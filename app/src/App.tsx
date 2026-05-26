@@ -5,15 +5,22 @@ import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import type { GraphData } from "../../core/src/graph";
-import { mergeGraphs } from "../../core/src/graph";
 import "./App.css";
 
-type GraphMode = "brain" | "agents" | "both";
+// 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
+// agents = the agent network. Agents is exclusive — never shown with the brains.
+type GraphMode = "2nd" | "3rd" | "both" | "agents";
+
+function filterByKinds(g: GraphData, kinds: Set<string>): GraphData {
+  const nodes = g.nodes.filter((n) => kinds.has(n.kind));
+  const ids = new Set(nodes.map((n) => n.id));
+  return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
+}
 
 export default function App() {
   const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
-  const [mode, setMode] = createSignal<GraphMode>("brain");
+  const [mode, setMode] = createSignal<GraphMode>("both");
   const [tabs, setTabs] = createSignal<string[]>([]);
   const [active, setActive] = createSignal<string | null>(null);
 
@@ -21,10 +28,12 @@ export default function App() {
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
   const displayGraph = createMemo<GraphData>(() => {
-    const m = mode();
-    if (m === "brain") return graph();
-    if (m === "agents") return agents();
-    return mergeGraphs([graph(), agents()]);
+    switch (mode()) {
+      case "2nd": return filterByKinds(graph(), new Set(["self", "note"]));
+      case "3rd": return filterByKinds(graph(), new Set(["self", "memory"]));
+      case "agents": return agents();
+      default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
+    }
   });
 
   const openFile = (path: string) => {

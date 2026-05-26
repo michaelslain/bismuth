@@ -3,7 +3,7 @@ import { onCleanup, onMount, createEffect } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer } from "./graph/WebGLRenderer";
 
-type GraphMode = "brain" | "agents" | "both";
+type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
 export function GraphView(props: {
   graph: GraphData;
@@ -49,9 +49,10 @@ export function GraphView(props: {
         <span style={{ "font-size": "11px", "text-transform": "uppercase", opacity: 0.6, "margin-right": "8px", "flex-shrink": 0 }}>
           Living graph
         </span>
-        <button style={btnStyle("brain")} onClick={() => props.setMode("brain")}>Brain</button>
-        <button style={btnStyle("agents")} onClick={() => props.setMode("agents")}>Agents</button>
+        <button style={btnStyle("2nd")} onClick={() => props.setMode("2nd")}>2nd</button>
+        <button style={btnStyle("3rd")} onClick={() => props.setMode("3rd")}>3rd</button>
         <button style={btnStyle("both")} onClick={() => props.setMode("both")}>Both</button>
+        <button style={btnStyle("agents")} onClick={() => props.setMode("agents")}>Agents</button>
       </div>
       <div style={{ flex: "1", "min-height": "0", display: "flex", "align-items": "center", "justify-content": "center" }}>
         <div ref={host} style={{ width: "100%", "aspect-ratio": "1", "max-height": "100%" }} />
