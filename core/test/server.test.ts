@@ -21,3 +21,15 @@ test("GET /graph returns the merged brain graph", async () => {
     server.stop(true);
   }
 });
+
+test("GET /agent-graph returns an object with nodes and edges arrays", async () => {
+  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const ag = await (await fetch(`${base}/agent-graph`)).json();
+    expect(Array.isArray(ag.nodes)).toBe(true);
+    expect(Array.isArray(ag.edges)).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});

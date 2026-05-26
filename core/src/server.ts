@@ -3,6 +3,7 @@ import { buildGraph } from "./engine";
 import { listMarkdown, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
+import { buildAgentGraph } from "./agents";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -47,6 +48,9 @@ export function createServer(cfg: CoreConfig) {
         const noteText = metaExists ? await readNote(cfg.vault, path) : "";
         const { data } = parseFrontmatter(noteText);
         return Response.json(data, { headers: cors });
+      }
+      if (url.pathname === "/agent-graph" && req.method === "GET") {
+        return Response.json(buildAgentGraph(), { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });
     },
