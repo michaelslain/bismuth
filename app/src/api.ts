@@ -3,6 +3,7 @@ import type { GraphData } from "../../core/src/graph";
 
 export const api = {
   graph: () => fetch(`${BASE}/graph`).then((r) => r.json() as Promise<GraphData>),
+  agentGraph: () => fetch(`${BASE}/agent-graph`).then((r) => r.json() as Promise<GraphData>),
   tree: () => fetch(`${BASE}/tree`).then((r) => r.json() as Promise<string[]>),
   read: (path: string) => fetch(`${BASE}/file?path=${encodeURIComponent(path)}`).then((r) => r.text()),
   write: (path: string, contents: string) =>
