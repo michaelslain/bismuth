@@ -34,6 +34,35 @@ launches as a single thing.
 - "Render the vault + render `/graph` + edit markdown + supervise services" is **bounded**.
   "Reimplement three systems into one binary" is not.
 
+## claude-communicate backend — planned features this app surfaces
+
+These are being built in the `claude-communicate` repo (by sibling agents). They are **not**
+implemented in this app; this app **renders and controls** them. Captured here so the front-end
+(Stones 2 & 4) is designed to surface them, and so the contracts get coordinated via the relay.
+
+- **Autonomous agent-to-agent communication.** Agents message each other on their own; a message
+  can **wake a sleeping agent** so it responds. The human stops being the messenger and mostly watches.
+  (The redundant `/register` step is gone — sessions auto-register.)
+- **Live conversation graph + `/graph` endpoint.** The whole system modeled as a graph: each agent
+  is a node, each message is an edge, a back-and-forth is a thread. Served from a `/graph` endpoint —
+  the reusable artifact this app renders.
+- **Spiral guardrails** (so agents don't loop forever burning tokens): depth cap (~3 hops),
+  per-conversation budget (~6 exchanges), per-agent rate limit (~5 wakes / 10 min). A runaway
+  conversation is marked **dead** (shown **red** on the graph).
+- **Haiku for woken agents.** Auto-woken instances handling inter-agent chatter run on the cheap
+  Claude Haiku model; hands-on human sessions stay on Opus. Keeps autonomous gossip cheap.
+- **Governance structures.** The agent collective can be organized under a selectable governance
+  model that determines authority and how decisions/messages route among agents:
+  - **Dictatorship** — one agent holds authority; others execute its directives (centralized topology).
+  - **Democratic republic** — agents elect representatives who vote on decisions, under constitutional
+    limits. *Representative, not direct democracy.*
+  - **Central committee / politburo** — a committee (one-party) decides; execution is decentralized.
+
+  The governance *mechanisms* live in `claude-communicate`. This app **visualizes** the structure
+  (topology + authority reflected in the graph) and lets you **see/switch** the active model.
+- **Deferred:** full chat-history mirroring (one agent reading another's entire transcript) — too
+  heavy across machines; out of scope for now.
+
 ## Architecture & principles
 
 - **Stack:** Tauri 2 (Rust shell) + SolidJS + TypeScript + Vite. CodeMirror 6 for the editor.
@@ -107,15 +136,21 @@ The agents appear and move on the same graph.
 
 **Scope**
 - Agree the `/graph` payload + transport with `claude-communicate` (via the relay): node/edge
-  schema, live channel (SSE/WebSocket preferred, polling fallback), agent `state` + dead-thread flag.
+  schema, live channel (SSE/WebSocket preferred, polling fallback), agent `state`, dead-thread flag,
+  and **governance metadata** (active model + each agent's role/authority).
 - `AgentGraphSource` consumes `/graph`; agents render as nodes, messages as edges.
-- Live behavior: pulse on wake, edges animate as messages fly, threads glow red when killed.
+- Live behavior: pulse on wake, edges animate as messages fly, threads glow **red** when killed
+  (the spiral-guardrail "dead" state).
+- **Governance visualization:** the active model shapes the graph — dictatorship as a centralized
+  star (the dictator emphasized), democratic republic with representatives highlighted, central
+  committee as a distinct authority subgraph. Role/authority is legible at a glance.
 - View control: toggle/overlay note-graph vs agent-graph (and a combined view).
 
 **Done when:** with the relay running, agents and their live conversations appear on the graph
-in real time alongside notes.
+in real time alongside notes, dead threads show red, and the active governance structure is visible.
 
-**Dependencies:** `claude-communicate` `/graph` endpoint (in progress) — coordinate contract now.
+**Dependencies:** `claude-communicate` `/graph` endpoint + guardrails + governance model
+(in progress) — coordinate the contract now via the relay.
 
 ### Stone 3 — Backend supervision (the "one app" feel) `[self-contained]`
 
@@ -136,10 +171,13 @@ is visible.
 - Messages panel: read agent messages/threads (from relay or files) and display them.
 - Send a message / trigger an action by calling existing `claude-communicate` / `claude-bot`
   interfaces (HTTP or shelling out to their CLIs) — no reimplementation.
+- **Governance control:** view the active governance model and switch it
+  (dictatorship / democratic republic / central committee) via a `claude-communicate` call —
+  the app is the control surface; the mechanism stays in the backend.
 - Light `claude-bot` controls (e.g., trigger a remember, view scheduled crons).
 
-**Done when:** you can read and send agent messages and fire basic bot actions without leaving
-the app.
+**Done when:** you can read and send agent messages, switch the governance model, and fire basic
+bot actions without leaving the app.
 
 **Dependencies:** `claude-communicate` send/message interface; `claude-bot` CLI/MCP surface —
 confirm via relay.
@@ -174,6 +212,8 @@ to the data layer.
 
 ## Open questions (resolve via relay coordination, not blocking Stone 1)
 
-- `/graph` payload schema + live transport (Stone 2).
+- `/graph` payload schema + live transport, including guardrail/dead-thread fields and
+  governance metadata (active model + per-agent role/authority) (Stone 2).
+- Governance model representation and how switching it is triggered from the app (Stones 2 & 4).
 - Message read/send interface and where messages are persisted (Stone 4).
 - Exact launch commands + health checks for each backend (Stone 3).
