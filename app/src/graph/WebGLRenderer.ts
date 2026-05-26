@@ -16,13 +16,13 @@ import {
 import type { GraphData } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
 
-const EDGE_COLOR = 0x9aa6e6;
 // Graph node palette (pink → purples → lavender → blue)
 const PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
-const EDGE_BASE = 0.5; // normal edge brightness (0..1)
-const NODE_DIM = 0.1;  // dimmed non-neighbor node brightness on hover
-const EDGE_DIM = 0.05; // dimmed edge brightness on hover
-const HL_SPEED = 0.16; // highlight ease per frame (smooth fade in/out)
+const EDGE_BASE = 0.55; // normal edge brightness (0..1)
+const NODE_DIM = 0.4;   // dimmed non-neighbor node brightness on hover (gentle — stays visible)
+const EDGE_DIM = 0.18;  // dimmed edge brightness on hover
+const HL_SPEED = 0.16;  // highlight ease per frame (smooth fade in/out)
+const EDGE_COLOR = 0xbdcaf2; // cohesive lavender for links
 
 function hashInt(s: string): number {
   let h = 0;
@@ -105,6 +105,9 @@ export class WebGLRenderer implements GraphRenderer {
   private tgtI: Float32Array = new Float32Array(0); // target node intensities
   private curE: Float32Array = new Float32Array(0); // current edge intensities (eased)
   private tgtE: Float32Array = new Float32Array(0); // target edge intensities
+  private baseEdgeColors: Float32Array = new Float32Array(0); // per-vertex edge colors (endpoint gradient)
+  private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
+  private interactHandler?: () => void;
 
   mount(el: HTMLElement, onNodeClick: (id: string) => void) {
     this.el = el;
@@ -160,6 +163,11 @@ export class WebGLRenderer implements GraphRenderer {
       this.setHighlightTargets();
     };
     this.renderer.domElement.addEventListener("mouseleave", this.leaveHandler);
+
+    // Once the user zooms/drags, stop auto-fitting so we don't fight their camera
+    this.interactHandler = () => { this.userControlled = true; };
+    this.renderer.domElement.addEventListener("wheel", this.interactHandler, { passive: true });
+    this.renderer.domElement.addEventListener("pointerdown", this.interactHandler);
 
     // Start render loop
     this.animate();
@@ -269,15 +277,13 @@ export class WebGLRenderer implements GraphRenderer {
 
     const edgeAttr = this.linesMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
     const eArr = edgeAttr.array as Float32Array;
-    const ec = new THREE.Color(EDGE_COLOR);
     let movingE = false;
     for (let i = 0; i < this.curE.length; i++) {
       const d = this.tgtE[i] - this.curE[i];
       if (Math.abs(d) > 0.002) {
         this.curE[i] += d * HL_SPEED;
         const v = this.curE[i];
-        eArr[i * 6] = ec.r * v; eArr[i * 6 + 1] = ec.g * v; eArr[i * 6 + 2] = ec.b * v;
-        eArr[i * 6 + 3] = ec.r * v; eArr[i * 6 + 4] = ec.g * v; eArr[i * 6 + 5] = ec.b * v;
+        for (let k = 0; k < 6; k++) eArr[i * 6 + k] = this.baseEdgeColors[i * 6 + k] * v;
         movingE = true;
       }
     }
@@ -288,6 +294,7 @@ export class WebGLRenderer implements GraphRenderer {
     const sig = graphSig(g.nodes, g.edges.length);
     if (sig === this.lastSig) return;
     this.lastSig = sig;
+    this.userControlled = false; // new graph/mode → re-enable auto-fit
 
     // Stop old simulation
     if (this.sim) {
@@ -400,28 +407,26 @@ export class WebGLRenderer implements GraphRenderer {
     this.pointsMesh = new THREE.Points(pointsGeo, pointsMat);
     this.group.add(this.pointsMesh);
 
-    // --- LineSegments (edges) ---
-    // Resolve links to node references if they are strings
+    // --- LineSegments (edges) — clean cohesive lavender, brighten on hover ---
     const resolvedLinks = this.resolveLinks();
     const lineCount = resolvedLinks.length;
     const linePos = new Float32Array(lineCount * 6); // 2 vertices * 3 components
-
+    const lineColors = new Float32Array(lineCount * 6);
+    this.baseEdgeColors = new Float32Array(lineCount * 6);
+    const ec = new THREE.Color(EDGE_COLOR);
+    const ecc = [ec.r, ec.g, ec.b];
     for (let i = 0; i < lineCount; i++) {
       const { s, t } = resolvedLinks[i];
-      linePos[i * 6] = s.x ?? 0;
-      linePos[i * 6 + 1] = s.y ?? 0;
-      linePos[i * 6 + 2] = s.z ?? 0;
-      linePos[i * 6 + 3] = t.x ?? 0;
-      linePos[i * 6 + 4] = t.y ?? 0;
-      linePos[i * 6 + 5] = t.z ?? 0;
+      linePos[i * 6] = s.x ?? 0; linePos[i * 6 + 1] = s.y ?? 0; linePos[i * 6 + 2] = s.z ?? 0;
+      linePos[i * 6 + 3] = t.x ?? 0; linePos[i * 6 + 4] = t.y ?? 0; linePos[i * 6 + 5] = t.z ?? 0;
+      for (let k = 0; k < 6; k++) {
+        this.baseEdgeColors[i * 6 + k] = ecc[k % 3];
+        lineColors[i * 6 + k] = ecc[k % 3] * EDGE_BASE;
+      }
     }
 
     const linesGeo = new THREE.BufferGeometry();
     linesGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
-    // per-vertex edge colors (so hover can brighten connected edges / dim the rest)
-    const lineColors = new Float32Array(lineCount * 6);
-    const ec = new THREE.Color(EDGE_COLOR);
-    for (let i = 0; i < lineCount * 2; i++) { lineColors[i * 3] = ec.r * EDGE_BASE; lineColors[i * 3 + 1] = ec.g * EDGE_BASE; lineColors[i * 3 + 2] = ec.b * EDGE_BASE; }
     linesGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
     this.curE = new Float32Array(lineCount).fill(EDGE_BASE);
     this.tgtE = new Float32Array(lineCount).fill(EDGE_BASE);
@@ -429,7 +434,8 @@ export class WebGLRenderer implements GraphRenderer {
     const linesMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.45,
+      depthWrite: false,
     });
 
     this.linesMesh = new THREE.LineSegments(linesGeo, linesMat);
@@ -487,7 +493,7 @@ export class WebGLRenderer implements GraphRenderer {
 
   /** Frame the camera to the node cloud's bounding sphere (centroid + max radius). */
   private fitCamera() {
-    if (this.nodes.length === 0) return;
+    if (this.nodes.length === 0 || this.userControlled) return;
     let cx = 0, cy = 0, cz = 0;
     for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
     const k = this.nodes.length;
@@ -507,8 +513,8 @@ export class WebGLRenderer implements GraphRenderer {
     this.camera.near = Math.max(0.1, dist / 1000);
     this.camera.far = dist * 12 + 100;
     this.camera.updateProjectionMatrix();
-    this.controls.minDistance = dist * 0.1;
-    this.controls.maxDistance = dist * 4;
+    this.controls.minDistance = Math.max(0.5, dist * 0.02); // allow zooming in close
+    this.controls.maxDistance = dist * 12;
     this.controls.update();
   }
 
@@ -537,6 +543,11 @@ export class WebGLRenderer implements GraphRenderer {
     if (this.leaveHandler) {
       this.renderer.domElement.removeEventListener("mouseleave", this.leaveHandler);
       this.leaveHandler = undefined;
+    }
+    if (this.interactHandler) {
+      this.renderer.domElement.removeEventListener("wheel", this.interactHandler);
+      this.renderer.domElement.removeEventListener("pointerdown", this.interactHandler);
+      this.interactHandler = undefined;
     }
     this.circleTex?.dispose();
     this.circleTex = null;
