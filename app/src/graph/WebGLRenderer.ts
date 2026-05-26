@@ -6,6 +6,9 @@ import {
   forceManyBody,
   forceLink,
   forceCenter,
+  forceX,
+  forceY,
+  forceZ,
   type Simulation,
   type SimNode,
   type SimLink,
@@ -179,14 +182,19 @@ export class WebGLRenderer implements GraphRenderer {
     // Run 3D force simulation — stop automatically after 300 ticks to save CPU
     let ticks = 0;
     this.sim = forceSimulation<N3>(this.nodes, 3)
-      .force("charge", forceManyBody<N3>().strength(-30))
+      .force("charge", forceManyBody<N3>().strength(-12))
       .force(
         "link",
         forceLink<N3, L3>(this.links)
           .id((d: N3) => d.id)
-          .distance(8)
+          .distance(6)
       )
       .force("center", forceCenter<N3>(0, 0, 0))
+      // Gentle pull toward origin so weakly-connected nodes condense into a bounded
+      // ball instead of flying off — keeps the whole graph compact and frameable.
+      .force("x", forceX<N3>(0).strength(0.07))
+      .force("y", forceY<N3>(0).strength(0.07))
+      .force("z", forceZ<N3>(0).strength(0.07))
       .alphaMin(0.001)
       .on("tick", () => {
         this.updateGeometryPositions();
@@ -330,15 +338,16 @@ export class WebGLRenderer implements GraphRenderer {
     for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
     const k = this.nodes.length;
     cx /= k; cy /= k; cz /= k;
-    // Fit to the ~88th-percentile radius so far-flung weakly-connected outliers
-    // don't shrink the dense core to a dot. Outliers clip; user can zoom out.
-    const dists = this.nodes.map((n) => {
+    // The centering forces keep the cloud bounded, so fit to the farthest node
+    // (with margin) — every node is visible, comfortably framed.
+    let r = 1;
+    for (const n of this.nodes) {
       const dx = (n.x ?? 0) - cx, dy = (n.y ?? 0) - cy, dz = (n.z ?? 0) - cz;
-      return Math.sqrt(dx * dx + dy * dy + dz * dz);
-    }).sort((a, b) => a - b);
-    const r = Math.max(1, dists[Math.floor(dists.length * 0.88)] ?? dists[dists.length - 1] ?? 1);
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d > r) r = d;
+    }
     const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = (r / Math.sin(fov / 2)) * 1.15;
+    const dist = (r / Math.sin(fov / 2)) * 1.25;
     this.controls.target.set(cx, cy, cz);
     this.camera.position.set(cx, cy, cz + dist);
     this.camera.near = Math.max(0.1, dist / 1000);
