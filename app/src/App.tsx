@@ -1,11 +1,27 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo, Show } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import type { GraphData } from "../../core/src/graph";
 import "./App.css";
+
+// Empty state shown when no note is open: project name + a logo
+// (three overlapping circles = the three brains: you / vault / memory).
+function EmptyTab() {
+  return (
+    <div style={{ height: "100%", display: "flex", "flex-direction": "column", "align-items": "center", "justify-content": "center", gap: "20px", "user-select": "none" }}>
+      <svg width="108" height="108" viewBox="0 0 100 100">
+        <circle cx="50" cy="35" r="23" fill="#ebaa5a" opacity="0.8" />
+        <circle cx="35" cy="62" r="23" fill="#6496ff" opacity="0.8" />
+        <circle cx="65" cy="62" r="23" fill="#50c878" opacity="0.8" />
+      </svg>
+      <div style={{ "font-size": "30px", "font-weight": "700", "letter-spacing": "0.01em" }}>Three Brains</div>
+      <div style={{ "font-size": "13px", opacity: 0.45 }}>Select a note to begin</div>
+    </div>
+  );
+}
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -87,7 +103,11 @@ export default function App() {
             )}
           </For>
         </div>
-        <div class="editor-body"><Editor path={active()} onSaved={refreshGraph} /></div>
+        <div class="editor-body">
+          <Show when={active()} fallback={<EmptyTab />}>
+            <Editor path={active()} onSaved={refreshGraph} />
+          </Show>
+        </div>
       </main>
     </div>
   );
