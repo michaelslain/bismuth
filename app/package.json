@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault ../sample-vault --memory ../sample-vault/.memory\" \"vite\"",
+    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault \\\"${OA_VAULT:-../sample-vault}\\\" --memory \\\"${OA_MEMORY:-../sample-vault/.memory}\\\"\" \"vite\"",
     "build": "vite build",
     "serve": "vite preview",
     "tauri": "tauri"

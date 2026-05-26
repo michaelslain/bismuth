@@ -4,7 +4,6 @@ import { api } from "./api";
 import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
-import { Backlinks } from "./Backlinks";
 import type { GraphData } from "../../core/src/graph";
 import "./App.css";
 
@@ -32,7 +31,6 @@ export default function App() {
       <main class="editor"><Editor path={openPath()} onSaved={refreshGraph} /></main>
       <aside class="right">
         <GraphView graph={graph()} onOpen={(id) => setOpenPath(id + ".md")} />
-        <Backlinks graph={graph()} path={openPath()} onOpen={setOpenPath} />
       </aside>
     </div>
   );
