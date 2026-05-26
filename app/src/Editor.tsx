@@ -5,6 +5,7 @@ import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
+import { livePreview } from "./editor/livePreview";
 
 export function Editor(props: { path: string | null; onSaved: () => void }) {
   let host!: HTMLDivElement;
@@ -40,6 +41,25 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
             clearTimeout(saveTimer);
             saveTimer = setTimeout(() => save(path, u.state.doc.toString()), 800);
           }),
+          livePreview,
+          EditorView.domEventHandlers({
+            mousedown: (e, view) => {
+              const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
+              if (pos == null) return false;
+              const line = view.state.doc.lineAt(pos);
+              for (const m of line.text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
+                const s = line.from + (m.index ?? 0), en = s + m[0].length;
+                if (pos >= s && pos <= en) {
+                  const target = m[1].split("|")[0].split("#")[0].trim();
+                  api.read(target + ".md").then(() => props.onSaved()); // ensure exists
+                  // open via a custom event the parent listens to:
+                  window.dispatchEvent(new CustomEvent("oa-open", { detail: target + ".md" }));
+                  return true;
+                }
+              }
+              return false;
+            },
+          }),
         ],
       }),
     });
@@ -48,7 +68,7 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
   onCleanup(() => view?.destroy());
   return (
     <div style={{ height: "100%", display: "flex", "flex-direction": "column" }}>
-      {(meta().status || meta().priority || meta().tags) && (
+      {!!(meta().status || meta().priority || meta().tags) && (
         <div style={{ padding: "4px 8px", "border-bottom": "1px solid #2a2a2a", "font-size": "12px", opacity: 0.8 }}>
           {meta().status ? `● ${String(meta().status)}` : ""}
           {meta().priority != null ? `  ·  P${String(meta().priority)}` : ""}

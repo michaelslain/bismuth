@@ -20,6 +20,8 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
 
+  onMount(() => window.addEventListener("oa-open", (e: any) => setOpenPath(e.detail)));
+
   return (
     <div class="layout">
       <aside class="sidebar"><FileTree onOpen={setOpenPath} /></aside>
