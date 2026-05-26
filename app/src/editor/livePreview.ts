@@ -14,6 +14,7 @@ const wikilink = Decoration.mark({ class: "cm-wikilink" });
 const headingLine = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const bulletLine = Decoration.line({ class: "cm-li" });
+const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
 
 /** Hide the delimiters of an inline token (off the cursor line) and style the inner text. */
 function pushInline(
@@ -35,7 +36,17 @@ function pushInline(
 
 function build(view: EditorView): DecorationSet {
   const deco: Range<Decoration>[] = [];
-  const cursorLine = view.state.doc.lineAt(view.state.selection.main.head).number;
+  const doc = view.state.doc;
+  const cursorLine = doc.lineAt(view.state.selection.main.head).number;
+
+  // precompute fenced code regions (scan whole doc so viewport offsets don't matter)
+  const fenceLines = new Set<number>(); // the ``` marker lines
+  const codeLines = new Set<number>();  // lines inside a fence
+  let inFence = false;
+  for (let i = 1; i <= doc.lines; i++) {
+    if (/^\s*```/.test(doc.line(i).text)) { fenceLines.add(i); inFence = !inFence; }
+    else if (inFence) codeLines.add(i);
+  }
 
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
@@ -43,6 +54,13 @@ function build(view: EditorView): DecorationSet {
       const line = view.state.doc.lineAt(pos);
       const onCursor = line.number === cursorLine;
       const text = line.text;
+
+      // fenced code: style the block monospace and skip inline-markdown processing inside it
+      if (fenceLines.has(line.number) || codeLines.has(line.number)) {
+        deco.push(codeBlockLine.range(line.from));
+        pos = line.to + 1;
+        continue;
+      }
 
       // headings: size the whole line, hide the leading "#"s off the cursor line
       const hm = text.match(/^(#{1,6})\s+/);
@@ -120,5 +138,6 @@ export const livePreview = [
     ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
     ".cm-li": { "padding-left": "2px" },
+    ".cm-codeblock": { "font-family": "ui-monospace, monospace", background: "rgba(140,140,140,0.10)", "font-size": "0.92em" },
   }),
 ];
