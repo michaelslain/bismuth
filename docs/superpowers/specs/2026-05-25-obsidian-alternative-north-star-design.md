@@ -3,217 +3,218 @@
 **Date:** 2026-05-25
 **Status:** Approved design, pre-implementation
 
+## Central thesis: everything is a graph
+
+The app is **a universal graph renderer**. Every brain and every structure in the system is a
+*graph* (nodes + edges), and the app's job is to render them — in one visual language, in one
+window, eventually in 3D.
+
+- Your vault is a graph (notes + links).
+- The agent's memory is a graph (memories + links).
+- The agent network is a graph (agents + messages + governance topology).
+
+So the architecture's spine is a **graph engine fed by interchangeable graph sources**. The
+markdown editor is *one tool for one of the graphs* (the vault). Everything else is "point another
+source at the same renderer." This is what makes the project both **bounded** (one rendering core)
+and **endlessly extensible** (add a source).
+
 ## North Star (the destination)
 
-One desktop app you double-click. It opens to your whole second brain as a single
-**living graph** — your notes, your Claude agents' memories, and the agents talking to
-each other in real time — all in one window you can read, edit, and watch.
+One app you double-click. It opens to your whole world as a **living graph** — the three brains
+plus the live agent network — all rendered together, navigable, editable where it makes sense.
 
-- **One icon.** Launching the app quietly brings its backends up; you never juggle services.
-- **A markdown vault editor** — live preview, `[[wikilinks]]`, backlinks. (The Obsidian part.)
-- **One graph, two feeds:**
-  - **Notes** — dots = notes, lines = links. Static; your knowledge.
-  - **Agents** — dots = Claude instances, lines = live messages. Moving; pulses on wake,
-    glows red when a runaway conversation is killed.
+- **One icon, one project, everything inside** (a monolith) — but internally layered (below) so the
+  logic runs headless on a Raspberry Pi via CLI, and as a rich GUI on your machine.
+- The **graph is the home surface**; the **markdown editor** (live preview, `[[wikilinks]]`,
+  backlinks) is how you work inside the vault graph.
 - The graph later becomes a **3D sphere/storm**.
 
-It feels like **one app**. Under the hood it is **composed**: this app is the *face*; the
-existing `claude-bot` and `claude-communicate` repos are *backends* it talks to over the
-vault filesystem and local HTTP. The app **supervises** those services so it still ships and
-launches as a single thing.
+## The three brains (+ the live network)
 
-## Why composed (not a monolith)
+The conceptual foundation. Three brains, each a graph; plus a fourth, live graph for activity.
 
-- `claude-communicate` is already building a `/graph` endpoint (agents as nodes, messages as
-  edges, dead threads in red) — the *same shape* as Obsidian's graph view. This app renders
-  it rather than recomputing it.
-- `claude-bot` already writes zettelkasten markdown (frontmatter + `[[backlinks]]`) — the exact
-  format this app reads. Pointing the vault at that folder surfaces agent memories for free.
-- Those backends exist and are actively improved by sibling agents. Composition keeps them
-  independently buildable; we request changes via the relay rather than absorbing/freezing them.
-- "Render the vault + render `/graph` + edit markdown + supervise services" is **bounded**.
-  "Reimplement three systems into one binary" is not.
+| # | Brain | What it is | In the app |
+|---|-------|-----------|------------|
+| 1 | **You** | Your actual mind — the source of intent. Not stored. | A single `self` node the others relate to. |
+| 2 | **Your vault** | The markdown notes you write — your externalized second brain. | A graph source (notes + links) + the editor. |
+| 3 | **Claude-bot's memory** | What the agent remembers *about you and your vault* — its model of brains 1 & 2. (~160 notes.) | A graph source read from claude-bot's own memory store. |
 
-## claude-communicate backend — planned features this app surfaces
+- **Brain 3 is a brain *about* brains 1 and 2.** Its edges point *at* vault notes and facts about
+  you — so "the agent's understanding mapped onto your knowledge" is itself a visible cross-brain
+  layer.
+- Brain 3 reads **claude-bot's** memory store specifically — never Claude Code's built-in memory.
+- **The live agent network** (claude-communicate) is a *fourth* graph, but it represents **activity**
+  (agents talking now), not stored knowledge. Same renderer, different source, dynamic.
 
-These are being built in the `claude-communicate` repo (by sibling agents). They are **not**
-implemented in this app; this app **renders and controls** them. Captured here so the front-end
-(Stones 2 & 4) is designed to surface them, and so the contracts get coordinated via the relay.
+Node kinds in the unified model: `self` · `note` (vault) · `memory` (bot) · `agent` (live).
+Edges are within-brain (links/messages) or **cross-brain** (a memory about a note; a note about you).
 
-- **Autonomous agent-to-agent communication.** Agents message each other on their own; a message
-  can **wake a sleeping agent** so it responds. The human stops being the messenger and mostly watches.
-  (The redundant `/register` step is gone — sessions auto-register.)
-- **Live conversation graph + `/graph` endpoint.** The whole system modeled as a graph: each agent
-  is a node, each message is an edge, a back-and-forth is a thread. Served from a `/graph` endpoint —
-  the reusable artifact this app renders.
-- **Spiral guardrails** (so agents don't loop forever burning tokens): depth cap (~3 hops),
-  per-conversation budget (~6 exchanges), per-agent rate limit (~5 wakes / 10 min). A runaway
-  conversation is marked **dead** (shown **red** on the graph).
-- **Haiku for woken agents.** Auto-woken instances handling inter-agent chatter run on the cheap
-  Claude Haiku model; hands-on human sessions stay on Opus. Keeps autonomous gossip cheap.
-- **Governance structures.** The agent collective can be organized under a selectable governance
-  model that determines authority and how decisions/messages route among agents:
-  - **Dictatorship** — one agent holds authority; others execute its directives (centralized topology).
-  - **Democratic republic** — agents elect representatives who vote on decisions, under constitutional
-    limits. *Representative, not direct democracy.*
-  - **Central committee / politburo** — a committee (one-party) decides; execution is decentralized.
+## Architecture: one project, one core, two faces
 
-  The governance *mechanisms* live in `claude-communicate`. This app **visualizes** the structure
-  (topology + authority reflected in the graph) and lets you **see/switch** the active model.
-- **Deferred:** full chat-history mirroring (one agent reading another's entire transcript) — too
-  heavy across machines; out of scope for now.
+A monolith — one repo, everything inside — layered so the logic is separable from the UI.
 
-## Architecture & principles
+```
+                 ONE PROJECT (one repo)
+   ┌─────────────────────────────────────────────┐
+   │  CORE ENGINE (headless, no UI)               │
+   │  graph engine + sources · vault I/O ·        │
+   │  relay/messaging · guardrails · governance · │
+   │  bot memory · cron/dream                     │
+   └───────────────▲──────────────────▲───────────┘
+                   │                  │
+          ┌────────┴───────┐   ┌──────┴────────────┐
+          │  CLI           │   │  Desktop GUI       │
+          │  headless      │   │  (Tauri + SolidJS) │
+          │  runs on a Pi  │   │  graph + editor    │
+          └────────────────┘   └────────────────────┘
+```
 
-- **Stack:** Tauri 2 (Rust shell) + SolidJS + TypeScript + Vite. CodeMirror 6 for the editor.
-- **Filesystem in Rust:** Tauri commands own vault I/O (`list_vault`, `read_file`, `write_file`,
-  `watch_vault`). The JS side never touches disk directly.
-- **Pure-logic index in JS:** parsing frontmatter + `[[wikilinks]]` and building the graph model
-  is framework-free, dependency-light, and unit-tested.
-- **Focused UI components (Solid):** file tree, tabbed editor, backlinks panel, graph panel —
-  each one job, understandable in isolation.
-- **Small, well-bounded modules** so each can be reasoned about and changed without breaking
-  consumers.
+- **Core engine** — all logic, no UI. Owns the graph engine and every graph source, vault
+  filesystem I/O, the relay/agent-messaging, guardrails, governance, bot memory, cron/dream.
+- **CLI** — drives the core from the terminal, headless. *This is the Pi target:* a Pi node runs
+  the CLI only (an agent / relay node / bot daemon, no screen).
+- **Desktop GUI** — Tauri + SolidJS. The visual face: graph + editor + panels. Calls the same core.
+- **Same brain, two bodies.** Pi = CLI; your machine = GUI.
 
-### The two seams that make later stones cheap
+**Language:** strong lean toward a **Rust core** (Tauri is already Rust; cross-compiles to a Pi
+trivially, no runtime). The existing `claude-bot` / `claude-communicate` code gets **absorbed into
+the core**; whether each subsystem is ported or reimplemented is decided per-stone when we reach it
+(Stone 1 needs none of it). The old repos retire once absorbed.
 
-These interfaces are defined in Stone 1 even though only one implementation exists at first.
+## Core abstractions (the spine — built in Stone 1)
 
-1. **Graph data is source-agnostic.**
-   ```ts
-   type GraphData = { nodes: GraphNode[]; edges: GraphEdge[] };
-   interface GraphSource {
-     load(): Promise<GraphData>;
-     subscribe(onChange: (g: GraphData) => void): () => void; // live updates
-   }
-   ```
-   - `VaultSource` (Stone 1) builds `GraphData` from notes + links.
-   - `AgentGraphSource` (Stone 2) builds it from `claude-communicate`'s `/graph`.
-   - Same renderer consumes either, or a merged view.
+```ts
+type NodeKind = 'self' | 'note' | 'memory' | 'agent';
+type GraphNode = { id: string; label: string; kind: NodeKind;
+                   state?: 'idle' | 'awake' | 'dead'; meta?: Record<string, unknown> };
+type GraphEdge = { from: string; to: string; kind: 'link' | 'message' | 'about' };
+type GraphData = { nodes: GraphNode[]; edges: GraphEdge[] };
 
-2. **The renderer is an interface.**
-   ```ts
-   interface GraphRenderer {
-     mount(el: HTMLElement): void;
-     render(g: GraphData): void;
-     destroy(): void;
-   }
-   ```
-   - `Canvas2DRenderer` (Stone 1) — force-directed 2D (d3-force layout + canvas draw).
-   - `WebGLRenderer` (Stone 5) — three.js sphere/storm.
+interface GraphSource {                 // the primary extension point — one per brain/structure
+  load(): Promise<GraphData>;
+  subscribe(onChange: (g: GraphData) => void): () => void;   // live updates
+}
 
-Node shape carries enough to style both feeds: `{ id, label, kind: 'note'|'memory'|'agent',
-state?: 'idle'|'awake'|'dead', ... }`.
+interface GraphRenderer {               // swappable view
+  mount(el: HTMLElement): void;
+  render(g: GraphData): void;
+  destroy(): void;
+}
+```
+
+- **Sources:** `VaultSource` (brain 2), `BotMemorySource` (brain 3), `AgentNetworkSource`
+  (claude-communicate). Each emits `GraphData`; the app can show one, overlay, or merge them, with
+  cross-brain edges between sources.
+- **Renderers:** `Canvas2DRenderer` (now) → `WebGLRenderer` (three.js sphere/storm, later). Same
+  data, no rewrite.
+
+## The communicate subsystem (lives in the core)
+
+Folded into the monolith core; surfaced by the GUI and driveable by the CLI.
+
+- **Autonomous agent-to-agent communication** — agents message each other on their own; a message
+  can **wake a sleeping agent**. (Sessions auto-register; no manual `/register`.)
+- **Agent-network graph** — agents = nodes, messages = edges, exchange = thread. This is the
+  `AgentNetworkSource`.
+- **Spiral guardrails** — depth cap (~3 hops), per-conversation budget (~6 exchanges), per-agent
+  rate limit (~5 wakes / 10 min). Runaway conversations are marked **dead** (rendered **red**).
+- **Haiku for woken agents** — auto-woken instances run on Claude Haiku; hands-on human sessions
+  stay on Opus. Keeps autonomous chatter cheap.
+- **Governance structures** — the agent collective runs under a selectable model that sets authority
+  and decision/message routing, and **shapes the graph topology**:
+  - **Dictatorship** — one agent holds authority; centralized star.
+  - **Democratic republic** — elected representatives vote under constitutional limits.
+    *Representative, not direct democracy.*
+  - **Central committee / politburo** — one-party committee decides; decentralized execution.
+- **Deferred:** full chat-history mirroring across machines — too heavy for now.
 
 ---
 
 ## The stones (build in this order)
 
-### Stone 1 — Vault app foundation `[self-contained, build first]`
+### Stone 1 — Graph engine + the two static brains + editor `[self-contained, build first]`
 
-A real Obsidian-class vault app whose graph already includes your agents' memories.
-
-**Scope**
-- Tauri 2 + SolidJS + TS shell; pick/open a vault folder (persists last vault).
-- File tree + editor tabs; layout C (file tree left · editor center · graph-above-backlinks right).
-- CodeMirror 6 **live preview**: inline-rendered markdown, syntax hides off the active line,
-  `[[wikilinks]]` render as clickable links that open/create the target note.
-- Frontmatter aware: parse YAML `status` / `priority` / `tags`; surface them (badge/header).
-- Backlinks panel for the active note.
-- **Living graph** (Canvas2DRenderer fed by VaultSource): notes + memories as a force graph;
-  click a node to open the note; highlight neighbors of the active note.
-- `watch_vault` → re-index on external file changes (so agent writes show up live).
-
-**Done when:** open a folder of markdown (including `claude-bot` memories), edit notes with
-live preview, follow/create wikilinks, see backlinks, and see the whole vault as an interactive
-2D graph that updates when files change on disk.
-
-**Dependencies:** none outside this repo.
-
-### Stone 2 — Live agent graph `[needs /graph contract]`
-
-The agents appear and move on the same graph.
+The spine, plus everything that's just local markdown.
 
 **Scope**
-- Agree the `/graph` payload + transport with `claude-communicate` (via the relay): node/edge
-  schema, live channel (SSE/WebSocket preferred, polling fallback), agent `state`, dead-thread flag,
-  and **governance metadata** (active model + each agent's role/authority).
-- `AgentGraphSource` consumes `/graph`; agents render as nodes, messages as edges.
-- Live behavior: pulse on wake, edges animate as messages fly, threads glow **red** when killed
-  (the spiral-guardrail "dead" state).
-- **Governance visualization:** the active model shapes the graph — dictatorship as a centralized
-  star (the dictator emphasized), democratic republic with representatives highlighted, central
-  committee as a distinct authority subgraph. Role/authority is legible at a glance.
-- View control: toggle/overlay note-graph vs agent-graph (and a combined view).
+- Project skeleton: monolith repo with a **core** (graph engine + abstractions above), a **CLI** entry,
+  and a **Tauri + SolidJS GUI** — all sharing the core.
+- `GraphData` / `GraphSource` / `GraphRenderer` + `Canvas2DRenderer`.
+- `VaultSource` (brain 2) and `BotMemorySource` (brain 3) — both read local markdown graphs
+  (frontmatter + `[[wikilinks]]`). `self` node for brain 1. Cross-brain `about` edges where bot
+  memories reference vault notes.
+- GUI: layout C (file tree · editor · graph-above-backlinks). CodeMirror 6 **live preview**
+  (inline-rendered markdown, clickable wikilinks). Backlinks panel. Task frontmatter
+  (`status`/`priority`/`tags`) surfaced.
+- File-watch → re-index so external writes (incl. agent writes) show up live.
 
-**Done when:** with the relay running, agents and their live conversations appear on the graph
-in real time alongside notes, dead threads show red, and the active governance structure is visible.
+**Done when:** open the app on your vault + claude-bot memory, edit notes with live preview, and see
+all three brains as one interactive 2D graph (three colors + cross-brain links) that updates on disk
+changes. The CLI can dump/query the same graph headlessly.
 
-**Dependencies:** `claude-communicate` `/graph` endpoint + guardrails + governance model
-(in progress) — coordinate the contract now via the relay.
+**Dependencies:** none.
 
-### Stone 3 — Backend supervision (the "one app" feel) `[self-contained]`
-
-**Scope**
-- On launch, the app starts and monitors `claude-communicate` (relay) and `claude-bot` (daemon)
-  as managed child processes; status indicator; graceful shutdown with the app.
-- Config for backend paths/commands; "not installed / not running" handled gracefully (the app
-  still works as a pure vault editor without them).
-
-**Done when:** double-clicking the app brings the backends up; closing it shuts them down; status
-is visible.
-
-**Dependencies:** knowledge of how each repo is launched (confirm via relay).
-
-### Stone 4 — Agent interaction from the app `[needs messaging contract]`
+### Stone 2 — The live network brain (agents + governance) `[in-core]`
 
 **Scope**
-- Messages panel: read agent messages/threads (from relay or files) and display them.
-- Send a message / trigger an action by calling existing `claude-communicate` / `claude-bot`
-  interfaces (HTTP or shelling out to their CLIs) — no reimplementation.
-- **Governance control:** view the active governance model and switch it
-  (dictatorship / democratic republic / central committee) via a `claude-communicate` call —
-  the app is the control surface; the mechanism stays in the backend.
-- Light `claude-bot` controls (e.g., trigger a remember, view scheduled crons).
+- `AgentNetworkSource`: agents as nodes, live messages as edges, into the same renderer.
+- Live behavior: pulse on wake, edges animate, dead threads render **red** (guardrails).
+- **Governance visualization:** active model shapes topology (dictator star / representatives
+  highlighted / committee subgraph); role + authority legible at a glance.
+- View control: show one brain, overlay, or merge.
 
-**Done when:** you can read and send agent messages, switch the governance model, and fire basic
-bot actions without leaving the app.
+**Done when:** with the relay running, the agent network and its live conversations appear on the
+graph alongside the brains, dead threads show red, and the governance structure is visible.
 
-**Dependencies:** `claude-communicate` send/message interface; `claude-bot` CLI/MCP surface —
-confirm via relay.
+**Dependencies:** the communicate subsystem in the core (port/reimplement decided here).
+
+### Stone 3 — One-app supervision / Pi parity `[in-core]`
+
+**Scope**
+- GUI launch brings the core's services (relay, bot daemon/cron) up and monitors them; status
+  indicator; graceful shutdown. The CLI runs the same services headless on a Pi.
+- Config for paths/commands; degrades gracefully (pure vault editor if services are off).
+
+**Done when:** double-clicking the app brings everything up; the CLI runs the same on a Pi with no screen.
+
+### Stone 4 — Interaction (messages, governance, bot controls) `[in-core]`
+
+**Scope**
+- Messages panel: read agent messages/threads; send a message from the app.
+- **Governance control:** view and switch the active model (dictatorship / democratic republic /
+  central committee).
+- Light bot controls (trigger a remember, view crons).
+
+**Done when:** you can read/send agent messages, switch governance, and fire basic bot actions
+without leaving the app — all also available via CLI.
 
 ### Stone 5 — 3D graph (sphere / storm) `[self-contained]`
 
 **Scope**
-- `WebGLRenderer` (three.js) implementing `GraphRenderer`; 3D force layout; sphere/storm
-  aesthetic; toggle 2D ↔ 3D. Both feeds (notes + agents) render in 3D.
+- `WebGLRenderer` (three.js) implementing `GraphRenderer`; 3D force layout; sphere/storm aesthetic;
+  toggle 2D ↔ 3D. All sources render in 3D with no data-layer change.
 
-**Done when:** the living graph can be viewed as an interactive 3D sphere/storm with no change
-to the data layer.
-
-**Dependencies:** none (relies only on the Stone 1 renderer interface).
+**Done when:** the living graph can be viewed as an interactive 3D sphere/storm.
 
 ---
 
 ## Testing
 
-- **Unit tests (TDD):** the index/parser — frontmatter parsing, `[[wikilink]]` extraction
-  (including aliases/headings), and graph construction from notes/edges. Pure logic, high value.
-- **Component smoke tests:** editor mounts and round-trips a file; renderer mounts and draws a
-  small graph.
-- **Manual run** for visual/interaction work (live preview feel, graph behavior, 3D).
+- **Unit tests (TDD):** the graph layer — markdown/frontmatter/`[[wikilink]]` parsing, building
+  `GraphData` per source, cross-brain edge resolution. Pure logic, high value.
+- **Component smoke tests:** editor mounts and round-trips a file; renderer mounts and draws a small
+  graph; CLI dumps a graph from a fixture vault.
+- **Manual run** for visual/interaction work (live preview, graph behavior, 3D).
 
-## Out of scope (for the whole project, for now)
+## Out of scope (for now)
 
-- Reimplementing any `claude-bot` / `claude-communicate` internals inside the app.
-- Full chat-history mirroring across machines (the sibling agent deferred this too).
-- Mobile / web builds — desktop (Tauri) only.
-- Plugin system / themes marketplace.
+- Full chat-history mirroring across machines.
+- Mobile / web builds — desktop (Tauri) + CLI (incl. Pi) only.
+- Plugin marketplace / themes ecosystem.
 
-## Open questions (resolve via relay coordination, not blocking Stone 1)
+## Open questions (resolved per-stone, not blocking Stone 1)
 
-- `/graph` payload schema + live transport, including guardrail/dead-thread fields and
-  governance metadata (active model + per-agent role/authority) (Stone 2).
-- Governance model representation and how switching it is triggered from the app (Stones 2 & 4).
-- Message read/send interface and where messages are persisted (Stone 4).
-- Exact launch commands + health checks for each backend (Stone 3).
+- Core language final call (Rust strongly preferred) and port-vs-reimplement per subsystem (Stones 2–4).
+- Agent-network live transport + payload, incl. guardrail/dead fields and governance metadata (Stone 2).
+- Governance representation + how switching is triggered (Stones 2 & 4).
+- Backend launch/health for supervision and Pi (Stone 3).
