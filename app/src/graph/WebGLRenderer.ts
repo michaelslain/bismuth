@@ -70,7 +70,7 @@ export class WebGLRenderer implements GraphRenderer {
     // Camera
     const w = el.clientWidth || 320;
     const h = el.clientHeight || 400;
-    this.camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 2000);
+    this.camera = new THREE.PerspectiveCamera(60, w / h, 0.1, 20000);
     this.camera.position.set(0, 0, 180);
 
     // Renderer
@@ -174,6 +174,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.links = g.edges.map((e) => ({ source: e.from, target: e.to }));
 
     this.buildGeometry(); // initial geometry with starting positions
+    this.fitCamera();
 
     // Run 3D force simulation — stop automatically after 300 ticks to save CPU
     let ticks = 0;
@@ -192,6 +193,7 @@ export class WebGLRenderer implements GraphRenderer {
         ticks++;
         if (ticks >= 300 && this.sim) {
           this.sim.stop();
+          this.fitCamera(); // frame the settled cloud
         }
       });
   }
@@ -235,7 +237,7 @@ export class WebGLRenderer implements GraphRenderer {
     pointsGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
     const pointsMat = new THREE.PointsMaterial({
-      size: 3.5,
+      size: 5,
       sizeAttenuation: true,
       vertexColors: true,
     });
@@ -319,6 +321,32 @@ export class WebGLRenderer implements GraphRenderer {
     }
     linePosAttr.needsUpdate = true;
     this.linesMesh.geometry.computeBoundingSphere();
+  }
+
+  /** Frame the camera to the node cloud's bounding sphere (centroid + max radius). */
+  private fitCamera() {
+    if (this.nodes.length === 0) return;
+    let cx = 0, cy = 0, cz = 0;
+    for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
+    const k = this.nodes.length;
+    cx /= k; cy /= k; cz /= k;
+    // Fit to the ~88th-percentile radius so far-flung weakly-connected outliers
+    // don't shrink the dense core to a dot. Outliers clip; user can zoom out.
+    const dists = this.nodes.map((n) => {
+      const dx = (n.x ?? 0) - cx, dy = (n.y ?? 0) - cy, dz = (n.z ?? 0) - cz;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }).sort((a, b) => a - b);
+    const r = Math.max(1, dists[Math.floor(dists.length * 0.88)] ?? dists[dists.length - 1] ?? 1);
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const dist = (r / Math.sin(fov / 2)) * 1.15;
+    this.controls.target.set(cx, cy, cz);
+    this.camera.position.set(cx, cy, cz + dist);
+    this.camera.near = Math.max(0.1, dist / 1000);
+    this.camera.far = dist * 12 + 100;
+    this.camera.updateProjectionMatrix();
+    this.controls.minDistance = dist * 0.1;
+    this.controls.maxDistance = dist * 4;
+    this.controls.update();
   }
 
   destroy() {
