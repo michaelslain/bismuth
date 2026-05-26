@@ -13,35 +13,42 @@ import {
   type SimNode,
   type SimLink,
 } from "d3-force-3d";
-import type { GraphData } from "../../../core/src/graph";
+import type { GraphData, NodeKind } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
 
-// Graph node palette (pink → purples → lavender → blue)
-const PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
+// Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
+const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
 const EDGE_BASE = 0.55; // normal edge brightness (0..1)
 const NODE_DIM = 0.4;   // dimmed non-neighbor node brightness on hover (gentle — stays visible)
 const EDGE_DIM = 0.18;  // dimmed edge brightness on hover
 const HL_SPEED = 0.16;  // highlight ease per frame (smooth fade in/out)
 const EDGE_COLOR = 0xbdcaf2; // cohesive lavender for links
 
+/** User-tunable graph appearance/physics, fed in from the settings store. */
+export interface GraphConfig {
+  spin: boolean;
+  spinSpeed: number;
+  palette: number[];
+  repulsion: number;    // d3 forceManyBody strength (negative = push apart)
+  linkDistance: number;
+  centering: number;    // forceX/Y/Z strength toward origin
+  nodeSize: number;
+}
+
+const DEFAULT_CONFIG: GraphConfig = {
+  spin: true,
+  spinSpeed: 0.0015,
+  palette: DEFAULT_PALETTE,
+  repulsion: -7,
+  linkDistance: 5,
+  centering: 0.13,
+  nodeSize: 6,
+};
+
 function hashInt(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
   return h;
-}
-function paletteColor(key: string): THREE.Color {
-  return new THREE.Color(PALETTE[hashInt(key) % PALETTE.length]);
-}
-
-function colorFor(n: N3): THREE.Color {
-  switch (n.kind) {
-    case "note": return paletteColor("folder:" + (n.folder ?? "(root)"));
-    case "tag": return paletteColor("tag:" + n.label);
-    case "memory": return paletteColor("mem:" + n.label);
-    case "agent": return paletteColor("agent:" + n.label);
-    case "self": return new THREE.Color(0xffffff); // the single "you" node — distinct white anchor
-    default: return new THREE.Color(0xbdcaf2);
-  }
 }
 
 /** A white disc texture so points render as circles (alphaTest clips the square corners). */
@@ -59,11 +66,16 @@ function makeCircleTexture(): THREE.Texture {
   return tex;
 }
 
-type N3 = SimNode & { id: string; label: string; kind: string; folder?: string };
+type N3 = SimNode & { id: string; label: string; kind: NodeKind; folder?: string };
 type L3 = SimLink<N3>;
 
 function graphSig(nodes: { id: string }[], edgeCount: number): string {
   return nodes.map((n) => n.id).sort().join(",") + "|" + edgeCount;
+}
+
+/** d3-force replaces link endpoints with node objects after the first tick; this reads the id either way. */
+function endpointId(endpoint: string | N3): string {
+  return typeof endpoint === "object" ? endpoint.id : endpoint;
 }
 
 export class WebGLRenderer implements GraphRenderer {
@@ -81,8 +93,13 @@ export class WebGLRenderer implements GraphRenderer {
   // graph data
   private nodes: N3[] = [];
   private links: L3[] = [];
+  private resolvedLinks: { s: N3; t: N3 }[] = []; // links with both endpoints resolved to nodes (rebuilt per graph)
   private onClick: (id: string) => void = () => {};
   private lastSig = "";
+
+  // user settings — spin/size read live each frame; palette/physics applied via setConfig
+  private cfg: GraphConfig = { ...DEFAULT_CONFIG };
+  private palette: number[] = DEFAULT_PALETTE;
 
   // simulation
   private sim: Simulation<N3> | null = null;
@@ -106,6 +123,7 @@ export class WebGLRenderer implements GraphRenderer {
   private curE: Float32Array = new Float32Array(0); // current edge intensities (eased)
   private tgtE: Float32Array = new Float32Array(0); // target edge intensities
   private baseEdgeColors: Float32Array = new Float32Array(0); // per-vertex edge colors (endpoint gradient)
+  private hlActive = false; // true while a highlight transition is in progress; cleared when settled
   private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
   private interactHandler?: () => void;
 
@@ -184,41 +202,35 @@ export class WebGLRenderer implements GraphRenderer {
   private animate() {
     this.rafId = requestAnimationFrame(() => this.animate());
     // Idle "storm" spin — paused while the pointer is over the graph so hover/inspect stays stable
-    if (!this.pointerInside) this.group.rotation.y += 0.0015;
+    if (!this.pointerInside && this.cfg.spin) this.group.rotation.y += this.cfg.spinSpeed;
     this.stepHighlight(); // ease hover highlight toward its target
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
 
-  private handleClick(e: MouseEvent) {
-    if (!this.pointsMesh || this.nodes.length === 0) return;
+  /** Raycast the pointer against the node points, returning the nearest node id (or null). */
+  private pickNodeId(e: MouseEvent, threshold: number): string | null {
+    if (!this.pointsMesh || this.nodes.length === 0) return null;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse2D.set(
       ((e.clientX - rect.left) / rect.width) * 2 - 1,
       -((e.clientY - rect.top) / rect.height) * 2 + 1
     );
     this.raycaster.setFromCamera(this.mouse2D, this.camera);
-    this.raycaster.params.Points = { threshold: 3 };
-    const intersects = this.raycaster.intersectObject(this.pointsMesh);
-    if (intersects.length > 0) {
-      const idx = intersects[0].index!;
-      const node = this.nodes[idx];
-      if (node) this.onClick(node.id);
-    }
+    this.raycaster.params.Points = { threshold };
+    const hits = this.raycaster.intersectObject(this.pointsMesh);
+    return hits.length > 0 ? this.nodes[hits[0].index!]?.id ?? null : null;
+  }
+
+  private handleClick(e: MouseEvent) {
+    const id = this.pickNodeId(e, 3);
+    if (id) this.onClick(id);
   }
 
   private handleMove(e: MouseEvent) {
     this.pointerInside = true; // pause idle spin while interacting
     if (!this.pointsMesh || this.nodes.length === 0) return;
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse2D.set(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      -((e.clientY - rect.top) / rect.height) * 2 + 1
-    );
-    this.raycaster.setFromCamera(this.mouse2D, this.camera);
-    this.raycaster.params.Points = { threshold: 4 };
-    const hits = this.raycaster.intersectObject(this.pointsMesh);
-    const id = hits.length > 0 ? this.nodes[hits[0].index!]?.id ?? null : null;
+    const id = this.pickNodeId(e, 4);
     if (id === this.hoveredId) return;
     this.hoveredId = id;
     this.renderer.domElement.style.cursor = id ? "pointer" : "default";
@@ -228,8 +240,8 @@ export class WebGLRenderer implements GraphRenderer {
   private neighborsOf(id: string): Set<string> {
     const set = new Set<string>();
     for (const l of this.links) {
-      const s = typeof l.source === "object" ? (l.source as N3).id : (l.source as string);
-      const t = typeof l.target === "object" ? (l.target as N3).id : (l.target as string);
+      const s = endpointId(l.source as string | N3);
+      const t = endpointId(l.target as string | N3);
       if (s === id) set.add(t);
       if (t === id) set.add(s);
     }
@@ -243,51 +255,100 @@ export class WebGLRenderer implements GraphRenderer {
     if (!id) {
       this.tgtI.fill(1);
       this.tgtE.fill(EDGE_BASE);
+      this.hlActive = true;
       return;
     }
     const nbrs = this.neighborsOf(id);
     for (let i = 0; i < this.nodes.length; i++) {
       this.tgtI[i] = this.nodes[i].id === id || nbrs.has(this.nodes[i].id) ? 1 : NODE_DIM;
     }
-    const resolved = this.resolveLinks();
-    for (let i = 0; i < resolved.length && i < this.tgtE.length; i++) {
-      this.tgtE[i] = resolved[i].s.id === id || resolved[i].t.id === id ? 1 : EDGE_DIM;
+    for (let i = 0; i < this.resolvedLinks.length && i < this.tgtE.length; i++) {
+      const { s, t } = this.resolvedLinks[i];
+      this.tgtE[i] = s.id === id || t.id === id ? 1 : EDGE_DIM;
     }
+    this.hlActive = true;
   }
 
   /** Ease current intensities toward targets each frame; rewrite color buffers only while moving. */
   private stepHighlight() {
+    if (!this.hlActive) return;
     if (!this.pointsMesh || !this.linesMesh || this.curI.length === 0) return;
+    const movingN = this.easeColors(this.pointsMesh, this.curI, this.tgtI, this.baseColors, 3);
+    const movingE = this.easeColors(this.linesMesh, this.curE, this.tgtE, this.baseEdgeColors, 6);
+    if (!movingN && !movingE) this.hlActive = false; // transition settled — stop looping until next hover change
+  }
 
-    const nodeAttr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-    const nArr = nodeAttr.array as Float32Array;
-    let movingN = false;
-    for (let i = 0; i < this.curI.length; i++) {
-      const d = this.tgtI[i] - this.curI[i];
-      if (Math.abs(d) > 0.002) {
-        this.curI[i] += d * HL_SPEED;
-        const v = this.curI[i];
-        nArr[i * 3] = this.baseColors[i * 3] * v;
-        nArr[i * 3 + 1] = this.baseColors[i * 3 + 1] * v;
-        nArr[i * 3 + 2] = this.baseColors[i * 3 + 2] * v;
-        movingN = true;
-      }
+  /**
+   * Ease each per-element intensity toward its target and scale that element's color
+   * components (`stride` per element) from the base colors. Only flags the attribute
+   * dirty when something actually moved, so a settled graph does no GPU uploads.
+   */
+  private easeColors(mesh: THREE.Object3D & { geometry: THREE.BufferGeometry }, cur: Float32Array, tgt: Float32Array, base: Float32Array, stride: number): boolean {
+    const attr = mesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    let moved = false;
+    for (let i = 0; i < cur.length; i++) {
+      const delta = tgt[i] - cur[i];
+      if (Math.abs(delta) <= 0.002) continue;
+      cur[i] += delta * HL_SPEED;
+      const v = cur[i];
+      for (let k = 0; k < stride; k++) arr[i * stride + k] = base[i * stride + k] * v;
+      moved = true;
     }
-    if (movingN) nodeAttr.needsUpdate = true;
+    if (moved) attr.needsUpdate = true;
+    return moved;
+  }
 
-    const edgeAttr = this.linesMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-    const eArr = edgeAttr.array as Float32Array;
-    let movingE = false;
-    for (let i = 0; i < this.curE.length; i++) {
-      const d = this.tgtE[i] - this.curE[i];
-      if (Math.abs(d) > 0.002) {
-        this.curE[i] += d * HL_SPEED;
-        const v = this.curE[i];
-        for (let k = 0; k < 6; k++) eArr[i * 6 + k] = this.baseEdgeColors[i * 6 + k] * v;
-        movingE = true;
-      }
+  private paletteColor(key: string): THREE.Color {
+    return new THREE.Color(this.palette[hashInt(key) % this.palette.length]);
+  }
+
+  private colorFor(n: N3): THREE.Color {
+    switch (n.kind) {
+      case "note": return this.paletteColor("folder:" + (n.folder ?? "(root)"));
+      case "tag": return this.paletteColor("tag:" + n.label);
+      case "memory": return this.paletteColor("mem:" + n.label);
+      case "agent": return this.paletteColor("agent:" + n.label);
+      case "self": return new THREE.Color(0xffffff); // the single "you" node — distinct white anchor
+      default: return new THREE.Color(0xbdcaf2);
     }
-    if (movingE) edgeAttr.needsUpdate = true;
+  }
+
+  /**
+   * Apply user settings. Spin and node size are read live (cheap); a palette change
+   * recolors the existing geometry in place; a physics change updates the forces and
+   * gently reheats the simulation so the layout re-settles — none of these reload.
+   */
+  setConfig(cfg: GraphConfig) {
+    const prev = this.cfg;
+    this.cfg = cfg;
+    this.palette = cfg.palette;
+
+    if (this.pointsMesh) (this.pointsMesh.material as THREE.PointsMaterial).size = cfg.nodeSize;
+
+    if (cfg.palette !== prev.palette && this.pointsMesh) this.recolorNodes();
+
+    if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering)) {
+      (this.sim.force("charge") as any)?.strength(cfg.repulsion);
+      (this.sim.force("link") as any)?.distance(cfg.linkDistance);
+      for (const axis of ["x", "y", "z"] as const) (this.sim.force(axis) as any)?.strength(cfg.centering);
+      this.userControlled = false; // re-frame as it re-settles
+      this.sim.alpha(0.5).restart();
+    }
+  }
+
+  /** Rewrite node colors (live + hover-base buffers) from the current palette. */
+  private recolorNodes() {
+    if (!this.pointsMesh) return;
+    const attr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const c = this.colorFor(this.nodes[i]);
+      arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
+      this.baseColors[i * 3] = c.r; this.baseColors[i * 3 + 1] = c.g; this.baseColors[i * 3 + 2] = c.b;
+    }
+    attr.needsUpdate = true;
+    this.curI.fill(1); this.tgtI.fill(1); // clear any in-progress hover dim
   }
 
   render(g: GraphData) {
@@ -325,25 +386,26 @@ export class WebGLRenderer implements GraphRenderer {
     });
 
     this.links = g.edges.map((e) => ({ source: e.from, target: e.to }));
+    this.rebuildResolvedLinks(); // resolve endpoints once; endpoint objects mutate in place during ticks
 
     this.buildGeometry(); // initial geometry with starting positions
     this.fitCamera();
 
     // Run 3D force simulation (d3 stops itself at alphaMin)
     this.sim = forceSimulation<N3>(this.nodes, 3)
-      .force("charge", forceManyBody<N3>().strength(-7))
+      .force("charge", forceManyBody<N3>().strength(this.cfg.repulsion))
       .force(
         "link",
         forceLink<N3, L3>(this.links)
           .id((d: N3) => d.id)
-          .distance(5)
+          .distance(this.cfg.linkDistance)
       )
       .force("center", forceCenter<N3>(0, 0, 0))
       // Strong pull toward origin so separate tag clusters condense together into one
       // dense ball rather than drifting apart. Higher = denser / clusters closer.
-      .force("x", forceX<N3>(0).strength(0.13))
-      .force("y", forceY<N3>(0).strength(0.13))
-      .force("z", forceZ<N3>(0).strength(0.13))
+      .force("x", forceX<N3>(0).strength(this.cfg.centering))
+      .force("y", forceY<N3>(0).strength(this.cfg.centering))
+      .force("z", forceZ<N3>(0).strength(this.cfg.centering))
       .alphaMin(0.001)
       .on("tick", () => {
         this.updateGeometryPositions();
@@ -352,20 +414,20 @@ export class WebGLRenderer implements GraphRenderer {
       .on("end", () => this.fitCamera()); // final frame once it settles
   }
 
+  /** Remove both meshes from the scene group and free their GPU resources. */
+  private disposeMeshes() {
+    for (const mesh of [this.pointsMesh, this.linesMesh]) {
+      if (!mesh) continue;
+      this.group.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.pointsMesh = null;
+    this.linesMesh = null;
+  }
+
   private buildGeometry() {
-    // Remove old meshes
-    if (this.pointsMesh) {
-      this.group.remove(this.pointsMesh);
-      this.pointsMesh.geometry.dispose();
-      (this.pointsMesh.material as THREE.Material).dispose();
-      this.pointsMesh = null;
-    }
-    if (this.linesMesh) {
-      this.group.remove(this.linesMesh);
-      this.linesMesh.geometry.dispose();
-      (this.linesMesh.material as THREE.Material).dispose();
-      this.linesMesh = null;
-    }
+    this.disposeMeshes();
 
     const nodeCount = this.nodes.length;
 
@@ -379,7 +441,7 @@ export class WebGLRenderer implements GraphRenderer {
       positions[i * 3 + 1] = n.y ?? 0;
       positions[i * 3 + 2] = n.z ?? 0;
 
-      const c = colorFor(n);
+      const c = this.colorFor(n);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -395,7 +457,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.tgtI = new Float32Array(nodeCount).fill(1);
 
     const pointsMat = new THREE.PointsMaterial({
-      size: 6,
+      size: this.cfg.nodeSize,
       sizeAttenuation: true,
       vertexColors: true,
       map: this.circleTex ?? undefined,
@@ -408,22 +470,19 @@ export class WebGLRenderer implements GraphRenderer {
     this.group.add(this.pointsMesh);
 
     // --- LineSegments (edges) — clean cohesive lavender, brighten on hover ---
-    const resolvedLinks = this.resolveLinks();
-    const lineCount = resolvedLinks.length;
+    const lineCount = this.resolvedLinks.length;
     const linePos = new Float32Array(lineCount * 6); // 2 vertices * 3 components
     const lineColors = new Float32Array(lineCount * 6);
     this.baseEdgeColors = new Float32Array(lineCount * 6);
     const ec = new THREE.Color(EDGE_COLOR);
     const ecc = [ec.r, ec.g, ec.b];
     for (let i = 0; i < lineCount; i++) {
-      const { s, t } = resolvedLinks[i];
-      linePos[i * 6] = s.x ?? 0; linePos[i * 6 + 1] = s.y ?? 0; linePos[i * 6 + 2] = s.z ?? 0;
-      linePos[i * 6 + 3] = t.x ?? 0; linePos[i * 6 + 4] = t.y ?? 0; linePos[i * 6 + 5] = t.z ?? 0;
       for (let k = 0; k < 6; k++) {
         this.baseEdgeColors[i * 6 + k] = ecc[k % 3];
         lineColors[i * 6 + k] = ecc[k % 3] * EDGE_BASE;
       }
     }
+    this.writeEdgePositions(linePos);
 
     const linesGeo = new THREE.BufferGeometry();
     linesGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
@@ -442,28 +501,37 @@ export class WebGLRenderer implements GraphRenderer {
     this.group.add(this.linesMesh);
   }
 
-  private resolveLinks(): { s: N3; t: N3 }[] {
+  /** Resolve each link's endpoints to live node objects, dropping links with a missing end. Cached per graph. */
+  private rebuildResolvedLinks() {
     const nodeById = new Map<string, N3>();
     for (const n of this.nodes) nodeById.set(n.id, n);
-    const result: { s: N3; t: N3 }[] = [];
+    this.resolvedLinks = [];
     for (const l of this.links) {
-      const srcId = typeof l.source === "object" ? (l.source as N3).id : l.source as string;
-      const tgtId = typeof l.target === "object" ? (l.target as N3).id : l.target as string;
-      const s = nodeById.get(srcId);
-      const t = nodeById.get(tgtId);
-      if (s && t) result.push({ s, t });
+      const s = nodeById.get(endpointId(l.source as string | N3));
+      const t = nodeById.get(endpointId(l.target as string | N3));
+      if (s && t) this.resolvedLinks.push({ s, t });
     }
-    return result;
+  }
+
+  /** Write current endpoint positions (2 vertices * 3 components) into an edge position buffer. */
+  private writeEdgePositions(buf: Float32Array) {
+    for (let i = 0; i < this.resolvedLinks.length; i++) {
+      const { s, t } = this.resolvedLinks[i];
+      buf[i * 6] = s.x ?? 0;
+      buf[i * 6 + 1] = s.y ?? 0;
+      buf[i * 6 + 2] = s.z ?? 0;
+      buf[i * 6 + 3] = t.x ?? 0;
+      buf[i * 6 + 4] = t.y ?? 0;
+      buf[i * 6 + 5] = t.z ?? 0;
+    }
   }
 
   private updateGeometryPositions() {
     if (!this.pointsMesh || !this.linesMesh) return;
 
-    const nodeCount = this.nodes.length;
     const posAttr = this.pointsMesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     const posArray = posAttr.array as Float32Array;
-
-    for (let i = 0; i < nodeCount; i++) {
+    for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
       posArray[i * 3] = n.x ?? 0;
       posArray[i * 3 + 1] = n.y ?? 0;
@@ -472,21 +540,8 @@ export class WebGLRenderer implements GraphRenderer {
     posAttr.needsUpdate = true;
     this.pointsMesh.geometry.computeBoundingSphere();
 
-    // Update edge positions
-    const resolvedLinks = this.resolveLinks();
-    const lineCount = resolvedLinks.length;
     const linePosAttr = this.linesMesh.geometry.getAttribute("position") as THREE.BufferAttribute;
-    const linePosArray = linePosAttr.array as Float32Array;
-
-    for (let i = 0; i < lineCount; i++) {
-      const { s, t } = resolvedLinks[i];
-      linePosArray[i * 6] = s.x ?? 0;
-      linePosArray[i * 6 + 1] = s.y ?? 0;
-      linePosArray[i * 6 + 2] = s.z ?? 0;
-      linePosArray[i * 6 + 3] = t.x ?? 0;
-      linePosArray[i * 6 + 4] = t.y ?? 0;
-      linePosArray[i * 6 + 5] = t.z ?? 0;
-    }
+    this.writeEdgePositions(linePosAttr.array as Float32Array);
     linePosAttr.needsUpdate = true;
     this.linesMesh.geometry.computeBoundingSphere();
   }
@@ -552,17 +607,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.circleTex?.dispose();
     this.circleTex = null;
 
-    // Dispose meshes
-    if (this.pointsMesh) {
-      this.pointsMesh.geometry.dispose();
-      (this.pointsMesh.material as THREE.Material).dispose();
-      this.pointsMesh = null;
-    }
-    if (this.linesMesh) {
-      this.linesMesh.geometry.dispose();
-      (this.linesMesh.material as THREE.Material).dispose();
-      this.linesMesh = null;
-    }
+    this.disposeMeshes();
 
     // Dispose controls
     this.controls?.dispose();
