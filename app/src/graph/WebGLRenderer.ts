@@ -16,16 +16,32 @@ import {
 import type { GraphData } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
 
-const COLOR: Record<string, number> = {
-  self: 0xebaa5a,
-  note: 0x6496ff,
-  memory: 0x50c878,
-  agent: 0xe06c9f,
-};
-const DEFAULT_COLOR = 0x888888;
 const EDGE_COLOR = 0x8aa5d2;
 
-type N3 = SimNode & { id: string; label: string; kind: string };
+function hashHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+  return (h % 360) / 360;
+}
+
+function colorFor(n: N3): THREE.Color {
+  switch (n.kind) {
+    case "note":
+      return new THREE.Color().setHSL(hashHue(n.folder ?? "(root)"), 0.6, 0.6);
+    case "tag":
+      return new THREE.Color().setHSL(hashHue(n.label), 0.7, 0.72);
+    case "self":
+      return new THREE.Color(0xebaa5a);
+    case "memory":
+      return new THREE.Color(0x50c878);
+    case "agent":
+      return new THREE.Color(0xe06c9f);
+    default:
+      return new THREE.Color(0x888888);
+  }
+}
+
+type N3 = SimNode & { id: string; label: string; kind: string; folder?: string };
 type L3 = SimLink<N3>;
 
 function graphSig(nodes: { id: string }[], edgeCount: number): string {
@@ -229,8 +245,7 @@ export class WebGLRenderer implements GraphRenderer {
       positions[i * 3 + 1] = n.y ?? 0;
       positions[i * 3 + 2] = n.z ?? 0;
 
-      const hex = COLOR[n.kind] ?? DEFAULT_COLOR;
-      const c = new THREE.Color(hex);
+      const c = colorFor(n);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
