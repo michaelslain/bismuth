@@ -70,7 +70,8 @@ A monolith — one repo, everything inside — layered so the logic is separable
 ```
 
 - **Core engine** — all logic, no UI. Owns the graph engine and every graph source, vault
-  filesystem I/O, the relay/agent-messaging, guardrails, governance, bot memory, cron/dream.
+  filesystem I/O, **automatic local-git vault backup**, the relay/agent-messaging, guardrails,
+  governance, bot memory, cron/dream.
 - **CLI** — drives the core from the terminal, headless. *This is the Pi target:* a Pi node runs
   the CLI only (an agent / relay node / bot daemon, no screen).
 - **Desktop GUI** — Tauri + SolidJS. The visual face: graph + editor + panels. Calls the same core.
@@ -128,6 +129,21 @@ Folded into the monolith core; surfaced by the GUI and driveable by the CLI.
   - **Central committee / politburo** — one-party committee decides; decentralized execution.
 - **Deferred:** full chat-history mirroring across machines — too heavy for now.
 
+## Vault backup (automatic local git)
+
+The vault backs itself up automatically using **local git — no remote, never GitHub, never push.**
+Pure on-disk version history for safety and time-travel.
+
+- The vault folder is a git repo (the core runs `git init` if it isn't one yet). This is the
+  **vault's** repo — entirely separate from the app's own source repo.
+- **Auto-commit** on a debounce after edits settle (e.g. ~a few seconds after the last change) plus
+  a periodic snapshot and a commit on app close. Never commits on every keystroke.
+- Commit messages are timestamped snapshots (e.g. `vault snapshot 2026-05-25 19:40` + changed files).
+- **Strictly local:** the core never adds a remote and never pushes. If the user's vault already has
+  a remote, the backup still only commits locally and leaves pushing to the user.
+- Lives in the core, so it works headless — the **CLI/Pi** node backs up its vault the same way.
+- Sets up the future "version history / time-travel" view in the GUI for free (later stone/feature).
+
 ---
 
 ## The stones (build in this order)
@@ -147,10 +163,13 @@ The spine, plus everything that's just local markdown.
   (inline-rendered markdown, clickable wikilinks). Backlinks panel. Task frontmatter
   (`status`/`priority`/`tags`) surfaced.
 - File-watch → re-index so external writes (incl. agent writes) show up live.
+- **Automatic local-git vault backup** (init if needed, debounced auto-commit, commit on close;
+  local only, never pushes) — see "Vault backup" above.
 
 **Done when:** open the app on your vault + claude-bot memory, edit notes with live preview, and see
 all three brains as one interactive 2D graph (three colors + cross-brain links) that updates on disk
-changes. The CLI can dump/query the same graph headlessly.
+changes. Edits get auto-committed to the vault's local git history. The CLI can dump/query the same
+graph headlessly.
 
 **Dependencies:** none.
 
