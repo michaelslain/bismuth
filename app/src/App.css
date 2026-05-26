@@ -2,7 +2,7 @@
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
 body, html, #root { margin: 0; height: 100%; }
-.layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 14px/1.5 system-ui, sans-serif; }
+.layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace; }
 .sidebar { border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; min-height: 0; }
 .sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
 .sidebar-graph { border-top: 1px solid #2a2a2a; flex-shrink: 0; }
