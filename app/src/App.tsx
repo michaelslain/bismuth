@@ -29,7 +29,7 @@ export default function App() {
 
   const displayGraph = createMemo<GraphData>(() => {
     switch (mode()) {
-      case "2nd": return filterByKinds(graph(), new Set(["self", "note"]));
+      case "2nd": return filterByKinds(graph(), new Set(["self", "note", "tag"]));
       case "3rd": return filterByKinds(graph(), new Set(["self", "memory"]));
       case "agents": return agents();
       default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
