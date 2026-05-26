@@ -44,19 +44,14 @@ export function GraphView(props: {
   } as const);
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
-      <div style={{ display: "flex", "align-items": "center", padding: "6px 8px 2px", gap: "2px" }}>
-        <span style={{ "font-size": "11px", "text-transform": "uppercase", opacity: 0.6, "margin-right": "8px", "flex-shrink": 0 }}>
-          Living graph
-        </span>
+    <div style={{ display: "flex", "flex-direction": "column" }}>
+      <div style={{ display: "flex", "align-items": "center", "justify-content": "center", padding: "5px 6px", gap: "2px" }}>
         <button style={btnStyle("2nd")} onClick={() => props.setMode("2nd")}>2nd</button>
         <button style={btnStyle("3rd")} onClick={() => props.setMode("3rd")}>3rd</button>
         <button style={btnStyle("both")} onClick={() => props.setMode("both")}>Both</button>
         <button style={btnStyle("agents")} onClick={() => props.setMode("agents")}>Agents</button>
       </div>
-      <div style={{ flex: "1", "min-height": "0", display: "flex", "align-items": "center", "justify-content": "center" }}>
-        <div ref={host} style={{ width: "100%", "aspect-ratio": "1", "max-height": "100%" }} />
-      </div>
+      <div ref={host} style={{ width: "100%", "aspect-ratio": "1" }} />
     </div>
   );
 }
