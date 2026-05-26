@@ -1,18 +1,31 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import type { GraphData } from "../../core/src/graph";
+import { mergeGraphs } from "../../core/src/graph";
 import "./App.css";
+
+type GraphMode = "brain" | "agents" | "both";
 
 export default function App() {
   const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
+  const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
+  const [mode, setMode] = createSignal<GraphMode>("brain");
   const [tabs, setTabs] = createSignal<string[]>([]);
   const [active, setActive] = createSignal<string | null>(null);
 
   const refreshGraph = async () => setGraph(await api.graph());
+  const refreshAgents = async () => setAgents(await api.agentGraph());
+
+  const displayGraph = createMemo<GraphData>(() => {
+    const m = mode();
+    if (m === "brain") return graph();
+    if (m === "agents") return agents();
+    return mergeGraphs([graph(), agents()]);
+  });
 
   const openFile = (path: string) => {
     setTabs((t) => (t.includes(path) ? t : [...t, path]));
@@ -31,6 +44,11 @@ export default function App() {
   onMount(() => {
     refreshGraph();
     const t = setInterval(refreshGraph, 3000); // pick up external/agent writes live
+    onCleanup(() => clearInterval(t));
+  });
+  onMount(() => {
+    refreshAgents();
+    const t = setInterval(refreshAgents, 2000); // live agent-network polling
     onCleanup(() => clearInterval(t));
   });
   onMount(() => {
@@ -58,7 +76,7 @@ export default function App() {
         <div class="editor-body"><Editor path={active()} onSaved={refreshGraph} /></div>
       </main>
       <aside class="right">
-        <GraphView graph={graph()} onOpen={(id) => openFile(id + ".md")} />
+        <GraphView graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
       </aside>
     </div>
   );

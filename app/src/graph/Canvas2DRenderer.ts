@@ -5,7 +5,7 @@ import type { GraphRenderer } from "./GraphRenderer";
 
 type N = { id: string; label: string; kind: string; x?: number; y?: number; vx?: number; vy?: number };
 type L = { source: any; target: any };
-const COLOR: Record<string, string> = { self: "#ebaa5a", note: "#6496ff", memory: "#50c878", agent: "#50c878" };
+const COLOR: Record<string, string> = { self: "#ebaa5a", note: "#6496ff", memory: "#50c878", agent: "#e06c9f" };
 
 const PAD = 24;
 const MAX_FIT = 1.5;   // don't blow tiny graphs up absurdly when auto-fitting
