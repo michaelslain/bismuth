@@ -197,19 +197,19 @@ export class WebGLRenderer implements GraphRenderer {
 
     // Run 3D force simulation (d3 stops itself at alphaMin)
     this.sim = forceSimulation<N3>(this.nodes, 3)
-      .force("charge", forceManyBody<N3>().strength(-12))
+      .force("charge", forceManyBody<N3>().strength(-7))
       .force(
         "link",
         forceLink<N3, L3>(this.links)
           .id((d: N3) => d.id)
-          .distance(6)
+          .distance(5)
       )
       .force("center", forceCenter<N3>(0, 0, 0))
-      // Gentle pull toward origin so weakly-connected nodes condense into a bounded
-      // ball instead of flying off — keeps the whole graph compact and frameable.
-      .force("x", forceX<N3>(0).strength(0.07))
-      .force("y", forceY<N3>(0).strength(0.07))
-      .force("z", forceZ<N3>(0).strength(0.07))
+      // Strong pull toward origin so separate tag clusters condense together into one
+      // dense ball rather than drifting apart. Higher = denser / clusters closer.
+      .force("x", forceX<N3>(0).strength(0.13))
+      .force("y", forceY<N3>(0).strength(0.13))
+      .force("z", forceZ<N3>(0).strength(0.13))
       .alphaMin(0.001)
       .on("tick", () => {
         this.updateGeometryPositions();
