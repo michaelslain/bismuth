@@ -23,10 +23,28 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
 
   createEffect(async () => {
     const path = props.path;
-    view?.destroy();
+    // Destroy the previous view when this effect re-runs (path changed or cleanup).
+    onCleanup(() => view?.destroy());
     if (!path) return;
-    const text = await api.read(path);
-    setMeta(await api.meta(path));
+
+    // Treat a missing file as an empty note (new, not yet written).
+    let text = "";
+    try {
+      text = await api.read(path);
+    } catch {
+      text = "";
+    }
+    let metaData: Record<string, unknown> = {};
+    try {
+      metaData = await api.meta(path);
+    } catch {
+      metaData = {};
+    }
+
+    // Guard: if the path changed while we were awaiting, discard this run.
+    if (path !== props.path) return;
+
+    setMeta(metaData);
     view = new EditorView({
       parent: host,
       state: EditorState.create({
@@ -51,8 +69,7 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
                 const s = line.from + (m.index ?? 0), en = s + m[0].length;
                 if (pos >= s && pos <= en) {
                   const target = m[1].split("|")[0].split("#")[0].trim();
-                  api.read(target + ".md").then(() => props.onSaved()); // ensure exists
-                  // open via a custom event the parent listens to:
+                  // Just dispatch; Editor.tsx FIX 2 try/catch + server FIX 3 handle missing files.
                   window.dispatchEvent(new CustomEvent("oa-open", { detail: target + ".md" }));
                   return true;
                 }
@@ -64,8 +81,6 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
       }),
     });
   });
-
-  onCleanup(() => view?.destroy());
   return (
     <div style={{ height: "100%", display: "flex", "flex-direction": "column" }}>
       {!!(meta().status || meta().priority || meta().tags) && (

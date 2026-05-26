@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { buildGraph } from "./engine";
 import { listMarkdown, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
@@ -21,7 +22,11 @@ export function createServer(cfg: CoreConfig) {
         return Response.json(await listMarkdown(cfg.vault), { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "GET") {
-        const path = url.searchParams.get("path")!;
+        const path = url.searchParams.get("path");
+        if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
+        const fullPath = join(cfg.vault, path);
+        const exists = await Bun.file(fullPath).exists();
+        if (!exists) return new Response("", { status: 200, headers: cors });
         return new Response(await readNote(cfg.vault, path), { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "PUT") {
@@ -35,8 +40,12 @@ export function createServer(cfg: CoreConfig) {
         return Response.json({ committed }, { headers: cors });
       }
       if (url.pathname === "/meta" && req.method === "GET") {
-        const path = url.searchParams.get("path")!;
-        const { data } = parseFrontmatter(await readNote(cfg.vault, path));
+        const path = url.searchParams.get("path");
+        if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
+        const metaFullPath = join(cfg.vault, path);
+        const metaExists = await Bun.file(metaFullPath).exists();
+        const noteText = metaExists ? await readNote(cfg.vault, path) : "";
+        const { data } = parseFrontmatter(noteText);
         return Response.json(data, { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });

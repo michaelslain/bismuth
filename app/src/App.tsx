@@ -20,7 +20,11 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
 
-  onMount(() => window.addEventListener("oa-open", (e: any) => setOpenPath(e.detail)));
+  onMount(() => {
+    const handler = (e: Event) => setOpenPath((e as CustomEvent).detail);
+    window.addEventListener("oa-open", handler);
+    onCleanup(() => window.removeEventListener("oa-open", handler));
+  });
 
   return (
     <div class="layout">

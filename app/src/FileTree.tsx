@@ -1,9 +1,11 @@
 // app/src/FileTree.tsx
-import { createResource, For } from "solid-js";
+import { createResource, For, onCleanup } from "solid-js";
 import { api } from "./api";
 
 export function FileTree(props: { onOpen: (path: string) => void }) {
-  const [files] = createResource(() => api.tree());
+  const [files, { refetch }] = createResource(() => api.tree());
+  const t = setInterval(() => refetch(), 3000);
+  onCleanup(() => clearInterval(t));
   return (
     <div>
       <div style={{ "font-size": "11px", "text-transform": "uppercase", opacity: 0.6 }}>Vault</div>

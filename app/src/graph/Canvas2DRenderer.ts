@@ -3,8 +3,15 @@ import { forceSimulation, forceManyBody, forceLink, forceCenter, type Simulation
 import type { GraphData } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
 
-type N = { id: string; label: string; kind: string; x?: number; y?: number };
+type N = { id: string; label: string; kind: string; x?: number; y?: number; vx?: number; vy?: number };
 const COLOR: Record<string, string> = { self: "#ebaa5a", note: "#6496ff", memory: "#50c878", agent: "#50c878" };
+
+/** Stable signature for detecting graph topology changes. */
+function graphSig(nodes: N[], links: { source: string; target: string }[]): string {
+  const ns = [...nodes].map((n) => n.id).sort().join(",");
+  const es = [...links].map((l) => `${l.source}>${l.target}`).sort().join(",");
+  return `${ns}|${es}`;
+}
 
 export class Canvas2DRenderer implements GraphRenderer {
   private canvas!: HTMLCanvasElement;
@@ -12,6 +19,7 @@ export class Canvas2DRenderer implements GraphRenderer {
   private sim?: Simulation<N, undefined>;
   private nodes: N[] = [];
   private onClick: (id: string) => void = () => {};
+  private lastSig = "";
 
   mount(el: HTMLElement, onNodeClick: (id: string) => void) {
     this.onClick = onNodeClick;
@@ -29,8 +37,27 @@ export class Canvas2DRenderer implements GraphRenderer {
   }
 
   render(g: GraphData) {
-    this.nodes = g.nodes.map((n) => ({ ...n }));
     const links = g.edges.map((e) => ({ source: e.from, target: e.to }));
+    const sig = graphSig(g.nodes.map((n) => ({ ...n })), links);
+
+    // If topology hasn't changed, do nothing — avoids re-layout every poll cycle.
+    if (sig === this.lastSig) return;
+    this.lastSig = sig;
+
+    // Build a position map from the previous simulation so we can warm-start.
+    const prevPos = new Map<string, { x: number; y: number; vx: number; vy: number }>();
+    for (const n of this.nodes) {
+      prevPos.set(n.id, { x: n.x ?? 0, y: n.y ?? 0, vx: n.vx ?? 0, vy: n.vy ?? 0 });
+    }
+
+    // Copy over existing positions for ids that survived the topology change.
+    this.nodes = g.nodes.map((n) => {
+      const prev = prevPos.get(n.id);
+      return prev
+        ? { ...n, x: prev.x, y: prev.y, vx: prev.vx, vy: prev.vy }
+        : { ...n };
+    });
+
     this.sim?.stop();
     this.sim = forceSimulation(this.nodes)
       .force("charge", forceManyBody().strength(-80))
