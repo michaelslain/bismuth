@@ -1,6 +1,7 @@
 // app/src/editor/livePreview.ts
-import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { type Range } from "@codemirror/state";
+import katex from "katex";
 
 // marks
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
@@ -15,6 +16,38 @@ const headingLine = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const bulletLine = Decoration.line({ class: "cm-li" });
 const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
+const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
+const tableLine = Decoration.line({ class: "cm-table" });
+
+// KaTeX widget for math rendering
+class MathWidget extends WidgetType {
+  private readonly expr: string;
+  private readonly displayMode: boolean;
+
+  constructor(expr: string, displayMode: boolean) {
+    super();
+    this.expr = expr;
+    this.displayMode = displayMode;
+  }
+
+  eq(other: MathWidget): boolean {
+    return other.expr === this.expr && other.displayMode === this.displayMode;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = this.displayMode ? "cm-math-block" : "cm-math-inline";
+    span.innerHTML = katex.renderToString(this.expr, {
+      throwOnError: false,
+      displayMode: this.displayMode,
+    });
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
 
 /** Hide the delimiters of an inline token (off the cursor line) and style the inner text. */
 function pushInline(
@@ -48,6 +81,42 @@ function build(view: EditorView): DecorationSet {
     else if (inFence) codeLines.add(i);
   }
 
+  // precompute YAML frontmatter lines (only if first line is exactly "---")
+  const frontmatterLines = new Set<number>();
+  if (doc.lines >= 1 && doc.line(1).text === "---") {
+    frontmatterLines.add(1);
+    let closed = false;
+    for (let i = 2; i <= doc.lines; i++) {
+      frontmatterLines.add(i);
+      if (doc.line(i).text === "---") { closed = true; break; }
+    }
+    // if the frontmatter was never closed, don't treat it as frontmatter
+    if (!closed) frontmatterLines.clear();
+  }
+
+  // precompute GFM table line sets (scan whole doc)
+  const tableLineSet = new Set<number>();
+  // A table separator line: starts with optional whitespace, then |?[:-| chars]+
+  const sepRe = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
+  for (let i = 1; i <= doc.lines; i++) {
+    const lineText = doc.line(i).text;
+    const prevLineText = i > 1 ? doc.line(i - 1).text : "";
+    // check if this is a separator row
+    if (sepRe.test(lineText) && prevLineText.includes("|")) {
+      // mark the header line (i-1), the separator (i), and following contiguous pipe lines
+      if (!tableLineSet.has(i - 1)) tableLineSet.add(i - 1);
+      tableLineSet.add(i);
+      // collect following rows
+      for (let j = i + 1; j <= doc.lines; j++) {
+        if (doc.line(j).text.includes("|")) {
+          tableLineSet.add(j);
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
     while (pos <= to) {
@@ -55,9 +124,23 @@ function build(view: EditorView): DecorationSet {
       const onCursor = line.number === cursorLine;
       const text = line.text;
 
+      // frontmatter: dim lines and skip inline markdown
+      if (frontmatterLines.has(line.number)) {
+        deco.push(frontmatterLine.range(line.from));
+        pos = line.to + 1;
+        continue;
+      }
+
       // fenced code: style the block monospace and skip inline-markdown processing inside it
       if (fenceLines.has(line.number) || codeLines.has(line.number)) {
         deco.push(codeBlockLine.range(line.from));
+        pos = line.to + 1;
+        continue;
+      }
+
+      // GFM table: monospace and skip inline rules
+      if (tableLineSet.has(line.number)) {
+        deco.push(tableLine.range(line.from));
         pos = line.to + 1;
         continue;
       }
@@ -78,6 +161,28 @@ function build(view: EditorView): DecorationSet {
 
       // bullet list line (CSS adds the dot)
       if (/^\s*[-*+]\s+/.test(text)) deco.push(bulletLine.range(line.from));
+
+      // math: process $$...$$ (block) before $...$ (inline) — skip if cursor is on this line
+      if (!onCursor) {
+        // block math: $$...$$  (single-line, non-empty inner)
+        const blockMathRe = /\$\$([^$]+)\$\$/g;
+        for (const m of text.matchAll(blockMathRe)) {
+          const s = line.from + (m.index ?? 0);
+          const end = s + m[0].length;
+          const expr = m[1];
+          deco.push(Decoration.replace({ widget: new MathWidget(expr, true) }).range(s, end));
+        }
+
+        // inline math: $...$ (not $$, at least one non-$ char inside)
+        // negative lookbehind/ahead for $ to avoid matching $$
+        const inlineMathRe = /(?<!\$)\$([^$\n]+)\$(?!\$)/g;
+        for (const m of text.matchAll(inlineMathRe)) {
+          const s = line.from + (m.index ?? 0);
+          const end = s + m[0].length;
+          const expr = m[1];
+          deco.push(Decoration.replace({ widget: new MathWidget(expr, false) }).range(s, end));
+        }
+      }
 
       // inline tokens
       pushInline(deco, text, line.from, onCursor, /\*\*([^*]+)\*\*/g, 2, strong);
@@ -139,5 +244,9 @@ export const livePreview = [
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
     ".cm-li": { "padding-left": "2px" },
     ".cm-codeblock": { "font-family": "ui-monospace, monospace", background: "rgba(140,140,140,0.10)", "font-size": "0.92em" },
+    ".cm-frontmatter": { opacity: "0.5", "font-family": "ui-monospace, monospace", "font-size": "0.85em" },
+    ".cm-table": { "font-family": "ui-monospace, monospace" },
+    ".cm-math-inline": { display: "inline-block", "vertical-align": "middle" },
+    ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
   }),
 ];
