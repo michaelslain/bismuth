@@ -56,31 +56,34 @@ A monolith — one repo, everything inside — layered so the logic is separable
 ```
                  ONE PROJECT (one repo)
    ┌─────────────────────────────────────────────┐
-   │  CORE ENGINE (headless, no UI)               │
-   │  graph engine + sources · vault I/O ·        │
+   │  CORE ENGINE — Bun / TypeScript (headless)   │
+   │  graph engine + sources · vault I/O + git ·  │
    │  relay/messaging · guardrails · governance · │
    │  bot memory · cron/dream                     │
+   │  (exposes a local HTTP API, incl. /graph)    │
    └───────────────▲──────────────────▲───────────┘
-                   │                  │
-          ┌────────┴───────┐   ┌──────┴────────────┐
-          │  CLI           │   │  Desktop GUI       │
-          │  headless      │   │  (Tauri + SolidJS) │
-          │  runs on a Pi  │   │  graph + editor    │
-          └────────────────┘   └────────────────────┘
+                   │ imports          │ localhost HTTP
+          ┌────────┴───────┐   ┌──────┴────────────────────┐
+          │  CLI (Bun)     │   │  Desktop GUI               │
+          │  headless      │   │  thin Tauri shell (Rust)   │
+          │  runs on a Pi  │   │  + SolidJS webview         │
+          └────────────────┘   └────────────────────────────┘
 ```
 
-- **Core engine** — all logic, no UI. Owns the graph engine and every graph source, vault
-  filesystem I/O, **automatic local-git vault backup**, the relay/agent-messaging, guardrails,
-  governance, bot memory, cron/dream.
-- **CLI** — drives the core from the terminal, headless. *This is the Pi target:* a Pi node runs
-  the CLI only (an agent / relay node / bot daemon, no screen).
-- **Desktop GUI** — Tauri + SolidJS. The visual face: graph + editor + panels. Calls the same core.
+- **Core engine — Bun / TypeScript.** All logic, no UI. Owns the graph engine and every graph
+  source, vault filesystem I/O, **automatic local-git vault backup**, the relay/agent-messaging,
+  guardrails, governance, bot memory, cron/dream. Usable as a library *and* as a local HTTP service
+  (the HTTP API is where the agent-network `/graph` endpoint lives).
+- **CLI — Bun.** Imports the core and drives it headless. *This is the Pi target:* a Pi node runs
+  the CLI only (agent / relay node / bot daemon, no screen). Bun ships ARM64 Linux builds.
+- **Desktop GUI — thin Tauri (Rust) shell + SolidJS webview.** The webview talks to the Bun core
+  over localhost HTTP. The Rust shell only hosts the window and (Stone 3) launches the core sidecar.
 - **Same brain, two bodies.** Pi = CLI; your machine = GUI.
 
-**Language:** strong lean toward a **Rust core** (Tauri is already Rust; cross-compiles to a Pi
-trivially, no runtime). The existing `claude-bot` / `claude-communicate` code gets **absorbed into
-the core**; whether each subsystem is ported or reimplemented is decided per-stone when we reach it
-(Stone 1 needs none of it). The old repos retire once absorbed.
+**Language (resolved):** the core is **Bun + TypeScript** (Michael's preferred runtime — native TS,
+fast startup, ARM64/Pi support). The Tauri shell stays Rust but is kept minimal. Because the existing
+`claude-bot` / `claude-communicate` are already TypeScript, absorbing them is mostly a **port, not a
+rewrite**; the old repos retire once absorbed.
 
 ## Core abstractions (the spine — built in Stone 1)
 
@@ -233,7 +236,7 @@ without leaving the app — all also available via CLI.
 
 ## Open questions (resolved per-stone, not blocking Stone 1)
 
-- Core language final call (Rust strongly preferred) and port-vs-reimplement per subsystem (Stones 2–4).
+- Core language resolved (**Bun/TypeScript**); port-vs-reimplement of each absorbed subsystem decided per-stone (Stones 2–4).
 - Agent-network live transport + payload, incl. guardrail/dead fields and governance metadata (Stone 2).
 - Governance representation + how switching is triggered (Stones 2 & 4).
 - Backend launch/health for supervision and Pi (Stone 3).
