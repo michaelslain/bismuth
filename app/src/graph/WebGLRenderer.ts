@@ -19,6 +19,10 @@ import type { GraphRenderer } from "./GraphRenderer";
 const EDGE_COLOR = 0x9aa6e6;
 // Graph node palette (pink → purples → lavender → blue)
 const PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
+const EDGE_BASE = 0.5; // normal edge brightness (0..1)
+const NODE_DIM = 0.1;  // dimmed non-neighbor node brightness on hover
+const EDGE_DIM = 0.05; // dimmed edge brightness on hover
+const HL_SPEED = 0.16; // highlight ease per frame (smooth fade in/out)
 
 function hashInt(s: string): number {
   let h = 0;
@@ -97,6 +101,10 @@ export class WebGLRenderer implements GraphRenderer {
   private baseColors: Float32Array = new Float32Array(0); // node colors, for hover restore
   private hoveredId: string | null = null;
   private pointerInside = false;
+  private curI: Float32Array = new Float32Array(0); // current node intensities (eased)
+  private tgtI: Float32Array = new Float32Array(0); // target node intensities
+  private curE: Float32Array = new Float32Array(0); // current edge intensities (eased)
+  private tgtE: Float32Array = new Float32Array(0); // target edge intensities
 
   mount(el: HTMLElement, onNodeClick: (id: string) => void) {
     this.el = el;
@@ -148,7 +156,8 @@ export class WebGLRenderer implements GraphRenderer {
     this.renderer.domElement.addEventListener("mousemove", this.moveHandler);
     this.leaveHandler = () => {
       this.pointerInside = false;
-      if (this.hoveredId) { this.hoveredId = null; this.applyHighlight(); }
+      this.hoveredId = null;
+      this.setHighlightTargets();
     };
     this.renderer.domElement.addEventListener("mouseleave", this.leaveHandler);
 
@@ -168,6 +177,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.rafId = requestAnimationFrame(() => this.animate());
     // Idle "storm" spin — paused while the pointer is over the graph so hover/inspect stays stable
     if (!this.pointerInside) this.group.rotation.y += 0.0015;
+    this.stepHighlight(); // ease hover highlight toward its target
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
@@ -204,7 +214,7 @@ export class WebGLRenderer implements GraphRenderer {
     if (id === this.hoveredId) return;
     this.hoveredId = id;
     this.renderer.domElement.style.cursor = id ? "pointer" : "default";
-    this.applyHighlight();
+    this.setHighlightTargets();
   }
 
   private neighborsOf(id: string): Set<string> {
@@ -218,42 +228,60 @@ export class WebGLRenderer implements GraphRenderer {
     return set;
   }
 
-  /** Recolor nodes + edges based on the hovered node (or restore when none). */
-  private applyHighlight() {
-    if (!this.pointsMesh || !this.linesMesh) return;
-    const nodeAttr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-    const nArr = nodeAttr.array as Float32Array;
-    const edgeAttr = this.linesMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
-    const eArr = edgeAttr.array as Float32Array;
-    const mat = this.linesMesh.material as THREE.LineBasicMaterial;
-
-    if (!this.hoveredId) {
-      nArr.set(this.baseColors); // restore node colors
-      const ec = new THREE.Color(EDGE_COLOR);
-      for (let i = 0; i < eArr.length / 3; i++) { eArr[i * 3] = ec.r; eArr[i * 3 + 1] = ec.g; eArr[i * 3 + 2] = ec.b; }
-      mat.opacity = 0.28;
-      nodeAttr.needsUpdate = true; edgeAttr.needsUpdate = true;
+  /** Set per-node / per-edge target intensities from the hovered node (eased in stepHighlight). */
+  private setHighlightTargets() {
+    if (this.tgtI.length !== this.nodes.length) return;
+    const id = this.hoveredId;
+    if (!id) {
+      this.tgtI.fill(1);
+      this.tgtE.fill(EDGE_BASE);
       return;
     }
-
-    const id = this.hoveredId;
     const nbrs = this.neighborsOf(id);
     for (let i = 0; i < this.nodes.length; i++) {
-      const on = this.nodes[i].id === id || nbrs.has(this.nodes[i].id);
-      const f = on ? 1 : 0.07;
-      nArr[i * 3] = this.baseColors[i * 3] * f;
-      nArr[i * 3 + 1] = this.baseColors[i * 3 + 1] * f;
-      nArr[i * 3 + 2] = this.baseColors[i * 3 + 2] * f;
+      this.tgtI[i] = this.nodes[i].id === id || nbrs.has(this.nodes[i].id) ? 1 : NODE_DIM;
     }
     const resolved = this.resolveLinks();
-    const bright = new THREE.Color(0xd6dcff), dim = new THREE.Color(0x191c28);
-    for (let i = 0; i < resolved.length; i++) {
-      const c = resolved[i].s.id === id || resolved[i].t.id === id ? bright : dim;
-      eArr[i * 6] = c.r; eArr[i * 6 + 1] = c.g; eArr[i * 6 + 2] = c.b;
-      eArr[i * 6 + 3] = c.r; eArr[i * 6 + 4] = c.g; eArr[i * 6 + 5] = c.b;
+    for (let i = 0; i < resolved.length && i < this.tgtE.length; i++) {
+      this.tgtE[i] = resolved[i].s.id === id || resolved[i].t.id === id ? 1 : EDGE_DIM;
     }
-    mat.opacity = 0.7;
-    nodeAttr.needsUpdate = true; edgeAttr.needsUpdate = true;
+  }
+
+  /** Ease current intensities toward targets each frame; rewrite color buffers only while moving. */
+  private stepHighlight() {
+    if (!this.pointsMesh || !this.linesMesh || this.curI.length === 0) return;
+
+    const nodeAttr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const nArr = nodeAttr.array as Float32Array;
+    let movingN = false;
+    for (let i = 0; i < this.curI.length; i++) {
+      const d = this.tgtI[i] - this.curI[i];
+      if (Math.abs(d) > 0.002) {
+        this.curI[i] += d * HL_SPEED;
+        const v = this.curI[i];
+        nArr[i * 3] = this.baseColors[i * 3] * v;
+        nArr[i * 3 + 1] = this.baseColors[i * 3 + 1] * v;
+        nArr[i * 3 + 2] = this.baseColors[i * 3 + 2] * v;
+        movingN = true;
+      }
+    }
+    if (movingN) nodeAttr.needsUpdate = true;
+
+    const edgeAttr = this.linesMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const eArr = edgeAttr.array as Float32Array;
+    const ec = new THREE.Color(EDGE_COLOR);
+    let movingE = false;
+    for (let i = 0; i < this.curE.length; i++) {
+      const d = this.tgtE[i] - this.curE[i];
+      if (Math.abs(d) > 0.002) {
+        this.curE[i] += d * HL_SPEED;
+        const v = this.curE[i];
+        eArr[i * 6] = ec.r * v; eArr[i * 6 + 1] = ec.g * v; eArr[i * 6 + 2] = ec.b * v;
+        eArr[i * 6 + 3] = ec.r * v; eArr[i * 6 + 4] = ec.g * v; eArr[i * 6 + 5] = ec.b * v;
+        movingE = true;
+      }
+    }
+    if (movingE) edgeAttr.needsUpdate = true;
   }
 
   render(g: GraphData) {
@@ -356,6 +384,8 @@ export class WebGLRenderer implements GraphRenderer {
 
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
+    this.curI = new Float32Array(nodeCount).fill(1);
+    this.tgtI = new Float32Array(nodeCount).fill(1);
 
     const pointsMat = new THREE.PointsMaterial({
       size: 6,
@@ -391,13 +421,15 @@ export class WebGLRenderer implements GraphRenderer {
     // per-vertex edge colors (so hover can brighten connected edges / dim the rest)
     const lineColors = new Float32Array(lineCount * 6);
     const ec = new THREE.Color(EDGE_COLOR);
-    for (let i = 0; i < lineCount * 2; i++) { lineColors[i * 3] = ec.r; lineColors[i * 3 + 1] = ec.g; lineColors[i * 3 + 2] = ec.b; }
+    for (let i = 0; i < lineCount * 2; i++) { lineColors[i * 3] = ec.r * EDGE_BASE; lineColors[i * 3 + 1] = ec.g * EDGE_BASE; lineColors[i * 3 + 2] = ec.b * EDGE_BASE; }
     linesGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
+    this.curE = new Float32Array(lineCount).fill(EDGE_BASE);
+    this.tgtE = new Float32Array(lineCount).fill(EDGE_BASE);
 
     const linesMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.6,
     });
 
     this.linesMesh = new THREE.LineSegments(linesGeo, linesMat);
