@@ -179,8 +179,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.buildGeometry(); // initial geometry with starting positions
     this.fitCamera();
 
-    // Run 3D force simulation — stop automatically after 300 ticks to save CPU
-    let ticks = 0;
+    // Run 3D force simulation (d3 stops itself at alphaMin)
     this.sim = forceSimulation<N3>(this.nodes, 3)
       .force("charge", forceManyBody<N3>().strength(-12))
       .force(
@@ -198,12 +197,9 @@ export class WebGLRenderer implements GraphRenderer {
       .alphaMin(0.001)
       .on("tick", () => {
         this.updateGeometryPositions();
-        ticks++;
-        if (ticks >= 300 && this.sim) {
-          this.sim.stop();
-          this.fitCamera(); // frame the settled cloud
-        }
-      });
+        this.fitCamera(); // keep the whole cloud framed as it condenses — also re-fits on every mode switch
+      })
+      .on("end", () => this.fitCamera()); // final frame once it settles
   }
 
   private buildGeometry() {

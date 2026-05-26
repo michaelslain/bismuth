@@ -70,7 +70,12 @@ export default function App() {
 
   return (
     <div class="layout">
-      <aside class="sidebar"><FileTree onOpen={openFile} /></aside>
+      <aside class="sidebar">
+        <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
+        <div class="sidebar-graph">
+          <GraphView graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
+        </div>
+      </aside>
       <main class="editor-pane">
         <div class="tabbar">
           <For each={tabs()}>
@@ -84,9 +89,6 @@ export default function App() {
         </div>
         <div class="editor-body"><Editor path={active()} onSaved={refreshGraph} /></div>
       </main>
-      <aside class="right">
-        <GraphView graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
-      </aside>
     </div>
   );
 }
