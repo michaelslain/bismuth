@@ -1,5 +1,5 @@
-export type NodeKind = "self" | "note" | "memory" | "agent";
-export type EdgeKind = "link" | "message" | "about";
+export type NodeKind = "self" | "note" | "memory" | "agent" | "tag";
+export type EdgeKind = "link" | "message" | "about" | "tag";
 export type NodeState = "idle" | "awake" | "dead";
 
 export interface GraphNode {
@@ -7,6 +7,7 @@ export interface GraphNode {
   label: string;
   kind: NodeKind;
   state?: NodeState;
+  folder?: string;
 }
 export interface GraphEdge {
   from: string;
