@@ -1,11 +1,28 @@
 // app/src/Editor.tsx
 import { createEffect, onCleanup, createSignal } from "solid-js";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, drawSelection } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
+
+// Dark theme: prose in Lora, a bright caret that glides between positions (VSCode-style).
+const editorTheme = EditorView.theme(
+  {
+    "&": { backgroundColor: "transparent", color: "#dcdcdc", height: "100%" },
+    ".cm-scroller": { fontFamily: "'Lora', serif", fontSize: "16px", lineHeight: "1.65", overflow: "auto" },
+    ".cm-content": { caretColor: "#e8e8e8", padding: "12px 16px" },
+    ".cm-cursor, .cm-dropCursor": {
+      borderLeftColor: "#e8e8e8",
+      borderLeftWidth: "2px",
+      transition: "left 70ms ease-out, top 70ms ease-out", // smooth glide
+    },
+    ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "rgba(100,150,255,0.30)" },
+    "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(100,150,255,0.35)" },
+  },
+  { dark: true },
+);
 
 export function Editor(props: { path: string | null; onSaved: () => void }) {
   let host!: HTMLDivElement;
@@ -51,8 +68,10 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
         doc: text,
         extensions: [
           history(),
+          drawSelection(),
           keymap.of([...defaultKeymap, ...historyKeymap]),
           markdown(),
+          editorTheme,
           EditorView.lineWrapping,
           EditorView.updateListener.of((u) => {
             if (!u.docChanged) return;
