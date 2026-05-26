@@ -16,29 +16,43 @@ import {
 import type { GraphData } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
 
-const EDGE_COLOR = 0x8aa5d2;
+const EDGE_COLOR = 0x9aa6e6;
+// Graph node palette (pink → purples → lavender → blue)
+const PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
 
-function hashHue(s: string): number {
+function hashInt(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
-  return (h % 360) / 360;
+  return h;
+}
+function paletteColor(key: string): THREE.Color {
+  return new THREE.Color(PALETTE[hashInt(key) % PALETTE.length]);
 }
 
 function colorFor(n: N3): THREE.Color {
   switch (n.kind) {
-    case "note":
-      return new THREE.Color().setHSL(hashHue(n.folder ?? "(root)"), 0.6, 0.6);
-    case "tag":
-      return new THREE.Color().setHSL(hashHue(n.label), 0.7, 0.72);
-    case "self":
-      return new THREE.Color(0xebaa5a);
-    case "memory":
-      return new THREE.Color(0x50c878);
-    case "agent":
-      return new THREE.Color(0xe06c9f);
-    default:
-      return new THREE.Color(0x888888);
+    case "note": return paletteColor("folder:" + (n.folder ?? "(root)"));
+    case "tag": return paletteColor("tag:" + n.label);
+    case "memory": return paletteColor("mem:" + n.label);
+    case "agent": return paletteColor("agent:" + n.label);
+    case "self": return new THREE.Color(0xffffff); // the single "you" node — distinct white anchor
+    default: return new THREE.Color(0xbdcaf2);
   }
+}
+
+/** A white disc texture so points render as circles (alphaTest clips the square corners). */
+function makeCircleTexture(): THREE.Texture {
+  const s = 64;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = s;
+  const ctx = cv.getContext("2d")!;
+  ctx.beginPath();
+  ctx.arc(s / 2, s / 2, s / 2 - 1, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
 }
 
 type N3 = SimNode & { id: string; label: string; kind: string; folder?: string };
@@ -77,6 +91,12 @@ export class WebGLRenderer implements GraphRenderer {
   private mouse2D = new THREE.Vector2();
   // click handler reference for removal
   private clickHandler?: (e: MouseEvent) => void;
+  private moveHandler?: (e: MouseEvent) => void;
+  private leaveHandler?: () => void;
+  private circleTex: THREE.Texture | null = null;
+  private baseColors: Float32Array = new Float32Array(0); // node colors, for hover restore
+  private hoveredId: string | null = null;
+  private pointerInside = false;
 
   mount(el: HTMLElement, onNodeClick: (id: string) => void) {
     this.el = el;
@@ -116,9 +136,21 @@ export class WebGLRenderer implements GraphRenderer {
     this.ro = new ResizeObserver(() => this.handleResize());
     this.ro.observe(el);
 
+    // Circle sprite for round nodes
+    this.circleTex = makeCircleTexture();
+
     // Click handler for node picking
     this.clickHandler = (e: MouseEvent) => this.handleClick(e);
     this.renderer.domElement.addEventListener("click", this.clickHandler);
+
+    // Hover handler — highlight a node + its neighbors (Obsidian-style); pauses spin while inside
+    this.moveHandler = (e: MouseEvent) => this.handleMove(e);
+    this.renderer.domElement.addEventListener("mousemove", this.moveHandler);
+    this.leaveHandler = () => {
+      this.pointerInside = false;
+      if (this.hoveredId) { this.hoveredId = null; this.applyHighlight(); }
+    };
+    this.renderer.domElement.addEventListener("mouseleave", this.leaveHandler);
 
     // Start render loop
     this.animate();
@@ -134,8 +166,8 @@ export class WebGLRenderer implements GraphRenderer {
 
   private animate() {
     this.rafId = requestAnimationFrame(() => this.animate());
-    // Auto-rotate the group (nodes+edges), not the camera, so OrbitControls still works
-    this.group.rotation.y += 0.0015;
+    // Idle "storm" spin — paused while the pointer is over the graph so hover/inspect stays stable
+    if (!this.pointerInside) this.group.rotation.y += 0.0015;
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
   }
@@ -155,6 +187,73 @@ export class WebGLRenderer implements GraphRenderer {
       const node = this.nodes[idx];
       if (node) this.onClick(node.id);
     }
+  }
+
+  private handleMove(e: MouseEvent) {
+    this.pointerInside = true; // pause idle spin while interacting
+    if (!this.pointsMesh || this.nodes.length === 0) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    this.mouse2D.set(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    this.raycaster.setFromCamera(this.mouse2D, this.camera);
+    this.raycaster.params.Points = { threshold: 4 };
+    const hits = this.raycaster.intersectObject(this.pointsMesh);
+    const id = hits.length > 0 ? this.nodes[hits[0].index!]?.id ?? null : null;
+    if (id === this.hoveredId) return;
+    this.hoveredId = id;
+    this.renderer.domElement.style.cursor = id ? "pointer" : "default";
+    this.applyHighlight();
+  }
+
+  private neighborsOf(id: string): Set<string> {
+    const set = new Set<string>();
+    for (const l of this.links) {
+      const s = typeof l.source === "object" ? (l.source as N3).id : (l.source as string);
+      const t = typeof l.target === "object" ? (l.target as N3).id : (l.target as string);
+      if (s === id) set.add(t);
+      if (t === id) set.add(s);
+    }
+    return set;
+  }
+
+  /** Recolor nodes + edges based on the hovered node (or restore when none). */
+  private applyHighlight() {
+    if (!this.pointsMesh || !this.linesMesh) return;
+    const nodeAttr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const nArr = nodeAttr.array as Float32Array;
+    const edgeAttr = this.linesMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const eArr = edgeAttr.array as Float32Array;
+    const mat = this.linesMesh.material as THREE.LineBasicMaterial;
+
+    if (!this.hoveredId) {
+      nArr.set(this.baseColors); // restore node colors
+      const ec = new THREE.Color(EDGE_COLOR);
+      for (let i = 0; i < eArr.length / 3; i++) { eArr[i * 3] = ec.r; eArr[i * 3 + 1] = ec.g; eArr[i * 3 + 2] = ec.b; }
+      mat.opacity = 0.28;
+      nodeAttr.needsUpdate = true; edgeAttr.needsUpdate = true;
+      return;
+    }
+
+    const id = this.hoveredId;
+    const nbrs = this.neighborsOf(id);
+    for (let i = 0; i < this.nodes.length; i++) {
+      const on = this.nodes[i].id === id || nbrs.has(this.nodes[i].id);
+      const f = on ? 1 : 0.07;
+      nArr[i * 3] = this.baseColors[i * 3] * f;
+      nArr[i * 3 + 1] = this.baseColors[i * 3 + 1] * f;
+      nArr[i * 3 + 2] = this.baseColors[i * 3 + 2] * f;
+    }
+    const resolved = this.resolveLinks();
+    const bright = new THREE.Color(0xd6dcff), dim = new THREE.Color(0x191c28);
+    for (let i = 0; i < resolved.length; i++) {
+      const c = resolved[i].s.id === id || resolved[i].t.id === id ? bright : dim;
+      eArr[i * 6] = c.r; eArr[i * 6 + 1] = c.g; eArr[i * 6 + 2] = c.b;
+      eArr[i * 6 + 3] = c.r; eArr[i * 6 + 4] = c.g; eArr[i * 6 + 5] = c.b;
+    }
+    mat.opacity = 0.7;
+    nodeAttr.needsUpdate = true; edgeAttr.needsUpdate = true;
   }
 
   render(g: GraphData) {
@@ -255,10 +354,17 @@ export class WebGLRenderer implements GraphRenderer {
     pointsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     pointsGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
+    this.baseColors = colors.slice(); // remember for hover restore
+    this.hoveredId = null;
+
     const pointsMat = new THREE.PointsMaterial({
-      size: 5,
+      size: 6,
       sizeAttenuation: true,
       vertexColors: true,
+      map: this.circleTex ?? undefined,
+      alphaTest: 0.5,
+      transparent: true,
+      depthWrite: false,
     });
 
     this.pointsMesh = new THREE.Points(pointsGeo, pointsMat);
@@ -282,11 +388,16 @@ export class WebGLRenderer implements GraphRenderer {
 
     const linesGeo = new THREE.BufferGeometry();
     linesGeo.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
+    // per-vertex edge colors (so hover can brighten connected edges / dim the rest)
+    const lineColors = new Float32Array(lineCount * 6);
+    const ec = new THREE.Color(EDGE_COLOR);
+    for (let i = 0; i < lineCount * 2; i++) { lineColors[i * 3] = ec.r; lineColors[i * 3 + 1] = ec.g; lineColors[i * 3 + 2] = ec.b; }
+    linesGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
 
     const linesMat = new THREE.LineBasicMaterial({
-      color: EDGE_COLOR,
+      vertexColors: true,
       transparent: true,
-      opacity: 0.25,
+      opacity: 0.28,
     });
 
     this.linesMesh = new THREE.LineSegments(linesGeo, linesMat);
@@ -387,6 +498,16 @@ export class WebGLRenderer implements GraphRenderer {
       this.renderer.domElement.removeEventListener("click", this.clickHandler);
       this.clickHandler = undefined;
     }
+    if (this.moveHandler) {
+      this.renderer.domElement.removeEventListener("mousemove", this.moveHandler);
+      this.moveHandler = undefined;
+    }
+    if (this.leaveHandler) {
+      this.renderer.domElement.removeEventListener("mouseleave", this.leaveHandler);
+      this.leaveHandler = undefined;
+    }
+    this.circleTex?.dispose();
+    this.circleTex = null;
 
     // Dispose meshes
     if (this.pointsMesh) {
