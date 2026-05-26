@@ -8,4 +8,6 @@ export const api = {
   write: (path: string, contents: string) =>
     fetch(`${BASE}/file`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, contents }) }),
   backup: () => fetch(`${BASE}/backup`, { method: "POST" }),
+  meta: (path: string) =>
+    fetch(`${BASE}/meta?path=${encodeURIComponent(path)}`).then((r) => r.json() as Promise<Record<string, unknown>>),
 };

@@ -14,6 +14,9 @@ test("GET /graph returns the merged brain graph", async () => {
 
     const before = await (await fetch(`${base}/file?path=essay.md`)).text();
     expect(before).toContain("Essay");
+
+    const meta = await (await fetch(`${base}/meta?path=housing.md`)).json();
+    expect(meta).toEqual({ status: "in-progress", priority: 1, tags: ["logistics"] });
   } finally {
     server.stop(true);
   }

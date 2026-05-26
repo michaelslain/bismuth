@@ -1,6 +1,7 @@
 import { buildGraph } from "./engine";
 import { listMarkdown, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
+import { parseFrontmatter } from "./frontmatter";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -32,6 +33,11 @@ export function createServer(cfg: CoreConfig) {
         const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
         const committed = await commitVault(cfg.vault, `vault snapshot ${stamp}`);
         return Response.json({ committed }, { headers: cors });
+      }
+      if (url.pathname === "/meta" && req.method === "GET") {
+        const path = url.searchParams.get("path")!;
+        const { data } = parseFrontmatter(await readNote(cfg.vault, path));
+        return Response.json(data, { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });
     },
