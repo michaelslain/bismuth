@@ -10,9 +10,9 @@ export function GraphView(props: { graph: GraphData; onOpen: (id: string) => voi
   createEffect(() => renderer.render(props.graph));
   onCleanup(() => renderer.destroy());
   return (
-    <div>
-      <div style={{ "font-size": "11px", "text-transform": "uppercase", opacity: 0.6, padding: "8px 8px 0" }}>Living graph</div>
-      <div ref={host} />
+    <div style={{ display: "flex", "flex-direction": "column", height: "100%" }}>
+      <div style={{ "font-size": "11px", "text-transform": "uppercase", opacity: 0.6, padding: "8px 8px 4px" }}>Living graph</div>
+      <div ref={host} style={{ flex: "1", "min-height": "0" }} />
     </div>
   );
 }
