@@ -1,0 +1,8 @@
+{
+  "name": "@oa/core",
+  "version": "0.1.0",
+  "type": "module",
+  "module": "src/index.ts",
+  "dependencies": { "yaml": "^2.5.0" },
+  "devDependencies": { "@types/bun": "latest" }
+}

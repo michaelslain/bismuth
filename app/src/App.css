@@ -1,0 +1,9 @@
+/* app/src/App.css */
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body, html, #root { margin: 0; height: 100%; }
+.layout { display: grid; grid-template-columns: 220px 1fr 320px; height: 100vh; font: 14px/1.5 system-ui, sans-serif; }
+.sidebar { border-right: 1px solid #2a2a2a; overflow: auto; padding: 8px; }
+.editor { overflow: auto; }
+.right { border-left: 1px solid #2a2a2a; display: flex; flex-direction: column; }
+.right canvas { display: block; }

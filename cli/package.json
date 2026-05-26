@@ -1,0 +1,8 @@
+{
+  "name": "@oa/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "oa": "src/index.ts" },
+  "dependencies": { "@oa/core": "workspace:*" },
+  "devDependencies": { "@types/bun": "latest" }
+}

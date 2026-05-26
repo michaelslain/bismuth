@@ -1,0 +1,9 @@
+{
+  "name": "obsidian-alternative",
+  "private": true,
+  "workspaces": ["core", "cli", "app"],
+  "scripts": {
+    "test": "bun test core",
+    "core:serve": "bun run core/src/server.ts"
+  }
+}
