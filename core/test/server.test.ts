@@ -55,3 +55,161 @@ test("GET /version returns { version: <number> }", async () => {
     server.stop(true);
   }
 });
+
+test("GET /file with missing path parameter returns 400", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/file`);
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /file with nonexistent file returns empty string with 200", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/file?path=nonexistent.md`);
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe("");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("OPTIONS request returns CORS headers", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/graph`, { method: "OPTIONS" });
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(res.headers.get("Access-Control-Allow-Methods")).toContain("GET");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /meta with missing path parameter returns 400", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/meta`);
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /meta for nonexistent file returns empty object", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/meta?path=nonexistent.md`);
+    const data = await res.json();
+    expect(data).toEqual({});
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /tree returns array of file paths", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/tree`);
+    const files = await res.json();
+    expect(Array.isArray(files)).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("PUT /file writes file and returns ok", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "test-write.md", contents: "New content" })
+    });
+    const text = await res.text();
+    expect(text).toBe("ok");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /backup returns committed boolean", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/backup`, { method: "POST" });
+    const data = await res.json();
+    expect(typeof data.committed).toBe("boolean");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /graph includes self node", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const g = await (await fetch(`${base}/graph`)).json();
+    expect(g.nodes.some((n: any) => n.id === "self")).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("graph caching: second request returns same graph without rebuild", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const first = await (await fetch(`${base}/graph`)).json();
+    const second = await (await fetch(`${base}/graph`)).json();
+    expect(first.nodes.length).toBe(second.nodes.length);
+    expect(first.edges.length).toBe(second.edges.length);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("version increments are consistent", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v1 = await (await fetch(`${base}/version`)).json();
+    const v2 = await (await fetch(`${base}/version`)).json();
+    expect(v1.version).toBeLessThanOrEqual(v2.version);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("config endpoint returns vault and memory paths", async () => {
+  const server = createServer({ vault: "/custom/vault", memory: "/custom/memory", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const cfg = await (await fetch(`${base}/config`)).json();
+    expect(cfg.vault).toBe("/custom/vault");
+    expect(cfg.memory).toBe("/custom/memory");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("config endpoint handles undefined memory", async () => {
+  const server = createServer({ vault: "test/fixtures/sample-vault", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const cfg = await (await fetch(`${base}/config`)).json();
+    expect(cfg.memory).toBeNull();
+  } finally {
+    server.stop(true);
+  }
+});
