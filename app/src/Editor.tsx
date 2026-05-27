@@ -6,6 +6,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
+import { tasksQuery } from "./editor/tasksQuery";
 import { vaultCompletion } from "./editor/autocomplete";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
@@ -87,7 +88,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
-      ...(ed.livePreview ? [livePreview] : []),
+      ...(ed.livePreview ? [livePreview, tasksQuery] : []),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return;
         clearTimeout(saveTimer);

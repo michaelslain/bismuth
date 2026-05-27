@@ -7,6 +7,7 @@ import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import type { GraphData, TreeEntry } from "./graph";
+import { collectVaultTasks, toggleTaskLine, todayISO } from "./tasks";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -148,6 +149,25 @@ export function createServer(cfg: CoreConfig) {
       }
       if (url.pathname === "/agent-graph" && req.method === "GET") {
         return Response.json(buildAgentGraph(), { headers: cors });
+      }
+      if (url.pathname === "/tasks" && req.method === "GET") {
+        return Response.json(await collectVaultTasks(cfg.vault), { headers: cors });
+      }
+      if (url.pathname === "/tasks/toggle" && req.method === "POST") {
+        const { path, line } = (await req.json()) as { path: string; line: number };
+        const content = await readNote(cfg.vault, path);
+        const lines = content.split("\n");
+        if (line < 0 || line >= lines.length) {
+          return new Response("line out of range", { status: 400, headers: cors });
+        }
+        try {
+          lines[line] = toggleTaskLine(lines[line], todayISO());
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+        await writeNote(cfg.vault, path, lines.join("\n"));
+        invalidate();
+        return new Response("ok", { headers: cors });
       }
       if (url.pathname === "/config" && req.method === "GET") {
         // Read-only view of how core was launched — surfaced in the settings page.
