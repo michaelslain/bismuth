@@ -1,5 +1,5 @@
 // app/src/editor/autocomplete.ts
-import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
@@ -18,12 +18,15 @@ export function wikilinkComplete(getNotes: () => NoteCandidate[]): Extension {
     const options = getNotes().map((n) => ({
       label: n.label,
       detail: n.folder,
-      apply: (view: EditorView, _c: unknown, applyFrom: number, applyTo: number) => {
+      apply: (view: EditorView, completion: Completion, applyFrom: number, applyTo: number) => {
         const after = view.state.doc.sliceString(applyTo, applyTo + 2);
         const { insert, cursorOffset } = buildInsert(n.label, after === "]]");
+        // A custom apply that dispatches its own transaction must annotate it so
+        // CodeMirror registers the pick (closes the popup, runs commit logic).
         view.dispatch({
           changes: { from: applyFrom, to: applyTo, insert },
           selection: { anchor: applyFrom + cursorOffset },
+          annotations: pickedCompletion.of(completion),
         });
       },
     }));
