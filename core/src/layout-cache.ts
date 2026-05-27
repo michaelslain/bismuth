@@ -18,7 +18,7 @@ import type { GraphData } from "./graph";
 interface Layout { pos3d: Positions; pos2d: Positions }
 
 const CACHE_DIR = join(tmpdir(), "oa-layout");
-const CACHE_VERSION = "v2"; // bump when the layout format changes (here: added 2D) to invalidate old files
+const CACHE_VERSION = "v3"; // bump when the layout format/algorithm changes to invalidate old files (v3: per-node collide radius)
 const REFINE_TICKS = 120; // PivotMDS-seeded, so this polishes well without a full ~300-tick settle
 const memCache = new Map<string, Layout>();
 

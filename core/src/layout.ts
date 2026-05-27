@@ -51,6 +51,19 @@ const MANYBODY_THETA = 1.5;
 const MODE_2D_SPACING = 1.8;
 const PIVOT_TARGET_RADIUS = 100; // PivotMDS output is scaled to this RMS radius; force refine sets the final scale
 
+// Per-node collision sizing, mirrored from the renderer (WebGLRenderer.ts SIZE_* + nodeSize + fov).
+// Nodes are DRAWN at a degree-scaled size (hubs up to ~6x a leaf), but collision used one uniform
+// radius — so big hubs collided as points and overlapped. A node's drawn world radius is
+// nodeSize*scale*tan(fov/2)/2 (sizeAttenuation); we space by that (×padding) when it beats the floor.
+const NODE_SIZE = 6;             // renderer DEFAULT_CONFIG.nodeSize
+const NODE_FOV_DEG = 60;         // renderer PerspectiveCamera fov
+const SIZE_MIN_MULT = 0.4;
+const SIZE_DEGREE_GAIN = 0.45;
+const SIZE_MAX_MULT = 6;
+const COLLIDE_SIZE_PADDING = 1.25; // leave a small gap between big circles instead of merely touching
+const degreeScale = (deg: number) => Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(deg));
+const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_FOV_DEG * Math.PI) / 180) / 2)) / 2;
+
 /** Deterministic LCG so layouts are reproducible (stable disk cache, testable). */
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
@@ -221,11 +234,17 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
   }));
 
   const linkDist = o.linkDistance * (dim === 2 ? MODE_2D_SPACING : 1);
+  // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
+  // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
+  // indexes `nodes`, the same order as `adj` (degree = adj[i].length) and the sim's node array.
+  const collideFloor = linkDist * COLLIDE_RATIO;
+  const collideRadiusFor = (_n: RN, i: number) =>
+    Math.max(collideFloor, drawnNodeRadius(degreeScale(adj[i].length)) * COLLIDE_SIZE_PADDING);
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(o.repulsion).theta(MANYBODY_THETA))
     .force("link", forceLink<RN, RL>(links).id((d: RN) => d.id).distance(linkDist).strength(LINK_STRENGTH))
-    .force("collide", forceCollide<RN>(linkDist * COLLIDE_RATIO).iterations(COLLIDE_ITERATIONS))
+    .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
     .force("x", forceX<RN>(0).strength(o.centering))
     .force("y", forceY<RN>(0).strength(o.centering));
   if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
