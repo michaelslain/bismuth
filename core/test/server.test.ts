@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
 import { writeNote } from "../src/files";
+import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory", port: 0 });
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const g = await (await fetch(`${base}/graph`)).json();
@@ -27,18 +29,20 @@ test("GET /graph returns the merged brain graph", async () => {
 });
 
 test("GET /config returns the launch vault and memory paths", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory", port: 0 });
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const cfg = await (await fetch(`${base}/config`)).json();
-    expect(cfg).toEqual({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory" });
+    expect(cfg).toEqual({ vault, memory });
   } finally {
     server.stop(true);
   }
 });
 
 test("GET /agent-graph returns an object with nodes and edges arrays", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory", port: 0 });
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const ag = await (await fetch(`${base}/agent-graph`)).json();
@@ -50,7 +54,8 @@ test("GET /agent-graph returns an object with nodes and edges arrays", async () 
 });
 
 test("GET /version returns { version: <number> }", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await (await fetch(`${base}/version`)).json();
@@ -61,7 +66,8 @@ test("GET /version returns { version: <number> }", async () => {
 });
 
 test("GET /file with missing path parameter returns 400", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/file`);
@@ -72,7 +78,8 @@ test("GET /file with missing path parameter returns 400", async () => {
 });
 
 test("GET /file with nonexistent file returns empty string with 200", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/file?path=nonexistent.md`);
@@ -85,7 +92,8 @@ test("GET /file with nonexistent file returns empty string with 200", async () =
 });
 
 test("OPTIONS request returns CORS headers", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/graph`, { method: "OPTIONS" });
@@ -97,7 +105,8 @@ test("OPTIONS request returns CORS headers", async () => {
 });
 
 test("GET /meta with missing path parameter returns 400", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/meta`);
@@ -108,7 +117,8 @@ test("GET /meta with missing path parameter returns 400", async () => {
 });
 
 test("GET /meta for nonexistent file returns empty object", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/meta?path=nonexistent.md`);
@@ -120,7 +130,8 @@ test("GET /meta for nonexistent file returns empty object", async () => {
 });
 
 test("GET /tree returns array of { path } entries", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/tree`);
@@ -149,7 +160,8 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
 });
 
 test("PUT /file writes file and returns ok", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/file`, {
@@ -165,7 +177,8 @@ test("PUT /file writes file and returns ok", async () => {
 });
 
 test("POST /backup returns committed boolean", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/backup`, { method: "POST" });
@@ -177,7 +190,8 @@ test("POST /backup returns committed boolean", async () => {
 });
 
 test("GET /graph includes self node", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const g = await (await fetch(`${base}/graph`)).json();
@@ -188,7 +202,8 @@ test("GET /graph includes self node", async () => {
 });
 
 test("graph caching: second request returns same graph without rebuild", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const first = await (await fetch(`${base}/graph`)).json();
@@ -201,7 +216,8 @@ test("graph caching: second request returns same graph without rebuild", async (
 });
 
 test("version increments are consistent", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const v1 = await (await fetch(`${base}/version`)).json();
@@ -225,7 +241,8 @@ test("config endpoint returns vault and memory paths", async () => {
 });
 
 test("config endpoint handles undefined memory", async () => {
-  const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const cfg = await (await fetch(`${base}/config`)).json();
