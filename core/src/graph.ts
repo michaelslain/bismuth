@@ -43,10 +43,11 @@ export function subgraphByKinds(g: GraphData, kinds: Set<NodeKind>): GraphData {
   return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
 }
 
-/** A markdown file in the vault, with its optional `icon` frontmatter (an emoji). Wire shape of /tree. */
+/** A vault entry surfaced by /tree: a markdown file (with optional `icon` frontmatter) or a directory. */
 export interface TreeEntry {
   path: string;
   icon?: string;
+  kind: "file" | "dir";
 }
 
 export function emptyGraph(): GraphData {
