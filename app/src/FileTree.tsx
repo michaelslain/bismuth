@@ -142,8 +142,13 @@ function EditableLabel(props: {
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
+  // setEditing(null) unmounts the input, which fires blur → a second commit.
+  // `done` makes the rename (or cancel) run exactly once.
+  let done = false;
 
   const commit = async () => {
+    if (done) return;
+    done = true;
     const raw = inputRef?.value.trim() ?? "";
     props.setEditing(null);
     if (!raw || raw === initial) return; // no-op
@@ -158,6 +163,12 @@ function EditableLabel(props: {
     }
   };
 
+  const cancel = () => {
+    if (done) return;
+    done = true;
+    props.setEditing(null);
+  };
+
   return (
     <input
       ref={(el) => {
@@ -165,7 +176,7 @@ function EditableLabel(props: {
         // Select the editable stem (filename without .md) so typing replaces it.
         queueMicrotask(() => {
           el.focus();
-          const dot = !props.isDir ? el.value.lastIndexOf(".md") : -1;
+          const dot = !props.isDir && el.value.endsWith(".md") ? el.value.length - 3 : -1;
           el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
         });
       }}
@@ -173,7 +184,7 @@ function EditableLabel(props: {
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
-        else if (e.key === "Escape") props.setEditing(null);
+        else if (e.key === "Escape") cancel();
       }}
       onBlur={commit}
       style={{
