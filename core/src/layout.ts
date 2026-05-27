@@ -181,6 +181,7 @@ type RL = SimLink<RN>;
 export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): Positions {
   const o = { ...DEFAULTS, ...options };
   const dim = o.dimensions;
+  const RANDOM_COORD_RADIUS = 160;
   const ids = input.nodes.map((n) => n.id);
   const n = ids.length;
   const positions: Positions = {};
@@ -201,7 +202,15 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
   const X = seed
     ? ids.map((id) => {
         const p = seed[id];
-        return p ? [p[0], p[1], dim === 3 ? p[2] : 0] : [(Math.random() - 0.5) * 160, (Math.random() - 0.5) * 160, dim === 3 ? (Math.random() - 0.5) * 160 : 0];
+        if (p) {
+          return [p[0], p[1], dim === 3 ? p[2] : 0];
+        } else {
+          return [
+            (Math.random() - 0.5) * RANDOM_COORD_RADIUS,
+            (Math.random() - 0.5) * RANDOM_COORD_RADIUS,
+            dim === 3 ? (Math.random() - 0.5) * RANDOM_COORD_RADIUS : 0
+          ];
+        }
       })
     : pivotMDS(adj, n, dim, o.numPivots);
   const nodes: RN[] = ids.map((id, i) => ({
