@@ -9,9 +9,16 @@
   --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
   --text-faint: color-mix(in srgb, var(--fg) 40%, transparent);
   --text-error: #e5534b;
-  --font-interface: inherit;
-  --font-text: var(--editor-font);
+  --font-interface: "Monaspace Xenon", ui-monospace, monospace;
+  --font-text: "Monaspace Xenon", ui-monospace, monospace;
 }
+
+/* Buttons/inputs/selects don't inherit font-family by default — without this they
+   fall back to the UA sans-serif (Arial-like) and clash with the app's monospace UI. */
+.calendar-app button,
+.calendar-app input,
+.calendar-app select,
+.calendar-app textarea { font-family: var(--font-interface); }
 
 .calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--font-interface); }
 .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); gap: 8px; flex-wrap: wrap; }
