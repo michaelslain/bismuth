@@ -55,7 +55,7 @@ export const PALETTE_KEYS = Object.keys(PALETTES);
 
 export const DEFAULTS: Settings = {
   appearance: { accent: "#6496ff", theme: "dark", editorFont: "Lora", editorFontSize: 16 },
-  graph: { spin: true, spinSpeed: 0.0015, palette: "aurora", repulsion: -7, linkDistance: 5, centering: 0.13, nodeSize: 6, viewMode: "3d" },
+  graph: { spin: true, spinSpeed: 0.0015, palette: "aurora", repulsion: -10, linkDistance: 5, centering: 0.13, nodeSize: 6, viewMode: "3d" },
   editor: { livePreview: true, lineNumbers: false, lineWrapping: true, autoSaveDelay: 800 },
   vault: { backupOnSave: true },
 };

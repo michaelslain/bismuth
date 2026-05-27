@@ -60,6 +60,15 @@ declare module "d3-force-3d" {
     z(z: number): this;
   }
 
+  export interface CollideForce<N extends SimNode = SimNode> extends Force<N> {
+    radius(): (d: N, i: number, nodes: N[]) => number;
+    radius(r: number | ((d: N, i: number, nodes: N[]) => number)): this;
+    strength(): number;
+    strength(s: number): this;
+    iterations(): number;
+    iterations(n: number): this;
+  }
+
   export interface Simulation<N extends SimNode = SimNode> {
     restart(): this;
     stop(): this;
@@ -89,6 +98,7 @@ declare module "d3-force-3d" {
   export function forceManyBody<N extends SimNode = SimNode>(): ManyBodyForce<N>;
   export function forceLink<N extends SimNode = SimNode, L extends SimLink<N> = SimLink<N>>(links?: L[]): LinkForce<N, L>;
   export function forceCenter<N extends SimNode = SimNode>(x?: number, y?: number, z?: number): CenterForce<N>;
+  export function forceCollide<N extends SimNode = SimNode>(radius?: number | ((d: N, i: number, nodes: N[]) => number)): CollideForce<N>;
   export function forceX<N extends SimNode = SimNode>(x?: number | ((d: N, i: number, nodes: N[]) => number)): PositionForce<N>;
   export function forceY<N extends SimNode = SimNode>(y?: number | ((d: N, i: number, nodes: N[]) => number)): PositionForce<N>;
   export function forceZ<N extends SimNode = SimNode>(z?: number | ((d: N, i: number, nodes: N[]) => number)): PositionForce<N>;
