@@ -38,6 +38,11 @@ const COLLIDE_ITERATIONS = 3;
 // charge set the spacing — leaves spread into an even field instead of clumping around hubs.
 const LINK_STRENGTH = 0.18;
 
+// 2D packs the same nodes into a plane instead of a volume, so it needs more spread than 3D
+// to feel equally airy. In 2D, link distance (and the collide radius that scales off it) is
+// multiplied by this — nodes settle farther apart and the auto-fit zooms out, shrinking them.
+const MODE_2D_SPACING = 1.8;
+
 // Node size scales with connection count (degree), Obsidian-style. Wide range so leaf nodes
 // read as small dots while hubs clearly pop: multiplier = clamp(MIN + GAIN*sqrt(degree), MIN, MAX).
 // sqrt keeps mid-range growth smooth; the sub-1 MIN floor shrinks low-degree nodes below base.
@@ -364,6 +369,16 @@ export class WebGLRenderer implements GraphRenderer {
     }
   }
 
+  /** Link distance for the current view mode (2D spreads wider than 3D). */
+  private linkDist(): number {
+    return this.cfg.linkDistance * (this.viewMode === "2d" ? MODE_2D_SPACING : 1);
+  }
+
+  /** Collide radius derived from the (mode-adjusted) link distance. */
+  private collideRadius(): number {
+    return this.linkDist() * COLLIDE_RATIO;
+  }
+
   /**
    * Apply user settings. Spin and node size are read live (cheap); a palette change
    * recolors the existing geometry in place; a physics change updates the forces and
@@ -380,8 +395,8 @@ export class WebGLRenderer implements GraphRenderer {
 
     if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering)) {
       (this.sim.force("charge") as any)?.strength(cfg.repulsion);
-      (this.sim.force("link") as any)?.distance(cfg.linkDistance);
-      (this.sim.force("collide") as any)?.radius(cfg.linkDistance * COLLIDE_RATIO);
+      (this.sim.force("link") as any)?.distance(this.linkDist());
+      (this.sim.force("collide") as any)?.radius(this.collideRadius());
       for (const axis of ["x", "y", "z"] as const) (this.sim.force(axis) as any)?.strength(cfg.centering);
       this.userControlled = false; // re-frame as it re-settles
       this.sim.alpha(0.5).restart();
@@ -396,6 +411,12 @@ export class WebGLRenderer implements GraphRenderer {
         this.applyControlsForMode(next);
       } else {
         this.startModeTween(next);
+      }
+      // Re-spread for the new mode: 2D uses wider link/collide spacing than 3D. The tween
+      // reheats on land; the instant paths re-settle on the next render.
+      if (this.sim) {
+        (this.sim.force("link") as any)?.distance(this.linkDist());
+        (this.sim.force("collide") as any)?.radius(this.collideRadius());
       }
     }
     if (this.controls) this.modeInitialized = true;
@@ -625,12 +646,12 @@ export class WebGLRenderer implements GraphRenderer {
         "link",
         forceLink<N3, L3>(this.links)
           .id((d: N3) => d.id)
-          .distance(this.cfg.linkDistance)
+          .distance(this.linkDist())
           .strength(LINK_STRENGTH)
       )
       .force("center", forceCenter<N3>(0, 0, 0))
       // Min-spacing floor: spreads dense clusters apart so density reads evenly across the graph.
-      .force("collide", forceCollide<N3>(this.cfg.linkDistance * COLLIDE_RATIO).iterations(COLLIDE_ITERATIONS))
+      .force("collide", forceCollide<N3>(this.collideRadius()).iterations(COLLIDE_ITERATIONS))
       // Pull toward origin so separate tag clusters stay grouped rather than drifting apart.
       // Higher = denser / clusters closer.
       .force("x", forceX<N3>(0).strength(this.cfg.centering))
