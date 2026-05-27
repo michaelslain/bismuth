@@ -14,6 +14,11 @@ export interface CoreConfig { vault: string; memory?: string; port?: number }
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
+/** Today's date as a "YYYY-MM-DD" string (UTC). */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 /** Read a `--flag value` pair from the process argv (shared by the core + cli launchers). */
 export function cliArg(name: string): string | undefined {
   const i = Bun.argv.indexOf(`--${name}`);
@@ -73,7 +78,6 @@ export function createServer(cfg: CoreConfig) {
       const url = new URL(req.url);
       const cors = CORS;
       if (req.method === "OPTIONS") return new Response(null, { headers: cors });
-      const today = () => new Date().toISOString().slice(0, 10);
 
       // Run a mutating file op: invalidate the cache on success; turn any thrown error
       // (e.g. the path-escape guard) into a 400 with the message as the body.
@@ -168,7 +172,11 @@ export function createServer(cfg: CoreConfig) {
       }
       if (url.pathname === "/cards/review" && req.method === "POST") {
         const { id, response } = (await req.json()) as { id: string; response: ReviewResponse };
-        await applyReview(cfg.vault, id, response, today());
+        try {
+          await applyReview(cfg.vault, id, response, today());
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
         invalidate();
         return new Response("ok", { headers: cors });
       }

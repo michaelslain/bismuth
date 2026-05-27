@@ -352,3 +352,35 @@ test("GET /cards/due returns due cards; POST /cards/review schedules them", asyn
     server.stop(true);
   }
 });
+
+test("GET /cards/all returns every card regardless of due date", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-all-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-all-mem-"));
+  await writeNote(vault, "m.md", "#flashcards\n\na::b\n\nc::d <!--SR:!2099-01-01,5,250-->");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const all = await (await fetch(`${base}/cards/all`)).json();
+    expect(all.length).toBe(2);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /cards/review with an unknown card id returns 400", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-bad-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-bad-mem-"));
+  await writeNote(vault, "m.md", "#flashcards\n\na::b");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/cards/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "m.md::99::0", response: "good" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
