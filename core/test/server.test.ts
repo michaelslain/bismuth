@@ -252,3 +252,66 @@ test("config endpoint handles undefined memory", async () => {
     server.stop(true);
   }
 });
+
+test("POST /create then /move then /delete then /restore round-trips a file", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    expect((await post("/create", { path: "fresh.md", kind: "file" })).status).toBe(200);
+    let paths = (await (await fetch(`${base}/tree`)).json()).map((e: any) => e.path);
+    expect(paths).toContain("fresh.md");
+
+    expect((await post("/move", { from: "fresh.md", to: "renamed.md" })).status).toBe(200);
+    paths = (await (await fetch(`${base}/tree`)).json()).map((e: any) => e.path);
+    expect(paths).toContain("renamed.md");
+    expect(paths).not.toContain("fresh.md");
+
+    const { trashPath } = await (await post("/delete", { path: "renamed.md" })).json();
+    expect(typeof trashPath).toBe("string");
+    paths = (await (await fetch(`${base}/tree`)).json()).map((e: any) => e.path);
+    expect(paths).not.toContain("renamed.md");
+
+    expect((await post("/restore", { trashPath, to: "renamed.md" })).status).toBe(200);
+    paths = (await (await fetch(`${base}/tree`)).json()).map((e: any) => e.path);
+    expect(paths).toContain("renamed.md");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /create returns 400 on collision", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "essay.md", kind: "file" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /move bumps the version so the sidebar refetches", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    await fetch(`${base}/move`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: "essay.md", to: "essay2.md" }),
+    });
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
