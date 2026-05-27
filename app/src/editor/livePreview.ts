@@ -1,6 +1,6 @@
 // app/src/editor/livePreview.ts
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import { type Range } from "@codemirror/state";
+import { type Range, type Text } from "@codemirror/state";
 import katex from "katex";
 
 // marks
@@ -67,12 +67,16 @@ function pushInline(
   }
 }
 
-function build(view: EditorView): DecorationSet {
-  const deco: Range<Decoration>[] = [];
-  const doc = view.state.doc;
-  const cursorLine = doc.lineAt(view.state.selection.main.head).number;
+interface BlockRegions {
+  frontmatterLines: Set<number>;
+  fenceLines: Set<number>;
+  codeLines: Set<number>;
+  tableLineSet: Set<number>;
+}
 
-  // precompute fenced code regions (scan whole doc so viewport offsets don't matter)
+/** Scan the whole document once and return the block-region sets.
+ *  Called only when the document content changes (or on first construction). */
+function computeBlockRegions(doc: Text): BlockRegions {
   const fenceLines = new Set<number>(); // the ``` marker lines
   const codeLines = new Set<number>();  // lines inside a fence
   let inFence = false;
@@ -116,6 +120,18 @@ function build(view: EditorView): DecorationSet {
       }
     }
   }
+
+  return { frontmatterLines, fenceLines, codeLines, tableLineSet };
+}
+
+/** Run the per-visible-line decoration pass using pre-computed block regions.
+ *  This is cheap: it only iterates view.visibleRanges and must run on every
+ *  update (including cursor moves) so that the cursor-line reveal stays correct. */
+function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSet {
+  const { frontmatterLines, fenceLines, codeLines, tableLineSet } = regions;
+  const deco: Range<Decoration>[] = [];
+  const doc = view.state.doc;
+  const cursorLine = doc.lineAt(view.state.selection.main.head).number;
 
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
@@ -220,9 +236,24 @@ export const livePreview = [
   ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
-      constructor(view: EditorView) { this.decorations = build(view); }
+      /** Cached block-region sets — recomputed only when the document changes. */
+      private blockRegions: BlockRegions;
+
+      constructor(view: EditorView) {
+        this.blockRegions = computeBlockRegions(view.state.doc);
+        this.decorations = buildDecorations(view, this.blockRegions);
+      }
+
       update(u: ViewUpdate) {
-        if (u.docChanged || u.viewportChanged || u.selectionSet) this.decorations = build(u.view);
+        if (u.docChanged || u.viewportChanged || u.selectionSet) {
+          // Refresh the block-region cache only when document content changes.
+          // On selectionSet / viewportChanged alone, reuse the cached sets —
+          // the per-line decoration pass (which handles cursor-line reveal) still runs every time.
+          if (u.docChanged) {
+            this.blockRegions = computeBlockRegions(u.view.state.doc);
+          }
+          this.decorations = buildDecorations(u.view, this.blockRegions);
+        }
       }
     },
     { decorations: (v) => v.decorations },
