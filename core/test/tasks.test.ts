@@ -75,6 +75,24 @@ test("extractTasks finds only task lines with correct line numbers", () => {
   expect(tasks.map((t) => t.description)).toEqual(["one", "two", "three"]);
 });
 
+test("extractTasks handles CRLF line endings", () => {
+  const md = "- [ ] one\r\nprose\r\n- [x] two\r\n";
+  const tasks = extractTasks(md, "n.md");
+  expect(tasks.map((t) => t.description)).toEqual(["one", "two"]);
+  expect(tasks.map((t) => t.line)).toEqual([0, 2]);
+});
+
+test("captures tags on both sides of the recurrence signifier", () => {
+  const t = parseTaskLine("- [ ] a #before 🔁 every week #after", "f.md", 0)!;
+  expect(t.tags.sort()).toEqual(["after", "before"]);
+  expect(t.recurrence).toContain("every week");
+});
+
+test("dedupes repeated tags", () => {
+  const t = parseTaskLine("- [ ] x #work #work", "f.md", 0)!;
+  expect(t.tags).toEqual(["work"]);
+});
+
 import { toggleTaskLine, todayISO } from "../src/tasks";
 
 test("toggleTaskLine completes a todo and appends today's done date", () => {
@@ -98,6 +116,10 @@ test("toggleTaskLine does not duplicate an existing done date when completing", 
 
 test("toggleTaskLine throws on a non-task line", () => {
   expect(() => toggleTaskLine("not a task", "2026-05-27")).toThrow();
+});
+
+test("toggleTaskLine preserves a trailing CR", () => {
+  expect(toggleTaskLine("- [ ] x\r", "2026-05-27")).toBe("- [x] x ✅ 2026-05-27\r");
 });
 
 test("todayISO formats a Date as YYYY-MM-DD", () => {
