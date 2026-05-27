@@ -24,7 +24,12 @@ body { background: var(--bg); color: var(--fg); }
 .layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace; }
 .sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
-.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; height: 305px; }
+.sidebar-graph.collapsed { display: none; }
+.graph-slot-main { width: 100%; height: 100%; }
+/* Single graph element, snapped over whichever slot is active (see App.tsx).
+   Box geometry is set inline in JS. */
+.graph-floater { position: fixed; z-index: 2; overflow: hidden; }
 .sidebar-icons { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sidebar canvas { display: block; }
 .icon-btn { background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
