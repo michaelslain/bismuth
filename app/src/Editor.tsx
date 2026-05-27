@@ -1,28 +1,28 @@
 // app/src/Editor.tsx
 import { createEffect, onCleanup } from "solid-js";
-import { EditorView, keymap, drawSelection } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
+import { settings } from "./settings";
 
-// Dark theme: prose in Lora, a bright caret that glides between positions (VSCode-style).
-const editorTheme = EditorView.theme(
-  {
-    "&": { backgroundColor: "transparent", color: "#dcdcdc", height: "100%" },
-    ".cm-scroller": { fontFamily: "'Lora', serif", fontSize: "16px", lineHeight: "1.65", overflow: "auto" },
-    ".cm-content": { caretColor: "#e8e8e8", padding: "12px 16px" },
-    ".cm-cursor, .cm-dropCursor": {
-      borderLeftColor: "#e8e8e8",
-      borderLeftWidth: "2px",
-      transition: "left 70ms ease-out, top 70ms ease-out", // smooth glide
-    },
-    ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "rgba(100,150,255,0.30)" },
-    "&.cm-focused .cm-selectionBackground": { backgroundColor: "rgba(100,150,255,0.35)" },
+// Prose font/size and selection tint come from CSS variables (set by App.tsx from
+// the Appearance settings), so they update live without rebuilding the editor.
+const editorTheme = EditorView.theme({
+  "&": { backgroundColor: "transparent", color: "var(--fg)", height: "100%" },
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "1.65", overflow: "auto" },
+  ".cm-content": { caretColor: "var(--fg)", padding: "12px 16px" },
+  ".cm-cursor, .cm-dropCursor": {
+    borderLeftColor: "var(--fg)",
+    borderLeftWidth: "2px",
+    transition: "left 70ms ease-out, top 70ms ease-out", // smooth glide
   },
-  { dark: true },
-);
+  ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
+  "&.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
+  ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
+});
 
 export function Editor(props: { path: string | null; onSaved: () => void }) {
   let host!: HTMLDivElement;
@@ -32,7 +32,7 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
   const save = async (path: string, text: string) => {
     await api.write(path, text);
     props.onSaved();
-    api.backup();           // local-git snapshot; no-op when nothing changed
+    if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
   };
 
   createEffect(async () => {
@@ -51,23 +51,31 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
     // Guard: if the path changed while we were awaiting, discard this run.
     if (path !== props.path) return;
 
+    // Read editor settings here so this effect re-runs (rebuilding the view) when
+    // any of them change — that re-applies live preview / gutter / wrapping toggles.
+    const ed = settings.editor;
+    const extensions = [
+      history(),
+      drawSelection(),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      markdown(),
+      editorTheme,
+      ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
+      ...(ed.lineNumbers ? [lineNumbers()] : []),
+      ...(ed.livePreview ? [livePreview] : []),
+      EditorView.updateListener.of((u) => {
+        if (!u.docChanged) return;
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => save(path, u.state.doc.toString()), settings.editor.autoSaveDelay);
+      }),
+    ];
+
     view = new EditorView({
       parent: host,
       state: EditorState.create({
         doc: text,
         extensions: [
-          history(),
-          drawSelection(),
-          keymap.of([...defaultKeymap, ...historyKeymap]),
-          markdown(),
-          editorTheme,
-          EditorView.lineWrapping,
-          EditorView.updateListener.of((u) => {
-            if (!u.docChanged) return;
-            clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => save(path, u.state.doc.toString()), 800);
-          }),
-          livePreview,
+          ...extensions,
           EditorView.domEventHandlers({
             mousedown: (e, view) => {
               const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
