@@ -74,3 +74,32 @@ test("extractTasks finds only task lines with correct line numbers", () => {
   expect(tasks.map((t) => t.line)).toEqual([2, 4, 5]);
   expect(tasks.map((t) => t.description)).toEqual(["one", "two", "three"]);
 });
+
+import { toggleTaskLine, todayISO } from "../src/tasks";
+
+test("toggleTaskLine completes a todo and appends today's done date", () => {
+  const out = toggleTaskLine("- [ ] buy milk", "2026-05-27");
+  expect(out).toBe("- [x] buy milk ✅ 2026-05-27");
+});
+
+test("toggleTaskLine un-completes a done task and strips the done date", () => {
+  const out = toggleTaskLine("- [x] buy milk ✅ 2026-05-27", "2026-05-27");
+  expect(out).toBe("- [ ] buy milk");
+});
+
+test("toggleTaskLine preserves indentation", () => {
+  expect(toggleTaskLine("    - [ ] nested", "2026-05-27")).toBe("    - [x] nested ✅ 2026-05-27");
+});
+
+test("toggleTaskLine does not duplicate an existing done date when completing", () => {
+  const out = toggleTaskLine("- [ ] thing ✅ 2026-01-01", "2026-05-27");
+  expect(out).toBe("- [x] thing ✅ 2026-01-01");
+});
+
+test("toggleTaskLine throws on a non-task line", () => {
+  expect(() => toggleTaskLine("not a task", "2026-05-27")).toThrow();
+});
+
+test("todayISO formats a Date as YYYY-MM-DD", () => {
+  expect(todayISO(new Date("2026-05-27T15:00:00Z"))).toBe("2026-05-27");
+});

@@ -120,3 +120,28 @@ export function extractTasks(content: string, path: string): Task[] {
   }
   return out;
 }
+
+/** Format a Date as YYYY-MM-DD (UTC date portion). */
+export function todayISO(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Flip a task line between done and not-done.
+ * - Completing: set the box to `x`; append `✅ <today>` unless a done-date is already present.
+ * - Un-completing: set the box to a space; strip any `✅ <date>` signifier.
+ * The bullet is normalized to `-`. Throws if the line is not a task.
+ */
+export function toggleTaskLine(line: string, today: string): string {
+  const m = TASK_LINE.exec(line);
+  if (!m) throw new Error("not a task line");
+  const [, indent, statusChar, body] = m;
+  const isDone = statusChar === "x" || statusChar === "X";
+  if (isDone) {
+    const cleaned = body.replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/, "").trimEnd();
+    return `${indent}- [ ] ${cleaned}`;
+  }
+  const hasDoneDate = /✅\s*\d{4}-\d{2}-\d{2}/.test(body);
+  const withDate = hasDoneDate ? body.trimEnd() : `${body.trimEnd()} ✅ ${today}`;
+  return `${indent}- [x] ${withDate}`;
+}
