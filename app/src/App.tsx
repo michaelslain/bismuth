@@ -6,6 +6,7 @@ import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
 import { CalendarPage } from "./calendar/CalendarPage";
+import { TasksPage } from "./TasksPage";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
@@ -18,6 +19,8 @@ import "./App.css";
 // Sentinel tab id for the settings page — not a real file path.
 const SETTINGS_TAB = "::settings";
 const CALENDAR_TAB = "::calendar";
+// Sentinel tab id for the tasks page — not a real file path.
+const TASKS_TAB = "::tasks";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -83,6 +86,7 @@ export default function App() {
   };
   const openSettings = () => openFile(SETTINGS_TAB);
   const openCalendar = () => openFile(CALENDAR_TAB);
+  const openTasks = () => openFile(TASKS_TAB);
 
   // Apply Appearance settings to the document: theme + accent + editor font/size,
   // surfaced as CSS variables that App.css and the editor theme read.
@@ -198,7 +202,13 @@ export default function App() {
   });
 
   const tabLabel = (p: string) =>
-    p === SETTINGS_TAB ? "⚙ Settings" : p === CALENDAR_TAB ? "📅 Calendar" : p.split("/").pop()!.replace(/\.md$/, "");
+    p === SETTINGS_TAB
+      ? "⚙ Settings"
+      : p === CALENDAR_TAB
+        ? "📅 Calendar"
+        : p === TASKS_TAB
+          ? "✓ Tasks"
+          : p.split("/").pop()!.replace(/\.md$/, "");
 
   return (
     <div class="layout">
@@ -208,6 +218,7 @@ export default function App() {
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
           <button class="icon-btn" title="Calendar" onClick={openCalendar}>📅</button>
+          <button class="icon-btn" title="Tasks" onClick={openTasks}>✓</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !active() }} ref={sidebarSlot} />
@@ -226,7 +237,11 @@ export default function App() {
         <div class="editor-body">
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             <Show when={active() === CALENDAR_TAB} fallback={
-              <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+              <Show when={active() === SETTINGS_TAB} fallback={
+                <Show when={active() === TASKS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                  <TasksPage onOpen={openFile} />
+                </Show>
+              }>
                 <SettingsPage />
               </Show>
             }>

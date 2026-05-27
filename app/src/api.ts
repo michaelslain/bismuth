@@ -2,6 +2,7 @@
 // to run the frontend against a backend on a different port (e.g. alongside another worktree).
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
+import type { Task } from "../../core/src/tasks";
 
 /** POST JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
 async function post(path: string, body: unknown): Promise<Response> {
@@ -33,4 +34,6 @@ export const api = {
   del: (path: string) => post("/delete", { path }).then((r) => r.json() as Promise<{ trashPath: string }>),
   restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
   create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
+  tasks: () => fetch(`${BASE}/tasks`).then((r) => r.json() as Promise<Task[]>),
+  toggleTask: (path: string, line: number) => post("/tasks/toggle", { path, line }),
 };
