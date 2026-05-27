@@ -39,6 +39,12 @@ function sortedChildren(node: TreeNode): TreeNode[] {
   });
 }
 
+/** Parent dir of a vault path ("a/b/c.md" -> "a/b", "x.md" -> ""). */
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
 /** Join a parent dir and a name into a vault path. */
 function joinPath(dir: string, name: string): string {
   return dir ? `${dir}/${name}` : name;
@@ -130,6 +136,59 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   );
 }
 
+/** Inline-editable name. Renders an auto-selected input; Enter commits via move, Escape cancels. */
+function EditableLabel(props: {
+  node: TreeNode; isDir: boolean; setEditing: (p: string | null) => void; refresh: () => void;
+}) {
+  let inputRef: HTMLInputElement | undefined;
+  const initial = props.node.name;
+
+  const commit = async () => {
+    const raw = inputRef?.value.trim() ?? "";
+    props.setEditing(null);
+    if (!raw || raw === initial) return; // no-op
+    // Preserve the .md extension for files if the user dropped it.
+    const newName = !props.isDir && !raw.endsWith(".md") ? `${raw}.md` : raw;
+    const to = joinPath(parentOf(props.node.path), newName);
+    try {
+      await api.move(props.node.path, to);
+      props.refresh();
+    } catch (e) {
+      pushToast(`Rename failed: ${(e as Error).message}`);
+    }
+  };
+
+  return (
+    <input
+      ref={(el) => {
+        inputRef = el;
+        // Select the editable stem (filename without .md) so typing replaces it.
+        queueMicrotask(() => {
+          el.focus();
+          const dot = !props.isDir ? el.value.lastIndexOf(".md") : -1;
+          el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
+        });
+      }}
+      value={initial}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        else if (e.key === "Escape") props.setEditing(null);
+      }}
+      onBlur={commit}
+      style={{
+        font: "inherit",
+        background: "var(--bg)",
+        color: "var(--fg)",
+        border: "1px solid var(--accent)",
+        "border-radius": "3px",
+        padding: "0 2px",
+        width: "70%",
+      }}
+    />
+  );
+}
+
 function Level(props: {
   node: TreeNode; depth: number;
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
@@ -144,10 +203,14 @@ function Level(props: {
           <div>
             <div
               style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8, "user-select": "none" }}
-              onClick={() => props.toggle(child.path)}
+              onClick={() => props.editing === child.path || props.toggle(child.path)}
+              onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON} {child.name}
+              {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON}{" "}
+              <Show when={props.editing === child.path} fallback={child.name}>
+                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} />
+              </Show>
             </div>
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
@@ -158,10 +221,14 @@ function Level(props: {
         ) : (
           <div
             style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
-            onClick={() => props.onOpen(child.path)}
+            onClick={() => props.editing === child.path || props.onOpen(child.path)}
+            onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            {child.icon ?? FILE_ICON} {child.name.replace(/\.md$/, "")}
+            {child.icon ?? FILE_ICON}{" "}
+            <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
+              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} />
+            </Show>
           </div>
         );
       }}
