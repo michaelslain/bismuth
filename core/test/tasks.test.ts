@@ -103,3 +103,22 @@ test("toggleTaskLine throws on a non-task line", () => {
 test("todayISO formats a Date as YYYY-MM-DD", () => {
   expect(todayISO(new Date("2026-05-27T15:00:00Z"))).toBe("2026-05-27");
 });
+
+import { collectVaultTasks } from "../src/tasks";
+import { writeNote } from "../src/files";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("collectVaultTasks scans every markdown file in the vault", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-tasks-"));
+  await writeNote(vault, "a.md", "# A\n- [ ] task a 📅 2026-06-01\n");
+  await writeNote(vault, "sub/b.md", "- [x] task b ✅ 2026-05-01\nprose\n- [ ] task c\n");
+  const tasks = await collectVaultTasks(vault);
+  const byDesc = Object.fromEntries(tasks.map((t) => [t.description, t]));
+  expect(Object.keys(byDesc).sort()).toEqual(["task a", "task b", "task c"]);
+  expect(byDesc["task a"].path).toBe("a.md");
+  expect(byDesc["task a"].due).toBe("2026-06-01");
+  expect(byDesc["task b"].path).toBe("sub/b.md");
+  expect(byDesc["task c"].line).toBe(2);
+});

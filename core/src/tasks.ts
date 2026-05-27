@@ -2,6 +2,8 @@
 // emoji-signifier format. One Task per checkbox list item, tracking the source file
 // and 0-indexed line so the line can be toggled back in place.
 
+import { listMarkdown, readNote } from "./files";
+
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
 
@@ -144,4 +146,15 @@ export function toggleTaskLine(line: string, today: string): string {
   const hasDoneDate = /✅\s*\d{4}-\d{2}-\d{2}/.test(body);
   const withDate = hasDoneDate ? body.trimEnd() : `${body.trimEnd()} ✅ ${today}`;
   return `${indent}- [x] ${withDate}`;
+}
+
+/** Read every markdown file in the vault and return all checkbox tasks across them. */
+export async function collectVaultTasks(root: string): Promise<Task[]> {
+  const rels = await listMarkdown(root);
+  const out: Task[] = [];
+  for (const rel of rels) {
+    const content = await readNote(root, rel);
+    out.push(...extractTasks(content, rel));
+  }
+  return out;
 }
