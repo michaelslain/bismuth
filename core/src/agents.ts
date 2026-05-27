@@ -1,5 +1,6 @@
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
+import { readFileSync } from "node:fs";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
 interface RelayAgent {
@@ -34,9 +35,7 @@ export function buildAgentGraph(statePath?: string): GraphData {
 
   let state: RelayState;
   try {
-    const file = Bun.file(path);
-    // Synchronous read using readFileSync equivalent in Bun
-    const text = require("node:fs").readFileSync(path, "utf-8");
+    const text = readFileSync(path, "utf-8");
     state = JSON.parse(text) as RelayState;
   } catch {
     return { nodes: [], edges: [] };
