@@ -7,7 +7,7 @@ import { toDateStr } from '../../dates'
 const DAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-export function MonthView(_props: { store: EventStore }) {
+export function MonthView(props: { store: EventStore }) {
   const year = () => currentDate.value.getFullYear()
   const month = () => currentDate.value.getMonth()
   const mondayFirst = () => settings.value.weekStartsOnMonday
@@ -40,7 +40,7 @@ export function MonthView(_props: { store: EventStore }) {
                   <div class="month-cell-number">{day}</div>
                   <div class="month-cell-events">
                     <For each={dayEvents()}>{e => (
-                      <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? dateStr : undefined} categories={categories.value} />
+                      <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? dateStr : undefined} categories={categories.value} store={props.store} />
                     )}</For>
                   </div>
                 </div>

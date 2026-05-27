@@ -59,7 +59,7 @@ export function TimeGrid(props: Props) {
     const eventStartMinutes = sh * 60 + sm
     const clickMinutes = yToMinutes(e.clientY - rect.top, rect.height)
     const offsetMinutes = clickMinutes - eventStartMinutes
-    const [eh, em] = (event.endTime ?? `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+    const [eh, em] = (event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
     const durationMinutes = (eh * 60 + em) - eventStartMinutes
     dragState.value = { type: 'move', event, masterId, date: ds, startMinutes: eventStartMinutes, currentMinutes: eventStartMinutes, offsetMinutes }
     function onMouseMove(ev: MouseEvent) {
@@ -94,7 +94,7 @@ export function TimeGrid(props: Props) {
     } else {
       startMin = ds2.startMinutes
       const [sh, sm] = (ds2.event.startTime ?? '00:00').split(':').map(Number)
-      const [eh, em] = (ds2.event.endTime ?? `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+      const [eh, em] = (ds2.event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
       const duration = (eh * 60 + em) - (sh * 60 + sm)
       endMin = clamp(startMin + duration)
       color = categoriesSignal.value.find(c => c.name === ds2.event.category)?.color ?? 'var(--interactive-accent)'
@@ -129,7 +129,7 @@ export function TimeGrid(props: Props) {
                 return (
                   <div class="time-grid-allday-cell">
                     <For each={props.events.filter(e => e.date === ds && !e.startTime)}>{e => (
-                      <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} />
+                      <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                     )}</For>
                   </div>
                 )
@@ -159,7 +159,7 @@ export function TimeGrid(props: Props) {
                   )}</Index>
                   <For each={props.events.filter(e => e.date === ds && e.startTime)}>{e => {
                     const [sh, sm] = (e.startTime ?? '00:00').split(':').map(Number)
-                    const [eh, em] = (e.endTime ?? `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+                    const [eh, em] = (e.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
                     const top = ((sh * 60 + sm) / (24 * 60)) * GRID_PX
                     const duration = eh * 60 + em - (sh * 60 + sm)
                     const visualDuration = duration <= 30 ? duration + 15 : duration
@@ -169,7 +169,7 @@ export function TimeGrid(props: Props) {
                     return (
                       <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, opacity: isBeingMoved ? 0.3 : 1 }}
                         onMouseDown={ev => onChipMouseDown(ev, e, ds, e.recurrence ? e.id : undefined)}>
-                        <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} />
+                        <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                       </div>
                     )
                   }}</For>
