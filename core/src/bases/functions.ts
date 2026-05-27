@@ -7,14 +7,8 @@ function asString(v: unknown): string {
   if (isLink(v)) return (v as Link).display ?? (v as Link).path;
   return String(v);
 }
-function asArray(v: unknown): unknown[] {
-  if (Array.isArray(v)) return v;
-  if (v === null || v === undefined) return [];
-  return [v];
-}
-
 // ---- Global functions ----
-export function callFunction(name: string, args: unknown[], ctx: EvalContext): unknown {
+export function callFunction(name: string, args: unknown[], _ctx: EvalContext): unknown {
   switch (name) {
     case "if": return truthy(args[0]) ? args[1] : args.length > 2 ? args[2] : undefined;
     case "number": return toNumber(args[0]);

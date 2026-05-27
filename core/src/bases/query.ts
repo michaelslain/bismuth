@@ -26,7 +26,7 @@ function computeFormulas(rows: Row[], formulas: Record<string, string> | undefin
 // to a value for a given row.
 export function resolveProperty(id: string, row: Row): unknown {
   const ctx = toContext(row);
-  if (id.startsWith("file.")) return (row.file as Record<string, unknown>)[id.slice(5)];
+  if (id.startsWith("file.")) return (row.file as unknown as Record<string, unknown>)[id.slice(5)];
   if (id.startsWith("note.")) return row.note[id.slice(5)];
   if (id.startsWith("formula.")) return row.formula[id.slice(8)];
   if (id.startsWith("this.")) return ctx.this?.[id.slice(5)];
