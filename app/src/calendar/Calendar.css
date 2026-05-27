@@ -13,23 +13,24 @@
   --font-text: "Monaspace Xenon", ui-monospace, monospace;
 }
 
-/* Buttons/inputs/selects don't inherit font-family by default — without this they
-   fall back to the UA sans-serif (Arial-like) and clash with the app's monospace UI. */
-.calendar-app button,
+/* Inputs don't inherit font-family by default — make them match the app font. */
 .calendar-app input,
 .calendar-app select,
 .calendar-app textarea { font-family: var(--font-interface); }
+
+/* EVERY calendar button shares the app's graph-toggle look (GraphView btnStyle):
+   borderless, muted by default, brighter on hover, subtle neutral highlight when
+   .active. Theme-aware (color-mix on --fg) so it works in light mode. One rule
+   covers the toolbar, modal actions (Save/Cancel/Delete), day-picker, recurrence
+   dialog and category panel. */
+.calendar-app button { padding: 3px 9px; border-radius: 4px; border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: 12px; font-family: var(--font-interface); }
+.calendar-app button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.calendar-app button.active { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
 
 .calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--font-interface); }
 .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); gap: 8px; flex-wrap: wrap; }
 .calendar-toolbar-left, .calendar-toolbar-right { display: flex; align-items: center; gap: 6px; }
 .calendar-toolbar-label { font-weight: 600; font-size: 1em; }
-/* Match the app's graph-toggle buttons (GraphView btnStyle): borderless and minimal,
-   muted by default, with a subtle neutral highlight on the active view. Theme-aware
-   (color-mix on --fg) so it also reads correctly in light mode. */
-.calendar-toolbar button { padding: 3px 9px; border-radius: 4px; border: none; background: transparent; color: color-mix(in srgb, var(--fg) 60%, transparent); cursor: pointer; font-size: 12px; }
-.calendar-toolbar button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
-.calendar-toolbar button.active { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
 .event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 5px; border-radius: 3px; font-size: 0.72em; color: #fff; cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); }
 .event-chip:hover { filter: brightness(1.1); }
 .event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
@@ -82,8 +83,9 @@
 .event-modal input, .event-modal select, .event-modal textarea { padding: 6px 8px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); font-family: var(--font-text); }
 .event-modal textarea { min-height: 80px; resize: none; }.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .day-picker { display: flex; gap: 4px; flex-wrap: wrap; }
-.day-picker button { padding: 4px 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; font-size: 12px; }
-.day-picker button.active { background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--fg); }
+/* day-picker chips inherit the shared button style; selected days get an accent tint
+   (matches the app's selection states like .tab.active / .palette-row.selected). */
+.day-picker button.active { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--fg); }
 .event-detail { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 300px; max-width: 420px; display: flex; flex-direction: column; gap: 10px; }
 .event-detail-header { padding-left: 10px; }
 .event-detail-header h3 { margin: 0; }
@@ -91,8 +93,8 @@
 .event-detail-description { font-size: 0.9em; white-space: pre-wrap; }
 .recurrence-dialog { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
 .recurrence-dialog-actions { display: flex; flex-direction: column; gap: 8px; }
-.recurrence-dialog-actions button { padding: 8px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--fg); cursor: pointer; text-align: left; font-size: 12px; }
-.recurrence-dialog-actions button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+/* recurrence choices inherit the shared button style; just widen + left-align. */
+.recurrence-dialog-actions button { padding: 8px 10px; text-align: left; }
 .category-panel { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 300px; display: flex; flex-direction: column; gap: 12px; }
 .category-list { display: flex; flex-direction: column; gap: 6px; }
 .category-row { display: flex; align-items: center; gap: 8px; }
