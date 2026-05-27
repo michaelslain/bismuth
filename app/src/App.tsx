@@ -138,10 +138,10 @@ export default function App() {
       const k = e.key.toLowerCase();
       if (k === "p") {
         e.preventDefault();
-        setPalette("command");
+        setPalette((p) => (p === "command" ? null : "command"));
       } else if (k === "o") {
         e.preventDefault();
-        setPalette("file");
+        setPalette((p) => (p === "file" ? null : "file"));
       }
     };
     window.addEventListener("keydown", handler);
