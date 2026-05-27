@@ -22,6 +22,13 @@ function computeFormulas(rows: Row[], formulas: Record<string, string> | undefin
   }
 }
 
+// Canonicalize a property id so bare frontmatter names line up with the
+// "note."-prefixed form used for auto-derived columns (e.g. "price" -> "note.price").
+export function canonicalId(id: string): string {
+  if (id.startsWith("file.") || id.startsWith("note.") || id.startsWith("formula.") || id.startsWith("this.")) return id;
+  return `note.${id}`;
+}
+
 // Resolve a property id (e.g. "file.name", "note.price", "formula.ppu", bare "price")
 // to a value for a given row.
 export function resolveProperty(id: string, row: Row): unknown {
@@ -101,7 +108,7 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number): Vi
   const summaries: Record<string, string> = {};
   if (view.summaries) {
     for (const [prop, sumName] of Object.entries(view.summaries)) {
-      summaries[prop] = summarize(sumName, filtered.map((r) => resolveProperty(prop, r)));
+      summaries[canonicalId(prop)] = summarize(sumName, filtered.map((r) => resolveProperty(prop, r)));
     }
   }
 

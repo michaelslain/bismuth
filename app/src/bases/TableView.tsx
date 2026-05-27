@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
+import { canonicalId } from "../../../core/src/bases/query";
 import { renderValue, columnLabel } from "./renderValue";
 import styles from "./BaseView.module.css";
 
@@ -36,7 +37,7 @@ export function TableView(props: { result: ViewResult; config: BaseConfig }) {
         <tfoot>
           <tr>
             <For each={cols()}>
-              {(c) => <td class={styles.summary}>{props.result.summaries[c] ?? ""}</td>}
+              {(c) => <td class={styles.summary}>{props.result.summaries[canonicalId(c)] ?? ""}</td>}
             </For>
           </tr>
         </tfoot>

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { runView } from "../../src/bases/query";
+import { runView, canonicalId } from "../../src/bases/query";
 import type { BaseConfig, Row } from "../../src/bases/types";
 
 function row(name: string, note: Record<string, unknown>): Row {
@@ -67,4 +67,19 @@ test("auto-derives columns from frontmatter when order is absent", () => {
   const res = runView(b, rows, 0);
   expect(res.columns[0]).toBe("file.name");
   expect(res.columns).toContain("note.status");
+});
+
+test("canonicalId normalizes bare frontmatter names to note.*", () => {
+  expect(canonicalId("price")).toBe("note.price");
+  expect(canonicalId("note.price")).toBe("note.price");
+  expect(canonicalId("file.name")).toBe("file.name");
+  expect(canonicalId("formula.ppu")).toBe("formula.ppu");
+});
+
+test("bare-id summary aligns with auto-derived note.* columns", () => {
+  // order omitted -> columns derived as note.*, summary written with a bare id
+  const b: BaseConfig = { views: [{ type: "table", name: "V", summaries: { price: "Sum" } }] };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toContain("note.price");
+  expect(res.summaries["note.price"]).toBe("34"); // 10 + 4 + 20 (no filter)
 });
