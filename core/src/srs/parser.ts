@@ -1,4 +1,4 @@
-import type { ParsedCard, CardType, SchedulingInfo } from "./types";
+import type { ParsedCard, SchedulingInfo } from "./types";
 import { parseScheduling } from "./scheduler";
 
 export const BASE_TAG = "flashcards";
@@ -74,25 +74,30 @@ export function parseCards(body: string): ParsedCard[] {
 
 function parseBlock(
   lines: string[],
-  start: number,
+  startLine: number,
   scheduleLine: number,
   endLine: number,
   multiSchedule: SchedulingInfo[],
 ): ParsedCard | null {
+  const base = { startLine, endLine, scheduleLine };
+
   // Single-line card: schedule (if any) is inline on the same line.
   if (lines.length === 1) {
     const { clean, sr } = splitInlineSr(lines[0]);
     const scheduling = sr ? parseScheduling(sr) : [];
     if (clean.includes(":::")) {
       const [front, back] = splitOnce(clean, ":::");
-      return mk("single-reversed", front, back, undefined, 2, scheduling, start, endLine, true, scheduleLine);
+      if (!front || !back) return null;
+      return { type: "single-reversed", front, back, subCount: 2, scheduling, inlineSchedule: true, ...base };
     }
     if (clean.includes("::")) {
       const [front, back] = splitOnce(clean, "::");
-      return mk("single-basic", front, back, undefined, 1, scheduling, start, endLine, true, scheduleLine);
+      if (!front || !back) return null;
+      return { type: "single-basic", front, back, subCount: 1, scheduling, inlineSchedule: true, ...base };
     }
-    if (countCloze(clean) > 0) {
-      return mk("cloze", "", "", clean, countCloze(clean), scheduling, start, endLine, true, scheduleLine);
+    const clozeCount = countCloze(clean);
+    if (clozeCount > 0) {
+      return { type: "cloze", front: "", back: "", clozeText: clean, subCount: clozeCount, scheduling, inlineSchedule: true, ...base };
     }
     return null;
   }
@@ -102,17 +107,20 @@ function parseBlock(
   if (sepRev >= 0) {
     const front = lines.slice(0, sepRev).join("\n").trim();
     const back = lines.slice(sepRev + 1).join("\n").trim();
-    return mk("multi-reversed", front, back, undefined, 2, multiSchedule, start, endLine, false, scheduleLine);
+    if (!front || !back) return null;
+    return { type: "multi-reversed", front, back, subCount: 2, scheduling: multiSchedule, inlineSchedule: false, ...base };
   }
   const sepBasic = lines.findIndex((l) => l.trim() === "?");
   if (sepBasic >= 0) {
     const front = lines.slice(0, sepBasic).join("\n").trim();
     const back = lines.slice(sepBasic + 1).join("\n").trim();
-    return mk("multi-basic", front, back, undefined, 1, multiSchedule, start, endLine, false, scheduleLine);
+    if (!front || !back) return null;
+    return { type: "multi-basic", front, back, subCount: 1, scheduling: multiSchedule, inlineSchedule: false, ...base };
   }
   const whole = lines.join("\n");
-  if (countCloze(whole) > 0) {
-    return mk("cloze", "", "", whole, countCloze(whole), multiSchedule, start, endLine, false, scheduleLine);
+  const clozeCount = countCloze(whole);
+  if (clozeCount > 0) {
+    return { type: "cloze", front: "", back: "", clozeText: whole, subCount: clozeCount, scheduling: multiSchedule, inlineSchedule: false, ...base };
   }
   return null;
 }
@@ -120,19 +128,4 @@ function parseBlock(
 function splitOnce(s: string, sep: string): [string, string] {
   const i = s.indexOf(sep);
   return [s.slice(0, i).trim(), s.slice(i + sep.length).trim()];
-}
-
-function mk(
-  type: CardType,
-  front: string,
-  back: string,
-  clozeText: string | undefined,
-  subCount: number,
-  scheduling: SchedulingInfo[],
-  startLine: number,
-  endLine: number,
-  inlineSchedule: boolean,
-  scheduleLine: number,
-): ParsedCard {
-  return { type, front, back, clozeText, subCount, scheduling, startLine, endLine, inlineSchedule, scheduleLine };
 }

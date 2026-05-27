@@ -84,3 +84,16 @@ test("deckPathsFromTags strips base tag and yields sub-deck path", () => {
 test("note without any flashcards tag yields no deck paths", () => {
   expect(deckPathsFromTags(["projects", "todo"])).toEqual([]);
 });
+
+test("multi-line basic with no answer is not a card", () => {
+  expect(parseCards("Question\n?").length).toBe(0);
+});
+
+test("a block that is only an SR comment is not a card", () => {
+  expect(parseCards("<!--SR:!2026-06-01,4,270-->").length).toBe(0);
+});
+
+test("cloze card exposes clozeText", () => {
+  const cards = parseCards("The ==sun== is a star");
+  expect(cards[0].clozeText).toBe("The ==sun== is a star");
+});
