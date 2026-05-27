@@ -75,13 +75,43 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
 
   const refresh = () => refetch();
 
+  // LIFO stack of undoable deletes (most-recent first).
+  const [undoStack, setUndoStack] = createSignal<{ trashPath: string; to: string; name: string }[]>([]);
+
+  async function undoLastDelete() {
+    const stack = undoStack();
+    const last = stack[0];
+    if (!last) return;
+    setUndoStack(stack.slice(1));
+    try {
+      await api.restore(last.trashPath, last.to);
+      await refresh();
+      pushToast(`Restored ${last.name}`);
+    } catch (e) {
+      pushToast(`Restore failed: ${(e as Error).message}`);
+    }
+  }
+
+  const onKey = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement | null;
+    const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+    if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      undoLastDelete();
+    }
+  };
+  window.addEventListener("keydown", onKey);
+  onCleanup(() => window.removeEventListener("keydown", onKey));
+
   async function doDelete(node: TreeNode) {
     try {
       const { trashPath } = await api.del(node.path);
+      setUndoStack((s) => [{ trashPath, to: node.path, name: node.name }, ...s]);
       await refresh();
       pushToast(`Deleted ${node.name}`, {
         label: "Undo",
         onClick: async () => {
+          setUndoStack((s) => s.filter((u) => u.trashPath !== trashPath));
           try {
             await api.restore(trashPath, node.path);
             await refresh();
