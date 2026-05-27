@@ -61,13 +61,25 @@ export function TimeGrid(props: Props) {
     const offsetMinutes = clickMinutes - eventStartMinutes
     const [eh, em] = (event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
     const durationMinutes = (eh * 60 + em) - eventStartMinutes
-    dragState.value = { type: 'move', event, masterId, date: ds, startMinutes: eventStartMinutes, currentMinutes: eventStartMinutes, offsetMinutes }
+    // Only begin a drag once the mouse actually moves past a small threshold.
+    // A stationary click must NOT start a drag: it should fall through to
+    // EventChip's onClick (which opens the modal). Committing an update on a
+    // plain click would also replace the chip's DOM and swallow that click.
+    const startY = e.clientY
+    let dragging = false
     function onMouseMove(ev: MouseEvent) {
+      if (!dragging) {
+        if (Math.abs(ev.clientY - startY) < 4) return
+        dragging = true
+      }
       const cur = yToMinutes(ev.clientY - rect.top, rect.height)
       const newStart = clamp(snap(cur - offsetMinutes))
       dragState.value = { type: 'move', event, masterId, date: ds, startMinutes: newStart, currentMinutes: newStart + durationMinutes, offsetMinutes }
     }
     async function onMouseUp() {
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+      if (!dragging) return // it was a click, not a drag — let EventChip's onClick open the modal
       const ds2 = dragState.value
       if (ds2?.type === 'move') {
         const newStart = ds2.startMinutes
@@ -76,8 +88,6 @@ export function TimeGrid(props: Props) {
         await refreshEvents(props.store)
       }
       dragState.value = null
-      window.removeEventListener('mousemove', onMouseMove)
-      window.removeEventListener('mouseup', onMouseUp)
     }
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
