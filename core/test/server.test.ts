@@ -314,6 +314,50 @@ test("POST /create returns 400 on collision", async () => {
   }
 });
 
+test("POST /set-property writes a frontmatter key reflected in /vault-data and /meta", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // housing.md starts at status: in-progress — flip it to done.
+    const res = await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "housing.md", key: "status", value: "done" }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = await (await fetch(`${base}/vault-data`)).json();
+    const housing = rows.find((r: any) => r.file.name === "housing");
+    expect(housing.note.status).toBe("done");
+    // other keys are preserved
+    expect(housing.note.priority).toBe(1);
+
+    const meta = await (await fetch(`${base}/meta?path=housing.md`)).json();
+    expect(meta.status).toBe("done");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-property bumps the version so views refetch", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "essay.md", key: "status", value: "todo" }),
+    });
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /move bumps the version so the sidebar refetches", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

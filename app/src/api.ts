@@ -35,4 +35,5 @@ export const api = {
   del: (path: string) => post("/delete", { path }).then((r) => r.json() as Promise<{ trashPath: string }>),
   restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
   create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
+  setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
 };

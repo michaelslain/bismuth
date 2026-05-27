@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseFrontmatter } from "../src/frontmatter";
+import { parseFrontmatter, setFrontmatterKey } from "../src/frontmatter";
 
 test("parses YAML frontmatter and returns the body", () => {
   const md = `---\nstatus: in-progress\npriority: 1\ntags: [a, b]\n---\n# Title\nbody text`;
@@ -131,4 +131,49 @@ test("no --- at start is treated as no frontmatter", () => {
   const { data, body } = parseFrontmatter(md);
   expect(data).toEqual({});
   expect(body).toContain("key: value");
+});
+
+test("setFrontmatterKey updates an existing key", () => {
+  const md = `---\nstatus: in-progress\npriority: 1\n---\n# Housing\nbody text`;
+  const out = setFrontmatterKey(md, "status", "done");
+  const { data, body } = parseFrontmatter(out);
+  expect(data.status).toBe("done");
+  expect(data.priority).toBe(1);
+  expect(body).toContain("# Housing");
+  expect(body).toContain("body text");
+});
+
+test("setFrontmatterKey adds a new key alongside existing ones", () => {
+  const md = `---\nstatus: todo\n---\n# Note\nbody`;
+  const out = setFrontmatterKey(md, "priority", 3);
+  const { data } = parseFrontmatter(out);
+  expect(data.status).toBe("todo");
+  expect(data.priority).toBe(3);
+});
+
+test("setFrontmatterKey creates frontmatter when the note had none", () => {
+  const md = `# Just a note\n\nSome content here.`;
+  const out = setFrontmatterKey(md, "status", "done");
+  const { data, body } = parseFrontmatter(out);
+  expect(data.status).toBe("done");
+  expect(body).toContain("# Just a note");
+  expect(body).toContain("Some content here.");
+});
+
+test("setFrontmatterKey preserves the body verbatim when frontmatter exists", () => {
+  const body = `# Title\n\nParagraph 1\n\nParagraph 2\n`;
+  const md = `---\nkey: value\n---\n${body}`;
+  const out = setFrontmatterKey(md, "status", "done");
+  expect(out).toContain(body);
+  const parsed = parseFrontmatter(out);
+  expect(parsed.data.key).toBe("value");
+  expect(parsed.data.status).toBe("done");
+});
+
+test("setFrontmatterKey can set array and object values", () => {
+  const md = `---\nstatus: todo\n---\nbody`;
+  const out = setFrontmatterKey(md, "tags", ["a", "b"]);
+  const { data } = parseFrontmatter(out);
+  expect(data.tags).toEqual(["a", "b"]);
+  expect(data.status).toBe("todo");
 });

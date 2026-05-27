@@ -4,7 +4,7 @@ import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
-import { parseFrontmatter } from "./frontmatter";
+import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import type { GraphData, TreeEntry } from "./graph";
@@ -144,6 +144,19 @@ export function createServer(cfg: CoreConfig) {
           createEntry(cfg.vault, path, kind);
           return new Response("ok", { headers: cors });
         });
+      }
+      if (url.pathname === "/set-property" && req.method === "POST") {
+        // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
+        const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
+        try {
+          const raw = await readNoteOrEmpty(cfg.vault, path);
+          const next = setFrontmatterKey(raw, key, value);
+          await writeNote(cfg.vault, path, next);
+        } catch (e) {
+          // e.g. the path-escape guard in resolveInVault — surface as a 400 like mutate() does.
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+        return mutate(() => new Response("ok", { headers: cors }));
       }
       if (url.pathname === "/backup" && req.method === "POST") {
         const committed = await commitVault(cfg.vault, snapshotMessage());
