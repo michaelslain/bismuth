@@ -57,6 +57,21 @@ export async function writeNote(root: string, rel: string, contents: string): Pr
   await Bun.write(full, contents);
 }
 
+/**
+ * "Delete" an entry by moving it into the hidden `.trash/` dir (excluded from listTree).
+ * Returns the trash-relative path so the caller can restore it via moveEntry.
+ */
+export function deleteEntry(root: string, path: string): { trashPath: string } {
+  const fromAbs = join(root, path);
+  if (!existsSync(fromAbs)) throw new Error(`does not exist: ${path}`);
+  const base = path.split("/").pop()!;
+  const trashPath = `.trash/${Date.now()}-${base}`;
+  const trashAbs = join(root, trashPath);
+  mkdirSync(dirname(trashAbs), { recursive: true });
+  renameSync(fromAbs, trashAbs);
+  return { trashPath };
+}
+
 /** Move or rename a vault entry (file or folder). Used for both rename and drag-drop. */
 export function moveEntry(root: string, from: string, to: string): void {
   if (to === from || to.startsWith(from + "/")) {

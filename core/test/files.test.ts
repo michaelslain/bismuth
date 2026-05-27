@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, listTree, moveEntry, readNote, writeNote } from "../src/files";
+import { listMarkdown, listTree, moveEntry, readNote, writeNote, deleteEntry } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -159,4 +159,34 @@ test("moveEntry rejects moving a folder into its own descendant", async () => {
 test("moveEntry rejects a missing source", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-move-missing-"));
   expect(() => moveEntry(dir, "nope.md", "yep.md")).toThrow();
+});
+
+test("deleteEntry moves a file into .trash and returns its trash path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-file-"));
+  await writeNote(dir, "note.md", "# Bye");
+  const { trashPath } = deleteEntry(dir, "note.md");
+  expect(existsSync(join(dir, "note.md"))).toBe(false);
+  expect(trashPath.startsWith(".trash/")).toBe(true);
+  expect(await readNote(dir, trashPath)).toBe("# Bye");
+});
+
+test("deleteEntry moves a whole folder into .trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-folder-"));
+  await writeNote(dir, "proj/a.md", "# A");
+  const { trashPath } = deleteEntry(dir, "proj");
+  expect(existsSync(join(dir, "proj"))).toBe(false);
+  expect(await readNote(dir, `${trashPath}/a.md`)).toBe("# A");
+});
+
+test("deleted entries do not appear in listTree (trash is hidden)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-hidden-"));
+  await writeNote(dir, "note.md", "# N");
+  deleteEntry(dir, "note.md");
+  const paths = (await listTree(dir)).map((e) => e.path);
+  expect(paths).toEqual([]);
+});
+
+test("deleteEntry rejects a missing path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-missing-"));
+  expect(() => deleteEntry(dir, "nope.md")).toThrow();
 });
