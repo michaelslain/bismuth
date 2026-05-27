@@ -6,6 +6,8 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
+import { wikilinkComplete } from "./editor/autocomplete";
+import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
 
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
@@ -22,9 +24,31 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
+    backgroundColor: "var(--bg)",
+    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+    fontFamily: "'Monaspace Xenon', monospace",
+    overflow: "hidden",
+  },
+  ".cm-tooltip-autocomplete > ul > li": {
+    padding: "3px 10px",
+    fontSize: "13px",
+    lineHeight: "1.5",
+  },
+  ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)",
+    color: "var(--fg)",
+  },
+  ".cm-completionDetail": {
+    marginLeft: "8px",
+    opacity: "0.5",
+    fontStyle: "normal",
+  },
 });
 
-export function Editor(props: { path: string | null; onSaved: () => void }) {
+export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -59,6 +83,7 @@ export function Editor(props: { path: string | null; onSaved: () => void }) {
       drawSelection(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
+      wikilinkComplete(props.noteNames),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),

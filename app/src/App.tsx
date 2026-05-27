@@ -7,6 +7,7 @@ import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
 import { settings, FONT_STACKS } from "./settings";
 import type { GraphData } from "../../core/src/graph";
+import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
 
 // Sentinel tab id for the settings page — not a real file path.
@@ -56,6 +57,10 @@ export default function App() {
       default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
     }
   });
+
+  const noteCandidates = createMemo<NoteCandidate[]>(() =>
+    graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, folder: n.folder })),
+  );
 
   const openFile = (path: string) => {
     setTabs((t) => (t.includes(path) ? t : [...t, path]));
@@ -136,7 +141,7 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<EmptyTab />}>
-            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} />}>
+            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} />}>
               <SettingsPage />
             </Show>
           </Show>
