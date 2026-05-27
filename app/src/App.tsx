@@ -6,7 +6,7 @@ import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
 import { settings, FONT_STACKS } from "./settings";
-import type { GraphData } from "../../core/src/graph";
+import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
 
@@ -21,6 +21,21 @@ function filterByKinds(g: GraphData, kinds: Set<string>): GraphData {
   const nodes = g.nodes.filter((n) => kinds.has(n.kind));
   const ids = new Set(nodes.map((n) => n.id));
   return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
+}
+
+// Overwrite each node's position with the brain VIEW's self-contained layout (computed by the
+// backend over just this subset). Without this, 2nd/3rd would draw nodes at their full-graph
+// coordinates — stranding cross-brain-linked nodes far from their cluster.
+function applyView(g: GraphData, view: ViewLayout | undefined): GraphData {
+  if (!view) return g;
+  return {
+    edges: g.edges,
+    nodes: g.nodes.map((n) => {
+      const p3 = view.pos3d[n.id];
+      const p2 = view.pos2d[n.id];
+      return { ...n, position: p3 ?? n.position, position2d: p2 ?? n.position2d };
+    }),
+  };
 }
 
 export default function App() {
@@ -43,8 +58,8 @@ export default function App() {
 
   const displayGraph = createMemo<GraphData>(() => {
     switch (mode()) {
-      case "2nd": return filterByKinds(graph(), new Set(["self", "note", "tag"]));
-      case "3rd": return filterByKinds(graph(), new Set(["self", "memory"]));
+      case "2nd": return applyView(filterByKinds(graph(), new Set(["self", "note", "tag"])), graph().views?.second);
+      case "3rd": return applyView(filterByKinds(graph(), new Set(["self", "memory"])), graph().views?.third);
       case "agents": return agents();
       default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
     }

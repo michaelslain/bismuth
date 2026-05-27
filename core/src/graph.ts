@@ -18,9 +18,29 @@ export interface GraphEdge {
   to: string;
   kind: EdgeKind;
 }
+/**
+ * A self-contained precomputed layout for one brain VIEW (2nd / 3rd), keyed by node id. The "both"
+ * view uses the positions baked onto the nodes themselves; the sub-views need their own layouts
+ * because slicing the full layout strands cross-brain-linked nodes (see layout-cache.ts).
+ */
+export interface ViewLayout {
+  pos3d: Record<string, [number, number, number]>;
+  pos2d: Record<string, [number, number]>;
+}
+
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Per-view layouts for the brain subsets, so 2nd/3rd render their own layout instead of a
+   *  stranded slice of the full ("both") layout. Absent on subgraph responses (agents, etc.). */
+  views?: { second?: ViewLayout; third?: ViewLayout };
+}
+
+/** Subgraph containing only nodes of the given kinds and the edges between them (pure). */
+export function subgraphByKinds(g: GraphData, kinds: Set<NodeKind>): GraphData {
+  const nodes = g.nodes.filter((n) => kinds.has(n.kind));
+  const ids = new Set(nodes.map((n) => n.id));
+  return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
 }
 
 /** A markdown file in the vault, with its optional `icon` frontmatter (an emoji). Wire shape of /tree. */
