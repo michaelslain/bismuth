@@ -6,10 +6,11 @@ import type { BaseConfig, Row, ViewResult } from "../../../core/src/bases/types"
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
 import { ListView } from "./ListView";
+import { KanbanView } from "./KanbanView";
 import styles from "./BaseView.module.css";
 
 export function BaseView(props: { path?: string; source?: string }) {
-  const [rows] = createResource(async () => (await api.vaultData()) as Row[]);
+  const [rows, { refetch }] = createResource(async () => (await api.vaultData()) as Row[]);
   const [sourceText] = createResource(
     () => props.path,
     async (p) => (p ? await api.read(p) : ""),
@@ -48,12 +49,16 @@ export function BaseView(props: { path?: string; source?: string }) {
         {(res) => {
           const v = res().view;
           return (
-            <Show when={v.type === "cards"} fallback={
-              <Show when={v.type === "list"} fallback={<TableView result={res()} config={config()} />}>
-                <ListView result={res()} config={config()} />
+            <Show when={v.type === "kanban"} fallback={
+              <Show when={v.type === "cards"} fallback={
+                <Show when={v.type === "list"} fallback={<TableView result={res()} config={config()} />}>
+                  <ListView result={res()} config={config()} />
+                </Show>
+              }>
+                <CardsView result={res()} config={config()} />
               </Show>
             }>
-              <CardsView result={res()} config={config()} />
+              <KanbanView result={res()} config={config()} onChange={refetch} />
             </Show>
           );
         }}
