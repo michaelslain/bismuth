@@ -29,7 +29,12 @@ export function GraphView(props: {
   onMount(() => {
     renderer.mount(
       host,
-      (id) => { if (id !== "self") props.onOpen(id); },
+      (id) => {
+        if (id === "self") return;
+        const node = lastGraph?.nodes.find((n) => n.id === id);
+        if (node?.kind === "tag") return;
+        props.onOpen(id);
+      },
       (node) => setHovered(node),
     );
     renderer.setFpsCallback(setFps);
