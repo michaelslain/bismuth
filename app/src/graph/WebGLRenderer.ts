@@ -204,7 +204,16 @@ function makeCircleTexture(): THREE.Texture {
   return tex;
 }
 
-type N3 = SimNode & { id: string; label: string; kind: NodeKind; folder?: string };
+type N3 = SimNode & {
+  id: string;
+  label: string;
+  kind: NodeKind;
+  folder?: string;
+  // Backend-precomputed target layouts for each mode — the 2D↔3D tween morphs straight to these
+  // (no re-settle). Populated from the graph's position/position2d in render().
+  pos3d?: [number, number, number];
+  pos2d?: [number, number];
+};
 type L3 = SimLink<N3>;
 
 /** The node currently under the pointer, reported to the host for the hover readout (null = none). */
@@ -272,8 +281,8 @@ export class WebGLRenderer implements GraphRenderer {
   private nearCullActive = false; // true while any node is currently near-camera culled (3D only)
   private hoveredId: string | null = null;
   private pointerInside = false;
-  private curI: Float32Array = new Float32Array(0); // current node intensities (eased)
-  private tgtI: Float32Array = new Float32Array(0); // target node intensities
+  private curI: Float32Array = new Float32Array(0); // current node highlight scalar, eased (0 rest, +1 white, -1 dim)
+  private tgtI: Float32Array = new Float32Array(0); // target node highlight scalar
   private curE: Float32Array = new Float32Array(0); // current edge intensities (eased)
   private tgtE: Float32Array = new Float32Array(0); // target edge intensities
   private crowdE: Float32Array = new Float32Array(0); // per-edge dim factor (1 = uncrowded, → EDGE_CROWD_MIN)
@@ -319,10 +328,10 @@ export class WebGLRenderer implements GraphRenderer {
   private modeInitialized = false; // first setConfig applies mode instantly; later changes tween
   private savedZ = new Map<string, number>(); // node depth captured when flattening, restored on expand
   private tween: null | {
-    goingFlat: boolean;
     start: number;
-    z0: Map<string, number>;       // per-node z at tween start
-    zTarget: Map<string, number>;  // per-node z at tween end
+    fromPos: Map<string, [number, number, number]>; // per-node xyz at tween start
+    toPos: Map<string, [number, number, number]>;    // per-node xyz at tween end
+    morph: boolean; // true = landing on a precomputed target layout (no re-settle); false = legacy z-ease + re-settle
     camFrom: { pos: THREE.Vector3; tgt: THREE.Vector3 };
     camTo: { pos: THREE.Vector3; tgt: THREE.Vector3 };
     rotFrom: number;
@@ -402,16 +411,17 @@ export class WebGLRenderer implements GraphRenderer {
     };
     this.renderer.domElement.addEventListener("wheel", this.wheelHandler, { passive: true });
 
-    // "z" while hovering a node → frame that node and its neighbors. Window-level so the canvas
-    // needn't be focused; gated on an active hover (only set while the pointer is over a node),
-    // and bails on modifiers (Cmd/Ctrl+Z is undo) and while typing in an input/editor.
+    // "z" over a node → frame that node + its neighbors; "z" over empty graph → fit the whole graph
+    // (the un-focus / overview gesture). Window-level so the canvas needn't be focused; bails on
+    // modifiers (Cmd/Ctrl+Z is undo) and while typing in an input/editor. The empty-space case is
+    // gated on pointerInside so a stray "z" elsewhere doesn't jump the camera.
     this.keyHandler = (e: KeyboardEvent) => {
       if (e.key !== "z" && e.key !== "Z") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (!this.hoveredId) return;
       const ae = document.activeElement as HTMLElement | null;
       if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
-      this.frameNode(this.hoveredId);
+      if (this.hoveredId) this.frameNode(this.hoveredId);
+      else if (this.pointerInside) this.frameAll();
     };
     window.addEventListener("keydown", this.keyHandler);
 
@@ -580,31 +590,59 @@ export class WebGLRenderer implements GraphRenderer {
       const perp = Math.sqrt(Math.max(0, off.lengthSq() - along * along));
       if (perp > r) r = perp;
     }
-    const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = (r / Math.sin(fov / 2)) * 1.4; // a touch of breathing room around the cluster
+    // Remember the pre-frame pose the first time we focus, so scrolling out returns to the original
+    // whole-graph view (re-framing a different cluster while focused keeps the original home).
+    if (!this.framed) this.homePose = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+    this.framed = true;
+    this.userControlled = true; // deliberate framing — don't let auto-fit pull it back
+    this.glideToFraming(center, viewDir, r, 1.4); // 1.4 = a touch of breathing room around the cluster
+  }
 
+  /**
+   * Glide the whole graph back into view from the current angle — the "z over empty space" gesture.
+   * Recenters on the graph centroid and fits every node, like the initial auto-fit but as a glide.
+   * Drops any "z" focus so the idle spin resumes and scroll-out behaves normally again.
+   */
+  private frameAll() {
+    if (this.nodes.length === 0) return;
+    const center = new THREE.Vector3();
+    for (const n of this.nodes) center.add(new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0));
+    center.divideScalar(this.nodes.length);
+    let r = this.cfg.nodeSize * 1.5;
+    for (const n of this.nodes) {
+      const d = center.distanceTo(new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0));
+      if (d > r) r = d;
+    }
+    const dir = this.camera.position.clone().sub(this.controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    this.clearFrame();           // overview — not focused on any cluster
+    this.userControlled = false; // this IS the resting home framing
+    this.glideToFraming(center, dir, r, 1.25); // 1.25 = fitCamera's whole-graph margin
+  }
+
+  /**
+   * Shared camera glide for both framings: ease position + target toward looking at `center` from
+   * `viewDir`, at the distance that fits `radius` to the FOV (× `margin`). Widens the clip planes
+   * and orbit-distance limits first so neither the projection nor controls.update() clamps the glide
+   * as it passes through distances outside the resting framing.
+   */
+  private glideToFraming(center: THREE.Vector3, viewDir: THREE.Vector3, radius: number, margin: number) {
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const dist = (radius / Math.sin(fov / 2)) * margin;
     const startDist = this.camera.position.distanceTo(this.controls.target);
-    // Widen clip planes + orbit limits so neither controls.update() nor the projection clamps the
-    // glide (the camera may pass through distances well outside the resting framing).
     this.camera.near = 0.1;
     this.camera.far = Math.max(this.camera.far, Math.max(startDist, dist) * 4 + 100);
     this.camera.updateProjectionMatrix();
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 4 + 100);
-
-    // Remember the pre-frame pose the first time we focus, so scrolling out returns to the original
-    // whole-graph view (re-framing a different cluster while focused keeps the original home).
-    if (!this.framed) this.homePose = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
-    this.framed = true;
-
-    this.userControlled = true;          // deliberate framing — don't let auto-fit pull it back
     this.controls.enableDamping = false; // we hard-set the camera each frame during the glide
     this.camTween = {
       start: performance.now(),
       posFrom: this.camera.position.clone(),
       posTo: center.clone().add(viewDir.clone().multiplyScalar(dist)),
       tgtFrom: this.controls.target.clone(),
-      tgtTo: center,
+      tgtTo: center.clone(),
     };
   }
 
@@ -700,7 +738,7 @@ export class WebGLRenderer implements GraphRenderer {
     if (this.tgtI.length !== this.nodes.length) return;
     const id = this.hoveredId;
     if (!id) {
-      this.tgtI.fill(1);
+      this.tgtI.fill(0); // 0 = resting palette color (no hover)
       for (let i = 0; i < this.tgtE.length; i++) this.tgtE[i] = this.edgeIntensity(i, EDGE_BASE);
       this.hlActive = true;
       this.rewriteEdgePositions(); // un-cull (no hover → every edge drawn)
@@ -708,7 +746,8 @@ export class WebGLRenderer implements GraphRenderer {
     }
     const nbrs = this.neighborsOf(id);
     for (let i = 0; i < this.nodes.length; i++) {
-      this.tgtI[i] = this.nodes[i].id === id || nbrs.has(this.nodes[i].id) ? 1 : NODE_DIM;
+      // +1 = highlighted → eased to white (matching the lit edges); -1 = dimmed non-neighbor.
+      this.tgtI[i] = this.nodes[i].id === id || nbrs.has(this.nodes[i].id) ? 1 : -1;
     }
     for (let i = 0; i < this.resolvedLinks.length && i < this.tgtE.length; i++) {
       const { s, t } = this.resolvedLinks[i];
@@ -827,9 +866,35 @@ export class WebGLRenderer implements GraphRenderer {
   private stepHighlight() {
     if (!this.hlActive) return;
     if (!this.pointsMesh || !this.linesMesh || this.curI.length === 0) return;
-    const movingN = this.easeColors(this.pointsMesh, this.curI, this.tgtI, this.baseColors, 3);
+    const movingN = this.easeNodeColors();
     const movingE = this.easeColors(this.linesMesh, this.curE, this.tgtE, this.baseEdgeColors, 6);
     if (!movingN && !movingE) this.hlActive = false; // transition settled — stop looping until next hover change
+  }
+
+  /**
+   * Ease each node's highlight scalar (curI) toward its target and recolor from it. The scalar is
+   * signed: s ≥ 0 lerps the palette color toward white (highlighted, matching the lit edges), s < 0
+   * darkens toward the dim level (non-neighbor under hover), s = 0 is the resting palette color.
+   * Only flags the attribute dirty when something moved, so a settled graph does no GPU uploads.
+   */
+  private easeNodeColors(): boolean {
+    if (!this.pointsMesh) return false;
+    const attr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    let moved = false;
+    for (let i = 0; i < this.curI.length; i++) {
+      const delta = this.tgtI[i] - this.curI[i];
+      if (Math.abs(delta) <= 0.002) continue;
+      this.curI[i] += delta * HL_SPEED;
+      const s = this.curI[i];
+      for (let k = 0; k < 3; k++) {
+        const b = this.baseColors[i * 3 + k];
+        arr[i * 3 + k] = s >= 0 ? b + (1 - b) * s : b * (1 + s * (1 - NODE_DIM));
+      }
+      moved = true;
+    }
+    if (moved) attr.needsUpdate = true;
+    return moved;
   }
 
   /**
@@ -940,10 +1005,11 @@ export class WebGLRenderer implements GraphRenderer {
   }
 
   /**
-   * Begin the smooth 2D<->3D glide: eases each node's depth (z) toward 0 (flatten) or back to
-   * its saved depth (expand), glides the camera to a top-down fit, and untilts the spin. The
-   * simulation is paused during the glide and reheated after so the layout re-settles in the
-   * new dimensionality.
+   * Begin the smooth 2D<->3D glide. When the backend has shipped both layouts (the common case), it
+   * morphs every node straight from its current position to the target mode's precomputed position —
+   * a controlled 500ms glide with NO re-settle, so it stays at full FPS. The 2D and 3D layouts are
+   * aligned (2D is seeded from the flattened 3D), so the morph flattens/expands in place. Falls back
+   * to the legacy "ease z, then re-settle" only when target positions aren't available.
    */
   private startModeTween(next: "2d" | "3d") {
     if (!this.pointsMesh || this.nodes.length === 0) {
@@ -954,42 +1020,53 @@ export class WebGLRenderer implements GraphRenderer {
     const goingFlat = next === "2d";
     this.viewMode = next; // logical switch is immediate; visuals catch up over the tween
     this.clearFrame();
+    this.sim?.stop(); // the tween owns positions until it finishes
+    for (const n of this.nodes) { n.vx = 0; n.vy = 0; n.vz = 0; }
 
-    const z0 = new Map<string, number>();
-    for (const n of this.nodes) z0.set(n.id, n.z ?? 0);
-    if (goingFlat) this.savedZ = new Map(z0); // remember depth so 3D restores it
-    const zTarget = new Map<string, number>();
+    // Target position for a node in the new mode, from the backend-precomputed layout (or null).
+    const targetOf = (n: N3): [number, number, number] | null =>
+      next === "2d"
+        ? (n.pos2d ? [n.pos2d[0], n.pos2d[1], 0] : null)
+        : (n.pos3d ? [n.pos3d[0], n.pos3d[1], n.pos3d[2]] : null);
+    const morph = this.nodes.every((n) => targetOf(n) !== null);
+
+    // Legacy expand needs the depth saved when we flattened (no precomputed 3D layout available).
+    if (!morph && goingFlat) this.savedZ = new Map(this.nodes.map((n) => [n.id, n.z ?? 0]));
+
+    const fromPos = new Map<string, [number, number, number]>();
+    const toPos = new Map<string, [number, number, number]>();
     for (const n of this.nodes) {
-      zTarget.set(n.id, goingFlat ? 0 : (this.savedZ.get(n.id) ?? (Math.random() - 0.5) * 60));
+      fromPos.set(n.id, [n.x ?? 0, n.y ?? 0, n.z ?? 0]);
+      if (morph) {
+        toPos.set(n.id, targetOf(n)!);
+      } else {
+        // legacy: x/y stay put, only z eases; the post-tween re-settle re-spreads x/y for the mode
+        const zT = goingFlat ? 0 : (this.savedZ.get(n.id) ?? (Math.random() - 0.5) * 60);
+        toPos.set(n.id, [n.x ?? 0, n.y ?? 0, zT]);
+      }
     }
 
-    this.sim?.stop(); // the tween owns positions until it finishes
-    for (const n of this.nodes) n.vz = 0;
-
-    const framing = (zOf: (n: N3) => number) => {
-      let cx = 0, cy = 0, cz = 0;
-      for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += zOf(n); }
-      const k = this.nodes.length || 1; cx /= k; cy /= k; cz /= k;
-      let r = 1;
-      for (const n of this.nodes) {
-        const dx = (n.x ?? 0) - cx, dy = (n.y ?? 0) - cy, dz = zOf(n) - cz;
-        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (d > r) r = d;
-      }
-      const fov = (this.camera.fov * Math.PI) / 180;
-      const dist = (r / Math.sin(fov / 2)) * 1.25;
-      return { pos: new THREE.Vector3(cx, cy, cz + dist), tgt: new THREE.Vector3(cx, cy, cz) };
-    };
+    // Frame the camera to the target layout's bounding sphere.
+    let cx = 0, cy = 0, cz = 0;
+    for (const t of toPos.values()) { cx += t[0]; cy += t[1]; cz += t[2]; }
+    const k = toPos.size || 1; cx /= k; cy /= k; cz /= k;
+    let r = 1;
+    for (const t of toPos.values()) {
+      const d = Math.hypot(t[0] - cx, t[1] - cy, t[2] - cz);
+      if (d > r) r = d;
+    }
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const dist = (r / Math.sin(fov / 2)) * 1.25;
 
     this.controls.enableRotate = false;  // lock orbit during the move
     this.controls.enableDamping = false; // we hard-set the camera each frame
     this.tween = {
-      goingFlat,
       start: performance.now(),
-      z0,
-      zTarget,
+      fromPos,
+      toPos,
+      morph,
       camFrom: { pos: this.camera.position.clone(), tgt: this.controls.target.clone() },
-      camTo: framing((n) => zTarget.get(n.id) ?? 0),
+      camTo: { pos: new THREE.Vector3(cx, cy, cz + dist), tgt: new THREE.Vector3(cx, cy, cz) },
       rotFrom: this.group.rotation.y,
       rotTo: goingFlat ? 0 : this.group.rotation.y, // untilt spin when flattening
     };
@@ -1002,9 +1079,11 @@ export class WebGLRenderer implements GraphRenderer {
     const t = raw >= 1 ? 1 : raw;
     const e = easeInOutCubic(t);
     for (const n of this.nodes) {
-      const a = tw.z0.get(n.id) ?? 0;
-      const b = tw.zTarget.get(n.id) ?? 0;
-      n.z = a + (b - a) * e;
+      const a = tw.fromPos.get(n.id); const b = tw.toPos.get(n.id);
+      if (!a || !b) continue;
+      n.x = a[0] + (b[0] - a[0]) * e;
+      n.y = a[1] + (b[1] - a[1]) * e;
+      n.z = a[2] + (b[2] - a[2]) * e;
     }
     this.group.rotation.y = tw.rotFrom + (tw.rotTo - tw.rotFrom) * e;
     this.camera.position.lerpVectors(tw.camFrom.pos, tw.camTo.pos, e);
@@ -1013,17 +1092,25 @@ export class WebGLRenderer implements GraphRenderer {
     if (t >= 1) this.finishTween();
   }
 
-  /** Land the tween: snap to exact targets, restore controls for the mode, reheat the layout. */
+  /** Land the tween: snap to the target layout, restore controls. Morph path needs no re-settle. */
   private finishTween() {
     const tw = this.tween;
     this.tween = null;
     if (!tw) return;
-    for (const n of this.nodes) { n.z = tw.zTarget.get(n.id) ?? 0; n.vz = 0; }
+    for (const n of this.nodes) {
+      const b = tw.toPos.get(n.id);
+      if (b) { n.x = b[0]; n.y = b[1]; n.z = b[2]; }
+      n.vx = 0; n.vy = 0; n.vz = 0;
+    }
     this.controls.enableDamping = true;
     this.applyControlsForMode(this.viewMode);
-    this.userControlled = false;       // re-frame as the layout re-settles
+    this.userControlled = false;
     this.updateGeometryPositions();
-    this.sim?.alpha(0.5).restart();    // re-spread in the new dimensionality (2D pins z each tick)
+    if (tw.morph) {
+      this.simSettling = false; // at rest on the precomputed layout → let crowding recompute, no re-settle
+    } else {
+      this.sim?.alpha(0.5).restart(); // legacy: re-spread in the new dimensionality (2D pins z each tick)
+    }
   }
 
   /** Rewrite node colors (live + hover-base buffers) from the current palette. */
@@ -1037,7 +1124,7 @@ export class WebGLRenderer implements GraphRenderer {
       this.baseColors[i * 3] = c.r; this.baseColors[i * 3 + 1] = c.g; this.baseColors[i * 3 + 2] = c.b;
     }
     attr.needsUpdate = true;
-    this.curI.fill(1); this.tgtI.fill(1); // clear any in-progress hover dim
+    this.curI.fill(0); this.tgtI.fill(0); // clear any in-progress hover highlight
   }
 
   /**
@@ -1137,23 +1224,26 @@ export class WebGLRenderer implements GraphRenderer {
     // Build new node/link arrays, tracking nodes that had no cached position (new since last settle).
     const uncached: N3[] = [];
     this.nodes = g.nodes.map((n) => {
-      // 0th priority: backend-precomputed layout shipped with the graph. It's a 3D layout, so only
-      // seed 3D mode from it; 2D falls through to its own cache/settle path.
-      if (this.viewMode === "3d" && n.position) {
-        cachedCount++;
-        return { ...n, x: n.position[0], y: n.position[1], z: n.position[2] };
-      }
+      // Stash both backend-precomputed target layouts on the node so the 2D↔3D tween can morph
+      // straight to them (no re-settle). Seed the current mode's starting position from the matching one.
+      const base = { ...n, pos3d: n.position, pos2d: n.position2d } as N3;
+      const server: [number, number, number] | null =
+        this.viewMode === "2d"
+          ? (n.position2d ? [n.position2d[0], n.position2d[1], 0] : null)
+          : (n.position ?? null);
+      // 0th priority: backend-precomputed layout for the current mode → render instantly.
+      if (server) { cachedCount++; return { ...base, x: server[0], y: server[1], z: server[2] }; }
       // 1st priority: persisted localStorage positions (settled layout from a previous session)
       if (cachedPos) {
         const c = cachedPos.get(n.id);
-        if (c) { cachedCount++; return { ...n, x: c[0], y: c[1], z: c[2] }; }
+        if (c) { cachedCount++; return { ...base, x: c[0], y: c[1], z: c[2] }; }
       }
       // 2nd priority: in-memory positions from previous render (same session, graph changed)
       const p = prevPos.get(n.id);
       const r = 80;
       const node: N3 = p
-        ? { ...n, x: p.x, y: p.y, z: p.z }
-        : { ...n, x: (Math.random() - 0.5) * r, y: (Math.random() - 0.5) * r, z: (Math.random() - 0.5) * r };
+        ? { ...base, x: p.x, y: p.y, z: p.z }
+        : { ...base, x: (Math.random() - 0.5) * r, y: (Math.random() - 0.5) * r, z: (Math.random() - 0.5) * r };
       uncached.push(node); // had no persisted position — new, or first session
       return node;
     });
@@ -1353,8 +1443,8 @@ export class WebGLRenderer implements GraphRenderer {
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
     this.clearFrame();
-    this.curI = new Float32Array(nodeCount).fill(1);
-    this.tgtI = new Float32Array(nodeCount).fill(1);
+    this.curI = new Float32Array(nodeCount).fill(0); // node highlight scalar: 0 rest, +1 white, -1 dim
+    this.tgtI = new Float32Array(nodeCount).fill(0);
 
     const pointsMat = new THREE.PointsMaterial({
       size: this.cfg.nodeSize,
