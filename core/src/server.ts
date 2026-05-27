@@ -7,6 +7,8 @@ import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import type { GraphData, TreeEntry } from "./graph";
+import { collectDecks, dueCards, collectCards, applyReview } from "./srs/cards";
+import type { ReviewResponse } from "./srs/types";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -71,6 +73,7 @@ export function createServer(cfg: CoreConfig) {
       const url = new URL(req.url);
       const cors = CORS;
       if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+      const today = () => new Date().toISOString().slice(0, 10);
 
       // Run a mutating file op: invalidate the cache on success; turn any thrown error
       // (e.g. the path-escape guard) into a 400 with the message as the body.
@@ -152,6 +155,22 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/config" && req.method === "GET") {
         // Read-only view of how core was launched — surfaced in the settings page.
         return Response.json({ vault: cfg.vault, memory: cfg.memory ?? null }, { headers: cors });
+      }
+      if (url.pathname === "/cards/decks" && req.method === "GET") {
+        return Response.json(await collectDecks(cfg.vault, today()), { headers: cors });
+      }
+      if (url.pathname === "/cards/all" && req.method === "GET") {
+        return Response.json(await collectCards(cfg.vault), { headers: cors });
+      }
+      if (url.pathname === "/cards/due" && req.method === "GET") {
+        const deck = url.searchParams.get("deck") ?? undefined;
+        return Response.json(await dueCards(cfg.vault, today(), deck), { headers: cors });
+      }
+      if (url.pathname === "/cards/review" && req.method === "POST") {
+        const { id, response } = (await req.json()) as { id: string; response: ReviewResponse };
+        await applyReview(cfg.vault, id, response, today());
+        invalidate();
+        return new Response("ok", { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });
     },

@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
-import { writeNote } from "../src/files";
+import { writeNote, readNote } from "../src/files";
 import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
@@ -311,6 +311,43 @@ test("POST /move bumps the version so the sidebar refetches", async () => {
     });
     const v1 = (await (await fetch(`${base}/version`)).json()).version;
     expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/decks returns decks with due counts", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem-"));
+  await writeNote(vault, "m.md", "#flashcards/math\n\n2+2::4");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const decks = await (await fetch(`${base}/cards/decks`)).json();
+    expect(decks.find((d: any) => d.name === "math").due).toBe(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/due returns due cards; POST /cards/review schedules them", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv2-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem2-"));
+  await writeNote(vault, "m.md", "#flashcards\n\n2+2::4");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const due = await (await fetch(`${base}/cards/due`)).json();
+    expect(due.length).toBe(1);
+    const id = due[0].id;
+    const res = await fetch(`${base}/cards/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, response: "good" }),
+    });
+    expect(res.ok).toBe(true);
+    const text = await readNote(vault, "m.md");
+    expect(text).toContain("<!--SR:");
   } finally {
     server.stop(true);
   }
