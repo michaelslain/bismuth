@@ -1,4 +1,6 @@
-const BASE = "http://localhost:4321";
+// Backend base URL. Defaults to the standard core port; override with VITE_API_BASE
+// to run the frontend against a backend on a different port (e.g. alongside another worktree).
+const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 
 export const api = {
