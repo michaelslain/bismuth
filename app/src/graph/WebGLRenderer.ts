@@ -287,6 +287,7 @@ export class WebGLRenderer implements GraphRenderer {
   private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
   private interactHandler?: () => void;
   private keyHandler?: (e: KeyboardEvent) => void;
+  private wheelHandler?: (e: WheelEvent) => void;
   // "z" zoom-to-fit: a camera-only glide that frames the hovered node + its neighbors. Kept
   // separate from the mode tween (which also moves node depths); the mode tween takes priority.
   private camTween: null | {
@@ -296,6 +297,12 @@ export class WebGLRenderer implements GraphRenderer {
     tgtFrom: THREE.Vector3;
     tgtTo: THREE.Vector3;
   } = null;
+  // While "focused" on a "z"-framed cluster the orbit target sits on the cluster (so it stays
+  // centered) and the idle spin is paused (the spin rotates the whole graph about the world origin,
+  // which would fling an off-center cluster across the view). Scrolling out returns to homePose —
+  // the whole-graph pose captured before the first frame — restoring the original pivot and axes.
+  private framed = false;
+  private homePose: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
 
   // 3D depth fog — centroid + radius of the node cloud, refreshed in fitCamera; the fog near/far
   // are derived from the live camera distance to this centroid so they track orbit/zoom.
@@ -386,8 +393,14 @@ export class WebGLRenderer implements GraphRenderer {
 
     // Once the user zooms/drags, stop auto-fitting so we don't fight their camera
     this.interactHandler = () => { this.userControlled = true; };
-    this.renderer.domElement.addEventListener("wheel", this.interactHandler, { passive: true });
     this.renderer.domElement.addEventListener("pointerdown", this.interactHandler);
+    // Scrolling OUT while focused on a framed cluster glides back to the pre-frame whole-graph view
+    // (the "undo" of a frame); otherwise the wheel just disables auto-fit like a drag.
+    this.wheelHandler = (e: WheelEvent) => {
+      this.userControlled = true;
+      if (this.framed && e.deltaY > 0) this.returnHome();
+    };
+    this.renderer.domElement.addEventListener("wheel", this.wheelHandler, { passive: true });
 
     // "z" while hovering a node → frame that node and its neighbors. Window-level so the canvas
     // needn't be focused; gated on an active hover (only set while the pointer is over a node),
@@ -420,8 +433,9 @@ export class WebGLRenderer implements GraphRenderer {
       this.stepTween();
     } else if (this.camTween) {
       this.stepCamTween();
-    } else if (!this.pointerInside && this.cfg.spin && this.viewMode === "3d") {
-      // Idle "storm" spin — paused while hovering (stable inspect) and in 2D (locked birdseye)
+    } else if (!this.pointerInside && !this.framed && this.cfg.spin && this.viewMode === "3d") {
+      // Idle "storm" spin — paused while hovering (stable inspect), while focused on a framed
+      // cluster (the world-origin spin would fling it off-center), and in 2D (locked birdseye)
       this.group.rotation.y += this.cfg.spinSpeed;
     }
     // Crowding is camera-relative (screen space), so it recomputes when the view changes — orbit,
@@ -578,6 +592,11 @@ export class WebGLRenderer implements GraphRenderer {
     this.controls.minDistance = 0.5;
     this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 4 + 100);
 
+    // Remember the pre-frame pose the first time we focus, so scrolling out returns to the original
+    // whole-graph view (re-framing a different cluster while focused keeps the original home).
+    if (!this.framed) this.homePose = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+    this.framed = true;
+
     this.userControlled = true;          // deliberate framing — don't let auto-fit pull it back
     this.controls.enableDamping = false; // we hard-set the camera each frame during the glide
     this.camTween = {
@@ -587,6 +606,25 @@ export class WebGLRenderer implements GraphRenderer {
       tgtFrom: this.controls.target.clone(),
       tgtTo: center,
     };
+  }
+
+  /**
+   * Glide back to the whole-graph pose captured before the first "z" frame, restoring the original
+   * orbit pivot and axes (and re-enabling the idle spin). Triggered by scrolling out while focused.
+   */
+  private returnHome() {
+    this.framed = false;
+    if (!this.homePose) return;
+    this.userControlled = false;         // back to the auto-fit home framing
+    this.controls.enableDamping = false; // hard-set the camera during the glide
+    this.camTween = {
+      start: performance.now(),
+      posFrom: this.camera.position.clone(),
+      posTo: this.homePose.pos.clone(),
+      tgtFrom: this.controls.target.clone(),
+      tgtTo: this.homePose.target.clone(),
+    };
+    this.homePose = null;
   }
 
   /** Advance the active "z" framing glide one frame (driven from animate()). */
@@ -909,6 +947,7 @@ export class WebGLRenderer implements GraphRenderer {
     }
     const goingFlat = next === "2d";
     this.viewMode = next; // logical switch is immediate; visuals catch up over the tween
+    this.framed = false; this.homePose = null; // a mode switch supersedes any "z" focus
 
     const z0 = new Map<string, number>();
     for (const n of this.nodes) z0.set(n.id, n.z ?? 0);
@@ -1092,6 +1131,12 @@ export class WebGLRenderer implements GraphRenderer {
     // Build new node/link arrays, tracking nodes that had no cached position (new since last settle).
     const uncached: N3[] = [];
     this.nodes = g.nodes.map((n) => {
+      // 0th priority: backend-precomputed layout shipped with the graph. It's a 3D layout, so only
+      // seed 3D mode from it; 2D falls through to its own cache/settle path.
+      if (this.viewMode === "3d" && n.position) {
+        cachedCount++;
+        return { ...n, x: n.position[0], y: n.position[1], z: n.position[2] };
+      }
       // 1st priority: persisted localStorage positions (settled layout from a previous session)
       if (cachedPos) {
         const c = cachedPos.get(n.id);
@@ -1301,6 +1346,7 @@ export class WebGLRenderer implements GraphRenderer {
 
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
+    this.framed = false; this.homePose = null; // a fresh graph supersedes any "z" focus
     this.curI = new Float32Array(nodeCount).fill(1);
     this.tgtI = new Float32Array(nodeCount).fill(1);
 
@@ -1496,9 +1542,12 @@ export class WebGLRenderer implements GraphRenderer {
       this.leaveHandler = undefined;
     }
     if (this.interactHandler) {
-      this.renderer.domElement.removeEventListener("wheel", this.interactHandler);
       this.renderer.domElement.removeEventListener("pointerdown", this.interactHandler);
       this.interactHandler = undefined;
+    }
+    if (this.wheelHandler) {
+      this.renderer.domElement.removeEventListener("wheel", this.wheelHandler);
+      this.wheelHandler = undefined;
     }
     if (this.keyHandler) {
       window.removeEventListener("keydown", this.keyHandler);

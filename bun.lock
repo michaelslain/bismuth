@@ -54,6 +54,7 @@
       "name": "@oa/core",
       "version": "0.1.0",
       "dependencies": {
+        "d3-force-3d": "^3.0.6",
         "yaml": "^2.5.0",
       },
       "devDependencies": {

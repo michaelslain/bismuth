@@ -8,6 +8,8 @@ export interface GraphNode {
   kind: NodeKind;
   state?: NodeState;
   folder?: string;
+  /** Precomputed 3D layout coordinate [x,y,z], attached by the backend (see layout-cache.ts). */
+  position?: [number, number, number];
 }
 export interface GraphEdge {
   from: string;
