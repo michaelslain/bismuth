@@ -121,7 +121,30 @@ class TasksQueryWidget extends WidgetType {
     };
 
     render();
+
+    // Keep the query live: poll the backend version and re-evaluate when the vault
+    // changes (a task toggled here or edited anywhere bumps it), so results never go stale.
+    let lastVersion = -1;
+    const timer = window.setInterval(async () => {
+      try {
+        const { version } = await api.version();
+        if (lastVersion === -1) lastVersion = version; // record baseline on first poll
+        else if (version !== lastVersion) {
+          lastVersion = version;
+          render();
+        }
+      } catch {
+        /* network hiccup — try again next tick */
+      }
+    }, 3000);
+    (root as HTMLElement & { __tasksTimer?: number }).__tasksTimer = timer;
+
     return root;
+  }
+
+  destroy(dom: HTMLElement): void {
+    const timer = (dom as HTMLElement & { __tasksTimer?: number }).__tasksTimer;
+    if (timer !== undefined) window.clearInterval(timer);
   }
 
   ignoreEvent(): boolean {
