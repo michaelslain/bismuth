@@ -7,7 +7,7 @@ export type CardType =
 
 export type ReviewResponse = "hard" | "good" | "easy";
 
-/** One scheduling entry, one per sub-card. null fields => new/unreviewed. */
+/** Per-sub-card scheduling state. A card with no entry yet is treated as new/unreviewed. */
 export interface SchedulingInfo {
   due: string;       // "YYYY-MM-DD"
   interval: number;  // whole days

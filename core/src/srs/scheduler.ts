@@ -4,6 +4,8 @@ export const BASE_EASE = 250;
 export const EASY_BONUS = 1.3;
 export const LAPSES_INTERVAL_CHANGE = 0.5;
 export const MAX_INTERVAL = 36525;
+export const MIN_EASE = 130;
+export const EASE_STEP = 20;
 
 /** Add `days` to a "YYYY-MM-DD" date, returning a "YYYY-MM-DD" string (UTC-safe). */
 export function addDays(date: string, days: number): string {
@@ -27,7 +29,7 @@ export function schedule(
   if (prev === null) {
     ease = BASE_EASE;
     if (response === "easy") {
-      ease = BASE_EASE + 20;
+      ease = BASE_EASE + EASE_STEP;
       interval = 4;
     } else {
       interval = 1;
@@ -35,12 +37,12 @@ export function schedule(
   } else {
     ease = prev.ease;
     if (response === "hard") {
-      ease = Math.max(130, ease - 20);
+      ease = Math.max(MIN_EASE, ease - EASE_STEP);
       interval = Math.max(1, Math.round(prev.interval * LAPSES_INTERVAL_CHANGE));
     } else if (response === "good") {
       interval = Math.round(prev.interval * (ease / 100));
     } else {
-      ease = ease + 20;
+      ease = ease + EASE_STEP;
       interval = Math.round(prev.interval * (ease / 100) * EASY_BONUS);
     }
   }
@@ -66,6 +68,7 @@ export function parseScheduling(text: string): SchedulingInfo[] {
 
 /** Serialize schedule entries into a single `<!--SR:..-->` comment. */
 export function formatScheduling(entries: SchedulingInfo[]): string {
+  if (entries.length === 0) return "";
   const body = entries.map((s) => `!${s.due},${s.interval},${s.ease}`).join("");
   return `<!--SR:${body}-->`;
 }

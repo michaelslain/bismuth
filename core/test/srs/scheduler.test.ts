@@ -85,3 +85,9 @@ test("addDays handles month rollover", () => {
   expect(addDays("2026-05-31", 1)).toBe("2026-06-01");
   expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
 });
+
+test("interval is clamped to MAX_INTERVAL", () => {
+  const prev = { due: "2026-05-27", interval: 1_000_000, ease: 250 };
+  const r = schedule(prev, "good", "2026-05-27");
+  expect(r.interval).toBe(36525);
+});
