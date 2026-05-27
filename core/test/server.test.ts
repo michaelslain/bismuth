@@ -160,6 +160,22 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
   }
 });
 
+test("GET /vault-data returns a row per note with file meta + frontmatter", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const rows = await (await fetch(`${base}/vault-data`)).json();
+    expect(Array.isArray(rows)).toBe(true);
+    const housing = rows.find((r: any) => r.file.name === "housing");
+    expect(housing).toBeDefined();
+    expect(housing.note.status).toBe("in-progress");
+    expect(housing.file.tags).toContain("logistics");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("PUT /file writes file and returns ok", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });

@@ -6,7 +6,9 @@ import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } fr
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
+import { buildVaultRows } from "./basesData";
 import type { GraphData, TreeEntry } from "./graph";
+import type { Row } from "./bases/types";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -24,6 +26,9 @@ export function createServer(cfg: CoreConfig) {
   // The sidebar polls /tree every few seconds; cache it (with the per-note icon read) so we
   // don't re-read every file on each poll. Invalidated alongside the graph on file changes.
   let cachedTree: TreeEntry[] | null = null;
+  // One Row per note (file.* meta + frontmatter), served to the Bases query engine via /vault-data.
+  // Cached and invalidated alongside the graph/tree on file changes.
+  let cachedRows: Row[] | null = null;
   let version = 0;
 
   // Debounce timer handle
@@ -32,6 +37,7 @@ export function createServer(cfg: CoreConfig) {
   function invalidate() {
     cachedGraph = null;
     cachedTree = null;
+    cachedRows = null;
     version++;
   }
 
@@ -98,6 +104,10 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/tree" && req.method === "GET") {
         if (cachedTree === null) cachedTree = await listTree(cfg.vault);
         return Response.json(cachedTree, { headers: cors });
+      }
+      if (url.pathname === "/vault-data" && req.method === "GET") {
+        if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
+        return Response.json(cachedRows, { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "GET") {
         const path = url.searchParams.get("path");
