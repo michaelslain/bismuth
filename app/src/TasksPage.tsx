@@ -5,6 +5,7 @@
 // style convention as SettingsPage.
 import { createSignal, onMount, For, Show, createMemo } from "solid-js";
 import { api } from "./api";
+import { pushToast } from "./Toast";
 import type { Task, Priority } from "../../core/src/tasks";
 
 type Filter = "open" | "all" | "overdue" | "today" | "done";
@@ -65,8 +66,12 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
   });
 
   const toggle = async (t: Task) => {
-    await api.toggleTask(t.path, t.line);
-    await refresh();
+    try {
+      await api.toggleTask(t.path, t.line);
+    } catch (e) {
+      pushToast(`Toggle failed: ${(e as Error).message}`);
+    }
+    await refresh(); // re-sync to disk truth even on failure (e.g. stale line number)
   };
 
   const fileName = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
