@@ -3,6 +3,7 @@ dist/
 target/
 .superpowers/
 docs/
+superpowers/
 .DS_Store
 *.log
 test/fixtures/sample-vault/test-write.md

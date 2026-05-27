@@ -15,6 +15,13 @@ The system treats knowledge as a "three-brain" model:
 - **2nd Brain** (vault): Personal knowledge base with wikilinks, tags, and YAML frontmatter
 - **3rd Brain** (memory): Claude-bot memory graph linked to vault notes
 
+## Development Artifacts
+
+Plans, brainstorming notes, design docs, and other temporary development artifacts are stored in the global `~/.claude/` directory (outside the source tree):
+- `~/.claude/obsidian-alternative-docs/` — Brainstorming, planning docs, design notes, and reference materials
+
+These are not committed to the repo and are git-ignored.
+
 ## Key Commands
 
 ### Development

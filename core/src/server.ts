@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { watch } from "node:fs";
 import { buildGraph } from "./engine";
+import { attachLayout } from "./layout-cache";
 import { listMarkdown, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
@@ -30,6 +31,13 @@ export function createServer(cfg: CoreConfig) {
     }, 250);
   }
 
+  // ── File helper ────────────────────────────────────────────────────────────
+  async function readNoteOrEmpty(vault: string, path: string): Promise<string> {
+    const fullPath = join(vault, path);
+    const exists = await Bun.file(fullPath).exists();
+    return exists ? await readNote(vault, path) : "";
+  }
+
   // ── File-system watchers ───────────────────────────────────────────────────
   try {
     watch(cfg.vault, { recursive: true }, () => scheduleInvalidate());
@@ -54,7 +62,9 @@ export function createServer(cfg: CoreConfig) {
 
       if (url.pathname === "/graph" && req.method === "GET") {
         if (cachedGraph === null) {
-          cachedGraph = await buildGraph(cfg.vault, cfg.memory);
+          // Attach a precomputed layout so the client renders positions directly instead of running
+          // the force settle on its main thread. Cached by graph signature (see layout-cache.ts).
+          cachedGraph = attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault);
         }
         return Response.json(cachedGraph, { headers: cors });
       }
@@ -67,10 +77,8 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/file" && req.method === "GET") {
         const path = url.searchParams.get("path");
         if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
-        const fullPath = join(cfg.vault, path);
-        const exists = await Bun.file(fullPath).exists();
-        if (!exists) return new Response("", { status: 200, headers: cors });
-        return new Response(await readNote(cfg.vault, path), { headers: cors });
+        const noteText = await readNoteOrEmpty(cfg.vault, path);
+        return new Response(noteText, { status: 200, headers: cors });
       }
       if (url.pathname === "/file" && req.method === "PUT") {
         const { path, contents } = (await req.json()) as { path: string; contents: string };
@@ -85,9 +93,7 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/meta" && req.method === "GET") {
         const path = url.searchParams.get("path");
         if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
-        const metaFullPath = join(cfg.vault, path);
-        const metaExists = await Bun.file(metaFullPath).exists();
-        const noteText = metaExists ? await readNote(cfg.vault, path) : "";
+        const noteText = await readNoteOrEmpty(cfg.vault, path);
         const { data } = parseFrontmatter(noteText);
         return Response.json(data, { headers: cors });
       }
@@ -105,10 +111,11 @@ export function createServer(cfg: CoreConfig) {
 
 if (import.meta.main) {
   const arg = (k: string) => { const i = Bun.argv.indexOf(`--${k}`); return i >= 0 ? Bun.argv[i + 1] : undefined; };
+  const portArg = arg("port");
   const s = createServer({
     vault: arg("vault") ?? "test/fixtures/sample-vault",
     memory: arg("memory"),
-    port: arg("port") ? Number(arg("port")) : 4321,
+    port: portArg ? Number(portArg) : 4321,
   });
   console.log(`core listening on http://localhost:${s.port}`);
 }
