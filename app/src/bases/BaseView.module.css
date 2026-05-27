@@ -17,6 +17,19 @@
 .cardField { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
 .cardKey { color: var(--text-muted, #888); }
 
+.bodyCard { border: 1px solid var(--border, #e3e3e3); border-radius: 8px; padding: 12px; background: var(--bg-alt, #fafafa); }
+.todoList { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.todoItem { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.todoCheckbox { flex: 0 0 auto; cursor: pointer; accent-color: var(--accent, #6c8); margin: 0; }
+.todoText { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--text, #222); font: inherit; padding: 2px 0; outline: none; }
+.todoText:focus { border-bottom: 1px solid var(--accent, #6c8); }
+.todoDone .todoText { color: var(--text-muted, #888); text-decoration: line-through; }
+.todoRemove { flex: 0 0 auto; border: none; background: transparent; color: var(--text-muted, #888); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; opacity: 0; transition: opacity 0.1s; }
+.todoItem:hover .todoRemove { opacity: 1; }
+.todoRemove:hover { color: var(--text, #222); }
+.todoAdd { align-self: flex-start; margin-top: 6px; border: none; background: transparent; color: var(--text-muted, #888); cursor: pointer; font: inherit; padding: 2px 0; }
+.todoAdd:hover { color: var(--accent, #6c8); }
+
 .list ul { margin: 0; padding-left: 20px; }
 .list li { padding: 2px 0; }
 .groupHeader { font-weight: 600; margin: 8px 0 4px; }
