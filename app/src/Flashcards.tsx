@@ -26,7 +26,7 @@ export function Flashcards() {
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
     if (!c) return;
-    await api.reviewCard(c.id, response);
+    await api.reviewCard(c.id, response, c.question);
     setRevealed(false);
     setIdx(idx() + 1);
   };

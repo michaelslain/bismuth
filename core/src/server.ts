@@ -171,9 +171,9 @@ export function createServer(cfg: CoreConfig) {
         return Response.json(await dueCards(cfg.vault, today(), deck), { headers: cors });
       }
       if (url.pathname === "/cards/review" && req.method === "POST") {
-        const { id, response } = (await req.json()) as { id: string; response: ReviewResponse };
+        const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
         try {
-          await applyReview(cfg.vault, id, response, today());
+          await applyReview(cfg.vault, id, response, today(), question);
         } catch (e) {
           return new Response((e as Error).message, { status: 400, headers: cors });
         }

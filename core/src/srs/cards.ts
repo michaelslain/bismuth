@@ -26,20 +26,28 @@ function renderCloze(text: string, n: number): [string, string] {
   return [question, answer];
 }
 
+/** The rendered question shown for sub-card `sub` of a parsed card. */
+function subQuestion(pc: ParsedCard, sub: number): string {
+  if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
+    return sub === 0 ? pc.front : pc.back;
+  }
+  if (pc.type === "cloze") {
+    return renderCloze(pc.clozeText ?? "", sub)[0];
+  }
+  return pc.front;
+}
+
 /** Expand a ParsedCard into its sub-card Card objects. */
 function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: string): Card[] {
   const out: Card[] = [];
   for (let sub = 0; sub < pc.subCount; sub++) {
     const sched: SchedulingInfo | undefined = pc.scheduling[sub];
-    let question: string;
     let answer: string;
     if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
-      question = sub === 0 ? pc.front : pc.back;
       answer = sub === 0 ? pc.back : pc.front;
     } else if (pc.type === "cloze") {
-      [question, answer] = renderCloze(pc.clozeText ?? "", sub);
+      answer = renderCloze(pc.clozeText ?? "", sub)[1];
     } else {
-      question = pc.front;
       answer = pc.back;
     }
     out.push({
@@ -47,7 +55,7 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
       notePath,
       deck,
       type: pc.type,
-      question,
+      question: subQuestion(pc, sub),
       answer,
       due: sched ? sched.due : null,
       interval: sched ? sched.interval : 0,
@@ -96,6 +104,7 @@ export async function applyReview(
   cardId: string,
   response: ReviewResponse,
   today: string,
+  expectedQuestion?: string,
 ): Promise<void> {
   const [notePath, cardIdxStr, subIdxStr] = cardId.split("::");
   const cardIndex = Number(cardIdxStr);
@@ -107,6 +116,10 @@ export async function applyReview(
 
   const pc = parseCards(body)[cardIndex];
   if (!pc) throw new Error(`card not found: ${cardId}`);
+
+  if (expectedQuestion !== undefined && subQuestion(pc, subIndex) !== expectedQuestion) {
+    throw new Error(`card content changed since it was loaded: ${cardId}`);
+  }
 
   // One schedule entry per sub-card. Update the reviewed sub; keep existing siblings;
   // un-reviewed siblings get a fresh schedule mirroring this response (treated as new).

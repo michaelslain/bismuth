@@ -39,6 +39,6 @@ export const api = {
   dueCards: (deck?: string) =>
     fetch(`${BASE}/cards/due${deck !== undefined ? `?deck=${encodeURIComponent(deck)}` : ""}`)
       .then((r) => r.json() as Promise<Card[]>),
-  reviewCard: (id: string, response: "hard" | "good" | "easy") =>
-    post("/cards/review", { id, response }),
+  reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
+    post("/cards/review", { id, response, question }),
 };

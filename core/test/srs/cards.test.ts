@@ -107,3 +107,19 @@ test("cloze sub-cards hide one deletion each", async () => {
   expect(c1.question).toBe("The sun is a [...]");
   expect(c1.answer).toBe("The sun is a star");
 });
+
+test("applyReview throws when the expected question no longer matches", async () => {
+  const vault = await vaultWith({ "a.md": "#flashcards\n\n2+2::4" });
+  const cards = await collectCards(vault);
+  await expect(
+    applyReview(vault, cards[0].id, "good", TODAY, "totally different question"),
+  ).rejects.toThrow(/content changed/);
+});
+
+test("applyReview succeeds when the expected question matches", async () => {
+  const vault = await vaultWith({ "a.md": "#flashcards\n\n2+2::4" });
+  const cards = await collectCards(vault);
+  await applyReview(vault, cards[0].id, "good", TODAY, cards[0].question);
+  const text = await readNote(vault, "a.md");
+  expect(text).toContain("<!--SR:!2026-05-28,1,250-->");
+});
