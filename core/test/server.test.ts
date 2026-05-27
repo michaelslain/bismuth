@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { createServer } from "../src/server";
 
 test("GET /graph returns the merged brain graph", async () => {
-  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const server = createServer({ vault: "test/fixtures/sample-vault", memory: "test/fixtures/sample-vault/.memory", port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const g = await (await fetch(`${base}/graph`)).json();
@@ -23,18 +23,18 @@ test("GET /graph returns the merged brain graph", async () => {
 });
 
 test("GET /config returns the launch vault and memory paths", async () => {
-  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const server = createServer({ vault: "test/fixtures/sample-vault", memory: "test/fixtures/sample-vault/.memory", port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const cfg = await (await fetch(`${base}/config`)).json();
-    expect(cfg).toEqual({ vault: "sample-vault", memory: "sample-vault/.memory" });
+    expect(cfg).toEqual({ vault: "test/fixtures/sample-vault", memory: "test/fixtures/sample-vault/.memory" });
   } finally {
     server.stop(true);
   }
 });
 
 test("GET /agent-graph returns an object with nodes and edges arrays", async () => {
-  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const server = createServer({ vault: "test/fixtures/sample-vault", memory: "test/fixtures/sample-vault/.memory", port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const ag = await (await fetch(`${base}/agent-graph`)).json();
@@ -46,7 +46,7 @@ test("GET /agent-graph returns an object with nodes and edges arrays", async () 
 });
 
 test("GET /version returns { version: <number> }", async () => {
-  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const server = createServer({ vault: "test/fixtures/sample-vault", memory: "test/fixtures/sample-vault/.memory", port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await (await fetch(`${base}/version`)).json();

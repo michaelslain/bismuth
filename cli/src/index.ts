@@ -8,7 +8,7 @@ function arg(k: string): string | undefined {
 }
 
 const cmd = Bun.argv[2];
-const vault = arg("vault") ?? "sample-vault";
+const vault = arg("vault") ?? "test/fixtures/sample-vault";
 const memory = arg("memory");
 
 if (cmd === "graph") {

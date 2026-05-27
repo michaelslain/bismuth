@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 
-test("`oa graph --vault sample-vault` prints graph JSON with the self node", async () => {
-  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "graph", "--vault", "sample-vault"], {
+test("`oa graph --vault test/fixtures/sample-vault` prints graph JSON with the self node", async () => {
+  const proc = Bun.spawn(["bun", "run", "cli/src/index.ts", "graph", "--vault", "test/fixtures/sample-vault"], {
     stdout: "pipe",
   });
   const out = await new Response(proc.stdout).text();
