@@ -5,6 +5,7 @@ import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
+import { Flashcards } from "./Flashcards";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
@@ -16,6 +17,8 @@ import "./App.css";
 
 // Sentinel tab id for the settings page — not a real file path.
 const SETTINGS_TAB = "::settings";
+// Sentinel tab id for the flashcards review screen — not a real file path.
+const FLASHCARDS_TAB = "::flashcards";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -194,7 +197,10 @@ export default function App() {
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
 
-  const tabLabel = (p: string) => (p === SETTINGS_TAB ? "⚙ Settings" : p.split("/").pop()!.replace(/\.md$/, ""));
+  const tabLabel = (p: string) =>
+    p === SETTINGS_TAB ? "⚙ Settings" :
+    p === FLASHCARDS_TAB ? "Flashcards" :
+    p.split("/").pop()!.replace(/\.md$/, "");
 
   return (
     <div class="layout">
@@ -202,6 +208,7 @@ export default function App() {
         <div class="sidebar-icons">
           <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
+          <button class="icon-btn" title="Flashcards" onClick={() => openFile(FLASHCARDS_TAB)}>🃏</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
@@ -220,8 +227,12 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
-              <SettingsPage />
+            <Show when={active() === FLASHCARDS_TAB} fallback={
+              <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                <SettingsPage />
+              </Show>
+            }>
+              <Flashcards />
             </Show>
           </Show>
         </div>
