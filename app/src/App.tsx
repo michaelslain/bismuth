@@ -1,11 +1,16 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo, Show } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
+import { SettingsPage } from "./SettingsPage";
+import { settings, FONT_STACKS } from "./settings";
 import type { GraphData } from "../../core/src/graph";
 import "./App.css";
+
+// Sentinel tab id for the settings page — not a real file path.
+const SETTINGS_TAB = "::settings";
 
 // Empty state shown when no note is open: project name + a logo
 // (three overlapping circles = the three brains: you / vault / memory).
@@ -56,6 +61,18 @@ export default function App() {
     setTabs((t) => (t.includes(path) ? t : [...t, path]));
     setActive(path);
   };
+  const openSettings = () => openFile(SETTINGS_TAB);
+
+  // Apply Appearance settings to the document: theme + accent + editor font/size,
+  // surfaced as CSS variables that App.css and the editor theme read.
+  createEffect(() => {
+    const a = settings.appearance;
+    const root = document.documentElement;
+    root.setAttribute("data-theme", a.theme);
+    root.style.setProperty("--accent", a.accent);
+    root.style.setProperty("--editor-font", FONT_STACKS[a.editorFont] ?? a.editorFont);
+    root.style.setProperty("--editor-font-size", a.editorFontSize + "px");
+  });
   const closeTab = (path: string, e: Event) => {
     e.stopPropagation();
     setTabs((t) => {
@@ -82,11 +99,14 @@ export default function App() {
     onCleanup(() => window.removeEventListener("oa-open", handler));
   });
 
-  const tabLabel = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
+  const tabLabel = (p: string) => (p === SETTINGS_TAB ? "⚙ Settings" : p.split("/").pop()!.replace(/\.md$/, ""));
 
   return (
     <div class="layout">
       <aside class="sidebar">
+        <div class="sidebar-icons">
+          <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
+        </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph">
           <GraphView graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
@@ -105,7 +125,9 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<EmptyTab />}>
-            <Editor path={active()} onSaved={refreshGraph} />
+            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} />}>
+              <SettingsPage />
+            </Show>
           </Show>
         </div>
       </main>

@@ -52,6 +52,10 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/agent-graph" && req.method === "GET") {
         return Response.json(buildAgentGraph(), { headers: cors });
       }
+      if (url.pathname === "/config" && req.method === "GET") {
+        // Read-only view of how core was launched — surfaced in the settings page.
+        return Response.json({ vault: cfg.vault, memory: cfg.memory ?? null }, { headers: cors });
+      }
       return new Response("not found", { status: 404, headers: cors });
     },
   });

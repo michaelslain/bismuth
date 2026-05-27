@@ -1,16 +1,38 @@
 /* app/src/App.css */
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  /* Appearance settings drive these (set on :root by App.tsx). Values here are
+     the dark-theme / default-accent fallbacks so first paint matches old behavior. */
+  --accent: #6496ff;
+  --bg: #0e0e11;
+  --fg: #dcdcdc;
+  --border: #2a2a2a;
+  --panel: rgba(127, 127, 127, 0.06);
+  --editor-font: 'Lora', serif;
+  --editor-font-size: 16px;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fbfbfa;
+  --fg: #1f1f1f;
+  --border: #e2e2e0;
+  --panel: rgba(0, 0, 0, 0.03);
+}
 * { box-sizing: border-box; }
 body, html, #root { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--fg); }
 .layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace; }
-.sidebar { border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; min-height: 0; }
+.sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
-.sidebar-graph { border-top: 1px solid #2a2a2a; flex-shrink: 0; }
+.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-icons { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sidebar canvas { display: block; }
+.icon-btn { background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
+.icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; }
-.tabbar { display: flex; overflow-x: auto; border-bottom: 1px solid #2a2a2a; background: rgba(127,127,127,0.06); }
-.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; border-right: 1px solid #2a2a2a; white-space: nowrap; opacity: 0.65; }
-.tab.active { opacity: 1; background: rgba(100,150,255,0.12); }
+.tabbar { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--panel); }
+.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; }
+.tab.active { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tab-x { opacity: 0.5; padding: 0 2px; border-radius: 3px; }
-.tab-x:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+.tab-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }

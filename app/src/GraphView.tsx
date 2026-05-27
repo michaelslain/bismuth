@@ -2,6 +2,7 @@
 import { onCleanup, onMount, createEffect } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer } from "./graph/WebGLRenderer";
+import { settings, PALETTES } from "./settings";
 
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
@@ -26,6 +27,20 @@ export function GraphView(props: {
     const g = props.graph;
     lastGraph = g;
     if (mounted) renderer.render(g);
+  });
+
+  // Push graph settings (spin/palette/physics/size) to the renderer whenever they change.
+  createEffect(() => {
+    const gs = settings.graph;
+    renderer.setConfig({
+      spin: gs.spin,
+      spinSpeed: gs.spinSpeed,
+      palette: PALETTES[gs.palette] ?? PALETTES.aurora,
+      repulsion: gs.repulsion,
+      linkDistance: gs.linkDistance,
+      centering: gs.centering,
+      nodeSize: gs.nodeSize,
+    });
   });
 
   onCleanup(() => renderer.destroy());
