@@ -113,7 +113,7 @@ if (import.meta.main) {
   const arg = (k: string) => { const i = Bun.argv.indexOf(`--${k}`); return i >= 0 ? Bun.argv[i + 1] : undefined; };
   const portArg = arg("port");
   const s = createServer({
-    vault: arg("vault") ?? "test/fixtures/sample-vault",
+    vault: arg("vault") ?? "fixtures/sample-vault",
     memory: arg("memory"),
     port: portArg ? Number(portArg) : 4321,
   });
