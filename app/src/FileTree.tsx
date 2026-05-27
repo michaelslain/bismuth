@@ -9,21 +9,24 @@ const FILE_ICON = "📝";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
-/** Turn flat entries ("a/b/c.md" + optional icon) into a nested folder tree. */
+/** Turn flat entries (files + dirs, each with a `kind`) into a nested folder tree. */
 function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
-  for (const { path, icon } of entries) {
+  for (const { path, icon, kind } of entries) {
     const parts = path.split("/");
     let cur = root;
     let acc = "";
     parts.forEach((part, i) => {
       acc = acc ? `${acc}/${part}` : part;
-      const isFile = i === parts.length - 1;
+      const isLeaf = i === parts.length - 1;
+      // Intermediate segments are always folders; a leaf is a folder only if kind === "dir".
+      const isDir = isLeaf ? kind === "dir" : true;
       if (!cur.children!.has(part)) {
-        cur.children!.set(part, { name: part, path: acc, children: isFile ? undefined : new Map() });
+        cur.children!.set(part, { name: part, path: acc, children: isDir ? new Map() : undefined });
       }
-      cur = cur.children!.get(part)!;
-      if (isFile && icon) cur.icon = icon;
+      const node = cur.children!.get(part)!;
+      if (isLeaf && kind !== "dir" && icon) node.icon = icon;
+      cur = node;
     });
   }
   return root;
