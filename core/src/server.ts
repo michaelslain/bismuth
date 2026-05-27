@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { watch } from "node:fs";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
-import { listMarkdownWithIcons, readNote, writeNote } from "./files";
+import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
@@ -76,7 +76,7 @@ export function createServer(cfg: CoreConfig) {
         return Response.json({ version }, { headers: cors });
       }
       if (url.pathname === "/tree" && req.method === "GET") {
-        if (cachedTree === null) cachedTree = await listMarkdownWithIcons(cfg.vault);
+        if (cachedTree === null) cachedTree = await listTree(cfg.vault);
         return Response.json(cachedTree, { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "GET") {
@@ -89,6 +89,46 @@ export function createServer(cfg: CoreConfig) {
         const { path, contents } = (await req.json()) as { path: string; contents: string };
         await writeNote(cfg.vault, path, contents);
         return new Response("ok", { headers: cors });
+      }
+      if (url.pathname === "/move" && req.method === "POST") {
+        const { from, to } = (await req.json()) as { from: string; to: string };
+        try {
+          moveEntry(cfg.vault, from, to);
+          invalidate();
+          return new Response("ok", { headers: cors });
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+      }
+      if (url.pathname === "/delete" && req.method === "POST") {
+        const { path } = (await req.json()) as { path: string };
+        try {
+          const result = deleteEntry(cfg.vault, path);
+          invalidate();
+          return Response.json(result, { headers: cors });
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+      }
+      if (url.pathname === "/restore" && req.method === "POST") {
+        const { trashPath, to } = (await req.json()) as { trashPath: string; to: string };
+        try {
+          moveEntry(cfg.vault, trashPath, to);
+          invalidate();
+          return new Response("ok", { headers: cors });
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+      }
+      if (url.pathname === "/create" && req.method === "POST") {
+        const { path, kind } = (await req.json()) as { path: string; kind: "file" | "dir" };
+        try {
+          createEntry(cfg.vault, path, kind);
+          invalidate();
+          return new Response("ok", { headers: cors });
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
       }
       if (url.pathname === "/backup" && req.method === "POST") {
         const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");

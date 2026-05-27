@@ -8,6 +8,7 @@ import { SettingsPage } from "./SettingsPage";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
+import { ToastHost } from "./Toast";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
@@ -93,14 +94,31 @@ export default function App() {
     root.style.setProperty("--editor-font", FONT_STACKS[a.editorFont] ?? a.editorFont);
     root.style.setProperty("--editor-font-size", a.editorFontSize + "px");
   });
-  const closeTab = (path: string, e: Event) => {
-    e.stopPropagation();
+  const closePath = (path: string) => {
     setTabs((t) => {
       const i = t.indexOf(path);
+      if (i === -1) return t;
       const next = t.filter((p) => p !== path);
       if (active() === path) setActive(next[Math.min(i, next.length - 1)] ?? null);
       return next;
     });
+  };
+  const closeTab = (path: string, e: Event) => {
+    e.stopPropagation();
+    closePath(path);
+  };
+
+  // Reconcile open tabs when files change in the tree.
+  // Delete: close the tab (and any open file beneath a deleted folder).
+  const closeDeleted = (path: string) => {
+    for (const p of [...tabs()]) if (p === path || p.startsWith(path + "/")) closePath(p);
+  };
+  // Rename/move: rewrite the open tab's path (handles files moved inside a renamed folder too).
+  const renamePath = (from: string, to: string) => {
+    const remap = (p: string) =>
+      p === from ? to : p.startsWith(from + "/") ? to + p.slice(from.length) : p;
+    setTabs((t) => t.map(remap));
+    setActive((a) => (a ? remap(a) : a));
   };
 
   onMount(() => {
@@ -125,9 +143,20 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
   onMount(() => {
-    const handler = (e: Event) => openFile((e as CustomEvent).detail);
-    window.addEventListener("oa-open", handler);
-    onCleanup(() => window.removeEventListener("oa-open", handler));
+    const onOpen = (e: Event) => openFile((e as CustomEvent).detail);
+    const onDeleted = (e: Event) => closeDeleted((e as CustomEvent).detail as string);
+    const onMoved = (e: Event) => {
+      const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
+      renamePath(from, to);
+    };
+    window.addEventListener("oa-open", onOpen);
+    window.addEventListener("oa-deleted", onDeleted);
+    window.addEventListener("oa-moved", onMoved);
+    onCleanup(() => {
+      window.removeEventListener("oa-open", onOpen);
+      window.removeEventListener("oa-deleted", onDeleted);
+      window.removeEventListener("oa-moved", onMoved);
+    });
   });
   // Obsidian-style shortcuts: Cmd/Ctrl+P → command palette, Cmd/Ctrl+O → quick
   // switcher. preventDefault suppresses the browser print/open dialogs. These fire
@@ -174,6 +203,8 @@ export default function App() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
+          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
+          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
@@ -207,6 +238,7 @@ export default function App() {
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
       </Show>
+      <ToastHost />
     </div>
   );
 }

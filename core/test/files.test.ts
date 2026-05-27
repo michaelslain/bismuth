@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, listMarkdownWithIcons, readNote, writeNote } from "../src/files";
+import { listMarkdown, listTree, moveEntry, readNote, writeNote, deleteEntry, createEntry } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -79,20 +79,152 @@ test("deeply nested directories work", async () => {
   expect(files).toContain("a/b/c/d/e/f.md");
 });
 
-test("listMarkdownWithIcons surfaces the `icon` frontmatter property", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-icons-"));
-  await writeNote(dir, "fire.md", "---\nicon: 🔥\n---\nhot");
-  await writeNote(dir, "plain.md", "# no frontmatter");
-  const entries = (await listMarkdownWithIcons(dir)).sort((a, b) => a.path.localeCompare(b.path));
+test("listTree surfaces the `icon` frontmatter property", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-icon-"));
+  await writeNote(dir, "plain.md", "# Plain");
+  await writeNote(dir, "fancy.md", "---\nicon: 🚀\n---\n# Fancy");
+  const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
   expect(entries).toEqual([
-    { path: "fire.md", icon: "🔥" },
-    { path: "plain.md" },
+    { path: "fancy.md", icon: "🚀", kind: "file" },
+    { path: "plain.md", kind: "file" },
   ]);
 });
 
-test("listMarkdownWithIcons ignores a non-string icon value", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-icons-bad-"));
-  await writeNote(dir, "num.md", "---\nicon: 42\n---\nbody");
-  const entries = await listMarkdownWithIcons(dir);
-  expect(entries).toEqual([{ path: "num.md" }]);
+test("listTree ignores a non-string icon value", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-badicon-"));
+  await writeNote(dir, "note.md", "---\nicon: [not, a, string]\n---\n# Note");
+  const entries = await listTree(dir);
+  expect(entries).toEqual([{ path: "note.md", kind: "file" }]);
+});
+
+test("listTree includes directories and excludes dot-dirs like .trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-dirs-"));
+  await writeNote(dir, "top.md", "# Top");
+  await writeNote(dir, "projects/inner.md", "# Inner");
+  mkdirSync(join(dir, "empty-folder"));
+  mkdirSync(join(dir, ".trash"));
+  await writeNote(dir, ".trash/deleted.md", "# Deleted");
+  const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
+  const paths = entries.map((e) => e.path);
+  expect(paths).toEqual(["empty-folder", "projects", "projects/inner.md", "top.md"]);
+  expect(entries.find((e) => e.path === "empty-folder")).toEqual({ path: "empty-folder", kind: "dir" });
+});
+
+test("listTree omits non-markdown files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-nonmd-"));
+  await writeNote(dir, "note.md", "# Note");
+  await Bun.write(join(dir, "image.png"), "binary");
+  const paths = (await listTree(dir)).map((e) => e.path);
+  expect(paths).toEqual(["note.md"]);
+});
+
+test("moveEntry renames a file within the same folder", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-rename-"));
+  await writeNote(dir, "old.md", "# Content");
+  moveEntry(dir, "old.md", "new.md");
+  expect(await readNote(dir, "new.md")).toBe("# Content");
+  expect(existsSync(join(dir, "old.md"))).toBe(false);
+});
+
+test("moveEntry moves a file into another folder, creating it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-into-"));
+  await writeNote(dir, "note.md", "# N");
+  moveEntry(dir, "note.md", "archive/note.md");
+  expect(await readNote(dir, "archive/note.md")).toBe("# N");
+});
+
+test("moveEntry moves a whole folder with its children", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-folder-"));
+  await writeNote(dir, "proj/a.md", "# A");
+  await writeNote(dir, "proj/b.md", "# B");
+  moveEntry(dir, "proj", "archive/proj");
+  expect(await readNote(dir, "archive/proj/a.md")).toBe("# A");
+  expect(await readNote(dir, "archive/proj/b.md")).toBe("# B");
+});
+
+test("moveEntry rejects an existing destination (no overwrite)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-collide-"));
+  await writeNote(dir, "a.md", "# A");
+  await writeNote(dir, "b.md", "# B");
+  expect(() => moveEntry(dir, "a.md", "b.md")).toThrow();
+  expect(await readNote(dir, "b.md")).toBe("# B");
+});
+
+test("moveEntry rejects moving a folder into its own descendant", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-cycle-"));
+  await writeNote(dir, "parent/x.md", "# X");
+  expect(() => moveEntry(dir, "parent", "parent/child")).toThrow();
+});
+
+test("moveEntry rejects a missing source", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-missing-"));
+  expect(() => moveEntry(dir, "nope.md", "yep.md")).toThrow();
+});
+
+test("deleteEntry moves a file into .trash and returns its trash path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-file-"));
+  await writeNote(dir, "note.md", "# Bye");
+  const { trashPath } = deleteEntry(dir, "note.md");
+  expect(existsSync(join(dir, "note.md"))).toBe(false);
+  expect(trashPath.startsWith(".trash/")).toBe(true);
+  expect(await readNote(dir, trashPath)).toBe("# Bye");
+});
+
+test("deleteEntry moves a whole folder into .trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-folder-"));
+  await writeNote(dir, "proj/a.md", "# A");
+  const { trashPath } = deleteEntry(dir, "proj");
+  expect(existsSync(join(dir, "proj"))).toBe(false);
+  expect(await readNote(dir, `${trashPath}/a.md`)).toBe("# A");
+});
+
+test("deleted entries do not appear in listTree (trash is hidden)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-hidden-"));
+  await writeNote(dir, "note.md", "# N");
+  deleteEntry(dir, "note.md");
+  const paths = (await listTree(dir)).map((e) => e.path);
+  expect(paths).toEqual([]);
+});
+
+test("deleteEntry rejects a missing path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-del-missing-"));
+  expect(() => deleteEntry(dir, "nope.md")).toThrow();
+});
+
+test("createEntry creates an empty markdown file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-file-"));
+  createEntry(dir, "Untitled.md", "file");
+  expect(existsSync(join(dir, "Untitled.md"))).toBe(true);
+  expect(await readNote(dir, "Untitled.md")).toBe("");
+});
+
+test("createEntry creates a directory", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-dir-"));
+  createEntry(dir, "New Folder", "dir");
+  const entry = (await listTree(dir)).find((e) => e.path === "New Folder");
+  expect(entry).toEqual({ path: "New Folder", kind: "dir" });
+});
+
+test("createEntry rejects an existing path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-collide-"));
+  await writeNote(dir, "exists.md", "# E");
+  expect(() => createEntry(dir, "exists.md", "file")).toThrow();
+});
+
+test("file ops reject path traversal outside the vault", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-traversal-"));
+  await writeNote(dir, "real.md", "# Real");
+  expect(() => createEntry(dir, "../escape.md", "file")).toThrow(/escape|vault/i);
+  expect(() => createEntry(dir, "/etc/whatever.md", "file")).toThrow(/escape|vault/i);
+  expect(() => moveEntry(dir, "../x.md", "y.md")).toThrow(/escape|vault/i);
+  expect(() => moveEntry(dir, "real.md", "../../y.md")).toThrow(/escape|vault/i);
+  expect(() => deleteEntry(dir, "../../etc/hosts")).toThrow(/escape|vault/i);
+  await expect(readNote(dir, "../../../etc/passwd")).rejects.toThrow(/escape|vault/i);
+});
+
+test("file ops still allow legitimate nested paths", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-nested-ok-"));
+  createEntry(dir, "sub/folder", "dir");
+  createEntry(dir, "sub/folder/note.md", "file");
+  expect((await listTree(dir)).map((e) => e.path).sort()).toContain("sub/folder/note.md");
 });
