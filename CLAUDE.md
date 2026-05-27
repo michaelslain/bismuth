@@ -25,9 +25,9 @@ These are not committed to the repo and are git-ignored.
 ## Key Commands
 
 ### Development
-- `bun run dev` (in `app/`) — Run Tauri app + backend server concurrently with hot reload. Loads sample vault at `test/fixtures/sample-vault/`
+- `bun run dev` (in `app/`) — Run Tauri app + backend server concurrently with hot reload. Requires `OA_VAULT` (2nd-brain vault dir) and `OA_MEMORY` (3rd-brain memory dir) env vars; there is no default vault
 - `bun start` — Start Vite dev server only (app/)
-- `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` — Run backend server standalone
+- `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` — Run backend server standalone (both flags required)
 
 ### Testing
 - `bun test core` — Run all tests in core workspace (uses Bun's test runner)
@@ -134,8 +134,7 @@ app/src/
 │  └── d3-force-3d.d.ts
 └── App.css             # Global styles
 
-test/fixtures/sample-vault/
-└── [markdown notes]    # Sample vault for dev/testing
+core/test/helpers.ts       # makeSampleVault(): builds a throwaway vault+memory in tmpdirs for tests
 ```
 
 ## Development Workflow
@@ -153,7 +152,7 @@ bun test core
 Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts` file with unit tests.
 
 ### Editing notes
-1. Edit `.md` files in `test/fixtures/sample-vault/`
+1. Edit `.md` files in the vault dir you launched with (`OA_VAULT` / `--vault`)
 2. Server detects file change, debounces 250ms, invalidates cache
 3. Frontend polls `/version` endpoint, detects version increment
 4. Frontend re-fetches `/graph` and updates visualization
@@ -183,7 +182,7 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 3. If it affects rendering: add CSS variable or pass to renderer in `GraphView.tsx`
 
 ### Debugging graph construction
-1. Run `bun run core/src/server.ts --vault /path/to/vault` manually
+1. Run `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` manually
 2. Call `curl http://localhost:4321/graph | jq` to inspect graph structure
 3. Check `core/test/vault.test.ts` or `core/test/engine.test.ts` for examples
 

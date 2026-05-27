@@ -116,11 +116,13 @@ export function createServer(cfg: CoreConfig) {
 
 if (import.meta.main) {
   const arg = (k: string) => { const i = Bun.argv.indexOf(`--${k}`); return i >= 0 ? Bun.argv[i + 1] : undefined; };
+  const vault = arg("vault");
+  const memory = arg("memory");
+  if (!vault || !memory) {
+    console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
+    process.exit(1);
+  }
   const portArg = arg("port");
-  const s = createServer({
-    vault: arg("vault") ?? "fixtures/sample-vault",
-    memory: arg("memory"),
-    port: portArg ? Number(portArg) : 4321,
-  });
+  const s = createServer({ vault, memory, port: portArg ? Number(portArg) : 4321 });
   console.log(`core listening on http://localhost:${s.port}`);
 }

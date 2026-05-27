@@ -8,8 +8,13 @@ function arg(k: string): string | undefined {
 }
 
 const cmd = Bun.argv[2];
-const vault = arg("vault") ?? "fixtures/sample-vault";
+const vault = arg("vault");
 const memory = arg("memory");
+
+if (!vault) {
+  console.error("usage: oa <graph|backup|serve> --vault <dir> [--memory <dir>] [--port n]");
+  process.exit(1);
+}
 
 if (cmd === "graph") {
   console.log(JSON.stringify(await buildGraph(vault, memory), null, 2));

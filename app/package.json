@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault \\\"${OA_VAULT:-../fixtures/sample-vault}\\\" --memory \\\"${OA_MEMORY:-../fixtures/sample-vault/.memory}\\\"\" \"vite\"",
+    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault \\\"${OA_VAULT:?set OA_VAULT to your 2nd-brain vault dir}\\\" --memory \\\"${OA_MEMORY:?set OA_MEMORY to your 3rd-brain memory dir}\\\"\" \"vite\"",
     "build": "vite build",
     "serve": "vite preview",
     "tauri": "tauri"
