@@ -5,6 +5,8 @@ import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
+import { CommandPalette } from "./palette/CommandPalette";
+import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -44,6 +46,8 @@ export default function App() {
   const [mode, setMode] = createSignal<GraphMode>("both");
   const [tabs, setTabs] = createSignal<string[]>([]);
   const [active, setActive] = createSignal<string | null>(null);
+  // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
+  const [palette, setPalette] = createSignal<"command" | "file" | null>(null);
 
   // The graph is a single persistent element that morphs between two slots: the
   // sidebar square (when a file/settings tab is active) and the full main pane
@@ -125,6 +129,24 @@ export default function App() {
     window.addEventListener("oa-open", handler);
     onCleanup(() => window.removeEventListener("oa-open", handler));
   });
+  // Obsidian-style shortcuts: Cmd/Ctrl+P → command palette, Cmd/Ctrl+O → quick
+  // switcher. preventDefault suppresses the browser print/open dialogs. These fire
+  // even while the editor is focused (CodeMirror doesn't bind these keys).
+  onMount(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "p") {
+        e.preventDefault();
+        setPalette("command");
+      } else if (k === "o") {
+        e.preventDefault();
+        setPalette("file");
+      }
+    };
+    window.addEventListener("keydown", handler);
+    onCleanup(() => window.removeEventListener("keydown", handler));
+  });
 
   // Snap the floating graph onto whichever slot is active (sidebar square when a
   // tab is open, full main pane on an empty tab).
@@ -179,6 +201,12 @@ export default function App() {
       <div class="graph-floater" ref={floater}>
         <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
       </div>
+      <Show when={palette() === "command"}>
+        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} setMode={(m) => setMode(m)} />
+      </Show>
+      <Show when={palette() === "file"}>
+        <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
+      </Show>
     </div>
   );
 }
