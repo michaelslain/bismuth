@@ -6,6 +6,7 @@ import {
   forceManyBody,
   forceLink,
   forceCenter,
+  forceCollide,
   forceX,
   forceY,
   forceZ,
@@ -18,11 +19,31 @@ import type { GraphRenderer } from "./GraphRenderer";
 
 // Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
 const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
-const EDGE_BASE = 0.55; // normal edge brightness (0..1)
+const EDGE_BASE = 0.32; // normal edge brightness (0..1) — faint so dense hub fans don't read as clumps
 const NODE_DIM = 0.4;   // dimmed non-neighbor node brightness on hover (gentle — stays visible)
 const EDGE_DIM = 0.18;  // dimmed edge brightness on hover
 const HL_SPEED = 0.16;  // highlight ease per frame (smooth fade in/out)
 const EDGE_COLOR = 0xbdcaf2; // cohesive lavender for links
+
+// Collision force gives every node a minimum personal space, so dense clusters can't pack
+// tighter than this floor while sparse regions are untouched — evening out density across
+// the graph. Radius is a fraction of link distance; min spacing between any two nodes is
+// 2*radius. Multiple solver iterations per tick make the floor hold even inside densely
+// linked cliques, where a single pass lets the link/centering pull overpower it.
+const COLLIDE_RATIO = 0.9;
+const COLLIDE_ITERATIONS = 3;
+
+// Link strength is fixed low instead of d3's default (1/min(degree), which yanks a hub's
+// degree-1 leaves tight against it into dense fans). A weak, uniform pull lets collision and
+// charge set the spacing — leaves spread into an even field instead of clumping around hubs.
+const LINK_STRENGTH = 0.18;
+
+// Node size scales with connection count (degree), Obsidian-style. Wide range so leaf nodes
+// read as small dots while hubs clearly pop: multiplier = clamp(MIN + GAIN*sqrt(degree), MIN, MAX).
+// sqrt keeps mid-range growth smooth; the sub-1 MIN floor shrinks low-degree nodes below base.
+const SIZE_MIN_MULT = 0.4;     // multiplier for a 0/1-degree leaf — well under base, so a small dot
+const SIZE_DEGREE_GAIN = 0.45; // size multiplier added per sqrt(degree)
+const SIZE_MAX_MULT = 6;       // ceiling so the biggest hub is ~6x base (not unbounded)
 
 /** User-tunable graph appearance/physics, fed in from the settings store. */
 export interface GraphConfig {
@@ -40,7 +61,7 @@ const DEFAULT_CONFIG: GraphConfig = {
   spin: true,
   spinSpeed: 0.0015,
   palette: DEFAULT_PALETTE,
-  repulsion: -7,
+  repulsion: -10,
   linkDistance: 5,
   centering: 0.13,
   nodeSize: 6,
@@ -360,6 +381,7 @@ export class WebGLRenderer implements GraphRenderer {
     if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering)) {
       (this.sim.force("charge") as any)?.strength(cfg.repulsion);
       (this.sim.force("link") as any)?.distance(cfg.linkDistance);
+      (this.sim.force("collide") as any)?.radius(cfg.linkDistance * COLLIDE_RATIO);
       for (const axis of ["x", "y", "z"] as const) (this.sim.force(axis) as any)?.strength(cfg.centering);
       this.userControlled = false; // re-frame as it re-settles
       this.sim.alpha(0.5).restart();
@@ -497,9 +519,13 @@ export class WebGLRenderer implements GraphRenderer {
     this.curI.fill(1); this.tgtI.fill(1); // clear any in-progress hover dim
   }
 
-  /** localStorage key for persisted node positions for the given graph signature. */
+  /**
+   * localStorage key for persisted node positions. Keyed by view mode as well as graph
+   * signature: a 2D layout is flat (z=0), so restoring it into 3D would leave the graph
+   * stuck on a plane — separate keys keep each mode's settled layout independent.
+   */
   private posKey(sig: string): string {
-    return `oa-graphpos:v1:${sig}`;
+    return `oa-graphpos:v2:${this.viewMode}:${sig}`;
   }
 
   /** Load persisted positions from localStorage; returns a map of id → [x,y,z] or null on miss. */
@@ -600,10 +626,13 @@ export class WebGLRenderer implements GraphRenderer {
         forceLink<N3, L3>(this.links)
           .id((d: N3) => d.id)
           .distance(this.cfg.linkDistance)
+          .strength(LINK_STRENGTH)
       )
       .force("center", forceCenter<N3>(0, 0, 0))
-      // Strong pull toward origin so separate tag clusters condense together into one
-      // dense ball rather than drifting apart. Higher = denser / clusters closer.
+      // Min-spacing floor: spreads dense clusters apart so density reads evenly across the graph.
+      .force("collide", forceCollide<N3>(this.cfg.linkDistance * COLLIDE_RATIO).iterations(COLLIDE_ITERATIONS))
+      // Pull toward origin so separate tag clusters stay grouped rather than drifting apart.
+      // Higher = denser / clusters closer.
       .force("x", forceX<N3>(0).strength(this.cfg.centering))
       .force("y", forceY<N3>(0).strength(this.cfg.centering))
       .force("z", forceZ<N3>(0).strength(this.cfg.centering))
@@ -631,6 +660,25 @@ export class WebGLRenderer implements GraphRenderer {
     this.linesMesh = null;
   }
 
+  /**
+   * Per-node size multiplier from connection count (degree). Counts edges touching each
+   * node from the resolved links, then maps degree → multiplier with a capped sqrt curve.
+   * Returned in node-array order for the geometry's `aScale` attribute.
+   */
+  private degreeScales(): Float32Array {
+    const deg = new Map<string, number>();
+    for (const { s, t } of this.resolvedLinks) {
+      deg.set(s.id, (deg.get(s.id) ?? 0) + 1);
+      deg.set(t.id, (deg.get(t.id) ?? 0) + 1);
+    }
+    const scales = new Float32Array(this.nodes.length);
+    for (let i = 0; i < this.nodes.length; i++) {
+      const d = deg.get(this.nodes[i].id) ?? 0;
+      scales[i] = Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(d));
+    }
+    return scales;
+  }
+
   private buildGeometry() {
     this.disposeMeshes();
 
@@ -655,6 +703,7 @@ export class WebGLRenderer implements GraphRenderer {
     const pointsGeo = new THREE.BufferGeometry();
     pointsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     pointsGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    pointsGeo.setAttribute("aScale", new THREE.BufferAttribute(this.degreeScales(), 1));
 
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
@@ -670,8 +719,16 @@ export class WebGLRenderer implements GraphRenderer {
       transparent: true,
       depthWrite: false,
     });
+    // Scale each point's base size by its per-vertex degree multiplier. Injected into the
+    // built-in points shader so size attenuation, circle map, and vertex colors stay intact.
+    pointsMat.onBeforeCompile = (shader) => {
+      shader.vertexShader =
+        "attribute float aScale;\n" +
+        shader.vertexShader.replace("gl_PointSize = size;", "gl_PointSize = size * aScale;");
+    };
 
     this.pointsMesh = new THREE.Points(pointsGeo, pointsMat);
+    this.pointsMesh.renderOrder = 1; // draw nodes after edges so links sit under nodes (matters in 2D, where equal depth ties)
     this.group.add(this.pointsMesh);
 
     // --- LineSegments (edges) — clean cohesive lavender, brighten on hover ---
@@ -698,11 +755,12 @@ export class WebGLRenderer implements GraphRenderer {
     const linesMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.45,
+      opacity: 0.32,
       depthWrite: false,
     });
 
     this.linesMesh = new THREE.LineSegments(linesGeo, linesMat);
+    this.linesMesh.renderOrder = 0; // edges below nodes (see pointsMesh.renderOrder)
     this.group.add(this.linesMesh);
   }
 
