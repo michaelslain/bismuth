@@ -30,9 +30,24 @@ class TasksQueryWidget extends WidgetType {
     return other.query === this.query;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const root = document.createElement("div");
     root.className = "cm-tasks-query";
+
+    // A block-replace decoration is atomic — the caret can't reach it via mouse or arrow
+    // keys, so the cursor-inside reveal never fires on its own. Explicitly move the caret
+    // into the block on mousedown so its raw source shows for editing. Clicks on the
+    // checkbox are excluded (it toggles instead).
+    root.addEventListener("mousedown", (ev) => {
+      if ((ev.target as HTMLElement).closest(".cm-tasks-check")) return;
+      ev.preventDefault();
+      // posAtDOM returns the position just before the widget (end of the previous line),
+      // so +1 lands on the opening fence line — inside the block range, which makes build()
+      // drop the replacement and reveal the raw source for editing.
+      const pos = Math.min(view.posAtDOM(root) + 1, view.state.doc.length);
+      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+      view.focus();
+    });
 
     const render = async () => {
       let all: Task[];
@@ -84,10 +99,8 @@ class TasksQueryWidget extends WidgetType {
         const pri = PRIORITY_LABEL[t.priority];
         text.textContent = (pri ? pri + " " : "") + t.description;
         text.title = t.path;
-        text.addEventListener("click", (ev) => {
-          ev.stopPropagation();
-          window.dispatchEvent(new CustomEvent("oa-open", { detail: t.path }));
-        });
+        // No click handler: clicking the text (like the rest of the block) lets the caret
+        // enter the block and reveal the raw query source for editing.
         row.appendChild(text);
 
         if (t.due) {
@@ -112,7 +125,9 @@ class TasksQueryWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    return true; // let the widget handle its own clicks (checkbox/link) without moving the editor caret
+    // We handle reveal/toggle via our own DOM listeners; CM should ignore widget events
+    // so it doesn't fight us by trying to place the caret in this atomic block.
+    return true;
   }
 }
 
@@ -173,7 +188,7 @@ export const tasksQuery: Extension = [
     },
     ".cm-tasks-row": { display: "flex", "align-items": "center", gap: "8px", padding: "3px 0" },
     ".cm-tasks-check": { cursor: "pointer", margin: "0" },
-    ".cm-tasks-text": { cursor: "pointer", flex: "1", "min-width": "0" },
+    ".cm-tasks-text": { flex: "1", "min-width": "0" },
     ".cm-tasks-text.done": { "text-decoration": "line-through", opacity: "0.5" },
     ".cm-tasks-due": { "font-size": "0.85em", opacity: "0.7", "white-space": "nowrap" },
     ".cm-tasks-due.overdue": { color: "var(--accent, #b00020)" },
