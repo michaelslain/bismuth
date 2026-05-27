@@ -10,6 +10,7 @@ export interface ViewConfig {
   sort?: SortSpec[];                       // sort keys, applied in order
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
+  cardContent?: "properties" | "body";   // cards view: what to render inside each card
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }

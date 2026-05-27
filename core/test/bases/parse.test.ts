@@ -68,3 +68,24 @@ test("kanban view with groupBy parses groupBy correctly", () => {
   expect(base.views[0].type).toBe("kanban");
   expect(base.views[0].groupBy).toEqual({ property: "note.status", direction: "ASC" });
 });
+
+test("cards view with cardContent: body parses to cardContent === 'body'", () => {
+  const base = parseBase(`views:\n  - type: cards\n    name: Todos\n    cardContent: body\n`);
+  expect(base.views[0].type).toBe("cards");
+  expect(base.views[0].cardContent).toBe("body");
+});
+
+test("cards view with cardContent: properties parses to cardContent === 'properties'", () => {
+  const base = parseBase(`views:\n  - type: cards\n    name: Notes\n    cardContent: properties\n`);
+  expect(base.views[0].cardContent).toBe("properties");
+});
+
+test("cards view without cardContent leaves it undefined", () => {
+  const base = parseBase(`views:\n  - type: cards\n    name: Cards\n`);
+  expect(base.views[0].cardContent).toBeUndefined();
+});
+
+test("cards view with unknown cardContent value leaves it undefined", () => {
+  const base = parseBase(`views:\n  - type: cards\n    name: Cards\n    cardContent: something-else\n`);
+  expect(base.views[0].cardContent).toBeUndefined();
+});
