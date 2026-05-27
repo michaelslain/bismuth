@@ -497,6 +497,40 @@ export class WebGLRenderer implements GraphRenderer {
     this.curI.fill(1); this.tgtI.fill(1); // clear any in-progress hover dim
   }
 
+  /** localStorage key for persisted node positions for the given graph signature. */
+  private posKey(sig: string): string {
+    return `oa-graphpos:v1:${sig}`;
+  }
+
+  /** Load persisted positions from localStorage; returns a map of id → [x,y,z] or null on miss. */
+  private loadCachedPositions(sig: string): Map<string, [number, number, number]> | null {
+    try {
+      const raw = localStorage.getItem(this.posKey(sig));
+      if (!raw) return null;
+      const obj = JSON.parse(raw) as Record<string, [number, number, number]>;
+      const map = new Map<string, [number, number, number]>();
+      for (const [id, xyz] of Object.entries(obj)) {
+        if (Array.isArray(xyz) && xyz.length === 3) map.set(id, xyz as [number, number, number]);
+      }
+      return map.size > 0 ? map : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Persist current node positions to localStorage for the given graph signature. */
+  private saveCachedPositions(sig: string) {
+    try {
+      const obj: Record<string, [number, number, number]> = {};
+      for (const n of this.nodes) {
+        obj[n.id] = [Math.round(n.x ?? 0), Math.round(n.y ?? 0), Math.round(n.z ?? 0)];
+      }
+      localStorage.setItem(this.posKey(sig), JSON.stringify(obj));
+    } catch {
+      // localStorage full or unavailable — silently skip
+    }
+  }
+
   render(g: GraphData) {
     const sig = graphSig(g.nodes, g.edges.length);
     if (sig === this.lastSig) return;
@@ -509,19 +543,32 @@ export class WebGLRenderer implements GraphRenderer {
       this.sim = null;
     }
 
-    // Preserve positions for nodes that still exist
+    // Preserve positions for nodes that still exist (in-memory warm-start)
     const prevPos = new Map<string, { x: number; y: number; z: number }>();
     for (const n of this.nodes) {
       prevPos.set(n.id, { x: n.x ?? 0, y: n.y ?? 0, z: n.z ?? 0 });
     }
 
+    // Try to restore persisted (settled) positions from localStorage for a cooled start
+    const cachedPos = this.loadCachedPositions(sig);
+    let cachedCount = 0;
+
     // Build new node/link arrays
     this.nodes = g.nodes.map((n) => {
+      // 1st priority: persisted localStorage positions (settled layout from previous session)
+      if (cachedPos) {
+        const c = cachedPos.get(n.id);
+        if (c) {
+          cachedCount++;
+          return { ...n, x: c[0], y: c[1], z: c[2] };
+        }
+      }
+      // 2nd priority: in-memory positions from previous render (same session, graph changed)
       const p = prevPos.get(n.id);
       if (p) {
         return { ...n, x: p.x, y: p.y, z: p.z };
       }
-      // Random initial position within a sphere
+      // Fallback: random initial position within a sphere
       const r = 80;
       return {
         ...n,
@@ -531,6 +578,13 @@ export class WebGLRenderer implements GraphRenderer {
       };
     });
 
+    // If ≥80% of nodes were seeded from the settled cache, start at low alpha so the
+    // simulation barely nudges rather than re-settling from scratch → near-instant display.
+    // Otherwise start at full alpha for a proper initial layout.
+    const totalNodes = this.nodes.length;
+    const cachedFraction = totalNodes > 0 ? cachedCount / totalNodes : 0;
+    const startAlpha = cachedFraction >= 0.8 ? 0.25 : 1;
+
     this.links = g.edges.map((e) => ({ source: e.from, target: e.to }));
     this.rebuildResolvedLinks(); // resolve endpoints once; endpoint objects mutate in place during ticks
 
@@ -539,6 +593,7 @@ export class WebGLRenderer implements GraphRenderer {
 
     // Run 3D force simulation (d3 stops itself at alphaMin)
     this.sim = forceSimulation<N3>(this.nodes, 3)
+      .alpha(startAlpha) // cooled start when positions are restored from cache
       .force("charge", forceManyBody<N3>().strength(this.cfg.repulsion))
       .force(
         "link",
@@ -558,7 +613,10 @@ export class WebGLRenderer implements GraphRenderer {
         this.updateGeometryPositions();
         this.fitCamera(); // keep the whole cloud framed as it condenses — also re-fits on every mode switch
       })
-      .on("end", () => this.fitCamera()); // final frame once it settles
+      .on("end", () => {
+        this.fitCamera(); // final frame once it settles
+        this.saveCachedPositions(sig); // persist settled positions for instant restore on next load
+      });
   }
 
   /** Remove both meshes from the scene group and free their GPU resources. */
