@@ -39,7 +39,7 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
 
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const type = o.type === "cards" || o.type === "list" ? o.type : "table";
+  const type = o.type === "cards" || o.type === "list" || o.type === "kanban" ? o.type : "table";
   return {
     type,
     name: typeof o.name === "string" && o.name.length ? o.name : "Untitled view",

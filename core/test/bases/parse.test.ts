@@ -57,3 +57,14 @@ test("returns a safe empty base on malformed yaml", () => {
   expect(base.views).toHaveLength(1);
   expect(base.views[0].type).toBe("table");
 });
+
+test("kanban view type is preserved as-is", () => {
+  const base = parseBase(`views:\n  - type: kanban\n    name: Board\n`);
+  expect(base.views[0].type).toBe("kanban");
+});
+
+test("kanban view with groupBy parses groupBy correctly", () => {
+  const base = parseBase(`views:\n  - type: kanban\n    name: Board\n    groupBy: note.status\n`);
+  expect(base.views[0].type).toBe("kanban");
+  expect(base.views[0].groupBy).toEqual({ property: "note.status", direction: "ASC" });
+});

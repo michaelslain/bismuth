@@ -2,7 +2,7 @@
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
 export interface ViewConfig {
-  type: "table" | "cards" | "list";
+  type: "table" | "cards" | "list" | "kanban";
   name: string;
   limit?: number;
   filters?: FilterNode;
