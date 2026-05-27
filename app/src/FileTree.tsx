@@ -53,10 +53,14 @@ function joinPath(dir: string, name: string): string {
 export function FileTree(props: { onOpen: (path: string) => void }) {
   const [files, { refetch }] = createResource(() => api.tree());
   const [editing, setEditing] = createSignal<string | null>(null);
-  // Pause polling while an inline edit is in progress: a refetch rebuilds the tree with
-  // new node objects, which tears down the <For> rows (and the focused edit input),
-  // firing blur → an unintended commit. Resuming after the edit ends is fine.
-  const t = setInterval(() => { if (editing() === null) refetch(); }, 3000);
+  const [dragPath, setDragPath] = createSignal<string | null>(null);
+  const [dropTarget, setDropTarget] = createSignal<string | null>(null);
+  // Pause polling while editing or dragging: a refetch rebuilds the tree with new node
+  // objects, tearing down the <For> rows (and the focused edit input / drag source).
+  // Resuming after the edit/drag ends is fine.
+  const t = setInterval(() => {
+    if (editing() === null && dragPath() === null) refetch();
+  }, 3000);
   onCleanup(() => clearInterval(t));
 
   const [open, setOpen] = createSignal<Set<string>>(new Set());
@@ -119,8 +123,35 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     setMenu({ x: e.clientX, y: e.clientY, items });
   }
 
+  /** Move the dragged node into `targetDir` ("" = vault root). Guards no-op and into-self. */
+  async function moveInto(targetDir: string) {
+    const from = dragPath();
+    setDragPath(null);
+    setDropTarget(null);
+    if (from === null) return;
+    if (parentOf(from) === targetDir) return; // already there
+    if (targetDir === from || targetDir.startsWith(from + "/")) return; // into itself/descendant
+    const to = joinPath(targetDir, from.split("/").pop()!);
+    try {
+      await api.move(from, to);
+      if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
+      await refresh();
+    } catch (e) {
+      pushToast(`Move failed: ${(e as Error).message}`);
+    }
+  }
+
+  const endDrag = () => {
+    setDragPath(null);
+    setDropTarget(null);
+  };
+
   return (
-    <div style={{ "font-size": "13px" }}>
+    <div
+      style={{ "font-size": "13px", "min-height": "100%" }}
+      onDragOver={(e) => { e.preventDefault(); setDropTarget(""); }}
+      onDrop={(e) => { e.preventDefault(); moveInto(""); }}
+    >
       <Level
         node={buildTree(files() ?? [])}
         depth={0}
@@ -131,6 +162,12 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
         editing={editing()}
         setEditing={setEditing}
         refresh={refresh}
+        dragPath={dragPath()}
+        setDragPath={setDragPath}
+        dropTarget={dropTarget()}
+        setDropTarget={setDropTarget}
+        moveInto={moveInto}
+        endDrag={endDrag}
       />
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
@@ -208,6 +245,9 @@ function Level(props: {
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
   onMenu: (node: TreeNode, e: MouseEvent) => void;
   editing: string | null; setEditing: (p: string | null) => void; refresh: () => void;
+  dragPath: string | null; setDragPath: (p: string | null) => void;
+  dropTarget: string | null; setDropTarget: (p: string | null) => void;
+  moveInto: (targetDir: string) => void; endDrag: () => void;
 }) {
   return (
     <For each={sortedChildren(props.node)}>
@@ -216,7 +256,16 @@ function Level(props: {
         return child.children ? (
           <div>
             <div
-              style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8, "user-select": "none" }}
+              style={{
+                padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8,
+                "user-select": "none",
+                background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
+              }}
+              draggable={props.editing !== child.path}
+              onDragStart={(e) => { e.stopPropagation(); props.setDragPath(child.path); }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
+              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
+              onDragEnd={() => props.endDrag()}
               onClick={() => props.editing === child.path || props.toggle(child.path)}
               onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
@@ -229,12 +278,18 @@ function Level(props: {
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
                 onOpen={props.onOpen} onMenu={props.onMenu}
-                editing={props.editing} setEditing={props.setEditing} refresh={props.refresh} />
+                editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
+                dragPath={props.dragPath} setDragPath={props.setDragPath}
+                dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
+                moveInto={props.moveInto} endDrag={props.endDrag} />
             </Show>
           </div>
         ) : (
           <div
             style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
+            draggable={props.editing !== child.path}
+            onDragStart={(e) => { e.stopPropagation(); props.setDragPath(child.path); }}
+            onDragEnd={() => props.endDrag()}
             onClick={() => props.editing === child.path || props.onOpen(child.path)}
             onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
