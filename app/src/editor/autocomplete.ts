@@ -1,28 +1,27 @@
 // app/src/editor/autocomplete.ts
-import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
+import { matchTagPrefix } from "./tag";
 
-// Autocomplete for `[[wikilinks]]`. `getNotes` is called when the popup opens, so the
-// candidate list always reflects the current vault even though the editor view (and
-// therefore this extension) is constructed only once per open file.
-export function wikilinkComplete(getNotes: () => NoteCandidate[]): Extension {
-  const source = (context: CompletionContext): CompletionResult | null => {
+// `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (and avoids a
+// double `]]` when one is already ahead). `getNotes` is read lazily per popup open so
+// the list reflects the current vault even though the editor view is built once.
+function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
     const match = matchWikilinkPrefix(textBefore);
     if (!match) return null;
 
-    const from = line.from + match.from; // document offset just after the `[[`
+    const from = line.from + match.from;
     const options = getNotes().map((n) => ({
       label: n.label,
       detail: n.folder,
       apply: (view: EditorView, completion: Completion, applyFrom: number, applyTo: number) => {
         const after = view.state.doc.sliceString(applyTo, applyTo + 2);
         const { insert, cursorOffset } = buildInsert(n.label, after === "]]");
-        // A custom apply that dispatches its own transaction must annotate it so
-        // CodeMirror registers the pick (closes the popup, runs commit logic).
         view.dispatch({
           changes: { from: applyFrom, to: applyTo, insert },
           selection: { anchor: applyFrom + cursorOffset },
@@ -30,9 +29,39 @@ export function wikilinkComplete(getNotes: () => NoteCandidate[]): Extension {
         });
       },
     }));
-    // validFor lets CodeMirror re-filter as the user keeps typing without re-running
-    // the source, until a `]` or newline ends the link.
     return { from, options, validFor: /^[^\]\n]*$/ };
   };
-  return autocompletion({ override: [source] });
+}
+
+// `#tag` completion. Inserts the bare tag name after the `#` the user already typed.
+// `getTags` returns bare names (no leading `#`), read lazily per popup open.
+function tagSource(getTags: () => string[]): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    const match = matchTagPrefix(textBefore);
+    if (!match) return null;
+
+    const from = line.from + match.from;
+    const options = getTags().map((name) => ({
+      label: name,
+      apply: (view: EditorView, completion: Completion, applyFrom: number, applyTo: number) => {
+        view.dispatch({
+          changes: { from: applyFrom, to: applyTo, insert: name },
+          selection: { anchor: applyFrom + name.length },
+          annotations: pickedCompletion.of(completion),
+        });
+      },
+    }));
+    return { from, options, validFor: /^[\w/-]*$/ };
+  };
+}
+
+// Combined editor completion: `[[wikilinks]]` and `#tags` in one autocompletion config
+// (two separate `autocompletion()` extensions with `override` would conflict).
+export function vaultCompletion(opts: {
+  getNotes: () => NoteCandidate[];
+  getTags: () => string[];
+}): Extension {
+  return autocompletion({ override: [wikilinkSource(opts.getNotes), tagSource(opts.getTags)] });
 }

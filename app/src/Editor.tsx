@@ -6,7 +6,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
-import { wikilinkComplete } from "./editor/autocomplete";
+import { vaultCompletion } from "./editor/autocomplete";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
 
@@ -48,7 +48,7 @@ const editorTheme = EditorView.theme({
   },
 });
 
-export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[] }) {
+export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -83,7 +83,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       drawSelection(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
-      wikilinkComplete(props.noteNames),
+      vaultCompletion({ getNotes: props.noteNames, getTags: props.tagNames }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),

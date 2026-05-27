@@ -62,6 +62,10 @@ export default function App() {
     graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, folder: n.folder })),
   );
 
+  const tagCandidates = createMemo<string[]>(() =>
+    graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
+  );
+
   const openFile = (path: string) => {
     setTabs((t) => (t.includes(path) ? t : [...t, path]));
     setActive(path);
@@ -141,7 +145,7 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<EmptyTab />}>
-            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} />}>
+            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
               <SettingsPage />
             </Show>
           </Show>
