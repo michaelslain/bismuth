@@ -97,7 +97,9 @@ export class EventStore {
     const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
     await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
     const { id: _id, ...masterRest } = master
-    await this.addEvent({ ...masterRest, ...updates, recurrence: { ...master.recurrence, startDate: occurrenceDate, endDate: originalEndDate, seriesId: uuid() } })
+    // Merge updates.recurrence (type/daysOfWeek) into the new segment, then apply
+    // the split-specific boundaries last so they win over any modal-supplied values.
+    await this.addEvent({ ...masterRest, ...updates, recurrence: { ...master.recurrence, ...(updates.recurrence ?? {}), startDate: occurrenceDate, endDate: originalEndDate, seriesId: uuid() } })
   }
 
   async deleteOccurrence(masterId: string, occurrenceDate: string): Promise<void> {
