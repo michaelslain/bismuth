@@ -88,7 +88,7 @@ export function GraphView(props: {
         <button style={btnStyle(props.mode === "both")} onClick={() => props.setMode("both")}>Both</button>
         <button style={btnStyle(props.mode === "agents")} onClick={() => props.setMode("agents")}>Agents</button>
       </div>
-      <div style={props.fill ? { position: "relative", width: "100%", flex: 1, "min-height": 0 } : { position: "relative", width: "100%", "aspect-ratio": "1" }}>
+      <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>

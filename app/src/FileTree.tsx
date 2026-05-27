@@ -78,18 +78,22 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   // LIFO stack of undoable deletes (most-recent first).
   const [undoStack, setUndoStack] = createSignal<{ trashPath: string; to: string; name: string }[]>([]);
 
-  async function undoLastDelete() {
-    const stack = undoStack();
-    const last = stack[0];
-    if (!last) return;
-    setUndoStack(stack.slice(1));
+  // Restore one trashed entry (drop it from the undo stack, move it back, refetch, toast).
+  // Shared by the Cmd+Z handler and the delete toast's "Undo" button.
+  async function restoreDeleted(entry: { trashPath: string; to: string; name: string }) {
+    setUndoStack((s) => s.filter((u) => u.trashPath !== entry.trashPath));
     try {
-      await api.restore(last.trashPath, last.to);
+      await api.restore(entry.trashPath, entry.to);
       await refresh();
-      pushToast(`Restored ${last.name}`);
+      pushToast(`Restored ${entry.name}`);
     } catch (e) {
       pushToast(`Restore failed: ${(e as Error).message}`);
     }
+  }
+
+  function undoLastDelete() {
+    const last = undoStack()[0];
+    if (last) restoreDeleted(last);
   }
 
   const onKey = (e: KeyboardEvent) => {
@@ -116,21 +120,10 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       const { trashPath } = await api.del(node.path);
       // Close any open tab for the deleted file (or files under a deleted folder).
       window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
-      setUndoStack((s) => [{ trashPath, to: node.path, name: node.name }, ...s]);
+      const entry = { trashPath, to: node.path, name: node.name };
+      setUndoStack((s) => [entry, ...s]);
       await refresh();
-      pushToast(`Deleted ${node.name}`, {
-        label: "Undo",
-        onClick: async () => {
-          setUndoStack((s) => s.filter((u) => u.trashPath !== trashPath));
-          try {
-            await api.restore(trashPath, node.path);
-            await refresh();
-            pushToast(`Restored ${node.name}`);
-          } catch (e) {
-            pushToast(`Restore failed: ${(e as Error).message}`);
-          }
-        },
-      });
+      pushToast(`Deleted ${node.name}`, { label: "Undo", onClick: () => restoreDeleted(entry) });
     } catch (e) {
       pushToast(`Delete failed: ${(e as Error).message}`);
     }

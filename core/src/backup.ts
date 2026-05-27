@@ -2,6 +2,12 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 
+/** Human-readable snapshot label, e.g. "vault snapshot 2026-05-27 14:30". */
+export function snapshotMessage(now: Date = new Date()): string {
+  const stamp = now.toISOString().slice(0, 16).replace("T", " ");
+  return `vault snapshot ${stamp}`;
+}
+
 /** git init if needed + set a local identity so commits never block. Never adds a remote. */
 export async function ensureRepo(dir: string): Promise<void> {
   if (!existsSync(join(dir, ".git"))) {
