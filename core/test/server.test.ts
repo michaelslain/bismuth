@@ -1,5 +1,9 @@
 import { test, expect } from "bun:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer } from "../src/server";
+import { writeNote } from "../src/files";
 
 test("GET /graph returns the merged brain graph", async () => {
   const server = createServer({ vault: "fixtures/sample-vault", memory: "fixtures/sample-vault/.memory", port: 0 });
@@ -115,13 +119,30 @@ test("GET /meta for nonexistent file returns empty object", async () => {
   }
 });
 
-test("GET /tree returns array of file paths", async () => {
+test("GET /tree returns array of { path } entries", async () => {
   const server = createServer({ vault: "fixtures/sample-vault", port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/tree`);
-    const files = await res.json();
-    expect(Array.isArray(files)).toBe(true);
+    const entries = await res.json();
+    expect(Array.isArray(entries)).toBe(true);
+    expect(entries.every((e: any) => typeof e.path === "string")).toBe(true);
+    expect(entries.map((e: any) => e.path)).toContain("housing.md");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /tree surfaces a note's `icon` frontmatter", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-icon-"));
+  await writeNote(dir, "fire.md", "---\nicon: 🔥\n---\nhot");
+  await writeNote(dir, "plain.md", "no frontmatter");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "fire.md", icon: "🔥" });
+    expect(entries).toContainEqual({ path: "plain.md" });
   } finally {
     server.stop(true);
   }

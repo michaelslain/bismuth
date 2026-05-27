@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, readNote, writeNote } from "../src/files";
+import { listMarkdown, listMarkdownWithIcons, readNote, writeNote } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -77,4 +77,22 @@ test("deeply nested directories work", async () => {
   await writeNote(dir, "a/b/c/d/e/f.md", "deep content");
   const files = await listMarkdown(dir);
   expect(files).toContain("a/b/c/d/e/f.md");
+});
+
+test("listMarkdownWithIcons surfaces the `icon` frontmatter property", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-icons-"));
+  await writeNote(dir, "fire.md", "---\nicon: 🔥\n---\nhot");
+  await writeNote(dir, "plain.md", "# no frontmatter");
+  const entries = (await listMarkdownWithIcons(dir)).sort((a, b) => a.path.localeCompare(b.path));
+  expect(entries).toEqual([
+    { path: "fire.md", icon: "🔥" },
+    { path: "plain.md" },
+  ]);
+});
+
+test("listMarkdownWithIcons ignores a non-string icon value", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-icons-bad-"));
+  await writeNote(dir, "num.md", "---\nicon: 42\n---\nbody");
+  const entries = await listMarkdownWithIcons(dir);
+  expect(entries).toEqual([{ path: "num.md" }]);
 });

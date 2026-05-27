@@ -2,17 +2,20 @@ import { join } from "node:path";
 import { watch } from "node:fs";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
-import { listMarkdown, readNote, writeNote } from "./files";
+import { listMarkdownWithIcons, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
-import type { GraphData } from "./graph";
+import type { GraphData, TreeEntry } from "./graph";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
 export function createServer(cfg: CoreConfig) {
   // ── In-memory cache ────────────────────────────────────────────────────────
   let cachedGraph: GraphData | null = null;
+  // The sidebar polls /tree every few seconds; cache it (with the per-note icon read) so we
+  // don't re-read every file on each poll. Invalidated alongside the graph on file changes.
+  let cachedTree: TreeEntry[] | null = null;
   let version = 0;
 
   // Debounce timer handle
@@ -20,6 +23,7 @@ export function createServer(cfg: CoreConfig) {
 
   function invalidate() {
     cachedGraph = null;
+    cachedTree = null;
     version++;
   }
 
@@ -72,7 +76,8 @@ export function createServer(cfg: CoreConfig) {
         return Response.json({ version }, { headers: cors });
       }
       if (url.pathname === "/tree" && req.method === "GET") {
-        return Response.json(await listMarkdown(cfg.vault), { headers: cors });
+        if (cachedTree === null) cachedTree = await listMarkdownWithIcons(cfg.vault);
+        return Response.json(cachedTree, { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "GET") {
         const path = url.searchParams.get("path");

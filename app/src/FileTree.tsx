@@ -1,14 +1,19 @@
 // app/src/FileTree.tsx
 import { createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import { api } from "./api";
+import type { TreeEntry } from "../../core/src/graph";
 
-type TreeNode = { name: string; path: string; children?: Map<string, TreeNode> };
+/** Default sidebar icons; a note's `icon` frontmatter overrides the file icon (Obsidian-style). */
+const FOLDER_ICON = "📁";
+const FILE_ICON = "📝";
 
-/** Turn flat relative paths ("a/b/c.md") into a nested folder tree. */
-function buildTree(paths: string[]): TreeNode {
+type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
+
+/** Turn flat entries ("a/b/c.md" + optional icon) into a nested folder tree. */
+function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
-  for (const p of paths) {
-    const parts = p.split("/");
+  for (const { path, icon } of entries) {
+    const parts = path.split("/");
     let cur = root;
     let acc = "";
     parts.forEach((part, i) => {
@@ -18,6 +23,7 @@ function buildTree(paths: string[]): TreeNode {
         cur.children!.set(part, { name: part, path: acc, children: isFile ? undefined : new Map() });
       }
       cur = cur.children!.get(part)!;
+      if (isFile && icon) cur.icon = icon;
     });
   }
   return root;
@@ -45,7 +51,7 @@ function Level(props: {
               style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8, "user-select": "none" }}
               onClick={() => props.toggle(child.path)}
             >
-              {props.open.has(child.path) ? "▾" : "▸"} {child.name}
+              {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON} {child.name}
             </div>
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle} onOpen={props.onOpen} />
@@ -56,7 +62,7 @@ function Level(props: {
             style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
             onClick={() => props.onOpen(child.path)}
           >
-            {child.name.replace(/\.md$/, "")}
+            {child.icon ?? FILE_ICON} {child.name.replace(/\.md$/, "")}
           </div>
         );
       }}
