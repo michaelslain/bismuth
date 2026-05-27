@@ -103,9 +103,19 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   window.addEventListener("keydown", onKey);
   onCleanup(() => window.removeEventListener("keydown", onKey));
 
+  // Header "New note" / "New folder" buttons (in App.tsx) create at the vault root.
+  const onNew = (e: Event) => {
+    const kind = (e as CustomEvent).detail?.kind as "file" | "dir";
+    if (kind === "file" || kind === "dir") doCreate("", kind);
+  };
+  window.addEventListener("oa-new", onNew);
+  onCleanup(() => window.removeEventListener("oa-new", onNew));
+
   async function doDelete(node: TreeNode) {
     try {
       const { trashPath } = await api.del(node.path);
+      // Close any open tab for the deleted file (or files under a deleted folder).
+      window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
       setUndoStack((s) => [{ trashPath, to: node.path, name: node.name }, ...s]);
       await refresh();
       pushToast(`Deleted ${node.name}`, {
@@ -164,6 +174,8 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     const to = joinPath(targetDir, from.split("/").pop()!);
     try {
       await api.move(from, to);
+      // Keep any open tab pointing at the moved path (incl. files under a moved folder).
+      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
       if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
       await refresh();
     } catch (e) {
@@ -227,6 +239,8 @@ function EditableLabel(props: {
     const to = joinPath(parentOf(props.node.path), newName);
     try {
       await api.move(props.node.path, to);
+      // Keep any open tab pointing at the renamed path.
+      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from: props.node.path, to } }));
       props.refresh();
     } catch (e) {
       pushToast(`Rename failed: ${(e as Error).message}`);

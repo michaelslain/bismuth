@@ -44,7 +44,7 @@ export function ToastHost() {
         {(t) => (
           <div
             style={{
-              background: "var(--panel)",
+              background: "var(--bg)",
               border: "1px solid var(--border)",
               "border-radius": "8px",
               padding: "8px 14px",

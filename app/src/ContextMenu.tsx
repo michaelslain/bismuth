@@ -26,7 +26,7 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
         top: `${props.y}px`,
         left: `${props.x}px`,
         "z-index": 1000,
-        background: "var(--panel)",
+        background: "var(--bg)",
         border: "1px solid var(--border)",
         "border-radius": "6px",
         padding: "4px",
