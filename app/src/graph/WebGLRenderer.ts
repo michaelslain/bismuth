@@ -25,6 +25,17 @@ const EDGE_DIM = 0.18;  // dimmed edge brightness on hover
 const HL_SPEED = 0.16;  // highlight ease per frame (smooth fade in/out)
 const EDGE_COLOR = 0xbdcaf2; // cohesive lavender for links
 
+// Edge crowding — measured in SCREEN space from the current camera, so it works for both 2D
+// and 3D and re-forms as you orbit/zoom. Each edge is sampled along its projected length and
+// binned into screen-pixel cells; an edge's "peak" is the most edges sharing any cell it
+// crosses. Crowded edges are DIMMED in the overview (the look you liked). While a node is
+// highlighted, crowded NON-focused edges are additionally CULLED (collapsed to zero length so
+// they don't draw) — the focused node's edges always stay — so the web doesn't reappear.
+const EDGE_CROWD_CELL = 0.7;   // crowding cell as a fraction of link distance (graph scale, projected to px)
+const EDGE_CROWD_FULL = 3;     // up to this many overlaps keep full brightness (no dimming)
+const EDGE_CROWD_MIN = 0.16;   // brightness floor for the densest clusters (× EDGE_BASE)
+const EDGE_CULL_KEEP = 5;      // while highlighting, keep ~this many non-focused edges per crowded cell
+
 // Collision force gives every node a minimum personal space, so dense clusters can't pack
 // tighter than this floor while sparse regions are untouched — evening out density across
 // the graph. Radius is a fraction of link distance; min spacing between any two nodes is
@@ -43,12 +54,58 @@ const LINK_STRENGTH = 0.18;
 // multiplied by this — nodes settle farther apart and the auto-fit zooms out, shrinking them.
 const MODE_2D_SPACING = 1.8;
 
+// Settle behaviour. d3 decays alpha slowly (~300 ticks to alphaMin) and renders every step, which
+// is what makes the initial layout visibly scatter and then drift for seconds at low FPS. Instead
+// we run the initial settle HEADLESSLY (tick the physics in a tight loop with no per-step render,
+// then paint once — the graph appears already in place) and stop on actual motion rather than the
+// slow global timer:
+//   SETTLE_SPEED_FRAC — once the fastest node moves slower than this fraction of link distance
+//     (world units/tick), the layout is visually at rest: zero velocities and stop. Lower = let it
+//     relax more before freezing; higher = snap sooner. Used by both the headless and animated paths.
+//   PRESETTLE_MAX_TICKS / PRESETTLE_BUDGET_MS — caps on the synchronous headless loop so a large
+//     graph can't hang the load; if it can't settle within them we paint the partial layout and
+//     hand the remainder to the (brief, velocity-capped) animated timer.
+const SETTLE_SPEED_FRAC = 0.03;
+const SETTLE_REST_TICKS = 3; // require this many consecutive sub-threshold ticks so a momentary mid-scatter lull can't freeze a half-formed layout
+const PRESETTLE_MAX_TICKS = 400;
+const PRESETTLE_BUDGET_MS = 120;
+
+// A single force tick is expensive at scale (the n-body charge alone is tens of ms for a few
+// thousand nodes), so re-settling on every load is what tanks FPS. When at least this fraction of
+// nodes already have a cached (previously-settled) position, we SKIP the simulation entirely and
+// render the cached layout — the costly settle then only runs on a true first load. The few new
+// nodes (a live vault/memory graph adds a handful between loads) are placed next to their neighbours.
+const SETTLE_SKIP_FRAC = 0.9;
+
+// Barnes-Hut approximation for the n-body charge force. d3's default (0.9) does little pruning in 3D;
+// 1.5 roughly halves the charge cost with negligible visual change (only the cold first settle runs it).
+const MANYBODY_THETA = 1.5;
+
+// Cap the render resolution. On a Retina display devicePixelRatio is 2 (some 3), so an uncapped
+// renderer draws the full canvas at 4x the pixels every frame (with MSAA on top) — a fixed GPU cost
+// that caps FPS no matter how small the graph is. 1.5x keeps nodes/edges crisp while ~halving the
+// pixel work vs 2x. Lower toward 1 for more headroom on weak GPUs.
+const MAX_PIXEL_RATIO = 1.5;
+
+// Recompute screen-space edge crowding at most once every N frames while the view is moving (idle
+// spin, orbit, zoom). The recompute is an O(edges x samples) Map-building pass; at 60fps every other
+// frame it dominates the frame budget during the perpetual 3D spin. ~6Hz is plenty for a subtle
+// dim effect (and the brightness changes are eased, so stepped recomputes still look smooth).
+const CROWD_RECOMPUTE_FRAMES = 10;
+
 // Node size scales with connection count (degree), Obsidian-style. Wide range so leaf nodes
 // read as small dots while hubs clearly pop: multiplier = clamp(MIN + GAIN*sqrt(degree), MIN, MAX).
 // sqrt keeps mid-range growth smooth; the sub-1 MIN floor shrinks low-degree nodes below base.
 const SIZE_MIN_MULT = 0.4;     // multiplier for a 0/1-degree leaf — well under base, so a small dot
 const SIZE_DEGREE_GAIN = 0.45; // size multiplier added per sqrt(degree)
 const SIZE_MAX_MULT = 6;       // ceiling so the biggest hub is ~6x base (not unbounded)
+
+// 3D depth cue: linear fog toward the background color, so nodes/edges deeper in the cloud
+// fade out and read as "further away". near/far track the live camera→centroid distance and
+// the cloud radius — the front edge stays crisp, the rearmost nodes fade to a faint ghost.
+// In flat 2D the fog is pushed out of range (every node sits at one depth, nothing to convey).
+const FOG_FRONT = 1.0; // fog.near = camDist - cloudRadius*FOG_FRONT (front edge of cloud → crisp)
+const FOG_BACK = 1.7;  // fog.far  = camDist + cloudRadius*FOG_BACK  (past the back → it ghosts out)
 
 /** User-tunable graph appearance/physics, fed in from the settings store. */
 export interface GraphConfig {
@@ -74,9 +131,56 @@ const DEFAULT_CONFIG: GraphConfig = {
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
+const FRAME_TWEEN_MS = 450; // duration of the "z" zoom-to-fit-node-and-neighbors glide
+// 3D near-camera node cull: a node fades out as it approaches the camera, fully gone once it's
+// closer than NEAR_CULL_HIDE × (camera→target distance) and fully shown past NEAR_CULL_SHOW ×.
+// Expressed as a fraction of the focal distance so it's dormant at the resting whole-graph framing
+// (nearest node sits past SHOW) and only bites as you zoom in — e.g. after a "z" frame — dissolving
+// foreground nodes that would otherwise occlude whatever you're looking at. 3D only.
+const NEAR_CULL_SHOW = 0.55;
+const NEAR_CULL_HIDE = 0.32;
 
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+/**
+ * Eigen-decomposition of a symmetric 3x3 matrix via cyclic Jacobi rotations. Returns the three
+ * eigenvalues with their (unit) eigenvectors, ascending by eigenvalue. Used to find the best-fit
+ * plane of a point cluster: the smallest-eigenvalue eigenvector is the plane normal (the thinnest
+ * axis), so looking down it shows the cluster spread out face-on. n=3 converges in a few sweeps.
+ */
+function eigenSym3(m: number[][]): { value: number; vector: THREE.Vector3 }[] {
+  const a = m.map((row) => row.slice());
+  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let iter = 0; iter < 24; iter++) {
+    // Rotate to annihilate the largest off-diagonal element.
+    let p = 0, q = 1, max = Math.abs(a[0][1]);
+    if (Math.abs(a[0][2]) > max) { max = Math.abs(a[0][2]); p = 0; q = 2; }
+    if (Math.abs(a[1][2]) > max) { max = Math.abs(a[1][2]); p = 1; q = 2; }
+    if (max < 1e-10) break;
+    const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+    const t = (theta === 0 ? 1 : Math.sign(theta)) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+    const c = 1 / Math.sqrt(t * t + 1), s = t * c;
+    for (let i = 0; i < 3; i++) {
+      const aip = a[i][p], aiq = a[i][q];
+      a[i][p] = c * aip - s * aiq;
+      a[i][q] = s * aip + c * aiq;
+    }
+    for (let i = 0; i < 3; i++) {
+      const api = a[p][i], aqi = a[q][i];
+      a[p][i] = c * api - s * aqi;
+      a[q][i] = s * api + c * aqi;
+    }
+    for (let i = 0; i < 3; i++) {
+      const vip = v[i][p], viq = v[i][q];
+      v[i][p] = c * vip - s * viq;
+      v[i][q] = s * vip + c * viq;
+    }
+  }
+  return [0, 1, 2]
+    .map((i) => ({ value: a[i][i], vector: new THREE.Vector3(v[0][i], v[1][i], v[2][i]).normalize() }))
+    .sort((x, y) => x.value - y.value);
 }
 
 function hashInt(s: string): number {
@@ -102,6 +206,14 @@ function makeCircleTexture(): THREE.Texture {
 
 type N3 = SimNode & { id: string; label: string; kind: NodeKind; folder?: string };
 type L3 = SimLink<N3>;
+
+/** The node currently under the pointer, reported to the host for the hover readout (null = none). */
+export interface HoverNode {
+  id: string;
+  label: string;
+  kind: NodeKind;
+  folder?: string;
+}
 
 function graphSig(nodes: { id: string }[], edgeCount: number): string {
   return nodes.map((n) => n.id).sort().join(",") + "|" + edgeCount;
@@ -129,6 +241,7 @@ export class WebGLRenderer implements GraphRenderer {
   private links: L3[] = [];
   private resolvedLinks: { s: N3; t: N3 }[] = []; // links with both endpoints resolved to nodes (rebuilt per graph)
   private onClick: (id: string) => void = () => {};
+  private onHover: (node: HoverNode | null) => void = () => {};
   private lastSig = "";
 
   // user settings — spin/size read live each frame; palette/physics applied via setConfig
@@ -137,9 +250,14 @@ export class WebGLRenderer implements GraphRenderer {
 
   // simulation
   private sim: Simulation<N3> | null = null;
+  private simSettling = false; // true while the layout is actively settling (sim ticking) — see refreshCrowdingIfMoved
 
   // animation
   private rafId: number | null = null;
+  // FPS sampling — count frames over a window and report the rate to the host once per window.
+  private onFps: (fps: number) => void = () => {};
+  private fpsWindowStart = 0; // performance.now() at the start of the current sample window
+  private fpsFrames = 0;      // frames rendered since the window started
   private el!: HTMLElement;
   private ro?: ResizeObserver;
   private raycaster = new THREE.Raycaster();
@@ -150,16 +268,44 @@ export class WebGLRenderer implements GraphRenderer {
   private leaveHandler?: () => void;
   private circleTex: THREE.Texture | null = null;
   private baseColors: Float32Array = new Float32Array(0); // node colors, for hover restore
+  private baseScales: Float32Array = new Float32Array(0); // per-node degree size multiplier, before near-cull
+  private nearCullActive = false; // true while any node is currently near-camera culled (3D only)
   private hoveredId: string | null = null;
   private pointerInside = false;
   private curI: Float32Array = new Float32Array(0); // current node intensities (eased)
   private tgtI: Float32Array = new Float32Array(0); // target node intensities
   private curE: Float32Array = new Float32Array(0); // current edge intensities (eased)
   private tgtE: Float32Array = new Float32Array(0); // target edge intensities
+  private crowdE: Float32Array = new Float32Array(0); // per-edge dim factor (1 = uncrowded, → EDGE_CROWD_MIN)
+  private keepE: Uint8Array = new Uint8Array(0);      // per-edge render flag used while hovering (0 = cull)
+  private camKey = "";                                 // camera pose the crowding was last computed for
+  private frame = 0;                                   // frame counter (throttles crowding recompute)
+  private wppDefault = 0;                              // world-per-pixel at the auto-fit framing (zoom reference)
+  private crowdZoom = 1;                               // current zoom ratio vs default framing (brightens edges as you zoom in)
   private baseEdgeColors: Float32Array = new Float32Array(0); // per-vertex edge colors (endpoint gradient)
   private hlActive = false; // true while a highlight transition is in progress; cleared when settled
   private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
   private interactHandler?: () => void;
+  private keyHandler?: (e: KeyboardEvent) => void;
+  // "z" zoom-to-fit: a camera-only glide that frames the hovered node + its neighbors. Kept
+  // separate from the mode tween (which also moves node depths); the mode tween takes priority.
+  private camTween: null | {
+    start: number;
+    posFrom: THREE.Vector3;
+    posTo: THREE.Vector3;
+    tgtFrom: THREE.Vector3;
+    tgtTo: THREE.Vector3;
+  } = null;
+
+  // 3D depth fog — centroid + radius of the node cloud, refreshed in fitCamera; the fog near/far
+  // are derived from the live camera distance to this centroid so they track orbit/zoom.
+  private cloudCenter = new THREE.Vector3();
+  private cloudRadius = 1;
+
+  // Rotation velocity tracking — prevents clicks during fast graph rotation
+  private prevCameraQuat = new THREE.Quaternion();
+  private rotationVelocity = 0; // radians per frame
+  private readonly ROTATION_VELOCITY_THRESHOLD = 0.02; // clicks only allowed when below this
 
   // 2D/3D view mode + the glide between them
   private viewMode: "2d" | "3d" = "3d";
@@ -176,13 +322,17 @@ export class WebGLRenderer implements GraphRenderer {
     rotTo: number;
   } = null;
 
-  mount(el: HTMLElement, onNodeClick: (id: string) => void) {
+  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (node: HoverNode | null) => void) {
     this.el = el;
     this.onClick = onNodeClick;
+    if (onHover) this.onHover = onHover;
 
     // Scene
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0e0e11);
+    // Linear depth fog toward the background → nodes deeper in the cloud fade out (3D depth cue).
+    // near/far are recomputed each frame in updateFog (and pushed out of range in flat 2D).
+    this.scene.fog = new THREE.Fog(0x0e0e11, 1, 1000);
 
     // Camera
     const w = el.clientWidth || 320;
@@ -194,7 +344,7 @@ export class WebGLRenderer implements GraphRenderer {
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
     });
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.setSize(w, h);
     this.renderer.domElement.style.display = "block";
     el.appendChild(this.renderer.domElement);
@@ -230,6 +380,7 @@ export class WebGLRenderer implements GraphRenderer {
       this.pointerInside = false;
       this.hoveredId = null;
       this.setHighlightTargets();
+      this.notifyHover();
     };
     this.renderer.domElement.addEventListener("mouseleave", this.leaveHandler);
 
@@ -237,6 +388,19 @@ export class WebGLRenderer implements GraphRenderer {
     this.interactHandler = () => { this.userControlled = true; };
     this.renderer.domElement.addEventListener("wheel", this.interactHandler, { passive: true });
     this.renderer.domElement.addEventListener("pointerdown", this.interactHandler);
+
+    // "z" while hovering a node → frame that node and its neighbors. Window-level so the canvas
+    // needn't be focused; gated on an active hover (only set while the pointer is over a node),
+    // and bails on modifiers (Cmd/Ctrl+Z is undo) and while typing in an input/editor.
+    this.keyHandler = (e: KeyboardEvent) => {
+      if (e.key !== "z" && e.key !== "Z") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!this.hoveredId) return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      this.frameNode(this.hoveredId);
+    };
+    window.addEventListener("keydown", this.keyHandler);
 
     // Start render loop
     this.animate();
@@ -254,13 +418,52 @@ export class WebGLRenderer implements GraphRenderer {
     this.rafId = requestAnimationFrame(() => this.animate());
     if (this.tween) {
       this.stepTween();
+    } else if (this.camTween) {
+      this.stepCamTween();
     } else if (!this.pointerInside && this.cfg.spin && this.viewMode === "3d") {
       // Idle "storm" spin — paused while hovering (stable inspect) and in 2D (locked birdseye)
       this.group.rotation.y += this.cfg.spinSpeed;
     }
+    // Crowding is camera-relative (screen space), so it recomputes when the view changes — orbit,
+    // zoom, pan, or idle spin. In 3D the idle spin moves the view every frame, so without throttling
+    // this O(edges) pass would run continuously. Throttled (CROWD_RECOMPUTE_FRAMES); no-op when still.
+    if (this.frame++ % CROWD_RECOMPUTE_FRAMES === 0) this.refreshCrowdingIfMoved();
     this.stepHighlight(); // ease hover highlight toward its target
+    this.updateNearCull(); // dissolve nodes that have come too close to the camera (3D)
     this.controls.update();
+    this.updateRotationVelocity(); // track camera rotation speed for click gating
+    this.updateFog(); // depth fade tracks the (now-current) camera distance
     this.renderer.render(this.scene, this.camera);
+    this.sampleFps();
+  }
+
+  /** Count rendered frames and report the rate to the host roughly twice a second. */
+  private sampleFps() {
+    const now = performance.now();
+    if (this.fpsWindowStart === 0) { this.fpsWindowStart = now; return; }
+    this.fpsFrames++;
+    const elapsed = now - this.fpsWindowStart;
+    if (elapsed >= 500) {
+      this.onFps(Math.round((this.fpsFrames * 1000) / elapsed));
+      this.fpsWindowStart = now;
+      this.fpsFrames = 0;
+    }
+  }
+
+  /** Register a callback that receives the measured frames-per-second (~2x/sec). */
+  setFpsCallback(cb: (fps: number) => void) {
+    this.onFps = cb;
+  }
+
+  /** Compute rotation velocity by measuring the quaternion change each frame. */
+  private updateRotationVelocity() {
+    const curQuat = this.camera.quaternion.clone();
+    const deltaQuat = curQuat.clone().multiply(this.prevCameraQuat.clone().invert());
+    // Extract angle from quaternion: angle = 2 * acos(w), where w is the scalar part
+    // Clamp to [-1, 1] to avoid NaN from floating point errors
+    const w = Math.max(-1, Math.min(1, deltaQuat.w));
+    this.rotationVelocity = Math.abs(2 * Math.acos(w));
+    this.prevCameraQuat.copy(curQuat);
   }
 
   /** Raycast the pointer against the node points, returning the nearest node id (or null). */
@@ -278,6 +481,8 @@ export class WebGLRenderer implements GraphRenderer {
   }
 
   private handleClick(e: MouseEvent) {
+    // Prevent file opens during fast graph rotation
+    if (this.rotationVelocity > this.ROTATION_VELOCITY_THRESHOLD) return;
     const id = this.pickNodeId(e, 3);
     if (id) this.onClick(id);
   }
@@ -290,6 +495,14 @@ export class WebGLRenderer implements GraphRenderer {
     this.hoveredId = id;
     this.renderer.domElement.style.cursor = id ? "pointer" : "default";
     this.setHighlightTargets();
+    this.notifyHover();
+  }
+
+  /** Report the node under the pointer (resolved from hoveredId) to the host, or null when none. */
+  private notifyHover() {
+    const id = this.hoveredId;
+    const n = id ? this.nodes.find((nd) => nd.id === id) : undefined;
+    this.onHover(n ? { id: n.id, label: n.label, kind: n.kind, folder: n.folder } : null);
   }
 
   private neighborsOf(id: string): Set<string> {
@@ -303,14 +516,150 @@ export class WebGLRenderer implements GraphRenderer {
     return set;
   }
 
+  /**
+   * Glide the camera so the given node and its direct neighbors fill the view, centered, viewed
+   * from the angle that shows the cluster most spread out. The viewing direction is the normal of
+   * the cluster's best-fit plane (PCA: the thinnest principal axis), so neighbors fan across the
+   * screen instead of stacking edge-on. Distance fits the in-plane (perpendicular-to-view) radius
+   * to the FOV. A lone node (or a near-degenerate cluster) keeps the current angle and just dollies
+   * in, since there's no meaningful plane to square up to.
+   */
+  private frameNode(id: string) {
+    const focus = this.nodes.find((n) => n.id === id);
+    if (!focus) return;
+    const ids = this.neighborsOf(id);
+    ids.add(id);
+    const subset = this.nodes.filter((n) => ids.has(n.id));
+
+    const center = new THREE.Vector3();
+    for (const n of subset) center.add(new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0));
+    center.divideScalar(subset.length);
+
+    // View direction: normal of the cluster's best-fit plane (smallest principal axis), oriented to
+    // stay on the camera's current side so we square up rather than flip around. Falls back to the
+    // current direction when the cluster is too small/flat for a plane to be meaningful.
+    const curDir = this.camera.position.clone().sub(this.controls.target);
+    if (curDir.lengthSq() < 1e-6) curDir.set(0, 0, 1);
+    curDir.normalize();
+    let viewDir = curDir.clone();
+    if (subset.length >= 2) {
+      let cxx = 0, cyy = 0, czz = 0, cxy = 0, cxz = 0, cyz = 0;
+      for (const n of subset) {
+        const dx = (n.x ?? 0) - center.x, dy = (n.y ?? 0) - center.y, dz = (n.z ?? 0) - center.z;
+        cxx += dx * dx; cyy += dy * dy; czz += dz * dz; cxy += dx * dy; cxz += dx * dz; cyz += dy * dz;
+      }
+      const eig = eigenSym3([[cxx, cxy, cxz], [cxy, cyy, cyz], [cxz, cyz, czz]]);
+      // Only reorient if the spread is genuinely 3D (a real plane exists, not a line/point).
+      if (eig[2].value > 1e-6 && eig[1].value > eig[2].value * 1e-3) {
+        viewDir = eig[0].vector;
+        if (viewDir.dot(curDir) < 0) viewDir.negate(); // keep the camera on its current side
+      }
+    }
+
+    // Distance fits the radius measured perpendicular to the view direction (the on-screen spread),
+    // so the flat dimension we're looking down doesn't inflate the framing. Floor keeps a lone node
+    // from zooming to a degenerate close-up.
+    let r = this.cfg.nodeSize * 1.5;
+    for (const n of subset) {
+      const off = new THREE.Vector3((n.x ?? 0) - center.x, (n.y ?? 0) - center.y, (n.z ?? 0) - center.z);
+      const along = off.dot(viewDir);
+      const perp = Math.sqrt(Math.max(0, off.lengthSq() - along * along));
+      if (perp > r) r = perp;
+    }
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const dist = (r / Math.sin(fov / 2)) * 1.4; // a touch of breathing room around the cluster
+
+    const startDist = this.camera.position.distanceTo(this.controls.target);
+    // Widen clip planes + orbit limits so neither controls.update() nor the projection clamps the
+    // glide (the camera may pass through distances well outside the resting framing).
+    this.camera.near = 0.1;
+    this.camera.far = Math.max(this.camera.far, Math.max(startDist, dist) * 4 + 100);
+    this.camera.updateProjectionMatrix();
+    this.controls.minDistance = 0.5;
+    this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 4 + 100);
+
+    this.userControlled = true;          // deliberate framing — don't let auto-fit pull it back
+    this.controls.enableDamping = false; // we hard-set the camera each frame during the glide
+    this.camTween = {
+      start: performance.now(),
+      posFrom: this.camera.position.clone(),
+      posTo: center.clone().add(viewDir.clone().multiplyScalar(dist)),
+      tgtFrom: this.controls.target.clone(),
+      tgtTo: center,
+    };
+  }
+
+  /** Advance the active "z" framing glide one frame (driven from animate()). */
+  private stepCamTween() {
+    const tw = this.camTween!;
+    const raw = (performance.now() - tw.start) / FRAME_TWEEN_MS;
+    const t = raw >= 1 ? 1 : raw;
+    const e = easeInOutCubic(t);
+    this.camera.position.lerpVectors(tw.posFrom, tw.posTo, e);
+    this.controls.target.lerpVectors(tw.tgtFrom, tw.tgtTo, e);
+    if (t >= 1) {
+      this.camTween = null;
+      this.controls.enableDamping = true; // restore inertial feel for manual orbit/zoom
+    }
+  }
+
+  /**
+   * Dissolve nodes too close to the camera (3D only) by zeroing their point size, so foreground
+   * nodes stop occluding whatever you've zoomed toward. The fade band is a fraction of the
+   * camera→target distance, so it's dormant at the resting framing and bites as you move in. Writes
+   * aScale = baseScale × fade each frame; the threshold uses world positions (group rotation/spin
+   * applies). Outside 3D (or mid mode-tween) it restores full sizes once and bails.
+   */
+  private updateNearCull() {
+    if (!this.pointsMesh || this.baseScales.length !== this.nodes.length) return;
+    const attr = this.pointsMesh.geometry.getAttribute("aScale") as THREE.BufferAttribute;
+    const arr = attr.array as Float32Array;
+    if (this.viewMode !== "3d" || this.tween) {
+      if (this.nearCullActive) { arr.set(this.baseScales); attr.needsUpdate = true; this.nearCullActive = false; }
+      return;
+    }
+    this.group.updateMatrixWorld(); // node coords are group-local; fold in rotation/spin for world distance
+    const cam = this.camera.position;
+    const D = cam.distanceTo(this.controls.target) || 1;
+    const hide = D * NEAR_CULL_HIDE;
+    const show = D * NEAR_CULL_SHOW;
+    const span = Math.max(1e-3, show - hide);
+    const m = this.group.matrixWorld.elements;
+    let anyCulled = false, changed = false;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      const x = n.x ?? 0, y = n.y ?? 0, z = n.z ?? 0;
+      const wx = m[0] * x + m[4] * y + m[8] * z + m[12];
+      const wy = m[1] * x + m[5] * y + m[9] * z + m[13];
+      const wz = m[2] * x + m[6] * y + m[10] * z + m[14];
+      const dist = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
+      const fade = dist <= hide ? 0 : dist >= show ? 1 : (dist - hide) / span;
+      if (fade < 1) anyCulled = true;
+      const v = this.baseScales[i] * fade;
+      if (arr[i] !== v) { arr[i] = v; changed = true; }
+    }
+    if (changed) attr.needsUpdate = true;
+    this.nearCullActive = anyCulled;
+  }
+
+  /**
+   * Edge target intensity = a base level scaled by the graph-scale crowding dim AND the zoom
+   * ratio, capped at fully opaque. At the default framing (crowdZoom ≈ 1) this is just
+   * base × crowd (the dimmed look); zooming in (crowdZoom > 1) brightens edges toward 1.0.
+   */
+  private edgeIntensity(i: number, base: number): number {
+    return Math.min(1, Math.max(EDGE_BASE * EDGE_CROWD_MIN, base * (this.crowdE[i] ?? 1) * this.crowdZoom));
+  }
+
   /** Set per-node / per-edge target intensities from the hovered node (eased in stepHighlight). */
   private setHighlightTargets() {
     if (this.tgtI.length !== this.nodes.length) return;
     const id = this.hoveredId;
     if (!id) {
       this.tgtI.fill(1);
-      this.tgtE.fill(EDGE_BASE);
+      for (let i = 0; i < this.tgtE.length; i++) this.tgtE[i] = this.edgeIntensity(i, EDGE_BASE);
       this.hlActive = true;
+      this.rewriteEdgePositions(); // un-cull (no hover → every edge drawn)
       return;
     }
     const nbrs = this.neighborsOf(id);
@@ -319,9 +668,115 @@ export class WebGLRenderer implements GraphRenderer {
     }
     for (let i = 0; i < this.resolvedLinks.length && i < this.tgtE.length; i++) {
       const { s, t } = this.resolvedLinks[i];
-      this.tgtE[i] = s.id === id || t.id === id ? 1 : EDGE_DIM;
+      // Focused edges pop to full; others dim by crowding (the crowded ones are also culled
+      // from the geometry in rewriteEdgePositions, so the dense web doesn't reappear).
+      this.tgtE[i] = s.id === id || t.id === id ? 1 : this.edgeIntensity(i, EDGE_DIM);
     }
     this.hlActive = true;
+    this.rewriteEdgePositions(); // cull crowded non-focused edges for this hover
+  }
+
+  /**
+   * Recompute crowding when the camera pose (or idle-spin rotation) has changed since the last
+   * computation. Crowding is screen-space, so any view change can alter it. Cheap no-op when still.
+   */
+  /** World units spanned by one screen pixel at the camera's focus distance (both 2D and 3D). */
+  private worldPerPixel(): number {
+    const dist = this.camera.position.distanceTo(this.controls.target) || 1;
+    const hpx = this.renderer.domElement.clientHeight || 1;
+    return (2 * dist * Math.tan(((this.camera.fov * Math.PI) / 180) / 2)) / hpx;
+  }
+
+  private refreshCrowdingIfMoved() {
+    if (this.resolvedLinks.length === 0) return;
+    // While the layout is in motion (sim settling on first load, or a 2D/3D tween) the node
+    // positions change every frame, so any crowding we measure is stale next frame — and
+    // updateGeometryPositions resets camKey each tick, which would otherwise force this expensive
+    // screen-space pass ~30x/sec. Skip it during motion; render() / finishTween recompute once on
+    // settle. Crowding on a still-moving graph has no visual value anyway. Exception: once the USER
+    // takes the camera (zoom/orbit/pan), recompute even mid-settle so zoom brightening responds —
+    // a 3D layout can take a long time to settle, and we don't want zoom dead until then.
+    if ((this.simSettling || this.tween) && !this.userControlled) return;
+    const c = this.camera.position, t = this.controls.target;
+    const key = `${c.x.toFixed(1)},${c.y.toFixed(1)},${c.z.toFixed(1)},${t.x.toFixed(1)},${t.y.toFixed(1)},${t.z.toFixed(1)},${this.group.rotation.y.toFixed(3)}`;
+    if (key === this.camKey) return;
+    this.camKey = key;
+    this.recomputeEdgeCrowding();
+    // Re-apply targets from the fresh crowding: hover re-dims + re-culls, otherwise resting dim.
+    if (this.hoveredId) this.setHighlightTargets();
+    else this.refreshRestingEdges();
+  }
+
+  /**
+   * Per-edge screen-space crowding (both 2D and 3D), from the current camera. Projects each
+   * edge's endpoints to pixels, walks the projected segment binning into screen cells, then sets
+   * a brightness factor (crowdE) and a render flag (keepE) from the peak crowding along the edge.
+   */
+  private recomputeEdgeCrowding() {
+    const n = this.resolvedLinks.length;
+    if (this.crowdE.length !== n) { this.crowdE = new Float32Array(n).fill(1); this.keepE = new Uint8Array(n).fill(1); }
+    if (n === 0) return;
+    const w = this.renderer.domElement.clientWidth || 1;
+    const h = this.renderer.domElement.clientHeight || 1;
+    this.group.updateMatrixWorld();
+    this.camera.updateMatrixWorld();
+    const v = new THREE.Vector3();
+    const project = (node: N3): [number, number] => {
+      v.set(node.x ?? 0, node.y ?? 0, node.z ?? 0).applyMatrix4(this.group.matrixWorld).project(this.camera);
+      return [(v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h];
+    };
+    // project each edge's endpoints once
+    const ex = new Float32Array(n * 4); // [sx, sy, tx, ty] per edge
+    for (let i = 0; i < n; i++) {
+      const { s, t } = this.resolvedLinks[i];
+      const [sx, sy] = project(s);
+      const [tx, ty] = project(t);
+      ex[i * 4] = sx; ex[i * 4 + 1] = sy; ex[i * 4 + 2] = tx; ex[i * 4 + 3] = ty;
+    }
+    // Cell size = a fraction of the link distance, projected to screen px at the current zoom.
+    // This keeps the crowding COUNT at graph scale (so sparse regions read sparse and the
+    // default look is stable), while still being a screen-space test that re-forms as you orbit.
+    const wpp = this.worldPerPixel();
+    const C = Math.max(2, (this.linkDist() * EDGE_CROWD_CELL) / wpp);
+    // Zoom factor: how much closer than the default (auto-fit) framing we are. Zooming in spreads
+    // edges apart on screen, so crowding should ease and edges brighten — this scales that in.
+    if (!this.userControlled || this.wppDefault === 0) this.wppDefault = wpp;
+    const zoom = Math.min(8, Math.max(0.25, this.wppDefault / wpp));
+    this.crowdZoom = zoom; // applied to edge brightness in restingEdgeIntensity / setHighlightTargets
+    const key = (px: number, py: number) => (Math.floor(px / C) + 4096) * 16384 + (Math.floor(py / C) + 4096);
+    const walk = (i: number, fn: (k: number) => void) => {
+      const sx = ex[i * 4], sy = ex[i * 4 + 1], tx = ex[i * 4 + 2], ty = ex[i * 4 + 3];
+      const steps = Math.max(1, Math.min(64, Math.ceil(Math.hypot(tx - sx, ty - sy) / C)));
+      for (let j = 0; j <= steps; j++) { const f = j / steps; fn(key(sx + (tx - sx) * f, sy + (ty - sy) * f)); }
+    };
+    const count = new Map<number, number>();
+    for (let i = 0; i < n; i++) walk(i, (k) => count.set(k, (count.get(k) ?? 0) + 1));
+    for (let i = 0; i < n; i++) {
+      let peak = 1;
+      walk(i, (k) => { const c = count.get(k) ?? 1; if (c > peak) peak = c; });
+      // crowdE: graph-scale dim factor (zoom-independent → stable default look). The zoom-relative
+      // brightening is applied separately via crowdZoom when building edge targets.
+      this.crowdE[i] = Math.max(EDGE_CROWD_MIN, Math.min(1, EDGE_CROWD_FULL / peak));
+      // culling DOES ease with zoom: keep more non-focused edges as you zoom in (effPeak = peak/zoom)
+      const effPeak = peak / zoom;
+      const keepFrac = effPeak <= EDGE_CROWD_FULL ? 1 : EDGE_CULL_KEEP / effPeak;
+      this.keepE[i] = (hashInt("" + i) % 1024) / 1024 < keepFrac ? 1 : 0;
+    }
+  }
+
+  /** Re-apply resting edge brightness from the latest crowding + zoom, unless a hover is active. */
+  private refreshRestingEdges() {
+    if (this.hoveredId) return;
+    for (let i = 0; i < this.tgtE.length; i++) this.tgtE[i] = this.edgeIntensity(i, EDGE_BASE);
+    this.hlActive = true;
+  }
+
+  /** Rewrite the edge position buffer (applies hover culling) and flag it for upload. */
+  private rewriteEdgePositions() {
+    if (!this.linesMesh) return;
+    const attr = this.linesMesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+    this.writeEdgePositions(attr.array as Float32Array);
+    attr.needsUpdate = true;
   }
 
   /** Ease current intensities toward targets each frame; rewrite color buffers only while moving. */
@@ -545,14 +1000,18 @@ export class WebGLRenderer implements GraphRenderer {
    * signature: a 2D layout is flat (z=0), so restoring it into 3D would leave the graph
    * stuck on a plane — separate keys keep each mode's settled layout independent.
    */
-  private posKey(sig: string): string {
-    return `oa-graphpos:v2:${this.viewMode}:${sig}`;
+  private posKey(): string {
+    // Key by view mode ONLY (not the graph signature). The vault/memory graph is live — a few nodes
+    // are added/removed between loads — so an exact-graph key never matches next load and every load
+    // is a cold start. One blob per view mode (2D layouts are flat, so they stay separate from 3D),
+    // merged by node id on save, lets a graph that's ~99% the same reuse ~99% of cached positions.
+    return `oa-graphpos:v4:${this.viewMode}`;
   }
 
-  /** Load persisted positions from localStorage; returns a map of id → [x,y,z] or null on miss. */
-  private loadCachedPositions(sig: string): Map<string, [number, number, number]> | null {
+  /** Load persisted positions (id → [x,y,z]) for the current view mode, or null if none. */
+  private loadCachedPositions(): Map<string, [number, number, number]> | null {
     try {
-      const raw = localStorage.getItem(this.posKey(sig));
+      const raw = localStorage.getItem(this.posKey());
       if (!raw) return null;
       const obj = JSON.parse(raw) as Record<string, [number, number, number]>;
       const map = new Map<string, [number, number, number]>();
@@ -565,16 +1024,46 @@ export class WebGLRenderer implements GraphRenderer {
     }
   }
 
-  /** Persist current node positions to localStorage for the given graph signature. */
-  private saveCachedPositions(sig: string) {
+  /**
+   * Persist settled node positions. Merges into the existing blob rather than overwriting, so
+   * positions survive the small graph changes that happen between loads (the live graph adds/removes
+   * a handful of nodes). The blob is a growing id→position memory; load() matches by id, keeping the
+   * overlap near 100% so we warm-start (low alpha) instead of re-settling from scratch (the cold,
+   * low-FPS path). Stale ids for deleted nodes linger harmlessly until a quota eviction clears them.
+   */
+  private saveCachedPositions() {
+    const key = this.posKey();
+    let obj: Record<string, [number, number, number]> = {};
     try {
-      const obj: Record<string, [number, number, number]> = {};
-      for (const n of this.nodes) {
-        obj[n.id] = [Math.round(n.x ?? 0), Math.round(n.y ?? 0), Math.round(n.z ?? 0)];
-      }
-      localStorage.setItem(this.posKey(sig), JSON.stringify(obj));
+      const raw = localStorage.getItem(key);
+      if (raw) obj = (JSON.parse(raw) as Record<string, [number, number, number]>) ?? {};
     } catch {
-      // localStorage full or unavailable — silently skip
+      obj = {};
+    }
+    for (const n of this.nodes) {
+      obj[n.id] = [Math.round(n.x ?? 0), Math.round(n.y ?? 0), Math.round(n.z ?? 0)];
+    }
+    const data = JSON.stringify(obj);
+    try {
+      localStorage.setItem(key, data);
+    } catch {
+      // Quota hit — drop every other cached layout (stale entries, other view mode) and retry once.
+      this.evictOtherPositionCaches(key);
+      try { localStorage.setItem(key, data); } catch { /* still too large — skip caching */ }
+    }
+  }
+
+  /** Remove all `oa-graphpos:*` entries except the one we want to keep (frees quota). */
+  private evictOtherPositionCaches(keepKey: string) {
+    try {
+      const stale: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("oa-graphpos:") && k !== keepKey) stale.push(k);
+      }
+      for (const k of stale) localStorage.removeItem(k);
+    } catch {
+      // localStorage unavailable — nothing to evict
     }
   }
 
@@ -597,51 +1086,47 @@ export class WebGLRenderer implements GraphRenderer {
     }
 
     // Try to restore persisted (settled) positions from localStorage for a cooled start
-    const cachedPos = this.loadCachedPositions(sig);
+    const cachedPos = this.loadCachedPositions();
     let cachedCount = 0;
 
-    // Build new node/link arrays
+    // Build new node/link arrays, tracking nodes that had no cached position (new since last settle).
+    const uncached: N3[] = [];
     this.nodes = g.nodes.map((n) => {
-      // 1st priority: persisted localStorage positions (settled layout from previous session)
+      // 1st priority: persisted localStorage positions (settled layout from a previous session)
       if (cachedPos) {
         const c = cachedPos.get(n.id);
-        if (c) {
-          cachedCount++;
-          return { ...n, x: c[0], y: c[1], z: c[2] };
-        }
+        if (c) { cachedCount++; return { ...n, x: c[0], y: c[1], z: c[2] }; }
       }
       // 2nd priority: in-memory positions from previous render (same session, graph changed)
       const p = prevPos.get(n.id);
-      if (p) {
-        return { ...n, x: p.x, y: p.y, z: p.z };
-      }
-      // Fallback: random initial position within a sphere
       const r = 80;
-      return {
-        ...n,
-        x: (Math.random() - 0.5) * r,
-        y: (Math.random() - 0.5) * r,
-        z: (Math.random() - 0.5) * r,
-      };
+      const node: N3 = p
+        ? { ...n, x: p.x, y: p.y, z: p.z }
+        : { ...n, x: (Math.random() - 0.5) * r, y: (Math.random() - 0.5) * r, z: (Math.random() - 0.5) * r };
+      uncached.push(node); // had no persisted position — new, or first session
+      return node;
     });
 
-    // If ≥80% of nodes were seeded from the settled cache, start at low alpha so the
-    // simulation barely nudges rather than re-settling from scratch → near-instant display.
-    // Otherwise start at full alpha for a proper initial layout.
     const totalNodes = this.nodes.length;
     const cachedFraction = totalNodes > 0 ? cachedCount / totalNodes : 0;
-    const startAlpha = cachedFraction >= 0.8 ? 0.25 : 1;
+    // Warm load: enough nodes already have a settled position that we skip the (expensive) global
+    // simulation and render the cached layout directly. Cold load (first ever / major change) settles.
+    const warm = cachedFraction >= SETTLE_SKIP_FRAC;
 
     this.links = g.edges.map((e) => ({ source: e.from, target: e.to }));
     this.rebuildResolvedLinks(); // resolve endpoints once; endpoint objects mutate in place during ticks
 
+    if (warm && uncached.length > 0) this.placeNearNeighbors(uncached); // nudge the few new nodes next to their neighbours
+
     this.buildGeometry(); // initial geometry with starting positions
     this.fitCamera();
 
-    // Run 3D force simulation (d3 stops itself at alphaMin)
+    // Build the 3D force simulation. On a warm load it stays stopped (the cached layout is already
+    // settled); it exists only so a settings-slider reheat or 2D/3D tween can re-run it. On a cold
+    // load presettle() runs it to rest. d3 stops itself at alphaMin.
     this.sim = forceSimulation<N3>(this.nodes, 3)
-      .alpha(startAlpha) // cooled start when positions are restored from cache
-      .force("charge", forceManyBody<N3>().strength(this.cfg.repulsion))
+      .alpha(warm ? 0.25 : 1) // cooled start when positions are restored from cache
+      .force("charge", forceManyBody<N3>().strength(this.cfg.repulsion).theta(MANYBODY_THETA))
       .force(
         "link",
         forceLink<N3, L3>(this.links)
@@ -658,15 +1143,102 @@ export class WebGLRenderer implements GraphRenderer {
       .force("y", forceY<N3>(0).strength(this.cfg.centering))
       .force("z", forceZ<N3>(0).strength(this.cfg.centering))
       .alphaMin(0.001)
+      // These handlers drive only the ANIMATED path — a settings-slider reheat or a 2D/3D tween
+      // nudging an already-settled layout. The INITIAL layout is run headlessly in presettle()
+      // below, so it never animates a scatter. Both paths stop on the same velocity threshold.
       .on("tick", () => {
+        this.simSettling = true; // suppresses per-frame crowding recompute while the layout moves
         if (this.viewMode === "2d") this.flattenZ(); // keep the layout planar while x/y re-spreads
         this.updateGeometryPositions();
         this.fitCamera(); // keep the whole cloud framed as it condenses — also re-fits on every mode switch
+        if (this.maxNodeSpeedSq() < this.restThresholdSq()) this.onSettled(); // freeze once motion is imperceptible
       })
-      .on("end", () => {
-        this.fitCamera(); // final frame once it settles
-        this.saveCachedPositions(sig); // persist settled positions for instant restore on next load
-      });
+      .on("end", () => this.onSettled()); // alphaMin backstop if motion never dips below the freeze threshold
+
+    if (warm) {
+      // The cached layout is already settled — don't tick the expensive simulation, just show it.
+      this.sim.stop();
+      this.onSettled();
+    } else {
+      this.presettle(); // cold: run the initial layout to rest synchronously (no scatter, once per new graph)
+    }
+  }
+
+  /**
+   * Place new (uncached) nodes at the average position of their already-positioned neighbours, so on
+   * a warm load the handful of nodes the live graph added since last settle sit next to where they
+   * belong instead of at a random point — good enough to render without running the global settle.
+   */
+  private placeNearNeighbors(uncached: N3[]) {
+    const isNew = new Set(uncached.map((n) => n.id));
+    const acc = new Map<string, { x: number; y: number; z: number; c: number }>();
+    for (const n of uncached) acc.set(n.id, { x: 0, y: 0, z: 0, c: 0 });
+    for (const { s, t } of this.resolvedLinks) {
+      if (isNew.has(s.id) && !isNew.has(t.id)) { const a = acc.get(s.id)!; a.x += t.x ?? 0; a.y += t.y ?? 0; a.z += t.z ?? 0; a.c++; }
+      if (isNew.has(t.id) && !isNew.has(s.id)) { const a = acc.get(t.id)!; a.x += s.x ?? 0; a.y += s.y ?? 0; a.z += s.z ?? 0; a.c++; }
+    }
+    for (const n of uncached) {
+      const a = acc.get(n.id)!;
+      if (a.c > 0) { n.x = a.x / a.c; n.y = a.y / a.c; n.z = a.z / a.c; } // else keep random fallback (isolated new node)
+    }
+  }
+
+  /** Squared speed of the fastest-moving node (compared squared to skip a per-node sqrt). */
+  private maxNodeSpeedSq(): number {
+    let max = 0;
+    for (const n of this.nodes) {
+      const vx = n.vx ?? 0, vy = n.vy ?? 0, vz = n.vz ?? 0;
+      const sq = vx * vx + vy * vy + vz * vz;
+      if (sq > max) max = sq;
+    }
+    return max;
+  }
+
+  /** Squared rest threshold: below this per-node speed the layout reads as settled (scales with mode spacing). */
+  private restThresholdSq(): number {
+    const t = this.linkDist() * SETTLE_SPEED_FRAC;
+    return t * t;
+  }
+
+  /** Shared at-rest bookkeeping: stop the sim, zero residual motion, frame + persist the settled layout. */
+  private onSettled() {
+    this.sim?.stop();
+    this.simSettling = false;
+    for (const n of this.nodes) { n.vx = 0; n.vy = 0; n.vz = 0; } // kill the last sliver of velocity (and accel — no more forces)
+    this.updateGeometryPositions();
+    this.fitCamera();
+    this.refreshCrowdingIfMoved(); // compute resting crowding once now that the layout is still
+    this.saveCachedPositions(); // persist settled positions for instant restore on next load
+  }
+
+  /**
+   * Run the initial layout to rest synchronously, before the first paint. Advances the physics in a
+   * tight loop (each tick() integrates forces → velocity → position; it does NOT dispatch "tick", so
+   * nothing renders mid-loop), stopping as soon as the fastest node is barely moving, alphaMin is
+   * reached, or the tick/time caps are hit. The graph then appears already in place — no visible
+   * scatter and no multi-second low-FPS settle. A graph too large to settle within the caps paints
+   * its partial layout and hands the rest to the animated timer (bounded by the same velocity freeze).
+   */
+  private presettle() {
+    if (!this.sim) return;
+    this.sim.stop(); // take over from d3's internal rAF timer; we tick manually
+    const threshSq = this.restThresholdSq();
+    const deadline = performance.now() + PRESETTLE_BUDGET_MS;
+    let restRun = 0; // consecutive sub-threshold ticks
+    for (let i = 0; i < PRESETTLE_MAX_TICKS; i++) {
+      this.sim.tick();
+      if (this.viewMode === "2d") this.flattenZ(); // keep the headless layout planar in 2D
+      if (this.sim.alpha() < this.sim.alphaMin()) { this.onSettled(); return; } // fully cooled
+      restRun = this.maxNodeSpeedSq() < threshSq ? restRun + 1 : 0;
+      if (restRun >= SETTLE_REST_TICKS) { this.onSettled(); return; } // settled by motion, not the slow timer
+      if (performance.now() >= deadline) break; // budget spent — finish the remainder animated
+    }
+    // Didn't fully settle within the caps: paint what we have and let the animated timer finish it
+    // (its tick handler applies the same velocity freeze, so the visible tail stays short).
+    this.updateGeometryPositions();
+    this.fitCamera();
+    this.simSettling = true;
+    this.sim.restart();
   }
 
   /** Remove both meshes from the scene group and free their GPU resources. */
@@ -724,7 +1296,8 @@ export class WebGLRenderer implements GraphRenderer {
     const pointsGeo = new THREE.BufferGeometry();
     pointsGeo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     pointsGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    pointsGeo.setAttribute("aScale", new THREE.BufferAttribute(this.degreeScales(), 1));
+    this.baseScales = this.degreeScales();
+    pointsGeo.setAttribute("aScale", new THREE.BufferAttribute(this.baseScales.slice(), 1));
 
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
@@ -738,7 +1311,10 @@ export class WebGLRenderer implements GraphRenderer {
       map: this.circleTex ?? undefined,
       alphaTest: 0.5,
       transparent: true,
-      depthWrite: false,
+      // Write depth so nodes occlude each other by real camera distance, not buffer order
+      // (a back node was painting over a front one). Safe because alphaTest hard-clips the
+      // transparent corners, so the kept pixels are opaque and leave no depth halos.
+      depthWrite: true,
     });
     // Scale each point's base size by its per-vertex degree multiplier. Injected into the
     // built-in points shader so size attenuation, circle map, and vertex colors stay intact.
@@ -772,6 +1348,8 @@ export class WebGLRenderer implements GraphRenderer {
     linesGeo.setAttribute("color", new THREE.BufferAttribute(lineColors, 3));
     this.curE = new Float32Array(lineCount).fill(EDGE_BASE);
     this.tgtE = new Float32Array(lineCount).fill(EDGE_BASE);
+    this.crowdE = new Float32Array(lineCount).fill(1);
+    this.keepE = new Uint8Array(lineCount).fill(1);
 
     const linesMat = new THREE.LineBasicMaterial({
       vertexColors: true,
@@ -797,16 +1375,26 @@ export class WebGLRenderer implements GraphRenderer {
     }
   }
 
-  /** Write current endpoint positions (2 vertices * 3 components) into an edge position buffer. */
+  /**
+   * Write endpoint positions (2 vertices * 3 components) into an edge position buffer. While a
+   * node is hovered, crowded NON-focused edges (keepE === 0) are collapsed to a zero-length
+   * segment so they don't render — thinning the dense web behind the highlight. The focused
+   * node's own edges are always drawn in full.
+   */
   private writeEdgePositions(buf: Float32Array) {
+    const id = this.hoveredId;
+    const hovering = id !== null;
     for (let i = 0; i < this.resolvedLinks.length; i++) {
       const { s, t } = this.resolvedLinks[i];
-      buf[i * 6] = s.x ?? 0;
-      buf[i * 6 + 1] = s.y ?? 0;
-      buf[i * 6 + 2] = s.z ?? 0;
-      buf[i * 6 + 3] = t.x ?? 0;
-      buf[i * 6 + 4] = t.y ?? 0;
-      buf[i * 6 + 5] = t.z ?? 0;
+      const sx = s.x ?? 0, sy = s.y ?? 0, sz = s.z ?? 0;
+      const cull = hovering && this.keepE[i] === 0 && s.id !== id && t.id !== id;
+      buf[i * 6] = sx;
+      buf[i * 6 + 1] = sy;
+      buf[i * 6 + 2] = sz;
+      // culled → second vertex == first (degenerate, no pixels); else the real far endpoint
+      buf[i * 6 + 3] = cull ? sx : (t.x ?? 0);
+      buf[i * 6 + 4] = cull ? sy : (t.y ?? 0);
+      buf[i * 6 + 5] = cull ? sz : (t.z ?? 0);
     }
   }
 
@@ -828,11 +1416,13 @@ export class WebGLRenderer implements GraphRenderer {
     this.writeEdgePositions(linePosAttr.array as Float32Array);
     linePosAttr.needsUpdate = true;
     this.linesMesh.geometry.computeBoundingSphere();
+
+    this.camKey = ""; // layout moved → force a crowding recompute on the next frame
   }
 
   /** Frame the camera to the node cloud's bounding sphere (centroid + max radius). */
   private fitCamera() {
-    if (this.nodes.length === 0 || this.userControlled || this.tween) return;
+    if (this.nodes.length === 0 || this.userControlled || this.tween || this.camTween) return;
     let cx = 0, cy = 0, cz = 0;
     for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
     const k = this.nodes.length;
@@ -845,6 +1435,8 @@ export class WebGLRenderer implements GraphRenderer {
       const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (d > r) r = d;
     }
+    this.cloudCenter.set(cx, cy, cz); // remembered for the depth-fog framing
+    this.cloudRadius = r;
     const fov = (this.camera.fov * Math.PI) / 180;
     const dist = (r / Math.sin(fov / 2)) * 1.25;
     this.controls.target.set(cx, cy, cz);
@@ -855,6 +1447,26 @@ export class WebGLRenderer implements GraphRenderer {
     this.controls.minDistance = Math.max(0.5, dist * 0.02); // allow zooming in close
     this.controls.maxDistance = dist * 12;
     this.controls.update();
+  }
+
+  /**
+   * Position the linear depth fog so the front of the node cloud stays crisp and the back
+   * fades toward the background — driven each frame off the live camera→centroid distance,
+   * so it tracks orbit and zoom. In flat 2D every node sits at one depth (nothing to convey),
+   * so the fog is pushed out of range rather than toggled off (toggling recompiles materials).
+   */
+  private updateFog() {
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (!fog) return;
+    if (this.viewMode !== "3d") {
+      fog.near = 1e6;
+      fog.far = 1e7;
+      return;
+    }
+    const camDist = this.camera.position.distanceTo(this.cloudCenter);
+    const r = this.cloudRadius;
+    fog.near = Math.max(0.1, camDist - r * FOG_FRONT);
+    fog.far = camDist + r * FOG_BACK;
   }
 
   destroy() {
@@ -887,6 +1499,10 @@ export class WebGLRenderer implements GraphRenderer {
       this.renderer.domElement.removeEventListener("wheel", this.interactHandler);
       this.renderer.domElement.removeEventListener("pointerdown", this.interactHandler);
       this.interactHandler = undefined;
+    }
+    if (this.keyHandler) {
+      window.removeEventListener("keydown", this.keyHandler);
+      this.keyHandler = undefined;
     }
     this.circleTex?.dispose();
     this.circleTex = null;
