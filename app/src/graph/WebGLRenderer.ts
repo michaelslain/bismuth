@@ -16,6 +16,7 @@ import {
 } from "d3-force-3d";
 import type { GraphData, NodeKind } from "../../../core/src/graph";
 import type { GraphRenderer } from "./GraphRenderer";
+import { nodeCollideRadius } from "./collide";
 
 // Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
 const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
@@ -43,6 +44,10 @@ const EDGE_CULL_KEEP = 5;      // while highlighting, keep ~this many non-focuse
 // linked cliques, where a single pass lets the link/centering pull overpower it.
 const COLLIDE_RATIO = 0.9;
 const COLLIDE_ITERATIONS = 3;
+// Big nodes collide as their drawn circle (not a point); this pads that circle so neighbouring hubs
+// keep a small visible gap instead of merely touching. Only affects nodes whose padded radius beats
+// the spacing floor (the largest hubs) — leaves are untouched.
+const COLLIDE_SIZE_PADDING = 1.25;
 
 // Link strength is fixed low instead of d3's default (1/min(degree), which yanks a hub's
 // degree-1 leaves tight against it into dense fans). A weak, uniform pull lets collision and
@@ -938,10 +943,19 @@ export class WebGLRenderer implements GraphRenderer {
     return this.cfg.linkDistance * (this.viewMode === "2d" ? MODE_2D_SPACING : 1);
   }
 
-  /** Collide radius derived from the (mode-adjusted) link distance. */
+  /** Collide radius derived from the (mode-adjusted) link distance — the uniform spacing floor. */
   private collideRadius(): number {
     return this.linkDist() * COLLIDE_RATIO;
   }
+
+  /**
+   * Per-node collide radius passed to forceCollide. Leaves get the uniform floor; hubs get their
+   * actual drawn radius (degree-scaled point size, converted to world units) so big nodes repel as
+   * the circles they're drawn as instead of as points — which is what made hubs overlap. `i` indexes
+   * `this.nodes`, the same order as `baseScales` (its degree multipliers) and the sim's node array.
+   */
+  private collideRadiusFor = (_n: N3, i: number): number =>
+    nodeCollideRadius(this.collideRadius(), this.cfg.nodeSize, this.baseScales[i] ?? 1, this.camera?.fov ?? 60, COLLIDE_SIZE_PADDING);
 
   /**
    * Apply user settings. Spin and node size are read live (cheap); a palette change
@@ -957,10 +971,11 @@ export class WebGLRenderer implements GraphRenderer {
 
     if (cfg.palette !== prev.palette && this.pointsMesh) this.recolorNodes();
 
-    if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering)) {
+    // nodeSize feeds the per-node collide radius, so a size change must recompute collide (and re-settle).
+    if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering || cfg.nodeSize !== prev.nodeSize)) {
       (this.sim.force("charge") as any)?.strength(cfg.repulsion);
       (this.sim.force("link") as any)?.distance(this.linkDist());
-      (this.sim.force("collide") as any)?.radius(this.collideRadius());
+      (this.sim.force("collide") as any)?.radius(this.collideRadiusFor); // re-eval per node (picks up new size/linkDist)
       for (const axis of ["x", "y", "z"] as const) (this.sim.force(axis) as any)?.strength(cfg.centering);
       this.userControlled = false; // re-frame as it re-settles
       this.sim.alpha(0.5).restart();
@@ -980,7 +995,7 @@ export class WebGLRenderer implements GraphRenderer {
       // reheats on land; the instant paths re-settle on the next render.
       if (this.sim) {
         (this.sim.force("link") as any)?.distance(this.linkDist());
-        (this.sim.force("collide") as any)?.radius(this.collideRadius());
+        (this.sim.force("collide") as any)?.radius(this.collideRadiusFor); // re-eval per node for the new mode spacing
       }
     }
     if (this.controls) this.modeInitialized = true;
@@ -1137,7 +1152,9 @@ export class WebGLRenderer implements GraphRenderer {
     // are added/removed between loads — so an exact-graph key never matches next load and every load
     // is a cold start. One blob per view mode (2D layouts are flat, so they stay separate from 3D),
     // merged by node id on save, lets a graph that's ~99% the same reuse ~99% of cached positions.
-    return `oa-graphpos:v4:${this.viewMode}`;
+    // Bump the version whenever the layout algorithm changes so stale cached positions are dropped
+    // and a fresh settle runs. v5: per-node collision radius (nodes collide as circles, not points).
+    return `oa-graphpos:v5:${this.viewMode}`;
   }
 
   /** Load persisted positions (id → [x,y,z]) for the current view mode, or null if none. */
@@ -1277,7 +1294,8 @@ export class WebGLRenderer implements GraphRenderer {
       )
       .force("center", forceCenter<N3>(0, 0, 0))
       // Min-spacing floor: spreads dense clusters apart so density reads evenly across the graph.
-      .force("collide", forceCollide<N3>(this.collideRadius()).iterations(COLLIDE_ITERATIONS))
+      // Radius is per-node (hubs use their drawn size) so big nodes don't overlap. See collideRadiusFor.
+      .force("collide", forceCollide<N3>(this.collideRadiusFor).iterations(COLLIDE_ITERATIONS))
       // Pull toward origin so separate tag clusters stay grouped rather than drifting apart.
       // Higher = denser / clusters closer.
       .force("x", forceX<N3>(0).strength(this.cfg.centering))
