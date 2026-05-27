@@ -1,4 +1,4 @@
-import { createSignal, createResource, createMemo, For, Show } from "solid-js";
+import { createSignal, createResource, createMemo, For, Show, Switch, Match } from "solid-js";
 import { api } from "../api";
 import { parseBase } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
@@ -46,22 +46,19 @@ export function BaseView(props: { path?: string; source?: string }) {
         </For>
       </div>
       <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
-        {(res) => {
-          const v = res().view;
-          return (
-            <Show when={v.type === "kanban"} fallback={
-              <Show when={v.type === "cards"} fallback={
-                <Show when={v.type === "list"} fallback={<TableView result={res()} config={config()} />}>
-                  <ListView result={res()} config={config()} />
-                </Show>
-              }>
-                <CardsView result={res()} config={config()} />
-              </Show>
-            }>
+        {(res) => (
+          <Switch fallback={<TableView result={res()} config={config()} />}>
+            <Match when={res().view.type === "kanban"}>
               <KanbanView result={res()} config={config()} onChange={refetch} />
-            </Show>
-          );
-        }}
+            </Match>
+            <Match when={res().view.type === "cards"}>
+              <CardsView result={res()} config={config()} />
+            </Match>
+            <Match when={res().view.type === "list"}>
+              <ListView result={res()} config={config()} />
+            </Match>
+          </Switch>
+        )}
       </Show>
     </div>
   );
