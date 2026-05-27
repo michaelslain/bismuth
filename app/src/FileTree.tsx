@@ -52,7 +52,11 @@ function joinPath(dir: string, name: string): string {
 
 export function FileTree(props: { onOpen: (path: string) => void }) {
   const [files, { refetch }] = createResource(() => api.tree());
-  const t = setInterval(() => refetch(), 3000);
+  const [editing, setEditing] = createSignal<string | null>(null);
+  // Pause polling while an inline edit is in progress: a refetch rebuilds the tree with
+  // new node objects, which tears down the <For> rows (and the focused edit input),
+  // firing blur → an unintended commit. Resuming after the edit ends is fine.
+  const t = setInterval(() => { if (editing() === null) refetch(); }, 3000);
   onCleanup(() => clearInterval(t));
 
   const [open, setOpen] = createSignal<Set<string>>(new Set());
@@ -64,7 +68,6 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     });
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
-  const [editing, setEditing] = createSignal<string | null>(null);
 
   const refresh = () => refetch();
 
