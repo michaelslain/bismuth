@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { watch } from "node:fs";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
-import { listMarkdownWithIcons, readNote, writeNote } from "./files";
+import { listTree, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
@@ -76,7 +76,7 @@ export function createServer(cfg: CoreConfig) {
         return Response.json({ version }, { headers: cors });
       }
       if (url.pathname === "/tree" && req.method === "GET") {
-        if (cachedTree === null) cachedTree = await listMarkdownWithIcons(cfg.vault);
+        if (cachedTree === null) cachedTree = await listTree(cfg.vault);
         return Response.json(cachedTree, { headers: cors });
       }
       if (url.pathname === "/file" && req.method === "GET") {

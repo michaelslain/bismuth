@@ -23,10 +23,11 @@ export interface GraphData {
   edges: GraphEdge[];
 }
 
-/** A markdown file in the vault, with its optional `icon` frontmatter (an emoji). Wire shape of /tree. */
+/** A vault entry surfaced by /tree: a markdown file (with optional `icon` frontmatter) or a directory. */
 export interface TreeEntry {
   path: string;
   icon?: string;
+  kind?: "file" | "dir";
 }
 
 export function emptyGraph(): GraphData {

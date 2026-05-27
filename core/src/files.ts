@@ -1,5 +1,5 @@
 import { join, dirname } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync } from "node:fs";
 import { parseFrontmatter } from "./frontmatter";
 import type { TreeEntry } from "./graph";
 
@@ -10,15 +10,40 @@ export async function listMarkdown(root: string): Promise<string[]> {
   return out;
 }
 
-/** Like {@link listMarkdown}, but reads each note's `icon` frontmatter so the sidebar can render it. */
-export async function listMarkdownWithIcons(root: string): Promise<TreeEntry[]> {
-  const paths = await listMarkdown(root);
-  return Promise.all(
-    paths.map(async (path) => {
-      const { data } = parseFrontmatter(await readNote(root, path));
-      return typeof data.icon === "string" ? { path, icon: data.icon } : { path };
-    }),
-  );
+/**
+ * Walk the vault, returning files AND directories for the sidebar tree.
+ * - Skips dot-entries (`.trash`, `.obsidian`, …) so trash and config stay hidden.
+ * - Only `.md` files are included; their `icon` frontmatter is read for the sidebar.
+ * - Empty directories are included so newly-created folders persist across polls.
+ */
+export async function listTree(root: string): Promise<TreeEntry[]> {
+  const out: TreeEntry[] = [];
+  const walk = async (relDir: string) => {
+    const absDir = relDir ? join(root, relDir) : root;
+    let entries: ReturnType<typeof readdirSync>;
+    try {
+      entries = readdirSync(absDir, { withFileTypes: true });
+    } catch {
+      return; // dir may have been removed mid-walk
+    }
+    for (const d of entries) {
+      if (d.name.startsWith(".")) continue;
+      const rel = relDir ? `${relDir}/${d.name}` : d.name;
+      if (d.isDirectory()) {
+        out.push({ path: rel, kind: "dir" });
+        await walk(rel);
+      } else if (d.name.endsWith(".md")) {
+        const { data } = parseFrontmatter(await readNote(root, rel));
+        out.push(
+          typeof data.icon === "string"
+            ? { path: rel, icon: data.icon, kind: "file" }
+            : { path: rel, kind: "file" },
+        );
+      }
+    }
+  };
+  await walk("");
+  return out;
 }
 
 export async function readNote(root: string, rel: string): Promise<string> {

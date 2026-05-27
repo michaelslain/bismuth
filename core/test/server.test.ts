@@ -152,8 +152,8 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
   const base = `http://localhost:${server.port}`;
   try {
     const entries = await (await fetch(`${base}/tree`)).json();
-    expect(entries).toContainEqual({ path: "fire.md", icon: "🔥" });
-    expect(entries).toContainEqual({ path: "plain.md" });
+    expect(entries).toContainEqual({ path: "fire.md", icon: "🔥", kind: "file" });
+    expect(entries).toContainEqual({ path: "plain.md", kind: "file" });
   } finally {
     server.stop(true);
   }

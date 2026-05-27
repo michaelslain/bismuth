@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, listMarkdownWithIcons, readNote, writeNote } from "../src/files";
+import { listMarkdown, listTree, readNote, writeNote } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -79,20 +79,33 @@ test("deeply nested directories work", async () => {
   expect(files).toContain("a/b/c/d/e/f.md");
 });
 
-test("listMarkdownWithIcons surfaces the `icon` frontmatter property", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-icons-"));
-  await writeNote(dir, "fire.md", "---\nicon: 🔥\n---\nhot");
-  await writeNote(dir, "plain.md", "# no frontmatter");
-  const entries = (await listMarkdownWithIcons(dir)).sort((a, b) => a.path.localeCompare(b.path));
+test("listTree surfaces the `icon` frontmatter property", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-icon-"));
+  await writeNote(dir, "plain.md", "# Plain");
+  await writeNote(dir, "fancy.md", "---\nicon: 🚀\n---\n# Fancy");
+  const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
   expect(entries).toEqual([
-    { path: "fire.md", icon: "🔥" },
-    { path: "plain.md" },
+    { path: "fancy.md", icon: "🚀", kind: "file" },
+    { path: "plain.md", kind: "file" },
   ]);
 });
 
-test("listMarkdownWithIcons ignores a non-string icon value", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-icons-bad-"));
-  await writeNote(dir, "num.md", "---\nicon: 42\n---\nbody");
-  const entries = await listMarkdownWithIcons(dir);
-  expect(entries).toEqual([{ path: "num.md" }]);
+test("listTree ignores a non-string icon value", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-badicon-"));
+  await writeNote(dir, "note.md", "---\nicon: [not, a, string]\n---\n# Note");
+  const entries = await listTree(dir);
+  expect(entries).toEqual([{ path: "note.md", kind: "file" }]);
+});
+
+test("listTree includes directories and excludes dot-dirs like .trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-dirs-"));
+  await writeNote(dir, "top.md", "# Top");
+  await writeNote(dir, "projects/inner.md", "# Inner");
+  mkdirSync(join(dir, "empty-folder"));
+  mkdirSync(join(dir, ".trash"));
+  await writeNote(dir, ".trash/deleted.md", "# Deleted");
+  const paths = (await listTree(dir)).map((e) => e.path).sort();
+  expect(paths).toEqual(["empty-folder", "projects", "projects/inner.md", "top.md"]);
+  const empty = (await listTree(dir)).find((e) => e.path === "empty-folder");
+  expect(empty).toEqual({ path: "empty-folder", kind: "dir" });
 });
