@@ -2,7 +2,7 @@ import { listMarkdown, readNote, writeNote } from "../files";
 import { parseFrontmatter } from "../frontmatter";
 import { extractTags } from "../tags";
 import { parseCards, deckPathsFromTags } from "./parser";
-import { schedule, formatScheduling, BASE_EASE } from "./scheduler";
+import { schedule, formatScheduling, BASE_EASE, SR_COMMENT_RE } from "./scheduler";
 import type { Card, Deck, ParsedCard, ReviewResponse, SchedulingInfo } from "./types";
 
 /** Deck for a note: first flashcard deck path found, or null if not a flashcard note. */
@@ -57,7 +57,7 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
   return out;
 }
 
-export async function collectCards(vault: string, _today: string): Promise<Card[]> {
+export async function collectCards(vault: string): Promise<Card[]> {
   const rels = await listMarkdown(vault);
   const out: Card[] = [];
   for (const rel of rels) {
@@ -72,7 +72,7 @@ export async function collectCards(vault: string, _today: string): Promise<Card[
 }
 
 export async function collectDecks(vault: string, today: string): Promise<Deck[]> {
-  const cards = await collectCards(vault, today);
+  const cards = await collectCards(vault);
   const map = new Map<string, Deck>();
   for (const c of cards) {
     const d = map.get(c.deck) ?? { name: c.deck, total: 0, due: 0 };
@@ -84,7 +84,7 @@ export async function collectDecks(vault: string, today: string): Promise<Deck[]
 }
 
 export async function dueCards(vault: string, today: string, deck?: string): Promise<Card[]> {
-  const cards = await collectCards(vault, today);
+  const cards = await collectCards(vault);
   return cards.filter(
     (c) => (deck === undefined || c.deck === deck) && (c.due === null || c.due <= today),
   );
@@ -127,7 +127,7 @@ function rewriteCardSchedule(body: string, pc: ParsedCard, srComment: string): s
   const lines = body.split("\n");
   if (pc.inlineSchedule) {
     const i = pc.startLine;
-    const clean = lines[i].replace(/\s*<!--SR:(?:!\d{4}-\d{2}-\d{2},\d+,\d+)+-->/, "");
+    const clean = lines[i].replace(SR_COMMENT_RE, "").trimEnd();
     lines[i] = `${clean} ${srComment}`;
   } else if (pc.scheduleLine >= 0) {
     lines[pc.scheduleLine] = srComment;

@@ -1,9 +1,7 @@
 import type { ParsedCard, SchedulingInfo } from "./types";
-import { parseScheduling } from "./scheduler";
+import { parseScheduling, SR_COMMENT_RE } from "./scheduler";
 
 export const BASE_TAG = "flashcards";
-
-const SR_LINE_RE = /<!--SR:(?:!\d{4}-\d{2}-\d{2},\d+,\d+)+-->/;
 const CLOZE_RE = /==[^=]+==|\{\{[^}]+\}\}|\*\*[^*]+\*\*/g;
 
 /** Given a note's tag strings (without leading '#'), return deck paths for the flashcard tag.
@@ -38,7 +36,7 @@ function splitBlocks(body: string): { lines: string[]; start: number }[] {
 
 /** Pull a trailing SR comment off a single line. Returns the cleaned line + comment text (or null). */
 function splitInlineSr(line: string): { clean: string; sr: string | null } {
-  const m = line.match(SR_LINE_RE);
+  const m = line.match(SR_COMMENT_RE);
   if (!m) return { clean: line, sr: null };
   return { clean: line.slice(0, m.index).trimEnd(), sr: m[0] };
 }
@@ -59,7 +57,7 @@ export function parseCards(body: string): ParsedCard[] {
     let contentLines = lines;
     let multiSchedule: SchedulingInfo[] = [];
     const lastIdx = lines.length - 1;
-    if (lines.length > 1 && lines[lastIdx].trim().startsWith("<!--SR:") && SR_LINE_RE.test(lines[lastIdx])) {
+    if (lines.length > 1 && lines[lastIdx].trim().startsWith("<!--SR:") && SR_COMMENT_RE.test(lines[lastIdx])) {
       scheduleLine = start + lastIdx;
       multiSchedule = parseScheduling(lines[lastIdx]);
       contentLines = lines.slice(0, lastIdx);

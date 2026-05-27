@@ -20,7 +20,7 @@ test("collectCards finds cards only in notes tagged #flashcards", async () => {
     "math.md": "#flashcards/math\n\n2+2::4\n\ndog:::perro",
     "notes.md": "no tag here\n\nshould::not appear",
   });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   expect(cards.length).toBe(3);
   expect(cards.every((c) => c.deck === "math")).toBe(true);
   expect(cards.every((c) => c.notePath === "math.md")).toBe(true);
@@ -28,7 +28,7 @@ test("collectCards finds cards only in notes tagged #flashcards", async () => {
 
 test("reversed sub-cards swap question/answer", async () => {
   const vault = await vaultWith({ "a.md": "#flashcards\n\ndog:::perro" });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   const fwd = cards.find((c) => c.id.endsWith("::0"))!;
   const rev = cards.find((c) => c.id.endsWith("::1"))!;
   expect(fwd.question).toBe("dog");
@@ -62,7 +62,7 @@ test("collectDecks aggregates totals and due counts", async () => {
 
 test("applyReview writes an inline SR comment to a single-line card", async () => {
   const vault = await vaultWith({ "a.md": "#flashcards\n\n2+2::4" });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   await applyReview(vault, cards[0].id, "good", TODAY);
   const text = await readNote(vault, "a.md");
   expect(text).toContain("2+2::4 <!--SR:!2026-05-28,1,250-->");
@@ -70,7 +70,7 @@ test("applyReview writes an inline SR comment to a single-line card", async () =
 
 test("applyReview appends standalone SR comment to a multi-line card", async () => {
   const vault = await vaultWith({ "a.md": "#flashcards\n\nQ\n?\nA" });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   await applyReview(vault, cards[0].id, "easy", TODAY);
   const text = await readNote(vault, "a.md");
   expect(text).toContain("Q\n?\nA\n<!--SR:!2026-05-31,4,270-->");
@@ -78,7 +78,7 @@ test("applyReview appends standalone SR comment to a multi-line card", async () 
 
 test("applyReview updates only the reviewed sub-card of a reversed card", async () => {
   const vault = await vaultWith({ "a.md": "#flashcards\n\ndog:::perro" });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   const fwd = cards.find((c) => c.id.endsWith("::0"))!;
   await applyReview(vault, fwd.id, "good", TODAY);
   const text = await readNote(vault, "a.md");
@@ -87,11 +87,23 @@ test("applyReview updates only the reviewed sub-card of a reversed card", async 
 
 test("applyReview re-review updates existing comment in place (no duplication)", async () => {
   const vault = await vaultWith({ "a.md": "#flashcards\n\n2+2::4 <!--SR:!2020-01-01,1,250-->" });
-  const cards = await collectCards(vault, TODAY);
+  const cards = await collectCards(vault);
   await applyReview(vault, cards[0].id, "good", TODAY);
   const text = await readNote(vault, "a.md");
   const matches = text.match(/<!--SR:/g) || [];
   expect(matches.length).toBe(1);
   // good review of a 1-day card: interval = round(1 * 250/100) = 3, due = today + 3 = 2026-05-30
   expect(text).toContain("<!--SR:!2026-05-30,3,250-->");
+});
+
+test("cloze sub-cards hide one deletion each", async () => {
+  const vault = await vaultWith({ "a.md": "#flashcards\n\nThe ==sun== is a {{star}}" });
+  const cards = await collectCards(vault);
+  expect(cards.length).toBe(2);
+  const c0 = cards.find((c) => c.id.endsWith("::0"))!;
+  const c1 = cards.find((c) => c.id.endsWith("::1"))!;
+  expect(c0.question).toBe("The [...] is a star");
+  expect(c0.answer).toBe("The sun is a star");
+  expect(c1.question).toBe("The sun is a [...]");
+  expect(c1.answer).toBe("The sun is a star");
 });
