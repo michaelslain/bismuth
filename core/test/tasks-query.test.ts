@@ -17,6 +17,31 @@ test("not done / done filter on status", () => {
   expect(runTaskQuery(tasks, "done", TODAY).tasks.map((t) => t.description)).toEqual(["b"]);
 });
 
+test("not done excludes cancelled tasks (cancelled is closed, not actionable)", () => {
+  const tasks = [
+    task({ status: "todo", description: "todo" }),
+    task({ status: "in-progress", description: "wip" }),
+    task({ status: "cancelled", description: "cancelled" }),
+    task({ status: "done", description: "done" }),
+  ];
+  expect(runTaskQuery(tasks, "not done", TODAY).tasks.map((t) => t.description).sort()).toEqual(["todo", "wip"]);
+});
+
+test("done matches both completed and cancelled tasks", () => {
+  const tasks = [
+    task({ status: "done", description: "done" }),
+    task({ status: "cancelled", description: "cancelled" }),
+    task({ status: "todo", description: "todo" }),
+  ];
+  expect(runTaskQuery(tasks, "done", TODAY).tasks.map((t) => t.description).sort()).toEqual(["cancelled", "done"]);
+});
+
+test("is cancelled / is not cancelled", () => {
+  const tasks = [task({ status: "cancelled", description: "c" }), task({ status: "todo", description: "t" })];
+  expect(runTaskQuery(tasks, "is cancelled", TODAY).tasks.map((t) => t.description)).toEqual(["c"]);
+  expect(runTaskQuery(tasks, "is not cancelled", TODAY).tasks.map((t) => t.description)).toEqual(["t"]);
+});
+
 test("done today filters by done date", () => {
   const tasks = [
     task({ status: "done", done: "2026-05-27", description: "today" }),

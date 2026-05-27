@@ -44,8 +44,12 @@ function parseLeaf(raw: string, today: string): Predicate | null {
   const s = raw.trim().toLowerCase();
   if (s === "") return null;
 
-  if (s === "done") return (t) => t.status === "done";
-  if (s === "not done") return (t) => t.status !== "done";
+  // Cancelled (`- [-]`) is treated like done: both are closed/non-actionable, so an overdue
+  // cancelled task must NOT appear in a "not done" to-do query.
+  if (s === "done") return (t) => t.status === "done" || t.status === "cancelled";
+  if (s === "not done") return (t) => t.status !== "done" && t.status !== "cancelled";
+  if (s === "is cancelled") return (t) => t.status === "cancelled";
+  if (s === "is not cancelled") return (t) => t.status !== "cancelled";
 
   let m = s.match(/^is( not)? recurring$/);
   if (m) {
