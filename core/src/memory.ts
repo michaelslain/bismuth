@@ -17,7 +17,6 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
   const edges: GraphEdge[] = [];
   const byBase = new Map<string, string>();
   const links = new Map<string, string[]>();
-  const bases: { base: string; content: string }[] = [];
   for (const rel of rels) {
     const base = basename(noteId(rel));
     nodes.push({ id: MEM(base), label: base, kind: "memory" });
@@ -25,10 +24,9 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
     const content = await readNote(root, rel);
     const targets = extractWikilinks(content);
     links.set(base, targets);
-    bases.push({ base, content });
   }
-  for (const { base } of bases) {
-    for (const t of links.get(base)!) {
+  for (const [base, targets] of links) {
+    for (const t of targets) {
       const toId = byBase.get(t);
       if (toId) edges.push({ from: MEM(base), to: toId, kind: "link" });
     }
