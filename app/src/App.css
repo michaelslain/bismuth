@@ -42,3 +42,17 @@ body { background: var(--bg); color: var(--fg); }
 .tab.active { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tab-x { opacity: 0.5; padding: 0 2px; border-radius: 3px; }
 .tab-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
+
+/* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
+.palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); overflow: hidden; }
+.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: 15px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.palette-input::placeholder { color: var(--fg); opacity: 0.4; }
+.palette-list { overflow-y: auto; padding: 6px; }
+.palette-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.palette-row.selected { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.palette-icon { opacity: 0.8; width: 1.2em; text-align: center; flex-shrink: 0; }
+.palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.palette-sub { opacity: 0.45; font-size: 11px; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; }
+.palette-match { color: var(--accent); font-weight: 600; }
+.palette-empty { padding: 14px 16px; opacity: 0.5; font-size: 12px; }
