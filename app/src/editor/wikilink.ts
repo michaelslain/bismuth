@@ -26,6 +26,8 @@ export function buildInsert(
 ): { insert: string; cursorOffset: number } {
   return {
     insert: hasClosingAhead ? label : label + "]]",
+    // Cursor lands just past the closing `]]`, whether we inserted it (label + "]]")
+    // or it was already ahead — hence `+ 2` in both branches.
     cursorOffset: label.length + 2,
   };
 }
