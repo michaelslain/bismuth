@@ -30,6 +30,13 @@ interface RelayState {
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
+/** Display label for an agent: its working-directory basename, else the part after "host:". */
+function agentLabel(agent: RelayAgent): string {
+  if (agent.cwd) return basename(agent.cwd);
+  if (agent.id.includes(":")) return agent.id.split(":").slice(1).join(":");
+  return agent.id;
+}
+
 export function buildAgentGraph(statePath?: string): GraphData {
   const path = statePath ?? join(homedir(), ".claude-communicate", "relay-state.json");
 
@@ -48,16 +55,11 @@ export function buildAgentGraph(statePath?: string): GraphData {
   // Build nodes
   const now = Date.now();
   const nodes: GraphNode[] = Object.values(agents).map((agent): GraphNode => {
-    const label = agent.cwd
-      ? basename(agent.cwd)
-      : agent.id.includes(":") ? agent.id.split(":").slice(1).join(":") : agent.id;
-
     const lastSeenMs = new Date(agent.last_seen).getTime();
-    const state: "awake" | "idle" = (now - lastSeenMs) <= TEN_MINUTES_MS ? "awake" : "idle";
-
+    const state: "awake" | "idle" = now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle";
     return {
       id: agent.id,
-      label,
+      label: agentLabel(agent),
       kind: "agent",
       state,
     };

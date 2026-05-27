@@ -81,14 +81,14 @@ These are not committed to the repo and are git-ignored.
 - `App.tsx` — Root component. Manages tabs, active file, graph mode ("2nd"/"3rd"/"both"/"agents"), settings persistence
 - `Editor.tsx` — CodeMirror 6 editor with live-preview block scanning and markdown extensions
 - `FileTree.tsx` — Left sidebar showing vault file structure
-- `GraphView.tsx` — Graph visualization hub (dispatches to Canvas2D or WebGL renderer)
+- `GraphView.tsx` — Graph visualization hub (mounts the WebGL renderer, mode/view-mode controls)
 - `SettingsPage.tsx` — Settings UI. Controls appearance (theme, accent, editor font/size), graph view mode (2D/3D), graph rendering options
 - `api.ts` — HTTP client for core endpoints
 - `settings.ts` — Settings state management, localStorage persistence
 
 **Graph rendering**:
-- `graph/Canvas2DRenderer.ts` — 2D SVG/Canvas renderer using d3-force layout
-- `graph/WebGLRenderer.ts` — 3D WebGL renderer (Three.js) with similar force simulation
+- `graph/WebGLRenderer.ts` — Three.js renderer for both 2D (flat birdseye) and 3D (volumetric orbit) modes, morphing between the backend's precomputed layouts
+- `graph/collide.ts` — Per-node collision-radius helpers (big hubs repel as their drawn circle, not a point)
 - `graph/d3-force-3d.d.ts` — Type stubs for d3-force-3d library
 
 **Styling**:
@@ -128,9 +128,9 @@ app/src/
 ├── SettingsPage.tsx    # Settings UI
 ├── api.ts              # HTTP client
 ├── settings.ts         # State + localStorage
-├── graph/              # Renderers
-│  ├── Canvas2DRenderer.ts
+├── graph/              # Renderer
 │  ├── WebGLRenderer.ts
+│  ├── collide.ts
 │  └── d3-force-3d.d.ts
 └── App.css             # Global styles
 

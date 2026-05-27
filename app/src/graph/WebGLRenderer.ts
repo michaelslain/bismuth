@@ -15,7 +15,6 @@ import {
   type SimLink,
 } from "d3-force-3d";
 import type { GraphData, NodeKind } from "../../../core/src/graph";
-import type { GraphRenderer } from "./GraphRenderer";
 import { nodeCollideRadius } from "./collide";
 
 // Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
@@ -238,7 +237,7 @@ function endpointId(endpoint: string | N3): string {
   return typeof endpoint === "object" ? endpoint.id : endpoint;
 }
 
-export class WebGLRenderer implements GraphRenderer {
+export class WebGLRenderer {
   // three.js core
   private scene!: THREE.Scene;
   private camera!: THREE.PerspectiveCamera;
