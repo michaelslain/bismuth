@@ -33,6 +33,7 @@ export interface GraphConfig {
   linkDistance: number;
   centering: number;    // forceX/Y/Z strength toward origin
   nodeSize: number;
+  viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -43,7 +44,14 @@ const DEFAULT_CONFIG: GraphConfig = {
   linkDistance: 5,
   centering: 0.13,
   nodeSize: 6,
+  viewMode: "3d",
 };
+
+const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
+
+function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
 
 function hashInt(s: string): number {
   let h = 0;
@@ -127,6 +135,21 @@ export class WebGLRenderer implements GraphRenderer {
   private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
   private interactHandler?: () => void;
 
+  // 2D/3D view mode + the glide between them
+  private viewMode: "2d" | "3d" = "3d";
+  private modeInitialized = false; // first setConfig applies mode instantly; later changes tween
+  private savedZ = new Map<string, number>(); // node depth captured when flattening, restored on expand
+  private tween: null | {
+    goingFlat: boolean;
+    start: number;
+    z0: Map<string, number>;       // per-node z at tween start
+    zTarget: Map<string, number>;  // per-node z at tween end
+    camFrom: { pos: THREE.Vector3; tgt: THREE.Vector3 };
+    camTo: { pos: THREE.Vector3; tgt: THREE.Vector3 };
+    rotFrom: number;
+    rotTo: number;
+  } = null;
+
   mount(el: HTMLElement, onNodeClick: (id: string) => void) {
     this.el = el;
     this.onClick = onNodeClick;
@@ -160,6 +183,8 @@ export class WebGLRenderer implements GraphRenderer {
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 10;
     this.controls.maxDistance = 600;
+    this.applyControlsForMode(this.viewMode); // honor a 2D mode chosen before mount
+    this.modeInitialized = true;
 
     // Resize observer
     this.ro = new ResizeObserver(() => this.handleResize());
@@ -201,8 +226,12 @@ export class WebGLRenderer implements GraphRenderer {
 
   private animate() {
     this.rafId = requestAnimationFrame(() => this.animate());
-    // Idle "storm" spin — paused while the pointer is over the graph so hover/inspect stays stable
-    if (!this.pointerInside && this.cfg.spin) this.group.rotation.y += this.cfg.spinSpeed;
+    if (this.tween) {
+      this.stepTween();
+    } else if (!this.pointerInside && this.cfg.spin && this.viewMode === "3d") {
+      // Idle "storm" spin — paused while hovering (stable inspect) and in 2D (locked birdseye)
+      this.group.rotation.y += this.cfg.spinSpeed;
+    }
     this.stepHighlight(); // ease hover highlight toward its target
     this.controls.update();
     this.renderer.render(this.scene, this.camera);
@@ -335,6 +364,123 @@ export class WebGLRenderer implements GraphRenderer {
       this.userControlled = false; // re-frame as it re-settles
       this.sim.alpha(0.5).restart();
     }
+
+    if (cfg.viewMode !== this.viewMode) {
+      const next = cfg.viewMode;
+      if (!this.controls) {
+        this.viewMode = next; // not mounted yet — mount() will apply the controls
+      } else if (!this.modeInitialized || !this.pointsMesh) {
+        this.viewMode = next; // first apply / no graph yet — switch instantly, no tween
+        this.applyControlsForMode(next);
+      } else {
+        this.startModeTween(next);
+      }
+    }
+    if (this.controls) this.modeInitialized = true;
+  }
+
+  /** Lock the camera for 2D (top-down, pan+zoom only) or free it for 3D orbit. */
+  private applyControlsForMode(mode: "2d" | "3d") {
+    if (!this.controls) return;
+    if (mode === "2d") {
+      this.controls.enableRotate = false;
+      this.controls.screenSpacePanning = true;
+      this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // left-drag pans the plane
+    } else {
+      this.controls.enableRotate = true;
+      this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    }
+  }
+
+  /** Pin every node to the z=0 plane (called on sim ticks in 2D so x/y re-spreads flat). */
+  private flattenZ() {
+    for (const n of this.nodes) { n.z = 0; n.vz = 0; }
+  }
+
+  /**
+   * Begin the smooth 2D<->3D glide: eases each node's depth (z) toward 0 (flatten) or back to
+   * its saved depth (expand), glides the camera to a top-down fit, and untilts the spin. The
+   * simulation is paused during the glide and reheated after so the layout re-settles in the
+   * new dimensionality.
+   */
+  private startModeTween(next: "2d" | "3d") {
+    if (!this.pointsMesh || this.nodes.length === 0) {
+      this.viewMode = next;
+      this.applyControlsForMode(next);
+      return;
+    }
+    const goingFlat = next === "2d";
+    this.viewMode = next; // logical switch is immediate; visuals catch up over the tween
+
+    const z0 = new Map<string, number>();
+    for (const n of this.nodes) z0.set(n.id, n.z ?? 0);
+    if (goingFlat) this.savedZ = new Map(z0); // remember depth so 3D restores it
+    const zTarget = new Map<string, number>();
+    for (const n of this.nodes) {
+      zTarget.set(n.id, goingFlat ? 0 : (this.savedZ.get(n.id) ?? (Math.random() - 0.5) * 60));
+    }
+
+    this.sim?.stop(); // the tween owns positions until it finishes
+    for (const n of this.nodes) n.vz = 0;
+
+    const framing = (zOf: (n: N3) => number) => {
+      let cx = 0, cy = 0, cz = 0;
+      for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += zOf(n); }
+      const k = this.nodes.length || 1; cx /= k; cy /= k; cz /= k;
+      let r = 1;
+      for (const n of this.nodes) {
+        const dx = (n.x ?? 0) - cx, dy = (n.y ?? 0) - cy, dz = zOf(n) - cz;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > r) r = d;
+      }
+      const fov = (this.camera.fov * Math.PI) / 180;
+      const dist = (r / Math.sin(fov / 2)) * 1.25;
+      return { pos: new THREE.Vector3(cx, cy, cz + dist), tgt: new THREE.Vector3(cx, cy, cz) };
+    };
+
+    this.controls.enableRotate = false;  // lock orbit during the move
+    this.controls.enableDamping = false; // we hard-set the camera each frame
+    this.tween = {
+      goingFlat,
+      start: performance.now(),
+      z0,
+      zTarget,
+      camFrom: { pos: this.camera.position.clone(), tgt: this.controls.target.clone() },
+      camTo: framing((n) => zTarget.get(n.id) ?? 0),
+      rotFrom: this.group.rotation.y,
+      rotTo: goingFlat ? 0 : this.group.rotation.y, // untilt spin when flattening
+    };
+  }
+
+  /** Advance the active 2D<->3D tween one frame (driven from animate()). */
+  private stepTween() {
+    const tw = this.tween!;
+    const raw = (performance.now() - tw.start) / MODE_TWEEN_MS;
+    const t = raw >= 1 ? 1 : raw;
+    const e = easeInOutCubic(t);
+    for (const n of this.nodes) {
+      const a = tw.z0.get(n.id) ?? 0;
+      const b = tw.zTarget.get(n.id) ?? 0;
+      n.z = a + (b - a) * e;
+    }
+    this.group.rotation.y = tw.rotFrom + (tw.rotTo - tw.rotFrom) * e;
+    this.camera.position.lerpVectors(tw.camFrom.pos, tw.camTo.pos, e);
+    this.controls.target.lerpVectors(tw.camFrom.tgt, tw.camTo.tgt, e);
+    this.updateGeometryPositions();
+    if (t >= 1) this.finishTween();
+  }
+
+  /** Land the tween: snap to exact targets, restore controls for the mode, reheat the layout. */
+  private finishTween() {
+    const tw = this.tween;
+    this.tween = null;
+    if (!tw) return;
+    for (const n of this.nodes) { n.z = tw.zTarget.get(n.id) ?? 0; n.vz = 0; }
+    this.controls.enableDamping = true;
+    this.applyControlsForMode(this.viewMode);
+    this.userControlled = false;       // re-frame as the layout re-settles
+    this.updateGeometryPositions();
+    this.sim?.alpha(0.5).restart();    // re-spread in the new dimensionality (2D pins z each tick)
   }
 
   /** Rewrite node colors (live + hover-base buffers) from the current palette. */
@@ -408,6 +554,7 @@ export class WebGLRenderer implements GraphRenderer {
       .force("z", forceZ<N3>(0).strength(this.cfg.centering))
       .alphaMin(0.001)
       .on("tick", () => {
+        if (this.viewMode === "2d") this.flattenZ(); // keep the layout planar while x/y re-spreads
         this.updateGeometryPositions();
         this.fitCamera(); // keep the whole cloud framed as it condenses — also re-fits on every mode switch
       })
@@ -548,7 +695,7 @@ export class WebGLRenderer implements GraphRenderer {
 
   /** Frame the camera to the node cloud's bounding sphere (centroid + max radius). */
   private fitCamera() {
-    if (this.nodes.length === 0 || this.userControlled) return;
+    if (this.nodes.length === 0 || this.userControlled || this.tween) return;
     let cx = 0, cy = 0, cz = 0;
     for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
     const k = this.nodes.length;
