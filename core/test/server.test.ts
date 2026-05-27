@@ -384,3 +384,17 @@ test("POST /cards/review with an unknown card id returns 400", async () => {
     server.stop(true);
   }
 });
+
+test("GET /cards/note returns all cards for one note (tagless ok)", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-note-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-note-mem-"));
+  await writeNote(vault, "n.md", "a::b\n\nc::d");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const cards = await (await fetch(`${base}/cards/note?path=${encodeURIComponent("n.md")}`)).json();
+    expect(cards.length).toBe(2);
+  } finally {
+    server.stop(true);
+  }
+});

@@ -79,6 +79,20 @@ export async function collectCards(vault: string): Promise<Card[]> {
   return out;
 }
 
+/**
+ * All cards parsed from a single note, regardless of due date — and regardless of whether the
+ * note carries a #flashcards tag. Used for focused, per-note review (the user explicitly chose
+ * this note). Deck falls back to "" when the note has no flashcard tag.
+ */
+export async function noteCards(vault: string, notePath: string): Promise<Card[]> {
+  const text = await readNote(vault, notePath);
+  const { data, body } = parseFrontmatter(text);
+  const deck = noteDeck(extractTags(data, body)) ?? "";
+  const out: Card[] = [];
+  parseCards(body).forEach((pc, idx) => out.push(...toCards(pc, idx, notePath, deck)));
+  return out;
+}
+
 export async function collectDecks(vault: string, today: string): Promise<Deck[]> {
   const cards = await collectCards(vault);
   const map = new Map<string, Deck>();

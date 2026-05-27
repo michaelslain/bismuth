@@ -7,7 +7,7 @@ import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import type { GraphData, TreeEntry } from "./graph";
-import { collectDecks, dueCards, collectCards, applyReview } from "./srs/cards";
+import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import type { ReviewResponse } from "./srs/types";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
@@ -165,6 +165,11 @@ export function createServer(cfg: CoreConfig) {
       }
       if (url.pathname === "/cards/all" && req.method === "GET") {
         return Response.json(await collectCards(cfg.vault), { headers: cors });
+      }
+      if (url.pathname === "/cards/note" && req.method === "GET") {
+        const path = url.searchParams.get("path");
+        if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
+        return Response.json(await noteCards(cfg.vault, path), { headers: cors });
       }
       if (url.pathname === "/cards/due" && req.method === "GET") {
         const deck = url.searchParams.get("deck") ?? undefined;

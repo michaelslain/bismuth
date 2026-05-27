@@ -9,7 +9,7 @@ import { Flashcards } from "./Flashcards";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
-import { ToastHost } from "./Toast";
+import { ToastHost, pushToast } from "./Toast";
 import { subgraphByKinds } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -17,8 +17,9 @@ import "./App.css";
 
 // Sentinel tab id for the settings page — not a real file path.
 const SETTINGS_TAB = "::settings";
-// Sentinel tab id for the flashcards review screen — not a real file path.
-const FLASHCARDS_TAB = "::flashcards";
+// Tab id prefix for a per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
+// Each reviewed note gets its own tab; no real note path begins with "::".
+const FLASHCARDS_PREFIX = "::flashcards:";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -83,6 +84,12 @@ export default function App() {
     setActive(path);
   };
   const openSettings = () => openFile(SETTINGS_TAB);
+  // Review the flashcards in whichever note is currently active (its own tab).
+  const reviewCurrentNote = () => {
+    const a = active();
+    if (a && !a.startsWith("::")) openFile(FLASHCARDS_PREFIX + a);
+    else pushToast("Open a note to review its flashcards");
+  };
 
   // Apply Appearance settings to the document: theme + accent + editor font/size,
   // surfaced as CSS variables that App.css and the editor theme read.
@@ -199,7 +206,7 @@ export default function App() {
 
   const tabLabel = (p: string) =>
     p === SETTINGS_TAB ? "⚙ Settings" :
-    p === FLASHCARDS_TAB ? "Flashcards" :
+    p.startsWith(FLASHCARDS_PREFIX) ? "🃏 " + p.slice(FLASHCARDS_PREFIX.length).split("/").pop()!.replace(/\.md$/, "") :
     p.split("/").pop()!.replace(/\.md$/, "");
 
   return (
@@ -208,7 +215,7 @@ export default function App() {
         <div class="sidebar-icons">
           <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
-          <button class="icon-btn" title="Flashcards" onClick={() => openFile(FLASHCARDS_TAB)}>🃏</button>
+          <button class="icon-btn" title="Review this note's flashcards" onClick={reviewCurrentNote}>🃏</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
@@ -227,12 +234,12 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            <Show when={active() === FLASHCARDS_TAB} fallback={
+            <Show when={active()!.startsWith(FLASHCARDS_PREFIX)} fallback={
               <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
                 <SettingsPage />
               </Show>
             }>
-              <Flashcards />
+              <Flashcards note={active()!.slice(FLASHCARDS_PREFIX.length)} />
             </Show>
           </Show>
         </div>

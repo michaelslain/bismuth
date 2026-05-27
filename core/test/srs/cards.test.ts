@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote, readNote } from "../../src/files";
-import { collectCards, collectDecks, dueCards, applyReview } from "../../src/srs/cards";
+import { collectCards, collectDecks, dueCards, applyReview, noteCards } from "../../src/srs/cards";
 
 async function vaultWith(files: Record<string, string>): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "oa-srs-"));
@@ -122,4 +122,18 @@ test("applyReview succeeds when the expected question matches", async () => {
   await applyReview(vault, cards[0].id, "good", TODAY, cards[0].question);
   const text = await readNote(vault, "a.md");
   expect(text).toContain("<!--SR:!2026-05-28,1,250-->");
+});
+
+test("noteCards returns all cards in a note regardless of tag or due date", async () => {
+  const vault = await vaultWith({
+    "untagged.md": "Capital::Paris\n\ndone::card <!--SR:!2099-01-01,5,250-->",
+  });
+  const cards = await noteCards(vault, "untagged.md");
+  expect(cards.length).toBe(2); // both returned: untagged note + one far-future card
+  expect(cards.map((c) => c.question).sort()).toEqual(["Capital", "done"]);
+});
+
+test("noteCards on a note with no card syntax returns empty", async () => {
+  const vault = await vaultWith({ "prose.md": "# Heading\n\nJust some prose." });
+  expect(await noteCards(vault, "prose.md")).toEqual([]);
 });

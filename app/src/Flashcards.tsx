@@ -1,27 +1,30 @@
-import { createSignal, onMount, For, Show } from "solid-js";
+import { createSignal, createEffect, Show } from "solid-js";
 import { api } from "./api";
-import type { Card, Deck } from "../../core/src/srs/types";
+import type { Card } from "../../core/src/srs/types";
 
-export function Flashcards() {
-  const [decks, setDecks] = createSignal<Deck[]>([]);
-  const [session, setSession] = createSignal<Card[] | null>(null);
+/** Focused review of the flashcards in a single note. */
+export function Flashcards(props: { note: string }) {
+  const [cards, setCards] = createSignal<Card[]>([]);
   const [idx, setIdx] = createSignal(0);
   const [revealed, setRevealed] = createSignal(false);
+  const [loading, setLoading] = createSignal(true);
 
-  const loadDecks = async () => setDecks(await api.decks());
-  onMount(loadDecks);
-
-  const startSession = async (deck: string) => {
-    const cards = await api.dueCards(deck);
-    setSession(cards);
+  const load = async () => {
+    setLoading(true);
+    setCards(await api.noteCards(props.note));
     setIdx(0);
     setRevealed(false);
+    setLoading(false);
   };
+  // Re-load whenever the target note changes (the same component instance is reused
+  // when switching between two per-note flashcard tabs).
+  createEffect(() => {
+    props.note;
+    load();
+  });
 
-  const current = () => {
-    const s = session();
-    return s && idx() < s.length ? s[idx()] : null;
-  };
+  const current = () => (idx() < cards().length ? cards()[idx()] : null);
+  const noteName = () => props.note.split("/").pop()!.replace(/\.md$/, "");
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
@@ -31,67 +34,46 @@ export function Flashcards() {
     setIdx(idx() + 1);
   };
 
-  const exit = () => {
-    setSession(null);
-    loadDecks();
-  };
-
   return (
     <div class="flashcards-host">
-      <Show
-        when={session() !== null}
-        fallback={
-          <div class="deck-list">
-            <h2>Flashcard Decks</h2>
-            <Show
-              when={decks().length > 0}
-              fallback={
-                <p class="deck-empty">
-                  No decks found. Tag a note with <code>#flashcards</code> and add cards like{" "}
-                  <code>question::answer</code>.
-                </p>
-              }
-            >
-              <For each={decks()}>
-                {(d) => (
-                  <button class="deck-row" disabled={d.due === 0} onClick={() => startSession(d.name)}>
-                    <span class="deck-name">{d.name || "flashcards"}</span>
-                    <span class="deck-counts">
-                      <span class="deck-due">{d.due} due</span>
-                      <span class="deck-total">{d.total} total</span>
-                    </span>
-                  </button>
-                )}
-              </For>
-            </Show>
-          </div>
-        }
-      >
+      <Show when={!loading()} fallback={<p class="deck-empty">Loading…</p>}>
         <Show
-          when={current() !== null}
+          when={cards().length > 0}
           fallback={
             <div class="review-done">
-              <h2>Session complete</h2>
-              <button class="card-btn" onClick={exit}>Back to decks</button>
+              <h2>No flashcards in “{noteName()}”</h2>
+              <p class="deck-empty">
+                Add cards to this note like <code>question::answer</code>, or a multi-line card with{" "}
+                <code>?</code> on its own line.
+              </p>
             </div>
           }
         >
-          <div class="review">
-            <div class="review-progress">{idx() + 1} / {session()!.length}</div>
-            <div class="card-face question">{current()!.question}</div>
-            <Show
-              when={revealed()}
-              fallback={<button class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</button>}
-            >
-              <div class="card-face answer">{current()!.answer}</div>
-              <div class="grade-row">
-                <button class="card-btn hard" onClick={() => grade("hard")}>Hard</button>
-                <button class="card-btn good" onClick={() => grade("good")}>Good</button>
-                <button class="card-btn easy" onClick={() => grade("easy")}>Easy</button>
+          <Show
+            when={current() !== null}
+            fallback={
+              <div class="review-done">
+                <h2>Done reviewing “{noteName()}”</h2>
+                <button class="card-btn" onClick={load}>Review again</button>
               </div>
-            </Show>
-            <button class="exit-btn" onClick={exit}>Exit session</button>
-          </div>
+            }
+          >
+            <div class="review">
+              <div class="review-progress">{noteName()} · {idx() + 1} / {cards().length}</div>
+              <div class="card-face question">{current()!.question}</div>
+              <Show
+                when={revealed()}
+                fallback={<button class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</button>}
+              >
+                <div class="card-face answer">{current()!.answer}</div>
+                <div class="grade-row">
+                  <button class="card-btn hard" onClick={() => grade("hard")}>Hard</button>
+                  <button class="card-btn good" onClick={() => grade("good")}>Good</button>
+                  <button class="card-btn easy" onClick={() => grade("easy")}>Easy</button>
+                </div>
+              </Show>
+            </div>
+          </Show>
         </Show>
       </Show>
     </div>
