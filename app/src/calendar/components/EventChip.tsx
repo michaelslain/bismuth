@@ -1,9 +1,12 @@
 import { createSignal, onMount, onCleanup, Show } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
-import { showEventModal, settings } from '../state'
+import { showEventModal, settings, events, recurrenceAction } from '../state'
 import { formatTime } from '../dates'
+import { EventStore } from '../EventStore'
+import { ContextMenu } from '../../ContextMenu'
 
-interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[] }
+interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[]; store: EventStore }
 
 export function EventChip(props: Props) {
   const category = () => props.categories.find(c => c.name === props.event.category)
@@ -13,6 +16,20 @@ export function EventChip(props: Props) {
   let chipRef: HTMLDivElement | undefined
   let metaRef: HTMLDivElement | undefined
   const [metaVisible, setMetaVisible] = createSignal(true)
+  const [menu, setMenu] = createSignal<{ x: number; y: number } | null>(null)
+
+  function openEdit() {
+    showEventModal.value = { event: props.event, masterId: props.masterId, occurrenceDate: props.occurrenceDate }
+  }
+  async function handleDelete() {
+    if (props.event.recurrence && props.masterId && props.occurrenceDate) {
+      // Recurring: let the user pick this-one / following / all (same as the modal).
+      recurrenceAction.value = { type: 'delete', masterId: props.masterId, occurrenceDate: props.occurrenceDate }
+    } else {
+      await props.store.deleteEvent(props.event.id)
+      events.value = events.value.filter(e => e.id !== props.event.id)
+    }
+  }
 
   onMount(() => {
     const chip = chipRef, meta = metaRef
@@ -36,7 +53,12 @@ export function EventChip(props: Props) {
       style={{ background: color() }}
       onClick={e => {
         e.stopPropagation()
-        showEventModal.value = { event: props.event, masterId: props.masterId, occurrenceDate: props.occurrenceDate }
+        openEdit()
+      }}
+      onContextMenu={e => {
+        e.preventDefault()
+        e.stopPropagation()
+        setMenu({ x: e.clientX, y: e.clientY })
       }}
     >
       <Show when={props.event.startTime}>
@@ -57,6 +79,25 @@ export function EventChip(props: Props) {
             <span class="event-chip-link" onClick={e => { e.stopPropagation(); window.open(props.event.link!, '_blank') }}>🔗</span>
           </Show>
         </div>
+      </Show>
+      <Show when={menu()}>
+        {m => {
+          // Portal to document.body so the fixed menu escapes the chip's
+          // overflow:hidden and :hover filter (which would otherwise clip it).
+          return (
+            <Portal>
+              <ContextMenu
+                x={m().x}
+                y={m().y}
+                items={[
+                  { label: 'Edit', onSelect: openEdit },
+                  { label: 'Delete', onSelect: handleDelete, danger: true },
+                ]}
+                onClose={() => setMenu(null)}
+              />
+            </Portal>
+          )
+        }}
       </Show>
     </div>
   )
