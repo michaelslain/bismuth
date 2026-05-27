@@ -7,3 +7,4 @@ superpowers/
 .DS_Store
 *.log
 test/fixtures/sample-vault/test-write.md
+fixtures/sample-vault/.git

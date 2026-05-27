@@ -3,7 +3,7 @@
   "private": true,
   "workspaces": ["core", "cli", "app"],
   "scripts": {
-    "test": "bun test core",
+    "test": "bun test",
     "core:serve": "bun run core/src/server.ts"
   }
 }
