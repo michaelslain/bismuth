@@ -6,6 +6,7 @@ import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
 import { settings, FONT_STACKS } from "./settings";
+import { ToastHost } from "./Toast";
 import type { GraphData } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
@@ -164,6 +165,7 @@ export default function App() {
       <div class="graph-floater" ref={floater}>
         <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
       </div>
+      <ToastHost />
     </div>
   );
 }
