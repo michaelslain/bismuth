@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { computeLayout, type Positions } from "./layout";
-import type { GraphData } from "./graph";
+import { subgraphByKinds, type GraphData, type NodeKind, type ViewLayout } from "./graph";
 
 interface Layout { pos3d: Positions; pos2d: Positions }
 
@@ -46,15 +46,15 @@ function writeDisk(sig: string, layout: Layout): void {
   }
 }
 
-/**
- * Return a copy of the graph with precomputed `position` (3D) and `position2d` (flat) on every node.
- * Uses the in-memory or disk cache when the graph signature is unchanged; otherwise computes both
- * layouts (~3-5s for a few thousand nodes) and caches them. `vaultKey` namespaces the cache per vault.
- */
-export function attachLayout(graph: GraphData, vaultKey: string): GraphData {
-  if (graph.nodes.length === 0) return graph;
-  const sig = graphSig(graph, vaultKey);
+// Node kinds belonging to each brain VIEW, mirrored by the frontend's mode filter (App.tsx). "both"
+// is the full graph (no subset). Each sub-view is laid out on its OWN node set so cross-brain-linked
+// nodes aren't stranded far from their cluster when the other brain is hidden.
+const SECOND_KINDS = new Set<NodeKind>(["self", "note", "tag"]);
+const THIRD_KINDS = new Set<NodeKind>(["self", "memory"]);
 
+/** Compute (or fetch from cache) the 3D + flat-2D layout for one graph. ~3-5s for a few thousand nodes. */
+function layoutFor(graph: GraphData, vaultKey: string): Layout {
+  const sig = graphSig(graph, vaultKey);
   let layout = memCache.get(sig) ?? readDisk(sig);
   if (!layout) {
     const input = { nodes: graph.nodes, edges: graph.edges.map((e) => ({ from: e.from, to: e.to })) };
@@ -65,9 +65,31 @@ export function attachLayout(graph: GraphData, vaultKey: string): GraphData {
     writeDisk(sig, layout);
   }
   memCache.set(sig, layout);
+  return layout;
+}
+
+/** A Layout (full [x,y,z] in both maps) → wire ViewLayout (pos2d trimmed to [x,y]). */
+function toViewLayout(layout: Layout): ViewLayout {
+  const pos2d: ViewLayout["pos2d"] = {};
+  for (const id in layout.pos2d) pos2d[id] = [layout.pos2d[id][0], layout.pos2d[id][1]];
+  return { pos3d: layout.pos3d, pos2d };
+}
+
+/**
+ * Return a copy of the graph with precomputed `position` (3D) and `position2d` (flat) on every node
+ * for the full ("both") view, plus self-contained `views.second` / `views.third` layouts for the
+ * brain subsets. Uses the in-memory or disk cache (keyed by graph signature) per layout. `vaultKey`
+ * namespaces the cache per vault.
+ */
+export function attachLayout(graph: GraphData, vaultKey: string): GraphData {
+  if (graph.nodes.length === 0) return graph;
+  const layout = layoutFor(graph, vaultKey); // full graph → "both" view (unchanged)
+  const second = layoutFor(subgraphByKinds(graph, SECOND_KINDS), vaultKey);
+  const third = layoutFor(subgraphByKinds(graph, THIRD_KINDS), vaultKey);
 
   return {
     edges: graph.edges,
+    views: { second: toViewLayout(second), third: toViewLayout(third) },
     nodes: graph.nodes.map((n) => {
       const p3 = layout.pos3d[n.id];
       const p2 = layout.pos2d[n.id];
