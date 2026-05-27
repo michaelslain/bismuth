@@ -10,6 +10,8 @@ export interface GraphNode {
   folder?: string;
   /** Precomputed 3D layout coordinate [x,y,z], attached by the backend (see layout-cache.ts). */
   position?: [number, number, number];
+  /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */
+  position2d?: [number, number];
 }
 export interface GraphEdge {
   from: string;
