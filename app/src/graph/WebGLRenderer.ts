@@ -608,23 +608,29 @@ export class WebGLRenderer implements GraphRenderer {
     };
   }
 
+  /** Clear frame state: a mode switch, graph reload, or return-home supersedes any "z" focus. */
+  private clearFrame() {
+    this.framed = false;
+    this.homePose = null;
+  }
+
   /**
    * Glide back to the whole-graph pose captured before the first "z" frame, restoring the original
    * orbit pivot and axes (and re-enabling the idle spin). Triggered by scrolling out while focused.
    */
   private returnHome() {
-    this.framed = false;
     if (!this.homePose) return;
+    const pose = this.homePose;
+    this.clearFrame();
     this.userControlled = false;         // back to the auto-fit home framing
     this.controls.enableDamping = false; // hard-set the camera during the glide
     this.camTween = {
       start: performance.now(),
       posFrom: this.camera.position.clone(),
-      posTo: this.homePose.pos.clone(),
+      posTo: pose.pos.clone(),
       tgtFrom: this.controls.target.clone(),
-      tgtTo: this.homePose.target.clone(),
+      tgtTo: pose.target.clone(),
     };
-    this.homePose = null;
   }
 
   /** Advance the active "z" framing glide one frame (driven from animate()). */
@@ -947,7 +953,7 @@ export class WebGLRenderer implements GraphRenderer {
     }
     const goingFlat = next === "2d";
     this.viewMode = next; // logical switch is immediate; visuals catch up over the tween
-    this.framed = false; this.homePose = null; // a mode switch supersedes any "z" focus
+    this.clearFrame();
 
     const z0 = new Map<string, number>();
     for (const n of this.nodes) z0.set(n.id, n.z ?? 0);
@@ -1346,7 +1352,7 @@ export class WebGLRenderer implements GraphRenderer {
 
     this.baseColors = colors.slice(); // remember for hover restore
     this.hoveredId = null;
-    this.framed = false; this.homePose = null; // a fresh graph supersedes any "z" focus
+    this.clearFrame();
     this.curI = new Float32Array(nodeCount).fill(1);
     this.tgtI = new Float32Array(nodeCount).fill(1);
 
