@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quick Start
+
+**Prerequisites**: Bun 1.0+, Node.js 20+
+
+```bash
+git clone <repo>
+cd obsidian-alternative
+bun install
+export OA_VAULT="/path/to/your/vault"           # Directory with .md files
+export OA_MEMORY="/path/to/your/memory"         # Claude-bot memory directory
+cd app && bun run dev                            # Tauri app + backend on :4321
+```
+
+For first-time setup without existing vaults, see **Creating Test Vaults** below.
+
 ## Project Overview
 
 **Three Brains** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces:
@@ -14,6 +29,26 @@ The system treats knowledge as a "three-brain" model:
 - **You** (self node): Central hub representing the user
 - **2nd Brain** (vault): Personal knowledge base with wikilinks, tags, and YAML frontmatter
 - **3rd Brain** (memory): Claude-bot memory graph linked to vault notes
+
+## Environment Setup
+
+**Required environment variables** for running `bun run dev`:
+
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `OA_VAULT` | 2nd-brain vault directory (markdown files) | `~/my-vault` or `/tmp/test-vault` |
+| `OA_MEMORY` | 3rd-brain memory directory (Claude-bot notes) | `~/.claude/memories` or `/tmp/test-memory` |
+
+The dev command will error if these are not set. Both directories must exist before running.
+
+**Creating Test Vaults** (for development):
+```bash
+mkdir -p /tmp/test-vault /tmp/test-memory
+echo "# Hello\nSome content" > /tmp/test-vault/example.md
+export OA_VAULT="/tmp/test-vault"
+export OA_MEMORY="/tmp/test-memory"
+cd app && bun run dev
+```
 
 ## Development Artifacts
 
@@ -212,6 +247,13 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 4. **Lazy renderer init**: WebGL only loads when needed
 5. **Frontmatter tolerance**: Malformed YAML doesn't crash graph builder
 
+## Recent Stability & Security Updates
+
+- **Path traversal rejection** (d5d0cdf): Core now validates vault file paths to prevent directory escape attacks
+- **File-tree context menu** (e174978): New header buttons for note/folder creation, opaque UI, delete closes tab, rename/move retargets active tab
+- **Undo support** (6613f27): Cmd+Z now undoes most recent delete action in file tree
+- **Drag-drop moves** (2278b84): Files and folders can be rearranged by dragging within the tree
+
 ## Testing
 
 Tests use Bun's native test runner. Run with:
@@ -226,3 +268,14 @@ Common test files:
 - `core/test/tags.test.ts` — Tag extraction from frontmatter and body
 - `core/test/wikilinks.test.ts` — WikiLink pattern matching
 - `core/test/server.test.ts` — HTTP endpoint behavior
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `OA_VAULT: not set` when running `bun run dev` | Set environment variable: `export OA_VAULT="/path/to/vault"` before running |
+| `OA_MEMORY: not set` | Set environment variable: `export OA_MEMORY="/path/to/memory"` before running |
+| Backend on :4321 doesn't respond | Check that `core/src/server.ts` started (look for "Server running" message) |
+| Frontend on :5173 shows connection error | Backend may be crashed; check that OA_VAULT and OA_MEMORY directories exist and are readable |
+| Graph nodes not updating after editing .md | Wait for file-watch debounce (250ms) + frontend version poll (may take a second or two) |
+| Tests fail with file permission errors | Ensure test helper can create temp directories in `/tmp` (or adjust `core/test/helpers.ts` path) |

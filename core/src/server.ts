@@ -3,12 +3,20 @@ import { watch } from "node:fs";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
-import { commitVault } from "./backup";
+import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import type { GraphData, TreeEntry } from "./graph";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
+
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+
+/** Read a `--flag value` pair from the process argv (shared by the core + cli launchers). */
+export function cliArg(name: string): string | undefined {
+  const i = Bun.argv.indexOf(`--${name}`);
+  return i >= 0 ? Bun.argv[i + 1] : undefined;
+}
 
 export function createServer(cfg: CoreConfig) {
   // ── In-memory cache ────────────────────────────────────────────────────────
@@ -61,8 +69,20 @@ export function createServer(cfg: CoreConfig) {
     port: cfg.port ?? 4321,
     async fetch(req) {
       const url = new URL(req.url);
-      const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+      const cors = CORS;
       if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+
+      // Run a mutating file op: invalidate the cache on success; turn any thrown error
+      // (e.g. the path-escape guard) into a 400 with the message as the body.
+      function mutate(run: () => Response): Response {
+        try {
+          const res = run();
+          invalidate();
+          return res;
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+      }
 
       if (url.pathname === "/graph" && req.method === "GET") {
         if (cachedGraph === null) {
@@ -92,47 +112,31 @@ export function createServer(cfg: CoreConfig) {
       }
       if (url.pathname === "/move" && req.method === "POST") {
         const { from, to } = (await req.json()) as { from: string; to: string };
-        try {
+        return mutate(() => {
           moveEntry(cfg.vault, from, to);
-          invalidate();
           return new Response("ok", { headers: cors });
-        } catch (e) {
-          return new Response((e as Error).message, { status: 400, headers: cors });
-        }
+        });
       }
       if (url.pathname === "/delete" && req.method === "POST") {
         const { path } = (await req.json()) as { path: string };
-        try {
-          const result = deleteEntry(cfg.vault, path);
-          invalidate();
-          return Response.json(result, { headers: cors });
-        } catch (e) {
-          return new Response((e as Error).message, { status: 400, headers: cors });
-        }
+        return mutate(() => Response.json(deleteEntry(cfg.vault, path), { headers: cors }));
       }
       if (url.pathname === "/restore" && req.method === "POST") {
         const { trashPath, to } = (await req.json()) as { trashPath: string; to: string };
-        try {
+        return mutate(() => {
           moveEntry(cfg.vault, trashPath, to);
-          invalidate();
           return new Response("ok", { headers: cors });
-        } catch (e) {
-          return new Response((e as Error).message, { status: 400, headers: cors });
-        }
+        });
       }
       if (url.pathname === "/create" && req.method === "POST") {
         const { path, kind } = (await req.json()) as { path: string; kind: "file" | "dir" };
-        try {
+        return mutate(() => {
           createEntry(cfg.vault, path, kind);
-          invalidate();
           return new Response("ok", { headers: cors });
-        } catch (e) {
-          return new Response((e as Error).message, { status: 400, headers: cors });
-        }
+        });
       }
       if (url.pathname === "/backup" && req.method === "POST") {
-        const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
-        const committed = await commitVault(cfg.vault, `vault snapshot ${stamp}`);
+        const committed = await commitVault(cfg.vault, snapshotMessage());
         return Response.json({ committed }, { headers: cors });
       }
       if (url.pathname === "/meta" && req.method === "GET") {
@@ -155,14 +159,13 @@ export function createServer(cfg: CoreConfig) {
 }
 
 if (import.meta.main) {
-  const arg = (k: string) => { const i = Bun.argv.indexOf(`--${k}`); return i >= 0 ? Bun.argv[i + 1] : undefined; };
-  const vault = arg("vault");
-  const memory = arg("memory");
+  const vault = cliArg("vault");
+  const memory = cliArg("memory");
   if (!vault || !memory) {
     console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
     process.exit(1);
   }
-  const portArg = arg("port");
+  const portArg = cliArg("port");
   const s = createServer({ vault, memory, port: portArg ? Number(portArg) : 4321 });
   console.log(`core listening on http://localhost:${s.port}`);
 }

@@ -9,7 +9,8 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
 import { ToastHost } from "./Toast";
-import type { GraphData, ViewLayout } from "../../core/src/graph";
+import { subgraphByKinds } from "../../core/src/graph";
+import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
 
@@ -19,12 +20,6 @@ const SETTINGS_TAB = "::settings";
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
-
-function filterByKinds(g: GraphData, kinds: Set<string>): GraphData {
-  const nodes = g.nodes.filter((n) => kinds.has(n.kind));
-  const ids = new Set(nodes.map((n) => n.id));
-  return { nodes, edges: g.edges.filter((e) => ids.has(e.from) && ids.has(e.to)) };
-}
 
 // Overwrite each node's position with the brain VIEW's self-contained layout (computed by the
 // backend over just this subset). Without this, 2nd/3rd would draw nodes at their full-graph
@@ -61,10 +56,12 @@ export default function App() {
   const refreshGraph = async () => setGraph(await api.graph());
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
+  const SECOND_KINDS = new Set<NodeKind>(["self", "note", "tag"]);
+  const THIRD_KINDS = new Set<NodeKind>(["self", "memory"]);
   const displayGraph = createMemo<GraphData>(() => {
     switch (mode()) {
-      case "2nd": return applyView(filterByKinds(graph(), new Set(["self", "note", "tag"])), graph().views?.second);
-      case "3rd": return applyView(filterByKinds(graph(), new Set(["self", "memory"])), graph().views?.third);
+      case "2nd": return applyView(subgraphByKinds(graph(), SECOND_KINDS), graph().views?.second);
+      case "3rd": return applyView(subgraphByKinds(graph(), THIRD_KINDS), graph().views?.third);
       case "agents": return agents();
       default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
     }
