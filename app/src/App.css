@@ -19,6 +19,7 @@
   --panel: rgba(0, 0, 0, 0.03);
 }
 * { box-sizing: border-box; }
+button { outline: none; }
 body, html, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--fg); }
 .layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace; }
