@@ -18,6 +18,10 @@ test("matches a nested tag", () => {
   expect(matchTagPrefix("#parent/child")).toEqual({ from: 1, query: "parent/child" });
 });
 
+test("matches the rightmost tag when an earlier one is complete", () => {
+  expect(matchTagPrefix("see #a #b")).toEqual({ from: 8, query: "b" });
+});
+
 test("does not match a heading (# space)", () => {
   expect(matchTagPrefix("# ")).toBeNull();
 });
