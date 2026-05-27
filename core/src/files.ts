@@ -1,8 +1,18 @@
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { mkdirSync, renameSync, existsSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { parseFrontmatter } from "./frontmatter";
 import type { TreeEntry } from "./graph";
+
+/** Resolve a vault-relative path to an absolute path, throwing if it escapes the vault root. */
+function resolveInVault(root: string, rel: string): string {
+  const rootAbs = resolve(root);
+  const abs = resolve(rootAbs, rel);
+  if (abs !== rootAbs && !abs.startsWith(rootAbs + sep)) {
+    throw new Error(`path escapes vault: ${rel}`);
+  }
+  return abs;
+}
 
 export async function listMarkdown(root: string): Promise<string[]> {
   const glob = new Bun.Glob("**/*.md");
@@ -48,11 +58,11 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
 }
 
 export async function readNote(root: string, rel: string): Promise<string> {
-  return await Bun.file(join(root, rel)).text();
+  return await Bun.file(resolveInVault(root, rel)).text();
 }
 
 export async function writeNote(root: string, rel: string, contents: string): Promise<void> {
-  const full = join(root, rel);
+  const full = resolveInVault(root, rel);
   mkdirSync(dirname(full), { recursive: true });
   await Bun.write(full, contents);
 }
@@ -62,7 +72,7 @@ export async function writeNote(root: string, rel: string, contents: string): Pr
  * Returns the trash-relative path so the caller can restore it via moveEntry.
  */
 export function deleteEntry(root: string, path: string): { trashPath: string } {
-  const fromAbs = join(root, path);
+  const fromAbs = resolveInVault(root, path);
   if (!existsSync(fromAbs)) throw new Error(`does not exist: ${path}`);
   const base = path.split("/").pop()!;
   const trashPath = `.trash/${Date.now()}-${base}`;
@@ -74,7 +84,7 @@ export function deleteEntry(root: string, path: string): { trashPath: string } {
 
 /** Create a new empty markdown file or a new directory. */
 export function createEntry(root: string, path: string, kind: "file" | "dir"): void {
-  const abs = join(root, path);
+  const abs = resolveInVault(root, path);
   if (existsSync(abs)) throw new Error(`already exists: ${path}`);
   if (kind === "dir") {
     mkdirSync(abs, { recursive: true });
@@ -89,8 +99,8 @@ export function moveEntry(root: string, from: string, to: string): void {
   if (to === from || to.startsWith(from + "/")) {
     throw new Error("cannot move an entry into itself");
   }
-  const fromAbs = join(root, from);
-  const toAbs = join(root, to);
+  const fromAbs = resolveInVault(root, from);
+  const toAbs = resolveInVault(root, to);
   if (!existsSync(fromAbs)) throw new Error(`source does not exist: ${from}`);
   if (existsSync(toAbs)) throw new Error(`destination already exists: ${to}`);
   mkdirSync(dirname(toAbs), { recursive: true });

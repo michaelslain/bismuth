@@ -210,3 +210,21 @@ test("createEntry rejects an existing path", async () => {
   await writeNote(dir, "exists.md", "# E");
   expect(() => createEntry(dir, "exists.md", "file")).toThrow();
 });
+
+test("file ops reject path traversal outside the vault", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-traversal-"));
+  await writeNote(dir, "real.md", "# Real");
+  expect(() => createEntry(dir, "../escape.md", "file")).toThrow(/escape|vault/i);
+  expect(() => createEntry(dir, "/etc/whatever.md", "file")).toThrow(/escape|vault/i);
+  expect(() => moveEntry(dir, "../x.md", "y.md")).toThrow(/escape|vault/i);
+  expect(() => moveEntry(dir, "real.md", "../../y.md")).toThrow(/escape|vault/i);
+  expect(() => deleteEntry(dir, "../../etc/hosts")).toThrow(/escape|vault/i);
+  await expect(readNote(dir, "../../../etc/passwd")).rejects.toThrow(/escape|vault/i);
+});
+
+test("file ops still allow legitimate nested paths", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-nested-ok-"));
+  createEntry(dir, "sub/folder", "dir");
+  createEntry(dir, "sub/folder/note.md", "file");
+  expect((await listTree(dir)).map((e) => e.path).sort()).toContain("sub/folder/note.md");
+});
