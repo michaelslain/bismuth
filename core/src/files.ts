@@ -1,5 +1,5 @@
 import { join, dirname } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { parseFrontmatter } from "./frontmatter";
 import type { TreeEntry } from "./graph";
@@ -55,4 +55,17 @@ export async function writeNote(root: string, rel: string, contents: string): Pr
   const full = join(root, rel);
   mkdirSync(dirname(full), { recursive: true });
   await Bun.write(full, contents);
+}
+
+/** Move or rename a vault entry (file or folder). Used for both rename and drag-drop. */
+export function moveEntry(root: string, from: string, to: string): void {
+  if (to === from || to.startsWith(from + "/")) {
+    throw new Error("cannot move an entry into itself");
+  }
+  const fromAbs = join(root, from);
+  const toAbs = join(root, to);
+  if (!existsSync(fromAbs)) throw new Error(`source does not exist: ${from}`);
+  if (existsSync(toAbs)) throw new Error(`destination already exists: ${to}`);
+  mkdirSync(dirname(toAbs), { recursive: true });
+  renameSync(fromAbs, toAbs);
 }

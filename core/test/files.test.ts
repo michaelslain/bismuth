@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, listTree, readNote, writeNote } from "../src/files";
+import { listMarkdown, listTree, moveEntry, readNote, writeNote } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -116,4 +116,47 @@ test("listTree omits non-markdown files", async () => {
   await Bun.write(join(dir, "image.png"), "binary");
   const paths = (await listTree(dir)).map((e) => e.path);
   expect(paths).toEqual(["note.md"]);
+});
+
+test("moveEntry renames a file within the same folder", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-rename-"));
+  await writeNote(dir, "old.md", "# Content");
+  moveEntry(dir, "old.md", "new.md");
+  expect(await readNote(dir, "new.md")).toBe("# Content");
+  expect(existsSync(join(dir, "old.md"))).toBe(false);
+});
+
+test("moveEntry moves a file into another folder, creating it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-into-"));
+  await writeNote(dir, "note.md", "# N");
+  moveEntry(dir, "note.md", "archive/note.md");
+  expect(await readNote(dir, "archive/note.md")).toBe("# N");
+});
+
+test("moveEntry moves a whole folder with its children", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-folder-"));
+  await writeNote(dir, "proj/a.md", "# A");
+  await writeNote(dir, "proj/b.md", "# B");
+  moveEntry(dir, "proj", "archive/proj");
+  expect(await readNote(dir, "archive/proj/a.md")).toBe("# A");
+  expect(await readNote(dir, "archive/proj/b.md")).toBe("# B");
+});
+
+test("moveEntry rejects an existing destination (no overwrite)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-collide-"));
+  await writeNote(dir, "a.md", "# A");
+  await writeNote(dir, "b.md", "# B");
+  expect(() => moveEntry(dir, "a.md", "b.md")).toThrow();
+  expect(await readNote(dir, "b.md")).toBe("# B");
+});
+
+test("moveEntry rejects moving a folder into its own descendant", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-cycle-"));
+  await writeNote(dir, "parent/x.md", "# X");
+  expect(() => moveEntry(dir, "parent", "parent/child")).toThrow();
+});
+
+test("moveEntry rejects a missing source", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-move-missing-"));
+  expect(() => moveEntry(dir, "nope.md", "yep.md")).toThrow();
 });
