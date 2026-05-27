@@ -44,7 +44,9 @@ export function EventModal(props: { store: EventStore }) {
   async function handleSave() {
     const eventData: Omit<CalendarEvent, 'id'> = {
       title: title(), date: date(),
-      ...(allDay() ? {} : { startTime: startTime(), endTime: endTime() }),
+      // Treat a blank start as all-day, and never persist an empty endTime
+      // (an empty "" later breaks drag math — `"".split(':')` → NaN).
+      ...(allDay() || !startTime() ? {} : { startTime: startTime(), ...(endTime() ? { endTime: endTime() } : {}) }),
       ...(location() ? { location: location() } : {}),
       ...(link() ? { link: link() } : {}),
       ...(description() ? { description: description() } : {}),
