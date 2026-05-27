@@ -106,7 +106,7 @@ export function createServer(cfg: CoreConfig) {
 if (import.meta.main) {
   const arg = (k: string) => { const i = Bun.argv.indexOf(`--${k}`); return i >= 0 ? Bun.argv[i + 1] : undefined; };
   const s = createServer({
-    vault: arg("vault") ?? "sample-vault",
+    vault: arg("vault") ?? "test/fixtures/sample-vault",
     memory: arg("memory"),
     port: arg("port") ? Number(arg("port")) : 4321,
   });
