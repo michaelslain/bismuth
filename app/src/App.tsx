@@ -5,6 +5,7 @@ import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
 import { SettingsPage } from "./SettingsPage";
+import { BaseView } from "./bases/BaseView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
@@ -220,7 +221,11 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            <Show when={active() === SETTINGS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+            <Show when={active() === SETTINGS_TAB} fallback={
+              <Show when={active()!.endsWith(".base")} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                <BaseView path={active()!} />
+              </Show>
+            }>
               <SettingsPage />
             </Show>
           </Show>
