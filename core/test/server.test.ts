@@ -139,6 +139,7 @@ test("GET /tree returns array of { path } entries", async () => {
     expect(Array.isArray(entries)).toBe(true);
     expect(entries.every((e: any) => typeof e.path === "string")).toBe(true);
     expect(entries.map((e: any) => e.path)).toContain("housing.md");
+    expect(entries.every((e: any) => e.kind === "file" || e.kind === "dir")).toBe(true);
   } finally {
     server.stop(true);
   }

@@ -104,8 +104,16 @@ test("listTree includes directories and excludes dot-dirs like .trash", async ()
   mkdirSync(join(dir, "empty-folder"));
   mkdirSync(join(dir, ".trash"));
   await writeNote(dir, ".trash/deleted.md", "# Deleted");
-  const paths = (await listTree(dir)).map((e) => e.path).sort();
+  const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
+  const paths = entries.map((e) => e.path);
   expect(paths).toEqual(["empty-folder", "projects", "projects/inner.md", "top.md"]);
-  const empty = (await listTree(dir)).find((e) => e.path === "empty-folder");
-  expect(empty).toEqual({ path: "empty-folder", kind: "dir" });
+  expect(entries.find((e) => e.path === "empty-folder")).toEqual({ path: "empty-folder", kind: "dir" });
+});
+
+test("listTree omits non-markdown files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-tree-nonmd-"));
+  await writeNote(dir, "note.md", "# Note");
+  await Bun.write(join(dir, "image.png"), "binary");
+  const paths = (await listTree(dir)).map((e) => e.path);
+  expect(paths).toEqual(["note.md"]);
 });

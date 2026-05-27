@@ -1,5 +1,6 @@
 import { join, dirname } from "node:path";
-import { mkdirSync, readdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { parseFrontmatter } from "./frontmatter";
 import type { TreeEntry } from "./graph";
 
@@ -20,9 +21,9 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
   const out: TreeEntry[] = [];
   const walk = async (relDir: string) => {
     const absDir = relDir ? join(root, relDir) : root;
-    let entries: ReturnType<typeof readdirSync>;
+    let entries: Awaited<ReturnType<typeof readdir>>;
     try {
-      entries = readdirSync(absDir, { withFileTypes: true });
+      entries = await readdir(absDir, { withFileTypes: true });
     } catch {
       return; // dir may have been removed mid-walk
     }

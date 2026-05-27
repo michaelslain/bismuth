@@ -27,7 +27,7 @@ export interface GraphData {
 export interface TreeEntry {
   path: string;
   icon?: string;
-  kind?: "file" | "dir";
+  kind: "file" | "dir";
 }
 
 export function emptyGraph(): GraphData {
