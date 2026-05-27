@@ -13,4 +13,6 @@ export const api = {
     fetch(`${BASE}/meta?path=${encodeURIComponent(path)}`).then((r) => r.json() as Promise<Record<string, unknown>>),
   config: () =>
     fetch(`${BASE}/config`).then((r) => r.json() as Promise<{ vault: string; memory: string | null }>),
+  version: () =>
+    fetch(`${BASE}/version`).then((r) => r.json() as Promise<{ version: number }>),
 };

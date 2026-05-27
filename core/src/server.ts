@@ -1,13 +1,50 @@
 import { join } from "node:path";
+import { watch } from "node:fs";
 import { buildGraph } from "./engine";
 import { listMarkdown, readNote, writeNote } from "./files";
 import { commitVault } from "./backup";
 import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
+import type { GraphData } from "./graph";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
 export function createServer(cfg: CoreConfig) {
+  // ── In-memory cache ────────────────────────────────────────────────────────
+  let cachedGraph: GraphData | null = null;
+  let version = 0;
+
+  // Debounce timer handle
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function invalidate() {
+    cachedGraph = null;
+    version++;
+  }
+
+  function scheduleInvalidate() {
+    if (debounceTimer !== null) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      invalidate();
+    }, 250);
+  }
+
+  // ── File-system watchers ───────────────────────────────────────────────────
+  try {
+    watch(cfg.vault, { recursive: true }, () => scheduleInvalidate());
+  } catch {
+    // vault dir may not exist in test / CI environments
+  }
+  if (cfg.memory) {
+    try {
+      watch(cfg.memory, { recursive: true }, () => scheduleInvalidate());
+    } catch {
+      // memory dir may be absent
+    }
+  }
+
+  // ── HTTP server ────────────────────────────────────────────────────────────
   return Bun.serve({
     port: cfg.port ?? 4321,
     async fetch(req) {
@@ -16,8 +53,13 @@ export function createServer(cfg: CoreConfig) {
       if (req.method === "OPTIONS") return new Response(null, { headers: cors });
 
       if (url.pathname === "/graph" && req.method === "GET") {
-        const g = await buildGraph(cfg.vault, cfg.memory);
-        return Response.json(g, { headers: cors });
+        if (cachedGraph === null) {
+          cachedGraph = await buildGraph(cfg.vault, cfg.memory);
+        }
+        return Response.json(cachedGraph, { headers: cors });
+      }
+      if (url.pathname === "/version" && req.method === "GET") {
+        return Response.json({ version }, { headers: cors });
       }
       if (url.pathname === "/tree" && req.method === "GET") {
         return Response.json(await listMarkdown(cfg.vault), { headers: cors });

@@ -44,3 +44,14 @@ test("GET /agent-graph returns an object with nodes and edges arrays", async () 
     server.stop(true);
   }
 });
+
+test("GET /version returns { version: <number> }", async () => {
+  const server = createServer({ vault: "sample-vault", memory: "sample-vault/.memory", port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await (await fetch(`${base}/version`)).json();
+    expect(typeof res.version).toBe("number");
+  } finally {
+    server.stop(true);
+  }
+});
