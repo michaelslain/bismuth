@@ -1,5 +1,5 @@
 import { join, dirname } from "node:path";
-import { mkdirSync, renameSync, existsSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { parseFrontmatter } from "./frontmatter";
 import type { TreeEntry } from "./graph";
@@ -70,6 +70,18 @@ export function deleteEntry(root: string, path: string): { trashPath: string } {
   mkdirSync(dirname(trashAbs), { recursive: true });
   renameSync(fromAbs, trashAbs);
   return { trashPath };
+}
+
+/** Create a new empty markdown file or a new directory. */
+export function createEntry(root: string, path: string, kind: "file" | "dir"): void {
+  const abs = join(root, path);
+  if (existsSync(abs)) throw new Error(`already exists: ${path}`);
+  if (kind === "dir") {
+    mkdirSync(abs, { recursive: true });
+  } else {
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, "");
+  }
 }
 
 /** Move or rename a vault entry (file or folder). Used for both rename and drag-drop. */

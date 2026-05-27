@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listMarkdown, listTree, moveEntry, readNote, writeNote, deleteEntry } from "../src/files";
+import { listMarkdown, listTree, moveEntry, readNote, writeNote, deleteEntry, createEntry } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
@@ -189,4 +189,24 @@ test("deleted entries do not appear in listTree (trash is hidden)", async () => 
 test("deleteEntry rejects a missing path", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-del-missing-"));
   expect(() => deleteEntry(dir, "nope.md")).toThrow();
+});
+
+test("createEntry creates an empty markdown file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-file-"));
+  createEntry(dir, "Untitled.md", "file");
+  expect(existsSync(join(dir, "Untitled.md"))).toBe(true);
+  expect(await readNote(dir, "Untitled.md")).toBe("");
+});
+
+test("createEntry creates a directory", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-dir-"));
+  createEntry(dir, "New Folder", "dir");
+  const entry = (await listTree(dir)).find((e) => e.path === "New Folder");
+  expect(entry).toEqual({ path: "New Folder", kind: "dir" });
+});
+
+test("createEntry rejects an existing path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-create-collide-"));
+  await writeNote(dir, "exists.md", "# E");
+  expect(() => createEntry(dir, "exists.md", "file")).toThrow();
 });
