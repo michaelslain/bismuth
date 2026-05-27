@@ -109,8 +109,9 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
               for (const m of line.text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
                 const s = line.from + (m.index ?? 0), en = s + m[0].length;
                 if (pos >= s && pos <= en) {
+                  // Strip an optional "|alias" and "#heading" to get the target note name.
                   const target = m[1].split("|")[0].split("#")[0].trim();
-                  // Just dispatch; Editor.tsx FIX 2 try/catch + server FIX 3 handle missing files.
+                  // A missing target opens as a new empty note (read falls back to "" above).
                   window.dispatchEvent(new CustomEvent("oa-open", { detail: target + ".md" }));
                   return true;
                 }
