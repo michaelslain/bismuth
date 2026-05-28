@@ -6,6 +6,13 @@ import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
 import type { Row } from "../../core/src/bases/types";
 
+/** GET and parse JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
+async function getJson<T>(path: string): Promise<T> {
+  const r = await fetch(`${BASE}${path}`);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json() as Promise<T>;
+}
+
 /** POST JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
 async function post(path: string, body: unknown): Promise<Response> {
   const r = await fetch(`${BASE}${path}`, {
@@ -17,31 +24,40 @@ async function post(path: string, body: unknown): Promise<Response> {
   return r;
 }
 
+/** POST JSON and parse response; throw the server's error text on a non-2xx. */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await post(path, body);
+  return r.json() as Promise<T>;
+}
+
 export const api = {
-  graph: () => fetch(`${BASE}/graph`).then((r) => r.json() as Promise<GraphData>),
-  agentGraph: () => fetch(`${BASE}/agent-graph`).then((r) => r.json() as Promise<GraphData>),
-  tree: () => fetch(`${BASE}/tree`).then((r) => r.json() as Promise<TreeEntry[]>),
-  read: (path: string) => fetch(`${BASE}/file?path=${encodeURIComponent(path)}`).then((r) => r.text()),
+  graph: () => getJson<GraphData>("/graph"),
+  agentGraph: () => getJson<GraphData>("/agent-graph"),
+  tree: () => getJson<TreeEntry[]>("/tree"),
+  read: (path: string) => fetch(`${BASE}/file?path=${encodeURIComponent(path)}`).then((r) => {
+    if (!r.ok) throw new Error(r.statusText);
+    return r.text();
+  }),
   write: (path: string, contents: string) =>
     fetch(`${BASE}/file`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, contents }) }),
   backup: () => fetch(`${BASE}/backup`, { method: "POST" }),
   meta: (path: string) =>
-    fetch(`${BASE}/meta?path=${encodeURIComponent(path)}`).then((r) => r.json() as Promise<Record<string, unknown>>),
+    getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
   config: () =>
-    fetch(`${BASE}/config`).then((r) => r.json() as Promise<{ vault: string; memory: string | null }>),
+    getJson<{ vault: string; memory: string | null }>("/config"),
   version: () =>
-    fetch(`${BASE}/version`).then((r) => r.json() as Promise<{ version: number }>),
-  vaultData: () => fetch(`${BASE}/vault-data`).then((r) => r.json() as Promise<Row[]>),
+    getJson<{ version: number }>("/version"),
+  vaultData: () => getJson<Row[]>("/vault-data"),
 
   move: (from: string, to: string) => post("/move", { from, to }),
-  del: (path: string) => post("/delete", { path }).then((r) => r.json() as Promise<{ trashPath: string }>),
+  del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
   restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
   create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
-  tasks: () => fetch(`${BASE}/tasks`).then((r) => r.json() as Promise<Task[]>),
-  toggleTask: (path: string, line: number) => post("/tasks/toggle", { path, line }),
+  tasks: () => getJson<Task[]>("/tasks"),
+  toggleTask: (path: string, line: number) => postJson<unknown>("/tasks/toggle", { path, line }),
 
   noteCards: (path: string) =>
-    fetch(`${BASE}/cards/note?path=${encodeURIComponent(path)}`).then((r) => r.json() as Promise<Card[]>),
+    getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
 
