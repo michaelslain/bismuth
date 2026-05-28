@@ -7,6 +7,7 @@ import { createSignal, onMount, For, Show, createMemo } from "solid-js";
 import { api } from "./api";
 import { pushToast } from "./Toast";
 import type { Task, Priority } from "../../core/src/tasks";
+import { todayISO } from "../../core/src/dates";
 
 type Filter = "open" | "all" | "overdue" | "today" | "done";
 
@@ -21,10 +22,6 @@ const PRIORITY_LABEL: Record<Priority, string> = {
 
 const FILTERS: Filter[] = ["open", "all", "overdue", "today", "done"];
 
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function TasksPage(props: { onOpen: (path: string) => void }) {
   const [tasks, setTasks] = createSignal<Task[]>([]);
   const [filter, setFilter] = createSignal<Filter>("open");
@@ -37,7 +34,7 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
 
   const filtered = createMemo<Task[]>(() => {
     const q = query().toLowerCase();
-    const today = todayStr();
+    const today = todayISO();
     return tasks().filter((t) => {
       if (q && !t.description.toLowerCase().includes(q)) return false;
       switch (filter()) {
@@ -154,7 +151,7 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
                           style={{
                             "margin-left": "8px",
                             "font-size": "11px",
-                            color: t.due! < todayStr() && t.status !== "done" ? "var(--accent)" : "inherit",
+                            color: t.due! < todayISO() && t.status !== "done" ? "var(--accent)" : "inherit",
                             opacity: 0.7,
                           }}
                         >

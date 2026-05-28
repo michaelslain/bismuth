@@ -3,8 +3,8 @@ import {
   schedule,
   formatScheduling,
   parseScheduling,
-  addDays,
 } from "../../src/srs/scheduler";
+import { addDaysISO } from "../../src/dates";
 import type { SchedulingInfo } from "../../src/srs/types";
 
 const TODAY = "2026-05-27";
@@ -82,8 +82,8 @@ test("parseScheduling returns [] when no comment present", () => {
 });
 
 test("addDays handles month rollover", () => {
-  expect(addDays("2026-05-31", 1)).toBe("2026-06-01");
-  expect(addDays("2026-12-31", 1)).toBe("2027-01-01");
+  expect(addDaysISO("2026-05-31", 1)).toBe("2026-06-01");
+  expect(addDaysISO("2026-12-31", 1)).toBe("2027-01-01");
 });
 
 test("interval is clamped to MAX_INTERVAL", () => {

@@ -1,4 +1,5 @@
 import type { ReviewResponse, SchedulingInfo } from "./types";
+import { addDaysISO } from "../dates";
 
 export const BASE_EASE = 250;
 export const EASY_BONUS = 1.3;
@@ -6,13 +7,6 @@ export const LAPSES_INTERVAL_CHANGE = 0.5;
 export const MAX_INTERVAL = 36525;
 export const MIN_EASE = 130;
 export const EASE_STEP = 20;
-
-/** Add `days` to a "YYYY-MM-DD" date, returning a "YYYY-MM-DD" string (UTC-safe). */
-export function addDays(date: string, days: number): string {
-  const d = new Date(date + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * Compute the next schedule for a single sub-card.
@@ -48,7 +42,7 @@ export function schedule(
   }
 
   interval = Math.max(1, Math.min(interval, MAX_INTERVAL));
-  return { due: addDays(today, interval), interval, ease };
+  return { due: addDaysISO(today, interval), interval, ease };
 }
 
 /** Matches a full SR scheduling comment, e.g. <!--SR:!2026-06-01,4,270-->. */

@@ -2,6 +2,7 @@
 // Pure + synchronous: given all tasks, a query string, and today's date, return the
 // filtered/sorted tasks plus any human-readable errors for unrecognized filter lines.
 import type { Task, Priority } from "./tasks";
+import { addDaysISO } from "./dates";
 
 export interface QueryOutcome {
   tasks: Task[];
@@ -19,23 +20,17 @@ const PRIORITY_RANK: Record<Priority, number> = {
 const DATE_FIELDS = ["due", "scheduled", "start", "done", "created", "cancelled"] as const;
 type DateField = (typeof DATE_FIELDS)[number];
 
-function addDays(iso: string, n: number): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
-}
-
 /** Resolve a date expression to YYYY-MM-DD, or null if unrecognized. */
 function resolveDateExpr(expr: string, today: string): string | null {
   const e = expr.trim().toLowerCase();
   if (e === "today") return today;
-  if (e === "tomorrow") return addDays(today, 1);
-  if (e === "yesterday") return addDays(today, -1);
+  if (e === "tomorrow") return addDaysISO(today, 1);
+  if (e === "yesterday") return addDaysISO(today, -1);
   if (/^\d{4}-\d{2}-\d{2}$/.test(e)) return e;
   let m = e.match(/^in (\d+) days?$/);
-  if (m) return addDays(today, Number(m[1]));
+  if (m) return addDaysISO(today, Number(m[1]));
   m = e.match(/^(\d+) days? ago$/);
-  if (m) return addDays(today, -Number(m[1]));
+  if (m) return addDaysISO(today, -Number(m[1]));
   return null;
 }
 

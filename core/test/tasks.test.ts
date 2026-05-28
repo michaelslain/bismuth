@@ -93,7 +93,8 @@ test("dedupes repeated tags", () => {
   expect(t.tags).toEqual(["work"]);
 });
 
-import { toggleTaskLine, todayISO } from "../src/tasks";
+import { toggleTaskLine } from "../src/tasks";
+import { todayISO } from "../src/dates";
 
 test("toggleTaskLine completes a todo and appends today's done date", () => {
   const out = toggleTaskLine("- [ ] buy milk", "2026-05-27");
