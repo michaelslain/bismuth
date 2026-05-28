@@ -100,3 +100,28 @@ test("findLeafByContent returns the first leaf with matching content", () => {
   expect(found!.content).toBe("a.md");
   expect(findLeafByContent(r1, "missing.md")).toBeNull();
 });
+
+import { computeRects, focusNeighbor } from "./panes";
+
+test("computeRects splits normalized space by ratio and direction", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row"); // ratio 0.5, side-by-side
+  const s = r1 as Split;
+  const rects = computeRects(r1);
+  const a = rects.get(s.a.id)!;
+  const b = rects.get(s.b.id)!;
+  expect(a.x).toBeCloseTo(0, 5);
+  expect(a.w).toBeCloseTo(0.5, 5);
+  expect(b.x).toBeCloseTo(0.5, 5);
+  expect(b.w).toBeCloseTo(0.5, 5);
+  expect(a.h).toBeCloseTo(1, 5);
+});
+
+test("focusNeighbor finds the pane to the right", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row"); // a | b
+  const s = r1 as Split;
+  expect(focusNeighbor(r1, s.a.id, "right")).toBe(s.b.id);
+  expect(focusNeighbor(r1, s.b.id, "left")).toBe(s.a.id);
+  expect(focusNeighbor(r1, s.a.id, "up")).toBeNull(); // nothing above
+});

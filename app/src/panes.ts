@@ -95,3 +95,59 @@ export function findLeafByContent(root: PaneNode, content: string): Leaf | null 
   if (root.kind === "leaf") return root.content === content ? root : null;
   return findLeafByContent(root.a, content) ?? findLeafByContent(root.b, content);
 }
+
+export type Rect = { x: number; y: number; w: number; h: number };
+export type Dir = "left" | "right" | "up" | "down";
+
+// Normalized layout rectangles (0..1) for every leaf, derived from split ratios.
+export function computeRects(
+  root: PaneNode,
+  rect: Rect = { x: 0, y: 0, w: 1, h: 1 },
+): Map<string, Rect> {
+  const map = new Map<string, Rect>();
+  const walk = (node: PaneNode, r: Rect) => {
+    if (node.kind === "leaf") {
+      map.set(node.id, r);
+      return;
+    }
+    if (node.dir === "row") {
+      const wa = r.w * node.ratio;
+      walk(node.a, { x: r.x, y: r.y, w: wa, h: r.h });
+      walk(node.b, { x: r.x + wa, y: r.y, w: r.w - wa, h: r.h });
+    } else {
+      const ha = r.h * node.ratio;
+      walk(node.a, { x: r.x, y: r.y, w: r.w, h: ha });
+      walk(node.b, { x: r.x, y: r.y + ha, w: r.w, h: r.h - ha });
+    }
+  };
+  walk(root, rect);
+  return map;
+}
+
+// Nearest leaf whose center lies in the given direction from `fromId`.
+export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string | null {
+  const rects = computeRects(root);
+  const from = rects.get(fromId);
+  if (!from) return null;
+  const fcx = from.x + from.w / 2;
+  const fcy = from.y + from.h / 2;
+  let best: string | null = null;
+  let bestDist = Infinity;
+  for (const [id, r] of rects) {
+    if (id === fromId) continue;
+    const dx = r.x + r.w / 2 - fcx;
+    const dy = r.y + r.h / 2 - fcy;
+    const inDir =
+      dir === "right" ? dx > 0.001 && Math.abs(dy) <= Math.abs(dx) :
+      dir === "left" ? dx < -0.001 && Math.abs(dy) <= Math.abs(dx) :
+      dir === "down" ? dy > 0.001 && Math.abs(dx) <= Math.abs(dy) :
+      /* up */ dy < -0.001 && Math.abs(dx) <= Math.abs(dy);
+    if (!inDir) continue;
+    const dist = dx * dx + dy * dy;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = id;
+    }
+  }
+  return best;
+}
