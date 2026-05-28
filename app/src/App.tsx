@@ -16,16 +16,8 @@ import { ToastHost, pushToast } from "./Toast";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
+import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX } from "./tabIds";
 import "./App.css";
-
-// Sentinel tab id for the settings page — not a real file path.
-const SETTINGS_TAB = "::settings";
-const CALENDAR_TAB = "::calendar";
-// Sentinel tab id for the tasks page — not a real file path.
-const TASKS_TAB = "::tasks";
-// Tab id prefix for a per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
-// Each reviewed note gets its own tab; no real note path begins with "::".
-const FLASHCARDS_PREFIX = "::flashcards:";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
