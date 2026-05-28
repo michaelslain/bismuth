@@ -95,6 +95,14 @@ test("kanban view: columns: [...] parses into a string array", () => {
   expect(base.views[0].columns).toEqual(["todo", "reading", "done"]);
 });
 
+test("properties.hidden parses to a boolean flag", () => {
+  const base = parseBase(`properties:\n  order:\n    hidden: true\n  status:\n    displayName: Status\n    hidden: false\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.properties?.order?.hidden).toBe(true);
+  // Anything other than true (missing / false / non-bool) is normalised to undefined.
+  expect(base.properties?.status?.hidden).toBeUndefined();
+  expect(base.properties?.status?.displayName).toBe("Status");
+});
+
 test("map view: type, lat/lng keys, zoom, center parse", () => {
   const base = parseBase(`views:\n  - type: map\n    name: Atlas\n    lat: latitude\n    lng: longitude\n    zoom: 6\n    center: { lat: 40.7, lng: -74 }\n`);
   expect(base.views[0].type).toBe("map");

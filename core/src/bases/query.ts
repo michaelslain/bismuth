@@ -39,10 +39,28 @@ export function resolveProperty(id: string, row: Row, hostThis?: Record<string, 
   return row.note[id];
 }
 
-function deriveColumns(rows: Row[]): string[] {
+// Build the set of property ids the user has marked hidden in BaseConfig.properties.
+// Each entry contributes both its bare form and its canonical form so the user
+// can write `order: { hidden: true }` or `note.order: { hidden: true }` and get
+// the same result.
+function hiddenIds(base: BaseConfig): Set<string> {
+  const out = new Set<string>();
+  if (!base.properties) return out;
+  for (const [key, meta] of Object.entries(base.properties)) {
+    if (!meta?.hidden) continue;
+    out.add(key);
+    out.add(canonicalId(key));
+  }
+  return out;
+}
+
+function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
   const cols = new Set<string>(["file.name"]);
   for (const r of rows) for (const k of Object.keys(r.note)) cols.add(`note.${k}`);
-  return [...cols];
+  // Drop any column the base has flagged hidden. Match on both the raw column id
+  // (`note.order`) and the bare frontmatter name (`order`) — users may have
+  // written the hide under either form.
+  return [...cols].filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
 }
 
 function summarize(name: string, values: unknown[]): string {
@@ -85,8 +103,11 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
     });
   }
 
-  // 4. Resolve columns
-  const columns = view.order && view.order.length ? view.order : deriveColumns(filtered);
+  // 4. Resolve columns.
+  // Explicit `view.order` always wins (per-view opt-in beats global hide); the
+  // hidden filter only narrows the auto-derived fallback.
+  const hidden = hiddenIds(base);
+  const columns = view.order && view.order.length ? view.order : deriveColumns(filtered, hidden);
 
   // 5. Group
   let groups: ResultGroup[];

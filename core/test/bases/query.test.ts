@@ -114,6 +114,40 @@ test("kanban with fixed columns surfaces unexpected data keys as extras", () => 
   expect(res.groups.map((g) => g.key)).toEqual(["todo", "done", "open"]);
 });
 
+test("properties.hidden drops the property from auto-derived columns", () => {
+  // Bare-form hide.
+  const b1: BaseConfig = {
+    properties: { status: { hidden: true } },
+    views: [{ type: "table", name: "V" }],
+  };
+  const res1 = runView(b1, rows, 0);
+  expect(res1.columns).toContain("file.name");
+  expect(res1.columns).toContain("note.price");
+  expect(res1.columns).not.toContain("note.status");
+
+  // Namespaced-form hide reads the same way.
+  const b2: BaseConfig = {
+    properties: { "note.price": { hidden: true } },
+    views: [{ type: "table", name: "V" }],
+  };
+  const res2 = runView(b2, rows, 0);
+  expect(res2.columns).not.toContain("note.price");
+});
+
+test("properties.hidden is overridden by an explicit view.order", () => {
+  // The user wants `order`/`status` globally hidden, except this one table view
+  // where they explicitly list status — that wins.
+  const b: BaseConfig = {
+    properties: { status: { hidden: true } },
+    views: [{
+      type: "table", name: "V",
+      order: ["file.name", "note.price", "note.status"],
+    }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toEqual(["file.name", "note.price", "note.status"]);
+});
+
 test("hostThis flows into filters / formulas / groupBy as `this.*`", () => {
   // Embedded base: filter by `this.tier` from the host note's frontmatter.
   const b: BaseConfig = {
