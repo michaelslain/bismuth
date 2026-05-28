@@ -41,5 +41,6 @@ test("publish swallows errors from a single broken controller", () => {
   reg.subscribe(broken);
   reg.subscribe(goodCtrl);
   reg.publish({ version: 5 });
+  expect(reg.size()).toBe(1);
   expect(good).toEqual([`data: {"version":5}\n\n`]);
 });
