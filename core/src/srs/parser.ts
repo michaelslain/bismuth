@@ -2,7 +2,7 @@ import type { ParsedCard, SchedulingInfo } from "./types";
 import { parseScheduling, SR_COMMENT_RE } from "./scheduler";
 
 export const BASE_TAG = "flashcards";
-const CLOZE_RE = /==[^=]+==|\{\{[^}]+\}\}|\*\*[^*]+\*\*/g;
+export const CLOZE_RE = /==[^=]+==|\{\{[^}]+\}\}|\*\*[^*]+\*\*/g;
 
 /** Given a note's tag strings (without leading '#'), return deck paths for the flashcard tag.
  *  "flashcards" -> "", "flashcards/a/b" -> "a/b". Non-flashcard tags are dropped. */

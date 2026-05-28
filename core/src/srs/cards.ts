@@ -1,7 +1,7 @@
 import { listMarkdown, readNote, writeNote } from "../files";
 import { parseFrontmatter } from "../frontmatter";
 import { extractTags } from "../tags";
-import { parseCards, deckPathsFromTags } from "./parser";
+import { parseCards, deckPathsFromTags, CLOZE_RE } from "./parser";
 import { schedule, formatScheduling, BASE_EASE, SR_COMMENT_RE } from "./scheduler";
 import type { Card, Deck, ParsedCard, ReviewResponse, SchedulingInfo } from "./types";
 
@@ -10,8 +10,6 @@ function noteDeck(tags: string[]): string | null {
   const decks = deckPathsFromTags(tags);
   return decks.length ? decks[0] : null;
 }
-
-const CLOZE_RE = /==[^=]+==|\{\{[^}]+\}\}|\*\*[^*]+\*\*/g;
 
 /** Strip the cloze markers off a single deletion, returning its inner text. */
 function strip(marker: string): string {
