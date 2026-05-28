@@ -12,7 +12,8 @@ import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, isSentinel } from "./tabIds";
 import {
-  type Tab, type PaneNode, makeTab,
+  type Tab, type PaneNode, type Dir, makeTab,
+  splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
@@ -141,6 +142,20 @@ export default function App() {
     closeTabById(id);
   };
 
+  // Close the focused pane of the active tab. Collapses its parent split; if it was the
+  // last pane in the tab, the tab itself closes.
+  const closeFocusedPane = () => {
+    const at = activeTab();
+    if (!at) return;
+    const nextRoot = closeLeaf(at.root, at.focusId);
+    if (nextRoot === null) {
+      closeTabById(at.id);
+      return;
+    }
+    const focusId = leaves(nextRoot)[0].id;
+    updateActiveTab((t) => ({ ...t, root: nextRoot, focusId }));
+  };
+
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
   // folder), collapsing splits; remove a tab if its tree empties.
   const closeDeleted = (path: string) => {
@@ -213,14 +228,59 @@ export default function App() {
   // even while the editor is focused (CodeMirror doesn't bind these keys).
   onMount(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
       const k = e.key.toLowerCase();
-      if (k === "p") {
+
+      // Palette / quick-switcher (no other modifiers).
+      if (!e.altKey && !e.shiftKey && k === "p") {
         e.preventDefault();
         setPalette((p) => (p === "command" ? null : "command"));
-      } else if (k === "o") {
+        return;
+      }
+      if (!e.altKey && !e.shiftKey && k === "o") {
         e.preventDefault();
         setPalette((p) => (p === "file" ? null : "file"));
+        return;
+      }
+
+      const at = activeTab();
+      if (!at) return;
+
+      // Cmd+D split right, Cmd+Shift+D split down.
+      if (!e.altKey && k === "d") {
+        e.preventDefault();
+        const dir = e.shiftKey ? "col" : "row";
+        updateActiveTab((t) => {
+          const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir);
+          return { ...t, root, focusId: newLeafId };
+        });
+        return;
+      }
+      // Cmd+Alt+= equalize.
+      if (e.altKey && (k === "=" || k === "+")) {
+        e.preventDefault();
+        updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
+        return;
+      }
+      // Cmd+W close focused pane (collapse parent; if last pane, close tab).
+      if (!e.altKey && !e.shiftKey && k === "w") {
+        e.preventDefault();
+        closeFocusedPane();
+        return;
+      }
+      // Cmd+Alt+arrows focus neighbor.
+      if (e.altKey) {
+        const dirMap: Record<string, Dir> = {
+          arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
+        };
+        const dir = dirMap[k];
+        if (dir) {
+          e.preventDefault();
+          const next = focusNeighbor(at.root, at.focusId, dir);
+          if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
+          return;
+        }
       }
     };
     window.addEventListener("keydown", handler);
