@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
-import { writeNote } from "../src/files";
+import { writeNote, readNote } from "../src/files";
 import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
@@ -311,6 +311,89 @@ test("POST /move bumps the version so the sidebar refetches", async () => {
     });
     const v1 = (await (await fetch(`${base}/version`)).json()).version;
     expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/decks returns decks with due counts", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem-"));
+  await writeNote(vault, "m.md", "#flashcards/math\n\n2+2::4");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const decks = await (await fetch(`${base}/cards/decks`)).json();
+    expect(decks.find((d: any) => d.name === "math").due).toBe(1);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/due returns due cards; POST /cards/review schedules them", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv2-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem2-"));
+  await writeNote(vault, "m.md", "#flashcards\n\n2+2::4");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const due = await (await fetch(`${base}/cards/due`)).json();
+    expect(due.length).toBe(1);
+    const id = due[0].id;
+    const res = await fetch(`${base}/cards/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, response: "good" }),
+    });
+    expect(res.ok).toBe(true);
+    const text = await readNote(vault, "m.md");
+    expect(text).toContain("<!--SR:");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/all returns every card regardless of due date", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-all-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-all-mem-"));
+  await writeNote(vault, "m.md", "#flashcards\n\na::b\n\nc::d <!--SR:!2099-01-01,5,250-->");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const all = await (await fetch(`${base}/cards/all`)).json();
+    expect(all.length).toBe(2);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /cards/review with an unknown card id returns 400", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-bad-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-bad-mem-"));
+  await writeNote(vault, "m.md", "#flashcards\n\na::b");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/cards/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "m.md::99::0", response: "good" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /cards/note returns all cards for one note (tagless ok)", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-srs-note-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-srs-note-mem-"));
+  await writeNote(vault, "n.md", "a::b\n\nc::d");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const cards = await (await fetch(`${base}/cards/note?path=${encodeURIComponent("n.md")}`)).json();
+    expect(cards.length).toBe(2);
   } finally {
     server.stop(true);
   }
