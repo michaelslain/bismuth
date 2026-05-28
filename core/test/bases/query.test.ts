@@ -113,3 +113,23 @@ test("kanban with fixed columns surfaces unexpected data keys as extras", () => 
   // 'todo' first (declared, empty), then the two data keys in alpha order.
   expect(res.groups.map((g) => g.key)).toEqual(["todo", "done", "open"]);
 });
+
+test("hostThis flows into filters / formulas / groupBy as `this.*`", () => {
+  // Embedded base: filter by `this.tier` from the host note's frontmatter.
+  const b: BaseConfig = {
+    formulas: { adj: "price * this.markup" },
+    views: [{
+      type: "table",
+      name: "V",
+      filters: "price >= this.minPrice",
+      order: ["file.name", "formula.adj"],
+    }],
+  };
+  const host = { minPrice: 10, markup: 2, tier: "open" };
+  const res = runView(b, rows, 0, host);
+  // Only alpha (price=10) and gamma (price=20) clear minPrice=10.
+  expect(res.groups[0].rows.map((r) => r.file.name).sort()).toEqual(["alpha", "gamma"]);
+  // Formula computed against host markup.
+  const alpha = res.groups[0].rows.find((r) => r.file.name === "alpha")!;
+  expect(alpha.formula.adj).toBe(20); // 10 * 2
+});

@@ -60,4 +60,10 @@ export interface EvalContext {
   note: Record<string, unknown>;
   formula: Record<string, unknown>;
   this?: Record<string, unknown>;          // properties of the embedding/host note (optional)
+  scope?: Scope;                            // lambda parameter scope chain
+}
+
+export interface Scope {
+  bindings: Record<string, unknown>;
+  parent?: Scope;
 }

@@ -94,3 +94,25 @@ test("duration() helper parses to milliseconds", () => {
   expect(run('duration("1d")')).toBe(86_400_000);
   expect(run('duration("nonsense")')).toBeNaN();
 });
+
+test("real lambdas in list methods (closures, params, nesting)", () => {
+  const c = {
+    file: ctx.file,
+    note: { items: [{ title: "a", price: 1 }, { title: "b", price: 2 }, { title: "c", price: 3 }] },
+    formula: {},
+  };
+  const m = (s: string) => evaluate(parseExpr(s), c);
+  expect(m("items.map(x => x.title)")).toEqual(["a", "b", "c"]);
+  expect(m("items.filter(x => x.price > 1).length")).toBe(2);
+  expect(m("items.reduce((acc, x) => acc + x.price, 0)")).toBe(6);
+  // Lambda body can reference outer frontmatter via the bare name.
+  const c2 = { file: ctx.file, note: { items: [1, 2, 3], cap: 2 }, formula: {} };
+  expect(evaluate(parseExpr("items.filter(x => x <= cap)"), c2)).toEqual([1, 2]);
+});
+
+test("regex literal: /…/flags and .matches accepts RegExp directly", () => {
+  expect(run("title.matches(/^hello/i)")).toBe(true);
+  expect(run("title.matches(/^hello/)")).toBe(false);
+  // Division still parses as division when context says so.
+  expect(evaluate(parseExpr("10 / 2"), ctx)).toBe(5);
+});

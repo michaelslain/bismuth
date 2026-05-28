@@ -4,17 +4,17 @@ import { evaluate } from "./evaluate";
 import { passesFilter, combineFilters } from "./filters";
 import { compare, toNumber } from "./values";
 
-function toContext(row: Row): EvalContext {
-  return { file: row.file, note: row.note, formula: row.formula };
+function toContext(row: Row, hostThis?: Record<string, unknown>): EvalContext {
+  return { file: row.file, note: row.note, formula: row.formula, this: hostThis };
 }
 
-function computeFormulas(rows: Row[], formulas: Record<string, string> | undefined): void {
+function computeFormulas(rows: Row[], formulas: Record<string, string> | undefined, hostThis?: Record<string, unknown>): void {
   if (!formulas) return;
   const compiled = Object.entries(formulas).map(([name, src]) => {
     try { return [name, parseExpr(src)] as const; } catch { return [name, null] as const; }
   });
   for (const row of rows) {
-    const ctx = toContext(row);
+    const ctx = toContext(row, hostThis);
     for (const [name, ast] of compiled) {
       if (!ast) { row.formula[name] = undefined; continue; }
       try { row.formula[name] = evaluate(ast, ctx); } catch { row.formula[name] = undefined; }
@@ -31,12 +31,11 @@ export function canonicalId(id: string): string {
 
 // Resolve a property id (e.g. "file.name", "note.price", "formula.ppu", bare "price")
 // to a value for a given row.
-export function resolveProperty(id: string, row: Row): unknown {
-  const ctx = toContext(row);
+export function resolveProperty(id: string, row: Row, hostThis?: Record<string, unknown>): unknown {
   if (id.startsWith("file.")) return (row.file as unknown as Record<string, unknown>)[id.slice(5)];
   if (id.startsWith("note.")) return row.note[id.slice(5)];
   if (id.startsWith("formula.")) return row.formula[id.slice(8)];
-  if (id.startsWith("this.")) return ctx.this?.[id.slice(5)];
+  if (id.startsWith("this.")) return hostThis?.[id.slice(5)];
   return row.note[id];
 }
 
@@ -61,23 +60,25 @@ function summarize(name: string, values: unknown[]): string {
   }
 }
 
-export function runView(base: BaseConfig, allRows: Row[], viewIndex: number): ViewResult {
+export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hostThis?: Record<string, unknown>): ViewResult {
   const view = base.views[viewIndex] ?? base.views[0];
 
-  // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*)
+  // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*).
+  //    `hostThis` (the embedding note's frontmatter, when this base is being
+  //    rendered inline in another note) flows into the eval context as `this.*`.
   const rows = allRows.map((r) => ({ ...r, formula: { ...r.formula } }));
-  computeFormulas(rows, base.formulas);
+  computeFormulas(rows, base.formulas, hostThis);
 
   // 2. Filter (global AND view)
   const filter = combineFilters(base.filters, view.filters);
-  let filtered = rows.filter((r) => passesFilter(filter, toContext(r)));
+  let filtered = rows.filter((r) => passesFilter(filter, toContext(r, hostThis)));
 
   // 3. Sort
   if (view.sort && view.sort.length) {
     filtered = [...filtered].sort((a, b) => {
       for (const s of view.sort!) {
         const dir = s.direction === "DESC" ? -1 : 1;
-        const c = compare(resolveProperty(s.property, a), resolveProperty(s.property, b));
+        const c = compare(resolveProperty(s.property, a, hostThis), resolveProperty(s.property, b, hostThis));
         if (c !== 0) return c * dir;
       }
       return 0;
@@ -93,7 +94,7 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number): Vi
     const dir = view.groupBy.direction === "DESC" ? -1 : 1;
     const map = new Map<string, Row[]>();
     for (const r of filtered) {
-      const key = String(resolveProperty(view.groupBy.property, r) ?? "");
+      const key = String(resolveProperty(view.groupBy.property, r, hostThis) ?? "");
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
@@ -124,7 +125,7 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number): Vi
   const summaries: Record<string, string> = {};
   if (view.summaries) {
     for (const [prop, sumName] of Object.entries(view.summaries)) {
-      summaries[canonicalId(prop)] = summarize(sumName, filtered.map((r) => resolveProperty(prop, r)));
+      summaries[canonicalId(prop)] = summarize(sumName, filtered.map((r) => resolveProperty(prop, r, hostThis)));
     }
   }
 

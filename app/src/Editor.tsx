@@ -85,7 +85,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       drawSelection(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
-      basesBlock,
+      basesBlock(() => path),
       vaultCompletion({ getNotes: props.noteNames, getTags: props.tagNames }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
