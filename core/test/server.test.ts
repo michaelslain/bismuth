@@ -476,3 +476,42 @@ test("GET /cards/note returns all cards for one note (tagless ok)", async () => 
     server.stop(true);
   }
 });
+
+test("GET /events streams a version event after a mutating call", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/events`);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Trigger a mutation via the HTTP API.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "from-sse-test.md", kind: "file" }),
+    });
+
+    // Read until we see a data frame with a version number, or timeout.
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const m = buf.match(/data: (\{.*?\})\n\n/);
+      if (m) {
+        const payload = JSON.parse(m[1]);
+        expect(typeof payload.version).toBe("number");
+        expect(payload.version).toBeGreaterThan(0);
+        await reader.cancel();
+        return;
+      }
+    }
+    throw new Error(`no SSE event received; buffer: ${buf}`);
+  } finally {
+    server.stop(true);
+  }
+});
