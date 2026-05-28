@@ -16,12 +16,20 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const byBase = new Map<string, string>();
-  const links = new Map<string, string[]>();
+
+  // Build nodes and read all contents in parallel
   for (const rel of rels) {
     const base = basename(noteId(rel));
     nodes.push({ id: MEM(base), label: base, kind: "memory" });
     byBase.set(base, MEM(base));
-    const content = await readNote(root, rel);
+  }
+
+  const contentMap = new Map<string, string>(
+    await Promise.all(rels.map(async (rel) => [basename(noteId(rel)), await readNote(root, rel)] as const))
+  );
+
+  const links = new Map<string, string[]>();
+  for (const [base, content] of contentMap) {
     const targets = extractWikilinks(content);
     links.set(base, targets);
   }
