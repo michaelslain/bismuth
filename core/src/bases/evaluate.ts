@@ -4,6 +4,14 @@ import { callFunction, callMethod, parseDurationMs } from "./functions";
 import { compare, looseEquals, toNumber, truthy } from "./values";
 
 function resolveIdent(name: string, ctx: EvalContext): unknown {
+  // Lambda params are bound in an explicit scope chain so they shadow file/note/
+  // formula/this/frontmatter cleanly. The chain stores raw values rather than
+  // building a new ctx, so nested lambdas are cheap.
+  if (ctx.scope) {
+    for (let s: EvalContext["scope"] = ctx.scope; s; s = s.parent) {
+      if (name in s.bindings) return s.bindings[name];
+    }
+  }
   switch (name) {
     case "file": return ctx.file;
     case "note": return ctx.note;
@@ -31,6 +39,30 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
     case "bool": return node.value;
     case "null": return null;
     case "ident": return resolveIdent(node.name, ctx);
+
+    case "regex": {
+      try { return new RegExp(node.source, node.flags); }
+      catch { return undefined; }                                    // fail closed on bad pattern
+    }
+
+    case "lambda": {
+      // Returns a real JS closure. Each call extends the scope chain with the
+      // current ctx's chain so nested lambdas see outer params. The declared
+      // arity is exposed via `__params` so callers (e.g. .reduce) can tell a
+      // 1-arg projection from a 2-arg reducer (JS's `fn.length` is 0 because
+      // we use rest params here).
+      const params = node.params;
+      const body = node.body;
+      const parentScope = ctx.scope;
+      const fn = (...args: unknown[]) => {
+        const bindings: Record<string, unknown> = {};
+        for (let k = 0; k < params.length; k++) bindings[params[k]] = args[k];
+        const inner: EvalContext = { ...ctx, scope: { bindings, parent: parentScope } };
+        return evaluate(body, inner);
+      };
+      (fn as unknown as { __params: number }).__params = params.length;
+      return fn;
+    }
 
     case "member": {
       const obj = evaluate(node.object, ctx);

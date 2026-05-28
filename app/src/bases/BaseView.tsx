@@ -9,11 +9,18 @@ import { ListView } from "./ListView";
 import { KanbanView } from "./KanbanView";
 import styles from "./BaseView.module.css";
 
-export function BaseView(props: { path?: string; source?: string }) {
+export function BaseView(props: { path?: string; source?: string; hostPath?: string }) {
   const [rows, { refetch }] = createResource(async () => (await api.vaultData()) as Row[]);
   const [sourceText] = createResource(
     () => props.path,
     async (p) => (p ? await api.read(p) : ""),
+  );
+  // Embedded bases (inline ```base block or ![[file.base]] transclusion) want
+  // to expose the host note's frontmatter as `this.*`. We fetch it once per
+  // hostPath; an absent hostPath simply leaves `this` undefined.
+  const [hostMeta] = createResource(
+    () => props.hostPath,
+    async (p) => (p ? ((await api.meta(p)) as Record<string, unknown>) : undefined),
   );
 
   const config = createMemo<BaseConfig>(() => {
@@ -28,7 +35,7 @@ export function BaseView(props: { path?: string; source?: string }) {
     const data = rows();
     if (!data) return null;
     const idx = Math.min(activeView(), cfg.views.length - 1);
-    return runView(cfg, data, idx);
+    return runView(cfg, data, idx, hostMeta());
   });
 
   return (

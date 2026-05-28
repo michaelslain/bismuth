@@ -15,12 +15,65 @@ class Parser {
   constructor(src: string) { this.toks = lex(src); }
 
   private peek(): Token | undefined { return this.toks[this.i]; }
+  private peekAt(offset: number): Token | undefined { return this.toks[this.i + offset]; }
   private next(): Token | undefined { return this.toks[this.i++]; }
   private isOp(v: string): boolean { const t = this.peek(); return !!t && t.kind === "op" && t.value === v; }
 
   parse(): Expr {
-    const e = this.parseBinary(0);
-    return e;
+    const lam = this.tryParseLambda();
+    if (lam) return lam;
+    return this.parseBinary(0);
+  }
+
+  // Look-ahead a lambda from the current position. Returns null without
+  // consuming tokens if not a lambda.
+  // Two shapes are accepted:
+  //   - `ident => body`
+  //   - `(ident, ident, …) => body`  (zero or more idents)
+  // Anything else is left to the regular expression parser.
+  private tryParseLambda(): Expr | null {
+    // Bare-ident form.
+    const t0 = this.peek();
+    if (t0 && t0.kind === "ident" && this.peekAt(1)?.kind === "arrow") {
+      const param = String(t0.value);
+      this.i += 2; // ident, arrow
+      const body = this.parseBinary(0);
+      return { type: "lambda", params: [param], body };
+    }
+    // Parenthesized form. We need to scan to the matching ')' and check what
+    // follows; this is bounded because we only do it when the current token is `(`.
+    if (t0 && t0.kind === "lparen") {
+      const saved = this.i;
+      this.i++;
+      const params: string[] = [];
+      // Empty params: () =>
+      if (this.peek()?.kind === "rparen") {
+        this.i++;
+        if (this.peek()?.kind === "arrow") {
+          this.i++;
+          const body = this.parseBinary(0);
+          return { type: "lambda", params, body };
+        }
+        this.i = saved;
+        return null;
+      }
+      // Param list of bare idents: anything else means it's an ordinary expr.
+      for (;;) {
+        const p = this.peek();
+        if (!p || p.kind !== "ident") { this.i = saved; return null; }
+        params.push(String(p.value));
+        this.i++;
+        const sep = this.peek();
+        if (sep?.kind === "rparen") { this.i++; break; }
+        if (sep?.kind !== "comma") { this.i = saved; return null; }
+        this.i++;
+      }
+      if (this.peek()?.kind !== "arrow") { this.i = saved; return null; }
+      this.i++;
+      const body = this.parseBinary(0);
+      return { type: "lambda", params, body };
+    }
+    return null;
   }
 
   private parseBinary(minPrec: number): Expr {
@@ -72,7 +125,9 @@ class Parser {
     const args: Expr[] = [];
     if (this.peek()?.kind === "rparen") { this.next(); return args; }
     for (;;) {
-      args.push(this.parseBinary(0));
+      // Each argument slot can be a full lambda: `.map(x => x.title)`.
+      const lam = this.tryParseLambda();
+      args.push(lam ?? this.parseBinary(0));
       const t = this.next();
       if (!t) throw new Error("unterminated argument list");
       if (t.kind === "rparen") break;
@@ -91,7 +146,10 @@ class Parser {
       case "false": return { type: "bool", value: false };
       case "null": return { type: "null" };
       case "ident": return { type: "ident", name: String(t.value) };
+      case "regex": return { type: "regex", source: String(t.value), flags: t.flags ?? "" };
       case "lparen": {
+        // Lambda inside parens was already handled by tryParseLambda at the
+        // statement entry points; here we treat the parens as grouping.
         const e = this.parseBinary(0);
         const close = this.next();
         if (!close || close.kind !== "rparen") throw new Error("expected ')'");

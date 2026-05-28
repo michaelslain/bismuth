@@ -103,11 +103,13 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
       case "split": return receiver.split(asString(args[0]));
       case "reverse": return receiver.split("").reverse().join("");
       case "isEmpty": return receiver.length === 0;
-      // Regex via a string pattern: `name.matches("^Hello", "i")`. We can't accept a
-      // /…/ literal yet (lexer has no regex token), so this is the textual form.
+      // Regex match. Accepts either a real `/foo/i` literal (RegExp instance)
+      // or the textual form `"^Hello", "i"` for compatibility with older bases.
       case "matches": {
         try {
-          const re = new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
+          const re = args[0] instanceof RegExp
+            ? args[0]
+            : new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
           return re.test(receiver);
         } catch { return false; }
       }
@@ -125,17 +127,25 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
       case "slice": return receiver.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
       case "flat": return receiver.flat();
       case "isEmpty": return receiver.length === 0;
-      // Lambda-lite: instead of `x => x.title` we accept the property-path string
-      // `"title"` (or `"_.title"` / `"$.title"` / `"it.title"`). True closures
-      // would need new AST + parser support; this covers the common shape.
+      // Accepts a real lambda (`x => x.title`) or a property-path string
+      // (`"title"`, `"_.title"`, `"$.title"`). The string form is kept so
+      // older bases keep working.
       case "map": return receiver.map(compileItemAccessor(args[0]));
       case "filter": {
         const get = compileItemAccessor(args[0]);
         return receiver.filter((x, i) => truthy(get(x, i)));
       }
       case "reduce": {
-        // .reduce("_.price", 0) — pulls the accessor's value and sums via toNumber.
-        // For now we only do numeric sum; richer reducers would need real lambdas.
+        // Two shapes:
+        //   .reduce((acc, x) => …, seed)  — real reducer (acc + item), seed required
+        //   .reduce("_.price", 0)         — legacy: project + numeric sum
+        // A 2-arg lambda is treated as a real reducer; a 1-arg lambda or string
+        // path is treated as a projection that gets summed numerically.
+        const fn0 = args[0] as Function & { __params?: number };
+        const arity = typeof fn0 === "function" ? (fn0.__params ?? fn0.length) : -1;
+        if (typeof fn0 === "function" && arity >= 2) {
+          return receiver.reduce(fn0 as (acc: unknown, x: unknown, i: number) => unknown, args[1] as unknown);
+        }
         const get = compileItemAccessor(args[0]);
         const seed = args[1] != null ? toNumber(args[1]) : 0;
         return receiver.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed);
