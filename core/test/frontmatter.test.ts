@@ -177,3 +177,28 @@ test("setFrontmatterKey can set array and object values", () => {
   expect(data.tags).toEqual(["a", "b"]);
   expect(data.status).toBe("todo");
 });
+
+test("setFrontmatterKey preserves flow-style arrays on untouched keys", () => {
+  const md = `---\ntitle: Gamma\ntags: [book, fiction]\n---\n# Gamma`;
+  const out = setFrontmatterKey(md, "status", "done");
+  // The previous implementation exploded "tags: [book, fiction]" into a block list:
+  //   tags:
+  //     - book
+  //     - fiction
+  // The new Document-based impl keeps it as flow style (single line, square brackets,
+  // no leading `  - `), though internal whitespace may differ ("[book, fiction]" vs
+  // "[ book, fiction ]") — fidelity isn't byte-perfect.
+  expect(out).toMatch(/tags: \[\s*book\s*,\s*fiction\s*\]/);
+  expect(out).not.toMatch(/^\s*-\s+book/m);
+  expect(out).toContain("status: done");
+  expect(out).toContain("# Gamma");
+});
+
+test("setFrontmatterKey preserves the existing key order on update", () => {
+  const md = `---\ntitle: Gamma\nstatus: todo\nrating: 3\n---\nbody`;
+  const out = setFrontmatterKey(md, "status", "done");
+  const fmLines = out.match(/^---\n([\s\S]*?)\n---/)![1].split("\n");
+  expect(fmLines[0]).toContain("title:");
+  expect(fmLines[1]).toContain("status:");
+  expect(fmLines[2]).toContain("rating:");
+});

@@ -358,6 +358,24 @@ test("POST /set-property bumps the version so views refetch", async () => {
   }
 });
 
+test("POST /set-property returns 404 for a path that doesn't exist (no silent create)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "no-such-note.md", key: "status", value: "todo" }),
+    });
+    expect(res.status).toBe(404);
+    // The endpoint must NOT have created the file as a side effect.
+    expect(await Bun.file(`${vault}/no-such-note.md`).exists()).toBe(false);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /move bumps the version so the sidebar refetches", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

@@ -149,7 +149,12 @@ export function createServer(cfg: CoreConfig) {
         // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
         const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
         try {
+          // Refuse to write to a path that doesn't exist — silently creating notes
+          // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
           const raw = await readNoteOrEmpty(cfg.vault, path);
+          if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+            return new Response("note not found", { status: 404, headers: cors });
+          }
           const next = setFrontmatterKey(raw, key, value);
           await writeNote(cfg.vault, path, next);
         } catch (e) {

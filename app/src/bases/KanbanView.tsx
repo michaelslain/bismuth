@@ -95,21 +95,32 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
     if (!gb) return;
     const statusKey = writableKey(gb.property);
 
-    // Target column's cards (sorted), excluding the dragged one — the neighbours
-    // that determine the new fractional order value.
-    const list = sortedRows(group).filter((r) => r.file.path !== path);
-    const i = Math.max(0, Math.min(insertAt, list.length));
-    let newOrder: number;
-    if (list.length === 0) newOrder = 0;
-    else if (i <= 0) newOrder = effOrder(list[0], group) - 1;
-    else if (i >= list.length) newOrder = effOrder(list[list.length - 1], group) + 1;
-    else newOrder = (effOrder(list[i - 1], group) + effOrder(list[i], group)) / 2;
+    // Locate the dragged row across all groups.
+    const dragged = props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path);
+    if (!dragged) return;
 
-    // Move to the column (status) only if it actually changed; always persist order.
+    // Build the target column's new ordering with the dragged card inserted at i.
+    const others = sortedRows(group).filter((r) => r.file.path !== path);
+    const i = Math.max(0, Math.min(insertAt, others.length));
+    const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
+
+    // Cross-column move: write status first, sequentially with the dragged card's
+    // order (they target the same file — sequential avoids a read-modify-write race).
     if (statusKey !== null && from !== group.key) {
       await api.setProperty(path, statusKey, group.key);
     }
-    await api.setProperty(path, ORDER_KEY, newOrder);
+    await api.setProperty(path, ORDER_KEY, i);
+
+    // Reindex the rest of the column to clean integers (only writing cards whose
+    // current order differs from their new index). Different files = safe to parallelise.
+    const sideWrites: Promise<unknown>[] = [];
+    for (let k = 0; k < newList.length; k++) {
+      const row = newList[k];
+      if (row.file.path === path) continue;
+      const current = (row.note as Record<string, unknown>)[ORDER_KEY];
+      if (current !== k) sideWrites.push(api.setProperty(row.file.path, ORDER_KEY, k));
+    }
+    await Promise.all(sideWrites);
     props.onChange();
   }
 

@@ -1,4 +1,4 @@
-import { parse, stringify } from "yaml";
+import { parse, stringify, parseDocument } from "yaml";
 
 export interface Frontmatter {
   data: Record<string, unknown>;
@@ -22,11 +22,29 @@ export function parseFrontmatter(md: string): Frontmatter {
 
 /**
  * Set a single frontmatter key on a note, returning the rewritten markdown.
- * Preserves all other frontmatter keys and the body verbatim. If the note had
- * no frontmatter, a new block is prepended ahead of the existing body.
+ * Preserves the original YAML formatting (flow vs block arrays, key order,
+ * quoting, comments) by editing via the `yaml` Document API rather than
+ * round-tripping through a plain object. Preserves the body verbatim. If the
+ * note had no frontmatter, a new block is prepended ahead of the existing body.
  */
 export function setFrontmatterKey(md: string, key: string, value: unknown): string {
-  const { data, body } = parseFrontmatter(md);
-  data[key] = value;
-  return `---\n${stringify(data)}---\n${body}`;
+  const m = md.match(FM);
+  if (!m) {
+    // No existing frontmatter: synthesise a fresh block.
+    return `---\n${stringify({ [key]: value })}---\n${md}`;
+  }
+  const fmText = m[1];
+  const body = md.slice(m[0].length);
+  try {
+    const doc = parseDocument(fmText);
+    doc.set(key, value);
+    let out = doc.toString();
+    if (!out.endsWith("\n")) out += "\n";
+    return `---\n${out}---\n${body}`;
+  } catch {
+    // Malformed YAML: fall back to a clean rewrite via the parsed object.
+    const { data } = parseFrontmatter(md);
+    data[key] = value;
+    return `---\n${stringify(data)}---\n${body}`;
+  }
 }
