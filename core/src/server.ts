@@ -4,12 +4,14 @@ import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
-import { parseFrontmatter } from "./frontmatter";
+import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
+import { buildVaultRows } from "./basesData";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine, todayISO } from "./tasks";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import type { ReviewResponse } from "./srs/types";
+import type { Row } from "./bases/types";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -32,6 +34,9 @@ export function createServer(cfg: CoreConfig) {
   // The sidebar polls /tree every few seconds; cache it (with the per-note icon read) so we
   // don't re-read every file on each poll. Invalidated alongside the graph on file changes.
   let cachedTree: TreeEntry[] | null = null;
+  // One Row per note (file.* meta + frontmatter), served to the Bases query engine via /vault-data.
+  // Cached and invalidated alongside the graph/tree on file changes.
+  let cachedRows: Row[] | null = null;
   let version = 0;
 
   // Debounce timer handle
@@ -40,6 +45,7 @@ export function createServer(cfg: CoreConfig) {
   function invalidate() {
     cachedGraph = null;
     cachedTree = null;
+    cachedRows = null;
     version++;
   }
 
@@ -107,6 +113,10 @@ export function createServer(cfg: CoreConfig) {
         if (cachedTree === null) cachedTree = await listTree(cfg.vault);
         return Response.json(cachedTree, { headers: cors });
       }
+      if (url.pathname === "/vault-data" && req.method === "GET") {
+        if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
+        return Response.json(cachedRows, { headers: cors });
+      }
       if (url.pathname === "/file" && req.method === "GET") {
         const path = url.searchParams.get("path");
         if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
@@ -142,6 +152,24 @@ export function createServer(cfg: CoreConfig) {
           createEntry(cfg.vault, path, kind);
           return new Response("ok", { headers: cors });
         });
+      }
+      if (url.pathname === "/set-property" && req.method === "POST") {
+        // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
+        const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
+        try {
+          // Refuse to write to a path that doesn't exist — silently creating notes
+          // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
+          const raw = await readNoteOrEmpty(cfg.vault, path);
+          if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+            return new Response("note not found", { status: 404, headers: cors });
+          }
+          const next = setFrontmatterKey(raw, key, value);
+          await writeNote(cfg.vault, path, next);
+        } catch (e) {
+          // e.g. the path-escape guard in resolveInVault — surface as a 400 like mutate() does.
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+        return mutate(() => new Response("ok", { headers: cors }));
       }
       if (url.pathname === "/backup" && req.method === "POST") {
         const committed = await commitVault(cfg.vault, snapshotMessage());

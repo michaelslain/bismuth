@@ -8,6 +8,7 @@ import { SettingsPage } from "./SettingsPage";
 import { CalendarPage } from "./calendar/CalendarPage";
 import { TasksPage } from "./TasksPage";
 import { Flashcards } from "./Flashcards";
+import { BaseView } from "./bases/BaseView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
@@ -252,7 +253,11 @@ export default function App() {
             <Show when={active()!.startsWith(FLASHCARDS_PREFIX)} fallback={
               <Show when={active() === CALENDAR_TAB} fallback={
                 <Show when={active() === SETTINGS_TAB} fallback={
-                  <Show when={active() === TASKS_TAB} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                  <Show when={active() === TASKS_TAB} fallback={
+                    <Show when={active()!.endsWith(".base")} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                      <BaseView path={active()!} />
+                    </Show>
+                  }>
                     <TasksPage onOpen={openFile} />
                   </Show>
                 }>

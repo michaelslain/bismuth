@@ -4,6 +4,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
+import type { Row } from "../../core/src/bases/types";
 
 /** POST JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
 async function post(path: string, body: unknown): Promise<Response> {
@@ -30,6 +31,7 @@ export const api = {
     fetch(`${BASE}/config`).then((r) => r.json() as Promise<{ vault: string; memory: string | null }>),
   version: () =>
     fetch(`${BASE}/version`).then((r) => r.json() as Promise<{ version: number }>),
+  vaultData: () => fetch(`${BASE}/vault-data`).then((r) => r.json() as Promise<Row[]>),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => post("/delete", { path }).then((r) => r.json() as Promise<{ trashPath: string }>),
@@ -42,4 +44,6 @@ export const api = {
     fetch(`${BASE}/cards/note?path=${encodeURIComponent(path)}`).then((r) => r.json() as Promise<Card[]>),
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
+
+  setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
 };

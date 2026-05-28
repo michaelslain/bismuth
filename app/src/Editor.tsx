@@ -7,6 +7,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
 import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
+import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
@@ -84,6 +85,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       drawSelection(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
+      basesBlock,
       vaultCompletion({ getNotes: props.noteNames, getTags: props.tagNames }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),

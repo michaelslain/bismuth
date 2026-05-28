@@ -1,0 +1,109 @@
+.base {
+  /* Local surfaces/text derived from the real theme vars (--bg, --fg, --border, --accent).
+     Relative to --fg so they work in both dark and light themes. */
+  --oa-muted: color-mix(in srgb, var(--fg) 55%, transparent);
+  --oa-surface: color-mix(in srgb, var(--fg) 5%, transparent);
+  --oa-surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
+  --oa-surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
+  --oa-accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --oa-accent-border: color-mix(in srgb, var(--accent) 55%, var(--border));
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+  padding: 12px 16px;
+  color: var(--fg);
+}
+
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.tab { padding: 6px 12px; background: transparent; border: none; cursor: pointer; color: var(--oa-muted); border-bottom: 2px solid transparent; transition: color 120ms ease; }
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.loading { padding: 24px; color: var(--oa-muted); }
+
+.table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.table th, .table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.table th { font-weight: 600; color: var(--oa-muted); }
+.groupRow td { font-weight: 600; background: var(--oa-surface); }
+.summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }
+
+.cards { display: flex; flex-direction: column; gap: 12px; }
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--oa-surface-2); }
+.cardTitle { font-weight: 600; margin-bottom: 8px; }
+.cardField { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
+.cardKey { color: var(--oa-muted); }
+
+.bodyCard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--oa-surface-2); }
+.todoList { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.todoItem { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.todoCheckbox { flex: 0 0 auto; cursor: pointer; accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
+.todoText { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; outline: none; border-bottom: 1px solid transparent; transition: border-color 120ms ease; }
+.todoText:focus { border-bottom-color: var(--accent); }
+.todoDone .todoText { color: var(--oa-muted); text-decoration: line-through; }
+.todoRemove { flex: 0 0 auto; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; opacity: 0; transition: opacity 120ms ease, color 120ms ease; }
+.todoItem:hover .todoRemove { opacity: 1; }
+.todoRemove:hover { color: var(--fg); }
+.todoAdd { align-self: flex-start; margin-top: 6px; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font: inherit; padding: 2px 0; transition: color 120ms ease; }
+.todoAdd:hover { color: var(--accent); }
+
+.list ul { margin: 0; padding-left: 20px; }
+.list li { padding: 2px 0; }
+.groupHeader { font-weight: 600; margin: 8px 0 4px; }
+
+/* ---- Kanban ---- */
+.kanban { display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; padding-bottom: 8px; }
+.kanbanColumn {
+  display: flex;
+  flex-direction: column;
+  min-width: 248px;
+  max-width: 288px;
+  flex: 0 0 auto;
+  padding: 10px;
+  background: var(--oa-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.kanbanColumnOver {
+  border-color: var(--oa-accent-border);
+  background: var(--oa-surface-2);
+  box-shadow: 0 0 0 1px var(--oa-accent-border) inset;
+}
+.kanbanColHeader { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 2px 4px 10px; }
+.kanbanColTitle { text-transform: capitalize; }
+.kanbanCount { font-size: 12px; font-weight: 600; color: var(--oa-muted); background: var(--oa-surface-3); border-radius: 10px; padding: 1px 8px; }
+
+.kanbanCards { display: flex; flex-direction: column; }
+.kanbanCards .card {
+  cursor: grab;
+  margin-bottom: 8px;
+  background: var(--oa-surface-2);
+  transition: transform 130ms ease, background 130ms ease, border-color 130ms ease, box-shadow 130ms ease, opacity 130ms ease;
+  will-change: transform;
+}
+.kanbanCards .card:hover { background: var(--oa-surface-3); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
+.kanbanCards .card:active { cursor: grabbing; }
+.cardDragging { opacity: 0.35; box-shadow: none !important; transform: scale(0.98) !important; }
+
+/* Drop placeholder — collapsed by default, expands smoothly when a card hovers this column */
+.kanbanPlaceholder {
+  height: 0;
+  opacity: 0;
+  margin-bottom: 0;
+  border: 1px dashed transparent;
+  border-radius: 10px;
+  background: transparent;
+  pointer-events: none;
+  transition: height 170ms cubic-bezier(0.2, 0, 0, 1), opacity 170ms ease, margin-bottom 170ms ease;
+}
+.kanbanPlaceholderActive {
+  height: 46px;
+  opacity: 1;
+  margin-bottom: 8px;
+  border-color: var(--oa-accent-border);
+  background: var(--oa-accent-soft);
+}
+
+.kanbanHint { padding: 40px 24px; text-align: center; color: var(--oa-muted); line-height: 1.6; }
