@@ -7,6 +7,44 @@ function asString(v: unknown): string {
   if (isLink(v)) return (v as Link).display ?? (v as Link).path;
   return String(v);
 }
+
+// ---- Duration parsing (used by date arithmetic + the `duration` helper) ----
+// Accepts "1d", "-2h", "30m", "1.5w", "1y", "1mo", "500ms". "M"/"mo" = months,
+// "m" = minutes. Returns milliseconds, or NaN if not a duration literal.
+const UNIT_MS: Record<string, number> = {
+  ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000,
+  w: 7 * 86_400_000, mo: 30 * 86_400_000, M: 30 * 86_400_000, y: 365 * 86_400_000,
+};
+export function parseDurationMs(s: unknown): number {
+  if (typeof s !== "string") return NaN;
+  const m = s.trim().match(/^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/);
+  if (!m) return NaN;
+  return Number(m[1]) * UNIT_MS[m[2]];
+}
+
+// Lambda-style method args land here from the parser as plain strings (the
+// engine doesn't have first-class function values yet — we keep a property
+// path or a tiny embedded expression instead). `_.x`, `it.x`, `$.x`, and
+// "bare" forms all resolve against the item; an item that's an object lets
+// you reach into it, an item that's primitive only responds to `_`/`it`/`$`.
+function compileItemAccessor(arg: unknown): (item: unknown, index: number) => unknown {
+  if (typeof arg === "function") return arg as (i: unknown, n: number) => unknown;
+  if (typeof arg !== "string") return (item) => item;
+  const path = arg.trim();
+  // Bare placeholders just return the item.
+  if (path === "_" || path === "it" || path === "$") return (item) => item;
+  // Stripped leading placeholder + dot = property path on the item.
+  const stripped = path.replace(/^(_|it|\$)\./, "");
+  const parts = stripped.split(".").filter(Boolean);
+  return (item) => {
+    let v: unknown = item;
+    for (const k of parts) {
+      if (v === null || v === undefined) return undefined;
+      v = (v as Record<string, unknown>)[k];
+    }
+    return v;
+  };
+}
 // ---- Global functions ----
 export function callFunction(name: string, args: unknown[], _ctx: EvalContext): unknown {
   switch (name) {
@@ -18,6 +56,7 @@ export function callFunction(name: string, args: unknown[], _ctx: EvalContext): 
     case "now": return new Date();
     case "today": { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
     case "date": return args[0] instanceof Date ? args[0] : new Date(asString(args[0]));
+    case "duration": return parseDurationMs(args[0]);
     case "link": return { __link: true, path: asString(args[0]), display: args[1] != null ? asString(args[1]) : undefined } as Link;
     case "random": return Math.random();
     default: return undefined;
@@ -64,6 +103,14 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
       case "split": return receiver.split(asString(args[0]));
       case "reverse": return receiver.split("").reverse().join("");
       case "isEmpty": return receiver.length === 0;
+      // Regex via a string pattern: `name.matches("^Hello", "i")`. We can't accept a
+      // /…/ literal yet (lexer has no regex token), so this is the textual form.
+      case "matches": {
+        try {
+          const re = new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
+          return re.test(receiver);
+        } catch { return false; }
+      }
     }
   }
 
@@ -78,6 +125,21 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
       case "slice": return receiver.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
       case "flat": return receiver.flat();
       case "isEmpty": return receiver.length === 0;
+      // Lambda-lite: instead of `x => x.title` we accept the property-path string
+      // `"title"` (or `"_.title"` / `"$.title"` / `"it.title"`). True closures
+      // would need new AST + parser support; this covers the common shape.
+      case "map": return receiver.map(compileItemAccessor(args[0]));
+      case "filter": {
+        const get = compileItemAccessor(args[0]);
+        return receiver.filter((x, i) => truthy(get(x, i)));
+      }
+      case "reduce": {
+        // .reduce("_.price", 0) — pulls the accessor's value and sums via toNumber.
+        // For now we only do numeric sum; richer reducers would need real lambdas.
+        const get = compileItemAccessor(args[0]);
+        const seed = args[1] != null ? toNumber(args[1]) : 0;
+        return receiver.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed);
+      }
     }
   }
 
@@ -87,6 +149,10 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
       case "format": return formatDate(receiver, asString(args[0]));
       case "date": { const d = new Date(receiver); d.setHours(0, 0, 0, 0); return d; }
       case "isEmpty": return Number.isNaN(receiver.getTime());
+      // Explicit duration arithmetic. `date(mtime).plus("1d")` adds a day.
+      // The same shape works on the `+` / `-` operators (see evaluate.ts).
+      case "plus": { const ms = parseDurationMs(args[0]); return new Date(receiver.getTime() + (Number.isNaN(ms) ? 0 : ms)); }
+      case "minus": { const ms = parseDurationMs(args[0]); return new Date(receiver.getTime() - (Number.isNaN(ms) ? 0 : ms)); }
     }
   }
 

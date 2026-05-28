@@ -33,11 +33,46 @@ function sortedRows(group: ResultGroup): Row[] {
 
 export function KanbanView(props: { result: ViewResult; config: BaseConfig; onChange: () => void }) {
   const groupBy = () => props.result.view.groupBy;
-  const cols = () => props.result.columns;
+  // `order` is a persistence detail (within-column sort key) — don't pollute the card
+  // body with it. The user can still see/edit it in table view.
+  const cols = () => props.result.columns.filter((c) => c !== "note.order" && c !== "order");
   const [overCol, setOverCol] = createSignal<string | null>(null);
   const [overIndex, setOverIndex] = createSignal(0);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [fromCol, setFromCol] = createSignal<string | null>(null);
+
+  // FLIP (First-Last-Invert-Play): snapshot card rects, let Solid re-render, then
+  // animate each card from its old position back to its new one. Without this the
+  // placeholder pops open and the surrounding cards snap instantly — Trello slides.
+  let rootEl: HTMLDivElement | undefined;
+  const prevRects = new Map<string, DOMRect>();
+  function snapshotRects() {
+    if (!rootEl) return;
+    prevRects.clear();
+    for (const el of rootEl.querySelectorAll<HTMLElement>("[data-kbcard][data-path]")) {
+      const p = el.dataset.path;
+      if (p) prevRects.set(p, el.getBoundingClientRect());
+    }
+  }
+  function playFlip() {
+    if (!rootEl || prevRects.size === 0) return;
+    for (const el of rootEl.querySelectorAll<HTMLElement>("[data-kbcard][data-path]")) {
+      const p = el.dataset.path;
+      const prev = p ? prevRects.get(p) : undefined;
+      if (!prev) continue;
+      const now = el.getBoundingClientRect();
+      const dx = prev.left - now.left;
+      const dy = prev.top - now.top;
+      if (dx === 0 && dy === 0) continue;
+      el.style.transition = "none";
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+      // Force a reflow so the next style change actually transitions.
+      el.getBoundingClientRect();
+      el.style.transition = "transform 180ms cubic-bezier(.2,.7,.2,1)";
+      el.style.transform = "translate(0, 0)";
+    }
+    prevRects.clear();
+  }
 
   function clearDrag() {
     draggedPath = null;
@@ -78,10 +113,15 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
         break;
       }
     }
+    // Only snapshot when the placeholder is actually moving — otherwise we
+    // capture rects unnecessarily on every dragover tick (which fires constantly).
+    const moved = overCol() !== group.key || overIndex() !== idx;
+    if (moved) snapshotRects();
     batch(() => {
       setOverCol(group.key);
       setOverIndex(idx);
     });
+    if (moved) requestAnimationFrame(playFlip);
   }
 
   async function handleDrop(group: ResultGroup) {
@@ -133,7 +173,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
         </div>
       }
     >
-      <div class={styles.kanban}>
+      <div class={styles.kanban} ref={rootEl}>
         <For each={props.result.groups}>
           {(group) => (
             <div

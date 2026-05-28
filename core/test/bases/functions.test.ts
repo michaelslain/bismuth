@@ -58,3 +58,39 @@ test("global helpers", () => {
 test("length is also callable as a method", () => {
   expect(run("title.length")).toBe(11); // field access form
 });
+
+test("string .matches() supports regex pattern + optional flags", () => {
+  expect(run('title.matches("^Hello")')).toBe(true);
+  expect(run('title.matches("^hello")')).toBe(false);
+  expect(run('title.matches("^hello", "i")')).toBe(true);
+  // Malformed pattern must not throw — fail closed to false.
+  expect(run('title.matches("(")')).toBe(false);
+});
+
+test("list .map / .filter / .reduce via property-path strings", () => {
+  // Object-list shape: `.map("title")` and `.map("_.title")` are equivalent.
+  const c = {
+    file: ctx.file,
+    note: { items: [{ title: "a", price: 1 }, { title: "b", price: 2 }, { title: "c", price: 3 }] },
+    formula: {},
+  };
+  const m = (s: string) => evaluate(parseExpr(s), c);
+  expect(m('items.map("title")')).toEqual(["a", "b", "c"]);
+  expect(m('items.map("_.title")')).toEqual(["a", "b", "c"]);
+  expect(m('items.filter("_.price").length')).toBe(3);
+  expect(m('items.reduce("price", 0)')).toBe(6);
+});
+
+test("date .plus / .minus shift by duration", () => {
+  const base = new Date("2026-05-27T00:00:00Z");
+  const c = { ...ctx, note: { d: base } };
+  const plus = evaluate(parseExpr('d.plus("1w")'), c) as Date;
+  expect(plus.getTime()).toBe(base.getTime() + 7 * 86_400_000);
+  const minus = evaluate(parseExpr('d.minus("30m")'), c) as Date;
+  expect(minus.getTime()).toBe(base.getTime() - 30 * 60_000);
+});
+
+test("duration() helper parses to milliseconds", () => {
+  expect(run('duration("1d")')).toBe(86_400_000);
+  expect(run('duration("nonsense")')).toBeNaN();
+});
