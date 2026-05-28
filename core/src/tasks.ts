@@ -3,6 +3,7 @@
 // and 0-indexed line so the line can be toggled back in place.
 
 import { listMarkdown, readNote } from "./files";
+import { todayISO } from "./dates";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
@@ -124,10 +125,6 @@ export function extractTasks(content: string, path: string): Task[] {
   return out;
 }
 
-/** Format a Date as YYYY-MM-DD (UTC date portion). */
-export function todayISO(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
 
 /**
  * Flip a task line between done and not-done.

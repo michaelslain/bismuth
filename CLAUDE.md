@@ -248,9 +248,9 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 - **"2nd" brain**: Self + vault notes + tags (excludes memory)
 - **"3rd" brain**: Self + memory (excludes vault)
 - **"both"**: Full brain (self + vault + memory + edges between them)
-- **"agents"**: Agent interaction network (separate graph, exclusive)
+- **"agents"**: Agent interaction network showing Claude Code instances communicating via relay (see Relay Integration below)
 
-The "agents" graph mode shows Claude Code instances communicating via the relay system. Each agent is a node; messages between agents are edges. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
+The "agents" graph mode visualizes Claude Code instances running this project across machines. Each agent is a node; directed edges represent messages between agents. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
 
 ### Performance Optimizations
 1. **Debounced file-watch**: 250ms delay prevents thrashing on rapid edits
@@ -289,6 +289,14 @@ Common test files:
 - `core/test/tags.test.ts` — Tag extraction from frontmatter and body
 - `core/test/wikilinks.test.ts` — WikiLink pattern matching
 - `core/test/server.test.ts` — HTTP endpoint behavior
+
+## Gotchas & Edge Cases
+
+- **localStorage persistence breaks between Tauri reloads**: Node positions (2D/3D layouts) are cached in localStorage, but hard-reloading the app or switching graph modes may reset positions. Workaround: node positions re-settle quickly via force simulation.
+- **File-watch debounce timing**: The 250ms debounce can hide rapid successive edits. If you edit a note twice within 250ms, only the second change may trigger a graph rebuild.
+- **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches a file named `Another Note.md` anywhere in the vault, even in different folders. Ambiguous matches are undefined behavior.
+- **Memory graph requires Claude-bot memory directory**: If `OA_MEMORY` points to a non-existent or empty directory, the memory graph will be empty. Set up sample notes in memory directory to see "3rd brain" mode.
+- **Concurrent agent port conflicts**: Running multiple instances on the same machine requires port overrides; see "Running Multiple Agents Concurrently" section. Default 4321/1420 will only work for one instance.
 
 ## Troubleshooting
 

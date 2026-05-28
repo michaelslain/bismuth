@@ -9,13 +9,10 @@ import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemir
 import { api } from "../api";
 import { runTaskQuery } from "../../../core/src/tasks-query";
 import type { Task, Priority } from "../../../core/src/tasks";
+import { todayISO } from "../../../core/src/dates";
 
 const OPEN = /^\s*```+\s*tasks\s*$/i; // opening fence with the "tasks" info string
 const CLOSE = /^\s*```+\s*$/; // a bare fence line
-
-function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 const PRIORITY_LABEL: Record<Priority, string> = {
   highest: "🔺", high: "⏫", medium: "🔼", low: "🔽", lowest: "⏬", none: "",
@@ -58,7 +55,7 @@ class TasksQueryWidget extends WidgetType {
         root.textContent = `tasks: failed to load (${(e as Error).message})`;
         return;
       }
-      const { tasks, errors } = runTaskQuery(all, this.query, todayStr());
+      const { tasks, errors } = runTaskQuery(all, this.query, todayISO());
       root.replaceChildren();
 
       for (const err of errors) {
@@ -105,7 +102,7 @@ class TasksQueryWidget extends WidgetType {
 
         if (t.due) {
           const due = document.createElement("span");
-          due.className = "cm-tasks-due" + (t.due < todayStr() && t.status !== "done" ? " overdue" : "");
+          due.className = "cm-tasks-due" + (t.due < todayISO() && t.status !== "done" ? " overdue" : "");
           due.textContent = "📅 " + t.due;
           row.appendChild(due);
         }
