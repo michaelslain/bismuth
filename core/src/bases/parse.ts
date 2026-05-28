@@ -90,7 +90,10 @@ export function parseBase(text: string): BaseConfig {
       ? Object.fromEntries(
           Object.entries(o.properties as Record<string, unknown>).map(([k, v]) => {
             const pv = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-            return [k, { displayName: typeof pv.displayName === "string" ? pv.displayName : undefined }];
+            return [k, {
+              displayName: typeof pv.displayName === "string" ? pv.displayName : undefined,
+              hidden: pv.hidden === true || undefined,
+            }];
           }),
         )
       : undefined;

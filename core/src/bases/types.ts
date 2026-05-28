@@ -29,7 +29,10 @@ export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
 export interface BaseConfig {
   filters?: FilterNode;                    // global, ANDed with each view's filters
   formulas?: Record<string, string>;       // name -> expression string
-  properties?: Record<string, { displayName?: string }>;
+  // Per-property metadata. `hidden: true` omits the property from auto-derived
+  // columns (table/cards/list/kanban default columns). A view's explicit
+  // `order: [...]` still wins — that's the per-view opt-in.
+  properties?: Record<string, { displayName?: string; hidden?: boolean }>;
   views: ViewConfig[];
 }
 

@@ -33,9 +33,16 @@ function sortedRows(group: ResultGroup): Row[] {
 
 export function KanbanView(props: { result: ViewResult; config: BaseConfig; onChange: () => void }) {
   const groupBy = () => props.result.view.groupBy;
-  // `order` is a persistence detail (within-column sort key) — don't pollute the card
-  // body with it. The user can still see/edit it in table view.
-  const cols = () => props.result.columns.filter((c) => c !== "note.order" && c !== "order");
+  // `order` is a persistence detail (within-column sort key). Don't pollute the
+  // card body with it unless the user explicitly opted in by listing it in
+  // `view.order` — that's the per-view "show me everything" lever, and it should
+  // beat the implicit kanban hide. Same lever lets the new `properties.X.hidden`
+  // attribute be overridden per-view.
+  const cols = () => {
+    const explicit = props.result.view.order && props.result.view.order.length > 0;
+    if (explicit) return props.result.columns;
+    return props.result.columns.filter((c) => c !== "note.order" && c !== "order");
+  };
   const [overCol, setOverCol] = createSignal<string | null>(null);
   const [overIndex, setOverIndex] = createSignal(0);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
