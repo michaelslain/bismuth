@@ -77,6 +77,16 @@ These are not committed to the repo and are git-ignored.
 - `bun install` — Install dependencies for all workspaces
 - `bun run core:serve` — Standalone server startup (shorthand for core server)
 
+### Running Multiple Agents Concurrently
+
+When multiple Claude Code sessions run this project, port conflicts occur on default `:4321` (backend) and `:1420` (Tauri). Override with:
+
+```bash
+OA_VAULT="/path" OA_MEMORY="/path" PORT=4322 bun run dev
+```
+
+Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for port assignments across active sessions.
+
 ## Architecture
 
 ### Core Backend (`core/`)
@@ -240,6 +250,8 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 - **"both"**: Full brain (self + vault + memory + edges between them)
 - **"agents"**: Agent interaction network (separate graph, exclusive)
 
+The "agents" graph mode shows Claude Code instances communicating via the relay system. Each agent is a node; messages between agents are edges. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
+
 ### Performance Optimizations
 1. **Debounced file-watch**: 250ms delay prevents thrashing on rapid edits
 2. **Version-based polling**: Frontend only refetches graph when `/version` increments
@@ -253,6 +265,15 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 - **File-tree context menu** (e174978): New header buttons for note/folder creation, opaque UI, delete closes tab, rename/move retargets active tab
 - **Undo support** (6613f27): Cmd+Z now undoes most recent delete action in file tree
 - **Drag-drop moves** (2278b84): Files and folders can be rearranged by dragging within the tree
+
+### Relay Integration (May 2026)
+
+**Three Brains** integrates with **Claude Communicate** (inter-agent relay system) to:
+- Track which Claude Code instances are running the project (via `/agent-graph` endpoint)
+- Visualize agent communication network in "agents" graph mode
+- Enable agents to coordinate vault changes across machines
+
+See `claude-communicate-project-status` in claude-bot memory for Phase 2 (auto-discovery, circular prevention).
 
 ## Testing
 
