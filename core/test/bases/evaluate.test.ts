@@ -46,3 +46,28 @@ test("index access into a list", () => {
 test("missing numeric operand yields NaN-safe falsey comparison", () => {
   expect(run("missing > 5")).toBe(false);
 });
+
+test("&& / || return operand values, not booleans (JS semantics)", () => {
+  // Falsey left -> short-circuit returns the left value; truthy left -> right value.
+  expect(run('missing || "default"')).toBe("default");
+  expect(run('status || "default"')).toBe("in-progress"); // truthy string passes through
+  expect(run('price && "yes"')).toBe("yes");              // truthy number -> right
+  expect(run('done && "yes"')).toBe(false);               // falsey -> left
+  // truthy() still coerces at the filter boundary, so this stays usable in filters.
+  expect(run('!!(missing || "default")')).toBe(true);
+});
+
+test("date arithmetic: Date + duration string -> shifted Date", () => {
+  const base = new Date("2026-05-27T00:00:00Z").getTime();
+  const c = ctx({
+    note: { d: new Date("2026-05-27T00:00:00Z") },
+    file: { name: "x", basename: "x", path: "x.md", folder: "", ext: "md", size: 0, ctime: 0, mtime: base, tags: [], links: [] },
+  });
+  const plus1d = evaluate(parseExpr('d + "1d"'), c) as Date;
+  expect(plus1d.getTime()).toBe(base + 86_400_000);
+  const minus2h = evaluate(parseExpr('d - "2h"'), c) as Date;
+  expect(minus2h.getTime()).toBe(base - 7_200_000);
+  // mtime is a number (epoch ms) — arithmetic stays numeric.
+  const mtimePlus = evaluate(parseExpr('file.mtime + "1d"'), c) as number;
+  expect(mtimePlus).toBe(base + 86_400_000);
+});

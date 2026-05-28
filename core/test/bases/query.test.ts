@@ -83,3 +83,33 @@ test("bare-id summary aligns with auto-derived note.* columns", () => {
   expect(res.columns).toContain("note.price");
   expect(res.summaries["note.price"]).toBe("34"); // 10 + 4 + 20 (no filter)
 });
+
+test("kanban with fixed columns keeps empty columns in declared order", () => {
+  const b: BaseConfig = {
+    views: [{
+      type: "kanban",
+      name: "Board",
+      groupBy: { property: "note.status" },
+      columns: ["todo", "open", "done", "archived"],
+    }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.groups.map((g) => g.key)).toEqual(["todo", "open", "done", "archived"]);
+  expect(res.groups[0].rows).toHaveLength(0);          // todo: empty (no data)
+  expect(res.groups[1].rows.map((r) => r.file.name)).toEqual(["alpha", "gamma"]);
+  expect(res.groups[3].rows).toHaveLength(0);          // archived: empty
+});
+
+test("kanban with fixed columns surfaces unexpected data keys as extras", () => {
+  const b: BaseConfig = {
+    views: [{
+      type: "kanban",
+      name: "Board",
+      groupBy: { property: "note.status" },
+      columns: ["todo"],
+    }],
+  };
+  const res = runView(b, rows, 0);
+  // 'todo' first (declared, empty), then the two data keys in alpha order.
+  expect(res.groups.map((g) => g.key)).toEqual(["todo", "done", "open"]);
+});

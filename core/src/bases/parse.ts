@@ -53,6 +53,7 @@ function normalizeView(raw: unknown): ViewConfig {
         ? Object.fromEntries(Object.entries(o.summaries as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
         : undefined,
     cardContent: o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined,
+    columns: Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined,
   };
 }
 

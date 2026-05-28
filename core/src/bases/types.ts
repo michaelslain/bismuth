@@ -11,6 +11,10 @@ export interface ViewConfig {
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
   cardContent?: "properties" | "body";   // cards view: what to render inside each card
+  // Kanban: fixed group keys + order. Without this, columns are derived from data —
+  // dragging the last card out makes the column vanish. With it, every listed key
+  // shows up as a column even when empty, and the order follows the declared list.
+  columns?: string[];
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }

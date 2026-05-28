@@ -97,9 +97,25 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number): Vi
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(r);
     }
-    groups = [...map.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]) * dir)
-      .map(([key, rs]) => ({ key, rows: applyLimit(rs, view.limit) }));
+    // Kanban with explicit `columns: [...]`: lock the declared keys + order, and
+    // append any data-only keys at the end so unexpected values still surface.
+    // Without this an empty column would vanish on the last drag-out.
+    if (view.type === "kanban" && view.columns && view.columns.length) {
+      const declared = view.columns;
+      const declaredSet = new Set(declared);
+      const ordered: ResultGroup[] = declared.map((key) => ({
+        key, rows: applyLimit(map.get(key) ?? [], view.limit),
+      }));
+      const extras = [...map.entries()]
+        .filter(([key]) => !declaredSet.has(key))
+        .sort((a, b) => a[0].localeCompare(b[0]) * dir)
+        .map(([key, rs]) => ({ key, rows: applyLimit(rs, view.limit) }));
+      groups = [...ordered, ...extras];
+    } else {
+      groups = [...map.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]) * dir)
+        .map(([key, rs]) => ({ key, rows: applyLimit(rs, view.limit) }));
+    }
   } else {
     groups = [{ key: "", rows: applyLimit(filtered, view.limit) }];
   }

@@ -89,3 +89,8 @@ test("cards view with unknown cardContent value leaves it undefined", () => {
   const base = parseBase(`views:\n  - type: cards\n    name: Cards\n    cardContent: something-else\n`);
   expect(base.views[0].cardContent).toBeUndefined();
 });
+
+test("kanban view: columns: [...] parses into a string array", () => {
+  const base = parseBase(`views:\n  - type: kanban\n    name: Board\n    groupBy: status\n    columns: [todo, reading, done]\n`);
+  expect(base.views[0].columns).toEqual(["todo", "reading", "done"]);
+});

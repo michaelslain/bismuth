@@ -83,18 +83,41 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
 
   let listEl: HTMLDivElement | undefined;
 
+  // Append a new empty todo to the end of the file, then focus its input.
   async function addItem() {
     const lines = content().split("\n");
-    // Trim a single trailing empty line so we don't accumulate blank gaps.
     if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
     lines.push("- [ ] ");
     const next = lines.join("\n");
     setContent(next);
     await api.write(props.row.file.path, next);
-    // Focus the newly added input (the last one in the list).
     queueMicrotask(() => {
       const inputs = listEl?.querySelectorAll<HTMLInputElement>(`.${styles.todoText}`);
       inputs?.[inputs.length - 1]?.focus();
+    });
+  }
+
+  // Insert a new empty todo immediately AFTER the given item (Trello-style:
+  // Enter on any line creates the next one with matching indent). Persists the
+  // current text of `item` along the way so the user doesn't lose what they typed.
+  async function addAfter(item: TodoItem, currentText: string) {
+    const lines = content().split("\n");
+    if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
+    lines[item.lineIndex] = buildLine(item.indent, item.checked, currentText);
+    const newLine = `${item.indent}- [ ] `;
+    lines.splice(item.lineIndex + 1, 0, newLine);
+    const next = lines.join("\n");
+    setContent(next);
+    await api.write(props.row.file.path, next);
+    // Focus the newly inserted input — it sits at the position the new item now
+    // occupies in the rendered list (count of checklist lines up to and including
+    // the new index in the file).
+    queueMicrotask(() => {
+      const inputs = listEl?.querySelectorAll<HTMLInputElement>(`.${styles.todoText}`);
+      // We added at file index item.lineIndex+1; find its new index in `items()`.
+      const newItem = items().find((t) => t.lineIndex === item.lineIndex + 1);
+      const focusIdx = newItem ? items().indexOf(newItem) : (inputs?.length ?? 1) - 1;
+      inputs?.[focusIdx]?.focus();
     });
   }
 
@@ -120,7 +143,9 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       e.preventDefault();
-                      e.currentTarget.blur();
+                      // Persist current text + add a new item right below; the new
+                      // input gets focus so you can keep typing.
+                      void addAfter(item, e.currentTarget.value);
                     }
                   }}
                 />
