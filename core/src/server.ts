@@ -8,10 +8,17 @@ import { parseFrontmatter } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine, todayISO } from "./tasks";
+import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
+import type { ReviewResponse } from "./srs/types";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+
+/** Today's date as a "YYYY-MM-DD" string (UTC). */
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 /** Read a `--flag value` pair from the process argv (shared by the core + cli launchers). */
 export function cliArg(name: string): string | undefined {
@@ -172,6 +179,31 @@ export function createServer(cfg: CoreConfig) {
       if (url.pathname === "/config" && req.method === "GET") {
         // Read-only view of how core was launched — surfaced in the settings page.
         return Response.json({ vault: cfg.vault, memory: cfg.memory ?? null }, { headers: cors });
+      }
+      if (url.pathname === "/cards/decks" && req.method === "GET") {
+        return Response.json(await collectDecks(cfg.vault, today()), { headers: cors });
+      }
+      if (url.pathname === "/cards/all" && req.method === "GET") {
+        return Response.json(await collectCards(cfg.vault), { headers: cors });
+      }
+      if (url.pathname === "/cards/note" && req.method === "GET") {
+        const path = url.searchParams.get("path");
+        if (!path) return new Response("missing ?path=", { status: 400, headers: cors });
+        return Response.json(await noteCards(cfg.vault, path), { headers: cors });
+      }
+      if (url.pathname === "/cards/due" && req.method === "GET") {
+        const deck = url.searchParams.get("deck") ?? undefined;
+        return Response.json(await dueCards(cfg.vault, today(), deck), { headers: cors });
+      }
+      if (url.pathname === "/cards/review" && req.method === "POST") {
+        const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
+        try {
+          await applyReview(cfg.vault, id, response, today(), question);
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400, headers: cors });
+        }
+        invalidate();
+        return new Response("ok", { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });
     },
