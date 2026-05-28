@@ -181,14 +181,10 @@ test("setFrontmatterKey can set array and object values", () => {
 test("setFrontmatterKey preserves flow-style arrays on untouched keys", () => {
   const md = `---\ntitle: Gamma\ntags: [book, fiction]\n---\n# Gamma`;
   const out = setFrontmatterKey(md, "status", "done");
-  // The previous implementation exploded "tags: [book, fiction]" into a block list:
-  //   tags:
-  //     - book
-  //     - fiction
-  // The new Document-based impl keeps it as flow style (single line, square brackets,
-  // no leading `  - `), though internal whitespace may differ ("[book, fiction]" vs
-  // "[ book, fiction ]") — fidelity isn't byte-perfect.
-  expect(out).toMatch(/tags: \[\s*book\s*,\s*fiction\s*\]/);
+  // Flow style is preserved AND the bracket padding now matches Obsidian's
+  // idiom exactly: `[book, fiction]` rather than `[ book, fiction ]`.
+  // The block-list form is the previous bug we're guarding against.
+  expect(out).toContain("tags: [book, fiction]");
   expect(out).not.toMatch(/^\s*-\s+book/m);
   expect(out).toContain("status: done");
   expect(out).toContain("# Gamma");

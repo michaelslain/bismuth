@@ -39,7 +39,10 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
 
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-  const type = o.type === "cards" || o.type === "list" || o.type === "kanban" ? o.type : "table";
+  const type =
+    o.type === "cards" || o.type === "list" || o.type === "kanban" || o.type === "map"
+      ? o.type
+      : "table";
   return {
     type,
     name: typeof o.name === "string" && o.name.length ? o.name : "Untitled view",
@@ -54,6 +57,15 @@ function normalizeView(raw: unknown): ViewConfig {
         : undefined,
     cardContent: o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined,
     columns: Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined,
+    lat: typeof o.lat === "string" ? o.lat : undefined,
+    lng: typeof o.lng === "string" ? o.lng : undefined,
+    zoom: typeof o.zoom === "number" ? o.zoom : undefined,
+    center:
+      o.center && typeof o.center === "object" &&
+      typeof (o.center as { lat?: unknown }).lat === "number" &&
+      typeof (o.center as { lng?: unknown }).lng === "number"
+        ? { lat: (o.center as { lat: number }).lat, lng: (o.center as { lng: number }).lng }
+        : undefined,
   };
 }
 

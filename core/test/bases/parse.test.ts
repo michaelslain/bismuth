@@ -94,3 +94,12 @@ test("kanban view: columns: [...] parses into a string array", () => {
   const base = parseBase(`views:\n  - type: kanban\n    name: Board\n    groupBy: status\n    columns: [todo, reading, done]\n`);
   expect(base.views[0].columns).toEqual(["todo", "reading", "done"]);
 });
+
+test("map view: type, lat/lng keys, zoom, center parse", () => {
+  const base = parseBase(`views:\n  - type: map\n    name: Atlas\n    lat: latitude\n    lng: longitude\n    zoom: 6\n    center: { lat: 40.7, lng: -74 }\n`);
+  expect(base.views[0].type).toBe("map");
+  expect(base.views[0].lat).toBe("latitude");
+  expect(base.views[0].lng).toBe("longitude");
+  expect(base.views[0].zoom).toBe(6);
+  expect(base.views[0].center).toEqual({ lat: 40.7, lng: -74 });
+});

@@ -255,7 +255,7 @@ export default function App() {
                 <Show when={active() === SETTINGS_TAB} fallback={
                   <Show when={active() === TASKS_TAB} fallback={
                     <Show when={active()!.endsWith(".base")} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
-                      <BaseView path={active()!} />
+                      <BaseView path={active()!} onOpen={openFile} />
                     </Show>
                   }>
                     <TasksPage onOpen={openFile} />
