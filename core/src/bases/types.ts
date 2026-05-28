@@ -2,7 +2,7 @@
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
 export interface ViewConfig {
-  type: "table" | "cards" | "list" | "kanban";
+  type: "table" | "cards" | "list" | "kanban" | "map";
   name: string;
   limit?: number;
   filters?: FilterNode;
@@ -15,6 +15,13 @@ export interface ViewConfig {
   // dragging the last card out makes the column vanish. With it, every listed key
   // shows up as a column even when empty, and the order follows the declared list.
   columns?: string[];
+  // Map view: which property ids carry geo coords. Defaults to bare "lat" / "lng"
+  // (matched to frontmatter). Use "note.x" or "formula.y" for custom property
+  // namespaces. zoom + center seed the initial framing.
+  lat?: string;
+  lng?: string;
+  zoom?: number;
+  center?: { lat: number; lng: number };
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }

@@ -7,9 +7,15 @@ import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
 import { ListView } from "./ListView";
 import { KanbanView } from "./KanbanView";
+import { MapView } from "./MapView";
 import styles from "./BaseView.module.css";
 
-export function BaseView(props: { path?: string; source?: string; hostPath?: string }) {
+export function BaseView(props: {
+  path?: string;
+  source?: string;
+  hostPath?: string;
+  onOpen?: (path: string) => void;
+}) {
   const [rows, { refetch }] = createResource(async () => (await api.vaultData()) as Row[]);
   const [sourceText] = createResource(
     () => props.path,
@@ -63,6 +69,9 @@ export function BaseView(props: { path?: string; source?: string; hostPath?: str
             </Match>
             <Match when={res().view.type === "list"}>
               <ListView result={res()} config={config()} />
+            </Match>
+            <Match when={res().view.type === "map"}>
+              <MapView result={res()} config={config()} onOpen={props.onOpen} />
             </Match>
           </Switch>
         )}

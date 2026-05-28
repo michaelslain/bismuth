@@ -38,7 +38,11 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
   try {
     const doc = parseDocument(fmText);
     doc.set(key, value);
-    let out = doc.toString();
+    // `flowCollectionPadding: false` keeps flow arrays tight: `[book, fiction]`
+    // rather than `[ book, fiction ]`. The previous default added padding on
+    // every untouched flow array. Comma-space inside is still emitted by the
+    // library, so the result matches Obsidian's idiom.
+    let out = doc.toString({ flowCollectionPadding: false });
     if (!out.endsWith("\n")) out += "\n";
     return `---\n${out}---\n${body}`;
   } catch {

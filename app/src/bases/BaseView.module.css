@@ -52,6 +52,72 @@
 .list li { padding: 2px 0; }
 .groupHeader { font-weight: 600; margin: 8px 0 4px; }
 
+/* ---- Map ---- */
+.mapWrap { flex: 1 1 auto; min-height: 480px; display: flex; }
+.map {
+  position: relative;
+  flex: 1 1 auto;
+  overflow: hidden;
+  cursor: grab;
+  background: var(--oa-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  user-select: none;
+}
+.mapTiles, .mapMarkers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.mapTile {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  /* Hide alt text and the broken-image icon if a tile fails. */
+  color: transparent;
+}
+.mapMarker {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: var(--accent);
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  padding: 0;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.mapMarker:hover {
+  transform: scale(1.25);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+.mapAttribution {
+  position: absolute;
+  bottom: 4px;
+  right: 8px;
+  font-size: 10px;
+  color: var(--oa-muted);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: auto;
+}
+.mapAttribution a { color: var(--accent); text-decoration: none; }
+.mapEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--oa-muted);
+  pointer-events: none;
+  font-size: 13px;
+}
+.mapEmpty code { background: var(--oa-surface-2); padding: 1px 4px; border-radius: 4px; }
+
 /* ---- Kanban ---- */
 .kanban { display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; padding-bottom: 8px; }
 .kanbanColumn {
