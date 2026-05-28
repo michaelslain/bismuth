@@ -23,9 +23,11 @@ function fileMeta(root: string, rel: string, tags: string[], links: string[]): F
 
 export async function buildVaultRows(root: string): Promise<Row[]> {
   const files = await listMarkdown(root);
+  const contents = await Promise.all(
+    files.map(async (rel) => ({ rel, raw: await readNote(root, rel) }))
+  );
   const rows: Row[] = [];
-  for (const rel of files) {
-    const raw = await readNote(root, rel);
+  for (const { rel, raw } of contents) {
     const { data, body } = parseFrontmatter(raw);
     const tags = extractTags(data, body);
     const links = extractWikilinks(raw);

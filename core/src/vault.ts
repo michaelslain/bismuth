@@ -25,17 +25,19 @@ export async function buildVaultGraph(root: string): Promise<GraphData> {
   const notes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const byBase = new Map<string, string>();
-  const contents = new Map<string, string>();
 
-  // --- Pass 1: build note nodes ---
+  // --- Pass 1: build note nodes and read all contents in parallel ---
   for (const rel of rels) {
     const id = noteId(rel);
     const label = basename(rel).replace(/\.md$/i, "");
     const folder = topFolder(rel);
     notes.push({ id, label, kind: "note", folder });
     byBase.set(label, id);
-    contents.set(id, await readNote(root, rel));
   }
+
+  const contents = new Map<string, string>(
+    await Promise.all(rels.map(async (rel) => [noteId(rel), await readNote(root, rel)] as const))
+  );
 
   // --- Pass 2: link edges + tag collection ---
   const tagNodes = new Map<string, GraphNode>(); // tag id → node

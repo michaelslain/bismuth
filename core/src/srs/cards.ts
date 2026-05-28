@@ -65,9 +65,11 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
 
 export async function collectCards(vault: string): Promise<Card[]> {
   const rels = await listMarkdown(vault);
+  const contents = await Promise.all(
+    rels.map(async (rel) => ({ rel, text: await readNote(vault, rel) }))
+  );
   const out: Card[] = [];
-  for (const rel of rels) {
-    const text = await readNote(vault, rel);
+  for (const { rel, text } of contents) {
     const { data, body } = parseFrontmatter(text);
     const tags = extractTags(data, body);
     const deck = noteDeck(tags);

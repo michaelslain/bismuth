@@ -151,9 +151,11 @@ export function toggleTaskLine(line: string, today: string): string {
 /** Read every markdown file in the vault and return all checkbox tasks across them. */
 export async function collectVaultTasks(root: string): Promise<Task[]> {
   const rels = await listMarkdown(root);
+  const contents = await Promise.all(
+    rels.map(async (rel) => ({ rel, content: await readNote(root, rel) }))
+  );
   const out: Task[] = [];
-  for (const rel of rels) {
-    const content = await readNote(root, rel);
+  for (const { rel, content } of contents) {
     out.push(...extractTasks(content, rel));
   }
   return out;
