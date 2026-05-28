@@ -13,7 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { computeLayout, type Positions } from "./layout";
-import { subgraphByKinds, type GraphData, type NodeKind, type ViewLayout } from "./graph";
+import { subgraphByKinds, type GraphData, type NodeKind, type ViewLayout, SECOND_BRAIN_KINDS as SECOND_KINDS, THIRD_BRAIN_KINDS as THIRD_KINDS } from "./graph";
 
 interface Layout { pos3d: Positions; pos2d: Positions }
 
@@ -46,11 +46,6 @@ function writeDisk(sig: string, layout: Layout): void {
   }
 }
 
-// Node kinds belonging to each brain VIEW, mirrored by the frontend's mode filter (App.tsx). "both"
-// is the full graph (no subset). Each sub-view is laid out on its OWN node set so cross-brain-linked
-// nodes aren't stranded far from their cluster when the other brain is hidden.
-const SECOND_KINDS = new Set<NodeKind>(["self", "note", "tag"]);
-const THIRD_KINDS = new Set<NodeKind>(["self", "memory"]);
 
 /** Compute (or fetch from cache) the 3D + flat-2D layout for one graph. ~3-5s for a few thousand nodes. */
 function layoutFor(graph: GraphData, vaultKey: string): Layout {

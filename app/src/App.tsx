@@ -13,7 +13,7 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
 import { ToastHost, pushToast } from "./Toast";
-import { subgraphByKinds } from "../../core/src/graph";
+import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./App.css";
@@ -66,12 +66,10 @@ export default function App() {
   const refreshGraph = async () => setGraph(await api.graph());
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
-  const SECOND_KINDS = new Set<NodeKind>(["self", "note", "tag"]);
-  const THIRD_KINDS = new Set<NodeKind>(["self", "memory"]);
   const displayGraph = createMemo<GraphData>(() => {
     switch (mode()) {
-      case "2nd": return applyView(subgraphByKinds(graph(), SECOND_KINDS), graph().views?.second);
-      case "3rd": return applyView(subgraphByKinds(graph(), THIRD_KINDS), graph().views?.third);
+      case "2nd": return applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second);
+      case "3rd": return applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third);
       case "agents": return agents();
       default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
     }
