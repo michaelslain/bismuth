@@ -160,6 +160,22 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
   }
 });
 
+test("GET /vault-data returns a row per note with file meta + frontmatter", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const rows = await (await fetch(`${base}/vault-data`)).json();
+    expect(Array.isArray(rows)).toBe(true);
+    const housing = rows.find((r: any) => r.file.name === "housing");
+    expect(housing).toBeDefined();
+    expect(housing.note.status).toBe("in-progress");
+    expect(housing.file.tags).toContain("logistics");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("PUT /file writes file and returns ok", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });
@@ -293,6 +309,68 @@ test("POST /create returns 400 on collision", async () => {
       body: JSON.stringify({ path: "essay.md", kind: "file" }),
     });
     expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-property writes a frontmatter key reflected in /vault-data and /meta", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // housing.md starts at status: in-progress — flip it to done.
+    const res = await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "housing.md", key: "status", value: "done" }),
+    });
+    expect(res.status).toBe(200);
+
+    const rows = await (await fetch(`${base}/vault-data`)).json();
+    const housing = rows.find((r: any) => r.file.name === "housing");
+    expect(housing.note.status).toBe("done");
+    // other keys are preserved
+    expect(housing.note.priority).toBe(1);
+
+    const meta = await (await fetch(`${base}/meta?path=housing.md`)).json();
+    expect(meta.status).toBe("done");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-property bumps the version so views refetch", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "essay.md", key: "status", value: "todo" }),
+    });
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-property returns 404 for a path that doesn't exist (no silent create)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/set-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "no-such-note.md", key: "status", value: "todo" }),
+    });
+    expect(res.status).toBe(404);
+    // The endpoint must NOT have created the file as a side effect.
+    expect(await Bun.file(`${vault}/no-such-note.md`).exists()).toBe(false);
   } finally {
     server.stop(true);
   }

@@ -24,7 +24,7 @@ export async function listMarkdown(root: string): Promise<string[]> {
 /**
  * Walk the vault, returning files AND directories for the sidebar tree.
  * - Skips dot-entries (`.trash`, `.obsidian`, …) so trash and config stay hidden.
- * - Only `.md` files are included; their `icon` frontmatter is read for the sidebar.
+ * - `.md` files are included (their `icon` frontmatter is read for the sidebar) and `.base` files too.
  * - Empty directories are included so newly-created folders persist across polls.
  */
 export async function listTree(root: string): Promise<TreeEntry[]> {
@@ -50,6 +50,9 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
             ? { path: rel, icon: data.icon, kind: "file" }
             : { path: rel, kind: "file" },
         );
+      } else if (d.name.endsWith(".base")) {
+        // `.base` files surface in the sidebar like notes (no frontmatter/icon read).
+        out.push({ path: rel, kind: "file" });
       }
     }
   };

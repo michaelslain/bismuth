@@ -1,0 +1,106 @@
+import type { Expr } from "./ast";
+import type { EvalContext } from "./types";
+import { callFunction, callMethod } from "./functions";
+import { compare, looseEquals, toNumber, truthy } from "./values";
+
+function resolveIdent(name: string, ctx: EvalContext): unknown {
+  switch (name) {
+    case "file": return ctx.file;
+    case "note": return ctx.note;
+    case "formula": return ctx.formula;
+    case "this": return ctx.this;
+    default:
+      return ctx.note ? ctx.note[name] : undefined; // bare name -> frontmatter
+  }
+}
+
+function getMember(obj: unknown, name: string): unknown {
+  if (obj === null || obj === undefined) return undefined;
+  if (typeof obj === "string" || Array.isArray(obj)) {
+    if (name === "length") return obj.length;
+    return undefined;
+  }
+  if (typeof obj === "object") return (obj as Record<string, unknown>)[name];
+  return undefined;
+}
+
+export function evaluate(node: Expr, ctx: EvalContext): unknown {
+  switch (node.type) {
+    case "num": return node.value;
+    case "str": return node.value;
+    case "bool": return node.value;
+    case "null": return null;
+    case "ident": return resolveIdent(node.name, ctx);
+
+    case "member": {
+      const obj = evaluate(node.object, ctx);
+      return getMember(obj, node.name);
+    }
+
+    case "index": {
+      const obj = evaluate(node.object, ctx);
+      const idx = evaluate(node.index, ctx);
+      if (Array.isArray(obj) && typeof idx === "number") return obj[idx];
+      if (obj && typeof obj === "object") return (obj as Record<string, unknown>)[String(idx)];
+      return undefined;
+    }
+
+    case "unary": {
+      if (node.op === "!") return !truthy(evaluate(node.operand, ctx));
+      return -toNumber(evaluate(node.operand, ctx));
+    }
+
+    case "call": {
+      const callee = node.callee;
+      const args = node.args.map((a) => evaluate(a, ctx));
+      if (callee.type === "ident") return callFunction(callee.name, args, ctx);
+      if (callee.type === "member") {
+        const receiver = evaluate(callee.object, ctx);
+        return callMethod(receiver, callee.name, args, ctx);
+      }
+      throw new Error("invalid call target");
+    }
+
+    case "binary": return evalBinary(node.op, node.left, node.right, ctx);
+  }
+}
+
+function evalBinary(op: string, leftExpr: Expr, rightExpr: Expr, ctx: EvalContext): unknown {
+  // Short-circuit boolean ops
+  if (op === "&&") return truthy(evaluate(leftExpr, ctx)) ? truthy(evaluate(rightExpr, ctx)) : false;
+  if (op === "||") return truthy(evaluate(leftExpr, ctx)) ? true : truthy(evaluate(rightExpr, ctx));
+
+  const l = evaluate(leftExpr, ctx);
+  const r = evaluate(rightExpr, ctx);
+
+  switch (op) {
+    case "==": return looseEquals(l, r);
+    case "!=": return !looseEquals(l, r);
+    case ">": return cmpSafe(l, r) > 0;
+    case "<": return cmpSafe(l, r) < 0;
+    case ">=": return cmpSafe(l, r) >= 0;
+    case "<=": return cmpSafe(l, r) <= 0;
+    case "+":
+      if (typeof l === "string" || typeof r === "string") return `${stringify(l)}${stringify(r)}`;
+      return toNumber(l) + toNumber(r);
+    case "-": return toNumber(l) - toNumber(r);
+    case "*": return toNumber(l) * toNumber(r);
+    case "/": return toNumber(l) / toNumber(r);
+    case "%": return toNumber(l) % toNumber(r);
+    default: throw new Error(`unknown operator ${op}`);
+  }
+}
+
+// Comparison where a missing/incomparable operand must not throw and must
+// make ordered comparisons (> < >= <=) false.
+function cmpSafe(l: unknown, r: unknown): number {
+  if (l === null || l === undefined || r === null || r === undefined) return NaN as unknown as number;
+  const c = compare(l, r);
+  return c;
+}
+
+function stringify(v: unknown): string {
+  if (v === null || v === undefined) return "";
+  if (v instanceof Date) return v.toISOString();
+  return String(v);
+}
