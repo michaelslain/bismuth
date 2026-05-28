@@ -151,3 +151,53 @@ export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string 
   }
   return best;
 }
+
+// Drop leaves for which exists(content) is false; collapse splits accordingly.
+export function pruneMissing(
+  root: PaneNode,
+  exists: (content: string) => boolean,
+): PaneNode | null {
+  if (root.kind === "leaf") return exists(root.content) ? root : null;
+  const a = pruneMissing(root.a, exists);
+  const b = pruneMissing(root.b, exists);
+  if (a === null && b === null) return null;
+  if (a === null) return b;
+  if (b === null) return a;
+  if (a === root.a && b === root.b) return root;
+  return { ...root, a, b };
+}
+
+type Persisted = { tabs: Tab[]; activeTabId: string | null };
+
+export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
+  const payload: Persisted = { tabs, activeTabId };
+  return JSON.stringify(payload);
+}
+
+// Parse stored layout, pruning leaves whose content no longer exists. A tab whose
+// whole tree is gone is dropped; a focusId pointing at a pruned leaf is reset to
+// the tab's first surviving leaf. Malformed input yields an empty layout.
+export function deserializeTabs(
+  json: string | null,
+  exists: (content: string) => boolean,
+): Persisted {
+  if (!json) return { tabs: [], activeTabId: null };
+  let parsed: Persisted;
+  try {
+    parsed = JSON.parse(json) as Persisted;
+  } catch {
+    return { tabs: [], activeTabId: null };
+  }
+  if (!parsed || !Array.isArray(parsed.tabs)) return { tabs: [], activeTabId: null };
+  const tabs: Tab[] = [];
+  for (const t of parsed.tabs) {
+    const root = pruneMissing(t.root, exists);
+    if (!root) continue;
+    const ls = leaves(root);
+    const focusId = ls.some((l) => l.id === t.focusId) ? t.focusId : ls[0].id;
+    tabs.push({ id: t.id, root, focusId });
+  }
+  const activeTabId =
+    tabs.some((t) => t.id === parsed.activeTabId) ? parsed.activeTabId : tabs[0]?.id ?? null;
+  return { tabs, activeTabId };
+}

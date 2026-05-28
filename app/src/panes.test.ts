@@ -125,3 +125,44 @@ test("focusNeighbor finds the pane to the right", () => {
   expect(focusNeighbor(r1, s.b.id, "left")).toBe(s.a.id);
   expect(focusNeighbor(r1, s.a.id, "up")).toBeNull(); // nothing above
 });
+
+import { pruneMissing, serializeTabs, deserializeTabs } from "./panes";
+
+test("pruneMissing drops leaves that no longer exist and collapses splits", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row"); // a | a'
+  // rename one side so contents differ
+  const s = r1 as Split;
+  const r2 = setContent(r1, s.b.id, "gone.md");
+  const pruned = pruneMissing(r2, (c) => c === "a.md");
+  expect(pruned).not.toBeNull();
+  expect(pruned!.kind).toBe("leaf");
+  expect((pruned as Leaf).content).toBe("a.md");
+});
+
+test("pruneMissing returns null when nothing survives", () => {
+  const root = makeLeaf("gone.md");
+  expect(pruneMissing(root, () => false)).toBeNull();
+});
+
+test("serialize/deserialize round-trips tabs and prunes missing files", () => {
+  const tab = makeTab("a.md");
+  const json = serializeTabs([tab], "a.md");
+  const { tabs, activeTabId } = deserializeTabs(json, (c) => c === "a.md");
+  expect(tabs.length).toBe(1);
+  expect((tabs[0].root as Leaf).content).toBe("a.md");
+  expect(activeTabId).toBe(tab.id);
+});
+
+test("deserialize tolerates malformed JSON", () => {
+  const { tabs, activeTabId } = deserializeTabs("not json{", () => true);
+  expect(tabs).toEqual([]);
+  expect(activeTabId).toBeNull();
+});
+
+test("deserialize drops a tab whose entire tree is missing and resets focus", () => {
+  const tab = makeTab("gone.md");
+  const json = serializeTabs([tab], tab.id);
+  const { tabs } = deserializeTabs(json, () => false);
+  expect(tabs).toEqual([]);
+});
