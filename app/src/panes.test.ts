@@ -59,3 +59,44 @@ test("leaves lists every leaf left-to-right", () => {
   expect(ids).toContain((r1 as Split).a.id);
   expect(ids).toContain((r1 as Split).b.id);
 });
+
+import {
+  equalize, setContent, findLeafByContent, leafCount,
+} from "./panes";
+
+test("leafCount counts leaves in a tree", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "col");
+  expect(leafCount(r2)).toBe(3);
+});
+
+test("equalize weights ratios by leaf count so all leaves get equal area", () => {
+  // a | (b / c): left subtree has 1 leaf, right subtree has 2 leaves.
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "col");
+  const eq = equalize(r2) as Split;
+  // top split should give 1/3 to the single leaf, 2/3 to the pair
+  expect(eq.ratio).toBeCloseTo(1 / 3, 5);
+  // the nested col split should be an even 1/2
+  expect((eq.b as Split).ratio).toBeCloseTo(0.5, 5);
+});
+
+test("setContent retargets exactly one leaf", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const targetId = (r1 as Split).b.id;
+  const next = setContent(r1, targetId, "b.md") as Split;
+  expect((next.a as Leaf).content).toBe("a.md");
+  expect((next.b as Leaf).content).toBe("b.md");
+});
+
+test("findLeafByContent returns the first leaf with matching content", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const found = findLeafByContent(r1, "a.md");
+  expect(found).not.toBeNull();
+  expect(found!.content).toBe("a.md");
+  expect(findLeafByContent(r1, "missing.md")).toBeNull();
+});

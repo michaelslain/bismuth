@@ -67,3 +67,31 @@ export function closeLeaf(root: PaneNode, leafId: string): PaneNode | null {
 export function leaves(root: PaneNode): Leaf[] {
   return root.kind === "leaf" ? [root] : [...leaves(root.a), ...leaves(root.b)];
 }
+
+export function leafCount(node: PaneNode): number {
+  return node.kind === "leaf" ? 1 : leafCount(node.a) + leafCount(node.b);
+}
+
+// Recompute every split's ratio by leaf-count weighting so all leaves end up with
+// equal area, even when nesting is uneven. Structure is unchanged.
+export function equalize(root: PaneNode): PaneNode {
+  if (root.kind === "leaf") return root;
+  const a = equalize(root.a);
+  const b = equalize(root.b);
+  const ca = leafCount(a);
+  const cb = leafCount(b);
+  return { ...root, ratio: ca / (ca + cb), a, b };
+}
+
+export function setContent(root: PaneNode, leafId: string, content: string): PaneNode {
+  const walk = (node: PaneNode): PaneNode => {
+    if (node.kind === "leaf") return node.id === leafId ? { ...node, content } : node;
+    return { ...node, a: walk(node.a), b: walk(node.b) };
+  };
+  return walk(root);
+}
+
+export function findLeafByContent(root: PaneNode, content: string): Leaf | null {
+  if (root.kind === "leaf") return root.content === content ? root : null;
+  return findLeafByContent(root.a, content) ?? findLeafByContent(root.b, content);
+}
