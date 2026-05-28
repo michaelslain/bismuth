@@ -166,3 +166,13 @@ test("deserialize drops a tab whose entire tree is missing and resets focus", ()
   const { tabs } = deserializeTabs(json, () => false);
   expect(tabs).toEqual([]);
 });
+
+import { setRatio } from "./panes";
+
+test("setRatio updates only the targeted split", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const s = r1 as Split;
+  const next = setRatio(r1, s.id, 0.3) as Split;
+  expect(next.ratio).toBeCloseTo(0.3, 5);
+});

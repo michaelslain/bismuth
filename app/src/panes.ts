@@ -167,6 +167,15 @@ export function pruneMissing(
   return { ...root, a, b };
 }
 
+export function setRatio(root: PaneNode, splitId: string, ratio: number): PaneNode {
+  const walk = (node: PaneNode): PaneNode => {
+    if (node.kind === "leaf") return node;
+    if (node.id === splitId) return { ...node, ratio, a: walk(node.a), b: walk(node.b) };
+    return { ...node, a: walk(node.a), b: walk(node.b) };
+  };
+  return walk(root);
+}
+
 type Persisted = { tabs: Tab[]; activeTabId: string | null };
 
 export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
