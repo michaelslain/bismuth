@@ -1,5 +1,5 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show, Switch, Match } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
 import { Editor } from "./Editor";
@@ -210,16 +210,21 @@ export default function App() {
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
 
-  const tabLabel = (p: string) =>
-    p === SETTINGS_TAB
-      ? "⚙ Settings"
-      : p === CALENDAR_TAB
-        ? "📅 Calendar"
-        : p === TASKS_TAB
-          ? "✓ Tasks"
-          : p.startsWith(FLASHCARDS_PREFIX)
-            ? "🃏 " + p.slice(FLASHCARDS_PREFIX.length).split("/").pop()!.replace(/\.md$/, "")
-            : p.split("/").pop()!.replace(/\.md$/, "");
+  const SENTINEL_LABELS: Record<string, string> = {
+    [SETTINGS_TAB]: "⚙ Settings",
+    [CALENDAR_TAB]: "📅 Calendar",
+    [TASKS_TAB]: "✓ Tasks",
+  };
+
+  function noteNameOf(path: string): string {
+    return path.split("/").pop()!.replace(/\.md$/, "");
+  }
+
+  function tabLabel(p: string): string {
+    if (SENTINEL_LABELS[p]) return SENTINEL_LABELS[p];
+    if (p.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteNameOf(p.slice(FLASHCARDS_PREFIX.length));
+    return noteNameOf(p);
+  }
 
   return (
     <div class="layout">
@@ -248,25 +253,25 @@ export default function App() {
         </div>
         <div class="editor-body">
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            <Show when={active()!.startsWith(FLASHCARDS_PREFIX)} fallback={
-              <Show when={active() === CALENDAR_TAB} fallback={
-                <Show when={active() === SETTINGS_TAB} fallback={
-                  <Show when={active() === TASKS_TAB} fallback={
-                    <Show when={active()!.endsWith(".base")} fallback={<Editor path={active()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
-                      <BaseView path={active()!} onOpen={openFile} />
-                    </Show>
-                  }>
-                    <TasksPage onOpen={openFile} />
-                  </Show>
-                }>
+            {(a) => (
+              <Switch fallback={<Editor path={a()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
+                <Match when={a().startsWith(FLASHCARDS_PREFIX)}>
+                  <Flashcards note={a().slice(FLASHCARDS_PREFIX.length)} />
+                </Match>
+                <Match when={a() === CALENDAR_TAB}>
+                  <CalendarPage />
+                </Match>
+                <Match when={a() === SETTINGS_TAB}>
                   <SettingsPage />
-                </Show>
-              }>
-                <CalendarPage />
-              </Show>
-            }>
-              <Flashcards note={active()!.slice(FLASHCARDS_PREFIX.length)} />
-            </Show>
+                </Match>
+                <Match when={a() === TASKS_TAB}>
+                  <TasksPage onOpen={openFile} />
+                </Match>
+                <Match when={a().endsWith(".base")}>
+                  <BaseView path={a()} onOpen={openFile} />
+                </Match>
+              </Switch>
+            )}
           </Show>
         </div>
       </main>
