@@ -15,9 +15,11 @@ export type Split = {
 export type PaneNode = Leaf | Split;
 export type Tab = { id: string; root: PaneNode; focusId: string };
 
-let _counter = 0;
+// Globally-unique ids. A counter would reset to 0 on page reload while persisted layouts
+// keep their old ids — so a fresh split could mint an id that collides with an existing
+// pane, and since ops match by id they'd hit both. crypto.randomUUID never repeats.
 function newId(): string {
-  return `pane-${++_counter}`;
+  return crypto.randomUUID();
 }
 
 export function makeLeaf(content: string): Leaf {
@@ -189,9 +191,20 @@ export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
   return JSON.stringify(payload);
 }
 
-// Parse stored layout, pruning leaves whose content no longer exists. A tab whose
-// whole tree is gone is dropped; a focusId pointing at a pruned leaf is reset to
-// the tab's first surviving leaf. Malformed input yields an empty layout.
+// Give every node a fresh unique id, recording old→new so references (focusId) can be
+// remapped. Heals layouts persisted with duplicate ids (the counter-reset bug) and
+// guarantees uniqueness regardless of what was stored.
+function reassignIds(node: PaneNode, map: Map<string, string>): PaneNode {
+  const id = newId();
+  map.set(node.id, id);
+  if (node.kind === "leaf") return { ...node, id };
+  return { kind: "split", id, dir: node.dir, ratio: node.ratio, a: reassignIds(node.a, map), b: reassignIds(node.b, map) };
+}
+
+// Parse stored layout, pruning leaves whose content no longer exists, and re-id every
+// node/tab so no two share an id. A tab whose whole tree is gone is dropped; a focusId
+// pointing at a pruned leaf is reset to the tab's first surviving leaf. Malformed input
+// yields an empty layout.
 export function deserializeTabs(
   json: string | null,
   exists: (content: string) => boolean,
@@ -205,14 +218,19 @@ export function deserializeTabs(
   }
   if (!parsed || !Array.isArray(parsed.tabs)) return { tabs: [], activeTabId: null };
   const tabs: Tab[] = [];
+  const tabIdMap = new Map<string, string>();
   for (const t of parsed.tabs) {
-    const root = pruneMissing(t.root, exists);
-    if (!root) continue;
+    const pruned = pruneMissing(t.root, exists);
+    if (!pruned) continue;
+    const idMap = new Map<string, string>();
+    const root = reassignIds(pruned, idMap);
     const ls = leaves(root);
-    const focusId = ls.some((l) => l.id === t.focusId) ? t.focusId : ls[0].id;
-    tabs.push({ id: t.id, root, focusId });
+    const mappedFocus = idMap.get(t.focusId);
+    const focusId = mappedFocus && ls.some((l) => l.id === mappedFocus) ? mappedFocus : ls[0].id;
+    const tabId = newId();
+    tabIdMap.set(t.id, tabId);
+    tabs.push({ id: tabId, root, focusId });
   }
-  const activeTabId =
-    tabs.some((t) => t.id === parsed.activeTabId) ? parsed.activeTabId : tabs[0]?.id ?? null;
+  const activeTabId = tabIdMap.get(parsed.activeTabId ?? "") ?? tabs[0]?.id ?? null;
   return { tabs, activeTabId };
 }

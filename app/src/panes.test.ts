@@ -185,13 +185,15 @@ test("pruneMissing collapses nested splits when an interior leaf is dropped", ()
   expect((pruned.b as Leaf).content).toBe("c.md");
 });
 
-test("serialize/deserialize round-trips tabs and prunes missing files", () => {
+test("serialize/deserialize round-trips tab content and active tab", () => {
   const tab = makeTab("a.md");
-  const json = serializeTabs([tab], "a.md");
+  const json = serializeTabs([tab], tab.id);
   const { tabs, activeTabId } = deserializeTabs(json, (c) => c === "a.md");
   expect(tabs.length).toBe(1);
   expect((tabs[0].root as Leaf).content).toBe("a.md");
-  expect(activeTabId).toBe(tab.id);
+  // Nodes are re-ided on load (see heal test), so the active tab is identified by the
+  // restored tab's id, not the original.
+  expect(activeTabId).toBe(tabs[0].id);
 });
 
 test("deserialize tolerates malformed JSON", () => {
@@ -205,6 +207,45 @@ test("deserialize drops a tab whose entire tree is missing and resets focus", ()
   const json = serializeTabs([tab], tab.id);
   const { tabs } = deserializeTabs(json, () => false);
   expect(tabs).toEqual([]);
+});
+
+test("deserialize re-ids nodes so a layout with duplicate ids is healed", () => {
+  // Simulates the counter-reset-across-reload bug: a persisted tree whose nodes share
+  // ids. Without re-iding, splitLeaf/closeLeaf (which match by id) would hit every node
+  // with that id — e.g. splitting one pane splits its twin too.
+  const corrupt = JSON.stringify({
+    tabs: [
+      {
+        id: "dup",
+        focusId: "dup",
+        root: {
+          kind: "split",
+          id: "dup",
+          dir: "row",
+          ratio: 0.5,
+          a: { kind: "leaf", id: "dup", content: "a.md" },
+          b: { kind: "leaf", id: "dup", content: "b.md" },
+        },
+      },
+    ],
+    activeTabId: "dup",
+  });
+  const { tabs, activeTabId } = deserializeTabs(corrupt, () => true);
+  expect(tabs.length).toBe(1);
+  const ids: string[] = [];
+  const walk = (n: any) => {
+    ids.push(n.id);
+    if (n.kind === "split") {
+      walk(n.a);
+      walk(n.b);
+    }
+  };
+  walk(tabs[0].root);
+  expect(new Set(ids).size).toBe(ids.length); // every node id unique after heal
+  expect(tabs[0].id).not.toBe(tabs[0].root.id); // tab id distinct from node ids
+  // focusId resolves to a real leaf, and activeTabId to a real tab.
+  expect(leaves(tabs[0].root).some((l) => l.id === tabs[0].focusId)).toBe(true);
+  expect(activeTabId).toBe(tabs[0].id);
 });
 
 import { setRatio } from "./panes";
