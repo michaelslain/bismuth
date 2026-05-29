@@ -1,5 +1,6 @@
 import { createSignal, type Accessor } from "solid-js";
 import { api, eventsUrl } from "./api";
+import { recordSseError, recordPollCatchup } from "./telemetry";
 
 export type ServerChange = { version: number; paths: string[] };
 
@@ -31,11 +32,16 @@ es.onmessage = (e) => {
     // ignore malformed frames
   }
 };
+es.onerror = (e) => recordSseError(e);
 
 setInterval(async () => {
   try {
     const { version: v } = await api.version();
-    if (v > change().version) setChange({ version: v, paths: [] });
+    const current = change().version;
+    if (v > current) {
+      recordPollCatchup(v, current);
+      setChange({ version: v, paths: [] });
+    }
   } catch {
     // network hiccup — skip
   }
