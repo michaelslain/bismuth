@@ -49,12 +49,18 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     }
   });
 
-  onMount(() => {
+  onMount(async () => {
+    // xterm.js measures font metrics at construction time. If Monaspace Xenon
+    // hasn't loaded yet, the grid is sized for the fallback font and characters
+    // drift out of their cells. Wait for the actual font to be ready.
+    try {
+      await document.fonts.load(`${settings.appearance.editorFontSize ?? 14}px 'Monaspace Xenon'`);
+    } catch { /* font load failed; we'll render with fallback */ }
+
     // Read CSS variables for terminal theme colors.
     const style = getComputedStyle(document.documentElement);
     const bg = style.getPropertyValue("--bg").trim() || "#1e1e2e";
     const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
-    const accent = style.getPropertyValue("--accent").trim() || "#6496ff";
 
     term = new Xterm({
       fontFamily: "'Monaspace Xenon', ui-monospace, 'Cascadia Code', 'Menlo', monospace",
@@ -62,9 +68,11 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       theme: {
         background: bg,
         foreground: fg,
-        cursor: accent,
+        cursor: fg, // match the editor's caretColor (var(--fg))
       },
       cursorBlink: true,
+      cursorStyle: "bar",
+      cursorWidth: 2,
     });
 
     fit = new FitAddon();
