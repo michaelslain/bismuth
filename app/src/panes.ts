@@ -98,6 +98,28 @@ export function findLeafByContent(root: PaneNode, content: string): Leaf | null 
   return findLeafByContent(root.a, content) ?? findLeafByContent(root.b, content);
 }
 
+// Move one pane next to another: remove the dragged leaf (collapsing its parent), then
+// split the target along `dir` and place the dragged pane's content in the half nearest
+// the drop. Returns the new root and the moved pane's id, or null if the move is a no-op
+// (onto itself, dragged leaf missing, or dragging the tab's only pane).
+export function movePane(
+  root: PaneNode,
+  draggedId: string,
+  targetId: string,
+  dir: Dir,
+): { root: PaneNode; focusId: string } | null {
+  if (draggedId === targetId) return null;
+  const dragged = leaves(root).find((l) => l.id === draggedId);
+  if (!dragged) return null;
+  const afterClose = closeLeaf(root, draggedId);
+  if (afterClose === null) return null; // can't move the only pane
+  if (!leaves(afterClose).some((l) => l.id === targetId)) return null; // target gone (shouldn't happen)
+  const splitDir = dir === "left" || dir === "right" ? "row" : "col";
+  const { root: splitRoot, newLeafId } = splitLeaf(afterClose, targetId, splitDir);
+  const moved = dir === "right" || dir === "down" ? newLeafId : targetId;
+  return { root: setContent(splitRoot, moved, dragged.content), focusId: moved };
+}
+
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Dir = "left" | "right" | "up" | "down";
 

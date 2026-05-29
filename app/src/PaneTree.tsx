@@ -16,13 +16,15 @@ type PaneTreeProps = {
   onMenu: (leafId: string, x: number, y: number) => void;
   onClose: (leafId: string) => void;
   onDropFile: (leafId: string, path: string, dir: Dir) => void;
+  onMovePane: (targetId: string, draggedId: string, dir: Dir) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
 };
 
-const DRAG_MIME = "application/x-oa-path";
+const DRAG_MIME = "application/x-oa-path"; // a file dragged from the tree
+const PANE_MIME = "application/x-oa-pane"; // a pane dragged by its header (carries leaf id)
 
 // A single pane: renders its content, reports focus/right-click, and accepts a file
 // dragged from the tree as a drop-to-split (the highlighted half shows where it lands).
@@ -50,22 +52,38 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
         props.onMenu(props.node.id, e.clientX, e.clientY);
       }}
       onDragOver={(e) => {
-        if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+        const types = e.dataTransfer?.types;
+        if (!types || (!types.includes(DRAG_MIME) && !types.includes(PANE_MIME))) return;
         e.preventDefault(); // allow drop
         setDropDir(dirAt(e));
       }}
       onDragLeave={() => setDropDir(null)}
       onDrop={(e) => {
-        const path = e.dataTransfer?.getData(DRAG_MIME);
         const dir = dropDir();
         setDropDir(null);
-        if (!path || !dir) return;
-        e.preventDefault();
-        props.onDropFile(props.node.id, path, dir);
+        if (!dir) return;
+        const paneId = e.dataTransfer?.getData(PANE_MIME);
+        if (paneId) {
+          e.preventDefault();
+          props.onMovePane(props.node.id, paneId, dir);
+          return;
+        }
+        const path = e.dataTransfer?.getData(DRAG_MIME);
+        if (path) {
+          e.preventDefault();
+          props.onDropFile(props.node.id, path, dir);
+        }
       }}
     >
       <Show when={props.showHeader}>
-        <div class="pane-header">
+        <div
+          class="pane-header"
+          draggable={true}
+          onDragStart={(e) => {
+            e.dataTransfer?.setData(PANE_MIME, props.node.id);
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          }}
+        >
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
           <span
             class="pane-header-x"

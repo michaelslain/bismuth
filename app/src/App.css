@@ -115,7 +115,8 @@ body { background: var(--bg); color: var(--fg); }
 .pane-leaf.focused { box-shadow: inset 0 0 0 1px var(--accent); }
 .pane-body { flex: 1; min-height: 0; overflow: auto; }
 /* Per-pane name header, shown only when a tab is split into multiple panes. */
-.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 8px; font-size: 11px; opacity: 0.7; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; }
+.pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 8px; font-size: 11px; opacity: 0.7; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; cursor: grab; }
+.pane-header:active { cursor: grabbing; }
 .pane-leaf.focused .pane-header { opacity: 1; }
 .pane-header-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .pane-header-x { padding: 0 3px; border-radius: 3px; opacity: 0.5; cursor: pointer; }

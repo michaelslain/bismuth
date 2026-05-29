@@ -14,7 +14,7 @@ import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, isSentinel, c
 import {
   type Tab, type PaneNode, type Dir, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
-  setContent, setRatio, findLeafByContent, leaves, pruneMissing,
+  setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
   serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
@@ -198,6 +198,15 @@ export default function App() {
       const fileLeaf = dir === "right" || dir === "down" ? newLeafId : leafId;
       return { ...t, root: setContent(root, fileLeaf, path), focusId: fileLeaf };
     });
+  };
+
+  // Drag a pane by its header onto another pane to rearrange the layout.
+  const handleMovePane = (targetId: string, draggedId: string, dir: Dir) => {
+    const at = activeTab();
+    if (!at) return;
+    const result = movePane(at.root, draggedId, targetId, dir);
+    if (!result) return;
+    updateActiveTab((t) => ({ ...t, root: result.root, focusId: result.focusId }));
   };
 
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
@@ -402,6 +411,7 @@ export default function App() {
                 onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
                 onClose={closePane}
                 onDropFile={dropFileOnPane}
+                onMovePane={handleMovePane}
                 onSaved={refreshGraph}
                 onOpen={openFile}
                 noteNames={noteCandidates}

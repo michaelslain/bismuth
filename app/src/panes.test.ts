@@ -106,6 +106,45 @@ test("findLeafByContent returns the first leaf with matching content", () => {
   expect(findLeafByContent(r1, "missing.md")).toBeNull();
 });
 
+import { movePane } from "./panes";
+
+test("movePane reorders two side-by-side panes when dropped on the far edge", () => {
+  // row(a | b); drag a onto b's RIGHT edge -> b ends up left, a right.
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const s = r1 as Split;
+  const r2 = setContent(r1, s.b.id, "b.md"); // a | b
+  const aId = (r2 as Split).a.id;
+  const bId = (r2 as Split).b.id;
+  const res = movePane(r2, aId, bId, "right")!;
+  expect(res).not.toBeNull();
+  const out = res.root as Split;
+  expect(out.kind).toBe("split");
+  expect((out.a as Leaf).content).toBe("b.md"); // b moved to the left
+  expect((out.b as Leaf).content).toBe("a.md"); // a dropped on the right
+  expect(res.focusId).toBe(out.b.id); // moved pane is focused
+});
+
+test("movePane changes split direction when dropped on a perpendicular edge", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const s = r1 as Split;
+  const r2 = setContent(r1, s.b.id, "b.md"); // a | b
+  // drop a onto b's BOTTOM edge -> a stacked under b (col split).
+  const out = movePane(r2, (r2 as Split).a.id, (r2 as Split).b.id, "down")!.root as Split;
+  expect(out.dir).toBe("col");
+  expect((out.a as Leaf).content).toBe("b.md");
+  expect((out.b as Leaf).content).toBe("a.md");
+});
+
+test("movePane is a no-op onto itself or for the only pane", () => {
+  const root = makeLeaf("a.md");
+  expect(movePane(root, root.id, root.id, "right")).toBeNull(); // onto itself
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const s = r1 as Split;
+  expect(movePane(r1, s.a.id, s.a.id, "left")).toBeNull(); // onto itself
+});
+
 import { computeRects, focusNeighbor } from "./panes";
 
 test("computeRects splits normalized space by ratio and direction", () => {
