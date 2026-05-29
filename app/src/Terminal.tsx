@@ -11,8 +11,42 @@ import { settings, FONT_STACKS } from "./settings";
 const HTTP_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 const WS_BASE = HTTP_BASE.replace(/^http/, "ws"); // http→ws, https→wss
 
+// Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
+const enc = new TextEncoder();
+
 export function TerminalTab(props: { id: string; active: () => boolean }) {
   let container!: HTMLDivElement;
+  // Fix 1: Declare mutable refs at component scope so the top-level createEffect
+  // can close over them without being nested inside onMount.
+  let fit: FitAddon | undefined;
+  let ws: WebSocket | undefined;
+  let term: Xterm | undefined;
+
+  const sendResize = () => {
+    if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
+    const frame = new Uint8Array(5);
+    const view = new DataView(frame.buffer);
+    frame[0] = 0x01;
+    view.setUint16(1, term.cols, true);
+    view.setUint16(3, term.rows, true);
+    ws.send(frame);
+  };
+
+  // Fix 1: createEffect at component top level — properly owned by the component's
+  // reactive context and auto-disposed on cleanup. Inside onMount it would be
+  // unowned and never collected.
+  createEffect(() => {
+    if (props.active()) {
+      queueMicrotask(() => {
+        try {
+          fit?.fit();
+          sendResize();
+        } catch {
+          /* ignore during teardown */
+        }
+      });
+    }
+  });
 
   onMount(() => {
     // Read CSS variables for terminal theme colors.
@@ -21,7 +55,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
     const accent = style.getPropertyValue("--accent").trim() || "#6496ff";
 
-    const term = new Xterm({
+    term = new Xterm({
       fontFamily: FONT_STACKS[settings.appearance.editorFont] ?? "monospace",
       fontSize: settings.appearance.editorFontSize ?? 14,
       theme: {
@@ -32,47 +66,41 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       cursorBlink: true,
     });
 
-    const fit = new FitAddon();
+    fit = new FitAddon();
     term.loadAddon(fit);
     term.open(container);
     fit.fit();
 
     // Open WebSocket to backend PTY endpoint.
-    const ws = new WebSocket(
+    ws = new WebSocket(
       `${WS_BASE}/terminal?cols=${term.cols}&rows=${term.rows}`
     );
     ws.binaryType = "arraybuffer";
 
     // Backend → terminal: raw PTY output.
     ws.onmessage = (ev) => {
-      term.write(new Uint8Array(ev.data as ArrayBuffer));
+      term!.write(new Uint8Array(ev.data as ArrayBuffer));
     };
 
     // Terminal → backend: stdin frames prefixed with 0x00.
+    // Fix 3: use module-scoped `enc` instead of allocating per keystroke.
     const dataListener = term.onData((s) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      const encoded = new TextEncoder().encode(s);
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const encoded = enc.encode(s);
       const frame = new Uint8Array(1 + encoded.length);
       frame[0] = 0x00;
       frame.set(encoded, 1);
       ws.send(frame);
     });
 
-    // Send a resize frame: 0x01 prefix + cols (uint16 LE) + rows (uint16 LE).
-    const sendResize = () => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-      const frame = new Uint8Array(5);
-      const view = new DataView(frame.buffer);
-      frame[0] = 0x01;
-      view.setUint16(1, term.cols, true);
-      view.setUint16(3, term.rows, true);
-      ws.send(frame);
-    };
-
     // Observe container size changes and refit the terminal.
-    const ro = new ResizeObserver(() => {
+    // Fix 2: guard against zero-size rect (fired when container is display:none)
+    // to avoid propagating degenerate dimensions to the PTY.
+    const ro = new ResizeObserver((entries) => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || rect.width === 0 || rect.height === 0) return;
       try {
-        fit.fit();
+        fit?.fit();
         sendResize();
       } catch {
         /* ignore during teardown */
@@ -80,30 +108,15 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     });
     ro.observe(container);
 
-    // When the tab becomes active (unhidden), refit so xterm picks up the real
-    // dimensions — the container was display:none while the tab was inactive.
-    createEffect(() => {
-      if (props.active()) {
-        queueMicrotask(() => {
-          try {
-            fit.fit();
-            sendResize();
-          } catch {
-            /* ignore during teardown */
-          }
-        });
-      }
-    });
-
     onCleanup(() => {
       ro.disconnect();
       dataListener.dispose();
       try {
-        ws.close();
+        ws?.close();
       } catch {
         /* ignore */
       }
-      term.dispose();
+      term?.dispose();
     });
   });
 
