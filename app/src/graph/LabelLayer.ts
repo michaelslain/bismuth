@@ -66,10 +66,26 @@ export class LabelLayer {
   private sprites = new Map<string, THREE.Sprite>();
   private textureCache = new Map<string, { texture: THREE.CanvasTexture; cssW: number; cssH: number }>();
   private nodes: LabelNode[] = [];
+  private alwaysOn = new Set<string>();
+  private hoveredId: string | null = null;
+  private enabled = true;
 
   /** Attach to a scene. Called once at WebGLRenderer.mount(). */
   mount(scene: THREE.Scene): void {
     this.scene = scene;
+  }
+
+  setAlwaysOnSet(set: Set<string>): void {
+    this.alwaysOn = set;
+  }
+
+  setHoveredId(id: string | null): void {
+    this.hoveredId = id;
+  }
+
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+    if (!on) for (const s of this.sprites.values()) s.visible = false;
   }
 
   /** Lookup or build the texture for a label string. */
@@ -137,6 +153,51 @@ export class LabelLayer {
     }
 
     this.nodes = nodes;
+  }
+
+  /**
+   * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
+   * via the same throttle as crowding. For now: show all "always-on" candidates (hover, active,
+   * self, top-N hubs) at their node positions. Near-band and occlusion are added in later tasks.
+   */
+  updateVisibility(args: {
+    camera: THREE.PerspectiveCamera;
+    group: THREE.Group;
+    viewMode: "2d" | "3d";
+    screenW: number;
+    screenH: number;
+  }): void {
+    if (!this.enabled || this.sprites.size === 0) return;
+
+    // Resolve a node lookup for position reads — node positions update in place during settle/tween.
+    const nodeById = new Map<string, LabelNode>();
+    for (const n of this.nodes) nodeById.set(n.id, n);
+
+    // Build candidate set: hovered, plus everything in the always-on set.
+    const candidates = new Set<string>(this.alwaysOn);
+    if (this.hoveredId) candidates.add(this.hoveredId);
+
+    args.group.updateMatrixWorld();
+    const m = args.group.matrixWorld;
+    const v = new THREE.Vector3();
+
+    for (const [id, sprite] of this.sprites) {
+      if (!candidates.has(id)) { sprite.visible = false; continue; }
+      const n = nodeById.get(id);
+      if (!n) { sprite.visible = false; continue; }
+      // World position (group rotation applies for the 3D idle spin).
+      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
+      sprite.position.copy(v);
+      // Constant on-screen size: choose a scale s.t. CSS width fills cssW / screenH of NDC height.
+      const entry = this.textureCache.get(n.label);
+      if (entry) {
+        const sx = entry.cssW / args.screenH * 2;
+        const sy = entry.cssH / args.screenH * 2;
+        sprite.scale.set(sx, sy, 1);
+      }
+      sprite.material.opacity = 1;
+      sprite.visible = true;
+    }
   }
 
   /** Free GPU resources. Called at WebGLRenderer.destroy(). */
