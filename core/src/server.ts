@@ -103,8 +103,10 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /events": (_, __) => {
       // SSE stream of cache-invalidation events. One frame per `invalidate()`.
+      let subscriber: ReadableStreamDefaultController<Uint8Array>;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
+          subscriber = controller;
           sse.subscribe(controller);
           // Send an immediate snapshot so a fresh client knows the current version
           // without waiting for the next invalidation. Skip version 0 (initial
@@ -113,8 +115,8 @@ export function createServer(cfg: CoreConfig) {
             controller.enqueue(new TextEncoder().encode(`data: {"version":${version}}\n\n`));
           }
         },
-        cancel(controller) {
-          sse.unsubscribe(controller);
+        cancel() {
+          sse.unsubscribe(subscriber);
         },
       });
       return new Response(stream, {

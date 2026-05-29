@@ -482,19 +482,21 @@ test("GET /events streams a version event after a mutating call", async () => {
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
+    // Prime the version counter so the server sends an immediate snapshot when the
+    // SSE stream connects. Without this, Bun won't flush response headers until the
+    // first enqueue — causing `await fetch('/events')` to hang.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "prime.md", kind: "file" }),
+    });
+
     const res = await fetch(`${base}/events`);
     expect(res.headers.get("content-type")).toContain("text/event-stream");
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
 
-    // Trigger a mutation via the HTTP API.
-    await fetch(`${base}/create`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "from-sse-test.md", kind: "file" }),
-    });
-
-    // Read until we see a data frame with a version number, or timeout.
+    // Read until we see a data frame with a version number (the initial snapshot).
     let buf = "";
     const start = Date.now();
     while (Date.now() - start < 2000) {
