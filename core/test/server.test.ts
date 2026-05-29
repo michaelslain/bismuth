@@ -477,6 +477,54 @@ test("GET /cards/note returns all cards for one note (tagless ok)", async () => 
   }
 });
 
+test("GET /events frame includes the changed path on mutation", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Prime — gets headers flushed so the SSE response actually starts streaming.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "prime-paths.md", kind: "file" }),
+    });
+    const res = await fetch(`${base}/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Trigger another mutation we'll wait for.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "tracked-path.md", kind: "file" }),
+    });
+
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      // Walk frames; only look at data frames (skip heartbeat comments).
+      const frames = buf.split("\n\n");
+      buf = frames.pop() ?? "";
+      for (const f of frames) {
+        if (!f.startsWith("data: ")) continue;
+        const payload = JSON.parse(f.slice(6));
+        if (Array.isArray(payload.paths) && payload.paths.includes("tracked-path.md")) {
+          expect(typeof payload.version).toBe("number");
+          expect(payload.paths).toContain("tracked-path.md");
+          await reader.cancel();
+          return;
+        }
+      }
+    }
+    throw new Error(`no SSE frame mentioned tracked-path.md; buf=${buf}`);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /events streams a version event after a mutating call", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

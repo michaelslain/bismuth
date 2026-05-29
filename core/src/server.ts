@@ -56,20 +56,24 @@ export function createServer(cfg: CoreConfig) {
 
   // Debounce timer handle
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingPaths = new Set<string>();
 
-  function invalidate() {
+  function invalidate(...paths: string[]) {
     cachedGraph = null;
     cachedTree = null;
     cachedRows = null;
     version++;
-    sse.publish({ version });
+    sse.publish({ version, paths });
   }
 
-  function scheduleInvalidate() {
+  function scheduleInvalidate(path?: string) {
+    if (path) pendingPaths.add(path);
     if (debounceTimer !== null) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      invalidate();
+      const paths = [...pendingPaths];
+      pendingPaths.clear();
+      invalidate(...paths);
     }, 250);
   }
 
@@ -82,13 +86,17 @@ export function createServer(cfg: CoreConfig) {
 
   // ── File-system watchers ───────────────────────────────────────────────────
   try {
-    watch(cfg.vault, { recursive: true }, () => scheduleInvalidate());
+    watch(cfg.vault, { recursive: true }, (_event, filename) => {
+      scheduleInvalidate(filename ?? undefined);
+    });
   } catch {
     // vault dir may not exist in test / CI environments
   }
   if (cfg.memory) {
     try {
-      watch(cfg.memory, { recursive: true }, () => scheduleInvalidate());
+      watch(cfg.memory, { recursive: true }, (_event, filename) => {
+        scheduleInvalidate(filename ?? undefined);
+      });
     } catch {
       // memory dir may be absent
     }
@@ -113,7 +121,9 @@ export function createServer(cfg: CoreConfig) {
           // without waiting for the next invalidation. Skip version 0 (initial
           // state before any invalidation has occurred).
           if (version > 0) {
-            controller.enqueue(new TextEncoder().encode(`data: {"version":${version}}\n\n`));
+            controller.enqueue(
+              new TextEncoder().encode(`data: {"version":${version},"paths":[]}\n\n`),
+            );
           }
           // SSE comment frame — clients ignore it but it keeps the TCP connection
           // alive past Bun's default 10s idleTimeout. Without this, EventSource
@@ -169,6 +179,7 @@ export function createServer(cfg: CoreConfig) {
     "PUT /file": async (req, __) => {
       const { path, contents } = (await req.json()) as { path: string; contents: string };
       await writeNote(cfg.vault, path, contents);
+      invalidate(path);
       return new Response("ok");
     },
 
@@ -219,11 +230,27 @@ export function createServer(cfg: CoreConfig) {
   // ── Route handlers (mutating) ───────────────────────────────────────────────
   // These return a handler that automatically invalidates the cache and wraps errors.
 
-  function mutatingHandler(run: (req: Request, url: URL) => Promise<Response> | Response): Handler {
+  function mutatingHandler(
+    run: (req: Request, url: URL) => Promise<Response> | Response,
+    pathOf?: (body: any) => string | string[] | undefined,
+  ): Handler {
     return async (req, url) => {
       try {
+        // Tee the body so we can both read it for path extraction and pass it to run.
+        const cloned = req.clone();
         const res = await run(req, url);
-        invalidate();
+        let paths: string[] = [];
+        if (pathOf) {
+          try {
+            const body = await cloned.json();
+            const p = pathOf(body);
+            if (typeof p === "string") paths = [p];
+            else if (Array.isArray(p)) paths = p;
+          } catch {
+            // body wasn't JSON — that's fine, we just won't know the path
+          }
+        }
+        invalidate(...paths);
         return res;
       } catch (e) {
         throw new Error((e as Error).message);
@@ -232,60 +259,81 @@ export function createServer(cfg: CoreConfig) {
   }
 
   const mutatingRoutes: Record<string, Handler> = {
-    "POST /move": mutatingHandler(async (req) => {
-      const { from, to } = (await req.json()) as { from: string; to: string };
-      moveEntry(cfg.vault, from, to);
-      return new Response("ok");
-    }),
+    "POST /move": mutatingHandler(
+      async (req) => {
+        const { from, to } = (await req.json()) as { from: string; to: string };
+        moveEntry(cfg.vault, from, to);
+        return new Response("ok");
+      },
+      (b) => [b.from, b.to],
+    ),
 
-    "POST /delete": mutatingHandler(async (req) => {
-      const { path } = (await req.json()) as { path: string };
-      return Response.json(deleteEntry(cfg.vault, path));
-    }),
+    "POST /delete": mutatingHandler(
+      async (req) => {
+        const { path } = (await req.json()) as { path: string };
+        return Response.json(deleteEntry(cfg.vault, path));
+      },
+      (b) => b.path,
+    ),
 
-    "POST /restore": mutatingHandler(async (req) => {
-      const { trashPath, to } = (await req.json()) as { trashPath: string; to: string };
-      moveEntry(cfg.vault, trashPath, to);
-      return new Response("ok");
-    }),
+    "POST /restore": mutatingHandler(
+      async (req) => {
+        const { trashPath, to } = (await req.json()) as { trashPath: string; to: string };
+        moveEntry(cfg.vault, trashPath, to);
+        return new Response("ok");
+      },
+      (b) => b.to,
+    ),
 
-    "POST /create": mutatingHandler(async (req) => {
-      const { path, kind } = (await req.json()) as { path: string; kind: "file" | "dir" };
-      createEntry(cfg.vault, path, kind);
-      return new Response("ok");
-    }),
+    "POST /create": mutatingHandler(
+      async (req) => {
+        const { path, kind } = (await req.json()) as { path: string; kind: "file" | "dir" };
+        createEntry(cfg.vault, path, kind);
+        return new Response("ok");
+      },
+      (b) => b.path,
+    ),
 
-    "POST /set-property": mutatingHandler(async (req) => {
-      // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
-      const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
-      // Refuse to write to a path that doesn't exist — silently creating notes
-      // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
-      const raw = await readNoteOrEmpty(cfg.vault, path);
-      if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
-        return new Response("note not found", { status: 404 });
-      }
-      const next = setFrontmatterKey(raw, key, value);
-      await writeNote(cfg.vault, path, next);
-      return new Response("ok");
-    }),
+    "POST /set-property": mutatingHandler(
+      async (req) => {
+        // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
+        const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
+        // Refuse to write to a path that doesn't exist — silently creating notes
+        // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
+        const raw = await readNoteOrEmpty(cfg.vault, path);
+        if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+          return new Response("note not found", { status: 404 });
+        }
+        const next = setFrontmatterKey(raw, key, value);
+        await writeNote(cfg.vault, path, next);
+        return new Response("ok");
+      },
+      (b) => b.path,
+    ),
 
-    "POST /tasks/toggle": mutatingHandler(async (req) => {
-      const { path, line } = (await req.json()) as { path: string; line: number };
-      const content = await readNote(cfg.vault, path);
-      const lines = content.split("\n");
-      if (line < 0 || line >= lines.length) {
-        throw new Error("line out of range");
-      }
-      lines[line] = toggleTaskLine(lines[line], todayISO());
-      await writeNote(cfg.vault, path, lines.join("\n"));
-      return new Response("ok");
-    }),
+    "POST /tasks/toggle": mutatingHandler(
+      async (req) => {
+        const { path, line } = (await req.json()) as { path: string; line: number };
+        const content = await readNote(cfg.vault, path);
+        const lines = content.split("\n");
+        if (line < 0 || line >= lines.length) {
+          throw new Error("line out of range");
+        }
+        lines[line] = toggleTaskLine(lines[line], todayISO());
+        await writeNote(cfg.vault, path, lines.join("\n"));
+        return new Response("ok");
+      },
+      (b) => b.path,
+    ),
 
-    "POST /cards/review": mutatingHandler(async (req) => {
-      const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
-      await applyReview(cfg.vault, id, response, todayISO(), question);
-      return new Response("ok");
-    }),
+    "POST /cards/review": mutatingHandler(
+      async (req) => {
+        const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
+        await applyReview(cfg.vault, id, response, todayISO(), question);
+        return new Response("ok");
+      },
+      // No single path — leave paths empty.
+    ),
   };
 
   // ── HTTP server ────────────────────────────────────────────────────────────
