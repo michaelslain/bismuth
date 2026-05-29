@@ -17,32 +17,36 @@ export function schedule(
   response: ReviewResponse,
   today: string,
 ): SchedulingInfo {
-  let interval: number;
-  let ease: number;
+  const { interval, ease } = prev === null
+    ? scheduleNew(response)
+    : scheduleExisting(prev, response);
 
-  if (prev === null) {
-    ease = BASE_EASE;
-    if (response === "easy") {
-      ease = BASE_EASE + EASE_STEP;
-      interval = 4;
-    } else {
-      interval = 1;
-    }
+  const clampedInterval = Math.max(1, Math.min(interval, MAX_INTERVAL));
+  return { due: addDaysISO(today, clampedInterval), interval: clampedInterval, ease };
+}
+
+function scheduleNew(response: ReviewResponse): { interval: number; ease: number } {
+  if (response === "easy") {
+    return { interval: 4, ease: BASE_EASE + EASE_STEP };
+  }
+  return { interval: 1, ease: BASE_EASE };
+}
+
+function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse): { interval: number; ease: number } {
+  let ease = prev.ease;
+  let interval: number;
+
+  if (response === "hard") {
+    ease = Math.max(MIN_EASE, ease - EASE_STEP);
+    interval = Math.max(1, Math.round(prev.interval * LAPSES_INTERVAL_CHANGE));
+  } else if (response === "good") {
+    interval = Math.round(prev.interval * (ease / 100));
   } else {
-    ease = prev.ease;
-    if (response === "hard") {
-      ease = Math.max(MIN_EASE, ease - EASE_STEP);
-      interval = Math.max(1, Math.round(prev.interval * LAPSES_INTERVAL_CHANGE));
-    } else if (response === "good") {
-      interval = Math.round(prev.interval * (ease / 100));
-    } else {
-      ease = ease + EASE_STEP;
-      interval = Math.round(prev.interval * (ease / 100) * EASY_BONUS);
-    }
+    ease = ease + EASE_STEP;
+    interval = Math.round(prev.interval * (ease / 100) * EASY_BONUS);
   }
 
-  interval = Math.max(1, Math.min(interval, MAX_INTERVAL));
-  return { due: addDaysISO(today, interval), interval, ease };
+  return { interval, ease };
 }
 
 /** Matches a full SR scheduling comment, e.g. <!--SR:!2026-06-01,4,270-->. */

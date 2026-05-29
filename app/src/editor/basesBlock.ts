@@ -8,42 +8,54 @@ import { BaseView } from "../bases/BaseView";
 // can resolve `this.*` against the host's frontmatter).
 class BaseBlockWidget extends WidgetType {
   constructor(readonly source: string, readonly hostPath: string) { super(); }
-  eq(other: BaseBlockWidget) { return other.source === this.source && other.hostPath === this.hostPath; }
+
+  eq(other: BaseBlockWidget): boolean {
+    return other.source === this.source && other.hostPath === this.hostPath;
+  }
+
   toDOM(): HTMLElement {
     const container = document.createElement("div");
     container.className = "oa-base-block";
-    (container as unknown as { __dispose?: () => void }).__dispose = render(
-      () => BaseView({ source: this.source, hostPath: this.hostPath }),
-      container,
-    );
+    const dispose = render(() => BaseView({ source: this.source, hostPath: this.hostPath }), container);
+    (container as unknown as { __dispose?: () => void }).__dispose = dispose;
     return container;
   }
-  destroy(dom: HTMLElement) {
+
+  destroy(dom: HTMLElement): void {
     const dispose = (dom as unknown as { __dispose?: () => void }).__dispose;
     if (typeof dispose === "function") dispose();
   }
-  ignoreEvent() { return true; }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
 }
 
 // `![[file.base]]` transclusion. Renders the full referenced .base file as a
 // block widget, with the host note's frontmatter available as `this.*`.
 class BaseEmbedWidget extends WidgetType {
   constructor(readonly basePath: string, readonly hostPath: string) { super(); }
-  eq(other: BaseEmbedWidget) { return other.basePath === this.basePath && other.hostPath === this.hostPath; }
+
+  eq(other: BaseEmbedWidget): boolean {
+    return other.basePath === this.basePath && other.hostPath === this.hostPath;
+  }
+
   toDOM(): HTMLElement {
     const container = document.createElement("div");
     container.className = "oa-base-embed";
-    (container as unknown as { __dispose?: () => void }).__dispose = render(
-      () => BaseView({ path: this.basePath, hostPath: this.hostPath }),
-      container,
-    );
+    const dispose = render(() => BaseView({ path: this.basePath, hostPath: this.hostPath }), container);
+    (container as unknown as { __dispose?: () => void }).__dispose = dispose;
     return container;
   }
-  destroy(dom: HTMLElement) {
+
+  destroy(dom: HTMLElement): void {
     const dispose = (dom as unknown as { __dispose?: () => void }).__dispose;
     if (typeof dispose === "function") dispose();
   }
-  ignoreEvent() { return true; }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
 }
 
 // Find ```base ... ``` fenced blocks AND `![[*.base]]` embeds, and render
@@ -51,20 +63,20 @@ class BaseEmbedWidget extends WidgetType {
 // provided via a StateField (CodeMirror forbids them from view plugins).
 function buildDecorations(state: EditorState, getHostPath: () => string | null): DecorationSet {
   const hostPath = getHostPath() ?? "";
-  const matches: { to: number; widget: WidgetType }[] = [];
   const text = state.doc.toString();
+  const matches: { to: number; widget: WidgetType }[] = [];
 
+  // Base code block: ```base ... ```
   const fenceRe = /^```base[ \t]*\n([\s\S]*?)\n```/gm;
-  let m: RegExpExecArray | null;
-  while ((m = fenceRe.exec(text))) {
-    matches.push({ to: m.index + m[0].length, widget: new BaseBlockWidget(m[1], hostPath) });
+  let match: RegExpExecArray | null;
+  while ((match = fenceRe.exec(text))) {
+    matches.push({ to: match.index + match[0].length, widget: new BaseBlockWidget(match[1], hostPath) });
   }
 
-  // Transclusion: `![[foo.base]]` or `![[path/to/foo.base|alias]]`. Match on
-  // its own line (Obsidian renders only standalone embeds as block widgets).
+  // Transclusion: `![[foo.base]]` or `![[path/to/foo.base|alias]]` (standalone embeds only).
   const embedRe = /^!\[\[([^\]\n|]+\.base)(?:\|[^\]\n]*)?\]\][ \t]*$/gm;
-  while ((m = embedRe.exec(text))) {
-    matches.push({ to: m.index + m[0].length, widget: new BaseEmbedWidget(m[1], hostPath) });
+  while ((match = embedRe.exec(text))) {
+    matches.push({ to: match.index + match[0].length, widget: new BaseEmbedWidget(match[1], hostPath) });
   }
 
   // RangeSetBuilder requires sorted insertions.

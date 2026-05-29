@@ -132,16 +132,10 @@ export class LabelLayer {
   private textureFor(label: string): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
     const cached = this.textureCache.get(label);
     if (cached) return cached;
-    const family = this.fontFamily();
     const dpr = Math.min((window.devicePixelRatio || 1) * TEXTURE_DPR_MULT, 4);
-    const made = makeLabelTexture(label, family, dpr);
+    const made = makeLabelTexture(label, LABEL_FONT_FAMILY, dpr);
     this.textureCache.set(label, made);
     return made;
-  }
-
-  private fontFamily(): string {
-    // Labels use a fixed sans-serif — the editor font (e.g., serif Lora) is for prose, not UI chips.
-    return LABEL_FONT_FAMILY;
   }
 
   /** Build a sprite for one node and add it to the scene (hidden by default). */
@@ -198,17 +192,12 @@ export class LabelLayer {
     this.nodes = nodes;
   }
 
-  /** Lower number = higher priority. */
+  /** Assign label priority: lower number renders first and can occlude higher numbers. */
   private priorityOf(id: string, inAlwaysOn: boolean, isDiscovery: boolean): number {
-    if (id === this.hoveredId) return 0;
-    if (inAlwaysOn) {
-      // Self < active < hub among always-on. Order is approximate; the set semantics is what matters.
-      // We pull this apart with hints from the LabelLayer's view of the alwaysOn set; for finer grain
-      // we could split alwaysOn into separate sets, but for v1 they all share priority 1–3.
-      return 2;
-    }
-    if (isDiscovery) return 4;
-    return 9; // unreachable in practice — only candidates reach here
+    if (id === this.hoveredId) return 0; // hovered node always shows
+    if (inAlwaysOn) return 2;            // top hubs / active file
+    if (isDiscovery) return 4;           // near-camera discovery nodes
+    return 9;                             // fallback (unreachable in normal flow)
   }
 
   /**
@@ -237,13 +226,15 @@ export class LabelLayer {
     const v = new THREE.Vector3();
     const cam = args.camera.position;
 
+    // Compute zoom ratio: how much closer (< 1) or further (> 1) we are vs the default framing.
+    const zoomRatio = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
+
     // Discovery candidates: always score nodes by camera distance and take the N nearest. At rest
     // (zoom ≈ wppDefault) we take a small fixed N so orbiting the camera swaps which labels show.
     // Zoom in past DISCOVERY_ZOOM_IN — N grows proportionally so more leaves come into view. This
     // is the right mental model: orbit to see what's in front of you; zoom in to read more.
     const discovery = new Set<string>();
-    const zoomRatioCheck = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
-    if (zoomRatioCheck < ZOOMOUT_FADE_END) {
+    if (zoomRatio < ZOOMOUT_FADE_END) {
       const scored: { id: string; d: number }[] = [];
       for (const n of this.nodes) {
         const wx = m.elements[0] * (n.x ?? 0) + m.elements[4] * (n.y ?? 0) + m.elements[8] * (n.z ?? 0) + m.elements[12];
@@ -254,11 +245,13 @@ export class LabelLayer {
       }
       scored.sort((a, b) => a.d - b.d);
       // Bonus for zoom-in: smoothly add more leaf labels as you zoom past DISCOVERY_ZOOM_IN.
-      const zoomBonus = zoomRatioCheck < DISCOVERY_ZOOM_IN
-        ? Math.round(((DISCOVERY_ZOOM_IN - zoomRatioCheck) / DISCOVERY_ZOOM_IN) * this.nodes.length * 0.6)
+      const zoomBonus = zoomRatio < DISCOVERY_ZOOM_IN
+        ? Math.round(((DISCOVERY_ZOOM_IN - zoomRatio) / DISCOVERY_ZOOM_IN) * this.nodes.length * 0.6)
         : 0;
       const take = Math.min(this.nodes.length, NEAREST_AT_REST + zoomBonus);
-      for (let i = 0; i < take && i < scored.length; i++) discovery.add(scored[i].id);
+      for (let i = 0; i < take && i < scored.length; i++) {
+        discovery.add(scored[i].id);
+      }
     }
 
     const candidates = new Set<string>(this.alwaysOn);
@@ -267,14 +260,17 @@ export class LabelLayer {
 
     // Project each candidate to pixel coords; drop those outside the viewport.
     const camToCenter = cam.distanceTo(args.cloudCenter);
+
     // Zoom-out fade: as the user zooms further out (wpp grows past resting), labels fade
     // out so the abstract overview isn't dominated by constant-size text.
-    const zoomRatio = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
-    const zoomFade = zoomRatio <= ZOOMOUT_FADE_START
-      ? 1
-      : zoomRatio >= ZOOMOUT_FADE_END
-        ? 0
-        : 1 - (zoomRatio - ZOOMOUT_FADE_START) / (ZOOMOUT_FADE_END - ZOOMOUT_FADE_START);
+    let zoomFade: number;
+    if (zoomRatio <= ZOOMOUT_FADE_START) {
+      zoomFade = 1;
+    } else if (zoomRatio >= ZOOMOUT_FADE_END) {
+      zoomFade = 0;
+    } else {
+      zoomFade = 1 - (zoomRatio - ZOOMOUT_FADE_START) / (ZOOMOUT_FADE_END - ZOOMOUT_FADE_START);
+    }
     type Cand = { id: string; px: number; py: number; w: number; h: number; priority: number; opacity: number };
     const cands: Cand[] = [];
     // Fully zoomed out → hide everything cheaply.

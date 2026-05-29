@@ -3,8 +3,8 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
 
 export function columnLabel(id: string, config: BaseConfig): string {
-  const dn = config.properties?.[id]?.displayName;
-  if (dn) return dn;
+  const customLabel = config.properties?.[id]?.displayName;
+  if (customLabel) return customLabel;
   if (id.startsWith("file.")) return id.slice(5);
   if (id.startsWith("note.")) return id.slice(5);
   if (id.startsWith("formula.")) return id.slice(8);
@@ -15,7 +15,6 @@ export function renderValue(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
   if (v === null || v === undefined) return <span class="oa-empty">—</span>;
 
-  // Make the note's own name a clickable link that opens the note.
   if (id === "file.name") {
     return (
       <a
@@ -30,8 +29,17 @@ export function renderValue(id: string, row: Row): JSX.Element {
     );
   }
 
-  if (Array.isArray(v)) return <span>{v.map((x) => String(x)).join(", ")}</span>;
-  if (typeof v === "boolean") return <span>{v ? "✓" : ""}</span>;
-  if (v instanceof Date) return <span>{v.toISOString().slice(0, 10)}</span>;
+  if (Array.isArray(v)) {
+    return <span>{v.map((x) => String(x)).join(", ")}</span>;
+  }
+
+  if (typeof v === "boolean") {
+    return <span>{v ? "✓" : ""}</span>;
+  }
+
+  if (v instanceof Date) {
+    return <span>{v.toISOString().slice(0, 10)}</span>;
+  }
+
   return <span>{String(v)}</span>;
 }

@@ -4,7 +4,8 @@ import { renderValue } from "./renderValue";
 import styles from "./BaseView.module.css";
 
 export function ListView(props: { result: ViewResult; config: BaseConfig }) {
-  const first = () => props.result.columns[0] ?? "file.name";
+  const firstCol = (): string => props.result.columns[0] ?? "file.name";
+
   return (
     <div class={styles.list}>
       <For each={props.result.groups}>
@@ -14,7 +15,7 @@ export function ListView(props: { result: ViewResult; config: BaseConfig }) {
               <div class={styles.groupHeader}>{group.key}</div>
             </Show>
             <ul>
-              <For each={group.rows}>{(row) => <li>{renderValue(first(), row)}</li>}</For>
+              <For each={group.rows}>{(row) => <li>{renderValue(firstCol(), row)}</li>}</For>
             </ul>
           </>
         )}

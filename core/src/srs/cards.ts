@@ -39,15 +39,9 @@ function subQuestion(pc: ParsedCard, sub: number): string {
 function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: string): Card[] {
   const out: Card[] = [];
   for (let sub = 0; sub < pc.subCount; sub++) {
-    const sched: SchedulingInfo | undefined = pc.scheduling[sub];
-    let answer: string;
-    if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
-      answer = sub === 0 ? pc.back : pc.front;
-    } else if (pc.type === "cloze") {
-      answer = renderCloze(pc.clozeText ?? "", sub)[1];
-    } else {
-      answer = pc.back;
-    }
+    const sched = pc.scheduling[sub];
+    const answer = getSubAnswer(pc, sub);
+
     out.push({
       id: `${notePath}::${cardIndex}::${sub}`,
       notePath,
@@ -63,18 +57,30 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
   return out;
 }
 
+function getSubAnswer(pc: ParsedCard, sub: number): string {
+  if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
+    return sub === 0 ? pc.back : pc.front;
+  }
+  if (pc.type === "cloze") {
+    return renderCloze(pc.clozeText ?? "", sub)[1];
+  }
+  return pc.back;
+}
+
 export async function collectCards(vault: string): Promise<Card[]> {
   const rels = await listMarkdown(vault);
   const contents = await Promise.all(
-    rels.map(async (rel) => ({ rel, text: await readNote(vault, rel) }))
+    rels.map(async (rel) => ({ rel, text: await readNote(vault, rel) })),
   );
+
   const out: Card[] = [];
   for (const { rel, text } of contents) {
     const { data, body } = parseFrontmatter(text);
     const tags = extractTags(data, body);
     const deck = noteDeck(tags);
     if (deck === null) continue;
-    parseCards(body).forEach((pc, idx) => out.push(...toCards(pc, idx, rel, deck)));
+    const parsed = parseCards(body);
+    parsed.forEach((pc, idx) => out.push(...toCards(pc, idx, rel, deck)));
   }
   return out;
 }
@@ -88,8 +94,9 @@ export async function noteCards(vault: string, notePath: string): Promise<Card[]
   const text = await readNote(vault, notePath);
   const { data, body } = parseFrontmatter(text);
   const deck = noteDeck(extractTags(data, body)) ?? "";
+  const parsed = parseCards(body);
   const out: Card[] = [];
-  parseCards(body).forEach((pc, idx) => out.push(...toCards(pc, idx, notePath, deck)));
+  parsed.forEach((pc, idx) => out.push(...toCards(pc, idx, notePath, deck)));
   return out;
 }
 

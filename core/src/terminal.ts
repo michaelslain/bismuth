@@ -36,7 +36,11 @@ export function createTerminalSession(opts: {
 export function killSession(id: string): void {
   const s = sessions.get(id);
   if (!s) return;
-  try { s.pty.kill(); } catch { /* already dead */ }
+  try {
+    s.pty.kill();
+  } catch {
+    // already dead
+  }
   sessions.delete(id);
 }
 
@@ -53,7 +57,11 @@ export function resizeSession(id: string, cols: number, rows: number): void {
   if (!s) return;
   s.cols = cols;
   s.rows = rows;
-  try { s.pty.resize(cols, rows); } catch { /* dead */ }
+  try {
+    s.pty.resize(cols, rows);
+  } catch {
+    // dead
+  }
 }
 
 export function getSession(id: string): Session | undefined {

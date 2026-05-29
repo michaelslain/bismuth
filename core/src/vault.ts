@@ -23,36 +23,36 @@ function topFolder(rel: string): string {
 export async function buildVaultGraph(root: string): Promise<GraphData> {
   const rels = await listMarkdown(root);
   const notes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
   const byBase = new Map<string, string>();
 
-  // --- Pass 1: build note nodes and read all contents in parallel ---
+  // Build note nodes and index by basename
   for (const rel of rels) {
     const id = noteId(rel);
     const label = basename(rel).replace(/\.md$/i, "");
-    const folder = topFolder(rel);
-    notes.push({ id, label, kind: "note", folder });
+    notes.push({ id, label, kind: "note", folder: topFolder(rel) });
     byBase.set(label, id);
   }
 
+  // Read all contents in parallel
   const contents = new Map<string, string>(
     await Promise.all(rels.map(async (rel) => [noteId(rel), await readNote(root, rel)] as const))
   );
 
-  // --- Pass 2: link edges + tag collection ---
-  const tagNodes = new Map<string, GraphNode>(); // tag id → node
+  // Extract edges and tag nodes in a single pass
+  const edges: GraphEdge[] = [];
+  const tagNodes = new Map<string, GraphNode>();
 
   for (const note of notes) {
     const raw = contents.get(note.id)!;
     const { data, body } = parseFrontmatter(raw);
 
-    // Wikilink edges (against full raw content, unchanged behavior)
+    // Wikilink edges
     for (const target of extractWikilinks(raw)) {
       const toId = byBase.get(target);
       if (toId) edges.push({ from: note.id, to: toId, kind: "link" });
     }
 
-    // Tag edges
+    // Tag edges and nodes
     for (const tag of extractTags(data, body)) {
       const tagId = `tag:${tag}`;
       if (!tagNodes.has(tagId)) {

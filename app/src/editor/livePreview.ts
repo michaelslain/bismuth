@@ -3,7 +3,6 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { type Range, type Text } from "@codemirror/state";
 import katex from "katex";
 
-// marks
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
 const em = Decoration.mark({ class: "cm-em" });
@@ -11,8 +10,7 @@ const strike = Decoration.mark({ class: "cm-strike" });
 const code = Decoration.mark({ class: "cm-inline-code" });
 const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
-// line decorations
-const headingLine = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
+const headingLines = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const bulletLine = Decoration.line({ class: "cm-li" });
 const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
@@ -164,7 +162,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // headings: size the whole line, hide the leading "#"s off the cursor line
       const hm = text.match(/^(#{1,6})\s+/);
       if (hm) {
-        deco.push(headingLine[hm[1].length - 1].range(line.from));
+        deco.push(headingLines[hm[1].length - 1].range(line.from));
         if (!onCursor) deco.push(hide.range(line.from, line.from + hm[0].length));
       }
 

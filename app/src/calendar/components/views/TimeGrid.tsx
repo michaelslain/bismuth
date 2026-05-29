@@ -8,10 +8,26 @@ import { refreshEvents } from '../../refresh'
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const GRID_PX = 1200
-const minutesToStr = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-const snap = (m: number) => Math.round(m / 30) * 30
-const clamp = (m: number) => Math.max(0, Math.min(23 * 60 + 45, m))
-const yToMinutes = (y: number, colHeight: number) => clamp(snap((y / colHeight) * 24 * 60))
+const MAX_MINUTES = 23 * 60 + 45
+const SNAP_INTERVAL = 30
+
+function minutesToStr(m: number): string {
+  const hours = String(Math.floor(m / 60)).padStart(2, '0')
+  const minutes = String(m % 60).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+function snap(m: number): number {
+  return Math.round(m / SNAP_INTERVAL) * SNAP_INTERVAL
+}
+
+function clamp(m: number): number {
+  return Math.max(0, Math.min(MAX_MINUTES, m))
+}
+
+function yToMinutes(y: number, colHeight: number): number {
+  return clamp(snap((y / colHeight) * 24 * 60))
+}
 
 interface Props { dates: Date[]; events: CalendarEvent[]; categories: Category[]; store: EventStore }
 
@@ -20,40 +36,54 @@ export function TimeGrid(props: Props) {
   const colRefs: Record<string, HTMLDivElement | undefined> = {}
 
   function getMinutesFromEvent(e: MouseEvent, ds: string): number {
-    const col = colRefs[ds]; if (!col) return 0
+    const col = colRefs[ds]
+    if (!col) return 0
     const rect = col.getBoundingClientRect()
     return yToMinutes(e.clientY - rect.top, rect.height)
   }
 
-  function onColMouseDown(e: MouseEvent, ds: string) {
+  function onColMouseDown(e: MouseEvent, ds: string): void {
     if (e.button !== 0) return
     e.preventDefault()
     const minutes = getMinutesFromEvent(e, ds)
     dragState.value = { type: 'create', date: ds, startMinutes: minutes, currentMinutes: minutes }
-    function onMouseMove(ev: MouseEvent) {
+
+    function onMouseMove(ev: MouseEvent): void {
       const cur = getMinutesFromEvent(ev, ds)
-      const s = dragState.value
-      if (s?.type === 'create') dragState.value = { type: 'create', date: ds, startMinutes: s.startMinutes, currentMinutes: cur }
+      const state = dragState.value
+      if (state?.type === 'create') {
+        dragState.value = { type: 'create', date: ds, startMinutes: state.startMinutes, currentMinutes: cur }
+      }
     }
-    function onMouseUp() {
-      const ds2 = dragState.value
-      if (ds2?.type === 'create') {
-        const start = Math.min(ds2.startMinutes, ds2.currentMinutes)
-        const end = Math.max(ds2.startMinutes, ds2.currentMinutes)
-        showEventModal.value = { date: ds2.date, startTime: minutesToStr(start), ...(end - start >= 15 ? { endTime: minutesToStr(end) } : {}) }
+
+    function onMouseUp(): void {
+      const state = dragState.value
+      if (state?.type === 'create') {
+        const start = Math.min(state.startMinutes, state.currentMinutes)
+        const end = Math.max(state.startMinutes, state.currentMinutes)
+        const duration = end - start
+        showEventModal.value = {
+          date: state.date,
+          startTime: minutesToStr(start),
+          ...(duration >= 15 ? { endTime: minutesToStr(end) } : {}),
+        }
       }
       dragState.value = null
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
+
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
   }
 
-  function onChipMouseDown(e: MouseEvent, event: CalendarEvent, ds: string, masterId?: string) {
+  function onChipMouseDown(e: MouseEvent, event: CalendarEvent, ds: string, masterId?: string): void {
     if (e.button !== 0) return
-    e.stopPropagation(); e.preventDefault()
-    const col = colRefs[ds]; if (!col) return
+    e.stopPropagation()
+    e.preventDefault()
+    const col = colRefs[ds]
+    if (!col) return
+
     const rect = col.getBoundingClientRect()
     const [sh, sm] = (event.startTime ?? '00:00').split(':').map(Number)
     const eventStartMinutes = sh * 60 + sm
@@ -61,13 +91,10 @@ export function TimeGrid(props: Props) {
     const offsetMinutes = clickMinutes - eventStartMinutes
     const [eh, em] = (event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
     const durationMinutes = (eh * 60 + em) - eventStartMinutes
-    // Only begin a drag once the mouse actually moves past a small threshold.
-    // A stationary click must NOT start a drag: it should fall through to
-    // EventChip's onClick (which opens the modal). Committing an update on a
-    // plain click would also replace the chip's DOM and swallow that click.
     const startY = e.clientY
     let dragging = false
-    function onMouseMove(ev: MouseEvent) {
+
+    function onMouseMove(ev: MouseEvent): void {
       if (!dragging) {
         if (Math.abs(ev.clientY - startY) < 4) return
         dragging = true
@@ -76,42 +103,51 @@ export function TimeGrid(props: Props) {
       const newStart = clamp(snap(cur - offsetMinutes))
       dragState.value = { type: 'move', event, masterId, date: ds, startMinutes: newStart, currentMinutes: newStart + durationMinutes, offsetMinutes }
     }
-    async function onMouseUp() {
+
+    async function onMouseUp(): Promise<void> {
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
-      if (!dragging) return // it was a click, not a drag — let EventChip's onClick open the modal
-      const ds2 = dragState.value
-      if (ds2?.type === 'move') {
-        const newStart = ds2.startMinutes
+      if (!dragging) return
+      const state = dragState.value
+      if (state?.type === 'move') {
+        const newStart = state.startMinutes
         const newEnd = clamp(newStart + durationMinutes)
         await props.store.updateEvent(event.id, { startTime: minutesToStr(newStart), endTime: minutesToStr(newEnd) })
         await refreshEvents(props.store)
       }
       dragState.value = null
     }
+
     window.addEventListener('mousemove', onMouseMove)
     window.addEventListener('mouseup', onMouseUp)
   }
 
   function ghost(ds: string) {
-    const ds2 = dragState.value
-    if (!ds2 || ds2.date !== ds) return null
-    let startMin: number, endMin: number, color: string
-    if (ds2.type === 'create') {
-      startMin = Math.min(ds2.startMinutes, ds2.currentMinutes)
-      endMin = Math.max(ds2.startMinutes, ds2.currentMinutes)
+    const state = dragState.value
+    if (!state || state.date !== ds) return null
+
+    let startMin: number
+    let endMin: number
+    let color: string
+
+    if (state.type === 'create') {
+      startMin = Math.min(state.startMinutes, state.currentMinutes)
+      endMin = Math.max(state.startMinutes, state.currentMinutes)
       color = 'var(--interactive-accent)'
     } else {
-      startMin = ds2.startMinutes
-      const [sh, sm] = (ds2.event.startTime ?? '00:00').split(':').map(Number)
-      const [eh, em] = (ds2.event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+      startMin = state.startMinutes
+      const [sh, sm] = (state.event.startTime ?? '00:00').split(':').map(Number)
+      const [eh, em] = (state.event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
       const duration = (eh * 60 + em) - (sh * 60 + sm)
       endMin = clamp(startMin + duration)
-      color = categoriesSignal.value.find(c => c.name === ds2.event.category)?.color ?? 'var(--interactive-accent)'
+      color = categoriesSignal.value.find(c => c.name === state.event.category)?.color ?? 'var(--interactive-accent)'
     }
+
     if (endMin <= startMin) endMin = startMin + 15
+
     const top = (startMin / (24 * 60)) * GRID_PX
     const height = Math.max(((endMin - startMin) / (24 * 60)) * GRID_PX, 10)
+
     return (
       <div class="drag-ghost" style={{ top: `${top}px`, height: `${height}px`, background: color }}>
         {formatTime(minutesToStr(startMin), settings.value.militaryTime)} – {formatTime(minutesToStr(endMin), settings.value.militaryTime)}

@@ -5,9 +5,8 @@ import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
 import { matchTagPrefix } from "./tag";
 
-// `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (and avoids a
-// double `]]` when one is already ahead). `getNotes` is read lazily per popup open so
-// the list reflects the current vault even though the editor view is built once.
+// `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (avoids
+// double `]]` when one is already ahead). `getNotes` is read lazily per popup open.
 function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
@@ -19,7 +18,7 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
     const options = getNotes().map((n) => ({
       label: n.label,
       detail: n.folder,
-      apply: (view: EditorView, completion: Completion, applyFrom: number, applyTo: number) => {
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         const after = view.state.doc.sliceString(applyTo, applyTo + 2);
         const { insert, cursorOffset } = buildInsert(n.label, after === "]]");
         view.dispatch({
@@ -33,8 +32,8 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
   };
 }
 
-// `#tag` completion. Inserts the bare tag name after the `#` the user already typed.
-// `getTags` returns bare names (no leading `#`), read lazily per popup open.
+// `#tag` completion. Inserts the bare tag name after the `#`. `getTags` returns
+// bare names (no leading `#`), read lazily per popup open.
 function tagSource(getTags: () => string[]): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
@@ -45,7 +44,7 @@ function tagSource(getTags: () => string[]): CompletionSource {
     const from = line.from + match.from;
     const options = getTags().map((name) => ({
       label: name,
-      apply: (view: EditorView, completion: Completion, applyFrom: number, applyTo: number) => {
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         view.dispatch({
           changes: { from: applyFrom, to: applyTo, insert: name },
           selection: { anchor: applyFrom + name.length },
@@ -57,11 +56,13 @@ function tagSource(getTags: () => string[]): CompletionSource {
   };
 }
 
-// Combined editor completion: `[[wikilinks]]` and `#tags` in one autocompletion config
-// (two separate `autocompletion()` extensions with `override` would conflict).
+// Combined editor completion: `[[wikilinks]]` and `#tags` in one config.
+// Two separate `autocompletion()` extensions would conflict, so we combine them.
 export function vaultCompletion(opts: {
   getNotes: () => NoteCandidate[];
   getTags: () => string[];
 }): Extension {
-  return autocompletion({ override: [wikilinkSource(opts.getNotes), tagSource(opts.getTags)] });
+  return autocompletion({
+    override: [wikilinkSource(opts.getNotes), tagSource(opts.getTags)],
+  });
 }

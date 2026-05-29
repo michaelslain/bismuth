@@ -137,7 +137,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
 
   // Skip the SSE echo of versions we already reconciled (typically: our own
   // debounced save came back to us with the same content).
-  let ignoreVersion = -1;
+  let lastIgnoredVersion = -1;
 
   createEffect(async () => {
     const change = lastChange();
@@ -149,7 +149,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       change.paths.length === 0 /* unknown — assume so */ ||
       change.paths.includes(path);
     if (!affectsUs) return;
-    if (change.version === ignoreVersion) return;
+    if (change.version === lastIgnoredVersion) return;
 
     let onDisk: string;
     try {
@@ -164,7 +164,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     if (current === onDisk) {
       // No-op refresh (e.g., our own debounced save echoed back). Record so
       // future identical events don't even trigger the read.
-      ignoreVersion = change.version;
+      lastIgnoredVersion = change.version;
       return;
     }
     // Replace the doc while preserving cursor/selection by character offset.
@@ -178,7 +178,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       selection: { anchor, head },
       scrollIntoView: true,
     });
-    ignoreVersion = change.version;
+    lastIgnoredVersion = change.version;
   });
 
   return <div ref={host} style={{ height: "100%", overflow: "auto" }} />;

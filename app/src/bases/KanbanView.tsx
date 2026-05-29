@@ -33,14 +33,12 @@ function sortedRows(group: ResultGroup): Row[] {
 
 export function KanbanView(props: { result: ViewResult; config: BaseConfig; onChange: () => void }) {
   const groupBy = () => props.result.view.groupBy;
-  // `order` is a persistence detail (within-column sort key). Don't pollute the
-  // card body with it unless the user explicitly opted in by listing it in
-  // `view.order` — that's the per-view "show me everything" lever, and it should
-  // beat the implicit kanban hide. Same lever lets the new `properties.X.hidden`
-  // attribute be overridden per-view.
+
+  // `order` is a persistence detail (within-column sort). Hide it unless the user
+  // explicitly listed it in `view.order`, which is the per-view "show everything" lever.
   const cols = () => {
-    const explicit = props.result.view.order && props.result.view.order.length > 0;
-    if (explicit) return props.result.columns;
+    const hasExplicitOrder = props.result.view.order && props.result.view.order.length > 0;
+    if (hasExplicitOrder) return props.result.columns;
     return props.result.columns.filter((c) => c !== "note.order" && c !== "order");
   };
   const [overCol, setOverCol] = createSignal<string | null>(null);
@@ -81,7 +79,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
     prevRects.clear();
   }
 
-  function clearDrag() {
+  function clearDrag(): void {
     draggedPath = null;
     batch(() => {
       setOverCol(null);
@@ -96,22 +94,26 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
   onMount(() => window.addEventListener("dragend", onWindowDragEnd));
   onCleanup(() => window.removeEventListener("dragend", onWindowDragEnd));
 
-  const dragActive = () => dragPath() !== null;
-  // Cards shown in a column: while hovering it, lift the dragged card out so the
+  const dragActive = (): boolean => dragPath() !== null;
+
+  // Cards shown in column: while hovering, lift the dragged card so the
   // placeholder represents its new home.
   const visibleRows = (group: ResultGroup): Row[] => {
     const rows = sortedRows(group);
-    if (dragActive() && overCol() === group.key) return rows.filter((r) => r.file.path !== dragPath());
-    return rows;
+    const draggingThisCol = dragActive() && overCol() === group.key;
+    return draggingThisCol ? rows.filter((r) => r.file.path !== dragPath()) : rows;
   };
 
-  function onColumnDragOver(e: DragEvent, group: ResultGroup) {
+  function onColumnDragOver(e: DragEvent, group: ResultGroup): void {
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+
     const colEl = e.currentTarget as HTMLElement;
     const cardEls = [...colEl.querySelectorAll<HTMLElement>("[data-kbcard]")].filter(
       (el) => el.getAttribute("data-path") !== dragPath(),
     );
+
+    // Find insertion point by mouse Y position.
     let idx = cardEls.length;
     for (let k = 0; k < cardEls.length; k++) {
       const r = cardEls[k].getBoundingClientRect();
@@ -120,8 +122,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
         break;
       }
     }
-    // Only snapshot when the placeholder is actually moving — otherwise we
-    // capture rects unnecessarily on every dragover tick (which fires constantly).
+
+    // Only snapshot when the placeholder actually moves to avoid unnecessary
+    // DOM reads on every dragover tick (which fires constantly).
     const moved = overCol() !== group.key || overIndex() !== idx;
     if (moved) snapshotRects();
     batch(() => {
@@ -131,10 +134,10 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
     if (moved) requestAnimationFrame(playFlip);
   }
 
-  async function handleDrop(group: ResultGroup) {
+  async function handleDrop(group: ResultGroup): Promise<void> {
     const path = draggedPath;
     const insertAt = overIndex();
-    const from = fromCol();
+    const fromCol = fromCol();
     clearDrag();
     if (!path) return;
 
@@ -146,20 +149,18 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
     const dragged = props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path);
     if (!dragged) return;
 
-    // Build the target column's new ordering with the dragged card inserted at i.
+    // Build target column's new ordering with the dragged card inserted at position i.
     const others = sortedRows(group).filter((r) => r.file.path !== path);
     const i = Math.max(0, Math.min(insertAt, others.length));
     const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
 
-    // Cross-column move: write status first, sequentially with the dragged card's
-    // order (they target the same file — sequential avoids a read-modify-write race).
-    if (statusKey !== null && from !== group.key) {
+    // Cross-column move: write status first, then order (same file, sequential to avoid races).
+    if (statusKey !== null && fromCol !== group.key) {
       await api.setProperty(path, statusKey, group.key);
     }
     await api.setProperty(path, ORDER_KEY, i);
 
-    // Reindex the rest of the column to clean integers (only writing cards whose
-    // current order differs from their new index). Different files = safe to parallelise.
+    // Reindex remaining cards to clean integers (only those whose order changed).
     const sideWrites: Promise<unknown>[] = [];
     for (let k = 0; k < newList.length; k++) {
       const row = newList[k];

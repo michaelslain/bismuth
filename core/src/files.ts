@@ -21,12 +21,6 @@ export async function listMarkdown(root: string): Promise<string[]> {
   return out;
 }
 
-/**
- * Walk the vault, returning files AND directories for the sidebar tree.
- * - Skips dot-entries (`.trash`, `.obsidian`, …) so trash and config stay hidden.
- * - `.md` files are included (their `icon` frontmatter is read for the sidebar) and `.base` files too.
- * - Empty directories are included so newly-created folders persist across polls.
- */
 export async function listTree(root: string): Promise<TreeEntry[]> {
   const out: TreeEntry[] = [];
   const walk = async (relDir: string) => {
@@ -35,7 +29,7 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
     try {
       entries = await readdir(absDir, { withFileTypes: true });
     } catch {
-      return; // dir may have been removed mid-walk
+      return;
     }
     for (const d of entries) {
       if (d.name.startsWith(".")) continue;
@@ -45,13 +39,10 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
         await walk(rel);
       } else if (d.name.endsWith(".md")) {
         const { data } = parseFrontmatter(await readNote(root, rel));
-        out.push(
-          typeof data.icon === "string"
-            ? { path: rel, icon: data.icon, kind: "file" }
-            : { path: rel, kind: "file" },
-        );
+        const entry: TreeEntry = { path: rel, kind: "file" };
+        if (typeof data.icon === "string") entry.icon = data.icon;
+        out.push(entry);
       } else if (d.name.endsWith(".base")) {
-        // `.base` files surface in the sidebar like notes (no frontmatter/icon read).
         out.push({ path: rel, kind: "file" });
       }
     }
@@ -70,10 +61,6 @@ export async function writeNote(root: string, rel: string, contents: string): Pr
   await Bun.write(full, contents);
 }
 
-/**
- * "Delete" an entry by moving it into the hidden `.trash/` dir (excluded from listTree).
- * Returns the trash-relative path so the caller can restore it via moveEntry.
- */
 export function deleteEntry(root: string, path: string): { trashPath: string } {
   const fromAbs = resolveInVault(root, path);
   if (!existsSync(fromAbs)) throw new Error(`does not exist: ${path}`);
@@ -85,7 +72,6 @@ export function deleteEntry(root: string, path: string): { trashPath: string } {
   return { trashPath };
 }
 
-/** Create a new empty markdown file or a new directory. */
 export function createEntry(root: string, path: string, kind: "file" | "dir"): void {
   const abs = resolveInVault(root, path);
   if (existsSync(abs)) throw new Error(`already exists: ${path}`);
@@ -97,11 +83,8 @@ export function createEntry(root: string, path: string, kind: "file" | "dir"): v
   }
 }
 
-/** Move or rename a vault entry (file or folder). Used for both rename and drag-drop. */
 export function moveEntry(root: string, from: string, to: string): void {
-  if (to === from || to.startsWith(from + "/")) {
-    throw new Error("cannot move an entry into itself");
-  }
+  if (to === from || to.startsWith(from + "/")) throw new Error("cannot move an entry into itself");
   const fromAbs = resolveInVault(root, from);
   const toAbs = resolveInVault(root, to);
   if (!existsSync(fromAbs)) throw new Error(`source does not exist: ${from}`);

@@ -149,9 +149,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     }
   }
 
-  function openMenuFor(node: TreeNode, e: MouseEvent) {
-    e.preventDefault();
-    e.stopPropagation();
+  function buildMenuItems(node: TreeNode): MenuItem[] {
     const isDir = !!node.children;
     const items: MenuItem[] = [];
     if (isDir) {
@@ -160,7 +158,13 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     }
     items.push({ label: "Rename", onSelect: () => setEditing(node.path) });
     items.push({ label: "Delete", danger: true, onSelect: () => doDelete(node) });
-    setMenu({ x: e.clientX, y: e.clientY, items });
+    return items;
+  }
+
+  function openMenuFor(node: TreeNode, e: MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({ x: e.clientX, y: e.clientY, items: buildMenuItems(node) });
   }
 
   /** Move the dragged node into `targetDir` ("" = vault root). Guards no-op and into-self. */

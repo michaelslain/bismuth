@@ -17,13 +17,14 @@ export function BaseView(props: {
   onOpen?: (path: string) => void;
 }) {
   const [rows, { refetch }] = createResource(async () => (await api.vaultData()) as Row[]);
+
   const [sourceText] = createResource(
     () => props.path,
     async (p) => (p ? await api.read(p) : ""),
   );
-  // Embedded bases (inline ```base block or ![[file.base]] transclusion) want
-  // to expose the host note's frontmatter as `this.*`. We fetch it once per
-  // hostPath; an absent hostPath simply leaves `this` undefined.
+
+  // Embedded bases expose the host note's frontmatter as `this.*`.
+  // Fetched once per hostPath; absent hostPath leaves `this` undefined.
   const [hostMeta] = createResource(
     () => props.hostPath,
     async (p) => (p ? ((await api.meta(p)) as Record<string, unknown>) : undefined),

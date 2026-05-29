@@ -98,51 +98,67 @@ export function evaluate(node: Expr, ctx: EvalContext): unknown {
 }
 
 function evalBinary(op: string, leftExpr: Expr, rightExpr: Expr, ctx: EvalContext): unknown {
-  // Short-circuit boolean ops return the operand value (JS semantics).
-  // Filter conditions still coerce via truthy() at the boundary, so this is
-  // safe to expose. Lets `x || "default"` give the string instead of `true`.
-  if (op === "&&") { const l = evaluate(leftExpr, ctx); return truthy(l) ? evaluate(rightExpr, ctx) : l; }
-  if (op === "||") { const l = evaluate(leftExpr, ctx); return truthy(l) ? l : evaluate(rightExpr, ctx); }
+  if (op === "&&") {
+    const l = evaluate(leftExpr, ctx);
+    return truthy(l) ? evaluate(rightExpr, ctx) : l;
+  }
+  if (op === "||") {
+    const l = evaluate(leftExpr, ctx);
+    return truthy(l) ? l : evaluate(rightExpr, ctx);
+  }
 
   const l = evaluate(leftExpr, ctx);
   const r = evaluate(rightExpr, ctx);
 
   switch (op) {
-    case "==": return looseEquals(l, r);
-    case "!=": return !looseEquals(l, r);
-    case ">": return cmpSafe(l, r) > 0;
-    case "<": return cmpSafe(l, r) < 0;
-    case ">=": return cmpSafe(l, r) >= 0;
-    case "<=": return cmpSafe(l, r) <= 0;
-    case "+": {
-      // Date + duration string (e.g. `mtime + "1d"`, `today() + "1w"`).
-      // Order doesn't matter — duration on either side works.
-      const dur = parseDurationMs(l) || parseDurationMs(r);
-      if (dur && (l instanceof Date || r instanceof Date)) {
-        const base = l instanceof Date ? l : (r as Date);
-        return new Date(base.getTime() + dur);
-      }
-      // Frontmatter mtime / numeric timestamps: treat number + duration as ms math.
-      if (dur && (typeof l === "number" || typeof r === "number")) {
-        const base = typeof l === "number" ? l : (r as number);
-        return base + dur;
-      }
-      if (typeof l === "string" || typeof r === "string") return `${stringify(l)}${stringify(r)}`;
-      return toNumber(l) + toNumber(r);
-    }
-    case "-": {
-      const dur = parseDurationMs(r);
-      if (!Number.isNaN(dur)) {
-        if (l instanceof Date) return new Date(l.getTime() - dur);
-        if (typeof l === "number") return l - dur;
-      }
-      return toNumber(l) - toNumber(r);
-    }
-    case "*": return toNumber(l) * toNumber(r);
-    case "/": return toNumber(l) / toNumber(r);
-    case "%": return toNumber(l) % toNumber(r);
-    default: throw new Error(`unknown operator ${op}`);
+    case "==":
+      return looseEquals(l, r);
+    case "!=":
+      return !looseEquals(l, r);
+    case ">":
+      return cmpSafe(l, r) > 0;
+    case "<":
+      return cmpSafe(l, r) < 0;
+    case ">=":
+      return cmpSafe(l, r) >= 0;
+    case "<=":
+      return cmpSafe(l, r) <= 0;
+    case "+":
+      return evalPlus(l, r);
+    case "-":
+      return evalMinus(l, r);
+    case "*":
+      return toNumber(l) * toNumber(r);
+    case "/":
+      return toNumber(l) / toNumber(r);
+    case "%":
+      return toNumber(l) % toNumber(r);
+    default:
+      throw new Error(`unknown operator ${op}`);
   }
+}
+
+function evalPlus(l: unknown, r: unknown): unknown {
+  const dur = parseDurationMs(l) || parseDurationMs(r);
+  if (dur && (l instanceof Date || r instanceof Date)) {
+    const base = l instanceof Date ? l : (r as Date);
+    return new Date(base.getTime() + dur);
+  }
+  if (dur && (typeof l === "number" || typeof r === "number")) {
+    const base = typeof l === "number" ? l : (r as number);
+    return base + dur;
+  }
+  if (typeof l === "string" || typeof r === "string") return `${stringify(l)}${stringify(r)}`;
+  return toNumber(l) + toNumber(r);
+}
+
+function evalMinus(l: unknown, r: unknown): unknown {
+  const dur = parseDurationMs(r);
+  if (!Number.isNaN(dur)) {
+    if (l instanceof Date) return new Date(l.getTime() - dur);
+    if (typeof l === "number") return l - dur;
+  }
+  return toNumber(l) - toNumber(r);
 }
 
 // Comparison where a missing/incomparable operand must not throw and must

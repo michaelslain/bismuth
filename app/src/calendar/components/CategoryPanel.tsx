@@ -6,27 +6,34 @@ export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
   const [newColor, setNewColor] = createSignal('#4a90e2')
 
-  async function handleAdd() {
+  async function handleAdd(): Promise<void> {
     if (!newName().trim()) return
     await props.store.addCategory({ name: newName().trim(), color: newColor() })
     categories.value = props.store.getCategories()
-    setNewName(''); setNewColor('#4a90e2')
+    setNewName('')
+    setNewColor('#4a90e2')
   }
-  async function handleDelete(name: string) {
+
+  async function handleDelete(name: string): Promise<void> {
     const reassign = categories.value.filter(c => c.name !== name)[0]?.name
     await props.store.deleteCategory(name, reassign)
     categories.value = props.store.getCategories()
   }
-  async function handleColorChange(name: string, color: string) {
+
+  async function handleColorChange(name: string, color: string): Promise<void> {
     await props.store.updateCategory(name, { color })
     categories.value = props.store.getCategories()
   }
 
   onMount(() => {
-    function onKey(e: KeyboardEvent) {
+    function onKey(e: KeyboardEvent): void {
       const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Escape') showCategoryPanel.value = false
-      else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') { e.preventDefault(); handleAdd() }
+      if (e.key === 'Escape') {
+        showCategoryPanel.value = false
+      } else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+        e.preventDefault()
+        handleAdd()
+      }
     }
     window.addEventListener('keydown', onKey)
     onCleanup(() => window.removeEventListener('keydown', onKey))

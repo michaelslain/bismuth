@@ -104,11 +104,16 @@ export default function App() {
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
   const displayGraph = createMemo<GraphData>(() => {
-    switch (mode()) {
-      case "2nd": return applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second);
-      case "3rd": return applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third);
-      case "agents": return agents();
-      default: return graph(); // "both" = full brain (self + notes + memory + cross-brain edges)
+    const currentMode = mode();
+    switch (currentMode) {
+      case "2nd":
+        return applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second);
+      case "3rd":
+        return applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third);
+      case "agents":
+        return agents();
+      case "both":
+        return graph(); // full brain (self + notes + memory + cross-brain edges)
     }
   });
 
@@ -124,7 +129,8 @@ export default function App() {
   // active tab → load into the focused pane. If already visible in the active tab, focus it.
   const openFile = (path: string) => {
     const at = activeTab();
-    if (at && leaves(at.root).length > 1) {
+    const isMultiPane = at && leaves(at.root).length > 1;
+    if (isMultiPane) {
       const existing = findLeafByContent(at.root, path);
       if (existing) {
         updateActiveTab((t) => ({ ...t, focusId: existing.id }));
@@ -277,7 +283,7 @@ export default function App() {
     const t = setInterval(refreshAgents, 2000); // live agent-network polling
     onCleanup(() => clearInterval(t));
   });
-  onMount(() => {
+  const registerFileEvents = () => {
     const onOpen = (e: Event) => openFile((e as CustomEvent).detail);
     const onDeleted = (e: Event) => closeDeleted((e as CustomEvent).detail as string);
     const onMoved = (e: Event) => {
@@ -292,76 +298,81 @@ export default function App() {
       window.removeEventListener("oa-deleted", onDeleted);
       window.removeEventListener("oa-moved", onMoved);
     });
-  });
+  };
+
+  onMount(registerFileEvents);
   // Obsidian-style shortcuts: Cmd/Ctrl+P → command palette, Cmd/Ctrl+O → quick
   // switcher. preventDefault suppresses the browser print/open dialogs. These fire
   // even while the editor is focused (CodeMirror doesn't bind these keys).
+  const handleGlobalKeydown = (e: KeyboardEvent) => {
+    if (e.repeat) return;
+    const hasMod = e.metaKey || e.ctrlKey;
+    if (!hasMod) return;
+    const k = e.key.toLowerCase();
+    const hasAlt = e.altKey;
+    const hasShift = e.shiftKey;
+
+    // Palette toggle: Cmd+P for command palette
+    if (!hasAlt && !hasShift && k === "p") {
+      e.preventDefault();
+      setPalette((p) => (p === "command" ? null : "command"));
+      return;
+    }
+    // File switcher: Cmd+O for quick switcher
+    if (!hasAlt && !hasShift && k === "o") {
+      e.preventDefault();
+      setPalette((p) => (p === "file" ? null : "file"));
+      return;
+    }
+    // Terminal: Cmd+` or Cmd+J
+    if (!hasAlt && !hasShift && (k === "`" || k === "j")) {
+      e.preventDefault();
+      openTerminal();
+      return;
+    }
+
+    const at = activeTab();
+    if (!at) return;
+
+    // Split: Cmd+D (right) or Cmd+Shift+D (down)
+    if (!hasAlt && k === "d") {
+      e.preventDefault();
+      const dir = hasShift ? "col" : "row";
+      updateActiveTab((t) => {
+        const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir);
+        return { ...t, root, focusId: newLeafId };
+      });
+      return;
+    }
+    // Equalize: Cmd+Alt+=
+    if (hasAlt && (k === "=" || k === "+")) {
+      e.preventDefault();
+      updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
+      return;
+    }
+    // Close pane: Cmd+W
+    if (!hasAlt && !hasShift && k === "w") {
+      e.preventDefault();
+      closeFocusedPane();
+      return;
+    }
+    // Focus neighbor: Cmd+Alt+Arrow keys
+    if (hasAlt) {
+      const dirMap: Record<string, Dir> = {
+        arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
+      };
+      const dir = dirMap[k];
+      if (dir) {
+        e.preventDefault();
+        const next = focusNeighbor(at.root, at.focusId, dir);
+        if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
+      }
+    }
+  };
+
   onMount(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      const mod = e.metaKey || e.ctrlKey;
-      if (!mod) return;
-      const k = e.key.toLowerCase();
-
-      // Palette / quick-switcher (no other modifiers).
-      if (!e.altKey && !e.shiftKey && k === "p") {
-        e.preventDefault();
-        setPalette((p) => (p === "command" ? null : "command"));
-        return;
-      }
-      if (!e.altKey && !e.shiftKey && k === "o") {
-        e.preventDefault();
-        setPalette((p) => (p === "file" ? null : "file"));
-        return;
-      }
-      // Cmd+` / Cmd+J → open terminal tab.
-      if (!e.altKey && !e.shiftKey && (k === "`" || k === "j")) {
-        e.preventDefault();
-        openTerminal();
-        return;
-      }
-
-      const at = activeTab();
-      if (!at) return;
-
-      // Cmd+D split right, Cmd+Shift+D split down.
-      if (!e.altKey && k === "d") {
-        e.preventDefault();
-        const dir = e.shiftKey ? "col" : "row";
-        updateActiveTab((t) => {
-          const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir);
-          return { ...t, root, focusId: newLeafId };
-        });
-        return;
-      }
-      // Cmd+Alt+= equalize.
-      if (e.altKey && (k === "=" || k === "+")) {
-        e.preventDefault();
-        updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
-        return;
-      }
-      // Cmd+W close focused pane (collapse parent; if last pane, close tab).
-      if (!e.altKey && !e.shiftKey && k === "w") {
-        e.preventDefault();
-        closeFocusedPane();
-        return;
-      }
-      // Cmd+Alt+arrows focus neighbor.
-      if (e.altKey) {
-        const dirMap: Record<string, Dir> = {
-          arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
-        };
-        const dir = dirMap[k];
-        if (dir) {
-          e.preventDefault();
-          const next = focusNeighbor(at.root, at.focusId, dir);
-          if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
-          return;
-        }
-      }
-    };
-    window.addEventListener("keydown", handler);
-    onCleanup(() => window.removeEventListener("keydown", handler));
+    window.addEventListener("keydown", handleGlobalKeydown);
+    onCleanup(() => window.removeEventListener("keydown", handleGlobalKeydown));
   });
 
   // Snap the floating graph onto whichever slot is active (sidebar square when a

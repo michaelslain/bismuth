@@ -14,30 +14,32 @@ export interface MemoryGraph extends GraphData {
 export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
   const rels = await listMarkdown(root);
   const nodes: GraphNode[] = [];
-  const edges: GraphEdge[] = [];
   const byBase = new Map<string, string>();
 
-  // Build nodes and read all contents in parallel
+  // Build memory nodes and index by basename
   for (const rel of rels) {
     const base = basename(noteId(rel));
     nodes.push({ id: MEM(base), label: base, kind: "memory" });
     byBase.set(base, MEM(base));
   }
 
-  const contentMap = new Map<string, string>(
+  // Read all contents in parallel
+  const contents = new Map<string, string>(
     await Promise.all(rels.map(async (rel) => [basename(noteId(rel)), await readNote(root, rel)] as const))
   );
 
+  // Extract links and create edges in a single pass
+  const edges: GraphEdge[] = [];
   const links = new Map<string, string[]>();
-  for (const [base, content] of contentMap) {
+
+  for (const [base, content] of contents) {
     const targets = extractWikilinks(content);
     links.set(base, targets);
-  }
-  for (const [base, targets] of links) {
     for (const t of targets) {
       const toId = byBase.get(t);
       if (toId) edges.push({ from: MEM(base), to: toId, kind: "link" });
     }
   }
+
   return { nodes, edges, links };
 }

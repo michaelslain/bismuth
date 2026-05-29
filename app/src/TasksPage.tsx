@@ -30,25 +30,30 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
   const refresh = async () => setTasks(await api.tasks());
   onMount(refresh);
 
-  const isOpen = (t: Task) => t.status === "todo" || t.status === "in-progress";
+  const isOpen = (t: Task): boolean => t.status === "todo" || t.status === "in-progress";
+
+  const matchesFilter = (t: Task, f: Filter, today: string): boolean => {
+    switch (f) {
+      case "open":
+        return isOpen(t);
+      case "done":
+        return t.status === "done";
+      case "overdue":
+        return isOpen(t) && !!t.due && t.due < today;
+      case "today":
+        return isOpen(t) && t.due === today;
+      case "all":
+        return true;
+    }
+  };
 
   const filtered = createMemo<Task[]>(() => {
     const q = query().toLowerCase();
     const today = todayISO();
+    const f = filter();
     return tasks().filter((t) => {
       if (q && !t.description.toLowerCase().includes(q)) return false;
-      switch (filter()) {
-        case "open":
-          return isOpen(t);
-        case "done":
-          return t.status === "done";
-        case "overdue":
-          return isOpen(t) && !!t.due && t.due < today;
-        case "today":
-          return isOpen(t) && t.due === today;
-        default:
-          return true;
-      }
+      return matchesFilter(t, f, today);
     });
   });
 
@@ -71,7 +76,7 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
     await refresh(); // re-sync to disk truth even on failure (e.g. stale line number)
   };
 
-  const fileName = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
+  const getFileName = (p: string): string => p.split("/").pop()!.replace(/\.md$/, "");
 
   return (
     <div style={{ padding: "24px 32px", overflow: "auto", height: "100%", "box-sizing": "border-box" }}>
@@ -126,7 +131,7 @@ export function TasksPage(props: { onOpen: (path: string) => void }) {
                   "margin-bottom": "6px",
                 }}
               >
-                {fileName(path)}
+                {getFileName(path)}
               </div>
               <For each={items}>
                 {(t) => (

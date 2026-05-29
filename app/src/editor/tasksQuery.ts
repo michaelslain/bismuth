@@ -145,8 +145,6 @@ class TasksQueryWidget extends WidgetType {
   }
 
   ignoreEvent(): boolean {
-    // We handle reveal/toggle via our own DOM listeners; CM should ignore widget events
-    // so it doesn't fight us by trying to place the caret in this atomic block.
     return true;
   }
 }

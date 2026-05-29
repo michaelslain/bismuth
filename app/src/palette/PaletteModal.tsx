@@ -61,9 +61,14 @@ export function PaletteModal(props: Props) {
   let inputRef: HTMLInputElement | undefined;
   let listRef: HTMLDivElement | undefined;
 
-  const fuse = createMemo(
-    () => new Fuse(props.items, { keys: ["label", "sublabel"], includeMatches: true, ignoreLocation: true, threshold: 0.4 }),
-  );
+  const fuse = createMemo(() => {
+    return new Fuse(props.items, {
+      keys: ["label", "sublabel"],
+      includeMatches: true,
+      ignoreLocation: true,
+      threshold: 0.4,
+    });
+  });
 
   // Cap rendered rows: fuzzy ranking floats the best matches to the top, so a
   // large vault (1000s of files) doesn't render 1000s of DOM rows on open.
@@ -71,14 +76,19 @@ export function PaletteModal(props: Props) {
 
   const results = createMemo<Match[]>(() => {
     const q = query().trim();
-    if (!q) return props.items.slice(0, MAX_RESULTS).map((item) => ({ item, indices: [] }));
+    if (!q) {
+      return props.items.slice(0, MAX_RESULTS).map((item) => ({ item, indices: [] }));
+    }
+
     return fuse()
       .search(q, { limit: MAX_RESULTS })
       .map((r) => {
         const labelMatch = r.matches?.find((m) => m.key === "label");
         const indices: number[] = [];
         for (const [start, end] of labelMatch?.indices ?? []) {
-          for (let i = start; i <= end; i++) indices.push(i);
+          for (let i = start; i <= end; i++) {
+            indices.push(i);
+          }
         }
         return { item: r.item, indices };
       });
@@ -99,23 +109,28 @@ export function PaletteModal(props: Props) {
 
   onMount(() => inputRef?.focus());
 
-  const onKeyDown = (e: KeyboardEvent) => {
+  function onKeyDown(e: KeyboardEvent): void {
     const n = results().length;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setSelected((s) => Math.min(s + 1, n - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setSelected((s) => Math.max(s - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const r = results()[selected()];
-      if (r) props.onSelect(r.item);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      props.onClose();
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        setSelected((s) => Math.min(s + 1, n - 1));
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        setSelected((s) => Math.max(s - 1, 0));
+        break;
+      case "Enter":
+        e.preventDefault();
+        const r = results()[selected()];
+        if (r) props.onSelect(r.item);
+        break;
+      case "Escape":
+        e.preventDefault();
+        props.onClose();
+        break;
     }
-  };
+  }
 
   return (
     <Portal>
