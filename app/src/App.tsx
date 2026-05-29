@@ -180,6 +180,7 @@ export default function App() {
   // even while the editor is focused (CodeMirror doesn't bind these keys).
   onMount(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       const k = e.key.toLowerCase();
       if (k === "p") {
