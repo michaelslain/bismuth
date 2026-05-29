@@ -25,6 +25,9 @@ const TEXTURE_DPR_MULT = 2;
 // labels begin to dominate the dots — fade them out across a small band so it doesn't pop.
 const ZOOMOUT_FADE_START = 1.4;
 const ZOOMOUT_FADE_END = 2.0;
+// Discovery threshold: zoomed in below this fraction of the resting wpp, non-hub labels begin
+// to appear, ramping in proportionally. 0.7 = once you've zoomed in ~30% past the resting view.
+const DISCOVERY_ZOOM_IN = 0.7;
 
 export type LabelNode = {
   id: string;
@@ -218,30 +221,28 @@ export class LabelLayer {
     const v = new THREE.Vector3();
     const cam = args.camera.position;
 
-    // Discovery-band candidates: 3D uses distance threshold; 2D uses zoom-gated viewport clip.
+    // Discovery candidates: in BOTH 2D and 3D, gate on screen-space zoom — as the user zooms in
+    // (wpp shrinks past wppDefault * DISCOVERY_ZOOM_IN), non-hub labels begin to appear; tighter
+    // zoom reveals more. The discovery set is then viewport-clipped per-candidate during the
+    // occlusion pass. This is the right mental model: zoom in to read more; zoom out to declutter.
     const discovery = new Set<string>();
-    if (args.viewMode === "3d") {
-      const thresh = args.focalDistance * 0.5;
+    const zoomRatioCheck = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
+    if (zoomRatioCheck < DISCOVERY_ZOOM_IN) {
+      // Fraction in [0..1]: 0 at the start of the band, 1 when fully zoomed in (or past).
+      // Used to take the closest N nodes when very zoomed in, or fewer when just past the threshold.
+      const closeness = Math.min(1, (DISCOVERY_ZOOM_IN - zoomRatioCheck) / DISCOVERY_ZOOM_IN);
+      // Score each node by camera-distance; smaller = closer = more likely to be labeled.
+      const scored: { id: string; d: number }[] = [];
       for (const n of this.nodes) {
         const wx = m.elements[0] * (n.x ?? 0) + m.elements[4] * (n.y ?? 0) + m.elements[8] * (n.z ?? 0) + m.elements[12];
         const wy = m.elements[1] * (n.x ?? 0) + m.elements[5] * (n.y ?? 0) + m.elements[9] * (n.z ?? 0) + m.elements[13];
         const wz = m.elements[2] * (n.x ?? 0) + m.elements[6] * (n.y ?? 0) + m.elements[10] * (n.z ?? 0) + m.elements[14];
         const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
-        if (d < thresh) discovery.add(n.id);
+        scored.push({ id: n.id, d });
       }
-    } else {
-      // 2D: zoom-gated, viewport-clipped.
-      const zoomedIn = args.wppDefault > 0 && args.worldPerPixel < args.wppDefault * 0.5;
-      if (zoomedIn) {
-        const proj = new THREE.Vector3();
-        for (const n of this.nodes) {
-          proj.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m).project(args.camera);
-          // NDC inside viewport
-          if (proj.x >= -1 && proj.x <= 1 && proj.y >= -1 && proj.y <= 1 && proj.z <= 1) {
-            discovery.add(n.id);
-          }
-        }
-      }
+      scored.sort((a, b) => a.d - b.d);
+      const take = Math.max(0, Math.round(closeness * this.nodes.length));
+      for (let i = 0; i < take && i < scored.length; i++) discovery.add(scored[i].id);
     }
 
     const candidates = new Set<string>(this.alwaysOn);
