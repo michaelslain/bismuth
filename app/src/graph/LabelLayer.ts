@@ -157,8 +157,8 @@ export class LabelLayer {
 
   /**
    * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
-   * via the same throttle as crowding. For now: show all "always-on" candidates (hover, active,
-   * self, top-N hubs) at their node positions. Near-band and occlusion are added in later tasks.
+   * via the same throttle as crowding. Shows always-on candidates (hover, active, self, top-N hubs)
+   * plus 3D near-band discovery nodes, with depth-fade opacity in 3D mode.
    */
   updateVisibility(args: {
     camera: THREE.PerspectiveCamera;
@@ -166,36 +166,63 @@ export class LabelLayer {
     viewMode: "2d" | "3d";
     screenW: number;
     screenH: number;
+    focalDistance: number;                       // camera.position.distanceTo(controls.target)
+    cloudCenter: THREE.Vector3;
+    cloudRadius: number;
   }): void {
     if (!this.enabled || this.sprites.size === 0) return;
-
-    // Resolve a node lookup for position reads — node positions update in place during settle/tween.
     const nodeById = new Map<string, LabelNode>();
     for (const n of this.nodes) nodeById.set(n.id, n);
-
-    // Build candidate set: hovered, plus everything in the always-on set.
-    const candidates = new Set<string>(this.alwaysOn);
-    if (this.hoveredId) candidates.add(this.hoveredId);
 
     args.group.updateMatrixWorld();
     const m = args.group.matrixWorld;
     const v = new THREE.Vector3();
+    const cam = args.camera.position;
+
+    // Discovery-band candidates (3D only): closer than half the focal distance.
+    const discovery = new Set<string>();
+    if (args.viewMode === "3d") {
+      const thresh = args.focalDistance * 0.5;
+      for (const n of this.nodes) {
+        const wx = m.elements[0] * (n.x ?? 0) + m.elements[4] * (n.y ?? 0) + m.elements[8] * (n.z ?? 0) + m.elements[12];
+        const wy = m.elements[1] * (n.x ?? 0) + m.elements[5] * (n.y ?? 0) + m.elements[9] * (n.z ?? 0) + m.elements[13];
+        const wz = m.elements[2] * (n.x ?? 0) + m.elements[6] * (n.y ?? 0) + m.elements[10] * (n.z ?? 0) + m.elements[14];
+        const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
+        if (d < thresh) discovery.add(n.id);
+      }
+    }
+
+    const candidates = new Set<string>(this.alwaysOn);
+    for (const id of discovery) candidates.add(id);
+    if (this.hoveredId) candidates.add(this.hoveredId);
+
+    // For 3D opacity fade: distance-to-cloud-center → 0..1 fade band.
+    // Front of cloud fully opaque; past (cloudCenter + cloudRadius) fades to 0.
+    const fadeStart = args.cloudRadius * 0.3;
+    const fadeEnd = args.cloudRadius * 1.0;
+    const camToCenter = cam.distanceTo(args.cloudCenter);
 
     for (const [id, sprite] of this.sprites) {
       if (!candidates.has(id)) { sprite.visible = false; continue; }
       const n = nodeById.get(id);
       if (!n) { sprite.visible = false; continue; }
-      // World position (group rotation applies for the 3D idle spin).
       v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
       sprite.position.copy(v);
-      // Constant on-screen size: choose a scale s.t. CSS width fills cssW / screenH of NDC height.
       const entry = this.textureCache.get(n.label);
       if (entry) {
         const sx = entry.cssW / args.screenH * 2;
         const sy = entry.cssH / args.screenH * 2;
         sprite.scale.set(sx, sy, 1);
       }
-      sprite.material.opacity = 1;
+      // 3D opacity fade: closer-to-camera is brighter.
+      if (args.viewMode === "3d" && fadeEnd > fadeStart) {
+        const dFromCenter = v.distanceTo(args.cloudCenter);
+        const depthFromCam = camToCenter + dFromCenter;
+        const t = (depthFromCam - (camToCenter + fadeStart)) / (fadeEnd - fadeStart);
+        sprite.material.opacity = Math.max(0.15, Math.min(1, 1 - t));
+      } else {
+        sprite.material.opacity = 1;
+      }
       sprite.visible = true;
     }
   }
