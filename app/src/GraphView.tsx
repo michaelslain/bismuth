@@ -31,7 +31,6 @@ export function GraphView(props: {
     renderer.mount(
       host,
       (id) => {
-        if (id === "self") return;
         const node = lastGraph?.nodes.find((n) => n.id === id);
         if (node?.kind === "tag") return;
         props.onOpen(id);

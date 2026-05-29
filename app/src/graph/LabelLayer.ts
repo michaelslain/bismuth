@@ -4,16 +4,16 @@
 // All sprites use sizeAttenuation:false so they hold a constant on-screen size at any distance.
 import * as THREE from "three";
 
-const FONT_PX = 13;        // CSS px before DPR scaling — tight, readable, doesn't dominate the dots
+const FONT_PX = 6;         // CSS px before DPR scaling — tiny, ambient annotation
 const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
-const PAD_X = 6;
-const PAD_Y = 2;
+const PAD_X = 2;
+const PAD_Y = 0;
 const TEXT_COLOR = "rgba(232,232,238,0.95)";
 const BG_COLOR = "rgba(14,14,17,0.6)";
 const BORDER_RADIUS = 5;
-// Labels always use a clean sans-serif regardless of the editor font (which can be a heavy serif
-// like Lora). Forcing a UI-grade family keeps labels neutral and crisp at small sizes.
-const LABEL_FONT_FAMILY = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+// Labels always use a monospace family regardless of the editor font. Monospace reads as a
+// technical annotation and stays crisp at small sizes.
+const LABEL_FONT_FAMILY = '"Monaspace Xenon", ui-monospace, "SF Mono", "Menlo", "Consolas", monospace';
 const RENDER_ORDER = 999;  // labels render after points/edges
 // Supersample the canvas texture: draw at 2x the device-pixel-ratio then sample down. Even at
 // DPR 2 (Retina), this means ~4x linear oversampling, eliminating the shimmer/aliasing on text
@@ -90,7 +90,10 @@ function makeLabelTexture(text: string, fontFamily: string, dpr: number): { text
 }
 
 export class LabelLayer {
-  private scene: THREE.Scene | null = null;
+  // The parent is the renderer's node GROUP, not the scene — so sprites inherit the group's
+  // rotation/tween every frame and track the spinning nodes smoothly (no per-frame reposition,
+  // no jitter). Sprite positions are therefore LOCAL node coords, not world coords.
+  private parent: THREE.Object3D | null = null;
   private sprites = new Map<string, THREE.Sprite>();
   private textureCache = new Map<string, { texture: THREE.CanvasTexture; cssW: number; cssH: number }>();
   private nodes: LabelNode[] = [];
@@ -98,9 +101,9 @@ export class LabelLayer {
   private hoveredId: string | null = null;
   private enabled = true;
 
-  /** Attach to a scene. Called once at WebGLRenderer.mount(). */
-  mount(scene: THREE.Scene): void {
-    this.scene = scene;
+  /** Attach to the node group (so sprites rotate with it). Called once at WebGLRenderer.mount(). */
+  mount(parent: THREE.Object3D): void {
+    this.parent = parent;
   }
 
   setAlwaysOnSet(set: Set<string>): void {
@@ -114,6 +117,15 @@ export class LabelLayer {
   setEnabled(on: boolean): void {
     this.enabled = on;
     if (!on) for (const s of this.sprites.values()) s.visible = false;
+  }
+
+  /**
+   * Transiently hide every label without touching `enabled`. Used during the 2D↔3D mode tween:
+   * positions are mid-morph, so labels are hidden for the duration and the next updateVisibility
+   * (after the tween lands) brings the correct set back.
+   */
+  hideAll(): void {
+    for (const s of this.sprites.values()) s.visible = false;
   }
 
   /** Lookup or build the texture for a label string. */
@@ -154,13 +166,13 @@ export class LabelLayer {
 
   /** Swap to a new graph: dispose sprites for removed nodes, create sprites for new ones. */
   setGraph(nodes: LabelNode[]): void {
-    if (!this.scene) return;
+    if (!this.parent) return;
     const newIds = new Set(nodes.map((n) => n.id));
 
     // Remove sprites for nodes no longer in the graph.
     for (const [id, sprite] of this.sprites) {
       if (!newIds.has(id)) {
-        this.scene.remove(sprite);
+        this.parent.remove(sprite);
         sprite.material.dispose();
         this.sprites.delete(id);
       }
@@ -171,7 +183,7 @@ export class LabelLayer {
       const existing = this.sprites.get(n.id);
       if (!existing) {
         const sprite = this.createSprite(n);
-        this.scene.add(sprite);
+        this.parent.add(sprite);
         this.sprites.set(n.id, sprite);
       } else {
         // If label text changed (rare), retarget the material to the new texture.
@@ -322,8 +334,10 @@ export class LabelLayer {
     for (const [id, sprite] of this.sprites) {
       if (!acceptedIds.has(id)) { sprite.visible = false; continue; }
       const n = nodeById.get(id)!;
-      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
-      sprite.position.copy(v);
+      // LOCAL node position — the sprite is a child of the rotating group, so the group's transform
+      // places it in the world. This makes it track the idle spin every frame (no jitter) even
+      // though this selection pass only runs every ~10 frames.
+      sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
       const entry = this.textureCache.get(n.label)!;
       const sx = entry.cssW / args.screenH * 2;
       const sy = entry.cssH / args.screenH * 2;
@@ -336,9 +350,9 @@ export class LabelLayer {
 
   /** Free GPU resources. Called at WebGLRenderer.destroy(). */
   dispose(): void {
-    if (this.scene) {
+    if (this.parent) {
       for (const sprite of this.sprites.values()) {
-        this.scene.remove(sprite);
+        this.parent.remove(sprite);
         sprite.material.dispose();
       }
     }
@@ -346,7 +360,7 @@ export class LabelLayer {
     for (const entry of this.textureCache.values()) entry.texture.dispose();
     this.textureCache.clear();
     this.nodes = [];
-    this.scene = null;
+    this.parent = null;
   }
 
   /** Test helper / introspection — number of currently-allocated sprites. */

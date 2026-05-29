@@ -15,7 +15,6 @@ test("GET /graph returns the merged brain graph", async () => {
     const ids = g.nodes.map((n: any) => n.id);
     expect(ids).toContain("internship");
     expect(ids).toContain("mem:michael-profile");
-    expect(ids).toContain("self");
     expect(g.edges).toContainEqual({ from: "mem:michael-profile", to: "internship", kind: "about" });
 
     const before = await (await fetch(`${base}/file?path=essay.md`)).text();
@@ -206,13 +205,14 @@ test("POST /backup returns committed boolean", async () => {
   }
 });
 
-test("GET /graph includes self node", async () => {
+test("GET /graph does not emit a synthetic self node", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const g = await (await fetch(`${base}/graph`)).json();
-    expect(g.nodes.some((n: any) => n.id === "self")).toBe(true);
+    expect(g.nodes.some((n: any) => n.id === "self")).toBe(false);
+    expect(g.nodes.some((n: any) => n.kind === "self")).toBe(false);
   } finally {
     server.stop(true);
   }
