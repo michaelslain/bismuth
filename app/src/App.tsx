@@ -13,6 +13,7 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
 import { ToastHost, pushToast } from "./Toast";
+import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -26,6 +27,8 @@ const TASKS_TAB = "::tasks";
 // Tab id prefix for a per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
 // Each reviewed note gets its own tab; no real note path begins with "::".
 const FLASHCARDS_PREFIX = "::flashcards:";
+// Tab id prefix for embedded terminal sessions: TERMINAL_PREFIX + "<uuid>".
+const TERMINAL_PREFIX = "::term:";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -90,6 +93,7 @@ export default function App() {
   const openSettings = () => openFile(SETTINGS_TAB);
   const openCalendar = () => openFile(CALENDAR_TAB);
   const openTasks = () => openFile(TASKS_TAB);
+  const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
   // Review the flashcards in whichever note is currently active (its own tab).
   const reviewCurrentNote = () => {
     const a = active();
@@ -184,6 +188,9 @@ export default function App() {
       } else if (k === "o") {
         e.preventDefault();
         setPalette((p) => (p === "file" ? null : "file"));
+      } else if (k === "`") {
+        e.preventDefault();
+        openTerminal();
       }
     };
     window.addEventListener("keydown", handler);
@@ -223,6 +230,11 @@ export default function App() {
   function tabLabel(p: string): string {
     if (SENTINEL_LABELS[p]) return SENTINEL_LABELS[p];
     if (p.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteNameOf(p.slice(FLASHCARDS_PREFIX.length));
+    if (p.startsWith(TERMINAL_PREFIX)) {
+      const termTabs = tabs().filter((t) => t.startsWith(TERMINAL_PREFIX));
+      const idx = termTabs.indexOf(p);
+      return `>_ Terminal ${idx + 1}`;
+    }
     return noteNameOf(p);
   }
 
@@ -251,7 +263,7 @@ export default function App() {
             )}
           </For>
         </div>
-        <div class="editor-body">
+        <div class="editor-body" style={{ position: "relative" }}>
           <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(a) => (
               <Switch fallback={<Editor path={a()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
@@ -270,9 +282,26 @@ export default function App() {
                 <Match when={a().endsWith(".base")}>
                   <BaseView path={a()} onOpen={openFile} />
                 </Match>
+                <Match when={a().startsWith(TERMINAL_PREFIX)}>
+                  {/* Empty placeholder. Actual terminal rendering lives in the always-mounted
+                      overlay below so WebSockets and scrollback survive tab switches. */}
+                  <></>
+                </Match>
               </Switch>
             )}
           </Show>
+          {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab switches. */}
+          <For each={tabs().filter((t) => t.startsWith(TERMINAL_PREFIX))}>
+            {(id) => (
+              <div style={{
+                position: "absolute",
+                inset: 0,
+                display: active() === id ? "block" : "none",
+              }}>
+                <TerminalTab id={id} active={() => active() === id} />
+              </div>
+            )}
+          </For>
         </div>
       </main>
       <div class="graph-floater" ref={floater}>
