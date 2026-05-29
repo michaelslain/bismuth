@@ -83,6 +83,12 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     ws.onmessage = (ev) => {
       term!.write(new Uint8Array(ev.data as ArrayBuffer));
     };
+    ws.onclose = () => {
+      try { term?.write("\r\n\x1b[2m[connection closed]\x1b[0m\r\n"); } catch {}
+    };
+    ws.onerror = () => {
+      try { term?.write("\r\n\x1b[31m[backend unavailable]\x1b[0m\r\n"); } catch {}
+    };
 
     // Terminal → backend: stdin frames prefixed with 0x00.
     // Fix 3: use module-scoped `enc` instead of allocating per keystroke.

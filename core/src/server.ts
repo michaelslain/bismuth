@@ -94,6 +94,18 @@ export function createServer(cfg: CoreConfig) {
             cols < 1 || cols > 500 || rows < 1 || rows > 500) {
           return new Response("bad cols/rows", { status: 400, headers: cors });
         }
+        const origin = req.headers.get("origin");
+        // Allow:
+        // - same-origin (no Origin header, e.g. Tauri webview)
+        // - localhost/127.0.0.1 on any port (Vite dev server, the Tauri webview, browser-based local dev)
+        // - tauri://localhost (Tauri scheme on some platforms)
+        const allowed =
+          !origin ||
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+          /^tauri:\/\//.test(origin);
+        if (!allowed) {
+          return new Response("forbidden origin", { status: 403, headers: cors });
+        }
         const session = createTerminalSession({ cwd: cfg.vault, cols, rows });
         const ok = server.upgrade(req, { data: { sessionId: session.id } });
         if (!ok) {
