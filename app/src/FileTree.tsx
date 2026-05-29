@@ -1,6 +1,7 @@
 // app/src/FileTree.tsx
-import { createResource, createSignal, For, Show, onCleanup } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import { api } from "./api";
+import { serverVersion } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { pushToast } from "./Toast";
 import type { TreeEntry } from "../../core/src/graph";
@@ -55,13 +56,19 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   const [editing, setEditing] = createSignal<string | null>(null);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [dropTarget, setDropTarget] = createSignal<string | null>(null);
-  // Pause polling while editing or dragging: a refetch rebuilds the tree with new node
-  // objects, tearing down the <For> rows (and the focused edit input / drag source).
-  // Resuming after the edit/drag ends is fine.
-  const t = setInterval(() => {
-    if (editing() === null && dragPath() === null) refetch();
-  }, 3000);
-  onCleanup(() => clearInterval(t));
+  // React to serverVersion changes instead of blind polling.
+  // Pause refetch while the user is editing/dragging — rebuilding the tree tears
+  // down the inline edit input or drag source. We'll catch up on the next event.
+  let lastSeen = 0;
+  createEffect(() => {
+    const v = serverVersion();
+    if (v === lastSeen) return;
+    lastSeen = v;
+    // Pause refetch while the user is editing/dragging — rebuilding the tree tears
+    // down the inline edit input or drag source. We'll catch up on the next event.
+    if (editing() !== null || dragPath() !== null) return;
+    refetch();
+  });
 
   const [open, setOpen] = createSignal<Set<string>>(new Set());
   const toggle = (p: string) =>

@@ -6,6 +6,7 @@ import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
+import { serverVersion } from "./serverVersion";
 import { ToastHost, pushToast } from "./Toast";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
@@ -241,19 +242,12 @@ export default function App() {
 
   onMount(() => {
     refreshGraph();
-    let lastVersion = -1; // sentinel: force fetch on first version check
-    const t = setInterval(async () => {
-      try {
-        const { version } = await api.version();
-        if (version !== lastVersion) {
-          lastVersion = version;
-          await refreshGraph();
-        }
-      } catch {
-        // network hiccup — skip this tick
-      }
-    }, 3000); // poll version only; fetch graph only when changed
-    onCleanup(() => clearInterval(t));
+  });
+
+  createEffect(() => {
+    const v = serverVersion();
+    // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
+    if (v > 0) refreshGraph();
   });
   onMount(() => {
     refreshAgents();
