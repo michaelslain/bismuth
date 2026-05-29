@@ -64,6 +64,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
 
     term = new Xterm({
+      cursorBlink: false,
       fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
       fontSize: 13,
       theme: {
@@ -71,9 +72,6 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
         foreground: fg,
         cursor: fg, // match the editor's caretColor (var(--fg))
       },
-      cursorBlink: true,
-      cursorStyle: "bar",
-      cursorWidth: 2,
     });
 
     fit = new FitAddon();
@@ -81,6 +79,30 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     term.open(container);
     fit.fit();
     term.focus();
+
+    // Custom cursor overlay that glides smoothly between positions — xterm's native
+    // cursor is a class transferred between inline spans, so CSS transitions don't
+    // apply. We render our own absolutely-positioned div and animate transform.
+    const cursorEl = document.createElement("div");
+    cursorEl.className = "xterm-custom-cursor";
+    container.appendChild(cursorEl);
+
+    const updateCursor = () => {
+      if (!term) return;
+      const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+      if (!rowsEl) return;
+      const cellW = rowsEl.clientWidth / term.cols;
+      const cellH = rowsEl.clientHeight / term.rows;
+      // cursorX/Y are in cell units relative to the visible viewport.
+      const x = term.buffer.active.cursorX * cellW;
+      const y = term.buffer.active.cursorY * cellH;
+      cursorEl.style.transform = `translate(${x}px, ${y}px)`;
+      cursorEl.style.height = `${cellH}px`;
+    };
+
+    const renderSub = term.onRender(() => updateCursor());
+    const cursorMoveSub = term.onCursorMove(() => updateCursor());
+    updateCursor();
 
     // Fix 3: Click-to-position cursor on the current prompt line (Warp-style).
     // Track mousedown position so we only treat single-point clicks as cursor jumps,
@@ -157,6 +179,9 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     onCleanup(() => {
       ro.disconnect();
       dataListener.dispose();
+      renderSub.dispose();
+      cursorMoveSub.dispose();
+      try { cursorEl.remove(); } catch {}
       container.removeEventListener("mousedown", downHandler);
       container.removeEventListener("mouseup", upHandler);
       try {
@@ -170,5 +195,5 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
   // Render a single container div. The parent controls visibility via display:none;
   // this component is mounted once and stays mounted for the tab's lifetime.
-  return <div ref={container!} style="width:100%; height:100%" />;
+  return <div ref={container!} style={{ width: "100%", height: "100%", position: "relative" }} />;
 }

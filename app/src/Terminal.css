@@ -1,8 +1,6 @@
-/* Match the CodeMirror editor's cursor: smooth glide between positions
-   (xterm's default snaps abruptly). */
-.xterm .xterm-cursor.xterm-cursor-outline,
-.xterm .xterm-cursor.xterm-cursor-bar {
-  transition: left 70ms ease-out, top 70ms ease-out;
+/* Hide xterm's native class-based cursor — we render our own overlay below. */
+.xterm .xterm-cursor {
+  visibility: hidden;
 }
 
 /* Reduce graininess on macOS displays. */
@@ -10,4 +8,24 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: geometricPrecision;
+}
+
+/* Custom gliding cursor overlay. Matches the CodeMirror editor caret:
+   2px wide bar in var(--fg), 70ms ease-out glide between positions,
+   subtle blink. */
+.xterm-custom-cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  background: var(--fg);
+  pointer-events: none;
+  transition: transform 70ms ease-out;
+  animation: xterm-caret-blink 1.2s steps(1) infinite;
+  will-change: transform;
+  z-index: 5;
+}
+
+@keyframes xterm-caret-blink {
+  50% { opacity: 0; }
 }
