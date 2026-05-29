@@ -104,8 +104,12 @@ export function PaneTree(props: PaneTreeProps) {
     >
       {(split) => {
         let container!: HTMLDivElement;
+        // While dragging the divider, sizes must track the cursor exactly — suppress the
+        // flex-basis transition (see .pane-split.resizing in App.css) for the duration.
+        const [resizing, setResizing] = createSignal(false);
         const startDrag = (e: PointerEvent) => {
           e.preventDefault();
+          setResizing(true);
           const rect = container.getBoundingClientRect();
           const move = (ev: PointerEvent) => {
             const ratio =
@@ -115,6 +119,7 @@ export function PaneTree(props: PaneTreeProps) {
             props.onResize(split().id, Math.min(0.92, Math.max(0.08, ratio)));
           };
           const up = () => {
+            setResizing(false);
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
           };
@@ -125,7 +130,7 @@ export function PaneTree(props: PaneTreeProps) {
           <div
             ref={container}
             class="pane-split"
-            classList={{ row: split().dir === "row", col: split().dir === "col" }}
+            classList={{ row: split().dir === "row", col: split().dir === "col", resizing: resizing() }}
           >
             <div class="pane-child" style={{ "flex-basis": `${split().ratio * 100}%` }}>
               <PaneTree {...props} node={split().a} />
