@@ -18,6 +18,7 @@ import {
   serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
+import { ContextMenu } from "./ContextMenu";
 import "./App.css";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
@@ -65,6 +66,8 @@ export default function App() {
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
   const [palette, setPalette] = createSignal<"command" | "file" | null>(null);
+  // Right-click pane menu: which leaf and where to anchor the menu, or null.
+  const [paneMenu, setPaneMenu] = createSignal<{ leafId: string; x: number; y: number } | null>(null);
 
   // The graph is a single persistent element that morphs between two slots: the
   // sidebar square (when a file/settings tab is active) and the full main pane
@@ -158,18 +161,43 @@ export default function App() {
     closeTabById(id);
   };
 
-  // Close the focused pane of the active tab. Collapses its parent split; if it was the
+  // Close a given pane of the active tab. Collapses its parent split; if it was the
   // last pane in the tab, the tab itself closes.
-  const closeFocusedPane = () => {
+  const closePane = (leafId: string) => {
     const at = activeTab();
     if (!at) return;
-    const nextRoot = closeLeaf(at.root, at.focusId);
+    const nextRoot = closeLeaf(at.root, leafId);
     if (nextRoot === null) {
       closeTabById(at.id);
       return;
     }
-    const focusId = leaves(nextRoot)[0].id;
+    const ls = leaves(nextRoot);
+    const focusId = ls.some((l) => l.id === at.focusId) ? at.focusId : ls[0].id;
     updateActiveTab((t) => ({ ...t, root: nextRoot, focusId }));
+  };
+  const closeFocusedPane = () => {
+    const at = activeTab();
+    if (at) closePane(at.focusId);
+  };
+
+  // Split a given pane; focus the new pane (which starts as a duplicate of the source).
+  const splitPane = (leafId: string, dir: "row" | "col") => {
+    updateActiveTab((t) => {
+      const { root, newLeafId } = splitLeaf(t.root, leafId, dir);
+      return { ...t, root, focusId: newLeafId };
+    });
+  };
+
+  // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
+  // the file in the half nearest the drop point. left/up put it on the original side; the
+  // duplicate (new leaf) holds the prior content.
+  const dropFileOnPane = (leafId: string, path: string, dir: Dir) => {
+    const splitDir = dir === "left" || dir === "right" ? "row" : "col";
+    updateActiveTab((t) => {
+      const { root, newLeafId } = splitLeaf(t.root, leafId, splitDir);
+      const fileLeaf = dir === "right" || dir === "down" ? newLeafId : leafId;
+      return { ...t, root: setContent(root, fileLeaf, path), focusId: fileLeaf };
+    });
   };
 
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
@@ -385,6 +413,8 @@ export default function App() {
                 onResize={(splitId, ratio) =>
                   updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
                 }
+                onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
+                onDropFile={dropFileOnPane}
                 onSaved={refreshGraph}
                 onOpen={openFile}
                 noteNames={noteCandidates}
@@ -402,6 +432,20 @@ export default function App() {
       </Show>
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
+      </Show>
+      <Show when={paneMenu()}>
+        {(m) => (
+          <ContextMenu
+            x={m().x}
+            y={m().y}
+            onClose={() => setPaneMenu(null)}
+            items={[
+              { label: "Split right", onSelect: () => splitPane(m().leafId, "row") },
+              { label: "Split down", onSelect: () => splitPane(m().leafId, "col") },
+              { label: "Close pane", danger: true, onSelect: () => closePane(m().leafId) },
+            ]}
+          />
+        )}
       </Show>
       <ToastHost />
     </div>

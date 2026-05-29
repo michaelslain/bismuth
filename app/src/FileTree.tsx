@@ -325,7 +325,12 @@ function Level(props: {
           <div
             style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
-            onDragStart={(e) => { e.stopPropagation(); props.setDragPath(child.path); }}
+            onDragStart={(e) => {
+              e.stopPropagation();
+              props.setDragPath(child.path);
+              // Expose the path so a pane can accept it as a drop-to-split (see PaneTree).
+              e.dataTransfer?.setData("application/x-oa-path", child.path);
+            }}
             onDragEnd={() => props.endDrag()}
             onClick={() => props.editing === child.path || props.onOpen(child.path)}
             onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}

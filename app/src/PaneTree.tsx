@@ -1,8 +1,8 @@
 // app/src/PaneTree.tsx
 // Recursively renders one tab's pane tree. A leaf renders PaneContent and reports
 // focus/clicks; a split renders two children with a draggable divider between them.
-import { Show } from "solid-js";
-import type { PaneNode } from "./panes";
+import { Show, createSignal } from "solid-js";
+import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import type { NoteCandidate } from "./editor/wikilink";
 
@@ -11,31 +11,75 @@ type PaneTreeProps = {
   focusId: string;
   onFocus: (leafId: string) => void;
   onResize: (splitId: string, ratio: number) => void;
+  onMenu: (leafId: string, x: number, y: number) => void;
+  onDropFile: (leafId: string, path: string, dir: Dir) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
 };
 
+const DRAG_MIME = "application/x-oa-path";
+
+// A single pane: renders its content, reports focus/right-click, and accepts a file
+// dragged from the tree as a drop-to-split (the highlighted half shows where it lands).
+function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
+  const [dropDir, setDropDir] = createSignal<Dir | null>(null);
+  let el!: HTMLDivElement;
+
+  // Which half of the pane the cursor is over → which direction the split will go.
+  const dirAt = (e: DragEvent): Dir => {
+    const r = el.getBoundingClientRect();
+    const fx = (e.clientX - r.left) / r.width - 0.5;
+    const fy = (e.clientY - r.top) / r.height - 0.5;
+    if (Math.abs(fx) >= Math.abs(fy)) return fx < 0 ? "left" : "right";
+    return fy < 0 ? "up" : "down";
+  };
+
+  return (
+    <div
+      ref={el}
+      class="pane-leaf"
+      classList={{ focused: props.node.id === props.focusId }}
+      onMouseDown={() => props.onFocus(props.node.id)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        props.onMenu(props.node.id, e.clientX, e.clientY);
+      }}
+      onDragOver={(e) => {
+        if (!e.dataTransfer?.types.includes(DRAG_MIME)) return;
+        e.preventDefault(); // allow drop
+        setDropDir(dirAt(e));
+      }}
+      onDragLeave={() => setDropDir(null)}
+      onDrop={(e) => {
+        const path = e.dataTransfer?.getData(DRAG_MIME);
+        const dir = dropDir();
+        setDropDir(null);
+        if (!path || !dir) return;
+        e.preventDefault();
+        props.onDropFile(props.node.id, path, dir);
+      }}
+    >
+      <PaneContent
+        path={props.node.content}
+        onSaved={props.onSaved}
+        onOpen={props.onOpen}
+        noteNames={props.noteNames}
+        tagNames={props.tagNames}
+      />
+      <Show when={dropDir()}>
+        {(d) => <div class={`pane-dropzone ${d()}`} />}
+      </Show>
+    </div>
+  );
+}
+
 export function PaneTree(props: PaneTreeProps) {
   return (
     <Show
       when={props.node.kind === "split" ? (props.node as Extract<PaneNode, { kind: "split" }>) : null}
-      fallback={
-        <div
-          class="pane-leaf"
-          classList={{ focused: props.node.id === props.focusId }}
-          onMouseDown={() => props.onFocus(props.node.id)}
-        >
-          <PaneContent
-            path={(props.node as Extract<PaneNode, { kind: "leaf" }>).content}
-            onSaved={props.onSaved}
-            onOpen={props.onOpen}
-            noteNames={props.noteNames}
-            tagNames={props.tagNames}
-          />
-        </div>
-      }
+      fallback={<PaneLeaf {...props} node={props.node as Leaf} />}
     >
       {(split) => {
         let container!: HTMLDivElement;
