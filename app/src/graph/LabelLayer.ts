@@ -155,6 +155,19 @@ export class LabelLayer {
     this.nodes = nodes;
   }
 
+  /** Lower number = higher priority. */
+  private priorityOf(id: string, inAlwaysOn: boolean, isDiscovery: boolean): number {
+    if (id === this.hoveredId) return 0;
+    if (inAlwaysOn) {
+      // Self < active < hub among always-on. Order is approximate; the set semantics is what matters.
+      // We pull this apart with hints from the LabelLayer's view of the alwaysOn set; for finer grain
+      // we could split alwaysOn into separate sets, but for v1 they all share priority 1–3.
+      return 2;
+    }
+    if (isDiscovery) return 4;
+    return 9; // unreachable in practice — only candidates reach here
+  }
+
   /**
    * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
    * via the same throttle as crowding. Shows always-on candidates (hover, active, self, top-N hubs)
@@ -211,33 +224,69 @@ export class LabelLayer {
     for (const id of discovery) candidates.add(id);
     if (this.hoveredId) candidates.add(this.hoveredId);
 
-    // For 3D opacity fade: distance-to-cloud-center → 0..1 fade band.
-    // Front of cloud fully opaque; past (cloudCenter + cloudRadius) fades to 0.
-    const fadeStart = args.cloudRadius * 0.3;
-    const fadeEnd = args.cloudRadius * 1.0;
+    // Project each candidate to pixel coords; drop those outside the viewport.
     const camToCenter = cam.distanceTo(args.cloudCenter);
-
-    for (const [id, sprite] of this.sprites) {
-      if (!candidates.has(id)) { sprite.visible = false; continue; }
+    type Cand = { id: string; px: number; py: number; w: number; h: number; priority: number; opacity: number };
+    const cands: Cand[] = [];
+    const proj = new THREE.Vector3();
+    for (const id of candidates) {
       const n = nodeById.get(id);
-      if (!n) { sprite.visible = false; continue; }
-      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
-      sprite.position.copy(v);
+      if (!n) continue;
       const entry = this.textureCache.get(n.label);
-      if (entry) {
-        const sx = entry.cssW / args.screenH * 2;
-        const sy = entry.cssH / args.screenH * 2;
-        sprite.scale.set(sx, sy, 1);
-      }
-      // 3D opacity fade: closer-to-camera is brighter.
-      if (args.viewMode === "3d" && fadeEnd > fadeStart) {
+      if (!entry) continue;
+      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
+      proj.copy(v).project(args.camera);
+      if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1 || proj.z > 1) continue;
+      const px = (proj.x * 0.5 + 0.5) * args.screenW;
+      const py = (-proj.y * 0.5 + 0.5) * args.screenH;
+      const w = entry.cssW;
+      const h = entry.cssH;
+      // Compute opacity for 3D depth fade.
+      let opacity = 1;
+      if (args.viewMode === "3d" && args.cloudRadius > 0) {
         const dFromCenter = v.distanceTo(args.cloudCenter);
         const depthFromCam = camToCenter + dFromCenter;
+        const fadeStart = args.cloudRadius * 0.3;
+        const fadeEnd = args.cloudRadius * 1.0;
         const t = (depthFromCam - (camToCenter + fadeStart)) / (fadeEnd - fadeStart);
-        sprite.material.opacity = Math.max(0.15, Math.min(1, 1 - t));
-      } else {
-        sprite.material.opacity = 1;
+        opacity = Math.max(0.15, Math.min(1, 1 - t));
       }
+      const inAlwaysOn = this.alwaysOn.has(id);
+      const isDiscovery = !inAlwaysOn && discovery.has(id);
+      const priority = this.priorityOf(id, inAlwaysOn, isDiscovery);
+      cands.push({ id, px, py, w, h, priority, opacity });
+    }
+
+    // Greedy occlusion: sort by priority asc, accept if rect (centered on px,py + label offset down)
+    // does not overlap an already-accepted rect.
+    cands.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
+    const accepted: { px: number; py: number; w: number; h: number }[] = [];
+    const LABEL_OFFSET_BELOW = 14;
+    const accept = (c: Cand) => {
+      const x = c.px - c.w / 2;
+      const y = c.py + LABEL_OFFSET_BELOW;
+      for (const r of accepted) {
+        if (x < r.px + r.w && x + c.w > r.px && y < r.py + r.h && y + c.h > r.py) return false;
+      }
+      accepted.push({ px: x, py: y, w: c.w, h: c.h });
+      return true;
+    };
+
+    const acceptedIds = new Set<string>();
+    for (const c of cands) if (accept(c)) acceptedIds.add(c.id);
+
+    // Apply visibility + per-sprite state.
+    for (const [id, sprite] of this.sprites) {
+      if (!acceptedIds.has(id)) { sprite.visible = false; continue; }
+      const n = nodeById.get(id)!;
+      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
+      sprite.position.copy(v);
+      const entry = this.textureCache.get(n.label)!;
+      const sx = entry.cssW / args.screenH * 2;
+      const sy = entry.cssH / args.screenH * 2;
+      sprite.scale.set(sx, sy, 1);
+      const opacity = cands.find((c) => c.id === id)?.opacity ?? 1;
+      sprite.material.opacity = opacity;
       sprite.visible = true;
     }
   }
