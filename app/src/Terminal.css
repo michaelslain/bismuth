@@ -4,3 +4,10 @@
 .xterm .xterm-cursor.xterm-cursor-bar {
   transition: left 70ms ease-out, top 70ms ease-out;
 }
+
+/* Reduce graininess on macOS displays. */
+.xterm {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+}
