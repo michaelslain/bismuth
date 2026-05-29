@@ -77,11 +77,11 @@ export class EventStore {
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
     await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
     if (!originalEndDate || originalEndDate > occurrenceDate) {
-      const { id: _id, ...masterRest } = master
+      const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
     }
-    const { recurrence: _, id: __, ...rest } = master
-    const { recurrence: _r, ...singleUpdates } = updates as CalendarEvent
+    const { id, recurrence, ...rest } = master
+    const { recurrence: _excluded, ...singleUpdates } = updates as CalendarEvent
     await this.addEvent({ ...rest, ...singleUpdates, date: occurrenceDate })
   }
 
@@ -96,9 +96,7 @@ export class EventStore {
     const originalEndDate = master.recurrence.endDate
     const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
     await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
-    const { id: _id, ...masterRest } = master
-    // Merge updates.recurrence (type/daysOfWeek) into the new segment, then apply
-    // the split-specific boundaries last so they win over any modal-supplied values.
+    const { id, ...masterRest } = master
     await this.addEvent({ ...masterRest, ...updates, recurrence: { ...master.recurrence, ...(updates.recurrence ?? {}), startDate: occurrenceDate, endDate: originalEndDate, seriesId: uuid() } })
   }
 
@@ -110,7 +108,7 @@ export class EventStore {
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
     await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
     if (!originalEndDate || originalEndDate > occurrenceDate) {
-      const { id: _id, ...masterRest } = master
+      const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
     }
   }

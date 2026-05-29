@@ -7,12 +7,9 @@ export const CLOZE_RE = /==[^=]+==|\{\{[^}]+\}\}|\*\*[^*]+\*\*/g;
 /** Given a note's tag strings (without leading '#'), return deck paths for the flashcard tag.
  *  "flashcards" -> "", "flashcards/a/b" -> "a/b". Non-flashcard tags are dropped. */
 export function deckPathsFromTags(tags: string[]): string[] {
-  const out: string[] = [];
-  for (const t of tags) {
-    if (t === BASE_TAG) out.push("");
-    else if (t.startsWith(BASE_TAG + "/")) out.push(t.slice(BASE_TAG.length + 1));
-  }
-  return out;
+  return tags
+    .filter((t) => t === BASE_TAG || t.startsWith(BASE_TAG + "/"))
+    .map((t) => (t === BASE_TAG ? "" : t.slice(BASE_TAG.length + 1)));
 }
 
 /** Split a note body into blocks of consecutive non-blank lines, tracking the start line index. */
@@ -21,15 +18,20 @@ function splitBlocks(body: string): { lines: string[]; start: number }[] {
   const blocks: { lines: string[]; start: number }[] = [];
   let cur: string[] = [];
   let start = 0;
-  allLines.forEach((line, i) => {
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i];
     if (line.trim() === "") {
-      if (cur.length) blocks.push({ lines: cur, start });
-      cur = [];
+      if (cur.length) {
+        blocks.push({ lines: cur, start });
+        cur = [];
+      }
     } else {
       if (cur.length === 0) start = i;
       cur.push(line);
     }
-  });
+  }
+
   if (cur.length) blocks.push({ lines: cur, start });
   return blocks;
 }
@@ -38,7 +40,8 @@ function splitBlocks(body: string): { lines: string[]; start: number }[] {
 function splitInlineSr(line: string): { clean: string; sr: string | null } {
   const m = line.match(SR_COMMENT_RE);
   if (!m) return { clean: line, sr: null };
-  return { clean: line.slice(0, m.index).trimEnd(), sr: m[0] };
+  const clean = line.slice(0, m.index).trimEnd();
+  return { clean, sr: m[0] };
 }
 
 function countCloze(text: string): number {

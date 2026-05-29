@@ -73,10 +73,8 @@ export function GraphView(props: {
 
   onCleanup(() => renderer.destroy());
 
-  const btnStyle = (active: boolean) => ({
-    background: active ? "rgba(255,255,255,0.15)" : "transparent",
+  const baseButtonStyle = {
     border: "none",
-    color: active ? "#e8e8e8" : "rgba(200,200,200,0.55)",
     cursor: "pointer",
     "font-size": "10px",
     "font-family": "inherit",
@@ -84,6 +82,12 @@ export function GraphView(props: {
     "border-radius": "3px",
     "text-transform": "uppercase",
     "letter-spacing": "0.04em",
+  } as const;
+
+  const getBtnStyle = (active: boolean) => ({
+    ...baseButtonStyle,
+    background: active ? "rgba(255,255,255,0.15)" : "transparent",
+    color: active ? "#e8e8e8" : "rgba(200,200,200,0.55)",
   } as const);
 
   const setViewMode = (m: "2d" | "3d") => setSettings("graph", "viewMode", m);
@@ -91,17 +95,17 @@ export function GraphView(props: {
   return (
     <div style={{ display: "flex", "flex-direction": "column", height: props.fill ? "100%" : undefined }}>
       <div style={{ display: "flex", "align-items": "center", "justify-content": "center", padding: "5px 6px", gap: "2px" }}>
-        <button style={btnStyle(props.mode === "2nd")} onClick={() => props.setMode("2nd")}>2nd</button>
-        <button style={btnStyle(props.mode === "3rd")} onClick={() => props.setMode("3rd")}>3rd</button>
-        <button style={btnStyle(props.mode === "both")} onClick={() => props.setMode("both")}>Both</button>
-        <button style={btnStyle(props.mode === "agents")} onClick={() => props.setMode("agents")}>Agents</button>
+        <button style={getBtnStyle(props.mode === "2nd")} onClick={() => props.setMode("2nd")}>2nd</button>
+        <button style={getBtnStyle(props.mode === "3rd")} onClick={() => props.setMode("3rd")}>3rd</button>
+        <button style={getBtnStyle(props.mode === "both")} onClick={() => props.setMode("both")}>Both</button>
+        <button style={getBtnStyle(props.mode === "agents")} onClick={() => props.setMode("agents")}>Agents</button>
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
-            <button style={btnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
-            <button style={btnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
+            <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
+            <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
           </div>
           <Show when={hovered()}>
             {(node) => (

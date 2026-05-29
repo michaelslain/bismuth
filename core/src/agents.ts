@@ -30,11 +30,10 @@ interface RelayState {
 
 const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-/** Display label for an agent: its working-directory basename, else the part after "host:". */
 function agentLabel(agent: RelayAgent): string {
   if (agent.cwd) return basename(agent.cwd);
-  if (agent.id.includes(":")) return agent.id.split(":").slice(1).join(":");
-  return agent.id;
+  const colonIdx = agent.id.indexOf(":");
+  return colonIdx >= 0 ? agent.id.slice(colonIdx + 1) : agent.id;
 }
 
 export function buildAgentGraph(statePath?: string): GraphData {
@@ -52,17 +51,11 @@ export function buildAgentGraph(statePath?: string): GraphData {
   const inboxes = state.inboxes ?? {};
   const agentIds = new Set(Object.keys(agents));
 
-  // Build nodes
   const now = Date.now();
-  const nodes: GraphNode[] = Object.values(agents).map((agent): GraphNode => {
+  const nodes: GraphNode[] = Object.values(agents).map((agent) => {
     const lastSeenMs = new Date(agent.last_seen).getTime();
-    const state: "awake" | "idle" = now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle";
-    return {
-      id: agent.id,
-      label: agentLabel(agent),
-      kind: "agent",
-      state,
-    };
+    const state = now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle" as const;
+    return { id: agent.id, label: agentLabel(agent), kind: "agent" as const, state };
   });
 
   const edges: GraphEdge[] = [];
@@ -76,7 +69,6 @@ export function buildAgentGraph(statePath?: string): GraphData {
     }
   }
 
-  // Directed message edges: from inbox messages
   for (const [recipientId, messages] of Object.entries(inboxes)) {
     if (!agentIds.has(recipientId)) continue;
     for (const msg of messages) {
@@ -86,15 +78,14 @@ export function buildAgentGraph(statePath?: string): GraphData {
     }
   }
 
-  // Same-project link edges: group by label, connect pairs with different ids
   const byLabel = new Map<string, string[]>();
   for (const node of nodes) {
-    const group = byLabel.get(node.label) ?? [];
-    group.push(node.id);
-    byLabel.set(node.label, group);
+    const ids = byLabel.get(node.label) ?? [];
+    ids.push(node.id);
+    byLabel.set(node.label, ids);
   }
 
-  for (const [, ids] of byLabel) {
+  for (const ids of byLabel.values()) {
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         addEdge({ from: ids[i], to: ids[j], kind: "link" });

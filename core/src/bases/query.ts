@@ -65,16 +65,27 @@ function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
 
 function summarize(name: string, values: unknown[]): string {
   const nums = values.map(toNumber).filter((n) => !Number.isNaN(n));
+  const sum = nums.reduce((a, b) => a + b, 0);
+
   switch (name) {
-    case "Sum": return String(nums.reduce((a, b) => a + b, 0));
-    case "Average": return nums.length ? String(nums.reduce((a, b) => a + b, 0) / nums.length) : "";
-    case "Min": return nums.length ? String(Math.min(...nums)) : "";
-    case "Max": return nums.length ? String(Math.max(...nums)) : "";
-    case "Count": return String(values.length);
-    case "Empty": return String(values.filter((v) => v === null || v === undefined || v === "").length);
-    case "Filled": return String(values.filter((v) => !(v === null || v === undefined || v === "")).length);
-    case "Unique": return String(new Set(values.map((v) => String(v))).size);
-    default: return "";
+    case "Sum":
+      return String(sum);
+    case "Average":
+      return nums.length ? String(sum / nums.length) : "";
+    case "Min":
+      return nums.length ? String(Math.min(...nums)) : "";
+    case "Max":
+      return nums.length ? String(Math.max(...nums)) : "";
+    case "Count":
+      return String(values.length);
+    case "Empty":
+      return String(values.filter((v) => v === null || v === undefined || v === "").length);
+    case "Filled":
+      return String(values.filter((v) => v !== null && v !== undefined && v !== "").length);
+    case "Unique":
+      return String(new Set(values.map((v) => String(v))).size);
+    default:
+      return "";
   }
 }
 

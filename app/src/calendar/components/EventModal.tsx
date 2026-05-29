@@ -14,6 +14,13 @@ export function EventModal(props: { store: EventStore }) {
   if (!modal) return null
   const editing = modal.event
 
+  const defaultDate = editing?.date ?? modal.date ?? toDateStr(new Date())
+
+  function getDefaultDaysOfWeek(): number[] {
+    const [y, m, d] = defaultDate.split('-').map(Number)
+    return [new Date(y, m - 1, d).getDay()]
+  }
+
   const [title, setTitle] = createSignal(editing?.title ?? '')
   const [date, setDate] = createSignal(editing?.date ?? modal.date ?? toDateStr(new Date()))
   const [startTime, setStartTime] = createSignal(editing?.startTime ?? modal.startTime ?? '')
@@ -24,13 +31,13 @@ export function EventModal(props: { store: EventStore }) {
   const [description, setDescription] = createSignal(editing?.description ?? '')
   const [category, setCategory] = createSignal(editing?.category ?? '')
   const [recType, setRecType] = createSignal<RecurrenceType | ''>(editing?.recurrence?.type ?? '')
-  const initialDays = editing?.recurrence?.daysOfWeek ?? (() => { const [y, m, d] = (editing?.date ?? modal.date ?? toDateStr(new Date())).split('-').map(Number); return [new Date(y, m - 1, d).getDay()] })()
-  const [recDays, setRecDays] = createSignal<number[]>(initialDays)
-  const [recStart, setRecStart] = createSignal(editing?.recurrence?.startDate ?? (editing?.date ?? modal.date ?? toDateStr(new Date())))
+  const [recDays, setRecDays] = createSignal<number[]>(editing?.recurrence?.daysOfWeek ?? getDefaultDaysOfWeek())
+  const [recStart, setRecStart] = createSignal(editing?.recurrence?.startDate ?? defaultDate)
   const [recEnd, setRecEnd] = createSignal(editing?.recurrence?.endDate ?? '')
 
-  async function handleDelete() {
+  async function handleDelete(): Promise<void> {
     if (!editing) return
+
     if (editing.recurrence && modal!.masterId && modal!.occurrenceDate) {
       recurrenceAction.value = { type: 'delete', masterId: modal!.masterId, occurrenceDate: modal!.occurrenceDate }
       showEventModal.value = null
@@ -41,11 +48,10 @@ export function EventModal(props: { store: EventStore }) {
     }
   }
 
-  async function handleSave() {
+  async function handleSave(): Promise<void> {
     const eventData: Omit<CalendarEvent, 'id'> = {
-      title: title(), date: date(),
-      // Treat a blank start as all-day, and never persist an empty endTime
-      // (an empty "" later breaks drag math — `"".split(':')` → NaN).
+      title: title(),
+      date: date(),
       ...(allDay() || !startTime() ? {} : { startTime: startTime(), ...(endTime() ? { endTime: endTime() } : {}) }),
       ...(location() ? { location: location() } : {}),
       ...(link() ? { link: link() } : {}),
@@ -53,26 +59,35 @@ export function EventModal(props: { store: EventStore }) {
       ...(category() ? { category: category() } : {}),
       ...(recType() ? { recurrence: { type: recType() as RecurrenceType, daysOfWeek: recDays().length ? recDays() : undefined, startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: editing?.recurrence?.seriesId ?? uuid() } } : {}),
     }
+
+    if (editing && editing.recurrence && modal!.masterId && modal!.occurrenceDate) {
+      recurrenceAction.value = { type: 'edit', masterId: modal!.masterId, occurrenceDate: modal!.occurrenceDate, updates: eventData }
+      showEventModal.value = null
+      return
+    }
+
     if (editing) {
-      if (editing.recurrence && modal!.masterId && modal!.occurrenceDate) {
-        recurrenceAction.value = { type: 'edit', masterId: modal!.masterId, occurrenceDate: modal!.occurrenceDate, updates: eventData }
-        showEventModal.value = null
-        return
-      }
       await props.store.updateEvent(editing.id, eventData)
     } else {
       await props.store.addEvent(eventData)
     }
+
     await refreshEvents(props.store)
     showEventModal.value = null
   }
 
   onMount(() => {
-    function onKey(e: KeyboardEvent) {
+    function onKey(e: KeyboardEvent): void {
       const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Escape') showEventModal.value = null
-      else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') { e.preventDefault(); handleSave() }
-      else if (e.key === 'Backspace' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') { e.preventDefault(); handleDelete() }
+      if (e.key === 'Escape') {
+        showEventModal.value = null
+      } else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+        e.preventDefault()
+        handleSave()
+      } else if (e.key === 'Backspace' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+        e.preventDefault()
+        handleDelete()
+      }
     }
     window.addEventListener('keydown', onKey)
     onCleanup(() => window.removeEventListener('keydown', onKey))

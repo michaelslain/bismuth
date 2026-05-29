@@ -7,6 +7,7 @@ import styles from "./BaseView.module.css";
 export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
   const cols = () => props.result.columns;
   const isBody = () => props.result.view.cardContent === "body";
+
   return (
     <div class={styles.cards}>
       <For each={props.result.groups}>

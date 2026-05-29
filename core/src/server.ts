@@ -23,20 +23,17 @@ const dec = new TextDecoder();
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
-/** Read a `--flag value` pair from the process argv (shared by the core + cli launchers). */
 export function cliArg(name: string): string | undefined {
   const i = Bun.argv.indexOf(`--${name}`);
   return i >= 0 ? Bun.argv[i + 1] : undefined;
 }
 
-/** Attach CORS headers to a response. */
 function withCors(res: Response): Response {
   const headers = new Headers(res.headers);
   for (const [k, v] of Object.entries(CORS)) headers.set(k, v);
   return new Response(res.body, { status: res.status, headers });
 }
 
-/** Extract a required query parameter. */
 function requireQueryParam(url: URL, param: string): string {
   const value = url.searchParams.get(param);
   if (!value) throw new Error(`missing ?${param}=`);
@@ -47,18 +44,12 @@ function requireQueryParam(url: URL, param: string): string {
 type Handler = (req: Request, url: URL, cfg: CoreConfig) => Promise<Response> | Response;
 
 export function createServer(cfg: CoreConfig) {
-  // ── In-memory cache ────────────────────────────────────────────────────────
   let cachedGraph: GraphData | null = null;
-  // The sidebar polls /tree every few seconds; cache it (with the per-note icon read) so we
-  // don't re-read every file on each poll. Invalidated alongside the graph on file changes.
   let cachedTree: TreeEntry[] | null = null;
-  // One Row per note (file.* meta + frontmatter), served to the Bases query engine via /vault-data.
-  // Cached and invalidated alongside the graph/tree on file changes.
   let cachedRows: Row[] | null = null;
   let version = 0;
   const sse = createSseRegistry();
 
-  // Debounce timer handle
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingPaths = new Set<string>();
 
@@ -81,14 +72,12 @@ export function createServer(cfg: CoreConfig) {
     }, 250);
   }
 
-  // ── File helper ────────────────────────────────────────────────────────────
   async function readNoteOrEmpty(vault: string, path: string): Promise<string> {
     const fullPath = join(vault, path);
     const exists = await Bun.file(fullPath).exists();
     return exists ? await readNote(vault, path) : "";
   }
 
-  // ── File-system watchers ───────────────────────────────────────────────────
   try {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
       scheduleInvalidate(filename ?? undefined);
@@ -106,38 +95,31 @@ export function createServer(cfg: CoreConfig) {
     }
   }
 
-  // ── Route handlers (read-only) ──────────────────────────────────────────────
-
   const routes: Record<string, Handler> = {
     "GET /version": async (_, __) => {
       return Response.json({ version });
     },
 
     "GET /events": (_, __) => {
-      // SSE stream of cache-invalidation events. One frame per `invalidate()`.
       let subscriber: ReadableStreamDefaultController<Uint8Array>;
       let heartbeat: ReturnType<typeof setInterval>;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           subscriber = controller;
           sse.subscribe(controller);
-          // Send an immediate snapshot so a fresh client knows the current version
-          // without waiting for the next invalidation. Skip version 0 (initial
-          // state before any invalidation has occurred).
+          // Send initial snapshot so client knows current version without waiting for next invalidation.
           if (version > 0) {
             controller.enqueue(
               new TextEncoder().encode(`data: {"version":${version},"paths":[]}\n\n`),
             );
           }
-          // SSE comment frame — clients ignore it but it keeps the TCP connection
-          // alive past Bun's default 10s idleTimeout. Without this, EventSource
-          // would silently reconnect every ~10s and miss events fired in the gap.
+          // SSE comment keeps TCP connection alive past Bun's default 10s idleTimeout.
           const ping = new TextEncoder().encode(`: keepalive\n\n`);
           heartbeat = setInterval(() => {
             try {
               controller.enqueue(ping);
             } catch {
-              // controller already closed — interval will be cleared on cancel()
+              // controller already closed
             }
           }, 5000);
         },
@@ -157,8 +139,6 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /graph": async (_, __) => {
       if (cachedGraph === null) {
-        // Attach a precomputed layout so the client renders positions directly instead of running
-        // the force settle on its main thread. Cached by graph signature (see layout-cache.ts).
         cachedGraph = attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault);
       }
       return Response.json(cachedGraph);
@@ -231,8 +211,6 @@ export function createServer(cfg: CoreConfig) {
     },
   };
 
-  // ── Route handlers (mutating) ───────────────────────────────────────────────
-  // These return a handler that automatically invalidates the cache and wraps errors.
 
   function mutatingHandler(
     run: (req: Request, url: URL) => Promise<Response> | Response,
@@ -340,7 +318,6 @@ export function createServer(cfg: CoreConfig) {
     ),
   };
 
-  // ── HTTP server ────────────────────────────────────────────────────────────
   return Bun.serve({
     port: cfg.port ?? 4321,
     async fetch(req, server) {

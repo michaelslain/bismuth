@@ -5,18 +5,19 @@ export type MenuItem = { label: string; onSelect: () => void; danger?: boolean }
 
 /** A cursor-positioned action menu. Closes on outside-click, Escape, or after an item is chosen. */
 export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; onClose: () => void }) {
-  const onDocClick = () => props.onClose();
-  const onKey = (e: KeyboardEvent) => {
+  const handleDocClick = () => props.onClose();
+  const handleKeydown = (e: KeyboardEvent) => {
     if (e.key === "Escape") props.onClose();
   };
+
   onMount(() => {
     // Defer so the click that opened the menu doesn't immediately close it.
-    setTimeout(() => document.addEventListener("click", onDocClick), 0);
-    document.addEventListener("keydown", onKey);
+    setTimeout(() => document.addEventListener("click", handleDocClick), 0);
+    document.addEventListener("keydown", handleKeydown);
   });
   onCleanup(() => {
-    document.removeEventListener("click", onDocClick);
-    document.removeEventListener("keydown", onKey);
+    document.removeEventListener("click", handleDocClick);
+    document.removeEventListener("keydown", handleKeydown);
   });
 
   return (

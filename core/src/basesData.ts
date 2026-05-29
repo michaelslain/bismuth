@@ -16,8 +16,12 @@ function fileMeta(root: string, rel: string, tags: string[], links: string[]): F
   let size = 0, ctime = 0, mtime = 0;
   try {
     const st = statSync(join(root, rel));
-    size = st.size; ctime = st.birthtimeMs || st.ctimeMs; mtime = st.mtimeMs;
-  } catch { /* file may have just been deleted */ }
+    size = st.size;
+    ctime = st.birthtimeMs || st.ctimeMs;
+    mtime = st.mtimeMs;
+  } catch {
+    // file may have been deleted
+  }
   return { name, basename: name, path: rel, folder, ext, size, ctime, mtime, tags, links };
 }
 

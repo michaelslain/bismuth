@@ -7,13 +7,22 @@ const VIEWS: { id: ViewType; label: string }[] = [
   { id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }, { id: '3day', label: '3 Day' }, { id: 'day', label: 'Day' },
 ]
 
-function navigate(dir: -1 | 1) {
+function navigate(dir: -1 | 1): void {
   const d = new Date(currentDate.value)
   const v = currentView.value
-  if (v === 'month') d.setMonth(d.getMonth() + dir)
-  else if (v === 'week') d.setDate(d.getDate() + dir * 7)
-  else if (v === '3day') d.setDate(d.getDate() + dir * 3)
-  else d.setDate(d.getDate() + dir)
+  switch (v) {
+    case 'month':
+      d.setMonth(d.getMonth() + dir)
+      break
+    case 'week':
+      d.setDate(d.getDate() + dir * 7)
+      break
+    case '3day':
+      d.setDate(d.getDate() + dir * 3)
+      break
+    case 'day':
+      d.setDate(d.getDate() + dir)
+  }
   currentDate.value = new Date(d)
 }
 
@@ -21,9 +30,17 @@ function headerLabel(): string {
   const d = currentDate.value
   const v = currentView.value
   const mondayFirst = settings.value.weekStartsOnMonday
+
   if (v === 'month') return d.toLocaleString('default', { month: 'long', year: 'numeric' })
-  if (v === 'week') { const offset = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay(); const start = addDays(d, offset); return `${toDateStr(start)} – ${toDateStr(addDays(start, 6))}` }
+
+  if (v === 'week') {
+    const offset = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay()
+    const start = addDays(d, offset)
+    return `${toDateStr(start)} – ${toDateStr(addDays(start, 6))}`
+  }
+
   if (v === '3day') return `${toDateStr(d)} – ${toDateStr(addDays(d, 2))}`
+
   return toDateStr(d)
 }
 

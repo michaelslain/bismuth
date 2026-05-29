@@ -11,8 +11,6 @@ export interface QueryOutcome {
 
 type Predicate = (t: Task) => boolean;
 
-// Sort order for "sort by priority": highest first. `none` sits between medium and low,
-// matching the Tasks plugin's default ordering.
 const PRIORITY_RANK: Record<Priority, number> = {
   highest: 1, high: 2, medium: 3, none: 4, low: 5, lowest: 6,
 };
@@ -20,43 +18,37 @@ const PRIORITY_RANK: Record<Priority, number> = {
 const DATE_FIELDS = ["due", "scheduled", "start", "done", "created", "cancelled"] as const;
 type DateField = (typeof DATE_FIELDS)[number];
 
-/** Resolve a date expression to YYYY-MM-DD, or null if unrecognized. */
 function resolveDateExpr(expr: string, today: string): string | null {
   const e = expr.trim().toLowerCase();
   if (e === "today") return today;
   if (e === "tomorrow") return addDaysISO(today, 1);
   if (e === "yesterday") return addDaysISO(today, -1);
   if (/^\d{4}-\d{2}-\d{2}$/.test(e)) return e;
-  let m = e.match(/^in (\d+) days?$/);
-  if (m) return addDaysISO(today, Number(m[1]));
-  m = e.match(/^(\d+) days? ago$/);
-  if (m) return addDaysISO(today, -Number(m[1]));
+  const inM = e.match(/^in (\d+) days?$/);
+  if (inM) return addDaysISO(today, Number(inM[1]));
+  const agoM = e.match(/^(\d+) days? ago$/);
+  if (agoM) return addDaysISO(today, -Number(agoM[1]));
   return null;
 }
 
-/** Parse a single leaf filter into a predicate, or null if unrecognized. */
 function parseLeaf(raw: string, today: string): Predicate | null {
   const s = raw.trim().toLowerCase();
   if (s === "") return null;
 
-  // Cancelled (`- [-]`) is treated like done: both are closed/non-actionable, so an overdue
-  // cancelled task must NOT appear in a "not done" to-do query.
   if (s === "done") return (t) => t.status === "done" || t.status === "cancelled";
   if (s === "not done") return (t) => t.status !== "done" && t.status !== "cancelled";
   if (s === "is cancelled") return (t) => t.status === "cancelled";
   if (s === "is not cancelled") return (t) => t.status !== "cancelled";
 
   let m = s.match(/^is( not)? recurring$/);
-  if (m) {
-    const wantRecurring = !m[1];
-    return (t) => !!t.recurrence === wantRecurring;
-  }
+  if (m) return (t) => !!t.recurrence === !m[1];
 
   m = s.match(/^priority is( not)? (highest|high|medium|low|lowest|none)$/);
   if (m) {
-    const negate = !!m[1];
     const target = m[2] as Priority;
-    return (t) => (negate ? t.priority !== target : t.priority === target);
+    return m[1]
+      ? (t) => t.priority !== target
+      : (t) => t.priority === target;
   }
 
   m = s.match(/^(due|scheduled|start|done|created|cancelled)(?: (before|after))? (.+)$/);
@@ -88,22 +80,24 @@ function tokenize(line: string): Tok[] {
     if (v) toks.push({ t: "leaf", v });
     buf = "";
   };
-  let i = 0;
-  while (i < line.length) {
+  for (let i = 0; i < line.length; i++) {
     const c = line[i];
-    if (c === "(") { flush(); toks.push({ t: "(" }); i++; continue; }
-    if (c === ")") { flush(); toks.push({ t: ")" }); i++; continue; }
-    // A standalone AND/OR (case-insensitive) is an operator only when the preceding
-    // char is a boundary (start/whitespace/paren) and it's followed by a word boundary.
-    const op = line.slice(i).match(/^(AND|OR)\b/i);
-    if (op && (buf === "" || /\s$/.test(buf))) {
+    if (c === "(") {
       flush();
-      toks.push({ t: op[1].toLowerCase() as "and" | "or" });
-      i += op[1].length;
-      continue;
+      toks.push({ t: "(" });
+    } else if (c === ")") {
+      flush();
+      toks.push({ t: ")" });
+    } else {
+      const op = line.slice(i).match(/^(AND|OR)\b/i);
+      if (op && (buf === "" || /\s$/.test(buf))) {
+        flush();
+        toks.push({ t: op[1].toLowerCase() as "and" | "or" });
+        i += op[1].length - 1; // -1 because for loop increments
+      } else {
+        buf += c;
+      }
     }
-    buf += c;
-    i++;
   }
   flush();
   return toks;
@@ -170,15 +164,15 @@ function makeSorter(key: string, reverse: boolean): (a: Task, b: Task) => number
   }
   const field = key as DateField;
   return (a, b) => {
-    const av = a[field], bv = b[field];
+    const av = a[field];
+    const bv = b[field];
     if (!av && !bv) return 0;
-    if (!av) return 1; // undated sorts last regardless of direction
+    if (!av) return 1; // undated sorts last
     if (!bv) return -1;
     return dir * (av < bv ? -1 : av > bv ? 1 : 0);
   };
 }
 
-/** Recognized instructions we accept but don't act on (no error). */
 const IGNORED_INSTRUCTION = /^(group by|limit|hide|show|short mode|full mode|explain)\b/i;
 
 export function runTaskQuery(allTasks: Task[], query: string, today: string): QueryOutcome {
@@ -186,27 +180,25 @@ export function runTaskQuery(allTasks: Task[], query: string, today: string): Qu
   const filters: Predicate[] = [];
   const sorters: Array<(a: Task, b: Task) => number> = [];
 
-  for (const rawLine of query.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
+  for (const line of query.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const sortM = line.match(
-      /^sort by (priority|due|scheduled|start|done|created|cancelled|description)(?: (reverse))?$/i,
-    );
+    const sortM = trimmed.match(/^sort by (priority|due|scheduled|start|done|created|cancelled|description)(?: (reverse))?$/i);
     if (sortM) {
       sorters.push(makeSorter(sortM[1].toLowerCase(), !!sortM[2]));
       continue;
     }
-    if (IGNORED_INSTRUCTION.test(line)) continue;
+    if (IGNORED_INSTRUCTION.test(trimmed)) continue;
 
-    filters.push(parseBool(tokenize(line), today, errors));
+    filters.push(parseBool(tokenize(trimmed), today, errors));
   }
 
   let tasks = allTasks.filter((t) => filters.every((f) => f(t)));
   if (sorters.length) {
     tasks = [...tasks].sort((a, b) => {
-      for (const s of sorters) {
-        const c = s(a, b);
+      for (const sorter of sorters) {
+        const c = sorter(a, b);
         if (c !== 0) return c;
       }
       return 0;

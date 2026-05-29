@@ -17,11 +17,19 @@ let loaded = false
 
 export function CalendarPage() {
   onMount(async () => {
-    if (!loaded) { await store.load(); loaded = true }
+    if (!loaded) {
+      await store.load()
+      loaded = true
+    }
     await refreshEvents(store)
   })
-  // Central refresh: re-run whenever the view, date, or week-start changes.
-  createEffect(() => { currentView.value; currentDate.value; settings.value.weekStartsOnMonday; refreshEvents(store) })
+
+  createEffect(() => {
+    currentView.value
+    currentDate.value
+    settings.value.weekStartsOnMonday
+    refreshEvents(store)
+  })
 
   return (
     <div class="calendar-app">

@@ -25,7 +25,10 @@ function unproject(x: number, y: number, z: number): { lat: number; lng: number 
 
 function toNum(v: unknown): number {
   if (typeof v === "number") return v;
-  if (typeof v === "string") { const n = Number(v); return Number.isNaN(n) ? NaN : n; }
+  if (typeof v === "string") {
+    const n = Number(v);
+    return Number.isNaN(n) ? NaN : n;
+  }
   return NaN;
 }
 
@@ -40,14 +43,15 @@ export function MapView(props: {
   const lngKey = () => props.result.view.lng ?? "lng";
   const titleCol = () => props.result.columns[0] ?? "file.name";
 
-  // Collect markers with valid numeric lat/lng. Done once per result so
-  // pan/zoom doesn't reflow this.
+  // Collect markers with valid numeric lat/lng (done once per result; pan/zoom don't reflow).
   const markers = createMemo<Marker[]>(() => {
+    const lk = latKey();
+    const lnk = lngKey();
     const out: Marker[] = [];
     for (const group of props.result.groups) {
       for (const row of group.rows) {
-        const lat = toNum(resolveProperty(latKey(), row));
-        const lng = toNum(resolveProperty(lngKey(), row));
+        const lat = toNum(resolveProperty(lk, row));
+        const lng = toNum(resolveProperty(lnk, row));
         if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
         if (lat < -85 || lat > 85 || lng < -180 || lng > 180) continue;
         out.push({ row, lat, lng });
@@ -148,19 +152,20 @@ export function MapView(props: {
     return out;
   });
 
-  // Pan via mouse drag. We track in world-pixel deltas (zoom-invariant relative
-  // to the current zoom), then unproject the new center.
+  // Pan via mouse drag. Track in world-pixel deltas, then unproject the new center.
   let dragging = false;
   let dragLastX = 0;
   let dragLastY = 0;
-  function onMouseDown(e: MouseEvent) {
+
+  function onMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
     dragging = true;
     dragLastX = e.clientX;
     dragLastY = e.clientY;
     (e.currentTarget as HTMLElement).style.cursor = "grabbing";
   }
-  function onMouseMove(e: MouseEvent) {
+
+  function onMouseMove(e: MouseEvent): void {
     if (!dragging) return;
     const dx = e.clientX - dragLastX;
     const dy = e.clientY - dragLastY;
@@ -169,31 +174,35 @@ export function MapView(props: {
     const c = centerWorld();
     setCenter(unproject(c.x - dx, c.y - dy, zoom()));
   }
-  function onMouseUp(e: MouseEvent) {
+
+  function onMouseUp(e: MouseEvent): void {
     dragging = false;
     (e.currentTarget as HTMLElement).style.cursor = "";
   }
 
-  // Zoom on wheel. Scroll up → zoom in; we keep the cursor's world point
-  // anchored under the cursor, so the user zooms into the spot they're hovering.
-  function onWheel(e: WheelEvent) {
+  // Zoom on wheel. Scroll up → zoom in; cursor's world point stays anchored under cursor.
+  function onWheel(e: WheelEvent): void {
     e.preventDefault();
     const z0 = zoom();
     const delta = -Math.sign(e.deltaY);
     const z1 = Math.max(1, Math.min(18, z0 + delta));
     if (z1 === z0) return;
+
     const rect = mapEl!.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
-    // World coord under the cursor at the old zoom.
+
+    // World coord under cursor at old zoom.
     const c0 = centerWorld();
     const wx0 = c0.x + (cx - size().w / 2);
     const wy0 = c0.y + (cy - size().h / 2);
-    // Same lat/lng, but at the new zoom — scales geometrically.
+
+    // Same lat/lng at new zoom; scales geometrically.
     const scale = 2 ** (z1 - z0);
     const wx1 = wx0 * scale;
     const wy1 = wy0 * scale;
-    // New center keeps the cursor's world point fixed on screen.
+
+    // New center keeps cursor's world point fixed on screen.
     setZoom(z1);
     setCenter(unproject(wx1 - (cx - size().w / 2), wy1 - (cy - size().h / 2), z1));
   }
@@ -209,11 +218,7 @@ export function MapView(props: {
         onMouseLeave={onMouseUp}
         onWheel={onWheel}
       >
-        <Show
-          when={markers().length > 0 || true}
-          fallback={<div class={styles.mapEmpty}>No notes with lat/lng coordinates.</div>}
-        >
-          <div class={styles.mapTiles}>
+        <div class={styles.mapTiles}>
             <For each={tiles()}>
               {(t) => (
                 <img
@@ -254,7 +259,6 @@ export function MapView(props: {
               No notes have valid <code>{latKey()}</code> / <code>{lngKey()}</code> properties.
             </div>
           </Show>
-        </Show>
       </div>
     </div>
   );

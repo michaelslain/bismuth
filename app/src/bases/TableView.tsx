@@ -5,7 +5,8 @@ import { renderValue, columnLabel } from "./renderValue";
 import styles from "./BaseView.module.css";
 
 export function TableView(props: { result: ViewResult; config: BaseConfig }) {
-  const cols = () => props.result.columns;
+  const cols = (): string[] => props.result.columns;
+
   return (
     <table class={styles.table}>
       <thead>

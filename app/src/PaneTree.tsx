@@ -33,11 +33,13 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
   let el!: HTMLDivElement;
 
   // Which half of the pane the cursor is over → which direction the split will go.
-  const dirAt = (e: DragEvent): Dir => {
+  const getDropDir = (e: DragEvent): Dir => {
     const r = el.getBoundingClientRect();
     const fx = (e.clientX - r.left) / r.width - 0.5;
     const fy = (e.clientY - r.top) / r.height - 0.5;
-    if (Math.abs(fx) >= Math.abs(fy)) return fx < 0 ? "left" : "right";
+    if (Math.abs(fx) >= Math.abs(fy)) {
+      return fx < 0 ? "left" : "right";
+    }
     return fy < 0 ? "up" : "down";
   };
 
@@ -55,7 +57,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
         const types = e.dataTransfer?.types;
         if (!types || (!types.includes(DRAG_MIME) && !types.includes(PANE_MIME))) return;
         e.preventDefault(); // allow drop
-        setDropDir(dirAt(e));
+        setDropDir(getDropDir(e));
       }}
       onDragLeave={() => setDropDir(null)}
       onDrop={(e) => {

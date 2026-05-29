@@ -11,9 +11,10 @@ type Props = {
   openFile: (path: string) => void;
 };
 
-// A directory path never ends in ".md", so this excludes folders both today (where
-// /tree returns only files) and once /tree starts returning dir entries with `kind`.
-const isFile = (e: TreeEntry & { kind?: string }) => e.kind !== "dir" && e.path.endsWith(".md");
+// Files must end in .md (excludes folders in /tree entries with `kind`).
+function isFile(e: TreeEntry & { kind?: string }): boolean {
+  return e.kind !== "dir" && e.path.endsWith(".md");
+}
 
 function toItem(e: TreeEntry): PaletteItem {
   const parts = e.path.split("/");
@@ -25,7 +26,7 @@ export function QuickSwitcher(props: Props) {
   const [items, setItems] = createSignal<PaletteItem[]>([]);
   const [failed, setFailed] = createSignal(false);
 
-  onMount(async () => {
+  onMount(async (): Promise<void> => {
     try {
       const tree = await api.tree();
       setItems(tree.filter(isFile).map(toItem));

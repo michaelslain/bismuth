@@ -13,7 +13,7 @@ type Props = {
 };
 
 export function CommandPalette(props: Props) {
-  const commands: { item: PaletteItem; action: () => void }[] = [
+  const commands: Array<{ item: PaletteItem; action: () => void }> = [
     { item: { id: "settings", label: "Open Settings", icon: "⚙" }, action: props.openSettings },
     { item: { id: "terminal", label: "Open Terminal", icon: ">_" }, action: props.openTerminal },
     { item: { id: "graph-2nd", label: "Graph: 2nd Brain (vault)", icon: "◐" }, action: () => props.setMode("2nd") },

@@ -150,8 +150,11 @@ const FRAME_TWEEN_MS = 450; // duration of the "z" zoom-to-fit-node-and-neighbor
 const NEAR_CULL_SHOW = 0.55;
 const NEAR_CULL_HIDE = 0.32;
 
+/** Ease-in-out cubic interpolation (0→1). Used for camera and node position tweens. */
 function easeInOutCubic(t: number): number {
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  if (t < 0.5) return 4 * t * t * t;
+  const s = -2 * t + 2;
+  return 1 - (s * s * s) / 2;
 }
 
 /**
@@ -506,8 +509,8 @@ export class WebGLRenderer {
   private updateRotationVelocity() {
     const curQuat = this.camera.quaternion.clone();
     const deltaQuat = curQuat.clone().multiply(this.prevCameraQuat.clone().invert());
-    // Extract angle from quaternion: angle = 2 * acos(w), where w is the scalar part
-    // Clamp to [-1, 1] to avoid NaN from floating point errors
+    // Extract angle from quaternion: angle = 2 * acos(w), where w is the scalar part.
+    // Clamp w to [-1, 1] to avoid NaN from floating point errors.
     const w = Math.max(-1, Math.min(1, deltaQuat.w));
     this.rotationVelocity = Math.abs(2 * Math.acos(w));
     this.prevCameraQuat.copy(curQuat);
@@ -553,15 +556,16 @@ export class WebGLRenderer {
     this.onHover(n ? { id: n.id, label: n.label, kind: n.kind, folder: n.folder } : null);
   }
 
+  /** Return the set of node ids directly connected to the given node (one-hop neighbors). */
   private neighborsOf(id: string): Set<string> {
-    const set = new Set<string>();
-    for (const l of this.links) {
-      const s = endpointId(l.source as string | N3);
-      const t = endpointId(l.target as string | N3);
-      if (s === id) set.add(t);
-      if (t === id) set.add(s);
+    const neighbors = new Set<string>();
+    for (const link of this.links) {
+      const sourceId = endpointId(link.source as string | N3);
+      const targetId = endpointId(link.target as string | N3);
+      if (sourceId === id) neighbors.add(targetId);
+      if (targetId === id) neighbors.add(sourceId);
     }
-    return set;
+    return neighbors;
   }
 
   /**
@@ -974,13 +978,19 @@ export class WebGLRenderer {
     return new THREE.Color(this.palette[hashInt(key) % this.palette.length]);
   }
 
+  /** Determine node color from kind (notes by folder, tags/memory/agents by label, self is lavender). */
   private colorFor(n: N3): THREE.Color {
     switch (n.kind) {
-      case "note": return this.paletteColor("folder:" + (n.folder ?? "(root)"));
-      case "tag": return this.paletteColor("tag:" + n.label);
-      case "memory": return this.paletteColor("mem:" + n.label);
-      case "agent": return this.paletteColor("agent:" + n.label);
-      default: return new THREE.Color(0xbdcaf2);
+      case "note":
+        return this.paletteColor("folder:" + (n.folder ?? "(root)"));
+      case "tag":
+        return this.paletteColor("tag:" + n.label);
+      case "memory":
+        return this.paletteColor("mem:" + n.label);
+      case "agent":
+        return this.paletteColor("agent:" + n.label);
+      default:
+        return new THREE.Color(0xbdcaf2); // self node (lavender)
     }
   }
 
@@ -1069,22 +1079,21 @@ export class WebGLRenderer {
     this.refreshAlwaysOnLabels();
   }
 
-  /** Lock the camera for 2D (top-down, pan+zoom only) or free it for 3D orbit. */
+  /** Configure OrbitControls for 2D (pan-only) or 3D (orbit) mode. */
   private applyControlsForMode(mode: "2d" | "3d") {
     if (!this.controls) return;
-    if (mode === "2d") {
-      this.controls.enableRotate = false;
-      this.controls.screenSpacePanning = true;
-      this.controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // left-drag pans the plane
-    } else {
-      this.controls.enableRotate = true;
-      this.controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-    }
+    const is2D = mode === "2d";
+    this.controls.enableRotate = !is2D;
+    this.controls.screenSpacePanning = is2D;
+    this.controls.mouseButtons.LEFT = is2D ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE;
   }
 
   /** Pin every node to the z=0 plane (called on sim ticks in 2D so x/y re-spreads flat). */
   private flattenZ() {
-    for (const n of this.nodes) { n.z = 0; n.vz = 0; }
+    for (const node of this.nodes) {
+      node.z = 0;
+      node.vz = 0;
+    }
   }
 
   /**
@@ -1104,17 +1113,25 @@ export class WebGLRenderer {
     this.viewMode = next; // logical switch is immediate; visuals catch up over the tween
     this.clearFrame();
     this.sim?.stop(); // the tween owns positions until it finishes
-    for (const n of this.nodes) { n.vx = 0; n.vy = 0; n.vz = 0; }
+    for (const node of this.nodes) {
+      node.vx = 0;
+      node.vy = 0;
+      node.vz = 0;
+    }
 
-    // Target position for a node in the new mode, from the backend-precomputed layout (or null).
-    const targetOf = (n: N3): [number, number, number] | null =>
-      next === "2d"
-        ? (n.pos2d ? [n.pos2d[0], n.pos2d[1], 0] : null)
-        : (n.pos3d ? [n.pos3d[0], n.pos3d[1], n.pos3d[2]] : null);
+    // Get target position for a node in the new mode from backend-precomputed layout (or null).
+    const targetOf = (n: N3): [number, number, number] | null => {
+      if (next === "2d") {
+        return n.pos2d ? [n.pos2d[0], n.pos2d[1], 0] : null;
+      }
+      return n.pos3d ? [n.pos3d[0], n.pos3d[1], n.pos3d[2]] : null;
+    };
     const morph = this.nodes.every((n) => targetOf(n) !== null);
 
     // Legacy expand needs the depth saved when we flattened (no precomputed 3D layout available).
-    if (!morph && goingFlat) this.savedZ = new Map(this.nodes.map((n) => [n.id, n.z ?? 0]));
+    if (!morph && goingFlat) {
+      this.savedZ = new Map(this.nodes.map((n) => [n.id, n.z ?? 0]));
+    }
 
     const fromPos = new Map<string, [number, number, number]>();
     const toPos = new Map<string, [number, number, number]>();
@@ -1123,19 +1140,26 @@ export class WebGLRenderer {
       if (morph) {
         toPos.set(n.id, targetOf(n)!);
       } else {
-        // legacy: x/y stay put, only z eases; the post-tween re-settle re-spreads x/y for the mode
-        const zT = goingFlat ? 0 : (this.savedZ.get(n.id) ?? (Math.random() - 0.5) * 60);
-        toPos.set(n.id, [n.x ?? 0, n.y ?? 0, zT]);
+        // Legacy: x/y stay put, only z eases; post-tween re-settle re-spreads x/y for the mode.
+        const zTarget = goingFlat ? 0 : (this.savedZ.get(n.id) ?? (Math.random() - 0.5) * 60);
+        toPos.set(n.id, [n.x ?? 0, n.y ?? 0, zTarget]);
       }
     }
 
     // Frame the camera to the target layout's bounding sphere.
     let cx = 0, cy = 0, cz = 0;
-    for (const t of toPos.values()) { cx += t[0]; cy += t[1]; cz += t[2]; }
-    const k = toPos.size || 1; cx /= k; cy /= k; cz /= k;
+    for (const [x, y, z] of toPos.values()) {
+      cx += x;
+      cy += y;
+      cz += z;
+    }
+    const k = toPos.size || 1;
+    cx /= k;
+    cy /= k;
+    cz /= k;
     let r = 1;
-    for (const t of toPos.values()) {
-      const d = Math.hypot(t[0] - cx, t[1] - cy, t[2] - cz);
+    for (const [x, y, z] of toPos.values()) {
+      const d = Math.hypot(x - cx, y - cy, z - cz);
       if (d > r) r = d;
     }
     const fov = (this.camera.fov * Math.PI) / 180;
@@ -1160,17 +1184,19 @@ export class WebGLRenderer {
     const tw = this.tween!;
     const raw = (performance.now() - tw.start) / MODE_TWEEN_MS;
     const t = raw >= 1 ? 1 : raw;
-    const e = easeInOutCubic(t);
-    for (const n of this.nodes) {
-      const a = tw.fromPos.get(n.id); const b = tw.toPos.get(n.id);
-      if (!a || !b) continue;
-      n.x = a[0] + (b[0] - a[0]) * e;
-      n.y = a[1] + (b[1] - a[1]) * e;
-      n.z = a[2] + (b[2] - a[2]) * e;
+    const eased = easeInOutCubic(t);
+
+    for (const node of this.nodes) {
+      const fromPos = tw.fromPos.get(node.id);
+      const toPos = tw.toPos.get(node.id);
+      if (!fromPos || !toPos) continue;
+      node.x = fromPos[0] + (toPos[0] - fromPos[0]) * eased;
+      node.y = fromPos[1] + (toPos[1] - fromPos[1]) * eased;
+      node.z = fromPos[2] + (toPos[2] - fromPos[2]) * eased;
     }
-    this.group.rotation.y = tw.rotFrom + (tw.rotTo - tw.rotFrom) * e;
-    this.camera.position.lerpVectors(tw.camFrom.pos, tw.camTo.pos, e);
-    this.controls.target.lerpVectors(tw.camFrom.tgt, tw.camTo.tgt, e);
+    this.group.rotation.y = tw.rotFrom + (tw.rotTo - tw.rotFrom) * eased;
+    this.camera.position.lerpVectors(tw.camFrom.pos, tw.camTo.pos, eased);
+    this.controls.target.lerpVectors(tw.camFrom.tgt, tw.camTo.tgt, eased);
     this.updateGeometryPositions();
     if (t >= 1) this.finishTween();
   }
@@ -1180,19 +1206,29 @@ export class WebGLRenderer {
     const tw = this.tween;
     this.tween = null;
     if (!tw) return;
-    for (const n of this.nodes) {
-      const b = tw.toPos.get(n.id);
-      if (b) { n.x = b[0]; n.y = b[1]; n.z = b[2]; }
-      n.vx = 0; n.vy = 0; n.vz = 0;
+
+    for (const node of this.nodes) {
+      const toPos = tw.toPos.get(node.id);
+      if (toPos) {
+        node.x = toPos[0];
+        node.y = toPos[1];
+        node.z = toPos[2];
+      }
+      node.vx = 0;
+      node.vy = 0;
+      node.vz = 0;
     }
     this.controls.enableDamping = true;
     this.applyControlsForMode(this.viewMode);
     this.userControlled = false;
     this.updateGeometryPositions();
+
     if (tw.morph) {
-      this.simSettling = false; // at rest on the precomputed layout → let crowding recompute, no re-settle
+      // At rest on precomputed layout → let crowding recompute, no re-settle needed.
+      this.simSettling = false;
     } else {
-      this.sim?.alpha(0.5).restart(); // legacy: re-spread in the new dimensionality (2D pins z each tick)
+      // Legacy path: re-spread in the new dimensionality (2D pins z each tick).
+      this.sim?.alpha(0.5).restart();
     }
   }
 
@@ -1202,12 +1238,17 @@ export class WebGLRenderer {
     const attr = this.pointsMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
     const arr = attr.array as Float32Array;
     for (let i = 0; i < this.nodes.length; i++) {
-      const c = this.colorFor(this.nodes[i]);
-      arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
-      this.baseColors[i * 3] = c.r; this.baseColors[i * 3 + 1] = c.g; this.baseColors[i * 3 + 2] = c.b;
+      const color = this.colorFor(this.nodes[i]);
+      arr[i * 3] = color.r;
+      arr[i * 3 + 1] = color.g;
+      arr[i * 3 + 2] = color.b;
+      this.baseColors[i * 3] = color.r;
+      this.baseColors[i * 3 + 1] = color.g;
+      this.baseColors[i * 3 + 2] = color.b;
     }
     attr.needsUpdate = true;
-    this.curI.fill(0); this.tgtI.fill(0); // clear any in-progress hover highlight
+    this.curI.fill(0);
+    this.tgtI.fill(0); // clear any in-progress hover highlight
   }
 
   /**
@@ -1271,14 +1312,19 @@ export class WebGLRenderer {
   }
 
   /** Remove all `oa-graphpos:*` entries except the one we want to keep (frees quota). */
+  /** Remove all `oa-graphpos:*` entries except the one we want to keep (frees quota). */
   private evictOtherPositionCaches(keepKey: string) {
     try {
-      const stale: string[] = [];
+      const staleKeys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith("oa-graphpos:") && k !== keepKey) stale.push(k);
+        const key = localStorage.key(i);
+        if (key && key.startsWith("oa-graphpos:") && key !== keepKey) {
+          staleKeys.push(key);
+        }
       }
-      for (const k of stale) localStorage.removeItem(k);
+      for (const key of staleKeys) {
+        localStorage.removeItem(key);
+      }
     } catch {
       // localStorage unavailable — nothing to evict
     }
@@ -1400,29 +1446,54 @@ export class WebGLRenderer {
    * a warm load the handful of nodes the live graph added since last settle sit next to where they
    * belong instead of at a random point — good enough to render without running the global settle.
    */
+  /** Place new (uncached) nodes at the average position of their already-positioned neighbors. */
   private placeNearNeighbors(uncached: N3[]) {
     const isNew = new Set(uncached.map((n) => n.id));
-    const acc = new Map<string, { x: number; y: number; z: number; c: number }>();
-    for (const n of uncached) acc.set(n.id, { x: 0, y: 0, z: 0, c: 0 });
-    for (const { s, t } of this.resolvedLinks) {
-      if (isNew.has(s.id) && !isNew.has(t.id)) { const a = acc.get(s.id)!; a.x += t.x ?? 0; a.y += t.y ?? 0; a.z += t.z ?? 0; a.c++; }
-      if (isNew.has(t.id) && !isNew.has(s.id)) { const a = acc.get(t.id)!; a.x += s.x ?? 0; a.y += s.y ?? 0; a.z += s.z ?? 0; a.c++; }
+    const neighborSum = new Map<string, { x: number; y: number; z: number; count: number }>();
+    for (const node of uncached) {
+      neighborSum.set(node.id, { x: 0, y: 0, z: 0, count: 0 });
     }
-    for (const n of uncached) {
-      const a = acc.get(n.id)!;
-      if (a.c > 0) { n.x = a.x / a.c; n.y = a.y / a.c; n.z = a.z / a.c; } // else keep random fallback (isolated new node)
+
+    // Accumulate position sums from positioned neighbors.
+    for (const { s, t } of this.resolvedLinks) {
+      if (isNew.has(s.id) && !isNew.has(t.id)) {
+        const sum = neighborSum.get(s.id)!;
+        sum.x += t.x ?? 0;
+        sum.y += t.y ?? 0;
+        sum.z += t.z ?? 0;
+        sum.count++;
+      }
+      if (isNew.has(t.id) && !isNew.has(s.id)) {
+        const sum = neighborSum.get(t.id)!;
+        sum.x += s.x ?? 0;
+        sum.y += s.y ?? 0;
+        sum.z += s.z ?? 0;
+        sum.count++;
+      }
+    }
+
+    // Apply averaged position, or keep random fallback for isolated nodes.
+    for (const node of uncached) {
+      const sum = neighborSum.get(node.id)!;
+      if (sum.count > 0) {
+        node.x = sum.x / sum.count;
+        node.y = sum.y / sum.count;
+        node.z = sum.z / sum.count;
+      }
     }
   }
 
   /** Squared speed of the fastest-moving node (compared squared to skip a per-node sqrt). */
   private maxNodeSpeedSq(): number {
-    let max = 0;
-    for (const n of this.nodes) {
-      const vx = n.vx ?? 0, vy = n.vy ?? 0, vz = n.vz ?? 0;
-      const sq = vx * vx + vy * vy + vz * vz;
-      if (sq > max) max = sq;
+    let maxSq = 0;
+    for (const node of this.nodes) {
+      const vx = node.vx ?? 0;
+      const vy = node.vy ?? 0;
+      const vz = node.vz ?? 0;
+      const speedSq = vx * vx + vy * vy + vz * vz;
+      if (speedSq > maxSq) maxSq = speedSq;
     }
-    return max;
+    return maxSq;
   }
 
   /** Squared rest threshold: below this per-node speed the layout reads as settled (scales with mode spacing). */
@@ -1435,11 +1506,16 @@ export class WebGLRenderer {
   private onSettled() {
     this.sim?.stop();
     this.simSettling = false;
-    for (const n of this.nodes) { n.vx = 0; n.vy = 0; n.vz = 0; } // kill the last sliver of velocity (and accel — no more forces)
+    // Zero residual velocity and acceleration (no more forces to apply).
+    for (const node of this.nodes) {
+      node.vx = 0;
+      node.vy = 0;
+      node.vz = 0;
+    }
     this.updateGeometryPositions();
     this.fitCamera();
     this.refreshCrowdingIfMoved(); // compute resting crowding once now that the layout is still
-    this.saveCachedPositions(); // persist settled positions for instant restore on next load
+    this.saveCachedPositions();    // persist settled positions for instant restore on next load
   }
 
   /**
@@ -1455,17 +1531,23 @@ export class WebGLRenderer {
     this.sim.stop(); // take over from d3's internal rAF timer; we tick manually
     const threshSq = this.restThresholdSq();
     const deadline = performance.now() + PRESETTLE_BUDGET_MS;
-    let restRun = 0; // consecutive sub-threshold ticks
+    let restRunCount = 0; // consecutive sub-threshold ticks
     for (let i = 0; i < PRESETTLE_MAX_TICKS; i++) {
       this.sim.tick();
       if (this.viewMode === "2d") this.flattenZ(); // keep the headless layout planar in 2D
-      if (this.sim.alpha() < this.sim.alphaMin()) { this.onSettled(); return; } // fully cooled
-      restRun = this.maxNodeSpeedSq() < threshSq ? restRun + 1 : 0;
-      if (restRun >= SETTLE_REST_TICKS) { this.onSettled(); return; } // settled by motion, not the slow timer
+      if (this.sim.alpha() < this.sim.alphaMin()) {
+        this.onSettled();
+        return; // fully cooled
+      }
+      restRunCount = this.maxNodeSpeedSq() < threshSq ? restRunCount + 1 : 0;
+      if (restRunCount >= SETTLE_REST_TICKS) {
+        this.onSettled();
+        return; // settled by motion, not the slow timer
+      }
       if (performance.now() >= deadline) break; // budget spent — finish the remainder animated
     }
-    // Didn't fully settle within the caps: paint what we have and let the animated timer finish it
-    // (its tick handler applies the same velocity freeze, so the visible tail stays short).
+    // Didn't fully settle within the caps: paint what we have and let the animated timer finish it.
+    // Its tick handler applies the same velocity freeze, so the visible tail stays short.
     this.updateGeometryPositions();
     this.fitCamera();
     this.simSettling = true;
@@ -1598,12 +1680,14 @@ export class WebGLRenderer {
   /** Resolve each link's endpoints to live node objects, dropping links with a missing end. Cached per graph. */
   private rebuildResolvedLinks() {
     const nodeById = new Map<string, N3>();
-    for (const n of this.nodes) nodeById.set(n.id, n);
+    for (const node of this.nodes) nodeById.set(node.id, node);
     this.resolvedLinks = [];
-    for (const l of this.links) {
-      const s = nodeById.get(endpointId(l.source as string | N3));
-      const t = nodeById.get(endpointId(l.target as string | N3));
-      if (s && t) this.resolvedLinks.push({ s, t });
+    for (const link of this.links) {
+      const source = nodeById.get(endpointId(link.source as string | N3));
+      const target = nodeById.get(endpointId(link.target as string | N3));
+      if (source && target) {
+        this.resolvedLinks.push({ s: source, t: target });
+      }
     }
   }
 
@@ -1614,19 +1698,21 @@ export class WebGLRenderer {
    * node's own edges are always drawn in full.
    */
   private writeEdgePositions(buf: Float32Array) {
-    const id = this.hoveredId;
-    const hovering = id !== null;
+    const hoveredId = this.hoveredId;
+    const hovering = hoveredId !== null;
     for (let i = 0; i < this.resolvedLinks.length; i++) {
-      const { s, t } = this.resolvedLinks[i];
-      const sx = s.x ?? 0, sy = s.y ?? 0, sz = s.z ?? 0;
-      const cull = hovering && this.keepE[i] === 0 && s.id !== id && t.id !== id;
+      const { s: source, t: target } = this.resolvedLinks[i];
+      const sx = source.x ?? 0;
+      const sy = source.y ?? 0;
+      const sz = source.z ?? 0;
+      const shouldCull = hovering && this.keepE[i] === 0 && source.id !== hoveredId && target.id !== hoveredId;
       buf[i * 6] = sx;
       buf[i * 6 + 1] = sy;
       buf[i * 6 + 2] = sz;
-      // culled → second vertex == first (degenerate, no pixels); else the real far endpoint
-      buf[i * 6 + 3] = cull ? sx : (t.x ?? 0);
-      buf[i * 6 + 4] = cull ? sy : (t.y ?? 0);
-      buf[i * 6 + 5] = cull ? sz : (t.z ?? 0);
+      // Culled edge: collapse to zero-length (second vertex == first, no pixels); else draw to far endpoint.
+      buf[i * 6 + 3] = shouldCull ? sx : (target.x ?? 0);
+      buf[i * 6 + 4] = shouldCull ? sy : (target.y ?? 0);
+      buf[i * 6 + 5] = shouldCull ? sz : (target.z ?? 0);
     }
   }
 
@@ -1655,29 +1741,43 @@ export class WebGLRenderer {
   /** Frame the camera to the node cloud's bounding sphere (centroid + max radius). */
   private fitCamera() {
     if (this.nodes.length === 0 || this.userControlled || this.tween || this.camTween) return;
+
+    // Compute centroid.
     let cx = 0, cy = 0, cz = 0;
-    for (const n of this.nodes) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
+    for (const node of this.nodes) {
+      cx += node.x ?? 0;
+      cy += node.y ?? 0;
+      cz += node.z ?? 0;
+    }
     const k = this.nodes.length;
-    cx /= k; cy /= k; cz /= k;
-    // The centering forces keep the cloud bounded, so fit to the farthest node
-    // (with margin) — every node is visible, comfortably framed.
-    let r = 1;
-    for (const n of this.nodes) {
-      const dx = (n.x ?? 0) - cx, dy = (n.y ?? 0) - cy, dz = (n.z ?? 0) - cz;
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (d > r) r = d;
+    cx /= k;
+    cy /= k;
+    cz /= k;
+
+    // Compute radius: the farthest node from the centroid.
+    // Centering forces keep the cloud bounded, so fitting to the farthest node with margin
+    // ensures every node is visible and comfortably framed.
+    let radius = 1;
+    for (const node of this.nodes) {
+      const dx = (node.x ?? 0) - cx;
+      const dy = (node.y ?? 0) - cy;
+      const dz = (node.z ?? 0) - cz;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (distance > radius) radius = distance;
     }
     this.cloudCenter.set(cx, cy, cz); // remembered for the depth-fog framing
-    this.cloudRadius = r;
+    this.cloudRadius = radius;
+
+    // Compute camera distance from FOV and radius.
     const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = (r / Math.sin(fov / 2)) * 1.25;
+    const distance = (radius / Math.sin(fov / 2)) * 1.25;
     this.controls.target.set(cx, cy, cz);
-    this.camera.position.set(cx, cy, cz + dist);
-    this.camera.near = Math.max(0.1, dist / 1000);
-    this.camera.far = dist * 12 + 100;
+    this.camera.position.set(cx, cy, cz + distance);
+    this.camera.near = Math.max(0.1, distance / 1000);
+    this.camera.far = distance * 12 + 100;
     this.camera.updateProjectionMatrix();
-    this.controls.minDistance = Math.max(0.5, dist * 0.02); // allow zooming in close
-    this.controls.maxDistance = dist * 12;
+    this.controls.minDistance = Math.max(0.5, distance * 0.02); // allow zooming in close
+    this.controls.maxDistance = distance * 12;
     this.controls.update();
   }
 

@@ -65,107 +65,154 @@ export function callFunction(name: string, args: unknown[], _ctx: EvalContext): 
 
 // ---- Method dispatch by receiver type ----
 export function callMethod(receiver: unknown, name: string, args: unknown[], ctx: EvalContext): unknown {
-  // File methods (receiver is a FileMeta-shaped object with .tags/.links/.folder)
   if (receiver && typeof receiver === "object" && !Array.isArray(receiver) && "path" in (receiver as object) && "tags" in (receiver as object)) {
-    const f = receiver as { tags: string[]; links: string[]; folder: string; path: string; [k: string]: unknown };
-    switch (name) {
-      case "hasTag": return args.some((a) => f.tags.includes(asString(a)));
-      case "hasLink": return args.some((a) => f.links.includes(asString(a)));
-      case "inFolder": return f.folder === asString(args[0]) || f.folder.startsWith(asString(args[0]) + "/");
-      case "hasProperty": return args.length > 0 ? Object.prototype.hasOwnProperty.call(ctx.note, asString(args[0])) : false;
-    }
+    return callFileMethod(receiver as FileMeta, name, args, ctx);
   }
+  if (typeof receiver === "number") return callNumberMethod(receiver, name, args);
+  if (typeof receiver === "string") return callStringMethod(receiver, name, args);
+  if (Array.isArray(receiver)) return callArrayMethod(receiver, name, args);
+  if (receiver instanceof Date) return callDateMethod(receiver, name, args);
+  return undefined;
+}
 
-  // Number methods
-  if (typeof receiver === "number") {
-    switch (name) {
-      case "toFixed": return receiver.toFixed(typeof args[0] === "number" ? args[0] : 0);
-      case "round": { const d = typeof args[0] === "number" ? args[0] : 0; const f = 10 ** d; return Math.round(receiver * f) / f; }
-      case "floor": return Math.floor(receiver);
-      case "ceil": return Math.ceil(receiver);
-      case "abs": return Math.abs(receiver);
-      case "isEmpty": return false;
-    }
+type FileMeta = { tags: string[]; links: string[]; folder: string; path: string; [k: string]: unknown };
+
+function callFileMethod(f: FileMeta, name: string, args: unknown[], ctx: EvalContext): unknown {
+  switch (name) {
+    case "hasTag":
+      return args.some((a) => f.tags.includes(asString(a)));
+    case "hasLink":
+      return args.some((a) => f.links.includes(asString(a)));
+    case "inFolder":
+      return f.folder === asString(args[0]) || f.folder.startsWith(asString(args[0]) + "/");
+    case "hasProperty":
+      return args.length > 0 ? Object.prototype.hasOwnProperty.call(ctx.note, asString(args[0])) : false;
   }
+  return undefined;
+}
 
-  // String methods
-  if (typeof receiver === "string") {
-    switch (name) {
-      case "lower": return receiver.toLowerCase();
-      case "upper": return receiver.toUpperCase();
-      case "trim": return receiver.trim();
-      case "title": return receiver.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
-      case "contains": return receiver.includes(asString(args[0]));
-      case "startsWith": return receiver.startsWith(asString(args[0]));
-      case "endsWith": return receiver.endsWith(asString(args[0]));
-      case "replace": return receiver.split(asString(args[0])).join(asString(args[1]));
-      case "slice": return receiver.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
-      case "split": return receiver.split(asString(args[0]));
-      case "reverse": return receiver.split("").reverse().join("");
-      case "isEmpty": return receiver.length === 0;
-      // Regex match. Accepts either a real `/foo/i` literal (RegExp instance)
-      // or the textual form `"^Hello", "i"` for compatibility with older bases.
-      case "matches": {
-        try {
-          const re = args[0] instanceof RegExp
-            ? args[0]
-            : new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
-          return re.test(receiver);
-        } catch { return false; }
+function callNumberMethod(n: number, name: string, args: unknown[]): unknown {
+  switch (name) {
+    case "toFixed":
+      return n.toFixed(typeof args[0] === "number" ? args[0] : 0);
+    case "round": {
+      const d = typeof args[0] === "number" ? args[0] : 0;
+      const f = 10 ** d;
+      return Math.round(n * f) / f;
+    }
+    case "floor":
+      return Math.floor(n);
+    case "ceil":
+      return Math.ceil(n);
+    case "abs":
+      return Math.abs(n);
+    case "isEmpty":
+      return false;
+  }
+  return undefined;
+}
+
+function callStringMethod(s: string, name: string, args: unknown[]): unknown {
+  switch (name) {
+    case "lower":
+      return s.toLowerCase();
+    case "upper":
+      return s.toUpperCase();
+    case "trim":
+      return s.trim();
+    case "title":
+      return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+    case "contains":
+      return s.includes(asString(args[0]));
+    case "startsWith":
+      return s.startsWith(asString(args[0]));
+    case "endsWith":
+      return s.endsWith(asString(args[0]));
+    case "replace":
+      return s.split(asString(args[0])).join(asString(args[1]));
+    case "slice":
+      return s.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
+    case "split":
+      return s.split(asString(args[0]));
+    case "reverse":
+      return s.split("").reverse().join("");
+    case "isEmpty":
+      return s.length === 0;
+    case "matches": {
+      try {
+        const re = args[0] instanceof RegExp
+          ? args[0]
+          : new RegExp(asString(args[0]), args[1] != null ? asString(args[1]) : undefined);
+        return re.test(s);
+      } catch {
+        return false;
       }
     }
   }
+  return undefined;
+}
 
-  // List methods
-  if (Array.isArray(receiver)) {
-    switch (name) {
-      case "contains": return receiver.some((x) => x === args[0] || asString(x) === asString(args[0]));
-      case "join": return receiver.map(asString).join(args[0] != null ? asString(args[0]) : ", ");
-      case "unique": return [...new Set(receiver)];
-      case "sort": return [...receiver].sort();
-      case "reverse": return [...receiver].reverse();
-      case "slice": return receiver.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
-      case "flat": return receiver.flat();
-      case "isEmpty": return receiver.length === 0;
-      // Accepts a real lambda (`x => x.title`) or a property-path string
-      // (`"title"`, `"_.title"`, `"$.title"`). The string form is kept so
-      // older bases keep working.
-      case "map": return receiver.map(compileItemAccessor(args[0]));
-      case "filter": {
-        const get = compileItemAccessor(args[0]);
-        return receiver.filter((x, i) => truthy(get(x, i)));
-      }
-      case "reduce": {
-        // Two shapes:
-        //   .reduce((acc, x) => …, seed)  — real reducer (acc + item), seed required
-        //   .reduce("_.price", 0)         — legacy: project + numeric sum
-        // A 2-arg lambda is treated as a real reducer; a 1-arg lambda or string
-        // path is treated as a projection that gets summed numerically.
-        const fn0 = args[0] as Function & { __params?: number };
-        const arity = typeof fn0 === "function" ? (fn0.__params ?? fn0.length) : -1;
-        if (typeof fn0 === "function" && arity >= 2) {
-          return receiver.reduce(fn0 as (acc: unknown, x: unknown, i: number) => unknown, args[1] as unknown);
-        }
-        const get = compileItemAccessor(args[0]);
-        const seed = args[1] != null ? toNumber(args[1]) : 0;
-        return receiver.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed);
-      }
+function callArrayMethod(arr: unknown[], name: string, args: unknown[]): unknown {
+  switch (name) {
+    case "contains":
+      return arr.some((x) => x === args[0] || asString(x) === asString(args[0]));
+    case "join":
+      return arr.map(asString).join(args[0] != null ? asString(args[0]) : ", ");
+    case "unique":
+      return [...new Set(arr)];
+    case "sort":
+      return [...arr].sort();
+    case "reverse":
+      return [...arr].reverse();
+    case "slice":
+      return arr.slice(toNumber(args[0]), args[1] != null ? toNumber(args[1]) : undefined);
+    case "flat":
+      return arr.flat();
+    case "isEmpty":
+      return arr.length === 0;
+    case "map":
+      return arr.map(compileItemAccessor(args[0]));
+    case "filter": {
+      const get = compileItemAccessor(args[0]);
+      return arr.filter((x, i) => truthy(get(x, i)));
+    }
+    case "reduce":
+      return callArrayReduce(arr, args);
+  }
+  return undefined;
+}
+
+function callArrayReduce(arr: unknown[], args: unknown[]): unknown {
+  const fn0 = args[0] as Function & { __params?: number };
+  const arity = typeof fn0 === "function" ? (fn0.__params ?? fn0.length) : -1;
+  if (typeof fn0 === "function" && arity >= 2) {
+    return arr.reduce(fn0 as (acc: unknown, x: unknown, i: number) => unknown, args[1] as unknown);
+  }
+  const get = compileItemAccessor(args[0]);
+  const seed = args[1] != null ? toNumber(args[1]) : 0;
+  return arr.reduce((acc: number, x, i) => acc + toNumber(get(x, i)), seed);
+}
+
+function callDateMethod(d: Date, name: string, args: unknown[]): unknown {
+  switch (name) {
+    case "format":
+      return formatDate(d, asString(args[0]));
+    case "date": {
+      const copy = new Date(d);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
+    }
+    case "isEmpty":
+      return Number.isNaN(d.getTime());
+    case "plus": {
+      const ms = parseDurationMs(args[0]);
+      return new Date(d.getTime() + (Number.isNaN(ms) ? 0 : ms));
+    }
+    case "minus": {
+      const ms = parseDurationMs(args[0]);
+      return new Date(d.getTime() - (Number.isNaN(ms) ? 0 : ms));
     }
   }
-
-  // Date methods
-  if (receiver instanceof Date) {
-    switch (name) {
-      case "format": return formatDate(receiver, asString(args[0]));
-      case "date": { const d = new Date(receiver); d.setHours(0, 0, 0, 0); return d; }
-      case "isEmpty": return Number.isNaN(receiver.getTime());
-      // Explicit duration arithmetic. `date(mtime).plus("1d")` adds a day.
-      // The same shape works on the `+` / `-` operators (see evaluate.ts).
-      case "plus": { const ms = parseDurationMs(args[0]); return new Date(receiver.getTime() + (Number.isNaN(ms) ? 0 : ms)); }
-      case "minus": { const ms = parseDurationMs(args[0]); return new Date(receiver.getTime() - (Number.isNaN(ms) ? 0 : ms)); }
-    }
-  }
-
   return undefined;
 }
 

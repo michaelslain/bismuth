@@ -63,22 +63,18 @@ function layoutFor(graph: GraphData, vaultKey: string): Layout {
   return layout;
 }
 
-/** A Layout (full [x,y,z] in both maps) → wire ViewLayout (pos2d trimmed to [x,y]). */
 function toViewLayout(layout: Layout): ViewLayout {
   const pos2d: ViewLayout["pos2d"] = {};
-  for (const id in layout.pos2d) pos2d[id] = [layout.pos2d[id][0], layout.pos2d[id][1]];
+  for (const id in layout.pos2d) {
+    const p = layout.pos2d[id];
+    pos2d[id] = [p[0], p[1]];
+  }
   return { pos3d: layout.pos3d, pos2d };
 }
 
-/**
- * Return a copy of the graph with precomputed `position` (3D) and `position2d` (flat) on every node
- * for the full ("both") view, plus self-contained `views.second` / `views.third` layouts for the
- * brain subsets. Uses the in-memory or disk cache (keyed by graph signature) per layout. `vaultKey`
- * namespaces the cache per vault.
- */
 export function attachLayout(graph: GraphData, vaultKey: string): GraphData {
   if (graph.nodes.length === 0) return graph;
-  const layout = layoutFor(graph, vaultKey); // full graph → "both" view (unchanged)
+  const layout = layoutFor(graph, vaultKey);
   const second = layoutFor(subgraphByKinds(graph, SECOND_KINDS), vaultKey);
   const third = layoutFor(subgraphByKinds(graph, THIRD_KINDS), vaultKey);
 
@@ -89,7 +85,10 @@ export function attachLayout(graph: GraphData, vaultKey: string): GraphData {
       const p3 = layout.pos3d[n.id];
       const p2 = layout.pos2d[n.id];
       if (!p3 && !p2) return n;
-      return { ...n, ...(p3 ? { position: p3 } : {}), ...(p2 ? { position2d: [p2[0], p2[1]] as [number, number] } : {}) };
+      const updates: Partial<typeof n> = {};
+      if (p3) updates.position = p3;
+      if (p2) updates.position2d = [p2[0], p2[1]];
+      return { ...n, ...updates };
     }),
   };
 }

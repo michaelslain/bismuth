@@ -18,12 +18,12 @@ export function EventChip(props: Props) {
   const [metaVisible, setMetaVisible] = createSignal(true)
   const [menu, setMenu] = createSignal<{ x: number; y: number } | null>(null)
 
-  function openEdit() {
+  function openEdit(): void {
     showEventModal.value = { event: props.event, masterId: props.masterId, occurrenceDate: props.occurrenceDate }
   }
-  async function handleDelete() {
+
+  async function handleDelete(): Promise<void> {
     if (props.event.recurrence && props.masterId && props.occurrenceDate) {
-      // Recurring: let the user pick this-one / following / all (same as the modal).
       recurrenceAction.value = { type: 'delete', masterId: props.masterId, occurrenceDate: props.occurrenceDate }
     } else {
       await props.store.deleteEvent(props.event.id)
@@ -32,18 +32,26 @@ export function EventChip(props: Props) {
   }
 
   onMount(() => {
-    const chip = chipRef, meta = metaRef
+    const chip = chipRef
+    const meta = metaRef
     if (!chip || !meta) return
     let decided = false
-    const check = () => {
+    const check = (): void => {
       if (decided) return
       const metaBottom = meta.offsetTop + meta.offsetHeight
-      if (metaBottom > chip.clientHeight + 1) { decided = true; setMetaVisible(false) }
+      if (metaBottom > chip.clientHeight + 1) {
+        decided = true
+        setMetaVisible(false)
+      }
     }
     const obs = new ResizeObserver(check)
-    obs.observe(chip); obs.observe(meta)
+    obs.observe(chip)
+    obs.observe(meta)
     const timer = setTimeout(check, 50)
-    onCleanup(() => { obs.disconnect(); clearTimeout(timer) })
+    onCleanup(() => {
+      obs.disconnect()
+      clearTimeout(timer)
+    })
   })
 
   return (

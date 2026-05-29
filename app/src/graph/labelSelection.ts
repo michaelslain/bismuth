@@ -8,7 +8,7 @@ type EdgeEndpoint = string | { id: string };
 type EdgeLike = { source: EdgeEndpoint; target: EdgeEndpoint };
 
 function endpointId(e: EdgeEndpoint): string {
-  return typeof e === "object" && e !== null ? e.id : (e as string);
+  return typeof e === "object" ? e.id : (e as string);
 }
 
 /**

@@ -15,7 +15,8 @@
  * `nodeSize * scale * tan(fov/2) / 2`.
  */
 export function drawnNodeRadius(nodeSize: number, scale: number, fovDeg: number): number {
-  return (nodeSize * scale * Math.tan(((fovDeg * Math.PI) / 180) / 2)) / 2;
+  const fovRad = (fovDeg * Math.PI) / 180;
+  return (nodeSize * scale * Math.tan(fovRad / 2)) / 2;
 }
 
 /**

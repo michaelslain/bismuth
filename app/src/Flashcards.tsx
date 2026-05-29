@@ -9,18 +9,19 @@ export function Flashcards(props: { note: string }) {
   const [revealed, setRevealed] = createSignal(false);
   const [loading, setLoading] = createSignal(true);
 
-  const load = async () => {
+  const loadCards = async () => {
     setLoading(true);
     setCards(await api.noteCards(props.note));
     setIdx(0);
     setRevealed(false);
     setLoading(false);
   };
+
   // Re-load whenever the target note changes (the same component instance is reused
   // when switching between two per-note flashcard tabs).
   createEffect(() => {
     props.note;
-    load();
+    loadCards();
   });
 
   const current = () => (idx() < cards().length ? cards()[idx()] : null);
@@ -54,7 +55,7 @@ export function Flashcards(props: { note: string }) {
             fallback={
               <div class="review-done">
                 <h2>Done reviewing “{noteName()}”</h2>
-                <button class="card-btn" onClick={load}>Review again</button>
+                <button class="card-btn" onClick={loadCards}>Review again</button>
               </div>
             }
           >

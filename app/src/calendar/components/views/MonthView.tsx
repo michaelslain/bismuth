@@ -29,25 +29,35 @@ export function MonthView(props: { store: EventStore }) {
         <For each={dayNames()}>{d => <div class="month-day-name">{d}</div>}</For>
       </div>
       <div class="month-grid">
-        <Index each={cells()}>{cell => (
-          <Show when={cell() !== null} fallback={<div class="month-cell empty" />}>
-            {(() => {
-              const day = cell() as number
-              const dateStr = `${year()}-${String(month() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-              const dayEvents = () => events.value.filter(e => e.date === dateStr)
-              return (
-                <div class={`month-cell${dateStr === today ? ' today' : ''}`} onClick={() => (showEventModal.value = { date: dateStr })}>
-                  <div class="month-cell-number">{day}</div>
-                  <div class="month-cell-events">
-                    <For each={dayEvents()}>{e => (
-                      <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? dateStr : undefined} categories={categories.value} store={props.store} />
-                    )}</For>
+        <Index each={cells()}>{cell => {
+          const day = cell()
+          return (
+            <Show when={day !== null} fallback={<div class="month-cell empty" />}>
+              {(() => {
+                const m = month() + 1
+                const dateStr = `${year()}-${String(m).padStart(2, '0')}-${String(day as number).padStart(2, '0')}`
+                const dayEvents = () => events.value.filter(e => e.date === dateStr)
+                const isToday = dateStr === today
+                return (
+                  <div class={`month-cell${isToday ? ' today' : ''}`} onClick={() => (showEventModal.value = { date: dateStr })}>
+                    <div class="month-cell-number">{day}</div>
+                    <div class="month-cell-events">
+                      <For each={dayEvents()}>{e => (
+                        <EventChip
+                          event={e}
+                          masterId={e.recurrence ? e.id : undefined}
+                          occurrenceDate={e.recurrence ? dateStr : undefined}
+                          categories={categories.value}
+                          store={props.store}
+                        />
+                      )}</For>
+                    </div>
                   </div>
-                </div>
-              )
-            })()}
-          </Show>
-        )}</Index>
+                )
+              })()}
+            </Show>
+          )
+        }}</Index>
       </div>
     </div>
   )

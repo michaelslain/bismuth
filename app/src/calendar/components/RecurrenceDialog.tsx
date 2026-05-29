@@ -4,19 +4,31 @@ import { refreshEvents } from '../refresh'
 import { Show } from 'solid-js'
 
 export function RecurrenceDialog(props: { store: EventStore }) {
-  async function handle(scope: 'one' | 'all' | 'following') {
+  async function handle(scope: 'one' | 'all' | 'following'): Promise<void> {
     const action = recurrenceAction.value
     if (!action) return
     const { type, masterId, occurrenceDate, updates } = action
+
     if (type === 'delete') {
-      if (scope === 'one') await props.store.deleteOccurrence(masterId, occurrenceDate)
-      else if (scope === 'all') { const m = events.value.find(e => e.id === masterId); if (m?.recurrence) await props.store.deleteSeries(m.recurrence.seriesId) }
-      else await props.store.deleteFollowing(masterId, occurrenceDate)
+      if (scope === 'one') {
+        await props.store.deleteOccurrence(masterId, occurrenceDate)
+      } else if (scope === 'all') {
+        const master = events.value.find(e => e.id === masterId)
+        if (master?.recurrence) await props.store.deleteSeries(master.recurrence.seriesId)
+      } else {
+        await props.store.deleteFollowing(masterId, occurrenceDate)
+      }
     } else if (type === 'edit' && updates) {
-      if (scope === 'one') await props.store.editOccurrence(masterId, occurrenceDate, updates)
-      else if (scope === 'all') { const m = events.value.find(e => e.id === masterId); if (m?.recurrence) await props.store.editSeries(m.recurrence.seriesId, updates) }
-      else await props.store.editFollowing(masterId, occurrenceDate, updates)
+      if (scope === 'one') {
+        await props.store.editOccurrence(masterId, occurrenceDate, updates)
+      } else if (scope === 'all') {
+        const master = events.value.find(e => e.id === masterId)
+        if (master?.recurrence) await props.store.editSeries(master.recurrence.seriesId, updates)
+      } else {
+        await props.store.editFollowing(masterId, occurrenceDate, updates)
+      }
     }
+
     await props.store.load()
     await refreshEvents(props.store)
     recurrenceAction.value = null
