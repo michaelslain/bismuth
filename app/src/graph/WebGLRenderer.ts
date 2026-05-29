@@ -16,6 +16,8 @@ import {
 } from "d3-force-3d";
 import type { GraphData, NodeKind } from "../../../core/src/graph";
 import { nodeCollideRadius } from "./collide";
+import { LabelLayer } from "./LabelLayer";
+import { computeAlwaysOnSet } from "./labelSelection";
 
 // Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
 const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
@@ -85,11 +87,11 @@ const SETTLE_SKIP_FRAC = 0.9;
 // 1.5 roughly halves the charge cost with negligible visual change (only the cold first settle runs it).
 const MANYBODY_THETA = 1.5;
 
-// Cap the render resolution. On a Retina display devicePixelRatio is 2 (some 3), so an uncapped
-// renderer draws the full canvas at 4x the pixels every frame (with MSAA on top) — a fixed GPU cost
-// that caps FPS no matter how small the graph is. 1.5x keeps nodes/edges crisp while ~halving the
-// pixel work vs 2x. Lower toward 1 for more headroom on weak GPUs.
-const MAX_PIXEL_RATIO = 1.5;
+// Cap the render resolution. On a Retina display devicePixelRatio is 2 (some 3). Rendering at the
+// full device ratio keeps nodes, edges, AND label sprites crisp — a 1.5x cap visibly softens them
+// (the graininess). 2x is the full Retina resolution; we clamp 3x displays to 2x as a GPU-cost
+// ceiling. Lower toward 1.5 if a weak GPU needs more headroom.
+const MAX_PIXEL_RATIO = 2;
 
 // Recompute screen-space edge crowding at most once every N frames while the view is moving (idle
 // spin, orbit, zoom). The recompute is an O(edges x samples) Map-building pass; at 60fps every other
@@ -121,6 +123,8 @@ export interface GraphConfig {
   centering: number;    // forceX/Y/Z strength toward origin
   nodeSize: number;
   viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
+  showGraphLabels: boolean;
+  graphLabelHubCount: number;
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -132,6 +136,8 @@ const DEFAULT_CONFIG: GraphConfig = {
   centering: 0.13,
   nodeSize: 6,
   viewMode: "3d",
+  showGraphLabels: true,
+  graphLabelHubCount: 10,
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -195,15 +201,20 @@ function hashInt(s: string): number {
 
 /** A white disc texture so points render as circles (alphaTest clips the square corners). */
 function makeCircleTexture(): THREE.Texture {
-  const s = 64;
+  // 256px (was 64) so big hubs — drawn many screen-px wide — don't upscale a tiny disc into a
+  // soft, grainy blob. The arc is anti-aliased at this resolution and downsamples cleanly.
+  const s = 256;
   const cv = document.createElement("canvas");
   cv.width = cv.height = s;
   const ctx = cv.getContext("2d")!;
   ctx.beginPath();
-  ctx.arc(s / 2, s / 2, s / 2 - 1, 0, Math.PI * 2);
+  ctx.arc(s / 2, s / 2, s / 2 - 2, 0, Math.PI * 2);
   ctx.fillStyle = "#fff";
   ctx.fill();
   const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearMipmapLinearFilter; // smooth mipmapped downscale when shrunk
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
   tex.needsUpdate = true;
   return tex;
 }
@@ -248,6 +259,9 @@ export class WebGLRenderer {
   private group!: THREE.Group;
   private pointsMesh: THREE.Points | null = null;
   private linesMesh: THREE.LineSegments | null = null;
+  private labels = new LabelLayer();
+  private activeFileId: string | null = null;
+  private wppDefaultForLabels = 0;
 
   // graph data
   private nodes: N3[] = [];
@@ -399,6 +413,7 @@ export class WebGLRenderer {
     this.leaveHandler = () => {
       this.pointerInside = false;
       this.hoveredId = null;
+      this.labels.setHoveredId(null);
       this.setHighlightTargets();
       this.notifyHover();
     };
@@ -428,6 +443,9 @@ export class WebGLRenderer {
       else if (this.pointerInside) this.frameAll();
     };
     window.addEventListener("keydown", this.keyHandler);
+
+    this.labels.mount(this.group); // parent to the node group so labels track the idle spin
+    this.labels.setEnabled(this.cfg.showGraphLabels);
 
     // Start render loop
     this.animate();
@@ -461,6 +479,7 @@ export class WebGLRenderer {
     this.controls.update();
     this.updateRotationVelocity(); // track camera rotation speed for click gating
     this.updateFog(); // depth fade tracks the (now-current) camera distance
+    this.updateLabelsIfMoved();
     this.renderer.render(this.scene, this.camera);
     this.sampleFps();
   }
@@ -521,6 +540,7 @@ export class WebGLRenderer {
     const id = this.pickNodeId(e, 4);
     if (id === this.hoveredId) return;
     this.hoveredId = id;
+    this.labels.setHoveredId(this.hoveredId);
     this.renderer.domElement.style.cursor = id ? "pointer" : "default";
     this.setHighlightTargets();
     this.notifyHover();
@@ -851,6 +871,34 @@ export class WebGLRenderer {
     }
   }
 
+  private updateLabelsIfMoved() {
+    if (!this.cfg.showGraphLabels) return;
+    // During a 2D↔3D mode tween the node positions are mid-morph, so hide labels entirely for the
+    // duration; the next recompute (once the tween lands) brings the correct set back. This is the
+    // requested "names go invisible while switching modes" behavior.
+    if (this.tween) { this.labels.hideAll(); return; }
+    // Skip while the layout is still settling (positions changing every frame) unless the user has
+    // taken the camera — labels freeze on their last set, mirroring the crowding recompute.
+    if (this.simSettling && !this.userControlled) return;
+    if (this.frame % CROWD_RECOMPUTE_FRAMES !== 0) return;
+
+    const wpp = this.worldPerPixel();
+    if (this.wppDefaultForLabels === 0 || !this.userControlled) this.wppDefaultForLabels = wpp;
+    const focalDistance = this.camera.position.distanceTo(this.controls.target);
+    this.labels.updateVisibility({
+      camera: this.camera,
+      group: this.group,
+      viewMode: this.viewMode,
+      screenW: this.renderer.domElement.clientWidth || 1,
+      screenH: this.renderer.domElement.clientHeight || 1,
+      focalDistance,
+      cloudCenter: this.cloudCenter,
+      cloudRadius: this.cloudRadius,
+      worldPerPixel: wpp,
+      wppDefault: this.wppDefaultForLabels,
+    });
+  }
+
   /** Re-apply resting edge brightness from the latest crowding + zoom, unless a hover is active. */
   private refreshRestingEdges() {
     if (this.hoveredId) return;
@@ -932,7 +980,6 @@ export class WebGLRenderer {
       case "tag": return this.paletteColor("tag:" + n.label);
       case "memory": return this.paletteColor("mem:" + n.label);
       case "agent": return this.paletteColor("agent:" + n.label);
-      case "self": return new THREE.Color(0xffffff); // the single "you" node — distinct white anchor
       default: return new THREE.Color(0xbdcaf2);
     }
   }
@@ -997,7 +1044,29 @@ export class WebGLRenderer {
         (this.sim.force("collide") as any)?.radius(this.collideRadiusFor); // re-eval per node for the new mode spacing
       }
     }
+    if (cfg.showGraphLabels !== prev.showGraphLabels) {
+      this.labels.setEnabled(cfg.showGraphLabels);
+    }
+    if (cfg.graphLabelHubCount !== prev.graphLabelHubCount) {
+      this.refreshAlwaysOnLabels();
+    }
     if (this.controls) this.modeInitialized = true;
+  }
+
+  private refreshAlwaysOnLabels() {
+    const set = computeAlwaysOnSet(
+      this.nodes.map((n) => ({ id: n.id, kind: n.kind })),
+      this.links.map((l) => ({ source: l.source as string | { id: string }, target: l.target as string | { id: string } })),
+      this.activeFileId,
+      this.cfg.graphLabelHubCount,
+    );
+    this.labels.setAlwaysOnSet(set);
+  }
+
+  setActiveFile(id: string | null) {
+    if (this.activeFileId === id) return;
+    this.activeFileId = id;
+    this.refreshAlwaysOnLabels();
   }
 
   /** Lock the camera for 2D (top-down, pan+zoom only) or free it for 3D orbit. */
@@ -1320,6 +1389,10 @@ export class WebGLRenderer {
     } else {
       this.presettle(); // cold: run the initial layout to rest synchronously (no scatter, once per new graph)
     }
+
+    // Refresh label sprites + always-on selection for the new graph.
+    this.labels.setGraph(this.nodes);
+    this.refreshAlwaysOnLabels();
   }
 
   /**
@@ -1670,6 +1743,7 @@ export class WebGLRenderer {
     this.circleTex = null;
 
     this.disposeMeshes();
+    this.labels.dispose();
 
     // Dispose controls
     this.controls?.dispose();

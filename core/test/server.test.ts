@@ -15,7 +15,6 @@ test("GET /graph returns the merged brain graph", async () => {
     const ids = g.nodes.map((n: any) => n.id);
     expect(ids).toContain("internship");
     expect(ids).toContain("mem:michael-profile");
-    expect(ids).toContain("self");
     expect(g.edges).toContainEqual({ from: "mem:michael-profile", to: "internship", kind: "about" });
 
     const before = await (await fetch(`${base}/file?path=essay.md`)).text();
@@ -206,13 +205,14 @@ test("POST /backup returns committed boolean", async () => {
   }
 });
 
-test("GET /graph includes self node", async () => {
+test("GET /graph does not emit a synthetic self node", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const g = await (await fetch(`${base}/graph`)).json();
-    expect(g.nodes.some((n: any) => n.id === "self")).toBe(true);
+    expect(g.nodes.some((n: any) => n.id === "self")).toBe(false);
+    expect(g.nodes.some((n: any) => n.kind === "self")).toBe(false);
   } finally {
     server.stop(true);
   }
@@ -472,6 +472,95 @@ test("GET /cards/note returns all cards for one note (tagless ok)", async () => 
   try {
     const cards = await (await fetch(`${base}/cards/note?path=${encodeURIComponent("n.md")}`)).json();
     expect(cards.length).toBe(2);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /events frame includes the changed path on mutation", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Prime — gets headers flushed so the SSE response actually starts streaming.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "prime-paths.md", kind: "file" }),
+    });
+    const res = await fetch(`${base}/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Trigger another mutation we'll wait for.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "tracked-path.md", kind: "file" }),
+    });
+
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      // Walk frames; only look at data frames (skip heartbeat comments).
+      const frames = buf.split("\n\n");
+      buf = frames.pop() ?? "";
+      for (const f of frames) {
+        if (!f.startsWith("data: ")) continue;
+        const payload = JSON.parse(f.slice(6));
+        if (Array.isArray(payload.paths) && payload.paths.includes("tracked-path.md")) {
+          expect(typeof payload.version).toBe("number");
+          expect(payload.paths).toContain("tracked-path.md");
+          await reader.cancel();
+          return;
+        }
+      }
+    }
+    throw new Error(`no SSE frame mentioned tracked-path.md; buf=${buf}`);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /events streams a version event after a mutating call", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Prime the version counter so the server sends an immediate snapshot when the
+    // SSE stream connects. Without this, Bun won't flush response headers until the
+    // first enqueue — causing `await fetch('/events')` to hang.
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "prime.md", kind: "file" }),
+    });
+
+    const res = await fetch(`${base}/events`);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Read until we see a data frame with a version number (the initial snapshot).
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const m = buf.match(/data: (\{.*?\})\n\n/);
+      if (m) {
+        const payload = JSON.parse(m[1]);
+        expect(typeof payload.version).toBe("number");
+        expect(payload.version).toBeGreaterThan(0);
+        await reader.cancel();
+        return;
+      }
+    }
+    throw new Error(`no SSE event received; buffer: ${buf}`);
   } finally {
     server.stop(true);
   }
