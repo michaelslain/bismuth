@@ -4,13 +4,27 @@
 // All sprites use sizeAttenuation:false so they hold a constant on-screen size at any distance.
 import * as THREE from "three";
 
-const FONT_PX = 14;        // CSS px before DPR scaling — matches existing UI chrome
+const FONT_PX = 13;        // CSS px before DPR scaling — tight, readable, doesn't dominate the dots
+const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
 const PAD_X = 6;
-const PAD_Y = 3;
-const TEXT_COLOR = "#e8e8ee";
-const BG_COLOR = "rgba(14,14,17,0.7)";
-const BORDER_RADIUS = 6;
+const PAD_Y = 2;
+const TEXT_COLOR = "rgba(232,232,238,0.95)";
+const BG_COLOR = "rgba(14,14,17,0.6)";
+const BORDER_RADIUS = 5;
+// Labels always use a clean sans-serif regardless of the editor font (which can be a heavy serif
+// like Lora). Forcing a UI-grade family keeps labels neutral and crisp at small sizes.
+const LABEL_FONT_FAMILY = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
 const RENDER_ORDER = 999;  // labels render after points/edges
+// Supersample the canvas texture: draw at 2x the device-pixel-ratio then sample down. Even at
+// DPR 2 (Retina), this means ~4x linear oversampling, eliminating the shimmer/aliasing on text
+// strokes when the sprite ends up around 16-24px tall on screen.
+const TEXTURE_DPR_MULT = 2;
+// Hide all labels once the user has zoomed FURTHER OUT than this fraction of the resting framing.
+// At rest worldPerPixel ≈ wppDefault; zooming in shrinks wpp (the screen covers less world);
+// zooming out grows it. Past 1.5x the resting wpp the graph is small enough that constant-size
+// labels begin to dominate the dots — fade them out across a small band so it doesn't pop.
+const ZOOMOUT_FADE_START = 1.4;
+const ZOOMOUT_FADE_END = 2.0;
 
 export type LabelNode = {
   id: string;
@@ -36,10 +50,10 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-/** Draw a pill-shaped label onto a canvas at DPR, return { texture, cssWidth, cssHeight }. */
+/** Draw a pill-shaped label onto a canvas at supersampled DPR, return { texture, cssWidth, cssHeight }. */
 function makeLabelTexture(text: string, fontFamily: string, dpr: number): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
   const measure = document.createElement("canvas").getContext("2d")!;
-  measure.font = `${FONT_PX}px ${fontFamily}`;
+  measure.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
   const textW = Math.ceil(measure.measureText(text).width);
   const cssW = textW + PAD_X * 2;
   const cssH = FONT_PX + PAD_Y * 2;
@@ -48,16 +62,23 @@ function makeLabelTexture(text: string, fontFamily: string, dpr: number): { text
   cv.height = Math.max(1, Math.round(cssH * dpr));
   const ctx = cv.getContext("2d")!;
   ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = BG_COLOR;
   roundRect(ctx, 0, 0, cssW, cssH, BORDER_RADIUS);
   ctx.fill();
   ctx.fillStyle = TEXT_COLOR;
-  ctx.font = `${FONT_PX}px ${fontFamily}`;
+  ctx.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.fillText(text, PAD_X, cssH / 2);
   const tex = new THREE.CanvasTexture(cv);
-  tex.needsUpdate = true;
+  // Skip mipmaps — labels are sampled at near-native size, mipmaps just add blur. Linear
+  // mag+min on the supersampled canvas gives crisp text without shimmer.
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   tex.anisotropy = 1;
+  tex.needsUpdate = true;
   return { texture: tex, cssW, cssH };
 }
 
@@ -93,16 +114,15 @@ export class LabelLayer {
     const cached = this.textureCache.get(label);
     if (cached) return cached;
     const family = this.fontFamily();
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min((window.devicePixelRatio || 1) * TEXTURE_DPR_MULT, 4);
     const made = makeLabelTexture(label, family, dpr);
     this.textureCache.set(label, made);
     return made;
   }
 
   private fontFamily(): string {
-    if (typeof document === "undefined") return "ui-sans-serif, system-ui, sans-serif";
-    const editorFont = getComputedStyle(document.documentElement).getPropertyValue("--editor-font").trim();
-    return editorFont || "ui-sans-serif, system-ui, sans-serif";
+    // Labels use a fixed sans-serif — the editor font (e.g., serif Lora) is for prose, not UI chips.
+    return LABEL_FONT_FAMILY;
   }
 
   /** Build a sprite for one node and add it to the scene (hidden by default). */
@@ -117,6 +137,10 @@ export class LabelLayer {
     const sprite = new THREE.Sprite(mat);
     sprite.renderOrder = RENDER_ORDER;
     sprite.visible = false;
+    // Anchor the sprite by its TOP-CENTER edge so labels hang BELOW the node instead of overlapping
+    // it. (0.5,0.5) is the default center anchor; (0.5,1.0+margin) shifts the sprite down so the dot
+    // sits cleanly above its label. The margin past 1.0 is the visual gap.
+    sprite.center.set(0.5, 1.45);
     sprite.position.set(node.x ?? 0, node.y ?? 0, node.z ?? 0);
     return sprite;
   }
@@ -226,8 +250,21 @@ export class LabelLayer {
 
     // Project each candidate to pixel coords; drop those outside the viewport.
     const camToCenter = cam.distanceTo(args.cloudCenter);
+    // Zoom-out fade: as the user zooms further out (wpp grows past resting), labels fade
+    // out so the abstract overview isn't dominated by constant-size text.
+    const zoomRatio = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
+    const zoomFade = zoomRatio <= ZOOMOUT_FADE_START
+      ? 1
+      : zoomRatio >= ZOOMOUT_FADE_END
+        ? 0
+        : 1 - (zoomRatio - ZOOMOUT_FADE_START) / (ZOOMOUT_FADE_END - ZOOMOUT_FADE_START);
     type Cand = { id: string; px: number; py: number; w: number; h: number; priority: number; opacity: number };
     const cands: Cand[] = [];
+    // Fully zoomed out → hide everything cheaply.
+    if (zoomFade <= 0.01) {
+      for (const sprite of this.sprites.values()) sprite.visible = false;
+      return;
+    }
     const proj = new THREE.Vector3();
     for (const id of candidates) {
       const n = nodeById.get(id);
@@ -241,7 +278,7 @@ export class LabelLayer {
       const py = (-proj.y * 0.5 + 0.5) * args.screenH;
       const w = entry.cssW;
       const h = entry.cssH;
-      // Compute opacity for 3D depth fade.
+      // Compute opacity for 3D depth fade, multiplied by the zoom-out fade.
       let opacity = 1;
       if (args.viewMode === "3d" && args.cloudRadius > 0) {
         const dFromCenter = v.distanceTo(args.cloudCenter);
@@ -251,6 +288,7 @@ export class LabelLayer {
         const t = (depthFromCam - (camToCenter + fadeStart)) / (fadeEnd - fadeStart);
         opacity = Math.max(0.15, Math.min(1, 1 - t));
       }
+      opacity *= zoomFade;
       const inAlwaysOn = this.alwaysOn.has(id);
       const isDiscovery = !inAlwaysOn && discovery.has(id);
       const priority = this.priorityOf(id, inAlwaysOn, isDiscovery);
