@@ -94,45 +94,71 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 **Purpose**: Manages vault file system, builds knowledge graphs, watches for changes, serves HTTP API.
 
 **Key modules**:
-- `server.ts` — HTTP server (Bun.serve) with caching strategy. Debounces file-watch invalidations (250ms). Returns `/graph`, `/tree`, `/file`, `/meta`, `/backup`, `/version`, `/config`, `/agent-graph` endpoints
+- `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
+  - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
+  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/tasks/toggle`, `/cards/review`
+  - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
+- `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths}` to subscribers on cache invalidation
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
-- `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes from markdown files, (2) extract wikilinks + tags + frontmatter metadata, create edges
+- `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
 - `graph.ts` — Graph type definitions. Node kinds: "self", "note", "memory", "agent", "tag". Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag"
-- `files.ts` — File I/O: list markdown, read/write notes
-- `frontmatter.ts` — YAML frontmatter parsing; tolerates malformed YAML (real vaults have inconsistencies)
+- `layout.ts` — Pure layout computation (pivot-MDS + force simulation). Produces 2D and 3D `Positions` maps used by the renderer
+- `layout-cache.ts` — `attachLayout()` writes precomputed `position2d` / `position3d` onto graph nodes, keyed by vault. Frontend morphs between them instead of running its own force sim
+- `files.ts` — File I/O: list markdown, read/write notes, path-traversal rejection
+- `frontmatter.ts` — YAML frontmatter parsing; tolerates malformed YAML
 - `wikilinks.ts` — Extract `[[WikiLink]]` patterns from markdown
 - `tags.ts` — Extract `#tag` from frontmatter and markdown body
 - `memory.ts` — Build memory graph from Claude-bot memory notes (in `mem:` namespace)
-- `agents.ts` — Build agent interaction graph (separate from vault/memory)
+- `agents.ts` — Build agent interaction graph from Claude Communicate relay
 - `backup.ts` — Git commit snapshot of vault
+- `tasks.ts`, `tasks-query.ts` — Tasks extraction + query DSL (Obsidian Tasks-compatible)
+- `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`)
+- `dates.ts` — Date math shared by tasks, SRS, calendar
+- `basesData.ts` — Vault-wide data feed consumed by the Bases query engine
+- `bases/` — Bases DSL: see "Bases" section below
+- `srs/` — Spaced-repetition system: see "Flashcards / SRS" section below
 
-**Caching strategy**: 
+**Caching strategy**:
 - `cachedGraph` persists until vault/memory files change
 - File-watch changes trigger a debounced 250ms invalidation timer
-- `/version` increments on cache invalidation; frontend polls and only refetches graph when version changes
-- This avoids expensive graph rebuilds on rapid file edits
+- On invalidation, the server bumps `version` and pushes an SSE event on `/events` with the changed paths
 
 **Data flow**:
-1. Frontend fetches `/version` periodically
-2. If version incremented, frontend fetches `/graph`
-3. Graph is computed lazily on first request after invalidation
-4. Node positions are persisted to localStorage (2D/3D view mode in settings)
+1. Frontend opens a single `EventSource("/events")` connection on boot (`app/src/serverVersion.ts`)
+2. On each SSE event, frontend re-fetches `/graph` (or just `/file` for the changed path)
+3. A low-frequency `/version` poll runs as a belt-and-suspenders fallback for dropped SSE connections (proxies, sleep)
+4. Graph is computed lazily on first request after invalidation
+5. Node positions are precomputed on the backend (`layout.ts`) and attached to nodes, not force-simulated in the browser
 
 ### Frontend App (`app/`)
 
 **Framework**: Solid.js (reactive primitives) + TypeScript, styled with CSS modules
 
 **Key components**:
-- `App.tsx` — Root component. Manages tabs, active file, graph mode ("2nd"/"3rd"/"both"/"agents"), settings persistence
-- `Editor.tsx` — CodeMirror 6 editor with live-preview block scanning and markdown extensions
-- `FileTree.tsx` — Left sidebar showing vault file structure
-- `GraphView.tsx` — Graph visualization hub (mounts the WebGL renderer, mode/view-mode controls)
-- `SettingsPage.tsx` — Settings UI. Controls appearance (theme, accent, editor font/size), graph view mode (2D/3D), graph rendering options
+- `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
+- `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
+- `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, calendar, tasks, flashcards, or terminal
+- `tabIds.ts` — Sentinel ids for non-file pane contents (`::settings`, `::graph`, `::tasks`, `::terminal`, etc.)
+- `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock` (embed Bases view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`
+- `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
+- `ContextMenu.tsx` — Right-click menu for file tree and editor
+- `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
+- `SettingsPage.tsx` — Appearance (theme, accent, fonts), graph (2D/3D mode, labels, label-hub count), editor
+- `palette/` — `CommandPalette`, `QuickSwitcher`, shared `PaletteModal`
+- `TasksPage.tsx` / `Flashcards.tsx` — Top-level views for tasks and SRS, both routable via sentinel ids
+- `Terminal.tsx` / `Terminal.css` — xterm.js terminal tab, WebSocket-backed by `core/src/terminal.ts`
+- `Toast.tsx`, `telemetry.ts` — Toast notifications, lightweight client telemetry (SSE errors, poll catch-ups)
+- `serverVersion.ts` — Single `EventSource` to `/events` plus fallback `/version` poll
+- `bases/` — Bases view renderers (Table, Cards, Kanban, List, Map, plus shared `renderValue`)
+- `calendar/` — Calendar feature: see "Calendar" section below
 - `api.ts` — HTTP client for core endpoints
-- `settings.ts` — Settings state management, localStorage persistence
+- `settings.ts` — Settings state, localStorage persistence (tested in `settings.test.ts`)
 
 **Graph rendering**:
 - `graph/WebGLRenderer.ts` — Three.js renderer for both 2D (flat birdseye) and 3D (volumetric orbit) modes, morphing between the backend's precomputed layouts
+- `graph/LabelLayer.ts` — Sprite-based file-name labels with viewport culling, occlusion, zoom-band discovery, and an "always-on" hub set
+- `graph/labelSelection.ts` — Pure `computeAlwaysOnSet` (top-N nodes by undirected edge count). Unit-tested
 - `graph/collide.ts` — Per-node collision-radius helpers (big hubs repel as their drawn circle, not a point)
 - `graph/d3-force-3d.d.ts` — Type stubs for d3-force-3d library
 
@@ -142,44 +168,120 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 
 ### CLI (`cli/`)
 
-**Purpose**: Lightweight wrapper around core library
+**Purpose**: Lightweight wrapper around core library.
 
-**Entry point**: `src/index.ts` (exports `oa` binary)
+**Entry point**: `src/index.ts` (exports `oa` binary). Imports `@oa/core` to expose vault operations from the shell.
 
-Imports `@oa/core` to expose vault operations via command-line interface.
+### Bases (`core/src/bases/` + `app/src/bases/`)
+
+Obsidian-Bases-compatible query/view system. A `.base` YAML file declares filters, formulas, and one or more views over the vault's notes.
+
+**Backend pipeline** (`core/src/bases/`):
+- `lexer.ts` → `parser.ts` → `parse.ts` — Tokenize and parse the Bases expression grammar (filters, formulas, view configs)
+- `evaluate.ts` — Evaluate a parsed AST against a single note
+- `filters.ts` — Filter combinators (`and`, `or`, `not`, comparisons)
+- `functions.ts` — Built-in functions on file/number/string/array/date values (method-dispatch tables per type)
+- `query.ts` — Apply a Base to the vault data feed (`basesData.ts`) and return rows + grouping
+
+**Frontend views** (`app/src/bases/`): one renderer per view kind — `TableView`, `CardsView`, `KanbanView`, `ListView`, `MapView`. `renderValue.tsx` formats cell values consistently across views. `BaseView.tsx` is the host that picks the right renderer.
+
+Bases can also be embedded inside a note via a code block; the editor extension `editor/basesBlock.ts` renders them inline.
+
+### Calendar (`app/src/calendar/`)
+
+Standalone calendar feature with its own state store and views.
+
+- `CalendarPage.tsx` — Top-level view
+- `EventStore.ts` — Event state + persistence (tested in `EventStore.test.ts`)
+- `state.ts` — Reactive view state (active date, zoom, selection)
+- `dates.ts` — Date helpers (tested in `dates.test.ts`)
+- `types.ts` — Event / category types
+- `refresh.ts` — Refresh wiring
+- `components/` — `EventChip`, `EventModal`, `RecurrenceDialog`, `CategoryPanel`, `Toolbar`
+- `components/views/` — `MonthView`, `ThreeDayView`, `TimeGrid`
+
+### Tasks (`core/src/tasks*.ts` + `app/src/TasksPage.tsx`)
+
+Obsidian-Tasks-compatible task system:
+- `core/src/tasks.ts` — Extract task items from markdown (status, due/scheduled/start dates, recurrence, tags)
+- `core/src/tasks-query.ts` — Query DSL (`not done`, `due before tomorrow`, etc.)
+- `editor/tasksQuery.ts` — CodeMirror extension that renders an inline query result block inside a note
+- `TasksPage.tsx` — Full-screen task list view
+- `POST /tasks/toggle` — Server-side toggle endpoint (rewrites the markdown line)
+
+### Flashcards / SRS (`core/src/srs/` + `app/src/Flashcards.tsx`)
+
+Spaced-repetition reviews extracted from markdown notes:
+- `srs/parser.ts` — Parses `?` / `??` flashcard syntax out of notes
+- `srs/cards.ts` — Card model + persistence
+- `srs/scheduler.ts` — SM-2-style scheduling (next-due, ease factor)
+- Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`, `POST /cards/review`
+- `Flashcards.tsx` — Review UI
+
+### Terminal (`core/src/terminal.ts` + `app/src/Terminal.tsx`)
+
+In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over WebSocket on `/terminal`. Frontend renders with xterm.js, with the ANSI palette wired from the graph color theme (`buildAnsiPalette`). DOM-rendered (not canvas), styled to match the editor.
+
+### Panes / Tabs
+
+A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::tasks`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
 ## Module Organization
 
 ```
 core/src/
-├── server.ts           # HTTP server, caching, file watching
-├── engine.ts           # Graph composition (vault + memory + agents)
-├── vault.ts            # Vault → graph builder
-├── graph.ts            # Type definitions
-├── memory.ts           # Memory → graph builder
-├── agents.ts           # Agent graph builder
-├── frontmatter.ts      # YAML parsing
-├── wikilinks.ts        # WikiLink extraction
-├── tags.ts             # Tag extraction (frontmatter + body)
-├── files.ts            # File I/O primitives
-├── backup.ts           # Git operations
-└── test/               # Test suite (one .test.ts per module)
+├── server.ts            # HTTP + SSE + WS, mutating-route abstraction
+├── sse.ts               # SSE registry / event formatting
+├── engine.ts            # Graph composition (vault + memory + agents)
+├── vault.ts             # Vault → graph builder
+├── graph.ts             # Graph type definitions
+├── memory.ts            # Memory → graph builder
+├── agents.ts            # Agent graph builder (Claude Communicate)
+├── layout.ts            # Pure layout (pivot-MDS + forces) → Positions
+├── layout-cache.ts      # Attach precomputed positions to nodes
+├── frontmatter.ts       # YAML parsing (tolerant)
+├── wikilinks.ts         # WikiLink extraction
+├── tags.ts              # Tag extraction (frontmatter + body)
+├── files.ts             # File I/O, path-traversal rejection
+├── backup.ts            # Git snapshot of vault
+├── tasks.ts             # Tasks extraction
+├── tasks-query.ts       # Tasks query DSL
+├── terminal.ts          # PTY session manager (bun-pty)
+├── dates.ts             # Date math (shared by tasks/SRS/calendar)
+├── basesData.ts         # Vault-wide data feed for Bases
+├── bases/               # Bases DSL — lexer, parser, evaluate, filters, functions, query
+└── srs/                 # SRS — cards, parser, scheduler
+
+core/test/
+├── helpers.ts           # makeSampleVault(): throwaway vault+memory in tmpdirs
+└── *.test.ts            # One per module (vault, engine, memory, server, sse, terminal, tasks, srs, bases, ...)
 
 app/src/
-├── App.tsx             # Root + tab/mode management
-├── Editor.tsx          # CodeMirror wrapper + live-preview
-├── FileTree.tsx        # Sidebar file browser
-├── GraphView.tsx       # Graph view orchestrator
-├── SettingsPage.tsx    # Settings UI
-├── api.ts              # HTTP client
-├── settings.ts         # State + localStorage
-├── graph/              # Renderer
-│  ├── WebGLRenderer.ts
-│  ├── collide.ts
-│  └── d3-force-3d.d.ts
-└── App.css             # Global styles
-
-core/test/helpers.ts       # makeSampleVault(): builds a throwaway vault+memory in tmpdirs for tests
+├── App.tsx              # Root: pane tree, routing, keyboard
+├── panes.ts             # Pure pane-tree model
+├── PaneTree.tsx         # Pane-tree renderer
+├── PaneContent.tsx      # Routes a leaf id to its view
+├── tabIds.ts            # Sentinel ids for non-file panes
+├── Editor.tsx           # CodeMirror wrapper
+├── editor/              # CM extensions (livePreview, autocomplete, basesBlock, tasksQuery, wikilink, tag)
+├── FileTree.tsx         # Sidebar with drag-drop / undo
+├── ContextMenu.tsx      # Right-click menu
+├── GraphView.tsx        # Graph view shell
+├── graph/               # Renderer + label layer + collide
+├── SettingsPage.tsx     # Settings UI
+├── TasksPage.tsx        # Tasks view
+├── Flashcards.tsx       # SRS review view
+├── Terminal.tsx         # xterm.js terminal tab
+├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map)
+├── calendar/            # Calendar feature (CalendarPage, EventStore, views/, components/)
+├── palette/             # Command palette + quick switcher
+├── serverVersion.ts     # SSE subscription + version poll
+├── api.ts               # HTTP client
+├── settings.ts          # State + localStorage
+├── Toast.tsx
+├── telemetry.ts
+├── App.css              # Global styles + CSS variables
+└── *.test.ts            # Unit tests for pure modules (panes, settings)
 ```
 
 ## Development Workflow
@@ -198,23 +300,23 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 
 ### Editing notes
 1. Edit `.md` files in the vault dir you launched with (`OA_VAULT` / `--vault`)
-2. Server detects file change, debounces 250ms, invalidates cache
-3. Frontend polls `/version` endpoint, detects version increment
-4. Frontend re-fetches `/graph` and updates visualization
+2. Server detects file change, debounces 250ms, invalidates cache, bumps version, pushes SSE event with changed paths
+3. Frontend receives the SSE event and re-fetches `/graph` (or just the touched `/file`)
+4. A low-frequency `/version` poll catches up if the SSE connection silently dies
 
 ### Performance considerations
 - **Graph caching**: Only rebuilds when vault/memory files change (fs-watch + debounce)
+- **Backend-precomputed layouts**: `layout.ts` produces both 2D and 3D positions on the server; the renderer morphs between them instead of running a force sim in the browser
 - **Live-preview scanning**: Scans document for code blocks only when content changes, not on every keystroke
-- **Node position persistence**: 2D/3D node positions stored in localStorage; on startup, nodes skip force-simulation settle step if positions are already known
-- **Renderer lazy loading**: WebGL renderer only initializes when 3D mode is selected
+- **Label layer**: Sprite-based, viewport-culled, with a stable "always-on" set of top-N hubs so labels don't pop in and out as you orbit
 
 ## Common Tasks
 
 ### Adding a new endpoint to core API
-1. Add handler to `createServer()` in `core/src/server.ts`
+1. Add a route entry to the `routes` (read) or `mutatingRoutes` (write) table in `core/src/server.ts`
 2. Implement the business logic (e.g., call `buildGraph()`, `listMarkdown()`)
-3. Add CORS headers
-4. Test with `bun test core/test/server.test.ts` (add test case)
+3. Mutating routes go through `mutatingHandler`, which automatically invalidates the cache and broadcasts an SSE event after the handler runs — don't bump version manually
+4. Test with `bun test core/test/server.test.ts` (add a case)
 
 ### Adding a graph node kind or edge kind
 1. Update `NodeKind` or `EdgeKind` types in `core/src/graph.ts`
@@ -259,14 +361,7 @@ The "agents" graph mode visualizes Claude Code instances running this project ac
 4. **Lazy renderer init**: WebGL only loads when needed
 5. **Frontmatter tolerance**: Malformed YAML doesn't crash graph builder
 
-## Recent Stability & Security Updates
-
-- **Path traversal rejection** (d5d0cdf): Core now validates vault file paths to prevent directory escape attacks
-- **File-tree context menu** (e174978): New header buttons for note/folder creation, opaque UI, delete closes tab, rename/move retargets active tab
-- **Undo support** (6613f27): Cmd+Z now undoes most recent delete action in file tree
-- **Drag-drop moves** (2278b84): Files and folders can be rearranged by dragging within the tree
-
-### Relay Integration (May 2026)
+### Relay Integration
 
 **Three Brains** integrates with **Claude Communicate** (inter-agent relay system) to:
 - Track which Claude Code instances are running the project (via `/agent-graph` endpoint)
@@ -286,14 +381,23 @@ bun test core -- [pattern]  # Filter by filename
 Common test files:
 - `core/test/vault.test.ts` — Note graph building, wikilink extraction
 - `core/test/engine.test.ts` — Graph composition (vault + memory + agents)
-- `core/test/tags.test.ts` — Tag extraction from frontmatter and body
-- `core/test/wikilinks.test.ts` — WikiLink pattern matching
-- `core/test/server.test.ts` — HTTP endpoint behavior
+- `core/test/tags.test.ts`, `wikilinks.test.ts` — Extraction
+- `core/test/server.test.ts`, `sse.test.ts` — HTTP + SSE behavior
+- `core/test/bases/` — Bases DSL (lexer/parser/evaluate/query)
+- `core/test/srs/` — SRS scheduler + parser
+- `core/test/tasks.test.ts`, `tasks-query.test.ts` — Tasks
+- `core/test/layout.test.ts` — Layout computation
+- `core/test/terminal.test.ts`, `terminal-ws.test.ts` — PTY + WebSocket
+- `app/src/panes.test.ts`, `settings.test.ts` — Pure frontend modules
+- `app/src/graph/collide.test.ts`, `labelSelection.test.ts` — Graph helpers
+- `app/src/calendar/EventStore.test.ts`, `dates.test.ts` — Calendar
+- `app/src/editor/wikilink.test.ts`, `tag.test.ts` — Editor extensions
 
 ## Gotchas & Edge Cases
 
-- **localStorage persistence breaks between Tauri reloads**: Node positions (2D/3D layouts) are cached in localStorage, but hard-reloading the app or switching graph modes may reset positions. Workaround: node positions re-settle quickly via force simulation.
-- **File-watch debounce timing**: The 250ms debounce can hide rapid successive edits. If you edit a note twice within 250ms, only the second change may trigger a graph rebuild.
+- **Layouts come from the backend, not the browser**: `position2d` / `position3d` are computed in `core/src/layout.ts` and attached via `layout-cache.ts`. The renderer morphs between them — it does not run a local force simulation. If positions look wrong, suspect the backend layout, not browser state.
+- **File-watch debounce timing**: The 250ms debounce can hide rapid successive edits. If you edit a note twice within 250ms, only the second change triggers a graph rebuild.
+- **SSE can silently die**: Proxies and OS sleep can drop the `/events` connection without an explicit close. The fallback `/version` poll catches this — if updates feel slow, check the EventSource state in `serverVersion.ts` and telemetry counters in `telemetry.ts`.
 - **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches a file named `Another Note.md` anywhere in the vault, even in different folders. Ambiguous matches are undefined behavior.
 - **Memory graph requires Claude-bot memory directory**: If `OA_MEMORY` points to a non-existent or empty directory, the memory graph will be empty. Set up sample notes in memory directory to see "3rd brain" mode.
 - **Concurrent agent port conflicts**: Running multiple instances on the same machine requires port overrides; see "Running Multiple Agents Concurrently" section. Default 4321/1420 will only work for one instance.
