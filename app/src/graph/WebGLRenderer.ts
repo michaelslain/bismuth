@@ -16,6 +16,8 @@ import {
 } from "d3-force-3d";
 import type { GraphData, NodeKind } from "../../../core/src/graph";
 import { nodeCollideRadius } from "./collide";
+import { LabelLayer } from "./LabelLayer";
+import { computeAlwaysOnSet } from "./labelSelection";
 
 // Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
 const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
@@ -121,6 +123,8 @@ export interface GraphConfig {
   centering: number;    // forceX/Y/Z strength toward origin
   nodeSize: number;
   viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
+  showGraphLabels: boolean;
+  graphLabelHubCount: number;
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -132,6 +136,8 @@ const DEFAULT_CONFIG: GraphConfig = {
   centering: 0.13,
   nodeSize: 6,
   viewMode: "3d",
+  showGraphLabels: true,
+  graphLabelHubCount: 10,
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -248,6 +254,9 @@ export class WebGLRenderer {
   private group!: THREE.Group;
   private pointsMesh: THREE.Points | null = null;
   private linesMesh: THREE.LineSegments | null = null;
+  private labels = new LabelLayer();
+  private activeFileId: string | null = null;
+  private wppDefaultForLabels = 0;
 
   // graph data
   private nodes: N3[] = [];
@@ -399,6 +408,7 @@ export class WebGLRenderer {
     this.leaveHandler = () => {
       this.pointerInside = false;
       this.hoveredId = null;
+      this.labels.setHoveredId(null);
       this.setHighlightTargets();
       this.notifyHover();
     };
@@ -428,6 +438,9 @@ export class WebGLRenderer {
       else if (this.pointerInside) this.frameAll();
     };
     window.addEventListener("keydown", this.keyHandler);
+
+    this.labels.mount(this.scene);
+    this.labels.setEnabled(this.cfg.showGraphLabels);
 
     // Start render loop
     this.animate();
@@ -461,6 +474,7 @@ export class WebGLRenderer {
     this.controls.update();
     this.updateRotationVelocity(); // track camera rotation speed for click gating
     this.updateFog(); // depth fade tracks the (now-current) camera distance
+    this.updateLabelsIfMoved();
     this.renderer.render(this.scene, this.camera);
     this.sampleFps();
   }
@@ -521,6 +535,7 @@ export class WebGLRenderer {
     const id = this.pickNodeId(e, 4);
     if (id === this.hoveredId) return;
     this.hoveredId = id;
+    this.labels.setHoveredId(this.hoveredId);
     this.renderer.domElement.style.cursor = id ? "pointer" : "default";
     this.setHighlightTargets();
     this.notifyHover();
@@ -851,6 +866,29 @@ export class WebGLRenderer {
     }
   }
 
+  private updateLabelsIfMoved() {
+    // Skip during settle/tween — labels freeze on their last-resolved set, mirroring crowding.
+    if ((this.simSettling || this.tween) && !this.userControlled) return;
+    if (this.frame % CROWD_RECOMPUTE_FRAMES !== 0) return;
+    if (!this.cfg.showGraphLabels) return;
+
+    const wpp = this.worldPerPixel();
+    if (this.wppDefaultForLabels === 0 || !this.userControlled) this.wppDefaultForLabels = wpp;
+    const focalDistance = this.camera.position.distanceTo(this.controls.target);
+    this.labels.updateVisibility({
+      camera: this.camera,
+      group: this.group,
+      viewMode: this.viewMode,
+      screenW: this.renderer.domElement.clientWidth || 1,
+      screenH: this.renderer.domElement.clientHeight || 1,
+      focalDistance,
+      cloudCenter: this.cloudCenter,
+      cloudRadius: this.cloudRadius,
+      worldPerPixel: wpp,
+      wppDefault: this.wppDefaultForLabels,
+    });
+  }
+
   /** Re-apply resting edge brightness from the latest crowding + zoom, unless a hover is active. */
   private refreshRestingEdges() {
     if (this.hoveredId) return;
@@ -997,7 +1035,29 @@ export class WebGLRenderer {
         (this.sim.force("collide") as any)?.radius(this.collideRadiusFor); // re-eval per node for the new mode spacing
       }
     }
+    if (cfg.showGraphLabels !== prev.showGraphLabels) {
+      this.labels.setEnabled(cfg.showGraphLabels);
+    }
+    if (cfg.graphLabelHubCount !== prev.graphLabelHubCount) {
+      this.refreshAlwaysOnLabels();
+    }
     if (this.controls) this.modeInitialized = true;
+  }
+
+  private refreshAlwaysOnLabels() {
+    const set = computeAlwaysOnSet(
+      this.nodes.map((n) => ({ id: n.id, kind: n.kind })),
+      this.links.map((l) => ({ source: l.source as string | { id: string }, target: l.target as string | { id: string } })),
+      this.activeFileId,
+      this.cfg.graphLabelHubCount,
+    );
+    this.labels.setAlwaysOnSet(set);
+  }
+
+  setActiveFile(id: string | null) {
+    if (this.activeFileId === id) return;
+    this.activeFileId = id;
+    this.refreshAlwaysOnLabels();
   }
 
   /** Lock the camera for 2D (top-down, pan+zoom only) or free it for 3D orbit. */
@@ -1320,6 +1380,10 @@ export class WebGLRenderer {
     } else {
       this.presettle(); // cold: run the initial layout to rest synchronously (no scatter, once per new graph)
     }
+
+    // Refresh label sprites + always-on selection for the new graph.
+    this.labels.setGraph(this.nodes);
+    this.refreshAlwaysOnLabels();
   }
 
   /**
@@ -1670,6 +1734,7 @@ export class WebGLRenderer {
     this.circleTex = null;
 
     this.disposeMeshes();
+    this.labels.dispose();
 
     // Dispose controls
     this.controls?.dispose();
