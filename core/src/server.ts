@@ -104,6 +104,7 @@ export function createServer(cfg: CoreConfig) {
     "GET /events": (_, __) => {
       // SSE stream of cache-invalidation events. One frame per `invalidate()`.
       let subscriber: ReadableStreamDefaultController<Uint8Array>;
+      let heartbeat: ReturnType<typeof setInterval>;
       const stream = new ReadableStream<Uint8Array>({
         start(controller) {
           subscriber = controller;
@@ -114,8 +115,20 @@ export function createServer(cfg: CoreConfig) {
           if (version > 0) {
             controller.enqueue(new TextEncoder().encode(`data: {"version":${version}}\n\n`));
           }
+          // SSE comment frame — clients ignore it but it keeps the TCP connection
+          // alive past Bun's default 10s idleTimeout. Without this, EventSource
+          // would silently reconnect every ~10s and miss events fired in the gap.
+          const ping = new TextEncoder().encode(`: keepalive\n\n`);
+          heartbeat = setInterval(() => {
+            try {
+              controller.enqueue(ping);
+            } catch {
+              // controller already closed — interval will be cleared on cancel()
+            }
+          }, 5000);
         },
         cancel() {
+          clearInterval(heartbeat);
           sse.unsubscribe(subscriber);
         },
       });
