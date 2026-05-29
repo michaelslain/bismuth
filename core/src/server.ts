@@ -13,6 +13,7 @@ import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
+import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -77,10 +78,27 @@ export function createServer(cfg: CoreConfig) {
   // ── HTTP server ────────────────────────────────────────────────────────────
   return Bun.serve({
     port: cfg.port ?? 4321,
-    async fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url);
       const cors = CORS;
       if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+
+      // Terminal WebSocket upgrade.
+      if (req.method === "GET" && url.pathname === "/terminal") {
+        const cols = Number(url.searchParams.get("cols"));
+        const rows = Number(url.searchParams.get("rows"));
+        if (!Number.isInteger(cols) || !Number.isInteger(rows) ||
+            cols < 1 || cols > 500 || rows < 1 || rows > 500) {
+          return new Response("bad cols/rows", { status: 400, headers: cors });
+        }
+        const session = createTerminalSession({ cwd: cfg.vault, cols, rows });
+        const ok = server.upgrade(req, { data: { sessionId: session.id } });
+        if (!ok) {
+          killSession(session.id);
+          return new Response("upgrade failed", { status: 400, headers: cors });
+        }
+        return undefined as unknown as Response; // upgrade response is sent by Bun
+      }
 
       // Run a mutating file op: invalidate the cache on success; turn any thrown error
       // (e.g. the path-escape guard) into a 400 with the message as the body.
@@ -230,6 +248,44 @@ export function createServer(cfg: CoreConfig) {
         return new Response("ok", { headers: cors });
       }
       return new Response("not found", { status: 404, headers: cors });
+    },
+
+    websocket: {
+      open(ws) {
+        const { sessionId } = ws.data as { sessionId: string };
+        const s = getSession(sessionId);
+        if (!s) { ws.close(); return; }
+        // Pipe PTY -> ws.
+        s.pty.onData((data: string) => {
+          ws.send(new TextEncoder().encode(data));
+        });
+        s.pty.onExit(() => { try { ws.close(); } catch { /* */ } });
+      },
+      message(ws, msg) {
+        const { sessionId } = ws.data as { sessionId: string };
+        const s = getSession(sessionId);
+        if (!s) return;
+        const bytes = msg instanceof ArrayBuffer
+          ? new Uint8Array(msg)
+          : msg instanceof Uint8Array
+            ? msg
+            : new TextEncoder().encode(msg as string);
+        if (bytes.length === 0) return;
+        const tag = bytes[0];
+        if (tag === 0x00) {
+          s.pty.write(new TextDecoder().decode(bytes.subarray(1)));
+        } else if (tag === 0x01 && bytes.length >= 5) {
+          const view = new DataView(bytes.buffer, bytes.byteOffset + 1, 4);
+          const cols = view.getUint16(0, true);
+          const rows = view.getUint16(2, true);
+          resizeSession(sessionId, cols, rows);
+        }
+      },
+      close(ws) {
+        const { sessionId } = ws.data as { sessionId: string };
+        // Grace period to absorb kernel/network races. No resume in v1.
+        setTimeout(() => killSession(sessionId), 3000);
+      },
     },
   });
 }

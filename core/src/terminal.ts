@@ -51,3 +51,7 @@ export function resizeSession(id: string, cols: number, rows: number): void {
   s.rows = rows;
   try { s.pty.resize(cols, rows); } catch { /* dead */ }
 }
+
+export function getSession(id: string): Session | undefined {
+  return sessions.get(id);
+}
