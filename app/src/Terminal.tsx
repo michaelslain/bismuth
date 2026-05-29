@@ -4,7 +4,7 @@ import { onMount, onCleanup, createEffect } from "solid-js";
 import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { settings, FONT_STACKS } from "./settings";
+import { settings } from "./settings";
 
 // Derive the WebSocket base URL from the same env var that the HTTP api.ts uses,
 // so that VITE_API_BASE overrides work for ws:// too.
@@ -41,6 +41,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
         try {
           fit?.fit();
           sendResize();
+          term?.focus();
         } catch {
           /* ignore during teardown */
         }
@@ -56,7 +57,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     const accent = style.getPropertyValue("--accent").trim() || "#6496ff";
 
     term = new Xterm({
-      fontFamily: FONT_STACKS[settings.appearance.editorFont] ?? "monospace",
+      fontFamily: "'Monaspace Xenon', ui-monospace, 'Cascadia Code', 'Menlo', monospace",
       fontSize: settings.appearance.editorFontSize ?? 14,
       theme: {
         background: bg,
@@ -70,6 +71,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     term.loadAddon(fit);
     term.open(container);
     fit.fit();
+    term.focus();
 
     // Open WebSocket to backend PTY endpoint.
     ws = new WebSocket(
