@@ -5,6 +5,7 @@ import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
+import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
@@ -126,5 +127,51 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       }),
     });
   });
+
+  // Skip the SSE echo of versions we already reconciled (typically: our own
+  // debounced save came back to us with the same content).
+  let ignoreVersion = -1;
+
+  createEffect(async () => {
+    const change = lastChange();
+    const path = props.path;
+    if (!path || !view) return;
+    // Skip our own writes: if any of the changed paths is ours AND the doc
+    // text already matches what's on disk, do nothing.
+    const affectsUs =
+      change.paths.length === 0 /* unknown — assume so */ ||
+      change.paths.includes(path);
+    if (!affectsUs) return;
+    if (change.version === ignoreVersion) return;
+
+    let onDisk: string;
+    try {
+      onDisk = await api.read(path);
+    } catch {
+      return; // file may have been deleted; another flow handles tab cleanup
+    }
+    // Guard: path may have changed while awaiting.
+    if (path !== props.path) return;
+    const current = view.state.doc.toString();
+    if (current === onDisk) {
+      // No-op refresh (e.g., our own debounced save echoed back). Record so
+      // future identical events don't even trigger the read.
+      ignoreVersion = change.version;
+      return;
+    }
+    // Replace the doc while preserving cursor/selection by character offset.
+    // Clamp to the new doc length in case the file got shorter.
+    const sel = view.state.selection.main;
+    const newLen = onDisk.length;
+    const anchor = Math.min(sel.anchor, newLen);
+    const head = Math.min(sel.head, newLen);
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: onDisk },
+      selection: { anchor, head },
+      scrollIntoView: true,
+    });
+    ignoreVersion = change.version;
+  });
+
   return <div ref={host} style={{ height: "100%", overflow: "auto" }} />;
 }
