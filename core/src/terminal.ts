@@ -44,6 +44,10 @@ export function sessionCount(): number {
   return sessions.size;
 }
 
+export function listSessionIds(): string[] {
+  return Array.from(sessions.keys());
+}
+
 export function resizeSession(id: string, cols: number, rows: number): void {
   const s = sessions.get(id);
   if (!s) return;
