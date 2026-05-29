@@ -25,9 +25,13 @@ const TEXTURE_DPR_MULT = 2;
 // labels begin to dominate the dots — fade them out across a small band so it doesn't pop.
 const ZOOMOUT_FADE_START = 1.4;
 const ZOOMOUT_FADE_END = 2.0;
-// Discovery threshold: zoomed in below this fraction of the resting wpp, non-hub labels begin
-// to appear, ramping in proportionally. 0.7 = once you've zoomed in ~30% past the resting view.
+// Discovery threshold: zoomed in below this fraction of the resting wpp, even MORE leaf labels
+// appear, ramping in proportionally. 0.7 = once you've zoomed in ~30% past the resting view.
 const DISCOVERY_ZOOM_IN = 0.7;
+// At rest (zoomRatio ≈ 1), always include this many nearest-to-camera nodes as candidates so
+// orbiting the camera actually changes which labels show. Without this the alwaysOn set (top
+// hubs) would look static under orbit.
+const NEAREST_AT_REST = 6;
 
 export type LabelNode = {
   id: string;
@@ -221,17 +225,13 @@ export class LabelLayer {
     const v = new THREE.Vector3();
     const cam = args.camera.position;
 
-    // Discovery candidates: in BOTH 2D and 3D, gate on screen-space zoom — as the user zooms in
-    // (wpp shrinks past wppDefault * DISCOVERY_ZOOM_IN), non-hub labels begin to appear; tighter
-    // zoom reveals more. The discovery set is then viewport-clipped per-candidate during the
-    // occlusion pass. This is the right mental model: zoom in to read more; zoom out to declutter.
+    // Discovery candidates: always score nodes by camera distance and take the N nearest. At rest
+    // (zoom ≈ wppDefault) we take a small fixed N so orbiting the camera swaps which labels show.
+    // Zoom in past DISCOVERY_ZOOM_IN — N grows proportionally so more leaves come into view. This
+    // is the right mental model: orbit to see what's in front of you; zoom in to read more.
     const discovery = new Set<string>();
     const zoomRatioCheck = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
-    if (zoomRatioCheck < DISCOVERY_ZOOM_IN) {
-      // Fraction in [0..1]: 0 at the start of the band, 1 when fully zoomed in (or past).
-      // Used to take the closest N nodes when very zoomed in, or fewer when just past the threshold.
-      const closeness = Math.min(1, (DISCOVERY_ZOOM_IN - zoomRatioCheck) / DISCOVERY_ZOOM_IN);
-      // Score each node by camera-distance; smaller = closer = more likely to be labeled.
+    if (zoomRatioCheck < ZOOMOUT_FADE_END) {
       const scored: { id: string; d: number }[] = [];
       for (const n of this.nodes) {
         const wx = m.elements[0] * (n.x ?? 0) + m.elements[4] * (n.y ?? 0) + m.elements[8] * (n.z ?? 0) + m.elements[12];
@@ -241,7 +241,11 @@ export class LabelLayer {
         scored.push({ id: n.id, d });
       }
       scored.sort((a, b) => a.d - b.d);
-      const take = Math.max(0, Math.round(closeness * this.nodes.length));
+      // Bonus for zoom-in: smoothly add more leaf labels as you zoom past DISCOVERY_ZOOM_IN.
+      const zoomBonus = zoomRatioCheck < DISCOVERY_ZOOM_IN
+        ? Math.round(((DISCOVERY_ZOOM_IN - zoomRatioCheck) / DISCOVERY_ZOOM_IN) * this.nodes.length * 0.6)
+        : 0;
+      const take = Math.min(this.nodes.length, NEAREST_AT_REST + zoomBonus);
       for (let i = 0; i < take && i < scored.length; i++) discovery.add(scored[i].id);
     }
 
