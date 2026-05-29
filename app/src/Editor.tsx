@@ -1,5 +1,5 @@
 // app/src/Editor.tsx
-import { createEffect, onCleanup } from "solid-js";
+import { createEffect, createMemo, onCleanup } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -55,6 +55,13 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // Value-dedupe the path. props.path is read through a chain (active tab → pane tree →
+  // leaf content) that re-emits whenever the tab object changes — e.g. on every pane
+  // focus change. Without this memo the view effect below would re-run and rebuild the
+  // CodeMirror view on each focus change, stealing focus mid-edit. The memo only emits
+  // when the path string itself changes, so the view is rebuilt only on a real file switch.
+  const currentPath = createMemo(() => props.path);
+
   const save = async (path: string, text: string) => {
     await api.write(path, text);
     props.onSaved();
@@ -62,7 +69,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   };
 
   createEffect(async () => {
-    const path = props.path;
+    const path = currentPath();
     // Destroy the previous view when this effect re-runs (path changed or cleanup).
     onCleanup(() => view?.destroy());
     if (!path) return;
@@ -75,7 +82,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       text = "";
     }
     // Guard: if the path changed while we were awaiting, discard this run.
-    if (path !== props.path) return;
+    if (path !== currentPath()) return;
 
     // Read editor settings here so this effect re-runs (rebuilding the view) when
     // any of them change — that re-applies live preview / gutter / wrapping toggles.
