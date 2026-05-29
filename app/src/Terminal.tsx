@@ -4,6 +4,7 @@ import { onMount, onCleanup, createEffect } from "solid-js";
 import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import "./Terminal.css";
 import { settings } from "./settings";
 
 // Derive the WebSocket base URL from the same env var that the HTTP api.ts uses,
@@ -63,7 +64,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
 
     term = new Xterm({
-      fontFamily: "'Monaspace Xenon', ui-monospace, 'Cascadia Code', 'Menlo', monospace",
+      fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
       fontSize: settings.appearance.editorFontSize ?? 14,
       theme: {
         background: bg,

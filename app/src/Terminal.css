@@ -1,0 +1,6 @@
+/* Match the CodeMirror editor's cursor: smooth glide between positions
+   (xterm's default snaps abruptly). */
+.xterm .xterm-cursor.xterm-cursor-outline,
+.xterm .xterm-cursor.xterm-cursor-bar {
+  transition: left 70ms ease-out, top 70ms ease-out;
+}
