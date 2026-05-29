@@ -5,7 +5,90 @@ import { Terminal as Xterm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import "./Terminal.css";
-import { settings } from "./settings";
+import { settings, PALETTES } from "./settings";
+
+// Build a 16-color ANSI palette from a 5-color graph palette + theme bg/fg.
+// Cycles palette colors through the hue slots; black/white come from CSS vars.
+function buildAnsiPalette(paletteKey: string, fg: string, bg: string) {
+  const hexes = (PALETTES[paletteKey] ?? PALETTES.aurora).map((n) =>
+    "#" + n.toString(16).padStart(6, "0"),
+  );
+  // Cycle palette across the 6 hue slots in order: red, green, yellow, blue, magenta, cyan.
+  const cycle = (i: number) => hexes[i % hexes.length];
+  const lighten = (hex: string, pct: number) => {
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 0xff, g = (n >> 8) & 0xff, b = n & 0xff;
+    r = Math.min(255, Math.round(r + (255 - r) * pct));
+    g = Math.min(255, Math.round(g + (255 - g) * pct));
+    b = Math.min(255, Math.round(b + (255 - b) * pct));
+    return "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+  };
+  return {
+    black: bg,
+    red: cycle(0),
+    green: cycle(1),
+    yellow: cycle(2),
+    blue: cycle(3),
+    magenta: cycle(4),
+    cyan: cycle(5),
+    white: fg,
+    brightBlack: lighten(bg, 0.4),
+    brightRed: lighten(cycle(0), 0.2),
+    brightGreen: lighten(cycle(1), 0.2),
+    brightYellow: lighten(cycle(2), 0.2),
+    brightBlue: lighten(cycle(3), 0.2),
+    brightMagenta: lighten(cycle(4), 0.2),
+    brightCyan: lighten(cycle(5), 0.2),
+    brightWhite: fg,
+  };
+}
+
+// Build the 240-entry extendedAnsi array (slots 16-255) tinted toward the
+// active palette. Preserves brightness/contrast from the standard 256-color
+// scheme so prompts/themes that use 256-color escapes still read structurally,
+// but pulls hues into the palette's family.
+function buildExtendedAnsi(paletteKey: string): string[] {
+  const hexes = (PALETTES[paletteKey] ?? PALETTES.aurora);
+  // Convert palette to {r,g,b} once.
+  const palette = hexes.map((n) => ({ r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }));
+  const stops = [0, 95, 135, 175, 215, 255];
+  const out: string[] = [];
+
+  const closest = (r: number, g: number, b: number) => {
+    let best = palette[0], bestD = Infinity;
+    for (const p of palette) {
+      const d = (p.r - r) ** 2 + (p.g - g) ** 2 + (p.b - b) ** 2;
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best;
+  };
+  const mix = (a: number, b: number, t: number) => Math.round(a * (1 - t) + b * t);
+  const hex = (r: number, g: number, b: number) =>
+    "#" + ((r << 16) | (g << 8) | b).toString(16).padStart(6, "0");
+
+  // 6×6×6 RGB cube (slots 16-231 → array indices 0-215).
+  for (let r6 = 0; r6 < 6; r6++) {
+    for (let g6 = 0; g6 < 6; g6++) {
+      for (let b6 = 0; b6 < 6; b6++) {
+        const r = stops[r6], g = stops[g6], b = stops[b6];
+        const c = closest(r, g, b);
+        // 60% original, 40% palette tint.
+        out.push(hex(mix(r, c.r, 0.75), mix(g, c.g, 0.75), mix(b, c.b, 0.75)));
+      }
+    }
+  }
+  // Grayscale (slots 232-255 → array indices 216-239). Tint slightly toward
+  // the average palette color so it doesn't feel disjoint.
+  const avg = palette.reduce(
+    (a, p) => ({ r: a.r + p.r / palette.length, g: a.g + p.g / palette.length, b: a.b + p.b / palette.length }),
+    { r: 0, g: 0, b: 0 },
+  );
+  for (let i = 0; i < 24; i++) {
+    const v = 8 + 10 * i;
+    out.push(hex(mix(v, Math.round(avg.r), 0.5), mix(v, Math.round(avg.g), 0.5), mix(v, Math.round(avg.b), 0.5)));
+  }
+  return out;
+}
 
 // Derive the WebSocket base URL from the same env var that the HTTP api.ts uses,
 // so that VITE_API_BASE overrides work for ws:// too.
@@ -63,10 +146,13 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     const bg = style.getPropertyValue("--bg").trim() || "#1e1e2e";
     const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
 
+    const ansi = buildAnsiPalette(settings.graph.palette, fg, bg);
+    const extendedAnsi = buildExtendedAnsi(settings.graph.palette);
     term = new Xterm({
       cursorBlink: false,
       fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
       fontSize: 13,
+      lineHeight: 1.5,
       theme: {
         background: bg,
         foreground: fg,
@@ -76,6 +162,9 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
         // Our `.xterm-custom-cursor` overlay draws the actual cursor.
         cursor: "rgba(0,0,0,0)",
         cursorAccent: fg,
+        selectionBackground: "rgba(125,125,125,0.3)",
+        ...ansi,
+        extendedAnsi,
       },
     });
 
