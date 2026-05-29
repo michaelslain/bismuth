@@ -55,7 +55,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // hasn't loaded yet, the grid is sized for the fallback font and characters
     // drift out of their cells. Wait for the actual font to be ready.
     try {
-      await document.fonts.load(`${settings.appearance.editorFontSize ?? 14}px 'Monaspace Xenon'`);
+      await document.fonts.load(`13px 'Monaspace Xenon'`);
     } catch { /* font load failed; we'll render with fallback */ }
 
     // Read CSS variables for terminal theme colors.
@@ -65,7 +65,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
     term = new Xterm({
       fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
-      fontSize: settings.appearance.editorFontSize ?? 14,
+      fontSize: 13,
       theme: {
         background: bg,
         foreground: fg,
@@ -81,6 +81,35 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     term.open(container);
     fit.fit();
     term.focus();
+
+    // Fix 3: Click-to-position cursor on the current prompt line (Warp-style).
+    // Track mousedown position so we only treat single-point clicks as cursor jumps,
+    // not drag-to-select.
+    let mdX = -1, mdY = -1;
+    const downHandler = (e: MouseEvent) => { mdX = e.clientX; mdY = e.clientY; };
+    const upHandler = (e: MouseEvent) => {
+      if (Math.abs(e.clientX - mdX) > 3 || Math.abs(e.clientY - mdY) > 3) return; // dragged → ignore
+      if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
+      const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+      if (!rowsEl) return;
+      const rect = rowsEl.getBoundingClientRect();
+      const cellW = rect.width / term.cols;
+      const cellH = rect.height / term.rows;
+      const targetCol = Math.floor((e.clientX - rect.left) / cellW);
+      const targetRow = Math.floor((e.clientY - rect.top) / cellH);
+      // Only jump on the cursor's own row (the active prompt line).
+      if (targetRow !== term.buffer.active.cursorY) return;
+      const delta = targetCol - term.buffer.active.cursorX;
+      if (delta === 0) return;
+      const seq = (delta > 0 ? "\x1b[C" : "\x1b[D").repeat(Math.abs(delta));
+      const bytes = enc.encode(seq);
+      const frame = new Uint8Array(1 + bytes.length);
+      frame[0] = 0x00;
+      frame.set(bytes, 1);
+      ws.send(frame);
+    };
+    container.addEventListener("mousedown", downHandler);
+    container.addEventListener("mouseup", upHandler);
 
     // Open WebSocket to backend PTY endpoint.
     ws = new WebSocket(
@@ -128,6 +157,8 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     onCleanup(() => {
       ro.disconnect();
       dataListener.dispose();
+      container.removeEventListener("mousedown", downHandler);
+      container.removeEventListener("mouseup", upHandler);
       try {
         ws?.close();
       } catch {
