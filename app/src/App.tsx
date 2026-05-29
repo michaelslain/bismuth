@@ -15,6 +15,7 @@ import {
   type Tab, type PaneNode, type Dir, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing,
+  serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
 import "./App.css";
@@ -38,12 +39,23 @@ function applyView(g: GraphData, view: ViewLayout | undefined): GraphData {
   };
 }
 
+const TABS_STORAGE_KEY = "oa-tabs-v1";
+
 export default function App() {
   const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
-  const [tabs, setTabs] = createSignal<Tab[]>([]);
-  const [activeTabId, setActiveTabId] = createSignal<string | null>(null);
+
+  // Restore persisted tab/pane layout at setup (before any persist effect runs, so we
+  // never clobber storage with the initial empty state). The graph/vault list isn't
+  // loaded yet, so we keep every leaf here; the existing oa-deleted reconciliation prunes
+  // any leaf whose file turns out to be gone once edits occur.
+  const restored = deserializeTabs(
+    typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null,
+    () => true,
+  );
+  const [tabs, setTabs] = createSignal<Tab[]>(restored.tabs);
+  const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId);
 
   const activeTab = createMemo(() => tabs().find((t) => t.id === activeTabId()) ?? null);
   // True when any tab is open — drives the graph floater's sidebar-vs-main docking.
@@ -126,6 +138,10 @@ export default function App() {
     root.style.setProperty("--accent", a.accent);
     root.style.setProperty("--editor-font", FONT_STACKS[a.editorFont] ?? a.editorFont);
     root.style.setProperty("--editor-font-size", a.editorFontSize + "px");
+  });
+  // Persist tab/pane layout whenever it changes.
+  createEffect(() => {
+    localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
   });
   // Close one tab by id (its whole pane tree goes with it).
   const closeTabById = (id: string) => {
