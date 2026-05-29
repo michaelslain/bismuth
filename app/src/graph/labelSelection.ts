@@ -16,7 +16,7 @@ function endpointId(e: EdgeEndpoint): string {
  * and `activeFile` (if present and in the node list). Ties in degree are broken by id
  * (lexicographically ascending) so the choice is deterministic across renders.
  *
- * Degree is computed as out-degree (number of edges where the node is the source).
+ * Degree is computed as undirected degree (total connections, in or out — counts both source and target).
  */
 export function computeAlwaysOnSet(
   nodes: NodeLike[],
@@ -34,13 +34,15 @@ export function computeAlwaysOnSet(
   // Active file, if it actually exists in the graph.
   if (activeFile && nodeIds.has(activeFile)) result.add(activeFile);
 
-  // Top-N by out-degree among non-self nodes. Self is already included unconditionally above.
+  // Top-N by undirected degree among non-self nodes. Self is already included unconditionally above.
   if (hubCount > 0) {
     const deg = new Map<string, number>();
     for (const n of nodes) deg.set(n.id, 0);
     for (const e of edges) {
       const s = endpointId(e.source);
+      const t = endpointId(e.target);
       if (deg.has(s)) deg.set(s, (deg.get(s) ?? 0) + 1);
+      if (deg.has(t)) deg.set(t, (deg.get(t) ?? 0) + 1);
     }
     const ranked = nodes
       .filter((n) => n.kind !== "self")

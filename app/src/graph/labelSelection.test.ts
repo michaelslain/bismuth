@@ -51,9 +51,9 @@ describe("computeAlwaysOnSet", () => {
   });
 
   it("breaks degree ties deterministically by id (lexicographic)", () => {
-    // a and b have equal degree (1 each)
-    const nodes: N[] = [node("self", "self"), node("a"), node("b"), node("c")];
-    const edges: E[] = [edge("a", "c"), edge("b", "c")];
+    // a and b each have degree 1 (the single a-b edge)
+    const nodes: N[] = [node("self", "self"), node("a"), node("b")];
+    const edges: E[] = [edge("a", "b")];
     // hubCount = 1 should pick a (lexicographically first) deterministically
     const set = computeAlwaysOnSet(nodes, edges, null, 1);
     expect(set.has("a")).toBe(true);
