@@ -140,7 +140,7 @@ export default function App() {
   });
 
   createEffect(() => {
-    const v = serverVersion()();
+    const v = serverVersion();
     // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
     if (v > 0) refreshGraph();
   });
