@@ -16,6 +16,7 @@ export function GraphView(props: {
   onOpen: (id: string) => void;
   mode: GraphMode;
   setMode: (m: GraphMode) => void;
+  active: string | null;
   // When true, fill the available height (main pane) instead of a 1:1 square (sidebar).
   fill?: boolean;
 }) {
@@ -60,7 +61,15 @@ export function GraphView(props: {
       centering: gs.centering,
       nodeSize: gs.nodeSize,
       viewMode: gs.viewMode,
+      showGraphLabels: gs.showGraphLabels,
+      graphLabelHubCount: gs.graphLabelHubCount,
     });
+  });
+
+  createEffect(() => {
+    const a = props.active;
+    // Node ids in vault.ts:32 are the file path WITHOUT the .md extension.
+    renderer.setActiveFile(a ? a.replace(/\.md$/, "") : null);
   });
 
   onCleanup(() => renderer.destroy());

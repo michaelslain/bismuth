@@ -416,7 +416,7 @@ export default function App() {
         </div>
       </main>
       <div class="graph-floater" ref={floater}>
-        <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
+        <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={active()} />
       </div>
       <Show when={palette() === "command"}>
         <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} setMode={(m) => setMode(m)} />
