@@ -152,6 +152,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     }
     // Guard: path may have changed while awaiting.
     if (path !== props.path) return;
+    if (!view) return; // view destroyed while we were awaiting
     const current = view.state.doc.toString();
     if (current === onDisk) {
       // No-op refresh (e.g., our own debounced save echoed back). Record so
