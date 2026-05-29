@@ -5,16 +5,14 @@ import { join } from "node:path";
 import { writeNote } from "../src/files";
 import { buildGraph } from "../src/engine";
 
-test("merges self + vault + memory and adds cross-brain about edges", async () => {
+test("merges vault + memory and adds cross-brain about edges", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-eng-v-"));
   const mem = mkdtempSync(join(tmpdir(), "oa-eng-m-"));
   await writeNote(vault, "internship.md", "# Internship");
   await writeNote(mem, "michael-profile.md", "He is working on [[internship]].");
   const g = await buildGraph(vault, mem);
 
-  expect(g.nodes.find((n) => n.kind === "self")).toEqual({
-    id: "self", label: "You", kind: "self",
-  });
+  expect(g.nodes.some((n) => n.id === "internship")).toBe(true);
   expect(g.edges).toContainEqual({
     from: "mem:michael-profile", to: "internship", kind: "about",
   });
@@ -25,14 +23,12 @@ test("works with no memory dir", async () => {
   await writeNote(vault, "a.md", "# A");
   const g = await buildGraph(vault);
   expect(g.nodes.some((n) => n.id === "a")).toBe(true);
-  expect(g.nodes.some((n) => n.kind === "self")).toBe(true);
 });
 
-test("empty vaults produce only self node", async () => {
+test("empty vault produces an empty graph", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-eng-empty-"));
   const g = await buildGraph(vault);
-  const ids = g.nodes.map((n) => n.id);
-  expect(ids).toEqual(["self"]);
+  expect(g.nodes).toEqual([]);
 });
 
 test("about edges only created for vault basenames", async () => {

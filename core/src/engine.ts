@@ -1,15 +1,12 @@
 import { basename } from "node:path";
 import { buildVaultGraph, noteId } from "./vault";
 import { buildMemoryGraph } from "./memory";
-import { mergeGraphs, type GraphData, type GraphEdge, type GraphNode } from "./graph";
+import { mergeGraphs, type GraphData, type GraphEdge } from "./graph";
 import { listMarkdown } from "./files";
-
-const SELF: GraphNode = { id: "self", label: "You", kind: "self" };
 
 export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<GraphData> {
   const vault = await buildVaultGraph(vaultDir);
-  const selfGraph: GraphData = { nodes: [SELF], edges: [] };
-  if (!memoryDir) return mergeGraphs([selfGraph, vault]);
+  if (!memoryDir) return vault;
 
   const memory = await buildMemoryGraph(memoryDir);
   const vaultByBase = new Map<string, string>();
@@ -23,5 +20,5 @@ export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<
       if (toId) about.push({ from: `mem:${base}`, to: toId, kind: "about" });
     }
   }
-  return mergeGraphs([selfGraph, vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }]);
+  return mergeGraphs([vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }]);
 }

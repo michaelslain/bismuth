@@ -165,6 +165,13 @@ export function SettingsPage() {
           <Slider value={settings.graph.nodeSize} min={2} max={16} step={1}
             onChange={(v) => set("graph", "nodeSize", v)} />
         </Row>
+        <Row label="Show labels" hint="Always show the open file, You, and the top hubs in the graph">
+          <Toggle value={settings.graph.showGraphLabels} onChange={(v) => set("graph", "showGraphLabels", v)} />
+        </Row>
+        <Row label="Always-labeled hubs" hint="How many of the most-connected nodes always get a label">
+          <Slider value={settings.graph.graphLabelHubCount} min={0} max={30} step={1}
+            onChange={(v) => set("graph", "graphLabelHubCount", v)} />
+        </Row>
       </Section>
 
       <Section title="Editor">

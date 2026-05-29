@@ -1,11 +1,11 @@
-export type NodeKind = "self" | "note" | "memory" | "agent" | "tag";
+export type NodeKind = "note" | "memory" | "agent" | "tag";
 export type EdgeKind = "link" | "message" | "about" | "tag";
 
 // Node kinds belonging to each brain VIEW, mirrored by the frontend's mode filter.
 // "both" is the full graph (no subset). Each sub-view is laid out on its OWN node set
 // so cross-brain-linked nodes aren't stranded far from their cluster when the other brain is hidden.
-export const SECOND_BRAIN_KINDS = new Set<NodeKind>(["self", "note", "tag"]);
-export const THIRD_BRAIN_KINDS = new Set<NodeKind>(["self", "memory"]);
+export const SECOND_BRAIN_KINDS = new Set<NodeKind>(["note", "tag"]);
+export const THIRD_BRAIN_KINDS = new Set<NodeKind>(["memory"]);
 export type NodeState = "idle" | "awake" | "dead";
 
 export interface GraphNode {

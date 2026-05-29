@@ -1,10 +1,14 @@
 // Backend base URL. Defaults to the standard core port; override with VITE_API_BASE
 // to run the frontend against a backend on a different port (e.g. alongside another worktree).
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
+
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
 import type { Row } from "../../core/src/bases/types";
+
+/** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
+export const eventsUrl = () => `${BASE}/events`;
 
 /** GET and parse JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
 async function getJson<T>(path: string): Promise<T> {

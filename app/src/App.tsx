@@ -1,34 +1,27 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show, Switch, Match } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
-import { Editor } from "./Editor";
 import { GraphView } from "./GraphView";
-import { SettingsPage } from "./SettingsPage";
-import { CalendarPage } from "./calendar/CalendarPage";
-import { TasksPage } from "./TasksPage";
-import { Flashcards } from "./Flashcards";
-import { BaseView } from "./bases/BaseView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
+import { serverVersion } from "./serverVersion";
 import { ToastHost, pushToast } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
+import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel, contentLabel } from "./tabIds";
+import {
+  type Tab, type PaneNode, type Dir, makeTab,
+  splitLeaf, closeLeaf, equalize, focusNeighbor,
+  setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
+  serializeTabs, deserializeTabs,
+} from "./panes";
+import { PaneTree } from "./PaneTree";
+import { ContextMenu } from "./ContextMenu";
 import "./App.css";
-
-// Sentinel tab id for the settings page — not a real file path.
-const SETTINGS_TAB = "::settings";
-const CALENDAR_TAB = "::calendar";
-// Sentinel tab id for the tasks page — not a real file path.
-const TASKS_TAB = "::tasks";
-// Tab id prefix for a per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
-// Each reviewed note gets its own tab; no real note path begins with "::".
-const FLASHCARDS_PREFIX = "::flashcards:";
-// Tab id prefix for embedded terminal sessions: TERMINAL_PREFIX + "<uuid>".
-const TERMINAL_PREFIX = "::term:";
 
 // 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
 // agents = the agent network. Agents is exclusive — never shown with the brains.
@@ -49,14 +42,55 @@ function applyView(g: GraphData, view: ViewLayout | undefined): GraphData {
   };
 }
 
+const TABS_STORAGE_KEY = "oa-tabs-v1";
+
 export default function App() {
   const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
-  const [tabs, setTabs] = createSignal<string[]>([]);
-  const [active, setActive] = createSignal<string | null>(null);
+
+  // Restore persisted tab/pane layout at setup (before any persist effect runs, so we
+  // never clobber storage with the initial empty state). The graph/vault list isn't
+  // loaded yet, so we keep every leaf here; the existing oa-deleted reconciliation prunes
+  // any leaf whose file turns out to be gone once edits occur.
+  const restored = deserializeTabs(
+    typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null,
+    () => true,
+  );
+  const [tabs, setTabs] = createSignal<Tab[]>(restored.tabs);
+  const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId);
+
+  const activeTab = createMemo(() => tabs().find((t) => t.id === activeTabId()) ?? null);
+  // True when any tab is open — drives the graph floater's sidebar-vs-main docking.
+  const anyTabOpen = createMemo(() => tabs().length > 0);
+
+  // Content id of the currently-focused leaf in the active tab, or null.
+  // Drives the terminal overlay's visibility.
+  const focusedContent = createMemo<string | null>(() => {
+    const t = activeTab();
+    if (!t) return null;
+    return leaves(t.root).find((l) => l.id === t.focusId)?.content ?? null;
+  });
+
+  // Every unique terminal content id open across all tabs/panes — each gets one
+  // always-mounted xterm in the overlay. Hidden ones use display:none so their
+  // PTY/WebSocket stay alive when the user switches tab or focuses a sibling pane.
+  const terminalContents = createMemo<string[]>(() => {
+    const ids = new Set<string>();
+    for (const t of tabs()) {
+      for (const l of leaves(t.root)) {
+        if (l.content.startsWith(TERMINAL_PREFIX)) ids.add(l.content);
+      }
+    }
+    return [...ids];
+  });
+
+  const updateActiveTab = (fn: (t: Tab) => Tab) =>
+    setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
   const [palette, setPalette] = createSignal<"command" | "file" | null>(null);
+  // Right-click pane menu: which leaf and where to anchor the menu, or null.
+  const [paneMenu, setPaneMenu] = createSignal<{ leafId: string; x: number; y: number } | null>(null);
 
   // The graph is a single persistent element that morphs between two slots: the
   // sidebar square (when a file/settings tab is active) and the full main pane
@@ -86,18 +120,39 @@ export default function App() {
     graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
   );
 
+  // Open a content id. Single-pane active tab → new tab (today's behavior). Multi-pane
+  // active tab → load into the focused pane. If already visible in the active tab, focus it.
   const openFile = (path: string) => {
-    setTabs((t) => (t.includes(path) ? t : [...t, path]));
-    setActive(path);
+    const at = activeTab();
+    if (at && leaves(at.root).length > 1) {
+      const existing = findLeafByContent(at.root, path);
+      if (existing) {
+        updateActiveTab((t) => ({ ...t, focusId: existing.id }));
+        return;
+      }
+      updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, path) }));
+      return;
+    }
+    const sameTab = tabs().find(
+      (t) => t.root.kind === "leaf" && t.root.content === path,
+    );
+    if (sameTab) {
+      setActiveTabId(sameTab.id);
+      return;
+    }
+    const tab = makeTab(path);
+    setTabs((ts) => [...ts, tab]);
+    setActiveTabId(tab.id);
   };
   const openSettings = () => openFile(SETTINGS_TAB);
   const openCalendar = () => openFile(CALENDAR_TAB);
   const openTasks = () => openFile(TASKS_TAB);
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
-  // Review the flashcards in whichever note is currently active (its own tab).
+  // Review the flashcards in whichever note is focused in the active tab.
   const reviewCurrentNote = () => {
-    const a = active();
-    if (a && !a.startsWith("::")) openFile(FLASHCARDS_PREFIX + a);
+    const at = activeTab();
+    const cur = at ? leaves(at.root).find((l) => l.id === at.focusId)?.content : null;
+    if (cur && !isSentinel(cur)) openFile(FLASHCARDS_PREFIX + cur);
     else pushToast("Open a note to review its flashcards");
   };
 
@@ -111,48 +166,111 @@ export default function App() {
     root.style.setProperty("--editor-font", FONT_STACKS[a.editorFont] ?? a.editorFont);
     root.style.setProperty("--editor-font-size", a.editorFontSize + "px");
   });
-  const closePath = (path: string) => {
-    setTabs((t) => {
-      const i = t.indexOf(path);
-      if (i === -1) return t;
-      const next = t.filter((p) => p !== path);
-      if (active() === path) setActive(next[Math.min(i, next.length - 1)] ?? null);
+  // Persist tab/pane layout whenever it changes.
+  createEffect(() => {
+    localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
+  });
+  // Close one tab by id (its whole pane tree goes with it).
+  const closeTabById = (id: string) => {
+    setTabs((ts) => {
+      const i = ts.findIndex((t) => t.id === id);
+      if (i === -1) return ts;
+      const next = ts.filter((t) => t.id !== id);
+      if (activeTabId() === id) setActiveTabId(next[Math.min(i, next.length - 1)]?.id ?? null);
       return next;
     });
   };
-  const closeTab = (path: string, e: Event) => {
+  const closeTab = (id: string, e: Event) => {
     e.stopPropagation();
-    closePath(path);
+    closeTabById(id);
   };
 
-  // Reconcile open tabs when files change in the tree.
-  // Delete: close the tab (and any open file beneath a deleted folder).
+  // Close a given pane of the active tab. Collapses its parent split; if it was the
+  // last pane in the tab, the tab itself closes.
+  const closePane = (leafId: string) => {
+    const at = activeTab();
+    if (!at) return;
+    const nextRoot = closeLeaf(at.root, leafId);
+    if (nextRoot === null) {
+      closeTabById(at.id);
+      return;
+    }
+    const ls = leaves(nextRoot);
+    const focusId = ls.some((l) => l.id === at.focusId) ? at.focusId : ls[0].id;
+    updateActiveTab((t) => ({ ...t, root: nextRoot, focusId }));
+  };
+  const closeFocusedPane = () => {
+    const at = activeTab();
+    if (at) closePane(at.focusId);
+  };
+
+  // Split a given pane; focus the new pane (which starts as a duplicate of the source).
+  const splitPane = (leafId: string, dir: "row" | "col") => {
+    updateActiveTab((t) => {
+      const { root, newLeafId } = splitLeaf(t.root, leafId, dir);
+      return { ...t, root, focusId: newLeafId };
+    });
+  };
+
+  // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
+  // the file in the half nearest the drop point. left/up put it on the original side; the
+  // duplicate (new leaf) holds the prior content.
+  const dropFileOnPane = (leafId: string, path: string, dir: Dir) => {
+    const splitDir = dir === "left" || dir === "right" ? "row" : "col";
+    updateActiveTab((t) => {
+      const { root, newLeafId } = splitLeaf(t.root, leafId, splitDir);
+      const fileLeaf = dir === "right" || dir === "down" ? newLeafId : leafId;
+      return { ...t, root: setContent(root, fileLeaf, path), focusId: fileLeaf };
+    });
+  };
+
+  // Drag a pane by its header onto another pane to rearrange the layout.
+  const handleMovePane = (targetId: string, draggedId: string, dir: Dir) => {
+    const at = activeTab();
+    if (!at) return;
+    const result = movePane(at.root, draggedId, targetId, dir);
+    if (!result) return;
+    updateActiveTab((t) => ({ ...t, root: result.root, focusId: result.focusId }));
+  };
+
+  // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
+  // folder), collapsing splits; remove a tab if its tree empties.
   const closeDeleted = (path: string) => {
-    for (const p of [...tabs()]) if (p === path || p.startsWith(path + "/")) closePath(p);
+    const hit = (c: string) => c === path || c.startsWith(path + "/");
+    setTabs((ts) => {
+      const next: Tab[] = [];
+      for (const t of ts) {
+        const root = pruneMissing(t.root, (c) => !hit(c));
+        if (!root) continue;
+        const ls = leaves(root);
+        const focusId = ls.some((l) => l.id === t.focusId) ? t.focusId : ls[0].id;
+        next.push({ ...t, root, focusId });
+      }
+      if (!next.some((t) => t.id === activeTabId())) setActiveTabId(next[0]?.id ?? null);
+      return next;
+    });
   };
-  // Rename/move: rewrite the open tab's path (handles files moved inside a renamed folder too).
+
+  // Rename/move: rewrite matching leaf contents in every tab's tree.
   const renamePath = (from: string, to: string) => {
-    const remap = (p: string) =>
-      p === from ? to : p.startsWith(from + "/") ? to + p.slice(from.length) : p;
-    setTabs((t) => t.map(remap));
-    setActive((a) => (a ? remap(a) : a));
+    const remap = (c: string) =>
+      c === from ? to : c.startsWith(from + "/") ? to + c.slice(from.length) : c;
+    const walk = (node: PaneNode): PaneNode =>
+      node.kind === "leaf"
+        ? { ...node, content: remap(node.content) }
+        : { ...node, a: walk(node.a), b: walk(node.b) };
+    setTabs((ts) => ts.map((t) => ({ ...t, root: walk(t.root) })));
   };
+
 
   onMount(() => {
     refreshGraph();
-    let lastVersion = -1; // sentinel: force fetch on first version check
-    const t = setInterval(async () => {
-      try {
-        const { version } = await api.version();
-        if (version !== lastVersion) {
-          lastVersion = version;
-          await refreshGraph();
-        }
-      } catch {
-        // network hiccup — skip this tick
-      }
-    }, 3000); // poll version only; fetch graph only when changed
-    onCleanup(() => clearInterval(t));
+  });
+
+  createEffect(() => {
+    const v = serverVersion();
+    // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
+    if (v > 0) refreshGraph();
   });
   onMount(() => {
     refreshAgents();
@@ -181,17 +299,65 @@ export default function App() {
   onMount(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
       const k = e.key.toLowerCase();
-      if (k === "p") {
+
+      // Palette / quick-switcher (no other modifiers).
+      if (!e.altKey && !e.shiftKey && k === "p") {
         e.preventDefault();
         setPalette((p) => (p === "command" ? null : "command"));
-      } else if (k === "o") {
+        return;
+      }
+      if (!e.altKey && !e.shiftKey && k === "o") {
         e.preventDefault();
         setPalette((p) => (p === "file" ? null : "file"));
-      } else if (k === "`" || k === "j") {
+        return;
+      }
+      // Cmd+` / Cmd+J → open terminal tab.
+      if (!e.altKey && !e.shiftKey && (k === "`" || k === "j")) {
         e.preventDefault();
         openTerminal();
+        return;
+      }
+
+      const at = activeTab();
+      if (!at) return;
+
+      // Cmd+D split right, Cmd+Shift+D split down.
+      if (!e.altKey && k === "d") {
+        e.preventDefault();
+        const dir = e.shiftKey ? "col" : "row";
+        updateActiveTab((t) => {
+          const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir);
+          return { ...t, root, focusId: newLeafId };
+        });
+        return;
+      }
+      // Cmd+Alt+= equalize.
+      if (e.altKey && (k === "=" || k === "+")) {
+        e.preventDefault();
+        updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
+        return;
+      }
+      // Cmd+W close focused pane (collapse parent; if last pane, close tab).
+      if (!e.altKey && !e.shiftKey && k === "w") {
+        e.preventDefault();
+        closeFocusedPane();
+        return;
+      }
+      // Cmd+Alt+arrows focus neighbor.
+      if (e.altKey) {
+        const dirMap: Record<string, Dir> = {
+          arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
+        };
+        const dir = dirMap[k];
+        if (dir) {
+          e.preventDefault();
+          const next = focusNeighbor(at.root, at.focusId, dir);
+          if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
+          return;
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -201,7 +367,7 @@ export default function App() {
   // Snap the floating graph onto whichever slot is active (sidebar square when a
   // tab is open, full main pane on an empty tab).
   const placeFloater = () => {
-    const slot = active() ? sidebarSlot : mainSlot;
+    const slot = anyTabOpen() ? sidebarSlot : mainSlot;
     if (!slot || !floater) return;
     const r = slot.getBoundingClientRect();
     floater.style.top = `${r.top}px`;
@@ -210,7 +376,8 @@ export default function App() {
     floater.style.height = `${r.height}px`;
   };
   createEffect(() => {
-    active(); // re-place whenever the active tab changes
+    activeTabId(); // re-place whenever the active tab changes
+    tabs().length; // …or when tabs open/close
     requestAnimationFrame(placeFloater);
   });
   onMount(() => {
@@ -218,25 +385,21 @@ export default function App() {
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
 
-  const SENTINEL_LABELS: Record<string, string> = {
-    [SETTINGS_TAB]: "⚙ Settings",
-    [CALENDAR_TAB]: "📅 Calendar",
-    [TASKS_TAB]: "✓ Tasks",
-  };
-
-  function noteNameOf(path: string): string {
-    return path.split("/").pop()!.replace(/\.md$/, "");
-  }
-
-  function tabLabel(p: string): string {
-    if (SENTINEL_LABELS[p]) return SENTINEL_LABELS[p];
-    if (p.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteNameOf(p.slice(FLASHCARDS_PREFIX.length));
-    if (p.startsWith(TERMINAL_PREFIX)) {
-      const termTabs = tabs().filter((t) => t.startsWith(TERMINAL_PREFIX));
-      const idx = termTabs.indexOf(p);
-      return `>_ Terminal ${idx + 1}`;
+  // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
+  // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
+  // numbered by their position among the open terminal tabs.
+  function tabBarLabel(t: Tab): string {
+    const ls = leaves(t.root);
+    if (ls.length > 1) return `⊞ ${ls.length} panes`;
+    const content = ls[0].content;
+    if (content.startsWith(TERMINAL_PREFIX)) {
+      const termTabs = tabs().filter((tt) => {
+        const tl = leaves(tt.root);
+        return tl.length === 1 && tl[0].content.startsWith(TERMINAL_PREFIX);
+      });
+      return contentLabel(content, termTabs.indexOf(t) + 1);
     }
-    return noteNameOf(p);
+    return contentLabel(content);
   }
 
   return (
@@ -252,68 +415,82 @@ export default function App() {
           <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
-        <div class="sidebar-graph" classList={{ collapsed: !active() }} ref={sidebarSlot} />
+        <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
         <div class="tabbar">
           <For each={tabs()}>
-            {(p) => (
-              <div class={`tab${active() === p ? " active" : ""}`} onClick={() => setActive(p)}>
-                <span>{tabLabel(p)}</span>
-                <span class="tab-x" onClick={(e) => closeTab(p, e)}>×</span>
+            {(t) => (
+              <div
+                class={`tab${activeTabId() === t.id ? " active" : ""}`}
+                onClick={() => setActiveTabId(t.id)}
+              >
+                <span>{tabBarLabel(t)}</span>
+                <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
               </div>
             )}
           </For>
         </div>
         <div class="editor-body" style={{ position: "relative" }}>
-          <Show when={active()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
-            {(a) => (
-              <Switch fallback={<Editor path={a()} onSaved={refreshGraph} noteNames={noteCandidates} tagNames={tagCandidates} />}>
-                <Match when={a().startsWith(FLASHCARDS_PREFIX)}>
-                  <Flashcards note={a().slice(FLASHCARDS_PREFIX.length)} />
-                </Match>
-                <Match when={a() === CALENDAR_TAB}>
-                  <CalendarPage />
-                </Match>
-                <Match when={a() === SETTINGS_TAB}>
-                  <SettingsPage />
-                </Match>
-                <Match when={a() === TASKS_TAB}>
-                  <TasksPage onOpen={openFile} />
-                </Match>
-                <Match when={a().endsWith(".base")}>
-                  <BaseView path={a()} onOpen={openFile} />
-                </Match>
-                <Match when={a().startsWith(TERMINAL_PREFIX)}>
-                  {/* Empty placeholder. Actual terminal rendering lives in the always-mounted
-                      overlay below so WebSockets and scrollback survive tab switches. */}
-                  <></>
-                </Match>
-              </Switch>
+          <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
+            {(t) => (
+              <PaneTree
+                node={t().root}
+                focusId={t().focusId}
+                showHeader={leaves(t().root).length > 1}
+                onFocus={(leafId) => updateActiveTab((tab) => ({ ...tab, focusId: leafId }))}
+                onResize={(splitId, ratio) =>
+                  updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
+                }
+                onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
+                onClose={closePane}
+                onDropFile={dropFileOnPane}
+                onMovePane={handleMovePane}
+                onSaved={refreshGraph}
+                onOpen={openFile}
+                noteNames={noteCandidates}
+                tagNames={tagCandidates}
+              />
             )}
           </Show>
-          {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab switches. */}
-          <For each={tabs().filter((t) => t.startsWith(TERMINAL_PREFIX))}>
+          {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
+              Each unique terminal content id (collected across all open tabs) mounts once; only the
+              one matching the currently-focused leaf's content is visible. */}
+          <For each={terminalContents()}>
             {(id) => (
               <div style={{
                 position: "absolute",
                 inset: 0,
-                display: active() === id ? "block" : "none",
+                display: focusedContent() === id ? "block" : "none",
               }}>
-                <TerminalTab id={id} active={() => active() === id} />
+                <TerminalTab id={id} active={() => focusedContent() === id} />
               </div>
             )}
           </For>
         </div>
       </main>
       <div class="graph-floater" ref={floater}>
-        <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
+        <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
       </div>
       <Show when={palette() === "command"}>
         <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} openTerminal={openTerminal} setMode={(m) => setMode(m)} />
       </Show>
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
+      </Show>
+      <Show when={paneMenu()}>
+        {(m) => (
+          <ContextMenu
+            x={m().x}
+            y={m().y}
+            onClose={() => setPaneMenu(null)}
+            items={[
+              { label: "Split right", onSelect: () => splitPane(m().leafId, "row") },
+              { label: "Split down", onSelect: () => splitPane(m().leafId, "col") },
+              { label: "Close pane", danger: true, onSelect: () => closePane(m().leafId) },
+            ]}
+          />
+        )}
       </Show>
       <ToastHost />
     </div>
