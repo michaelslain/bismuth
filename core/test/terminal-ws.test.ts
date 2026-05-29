@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { createServer } from "../src/server";
 import { makeSampleVault } from "./helpers";
-import { sessionCount } from "../src/terminal";
+import { sessionCount, listSessionIds } from "../src/terminal";
 
 // Connect a binary WebSocket to /terminal and wait for the first server-pushed bytes.
 async function openWs(base: string): Promise<WebSocket> {
@@ -95,15 +95,15 @@ test("closing the websocket kills the session after the grace period", async () 
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
   try {
+    const before = new Set(listSessionIds());
     const ws = await openWs(base);
-    const afterOpen = sessionCount();
-    expect(afterOpen).toBeGreaterThanOrEqual(1);
+    const mine = listSessionIds().filter((id) => !before.has(id));
+    expect(mine.length).toBe(1);
+    const sessionId = mine[0];
     ws.close();
     // Wait past the 3s grace period.
     await new Promise((r) => setTimeout(r, 3500));
-    // After the grace period, the session we opened (and any other lingering
-    // sessions from prior tests) should be cleaned up — count strictly less.
-    expect(sessionCount()).toBeLessThan(afterOpen);
+    expect(listSessionIds()).not.toContain(sessionId);
   } finally {
     server.stop(true);
   }

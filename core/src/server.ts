@@ -17,6 +17,9 @@ import { createTerminalSession, killSession, resizeSession, getSession } from ".
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
 /** Read a `--flag value` pair from the process argv (shared by the core + cli launchers). */
@@ -97,7 +100,7 @@ export function createServer(cfg: CoreConfig) {
           killSession(session.id);
           return new Response("upgrade failed", { status: 400, headers: cors });
         }
-        return undefined as unknown as Response; // upgrade response is sent by Bun
+        return new Response(null, { status: 101 }); // upgrade response is sent by Bun
       }
 
       // Run a mutating file op: invalidate the cache on success; turn any thrown error
@@ -252,14 +255,12 @@ export function createServer(cfg: CoreConfig) {
 
     websocket: {
       open(ws) {
-        const { sessionId } = ws.data as { sessionId: string };
-        const s = getSession(sessionId);
+        const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+        const s = getSession(data.sessionId);
         if (!s) { ws.close(); return; }
-        // Pipe PTY -> ws.
-        s.pty.onData((data: string) => {
-          ws.send(new TextEncoder().encode(data));
-        });
-        s.pty.onExit(() => { try { ws.close(); } catch { /* */ } });
+        // Pipe PTY -> ws. Store disposables so we can clean them up on close.
+        data.dataSub = s.pty.onData((d: string) => { ws.send(enc.encode(d)); });
+        data.exitSub = s.pty.onExit(() => { try { ws.close(); } catch { /* */ } });
       },
       message(ws, msg) {
         const { sessionId } = ws.data as { sessionId: string };
@@ -273,7 +274,7 @@ export function createServer(cfg: CoreConfig) {
         if (bytes.length === 0) return;
         const tag = bytes[0];
         if (tag === 0x00) {
-          s.pty.write(new TextDecoder().decode(bytes.subarray(1)));
+          s.pty.write(dec.decode(bytes.subarray(1)));
         } else if (tag === 0x01 && bytes.length >= 5) {
           const view = new DataView(bytes.buffer, bytes.byteOffset + 1, 4);
           const cols = view.getUint16(0, true);
@@ -282,9 +283,12 @@ export function createServer(cfg: CoreConfig) {
         }
       },
       close(ws) {
-        const { sessionId } = ws.data as { sessionId: string };
+        const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+        // Dispose PTY listeners immediately so no ws.send is called on the closed socket.
+        data.dataSub?.dispose();
+        data.exitSub?.dispose();
         // Grace period to absorb kernel/network races. No resume in v1.
-        setTimeout(() => killSession(sessionId), 3000);
+        setTimeout(() => killSession(data.sessionId), 3000);
       },
     },
   });
