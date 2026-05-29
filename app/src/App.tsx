@@ -189,7 +189,7 @@ export default function App() {
       } else if (k === "o") {
         e.preventDefault();
         setPalette((p) => (p === "file" ? null : "file"));
-      } else if (k === "`") {
+      } else if (k === "`" || k === "j") {
         e.preventDefault();
         openTerminal();
       }
@@ -249,6 +249,7 @@ export default function App() {
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
           <button class="icon-btn" title="Calendar" onClick={openCalendar}>📅</button>
           <button class="icon-btn" title="Tasks" onClick={openTasks}>✓</button>
+          <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !active() }} ref={sidebarSlot} />
@@ -309,7 +310,7 @@ export default function App() {
         <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} />
       </div>
       <Show when={palette() === "command"}>
-        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} setMode={(m) => setMode(m)} />
+        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} openTerminal={openTerminal} setMode={(m) => setMode(m)} />
       </Show>
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
