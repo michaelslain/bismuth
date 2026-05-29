@@ -10,7 +10,7 @@ import { ToastHost, pushToast } from "./Toast";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, isSentinel } from "./tabIds";
+import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, isSentinel, contentLabel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -352,27 +352,12 @@ export default function App() {
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
 
-  const SENTINEL_LABELS: Record<string, string> = {
-    [SETTINGS_TAB]: "⚙ Settings",
-    [CALENDAR_TAB]: "📅 Calendar",
-    [TASKS_TAB]: "✓ Tasks",
-  };
-
-  function noteNameOf(path: string): string {
-    return path.split("/").pop()!.replace(/\.md$/, "");
-  }
-
-  function tabLabel(p: string): string {
-    if (SENTINEL_LABELS[p]) return SENTINEL_LABELS[p];
-    if (p.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteNameOf(p.slice(FLASHCARDS_PREFIX.length));
-    return noteNameOf(p);
-  }
-
-  // The content shown on a tab's label: its focused leaf's content, falling back to the
-  // first leaf. Keeps the tab title meaningful even when the tab is split.
-  function primaryContentOf(t: Tab): string {
+  // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
+  // joining every pane name doesn't scale. (Per-pane headers identify the individual panes;
+  // a tab-rename feature can override this later.)
+  function tabBarLabel(t: Tab): string {
     const ls = leaves(t.root);
-    return ls.find((l) => l.id === t.focusId)?.content ?? ls[0].content;
+    return ls.length > 1 ? `⊞ ${ls.length} panes` : contentLabel(ls[0].content);
   }
 
   return (
@@ -397,7 +382,7 @@ export default function App() {
                 class={`tab${activeTabId() === t.id ? " active" : ""}`}
                 onClick={() => setActiveTabId(t.id)}
               >
-                <span>{tabLabel(primaryContentOf(t))}</span>
+                <span>{tabBarLabel(t)}</span>
                 <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
               </div>
             )}
@@ -409,11 +394,13 @@ export default function App() {
               <PaneTree
                 node={t().root}
                 focusId={t().focusId}
+                showHeader={leaves(t().root).length > 1}
                 onFocus={(leafId) => updateActiveTab((tab) => ({ ...tab, focusId: leafId }))}
                 onResize={(splitId, ratio) =>
                   updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
                 }
                 onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
+                onClose={closePane}
                 onDropFile={dropFileOnPane}
                 onSaved={refreshGraph}
                 onOpen={openFile}

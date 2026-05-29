@@ -4,14 +4,17 @@
 import { Show, createSignal } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
+import { contentLabel } from "./tabIds";
 import type { NoteCandidate } from "./editor/wikilink";
 
 type PaneTreeProps = {
   node: PaneNode;
   focusId: string;
+  showHeader: boolean; // tab is split → show a name header on each pane
   onFocus: (leafId: string) => void;
   onResize: (splitId: string, ratio: number) => void;
   onMenu: (leafId: string, x: number, y: number) => void;
+  onClose: (leafId: string) => void;
   onDropFile: (leafId: string, path: string, dir: Dir) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
@@ -61,13 +64,31 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
         props.onDropFile(props.node.id, path, dir);
       }}
     >
-      <PaneContent
-        path={props.node.content}
-        onSaved={props.onSaved}
-        onOpen={props.onOpen}
-        noteNames={props.noteNames}
-        tagNames={props.tagNames}
-      />
+      <Show when={props.showHeader}>
+        <div class="pane-header">
+          <span class="pane-header-label">{contentLabel(props.node.content)}</span>
+          <span
+            class="pane-header-x"
+            title="Close pane"
+            onMouseDown={(e) => {
+              e.stopPropagation(); // don't also trigger focus
+              e.preventDefault();
+              props.onClose(props.node.id);
+            }}
+          >
+            ×
+          </span>
+        </div>
+      </Show>
+      <div class="pane-body">
+        <PaneContent
+          path={props.node.content}
+          onSaved={props.onSaved}
+          onOpen={props.onOpen}
+          noteNames={props.noteNames}
+          tagNames={props.tagNames}
+        />
+      </div>
       <Show when={dropDir()}>
         {(d) => <div class={`pane-dropzone ${d()}`} />}
       </Show>
