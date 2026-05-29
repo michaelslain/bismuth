@@ -70,7 +70,12 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       theme: {
         background: bg,
         foreground: fg,
-        cursor: fg, // match the editor's caretColor (var(--fg))
+        // xterm's native cursor: make the block totally invisible. cursorAccent is
+        // the text color INSIDE the cursor cell — setting it to `fg` makes the
+        // underlying character render in its normal color (not the cursor accent).
+        // Our `.xterm-custom-cursor` overlay draws the actual cursor.
+        cursor: "rgba(0,0,0,0)",
+        cursorAccent: fg,
       },
     });
 

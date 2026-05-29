@@ -1,8 +1,3 @@
-/* Hide xterm's native class-based cursor — we render our own overlay below. */
-.xterm .xterm-cursor {
-  visibility: hidden;
-}
-
 /* Reduce graininess on macOS displays. */
 .xterm {
   -webkit-font-smoothing: antialiased;
