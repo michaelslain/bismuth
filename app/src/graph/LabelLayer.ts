@@ -169,6 +169,8 @@ export class LabelLayer {
     focalDistance: number;                       // camera.position.distanceTo(controls.target)
     cloudCenter: THREE.Vector3;
     cloudRadius: number;
+    worldPerPixel: number;
+    wppDefault: number;
   }): void {
     if (!this.enabled || this.sprites.size === 0) return;
     const nodeById = new Map<string, LabelNode>();
@@ -179,7 +181,7 @@ export class LabelLayer {
     const v = new THREE.Vector3();
     const cam = args.camera.position;
 
-    // Discovery-band candidates (3D only): closer than half the focal distance.
+    // Discovery-band candidates: 3D uses distance threshold; 2D uses zoom-gated viewport clip.
     const discovery = new Set<string>();
     if (args.viewMode === "3d") {
       const thresh = args.focalDistance * 0.5;
@@ -189,6 +191,19 @@ export class LabelLayer {
         const wz = m.elements[2] * (n.x ?? 0) + m.elements[6] * (n.y ?? 0) + m.elements[10] * (n.z ?? 0) + m.elements[14];
         const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
         if (d < thresh) discovery.add(n.id);
+      }
+    } else {
+      // 2D: zoom-gated, viewport-clipped.
+      const zoomedIn = args.wppDefault > 0 && args.worldPerPixel < args.wppDefault * 0.5;
+      if (zoomedIn) {
+        const proj = new THREE.Vector3();
+        for (const n of this.nodes) {
+          proj.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m).project(args.camera);
+          // NDC inside viewport
+          if (proj.x >= -1 && proj.x <= 1 && proj.y >= -1 && proj.y <= 1 && proj.z <= 1) {
+            discovery.add(n.id);
+          }
+        }
       }
     }
 
