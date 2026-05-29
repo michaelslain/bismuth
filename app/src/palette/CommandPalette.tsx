@@ -8,12 +8,14 @@ type GraphMode = "2nd" | "3rd" | "both" | "agents";
 type Props = {
   onClose: () => void;
   openSettings: () => void;
+  openTerminal: () => void;
   setMode: (m: GraphMode) => void;
 };
 
 export function CommandPalette(props: Props) {
   const commands: { item: PaletteItem; action: () => void }[] = [
     { item: { id: "settings", label: "Open Settings", icon: "⚙" }, action: props.openSettings },
+    { item: { id: "terminal", label: "Open Terminal", icon: ">_" }, action: props.openTerminal },
     { item: { id: "graph-2nd", label: "Graph: 2nd Brain (vault)", icon: "◐" }, action: () => props.setMode("2nd") },
     { item: { id: "graph-3rd", label: "Graph: 3rd Brain (memory)", icon: "◑" }, action: () => props.setMode("3rd") },
     { item: { id: "graph-both", label: "Graph: Both Brains", icon: "●" }, action: () => props.setMode("both") },
