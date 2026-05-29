@@ -27,13 +27,22 @@ test("createTerminalSession spawns a shell that echoes stdin to stdout", async (
   }
 });
 
-test("resizeSession updates the PTY winsize", async () => {
+test("resizeSession updates the PTY winsize and propagates to the shell", async () => {
   const cwd = tmp();
   const s = createTerminalSession({ cwd, shell: "/bin/sh", cols: 80, rows: 24 });
   try {
+    const out: Buffer[] = [];
+    s.pty.onData((d) => out.push(Buffer.from(d)));
     resizeSession(s.id, 120, 40);
     expect(s.cols).toBe(120);
     expect(s.rows).toBe(40);
+    s.pty.write("stty size\n");
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (/\b40\s+120\b/.test(Buffer.concat(out).toString())) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(Buffer.concat(out).toString()).toMatch(/\b40\s+120\b/);
   } finally {
     killSession(s.id);
   }
@@ -43,7 +52,10 @@ test("killSession removes the session from the registry", () => {
   const cwd = tmp();
   const before = sessionCount();
   const s = createTerminalSession({ cwd, shell: "/bin/sh", cols: 80, rows: 24 });
-  expect(sessionCount()).toBe(before + 1);
-  killSession(s.id);
+  try {
+    expect(sessionCount()).toBe(before + 1);
+  } finally {
+    killSession(s.id);
+  }
   expect(sessionCount()).toBe(before);
 });

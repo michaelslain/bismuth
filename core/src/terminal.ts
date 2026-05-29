@@ -23,7 +23,10 @@ export function createTerminalSession(opts: {
     cols: opts.cols,
     rows: opts.rows,
     cwd: opts.cwd,
-    env: { ...process.env, TERM: "xterm-256color" } as { [k: string]: string },
+    env: Object.fromEntries(
+      Object.entries({ ...process.env, TERM: "xterm-256color" })
+        .filter((e): e is [string, string] => e[1] !== undefined),
+    ),
   });
   const s: Session = { id: randomUUID(), pty: p, cols: opts.cols, rows: opts.rows };
   sessions.set(s.id, s);
