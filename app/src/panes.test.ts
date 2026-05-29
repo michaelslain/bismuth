@@ -83,6 +83,11 @@ test("equalize weights ratios by leaf count so all leaves get equal area", () =>
   expect((eq.b as Split).ratio).toBeCloseTo(0.5, 5);
 });
 
+test("equalize on a single leaf returns it unchanged", () => {
+  const root = makeLeaf("a.md");
+  expect(equalize(root)).toBe(root);
+});
+
 test("setContent retargets exactly one leaf", () => {
   const root = makeLeaf("a.md");
   const { root: r1 } = splitLeaf(root, root.id, "row");
@@ -126,6 +131,26 @@ test("focusNeighbor finds the pane to the right", () => {
   expect(focusNeighbor(r1, s.a.id, "up")).toBeNull(); // nothing above
 });
 
+test("focusNeighbor picks the straight-across pane in a 2x2 grid", () => {
+  // Build row( col(A,B), col(C,D) ): A top-left, B bottom-left, C top-right, D bottom-right.
+  const root = makeLeaf("A");
+  const { root: r1 } = splitLeaf(root, root.id, "row"); // A | A'(right)
+  const r2 = setContent(r1, (r1 as Split).b.id, "C"); // right side becomes C
+  const left = splitLeaf(r2, (r2 as Split).a.id, "col"); // left: A / B
+  const rightCol = splitLeaf(left.root, ((left.root as Split).b as Leaf).id, "col"); // right: C / D
+  const tree = rightCol.root as Split;
+  const leftSplit = tree.a as Split;
+  const rightSplit = tree.b as Split;
+  const A = leftSplit.a.id;
+  const C = rightSplit.a.id; // top-right, straight across from A
+  const D = rightSplit.b.id; // bottom-right, diagonal
+  // From A pressing right must land on C (same row band), not the diagonal D.
+  expect(focusNeighbor(tree, A, "right")).toBe(C);
+  expect(focusNeighbor(tree, A, "right")).not.toBe(D);
+  // And down from A is its column sibling B.
+  expect(focusNeighbor(tree, A, "down")).toBe(leftSplit.b.id);
+});
+
 import { pruneMissing, serializeTabs, deserializeTabs } from "./panes";
 
 test("pruneMissing drops leaves that no longer exist and collapses splits", () => {
@@ -143,6 +168,21 @@ test("pruneMissing drops leaves that no longer exist and collapses splits", () =
 test("pruneMissing returns null when nothing survives", () => {
   const root = makeLeaf("gone.md");
   expect(pruneMissing(root, () => false)).toBeNull();
+});
+
+test("pruneMissing collapses nested splits when an interior leaf is dropped", () => {
+  // a | (b / c) — drop b, expect a | c (the inner col split collapses to c).
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "col"); // right = (a' / a'')
+  const inner = (r2 as Split).b as Split;
+  const r3 = setContent(r2, inner.a.id, "b.md"); // b on top-right
+  const r4 = setContent(r3, inner.b.id, "c.md"); // c on bottom-right
+  const pruned = pruneMissing(r4, (x) => x !== "b.md") as Split;
+  expect(pruned.kind).toBe("split");
+  expect((pruned.a as Leaf).content).toBe("a.md");
+  expect((pruned.b as Leaf).kind).toBe("leaf"); // inner split collapsed to a single leaf
+  expect((pruned.b as Leaf).content).toBe("c.md");
 });
 
 test("serialize/deserialize round-trips tabs and prunes missing files", () => {

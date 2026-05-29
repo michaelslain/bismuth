@@ -131,8 +131,9 @@ export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string 
   if (!from) return null;
   const fcx = from.x + from.w / 2;
   const fcy = from.y + from.h / 2;
+  const horizontal = dir === "left" || dir === "right";
   let best: string | null = null;
-  let bestDist = Infinity;
+  let bestScore = Infinity;
   for (const [id, r] of rects) {
     if (id === fromId) continue;
     const dx = r.x + r.w / 2 - fcx;
@@ -143,9 +144,14 @@ export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string 
       dir === "down" ? dy > 0.001 && Math.abs(dx) <= Math.abs(dy) :
       /* up */ dy < -0.001 && Math.abs(dx) <= Math.abs(dy);
     if (!inDir) continue;
-    const dist = dx * dx + dy * dy;
-    if (dist < bestDist) {
-      bestDist = dist;
+    // Rank by distance along the travel axis first, breaking ties by the smaller
+    // cross-axis offset — so "right" lands on the pane straight across, not a
+    // diagonal one that merely happens to be closer in 2D.
+    const primary = horizontal ? Math.abs(dx) : Math.abs(dy);
+    const secondary = horizontal ? Math.abs(dy) : Math.abs(dx);
+    const score = primary * 1000 + secondary;
+    if (score < bestScore) {
+      bestScore = score;
       best = id;
     }
   }
@@ -170,7 +176,7 @@ export function pruneMissing(
 export function setRatio(root: PaneNode, splitId: string, ratio: number): PaneNode {
   const walk = (node: PaneNode): PaneNode => {
     if (node.kind === "leaf") return node;
-    if (node.id === splitId) return { ...node, ratio, a: walk(node.a), b: walk(node.b) };
+    if (node.id === splitId) return { ...node, ratio };
     return { ...node, a: walk(node.a), b: walk(node.b) };
   };
   return walk(root);
