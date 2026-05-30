@@ -18,19 +18,25 @@ export function createTerminalSession(opts: {
   rows: number;
 }): Session {
   const shell = opts.shell ?? process.env.SHELL ?? "/bin/sh";
-  const p = spawnPty(shell, [], {
+
+  // Build environment with TERM override, filtering out undefined values
+  const env = Object.fromEntries(
+    Object.entries({ ...process.env, TERM: "xterm-256color" }).filter(
+      (e): e is [string, string] => e[1] !== undefined,
+    ),
+  );
+
+  const pty = spawnPty(shell, [], {
     name: "xterm-256color",
     cols: opts.cols,
     rows: opts.rows,
     cwd: opts.cwd,
-    env: Object.fromEntries(
-      Object.entries({ ...process.env, TERM: "xterm-256color" })
-        .filter((e): e is [string, string] => e[1] !== undefined),
-    ),
+    env,
   });
-  const s: Session = { id: randomUUID(), pty: p, cols: opts.cols, rows: opts.rows };
-  sessions.set(s.id, s);
-  return s;
+
+  const session: Session = { id: randomUUID(), pty, cols: opts.cols, rows: opts.rows };
+  sessions.set(session.id, session);
+  return session;
 }
 
 export function killSession(id: string): void {

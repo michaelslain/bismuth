@@ -1,7 +1,7 @@
 // app/src/Editor.tsx
 import { createEffect, createMemo, onCleanup } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
+import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { api } from "./api";
@@ -12,6 +12,12 @@ import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
+
+// Marks a transaction as "content pulled in from disk" rather than a user edit,
+// so the autosave listener can skip it. Without this, reloading an external
+// change triggers a save that writes the file back to itself — an endless loop
+// against a file something else (e.g. a status-file writer) keeps rewriting.
+const ExternalReload = Annotation.define<boolean>();
 
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
@@ -101,6 +107,9 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       ...(ed.livePreview ? [livePreview, tasksQuery] : []),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return;
+        // A reload we pulled from disk isn't a user edit — don't autosave it
+        // back (that loops against externally-rewritten files like DAEMON.md).
+        if (u.transactions.some((tr) => tr.annotation(ExternalReload))) return;
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => save(path, u.state.doc.toString()), settings.editor.autoSaveDelay);
       }),
@@ -173,11 +182,16 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const newLen = onDisk.length;
     const anchor = Math.min(sel.anchor, newLen);
     const head = Math.min(sel.head, newLen);
+    // Keep the reader where they were: capture scroll before the full-document
+    // replace and restore it after (no scrollIntoView, which would jump to the
+    // caret — typically the top — every time the file changes on disk).
+    const scrollTop = view.scrollDOM.scrollTop;
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: onDisk },
       selection: { anchor, head },
-      scrollIntoView: true,
+      annotations: ExternalReload.of(true),
     });
+    view.scrollDOM.scrollTop = scrollTop;
     lastIgnoredVersion = change.version;
   });
 

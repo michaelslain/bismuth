@@ -15,31 +15,31 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
   const rels = await listMarkdown(root);
   const nodes: GraphNode[] = [];
   const byBase = new Map<string, string>();
+  const links = new Map<string, string[]>();
 
   // Build memory nodes and index by basename
   for (const rel of rels) {
     const base = basename(noteId(rel));
-    nodes.push({ id: MEM(base), label: base, kind: "memory" });
-    byBase.set(base, MEM(base));
+    const id = MEM(base);
+    nodes.push({ id, label: base, kind: "memory" });
+    byBase.set(base, id);
   }
 
-  // Read all contents in parallel
-  const contents = new Map<string, string>(
-    await Promise.all(rels.map(async (rel) => [basename(noteId(rel)), await readNote(root, rel)] as const))
-  );
-
-  // Extract links and create edges in a single pass
+  // Read all contents and extract links in parallel
   const edges: GraphEdge[] = [];
-  const links = new Map<string, string[]>();
-
-  for (const [base, content] of contents) {
-    const targets = extractWikilinks(content);
-    links.set(base, targets);
-    for (const t of targets) {
-      const toId = byBase.get(t);
-      if (toId) edges.push({ from: MEM(base), to: toId, kind: "link" });
-    }
-  }
+  await Promise.all(
+    rels.map(async (rel) => {
+      const base = basename(noteId(rel));
+      const content = await readNote(root, rel);
+      const targets = extractWikilinks(content);
+      links.set(base, targets);
+      // Create edges to other memory notes
+      for (const t of targets) {
+        const toId = byBase.get(t);
+        if (toId) edges.push({ from: MEM(base), to: toId, kind: "link" });
+      }
+    }),
+  );
 
   return { nodes, edges, links };
 }

@@ -1,9 +1,10 @@
 // app/src/FileTree.tsx
 import { createEffect, createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import { api } from "./api";
-import { serverVersion } from "./serverVersion";
+import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { pushToast } from "./Toast";
+import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
 
 const FOLDER_ICON = "📁";
@@ -40,33 +41,40 @@ function sortedChildren(node: TreeNode): TreeNode[] {
   });
 }
 
-/** Parent dir of a vault path ("a/b/c.md" -> "a/b", "x.md" -> ""). */
-function parentOf(path: string): string {
-  const i = path.lastIndexOf("/");
-  return i === -1 ? "" : path.slice(0, i);
+/** Parent dir and join path into a single namespace to reduce duplication. */
+namespace Path {
+  export function parent(path: string): string {
+    const i = path.lastIndexOf("/");
+    return i === -1 ? "" : path.slice(0, i);
+  }
+
+  export function join(dir: string, name: string): string {
+    return dir ? `${dir}/${name}` : name;
+  }
 }
 
-/** Join a parent dir and a name into a vault path. */
-function joinPath(dir: string, name: string): string {
-  return dir ? `${dir}/${name}` : name;
-}
+const parentOf = Path.parent;
+const joinPath = Path.join;
 
 export function FileTree(props: { onOpen: (path: string) => void }) {
-  const [files, { refetch }] = createResource(() => api.tree());
+  const [files, { refetch, mutate }] = createResource(() => api.tree());
   const [editing, setEditing] = createSignal<string | null>(null);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [dropTarget, setDropTarget] = createSignal<string | null>(null);
-  // React to serverVersion changes instead of blind polling.
-  // Pause refetch while the user is editing/dragging — rebuilding the tree tears
-  // down the inline edit input or drag source. We'll catch up on the next event.
+  // React to server changes instead of blind polling.
   let lastSeen = 0;
   createEffect(() => {
-    const v = serverVersion();
-    if (v === lastSeen) return;
-    lastSeen = v;
-    // Pause refetch while the user is editing/dragging — rebuilding the tree tears
-    // down the inline edit input or drag source. We'll catch up on the next event.
+    const c = lastChange();
+    if (c.version === lastSeen) return;
+    // Pause while the user is editing/dragging — rebuilding the tree tears down the
+    // inline input or drag source. Don't advance lastSeen, so the change is picked
+    // up once editing ends (this effect re-runs when editing()/dragPath() clear).
     if (editing() !== null || dragPath() !== null) return;
+    lastSeen = c.version;
+    // The server tells us whether a change altered tree structure or an icon. A
+    // pure content edit (dirty.tree === false) leaves the tree as-is — no rescan.
+    // Absent `dirty` (poll/reconnect) means "unknown", so refetch to be safe.
+    if (c.dirty?.tree === false) return;
     refetch();
   });
 
@@ -81,6 +89,18 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   const refresh = () => refetch();
+
+  // Optimistic local edits: apply the change to the tree instantly so the UI
+  // reflects it without waiting for a /tree round-trip (which contends with the
+  // server's graph rebuild). The op's own success path needs no refetch — the
+  // optimistic state already matches the server; we only refresh() to *revert*
+  // if the server call fails.
+  const optimisticRename = (from: string, to: string) =>
+    mutate((cur) => renameEntries(cur ?? [], from, to));
+  const optimisticRemove = (path: string) =>
+    mutate((cur) => removeEntries(cur ?? [], path));
+  const optimisticAdd = (path: string, kind: "file" | "dir") =>
+    mutate((cur) => addEntry(cur ?? [], path, kind));
 
   // LIFO stack of undoable deletes (most-recent first).
   const [undoStack, setUndoStack] = createSignal<{ trashPath: string; to: string; name: string }[]>([]);
@@ -123,15 +143,16 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   onCleanup(() => window.removeEventListener("oa-new", onNew));
 
   async function doDelete(node: TreeNode) {
+    optimisticRemove(node.path); // instant; reverted via refresh() on failure
+    // Close any open tab for the deleted file (or files under a deleted folder).
+    window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
     try {
       const { trashPath } = await api.del(node.path);
-      // Close any open tab for the deleted file (or files under a deleted folder).
-      window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
       const entry = { trashPath, to: node.path, name: node.name };
       setUndoStack((s) => [entry, ...s]);
-      await refresh();
       pushToast(`Deleted ${node.name}`, { label: "Undo", onClick: () => restoreDeleted(entry) });
     } catch (e) {
+      await refresh();
       pushToast(`Delete failed: ${(e as Error).message}`);
     }
   }
@@ -139,12 +160,14 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   async function doCreate(parentDir: string, kind: "file" | "dir") {
     const defaultName = kind === "dir" ? "New Folder" : "Untitled.md";
     const path = joinPath(parentDir, defaultName);
+    optimisticAdd(path, kind); // instant; reverted via refresh() on failure
+    if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
+    setEditing(path);
     try {
       await api.create(path, kind);
-      if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
-      await refresh();
-      setEditing(path);
     } catch (e) {
+      setEditing(null);
+      await refresh();
       pushToast(`Create failed: ${(e as Error).message}`);
     }
   }
@@ -176,13 +199,14 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     if (parentOf(from) === targetDir) return; // already there
     if (targetDir === from || targetDir.startsWith(from + "/")) return; // into itself/descendant
     const to = joinPath(targetDir, from.split("/").pop()!);
+    optimisticRename(from, to); // instant; reverted via refresh() on failure
+    // Keep any open tab pointing at the moved path (incl. files under a moved folder).
+    window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
+    if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
     try {
       await api.move(from, to);
-      // Keep any open tab pointing at the moved path (incl. files under a moved folder).
-      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
-      if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
-      await refresh();
     } catch (e) {
+      await refresh();
       pushToast(`Move failed: ${(e as Error).message}`);
     }
   }
@@ -208,6 +232,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
         editing={editing()}
         setEditing={setEditing}
         refresh={refresh}
+        optimisticRename={optimisticRename}
         dragPath={dragPath()}
         setDragPath={setDragPath}
         dropTarget={dropTarget()}
@@ -225,6 +250,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
 /** Inline-editable name. Renders an auto-selected input; Enter commits via move, Escape cancels. */
 function EditableLabel(props: {
   node: TreeNode; isDir: boolean; setEditing: (p: string | null) => void; refresh: () => void;
+  optimisticRename: (from: string, to: string) => void;
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
@@ -240,13 +266,15 @@ function EditableLabel(props: {
     if (!raw || raw === initial) return; // no-op
     // Preserve the .md extension for files if the user dropped it.
     const newName = !props.isDir && !raw.endsWith(".md") ? `${raw}.md` : raw;
-    const to = joinPath(parentOf(props.node.path), newName);
+    const from = props.node.path;
+    const to = joinPath(parentOf(from), newName);
+    props.optimisticRename(from, to); // instant; reverted via refresh() on failure
+    // Keep any open tab pointing at the renamed path.
+    window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
     try {
-      await api.move(props.node.path, to);
-      // Keep any open tab pointing at the renamed path.
-      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from: props.node.path, to } }));
-      props.refresh();
+      await api.move(from, to);
     } catch (e) {
+      props.refresh();
       pushToast(`Rename failed: ${(e as Error).message}`);
     }
   };
@@ -293,6 +321,7 @@ function Level(props: {
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
   onMenu: (node: TreeNode, e: MouseEvent) => void;
   editing: string | null; setEditing: (p: string | null) => void; refresh: () => void;
+  optimisticRename: (from: string, to: string) => void;
   dragPath: string | null; setDragPath: (p: string | null) => void;
   dropTarget: string | null; setDropTarget: (p: string | null) => void;
   moveInto: (targetDir: string) => void; endDrag: () => void;
@@ -320,13 +349,14 @@ function Level(props: {
             >
               {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON}{" "}
               <Show when={props.editing === child.path} fallback={child.name}>
-                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} />
+                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
               </Show>
             </div>
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
                 onOpen={props.onOpen} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
+                optimisticRename={props.optimisticRename}
                 dragPath={props.dragPath} setDragPath={props.setDragPath}
                 dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
                 moveInto={props.moveInto} endDrag={props.endDrag} />
@@ -349,7 +379,7 @@ function Level(props: {
           >
             {child.icon ?? FILE_ICON}{" "}
             <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
-              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} />
+              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
             </Show>
           </div>
         );

@@ -5,7 +5,10 @@ import { extractTags } from "./tags";
 import { extractWikilinks } from "./wikilinks";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
-/** id = relative path without ".md" */
+/**
+ * Normalize a relative path to a note id (remove .md extension).
+ * Used consistently across vault and memory graph builders.
+ */
 export function noteId(rel: string): string {
   return rel.replace(/\.md$/i, "");
 }
@@ -46,18 +49,16 @@ export async function buildVaultGraph(root: string): Promise<GraphData> {
     const raw = contents.get(note.id)!;
     const { data, body } = parseFrontmatter(raw);
 
-    // Wikilink edges
+    // Wikilink edges: create edges to existing notes only
     for (const target of extractWikilinks(raw)) {
       const toId = byBase.get(target);
       if (toId) edges.push({ from: note.id, to: toId, kind: "link" });
     }
 
-    // Tag edges and nodes
+    // Tag edges and nodes: create nodes on first reference
     for (const tag of extractTags(data, body)) {
       const tagId = `tag:${tag}`;
-      if (!tagNodes.has(tagId)) {
-        tagNodes.set(tagId, { id: tagId, label: `#${tag}`, kind: "tag" });
-      }
+      tagNodes.set(tagId, tagNodes.get(tagId) ?? { id: tagId, label: `#${tag}`, kind: "tag" });
       edges.push({ from: note.id, to: tagId, kind: "tag" });
     }
   }

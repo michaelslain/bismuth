@@ -31,18 +31,20 @@ export function makeTab(content: string): Tab {
   return { id: newId(), root, focusId: root.id };
 }
 
-// Replace the target leaf with a split: original content on side `a`, a duplicate
-// on side `b`. Returns the new root and the new (duplicate) leaf's id.
+// Replace the target leaf with a split: original content on side `a`, and on side `b`
+// either `newContent` (when provided) or a duplicate of the original. Returns the new
+// root and the new leaf's id.
 export function splitLeaf(
   root: PaneNode,
   leafId: string,
   dir: "row" | "col",
+  newContent?: string,
 ): { root: PaneNode; newLeafId: string } {
   let newLeafId = "";
   const walk = (node: PaneNode): PaneNode => {
     if (node.kind === "leaf") {
       if (node.id !== leafId) return node;
-      const dup = makeLeaf(node.content);
+      const dup = makeLeaf(newContent ?? node.content);
       newLeafId = dup.id;
       return { kind: "split", id: newId(), dir, ratio: 0.5, a: node, b: dup };
     }
@@ -162,11 +164,23 @@ export function focusNeighbor(root: PaneNode, fromId: string, dir: Dir): string 
     if (id === fromId) continue;
     const dx = r.x + r.w / 2 - fcx;
     const dy = r.y + r.h / 2 - fcy;
-    const inDir =
-      dir === "right" ? dx > 0.001 && Math.abs(dy) <= Math.abs(dx) :
-      dir === "left" ? dx < -0.001 && Math.abs(dy) <= Math.abs(dx) :
-      dir === "down" ? dy > 0.001 && Math.abs(dx) <= Math.abs(dy) :
-      /* up */ dy < -0.001 && Math.abs(dx) <= Math.abs(dy);
+
+    // Check if neighbor is in the target direction
+    let inDir: boolean;
+    switch (dir) {
+      case "right":
+        inDir = dx > 0.001 && Math.abs(dy) <= Math.abs(dx);
+        break;
+      case "left":
+        inDir = dx < -0.001 && Math.abs(dy) <= Math.abs(dx);
+        break;
+      case "down":
+        inDir = dy > 0.001 && Math.abs(dx) <= Math.abs(dy);
+        break;
+      case "up":
+        inDir = dy < -0.001 && Math.abs(dx) <= Math.abs(dy);
+        break;
+    }
     if (!inDir) continue;
     // Rank by distance along the travel axis first, breaking ties by the smaller
     // cross-axis offset — so "right" lands on the pane straight across, not a

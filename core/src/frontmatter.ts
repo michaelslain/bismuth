@@ -5,10 +5,11 @@ export interface Frontmatter {
   body: string;
 }
 
-const FM = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+/** Regex to match YAML frontmatter block at start of markdown (handles \r\n too). */
+const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 
 export function parseFrontmatter(md: string): Frontmatter {
-  const m = md.match(FM);
+  const m = md.match(FRONTMATTER_REGEX);
   if (!m) return { data: {}, body: md };
   // Real vaults contain notes with malformed YAML — tolerate it rather than crash.
   let data: Record<string, unknown> = {};
@@ -28,7 +29,7 @@ export function parseFrontmatter(md: string): Frontmatter {
  * note had no frontmatter, a new block is prepended ahead of the existing body.
  */
 export function setFrontmatterKey(md: string, key: string, value: unknown): string {
-  const m = md.match(FM);
+  const m = md.match(FRONTMATTER_REGEX);
   if (!m) {
     // No existing frontmatter: synthesise a fresh block.
     return `---\n${stringify({ [key]: value })}---\n${md}`;

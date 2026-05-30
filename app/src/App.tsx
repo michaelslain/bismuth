@@ -6,15 +6,16 @@ import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
-import { serverVersion } from "./serverVersion";
+import { lastChange } from "./serverVersion";
+import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel, contentLabel } from "./tabIds";
+import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE, isSentinel, contentLabel } from "./tabIds";
 import {
-  type Tab, type PaneNode, type Dir, makeTab,
+  type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
   serializeTabs, deserializeTabs,
@@ -23,22 +24,23 @@ import { PaneTree } from "./PaneTree";
 import { ContextMenu } from "./ContextMenu";
 import "./App.css";
 
-// 2nd = vault notes, 3rd = claude-bot memory, both = 2nd+3rd (the full brain),
-// agents = the agent network. Agents is exclusive — never shown with the brains.
+/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network */
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
-// Overwrite each node's position with the brain VIEW's self-contained layout (computed by the
-// backend over just this subset). Without this, 2nd/3rd would draw nodes at their full-graph
-// coordinates — stranding cross-brain-linked nodes far from their cluster.
-function applyView(g: GraphData, view: ViewLayout | undefined): GraphData {
-  if (!view) return g;
+/**
+ * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
+ * precomputed layout (for 2nd/3rd brain views) instead of using full-graph positions
+ * which would strand cross-brain-linked nodes.
+ */
+function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
+  if (!view) return graph;
   return {
-    edges: g.edges,
-    nodes: g.nodes.map((n) => {
-      const p3 = view.pos3d[n.id];
-      const p2 = view.pos2d[n.id];
-      return { ...n, position: p3 ?? n.position, position2d: p2 ?? n.position2d };
-    }),
+    edges: graph.edges,
+    nodes: graph.nodes.map((node) => ({
+      ...node,
+      position: view.pos3d[node.id] ?? node.position,
+      position2d: view.pos2d[node.id] ?? node.position2d,
+    })),
   };
 }
 
@@ -85,6 +87,31 @@ export default function App() {
     return [...ids];
   });
 
+  // The editor body element — overlay positioning is relative to its rect.
+  let editorBodyEl: HTMLDivElement | undefined;
+  // Pixel rects (relative to editor body) of each terminal's host placeholder in the
+  // active tab. Absent → terminal not in active tab → hidden. Recomputed whenever the
+  // active tab's tree changes or the body resizes (see effect below).
+  const [terminalHostRects, setTerminalHostRects] = createSignal<Map<string, Rect>>(new Map());
+  const measureTerminalHosts = (): void => {
+    if (!editorBodyEl) return;
+    const parent = editorBodyEl.getBoundingClientRect();
+    const next = new Map<string, Rect>();
+    for (const host of editorBodyEl.querySelectorAll<HTMLElement>("[data-terminal-host]")) {
+      const id = host.getAttribute("data-terminal-host");
+      if (!id) continue;
+      const r = host.getBoundingClientRect();
+      next.set(id, { x: r.left - parent.left, y: r.top - parent.top, w: r.width, h: r.height });
+    }
+    setTerminalHostRects(next);
+  };
+  // Re-measure whenever the active tab's tree changes — Solid runs this effect after the
+  // render that placed/removed host elements, so getBoundingClientRect is current.
+  createEffect(() => {
+    activeTab(); // track
+    queueMicrotask(measureTerminalHosts);
+  });
+
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
@@ -102,6 +129,13 @@ export default function App() {
 
   const refreshGraph = async () => setGraph(await api.graph());
   const refreshAgents = async () => setAgents(await api.agentGraph());
+
+  // The graph is a visualization, not the source of truth — it can update a beat
+  // after edits settle. Even with server-side `dirty` gating, a burst of real
+  // structural changes can fire several graph-dirty events in quick succession;
+  // debouncing collapses them into one rebuild (~100-150ms each) instead of a
+  // flicker.
+  const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, 300);
 
   const displayGraph = createMemo<GraphData>(() => {
     const currentMode = mode();
@@ -210,18 +244,27 @@ export default function App() {
     if (at) closePane(at.focusId);
   };
 
-  // Split a given pane; focus the new pane (which starts as a duplicate of the source).
+  // Split a given pane; focus the new pane. The new pane starts empty; the user
+  // fills it by dragging a file/pane onto it or opening something while focused.
   const splitPane = (leafId: string, dir: "row" | "col") => {
     updateActiveTab((t) => {
-      const { root, newLeafId } = splitLeaf(t.root, leafId, dir);
+      const { root, newLeafId } = splitLeaf(t.root, leafId, dir, EMPTY_PANE);
       return { ...t, root, focusId: newLeafId };
     });
   };
 
   // Drop a file from the tree onto a pane: split the pane along the dropped edge and show
   // the file in the half nearest the drop point. left/up put it on the original side; the
-  // duplicate (new leaf) holds the prior content.
+  // duplicate (new leaf) holds the prior content. Empty target panes are filled in place
+  // (no split) — the whole point of the empty placeholder is to be a drop target.
   const dropFileOnPane = (leafId: string, path: string, dir: Dir) => {
+    const at = activeTab();
+    if (!at) return;
+    const target = leaves(at.root).find((l) => l.id === leafId);
+    if (target?.content === EMPTY_PANE) {
+      updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, path), focusId: leafId }));
+      return;
+    }
     const splitDir = dir === "left" || dir === "right" ? "row" : "col";
     updateActiveTab((t) => {
       const { root, newLeafId } = splitLeaf(t.root, leafId, splitDir);
@@ -230,10 +273,23 @@ export default function App() {
     });
   };
 
-  // Drag a pane by its header onto another pane to rearrange the layout.
+  // Drag a pane by its header onto another pane to rearrange the layout. If the target
+  // is an empty placeholder, fill it with the dragged pane's content (no split) and
+  // collapse the source's slot.
   const handleMovePane = (targetId: string, draggedId: string, dir: Dir) => {
     const at = activeTab();
     if (!at) return;
+    if (draggedId === targetId) return;
+    const target = leaves(at.root).find((l) => l.id === targetId);
+    if (target?.content === EMPTY_PANE) {
+      const dragged = leaves(at.root).find((l) => l.id === draggedId);
+      if (!dragged) return;
+      const afterClose = closeLeaf(at.root, draggedId);
+      if (!afterClose) return;
+      const filled = setContent(afterClose, targetId, dragged.content);
+      updateActiveTab((t) => ({ ...t, root: filled, focusId: targetId }));
+      return;
+    }
     const result = movePane(at.root, draggedId, targetId, dir);
     if (!result) return;
     updateActiveTab((t) => ({ ...t, root: result.root, focusId: result.focusId }));
@@ -274,9 +330,15 @@ export default function App() {
   });
 
   createEffect(() => {
-    const v = serverVersion();
+    const c = lastChange();
     // Skip the initial 0 → don't double-fetch on mount; refreshGraph() above handles startup.
-    if (v > 0) refreshGraph();
+    if (c.version === 0) return;
+    // The server tells us when a change actually altered graph connections. A
+    // content edit that touched no wikilink/tag (dirty.graph === false) leaves
+    // the graph alone — no rebuild, no flicker. Absent `dirty` (poll/reconnect)
+    // means "unknown", so we refresh to be safe.
+    if (c.dirty?.graph === false) return;
+    scheduleGraphRefresh();
   });
   onMount(() => {
     refreshAgents();
@@ -334,12 +396,12 @@ export default function App() {
     const at = activeTab();
     if (!at) return;
 
-    // Split: Cmd+D (right) or Cmd+Shift+D (down)
+    // Split: Cmd+D (right) or Cmd+Shift+D (down). New pane starts empty.
     if (!hasAlt && k === "d") {
       e.preventDefault();
       const dir = hasShift ? "col" : "row";
       updateActiveTab((t) => {
-        const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir);
+        const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir, EMPTY_PANE);
         return { ...t, root, focusId: newLeafId };
       });
       return;
@@ -395,6 +457,13 @@ export default function App() {
     window.addEventListener("resize", placeFloater);
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
+  // Keep terminal overlay rects in sync when the body resizes (window resize, divider drag).
+  onMount(() => {
+    if (!editorBodyEl) return;
+    const ro = new ResizeObserver(measureTerminalHosts);
+    ro.observe(editorBodyEl);
+    onCleanup(() => ro.disconnect());
+  });
 
   // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
   // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
@@ -442,7 +511,7 @@ export default function App() {
             )}
           </For>
         </div>
-        <div class="editor-body" style={{ position: "relative" }}>
+        <div class="editor-body" ref={editorBodyEl} style={{ position: "relative" }}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(t) => (
               <PaneTree
@@ -457,26 +526,39 @@ export default function App() {
                 onClose={closePane}
                 onDropFile={dropFileOnPane}
                 onMovePane={handleMovePane}
-                onSaved={refreshGraph}
+                // Graph refresh is driven entirely by the server's SSE `dirty`
+                // signal now (it knows whether a save changed any connection), so
+                // a save itself needs no client-side graph poke.
+                onSaved={() => {}}
                 onOpen={openFile}
+                onOpenQuickSwitcher={() => setPalette("file")}
+                onNewTerminal={openTerminal}
                 noteNames={noteCandidates}
                 tagNames={tagCandidates}
               />
             )}
           </Show>
           {/* Always-mounted terminal overlay — preserves PTY and scrollback across tab/pane switches.
-              Each unique terminal content id (collected across all open tabs) mounts once; only the
-              one matching the currently-focused leaf's content is visible. */}
+              Each unique terminal content id mounts once. We position it over the matching
+              data-terminal-host inside the active tab's pane tree (so terminals in splits live
+              within their leaf, not over the whole editor body). When no host exists in the
+              active tab the terminal is hidden but stays mounted. */}
           <For each={terminalContents()}>
-            {(id) => (
-              <div style={{
-                position: "absolute",
-                inset: 0,
-                display: focusedContent() === id ? "block" : "none",
-              }}>
-                <TerminalTab id={id} active={() => focusedContent() === id} />
-              </div>
-            )}
+            {(id) => {
+              const rect = () => terminalHostRects().get(id);
+              return (
+                <div style={{
+                  position: "absolute",
+                  left: rect() ? `${rect()!.x}px` : "0",
+                  top: rect() ? `${rect()!.y}px` : "0",
+                  width: rect() ? `${rect()!.w}px` : "100%",
+                  height: rect() ? `${rect()!.h}px` : "100%",
+                  display: rect() ? "block" : "none",
+                }}>
+                  <TerminalTab id={id} active={() => focusedContent() === id} />
+                </div>
+              );
+            }}
           </For>
         </div>
       </main>

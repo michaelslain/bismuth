@@ -19,6 +19,8 @@ type PaneTreeProps = {
   onMovePane: (targetId: string, draggedId: string, dir: Dir) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
+  onOpenQuickSwitcher: () => void;
+  onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
 };
@@ -105,6 +107,8 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           path={props.node.content}
           onSaved={props.onSaved}
           onOpen={props.onOpen}
+          onOpenQuickSwitcher={props.onOpenQuickSwitcher}
+          onNewTerminal={props.onNewTerminal}
           noteNames={props.noteNames}
           tagNames={props.tagNames}
         />
