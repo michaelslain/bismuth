@@ -73,23 +73,30 @@ const KEY = "three-brains.settings";
 export function loadSettings(raw: string | null): Settings {
   const out = structuredClone(DEFAULTS);
   if (!raw) return out;
+
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return out;
   }
+
   if (!parsed || typeof parsed !== "object") return out;
   const p = parsed as Record<string, unknown>;
+
+  // Merge each section from storage into the corresponding default section
   for (const section of Object.keys(out) as (keyof Settings)[]) {
     const stored = p[section];
-    if (!stored || typeof stored !== "object") continue;
-    const s = stored as Record<string, unknown>;
+    if (typeof stored !== "object") continue;
+
     const target = out[section] as Record<string, unknown>;
-    for (const k of Object.keys(target)) {
-      if (k in s && typeof s[k] === typeof target[k]) target[k] = s[k];
+    for (const key of Object.keys(target)) {
+      const storedValue = (stored as Record<string, unknown>)[key];
+      // Only apply if type matches (handles schema evolution gracefully)
+      if (typeof storedValue === typeof target[key]) target[key] = storedValue;
     }
   }
+
   return out;
 }
 

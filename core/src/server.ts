@@ -15,6 +15,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
+import { createChangeTracker } from "./changeClassifier";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -51,24 +52,97 @@ export function createServer(cfg: CoreConfig) {
   const sse = createSseRegistry();
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  let pendingPaths = new Set<string>();
+  let pendingVault = new Set<string>();
+  let pendingVaultUnknown = false;
+  let pendingMemory = false;
 
-  function invalidate(...paths: string[]) {
-    cachedGraph = null;
-    cachedTree = null;
+  // Tracks each note's graph/tree-relevant fingerprint (wikilinks + tags + icon),
+  // so we can stay silent toward graph/tree consumers when a file is rewritten
+  // without changing its connections — e.g. a bot status file restamped every
+  // couple of seconds.
+  const tracker = createChangeTracker();
+  const isHidden = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
+
+  // Clear only the caches a change touched, bump version, and tell subscribers
+  // exactly what's dirty. We always bump version (so the editor can reconcile an
+  // externally-edited open file), but graph/tree consumers skip refetching when
+  // their `dirty` flag is false.
+  function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
+    if (dirty.graph) cachedGraph = null;
+    if (dirty.tree) cachedTree = null;
+    // Bases rows derive from arbitrary frontmatter/body — rebuild lazily on next read.
     cachedRows = null;
     version++;
-    sse.publish({ version, paths });
+    sse.publish({ version, paths, dirty });
   }
 
-  function scheduleInvalidate(path?: string) {
-    if (path) pendingPaths.add(path);
+  // Re-fingerprint changed vault notes; report whether the graph and/or tree
+  // need to change. New/deleted notes are structural (both dirty); a content-only
+  // edit that touches no link, tag, or icon is dirty to neither. Non-note and
+  // unreadable (e.g. directory) paths are treated as structural to be safe;
+  // hidden paths (.git/.trash) never affect graph or tree and are dropped.
+  async function classifyVault(paths: string[]): Promise<{ graph: boolean; tree: boolean }> {
+    let graph = false;
+    let tree = false;
+    const notePaths: string[] = [];
+    for (const p of paths) {
+      if (isHidden(p)) continue;
+      if (!p.endsWith(".md")) { graph = true; tree = true; continue; }
+      notePaths.push(p);
+    }
+    const d = await tracker.classify(notePaths, async (p) => {
+      try {
+        return (await Bun.file(join(cfg.vault, p)).exists()) ? await readNote(cfg.vault, p) : null;
+      } catch {
+        return null; // unreadable — treated as removed (structural)
+      }
+    });
+    return { graph: graph || d.graph, tree: tree || d.tree };
+  }
+
+  // Single entry point for vault content/structure changes (API mutations +
+  // file-watch). With no paths the change extent is unknown, so refresh both.
+  async function invalidate(...paths: string[]) {
+    const dirty = paths.length === 0
+      ? { graph: true, tree: true }
+      : await classifyVault(paths);
+    applyDirty(paths, dirty);
+  }
+
+  /** Schedule vault changes for debounced processing. */
+  function scheduleVault(path?: string): void {
+    if (path) pendingVault.add(path);
+    else pendingVaultUnknown = true;
+    arm();
+  }
+
+  /** Schedule memory changes for debounced processing. */
+  function scheduleMemory(): void {
+    pendingMemory = true;
+    arm();
+  }
+
+  function arm() {
     if (debounceTimer !== null) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      const paths = [...pendingPaths];
-      pendingPaths.clear();
-      invalidate(...paths);
+      const vaultPaths = [...pendingVault];
+      const unknown = pendingVaultUnknown;
+      const memory = pendingMemory;
+      pendingVault.clear();
+      pendingVaultUnknown = false;
+      pendingMemory = false;
+      void (async () => {
+        let dirty = { graph: false, tree: false };
+        if (unknown) {
+          dirty = { graph: true, tree: true };
+        } else if (vaultPaths.length) {
+          dirty = await classifyVault(vaultPaths);
+        }
+        // Memory (3rd brain) feeds the graph, never the vault file tree.
+        if (memory) dirty.graph = true;
+        applyDirty(unknown ? [] : vaultPaths, dirty);
+      })();
     }, 250);
   }
 
@@ -80,15 +154,18 @@ export function createServer(cfg: CoreConfig) {
 
   try {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
-      scheduleInvalidate(filename ?? undefined);
+      // Ignore churn in .git (backup commits) and .trash — neither feeds the
+      // graph or tree. A null filename means "something changed, extent unknown".
+      if (filename && isHidden(filename)) return;
+      scheduleVault(filename ?? undefined);
     });
   } catch {
     // vault dir may not exist in test / CI environments
   }
   if (cfg.memory) {
     try {
-      watch(cfg.memory, { recursive: true }, (_event, filename) => {
-        scheduleInvalidate(filename ?? undefined);
+      watch(cfg.memory, { recursive: true }, () => {
+        scheduleMemory();
       });
     } catch {
       // memory dir may be absent
@@ -163,7 +240,7 @@ export function createServer(cfg: CoreConfig) {
     "PUT /file": async (req, __) => {
       const { path, contents } = (await req.json()) as { path: string; contents: string };
       await writeNote(cfg.vault, path, contents);
-      invalidate(path);
+      await invalidate(path);
       return new Response("ok");
     },
 
@@ -232,7 +309,7 @@ export function createServer(cfg: CoreConfig) {
             // body wasn't JSON — that's fine, we just won't know the path
           }
         }
-        invalidate(...paths);
+        await invalidate(...paths);
         return res;
       } catch (e) {
         throw new Error((e as Error).message);

@@ -61,14 +61,16 @@ export function buildAgentGraph(statePath?: string): GraphData {
   const edges: GraphEdge[] = [];
   const edgeKeys = new Set<string>();
 
-  function addEdge(edge: GraphEdge) {
+  /** Add an edge if valid and not a duplicate. */
+  const addEdge = (edge: GraphEdge): void => {
     const key = `${edge.from}|${edge.to}|${edge.kind}`;
     if (!edgeKeys.has(key) && agentIds.has(edge.from) && agentIds.has(edge.to)) {
       edgeKeys.add(key);
       edges.push(edge);
     }
-  }
+  };
 
+  // Extract message edges from agent inboxes
   for (const [recipientId, messages] of Object.entries(inboxes)) {
     if (!agentIds.has(recipientId)) continue;
     for (const msg of messages) {
@@ -78,6 +80,7 @@ export function buildAgentGraph(statePath?: string): GraphData {
     }
   }
 
+  // Connect agents with the same label (different instances of same machine/project)
   const byLabel = new Map<string, string[]>();
   for (const node of nodes) {
     const ids = byLabel.get(node.label) ?? [];
@@ -86,11 +89,10 @@ export function buildAgentGraph(statePath?: string): GraphData {
   }
 
   for (const ids of byLabel.values()) {
-    for (let i = 0; i < ids.length; i++) {
-      for (let j = i + 1; j < ids.length; j++) {
+    // Connect all pairs of agents with the same label
+    for (let i = 0; i < ids.length; i++)
+      for (let j = i + 1; j < ids.length; j++)
         addEdge({ from: ids[i], to: ids[j], kind: "link" });
-      }
-    }
   }
 
   return { nodes, edges };

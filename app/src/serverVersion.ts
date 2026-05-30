@@ -2,7 +2,16 @@ import { createSignal, type Accessor } from "solid-js";
 import { api, eventsUrl } from "./api";
 import { recordSseError, recordPollCatchup } from "./telemetry";
 
-export type ServerChange = { version: number; paths: string[] };
+/**
+ * `dirty` tells graph/tree consumers whether their data actually changed. The
+ * server omits it for the initial snapshot and the fallback poll; an absent
+ * `dirty` means "extent unknown — assume everything changed."
+ */
+export type ServerChange = {
+  version: number;
+  paths: string[];
+  dirty?: { graph: boolean; tree: boolean };
+};
 
 /**
  * Reactive accessor for the latest server cache `version` plus the paths
@@ -27,6 +36,7 @@ es.onmessage = (e) => {
     setChange({
       version: raw.version,
       paths: Array.isArray(raw.paths) ? raw.paths : [],
+      dirty: raw.dirty,
     });
   } catch {
     // ignore malformed frames

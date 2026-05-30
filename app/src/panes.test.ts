@@ -296,3 +296,20 @@ test("setRatio updates only the targeted split", () => {
   const next = setRatio(r1, s.id, 0.3) as Split;
   expect(next.ratio).toBeCloseTo(0.3, 5);
 });
+
+test("splitLeaf with newContent puts that content in the new leaf, original in the kept side", () => {
+  const root = makeLeaf("a.md");
+  const { root: next, newLeafId } = splitLeaf(root, root.id, "row", "::empty");
+  const s = next as Split;
+  expect((s.a as Leaf).content).toBe("a.md");
+  expect((s.b as Leaf).content).toBe("::empty");
+  expect(s.b.id).toBe(newLeafId);
+});
+
+test("splitLeaf without newContent still duplicates (backwards compat)", () => {
+  const root = makeLeaf("a.md");
+  const { root: next } = splitLeaf(root, root.id, "row");
+  const s = next as Split;
+  expect((s.a as Leaf).content).toBe("a.md");
+  expect((s.b as Leaf).content).toBe("a.md");
+});

@@ -7,21 +7,27 @@ import { extractWikilinks } from "./wikilinks";
 import type { FileMeta, Row } from "./bases/types";
 
 function fileMeta(root: string, rel: string, tags: string[], links: string[]): FileMeta {
-  const slash = rel.lastIndexOf("/");
-  const folder = slash >= 0 ? rel.slice(0, slash) : "";
-  const filename = slash >= 0 ? rel.slice(slash + 1) : rel;
-  const dot = filename.lastIndexOf(".");
-  const ext = dot >= 0 ? filename.slice(dot + 1) : "";
-  const name = dot >= 0 ? filename.slice(0, dot) : filename;
+  // Parse folder and filename from path
+  const lastSlash = rel.lastIndexOf("/");
+  const folder = lastSlash >= 0 ? rel.slice(0, lastSlash) : "";
+  const filename = lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel;
+
+  // Parse name and extension from filename
+  const lastDot = filename.lastIndexOf(".");
+  const name = lastDot >= 0 ? filename.slice(0, lastDot) : filename;
+  const ext = lastDot >= 0 ? filename.slice(lastDot + 1) : "";
+
+  // Get file stats if available
   let size = 0, ctime = 0, mtime = 0;
   try {
-    const st = statSync(join(root, rel));
-    size = st.size;
-    ctime = st.birthtimeMs || st.ctimeMs;
-    mtime = st.mtimeMs;
+    const stat = statSync(join(root, rel));
+    size = stat.size;
+    ctime = stat.birthtimeMs || stat.ctimeMs;
+    mtime = stat.mtimeMs;
   } catch {
-    // file may have been deleted
+    // file may have been deleted since list
   }
+
   return { name, basename: name, path: rel, folder, ext, size, ctime, mtime, tags, links };
 }
 

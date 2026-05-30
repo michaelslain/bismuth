@@ -10,10 +10,15 @@ import type { Row } from "../../core/src/bases/types";
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
 
+/** Throw server error text on non-2xx response. */
+async function checkOk(r: Response): Promise<void> {
+  if (!r.ok) throw new Error(await r.text());
+}
+
 /** GET and parse JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
 async function getJson<T>(path: string): Promise<T> {
   const r = await fetch(`${BASE}${path}`);
-  if (!r.ok) throw new Error(await r.text());
+  await checkOk(r);
   return r.json() as Promise<T>;
 }
 
@@ -24,7 +29,7 @@ async function post(path: string, body: unknown): Promise<Response> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!r.ok) throw new Error(await r.text());
+  await checkOk(r);
   return r;
 }
 
@@ -34,17 +39,20 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+async function getText(path: string): Promise<string> {
+  const r = await fetch(`${BASE}${path}`);
+  await checkOk(r);
+  return r.text();
+}
+
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
   tree: () => getJson<TreeEntry[]>("/tree"),
-  read: (path: string) => fetch(`${BASE}/file?path=${encodeURIComponent(path)}`).then((r) => {
-    if (!r.ok) throw new Error(r.statusText);
-    return r.text();
-  }),
+  read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
   write: (path: string, contents: string) =>
-    fetch(`${BASE}/file`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, contents }) }),
-  backup: () => fetch(`${BASE}/backup`, { method: "POST" }),
+    post("/file", { path, contents }).then(() => {}),
+  backup: () => post("/backup", {}).then(() => {}),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
   config: () =>

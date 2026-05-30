@@ -3,6 +3,7 @@
 export const SETTINGS_TAB = "::settings";
 export const CALENDAR_TAB = "::calendar";
 export const TASKS_TAB = "::tasks";
+export const EMPTY_PANE = "::empty";
 // Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
 export const FLASHCARDS_PREFIX = "::flashcards:";
 // Embedded terminal session: TERMINAL_PREFIX + "<uuid>".
@@ -24,6 +25,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === SETTINGS_TAB) return "⚙ Settings";
   if (content === CALENDAR_TAB) return "📅 Calendar";
   if (content === TASKS_TAB) return "✓ Tasks";
+  if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `>_ Terminal ${terminalIndex ?? "?"}`;
   return noteName(content);
