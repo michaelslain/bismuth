@@ -98,7 +98,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
   - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/tasks/toggle`, `/cards/review`
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
-- `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths}` to subscribers on cache invalidation
+- `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
 - `graph.ts` — Graph type definitions. Node kinds: "self", "note", "memory", "agent", "tag". Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag"
@@ -119,9 +119,11 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `srs/` — Spaced-repetition system: see "Flashcards / SRS" section below
 
 **Caching strategy**:
-- `cachedGraph` persists until vault/memory files change
+- `cachedGraph` and `cachedTree` persist until vault/memory files change
 - File-watch changes trigger a debounced 250ms invalidation timer
-- On invalidation, the server bumps `version` and pushes an SSE event on `/events` with the changed paths
+- On invalidation, the server fingerprints changed notes via `changeClassifier.ts` to determine which caches are dirty (graph, tree, or both)
+- Only truly "dirty" caches are invalidated; content-only edits that don't affect links/tags/icon stay silent to graph/tree consumers
+- The server bumps `version` (so editors reconcile external edits) and pushes an SSE event on `/events` with `{version, paths, dirty}` so subscribers know which caches need refetching
 
 **Data flow**:
 1. Frontend opens a single `EventSource("/events")` connection on boot (`app/src/serverVersion.ts`)
@@ -244,6 +246,7 @@ core/src/
 ├── tags.ts              # Tag extraction (frontmatter + body)
 ├── files.ts             # File I/O, path-traversal rejection
 ├── backup.ts            # Git snapshot of vault
+├── changeClassifier.ts  # Tracks note-level changes (wikilinks/tags/icon) to selectively invalidate graph vs tree
 ├── tasks.ts             # Tasks extraction
 ├── tasks-query.ts       # Tasks query DSL
 ├── terminal.ts          # PTY session manager (bun-pty)
@@ -257,6 +260,9 @@ core/test/
 └── *.test.ts            # One per module (vault, engine, memory, server, sse, terminal, tasks, srs, bases, ...)
 
 app/src/
+├── EmptyPane.tsx        # Placeholder view for empty panes; quick switcher + new terminal
+├── fileTreeOps.ts       # File tree manipulation (drag/drop, rename, undo, retarget)
+├── debounce.ts          # Debounce utility (reusable across components)
 ├── App.tsx              # Root: pane tree, routing, keyboard
 ├── panes.ts             # Pure pane-tree model
 ├── PaneTree.tsx         # Pane-tree renderer
