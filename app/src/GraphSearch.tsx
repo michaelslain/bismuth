@@ -28,15 +28,16 @@ export function GraphSearch(props: {
   let listRef: HTMLDivElement | undefined;
 
   const results = createMemo<SearchItem[]>(() => {
+    // Empty query → no rows, so the cluster list owns the panel until the user actually searches.
     const q = query().trim().toLowerCase();
-    const base = q
-      ? props.items.filter(
-          (it) =>
-            it.label.toLowerCase().includes(q) ||
-            (it.sub?.toLowerCase().includes(q) ?? false),
-        )
-      : props.items;
-    return base.slice(0, MAX_RESULTS);
+    if (!q) return [];
+    return props.items
+      .filter(
+        (it) =>
+          it.label.toLowerCase().includes(q) ||
+          (it.sub?.toLowerCase().includes(q) ?? false),
+      )
+      .slice(0, MAX_RESULTS);
   });
 
   // Reset the highlighted row to the top whenever the query changes, and preview that top match
@@ -100,12 +101,13 @@ export function GraphSearch(props: {
       style={{
         display: "flex",
         "flex-direction": "column",
-        background: "rgba(20,20,24,0.55)",
+        background: "rgba(20,20,24,0.6)",
         "border-radius": "4px",
         "font-family": "inherit",
         "font-size": "11px",
-        width: "240px",
-        "max-height": "320px",
+        width: "100%",
+        "flex-shrink": 0,
+        "max-height": "260px",
         overflow: "hidden",
         "pointer-events": "auto",
       }}
@@ -166,8 +168,12 @@ export function GraphSearch(props: {
                   style={{
                     "margin-left": "auto",
                     "padding-left": "10px",
+                    "max-width": "42%",
+                    "flex-shrink": 0,
+                    "white-space": "nowrap",
                     overflow: "hidden",
                     "text-overflow": "ellipsis",
+                    "text-align": "right",
                     color: "rgba(200,200,200,0.45)",
                     "font-size": "10px",
                   }}
@@ -178,7 +184,7 @@ export function GraphSearch(props: {
             </div>
           )}
         </For>
-        <Show when={results().length === 0}>
+        <Show when={query().trim() && results().length === 0}>
           <div style={{ padding: "8px 9px", color: "rgba(200,200,200,0.5)", "font-size": "10px" }}>
             No matches
           </div>

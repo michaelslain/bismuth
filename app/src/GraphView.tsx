@@ -30,8 +30,10 @@ export function GraphView(props: {
   const [fps, setFps] = createSignal<number | null>(null);
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
-  const [showLegend, setShowLegend] = createSignal(false);
-  const [showSearch, setShowSearch] = createSignal(false);
+  // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
+  // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); };
 
   // Rebuild legend rows + search items from the renderer's current node set. Called after each
   // render() so the cluster directory tracks the live graph.
@@ -121,30 +123,56 @@ export function GraphView(props: {
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
-        <Show when={showLegend()}>
-          <div style={{ position: "absolute", top: "6px", right: "6px", "max-width": "210px", "pointer-events": "auto" }}>
-            <ClusterLegend rows={legendRows()} onFocus={(ids) => renderer.frameSubset(ids)} />
-          </div>
+        <Show when={props.fill && !menuOpen()}>
+          <button
+            title="Graph tools — search, clusters, reset"
+            onClick={() => setMenuOpen(true)}
+            style={{ ...baseButtonStyle, position: "absolute", top: "8px", right: "8px", background: "rgba(20,20,24,0.6)", color: "rgba(232,232,235,0.92)", "font-size": "14px", "line-height": 1, padding: "6px 9px", "pointer-events": "auto" }}
+          >
+            ☰
+          </button>
         </Show>
-        <Show when={showSearch()}>
-          <div style={{ position: "absolute", top: "6px", left: "50%", transform: "translateX(-50%)", "pointer-events": "auto" }}>
+        <Show when={props.fill && menuOpen()}>
+          <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto" }}>
+            {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
+            <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
+              <button
+                title="Reset view to whole graph"
+                onClick={() => renderer.resetView()}
+                style={{ ...baseButtonStyle, flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(232,232,235,0.9)", padding: "6px 8px" }}
+              >
+                Reset view
+              </button>
+              <button
+                title="Close menu"
+                onClick={closeMenu}
+                style={{ ...baseButtonStyle, background: "rgba(20,20,24,0.6)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(220,220,225,0.8)", "font-size": "12px", padding: "6px 9px" }}
+              >
+                ✕
+              </button>
+            </div>
+            {/* Section 2 — search. */}
             <GraphSearch
               items={searchItems()}
               onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
               onFly={(id) => { renderer.setSearchMatches(new Set([id])); renderer.focusNode(id); }}
-              onClose={() => { renderer.setSearchMatches(new Set()); setShowSearch(false); }}
+              onClose={closeMenu}
             />
+            {/* Section 3 — clusters, captioned + scrollable. */}
+            <div style={{ display: "flex", "flex-direction": "column", gap: "4px", flex: 1, "min-height": 0 }}>
+              <div style={{ "font-size": "9px", "letter-spacing": "0.09em", "text-transform": "uppercase", color: "rgba(200,200,200,0.4)", padding: "0 3px", "flex-shrink": 0 }}>
+                Clusters
+              </div>
+              <div style={{ flex: 1, "min-height": 0 }}>
+                <ClusterLegend rows={legendRows()} onFocus={(ids) => renderer.frameSubset(ids)} />
+              </div>
+            </div>
           </div>
         </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
             <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
-          </div>
-          <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
-            <button style={getBtnStyle(false)} title="Reset view to whole graph" onClick={() => renderer.resetView()}>Reset</button>
-            <button style={getBtnStyle(showLegend())} title="Toggle cluster legend" onClick={() => setShowLegend((v) => !v)}>Clusters</button>
-            <button style={getBtnStyle(showSearch())} title="Search nodes / fly to" onClick={() => { const v = !showSearch(); setShowSearch(v); if (!v) renderer.setSearchMatches(new Set()); }}>Search</button>
           </div>
           <Show when={hovered()}>
             {(node) => (

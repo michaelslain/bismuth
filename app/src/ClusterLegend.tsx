@@ -3,7 +3,7 @@
 // name + node count). Clicking a row flies to that cluster's nodes. Pure props in / callbacks
 // out — it knows nothing about the renderer; GraphView positions it and wires the callbacks.
 // Styled to match the GraphView overlay chrome (rgba(20,20,24,0.55), 10–11px, inherit font).
-import { For, Show, createMemo } from "solid-js";
+import { For, createMemo } from "solid-js";
 
 export interface ClusterRow {
   community: number;
@@ -12,10 +12,6 @@ export interface ClusterRow {
   color: string;
   ids: string[];
 }
-
-// Cap the visible rows so a busy graph doesn't grow an unbounded panel; the remainder
-// is summarized as a "+N more" tail.
-const MAX_ROWS = 12;
 
 export function ClusterLegend(props: {
   rows: ClusterRow[];
@@ -26,8 +22,6 @@ export function ClusterLegend(props: {
   const sorted = createMemo(() =>
     [...props.rows].sort((a, b) => b.count - a.count || a.community - b.community),
   );
-  const visible = createMemo(() => sorted().slice(0, MAX_ROWS));
-  const overflow = createMemo(() => Math.max(0, sorted().length - MAX_ROWS));
 
   return (
     <div
@@ -35,16 +29,18 @@ export function ClusterLegend(props: {
         display: "flex",
         "flex-direction": "column",
         gap: "1px",
-        background: "rgba(20,20,24,0.55)",
+        background: "rgba(20,20,24,0.6)",
         "border-radius": "4px",
         padding: "4px",
         "font-family": "inherit",
         "font-size": "11px",
-        "max-width": "200px",
+        width: "100%",
+        height: "100%",
+        "overflow-y": "auto",
         "pointer-events": "auto",
       }}
     >
-      <For each={visible()}>
+      <For each={sorted()}>
         {(row) => (
           <div
             onClick={() => props.onFocus(row.ids)}
@@ -94,17 +90,6 @@ export function ClusterLegend(props: {
           </div>
         )}
       </For>
-      <Show when={overflow() > 0}>
-        <div
-          style={{
-            padding: "3px 6px",
-            color: "rgba(200,200,200,0.45)",
-            "font-size": "10px",
-          }}
-        >
-          +{overflow()} more
-        </div>
-      </Show>
     </div>
   );
 }
