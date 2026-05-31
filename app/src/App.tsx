@@ -48,6 +48,9 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 }
 
 const TABS_STORAGE_KEY = "oa-tabs-v1";
+// Max width of the floating drag-ghost. A pane header spans the whole pane, which
+// looked oversized as a ghost; cap it to a tab-like chip.
+const GHOST_MAX_W = 200;
 
 export default function App() {
   const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
@@ -684,15 +687,17 @@ export default function App() {
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setEditorMenu(null)} />}
       </Show>
       {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
-          so elementFromPoint resolves the drop target beneath it. */}
+          so elementFromPoint resolves the drop target beneath it. Width is capped to a
+          tab-like size — a pane header spans the whole pane, which looked oversized — and
+          the grab offset is clamped to that width so the cursor stays over the ghost. */}
       <Show when={drag().active && drag().descriptor}>
         <div
           class="drag-ghost"
           classList={{ pane: drag().descriptor?.kind === "pane" }}
           style={{
-            left: `${drag().x - drag().grabDX}px`,
+            left: `${drag().x - Math.min(drag().grabDX, Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W))}px`,
             top: `${drag().y - drag().grabDY}px`,
-            "min-width": `${drag().descriptor?.width ?? 0}px`,
+            width: `${Math.min(drag().descriptor?.width ?? 0, GHOST_MAX_W)}px`,
           }}
         >
           {drag().descriptor?.label}
