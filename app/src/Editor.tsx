@@ -9,6 +9,7 @@ import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
+import { viewBlock } from "./editor/viewBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
@@ -100,6 +101,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
       basesBlock(() => path),
+      viewBlock(() => path),
       vaultCompletion({ getNotes: props.noteNames, getTags: props.tagNames }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),

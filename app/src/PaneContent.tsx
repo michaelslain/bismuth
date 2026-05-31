@@ -2,7 +2,7 @@
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
 import { Switch, Match } from "solid-js";
-import { Editor } from "./Editor";
+import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
 import { SettingsPage } from "./SettingsPage";
@@ -24,9 +24,10 @@ export function PaneContent(props: {
   return (
     <Switch
       fallback={
-        <Editor
+        <FileView
           path={props.path}
           onSaved={props.onSaved}
+          onOpen={props.onOpen}
           noteNames={props.noteNames}
           tagNames={props.tagNames}
         />
