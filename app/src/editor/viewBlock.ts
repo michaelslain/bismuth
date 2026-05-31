@@ -1,14 +1,19 @@
-import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import { RangeSetBuilder, StateField, type EditorState } from "@codemirror/state";
+// CodeMirror extension that renders ```view blocks via the unified BaseView host.
+// A StateField scans for ```view fences and block-replaces each (when the cursor is
+// outside it) with a widget that resolves the block's source (base/notes/tasks) and
+// renders the chosen view type. Block-replacing decorations must come from a StateField,
+// not a ViewPlugin. Mirrors the tasksQuery extension's replace+reveal pattern.
+import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { render } from "solid-js/web";
 import { BaseView } from "../bases/BaseView";
 import { parseViewBlock } from "../../../core/src/bases/viewBlock";
 
-// Inline ```view block. The body is parsed into a ViewBlock spec (of/from/as/where),
-// resolved against base/notes/tasks, and rendered by BaseView. hostPath lets the
-// block resolve `this.*` against the host note's frontmatter.
+const OPEN = /^\s*```+\s*view\s*$/i; // opening fence with the "view" info string
+const CLOSE = /^\s*```+\s*$/; // a bare fence line
+
 class ViewBlockWidget extends WidgetType {
-  constructor(readonly source: string, readonly hostPath: string) {
+  constructor(private readonly source: string, private readonly hostPath: string) {
     super();
   }
 
@@ -30,39 +35,56 @@ class ViewBlockWidget extends WidgetType {
     if (typeof dispose === "function") dispose();
   }
 
+  // Keep the rendered view interactive (kanban drag, calendar clicks, flashcard buttons).
   ignoreEvent(): boolean {
     return true;
   }
 }
 
-function buildDecorations(state: EditorState, getHostPath: () => string | null): DecorationSet {
+function build(state: EditorState, getHostPath: () => string | null): DecorationSet {
   const hostPath = getHostPath() ?? "";
-  const text = state.doc.toString();
-  const matches: { to: number; widget: WidgetType }[] = [];
+  const doc = state.doc;
+  const head = state.selection.main.head;
+  const decos: Range<Decoration>[] = [];
 
-  const fenceRe = /^```view[ \t]*\n([\s\S]*?)\n```/gm;
-  let match: RegExpExecArray | null;
-  while ((match = fenceRe.exec(text))) {
-    matches.push({ to: match.index + match[0].length, widget: new ViewBlockWidget(match[1], hostPath) });
+  let i = 1;
+  while (i <= doc.lines) {
+    const line = doc.line(i);
+    if (OPEN.test(line.text)) {
+      const bodyLines: string[] = [];
+      let j = i + 1;
+      while (j <= doc.lines && !CLOSE.test(doc.line(j).text)) {
+        bodyLines.push(doc.line(j).text);
+        j++;
+      }
+      if (j <= doc.lines) {
+        const blockFrom = line.from;
+        const blockTo = doc.line(j).to;
+        const cursorInside = head >= blockFrom && head <= blockTo;
+        if (!cursorInside) {
+          decos.push(
+            Decoration.replace({
+              widget: new ViewBlockWidget(bodyLines.join("\n"), hostPath),
+              block: true,
+            }).range(blockFrom, blockTo),
+          );
+        }
+        i = j + 1;
+        continue;
+      }
+    }
+    i++;
   }
-
-  matches.sort((a, b) => a.to - b.to);
-  const builder = new RangeSetBuilder<Decoration>();
-  for (const { to, widget } of matches) {
-    builder.add(to, to, Decoration.widget({ widget, side: 1, block: true }));
-  }
-  return builder.finish();
+  return Decoration.set(decos, true);
 }
 
-/** Renders ```view blocks inline. Block decorations must be a StateField (not a view plugin). */
-export function viewBlock(getHostPath: () => string | null) {
+/** Renders ```view blocks inline (block-replace; revealed for editing when the cursor enters). */
+export function viewBlock(getHostPath: () => string | null): Extension {
   return StateField.define<DecorationSet>({
-    create(state) {
-      return buildDecorations(state, getHostPath);
-    },
-    update(value, tr) {
-      if (tr.docChanged) return buildDecorations(tr.state, getHostPath);
-      return value.map(tr.changes);
+    create: (state) => build(state, getHostPath),
+    update(deco, tr) {
+      if (tr.docChanged || tr.selection) return build(tr.state, getHostPath);
+      return deco.map(tr.changes);
     },
     provide: (f) => EditorView.decorations.from(f),
   });
