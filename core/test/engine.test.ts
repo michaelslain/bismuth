@@ -53,6 +53,25 @@ test("memory references without vault match are ignored", async () => {
   expect(aboutEdges.length).toBe(0);
 });
 
+test("two disconnected clusters get distinct community ids", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-eng-comm-"));
+  // Cluster 1: a <-> b <-> c (linked). Cluster 2: x <-> y <-> z (linked). No cross-links.
+  await writeNote(vault, "a.md", "[[b]] [[c]]");
+  await writeNote(vault, "b.md", "[[a]] [[c]]");
+  await writeNote(vault, "c.md", "[[a]] [[b]]");
+  await writeNote(vault, "x.md", "[[y]] [[z]]");
+  await writeNote(vault, "y.md", "[[x]] [[z]]");
+  await writeNote(vault, "z.md", "[[x]] [[y]]");
+  const g = await buildGraph(vault);
+  const comm = (id: string) => g.nodes.find((n) => n.id === id)!.community;
+  expect(comm("a")).toBe(comm("b"));
+  expect(comm("a")).toBe(comm("c"));
+  expect(comm("x")).toBe(comm("y"));
+  expect(comm("a")).not.toBe(comm("x"));
+  // Exemplar labels stamped onto every node.
+  expect(g.nodes.find((n) => n.id === "a")!.communityLabel).toBeDefined();
+});
+
 test("multiple memory notes can link to same vault note", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-eng-multi-"));
   const mem = mkdtempSync(join(tmpdir(), "oa-eng-multi-mem-"));
