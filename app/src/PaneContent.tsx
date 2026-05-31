@@ -5,12 +5,11 @@ import { Switch, Match } from "solid-js";
 import { Editor } from "./Editor";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
-import { SettingsPage } from "./SettingsPage";
 import { TasksPage } from "./TasksPage";
 import { BaseView } from "./bases/BaseView";
 import { EmptyPane } from "./EmptyPane";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE } from "./tabIds";
+import { CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE } from "./tabIds";
 
 export function PaneContent(props: {
   path: string;
@@ -37,9 +36,6 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
-      </Match>
-      <Match when={props.path === SETTINGS_TAB}>
-        <SettingsPage />
       </Match>
       <Match when={props.path === TASKS_TAB}>
         <TasksPage onOpen={props.onOpen} />
