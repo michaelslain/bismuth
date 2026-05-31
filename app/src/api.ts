@@ -100,4 +100,7 @@ export const api = {
     post("/cards/review", { file, index, response }),
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
+  // Folders have no frontmatter — their icon override lives in settings.yaml.
+  // An empty icon clears the override (back to the default folder icon).
+  setFolderIcon: (path: string, icon: string) => post("/folder-icon", { path, icon }),
 };

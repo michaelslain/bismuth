@@ -7,6 +7,7 @@ import { pushToast } from "./Toast";
 import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
 import { Icon } from "./icons/Icon";
+import { IconPicker } from "./icons/IconPicker";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
@@ -87,8 +88,21 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     });
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [iconPicker, setIconPicker] = createSignal<{ node: TreeNode; isDir: boolean } | null>(null);
 
   const refresh = () => refetch();
+
+  // Set (or clear, when `icon` is "") a node's icon. Files store it in their
+  // `icon:` frontmatter; folders have none, so theirs lives in settings.yaml.
+  async function applyIcon(node: TreeNode, isDir: boolean, icon: string) {
+    try {
+      if (isDir) await api.setFolderIcon(node.path, icon);
+      else await api.setProperty(node.path, "icon", icon);
+      await refresh();
+    } catch (e) {
+      pushToast(`Set icon failed: ${(e as Error).message}`);
+    }
+  }
 
   // Optimistic local edits: apply the change to the tree instantly so the UI
   // reflects it without waiting for a /tree round-trip (which contends with the
@@ -179,6 +193,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       items.push({ label: "New File", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", onSelect: () => doCreate(node.path, "dir") });
     }
+    items.push({ label: "Set Icon…", onSelect: () => setIconPicker({ node, isDir }) });
     items.push({ label: "Rename", onSelect: () => setEditing(node.path) });
     items.push({ label: "Delete", danger: true, onSelect: () => doDelete(node) });
     return items;
@@ -242,6 +257,17 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       />
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
+      </Show>
+      <Show when={iconPicker()}>
+        {(p) => (
+          <IconPicker
+            title={`Set icon — ${p().node.name}`}
+            current={p().node.icon}
+            onPick={(name) => applyIcon(p().node, p().isDir, name)}
+            onClear={() => applyIcon(p().node, p().isDir, "")}
+            onClose={() => setIconPicker(null)}
+          />
+        )}
       </Show>
     </div>
   );
