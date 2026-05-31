@@ -526,6 +526,7 @@ test("GET /events frame includes the changed path on mutation", async () => {
 });
 
 import { initializeSettings } from "../src/settings";
+import { rmSync, existsSync } from "node:fs";
 
 test("GET /settings returns parsed app settings with defaults", async () => {
   const { vault, memory } = await makeSampleVault();
@@ -563,6 +564,26 @@ test("createServer writes a settings.yaml on boot when missing", async () => {
     await initializeSettings(vault); // idempotent — ensures the file is present
     const exists = await Bun.file(join(vault, "settings.yaml")).exists();
     expect(exists).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /file materializes settings.yaml from defaults when missing at read time", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Defeat the fire-and-forget boot init so the file is genuinely absent at the
+    // moment of the read — the exact state a stale/never-booted server leaves behind.
+    await initializeSettings(vault); // drain any pending boot write deterministically
+    rmSync(join(vault, "settings.yaml"));
+    const res = await fetch(`${base}/file?path=settings.yaml`);
+    const text = await res.text();
+    expect(res.status).toBe(200);
+    expect(text).toContain("appearance:"); // default content, not a blank editor
+    expect(text).toContain("theme: dark");
+    expect(existsSync(join(vault, "settings.yaml"))).toBe(true); // recreated on disk
   } finally {
     server.stop(true);
   }
