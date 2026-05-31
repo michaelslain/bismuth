@@ -37,6 +37,16 @@ export function PaneContent(props: {
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
       </Match>
+      {/* TEMPORARY spike route (T1) — replaced by <SheetView/> in T4. */}
+      <Match when={props.path.endsWith(".sheet")}>
+        {(() => {
+          let el!: HTMLDivElement;
+          import("./sheet/univerSheet").then(({ mountSheet }) =>
+            mountSheet({ container: el, onChange: () => console.log("[sheet] changed") }),
+          );
+          return <div ref={el} style={{ width: "100%", height: "100%" }} />;
+        })()}
+      </Match>
       <Match when={props.path.endsWith(".base")}>
         <BaseView path={props.path} onOpen={props.onOpen} />
       </Match>
