@@ -1,16 +1,12 @@
 import { parse as parseYaml } from "yaml";
-import type { BaseConfig, ViewConfig, SortSpec, ViewType, ParsedBase } from "./types";
+import type { BaseConfig, ViewConfig, SortSpec, ParsedBase } from "./types";
+import { isValidType } from "./types";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   return [];
-}
-
-const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
-function isValidType(t: unknown): t is ViewType {
-  return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
 }
 function strOrUndef(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -35,7 +31,7 @@ function normalizeSort(raw: unknown): SortSpec[] | undefined {
     } else if (it && typeof it === "object") {
       const o = it as Record<string, unknown>;
       const property = typeof o.property === "string" ? o.property : typeof o.column === "string" ? o.column : null;
-      if (property && typeof property === "string") {
+      if (property) {
         const dir = String(o.direction ?? "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
         spec = { property, direction: dir };
       }
@@ -128,16 +124,7 @@ function normalizeView(raw: unknown): ViewConfig {
 
 const EMPTY_BASE: BaseConfig = { views: [{ type: "table", name: "Table" }] };
 
-export function parseBase(text: string): BaseConfig {
-  let doc: unknown;
-  try {
-    doc = parseYaml(text);
-  } catch {
-    return EMPTY_BASE;
-  }
-  if (!doc || typeof doc !== "object") return EMPTY_BASE;
-  const o = doc as Record<string, unknown>;
-
+function parseBaseObject(o: Record<string, unknown>): BaseConfig {
   const rawViews = asArray<unknown>(o.views);
   const views: ViewConfig[] = rawViews.map(normalizeView);
   if (views.length === 0) views.push({ type: "table", name: "Table" });
@@ -178,6 +165,12 @@ export function parseBase(text: string): BaseConfig {
   };
 }
 
+export function parseBase(text: string): BaseConfig {
+  const o = safeYaml(text);
+  if (!o) return EMPTY_BASE;
+  return parseBaseObject(o);
+}
+
 const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 /**
@@ -188,8 +181,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   const m = text.match(FM_RE);
   const fmText = m ? m[1] : "";
   const body = m ? m[2] : text;
-  const config = fmText ? parseBase(fmText) : { views: [] as ViewConfig[] };
   const raw = fmText ? safeYaml(fmText) : null;
+  const config = raw ? parseBaseObject(raw) : { views: [] as ViewConfig[] };
 
   // `view: <type>` shorthand wins only when no explicit `views:` array was given.
   if (raw && isValidType(raw.view) && !Array.isArray(raw.views)) {
@@ -200,11 +193,6 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   }
   if (raw?.schema && typeof raw.schema === "object") {
     config.schema = raw.schema as BaseConfig["schema"];
-  }
-  // Normalize string OR object `source` (+ top-level from/where/ref) into a SourceSpec.
-  if (raw) {
-    const s = normalizeSource(raw.source, raw);
-    if (s) config.source = s;
   }
   // Top-level field-binding keys configure the default view (so the settings UI can
   // persist them with a flat `setProperty`, no nested `views:` editing needed).

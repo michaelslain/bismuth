@@ -10,6 +10,18 @@
   --panel: rgba(127, 127, 127, 0.06);
   --editor-font: 'Lora', serif;
   --editor-font-size: 16px;
+  /* Semantic tokens — single source of truth for colors/shadows/surfaces that were
+     previously hard-coded and duplicated across components (see app/src/ui/). */
+  --danger: #e5534b;
+  --success: #98c379;
+  --accent-purple: #b89cff;
+  --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
+  --hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
+  --surface-1: color-mix(in srgb, var(--fg) 5%, transparent);
+  --surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
+  --surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
+  --shadow-menu: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.25);
 }
 :root[data-theme="light"] {
   color-scheme: light;
@@ -132,9 +144,9 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 }
 .reveal-btn:hover, .card-btn:hover { border-color: var(--accent); }
 .grade-row { display: flex; gap: 12px; }
-.card-btn.hard:hover { border-color: #e06c75; }
+.card-btn.hard:hover { border-color: var(--danger); }
 .card-btn.good:hover { border-color: var(--accent); }
-.card-btn.easy:hover { border-color: #98c379; }
+.card-btn.easy:hover { border-color: var(--success); }
 .exit-btn { opacity: 0.7; font-size: 13px; }
 .review-done { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
 
@@ -189,7 +201,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 }
 .srs-icon-btn:hover:not(:disabled) { opacity: 1; border-color: var(--accent); }
 .srs-icon-btn:disabled { opacity: 0.35; cursor: default; }
-.srs-icon-btn.danger:hover:not(:disabled) { border-color: #e06c75; color: #e06c75; }
+.srs-icon-btn.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 /* Inline "add card" form: Front/Back textareas + Save, matching app vars. */
 .card-add-form {
   max-width: 640px; margin: 12px auto 0; width: 100%; box-sizing: border-box;
@@ -203,7 +215,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
   background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
   padding: 10px 12px; min-height: 64px; resize: vertical; box-sizing: border-box;
 }
-.card-add-field textarea:focus { outline: none; border-color: var(--accent); }
+.card-add-field textarea:focus, .srs-field input:focus, .srs-field select:focus { outline: none; border-color: var(--accent); }
 .card-add-field textarea::placeholder { opacity: 0.45; }
 .card-add-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .srs-panel { max-width: 640px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 16px; }
@@ -211,9 +223,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .srs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
 .srs-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; opacity: 0.85; }
 .srs-field input { padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; }
-.srs-field input:focus { outline: none; border-color: var(--accent); }
 .srs-field select { padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; }
-.srs-field select:focus { outline: none; border-color: var(--accent); }
 /* Record-view column visibility/order list */
 .vs-section { display: flex; flex-direction: column; gap: 4px; }
 .vs-section h4 { margin: 0; font-size: 13px; }
@@ -254,3 +264,20 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }
+
+/* --- Graph HUD segmented toggles (mode row + 2D/3D pill) --- */
+/* Dark-pill look over the WebGL canvas: borderless, uppercase, small. Keeps the
+   original getBtnStyle appearance now that GraphView uses the shared SegmentedToggle. */
+.graph-seg.btn {
+  border: none;
+  background: transparent;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1.4;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(200, 200, 200, 0.55);
+}
+.graph-seg.btn:hover:not(:disabled) { color: rgba(232, 232, 232, 0.85); background: transparent; }
+.graph-seg.btn.is-active { color: #e8e8e8; background: rgba(255, 255, 255, 0.15); }

@@ -36,7 +36,7 @@ class MathWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
-    span.className = this.displayMode ? "cm-math-block" : "cm-math-inline";
+    span.className = "cm-math";
     span.innerHTML = katex.renderToString(this.expr, {
       throwOnError: false,
       displayMode: this.displayMode,
@@ -284,8 +284,8 @@ export const livePreview = [
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
     ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
-    ".cm-link": { color: "#6496ff", cursor: "pointer", "text-decoration": "underline" },
-    ".cm-wikilink": { color: "#6496ff", cursor: "pointer", "text-decoration": "underline" },
+    ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "underline" },
+    ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "underline" },
     ".cm-h1": { "font-size": "1.8em", "font-weight": "700", "line-height": "1.3" },
     ".cm-h2": { "font-size": "1.5em", "font-weight": "700", "line-height": "1.3" },
     ".cm-h3": { "font-size": "1.3em", "font-weight": "700" },
@@ -301,12 +301,11 @@ export const livePreview = [
     // "properties = purple / 3rd-brain" category color.
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
-      background: "color-mix(in srgb, #b89cff 7%, transparent)",
-      "box-shadow": "inset 2px 0 0 color-mix(in srgb, #b89cff 55%, transparent)",
+      background: "color-mix(in srgb, var(--accent-purple) 7%, transparent)",
+      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--accent-purple) 55%, transparent)",
     },
     ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
-    ".cm-math-inline": { display: "inline-block", "vertical-align": "middle" },
-    ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
+    ".cm-math": { display: "inline-block", "vertical-align": "middle" },
     ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
     ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
     // Squiggles are colored by CATEGORY (via each diagnostic's markClass), not by

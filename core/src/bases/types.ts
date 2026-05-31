@@ -6,6 +6,12 @@ export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } |
 // All view kinds a view can render. Calendar + flashcards are the unified additions.
 export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards";
 
+/** Exhaustive list of valid view type strings. Single source of truth. */
+export const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
+export function isValidType(t: unknown): t is ViewType {
+  return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
+}
+
 // Where a view's rows come from. Default is { kind: "base" } for a type:base file.
 export type SourceSpec =
   | { kind: "base"; ref?: string }                  // ref = "[[Other Base]]"; resolves that base's OWN source (composition)
@@ -81,6 +87,26 @@ export interface FileMeta {
   mtime: number;       // epoch ms
   tags: string[];      // without leading '#'
   links: string[];     // wikilink targets (no .md, no #heading, no |alias)
+}
+
+/** Shared base for synthetic FileMeta rows (base-file rows, not distinct notes). */
+export const EMPTY_FILE: Omit<FileMeta, "name" | "path" | "basename"> = {
+  folder: "",
+  ext: "md",
+  size: 0,
+  ctime: 0,
+  mtime: 0,
+  tags: [],
+  links: [],
+};
+
+/**
+ * Build a synthetic FileMeta for a base-file row (not a distinct note).
+ * name/basename are empty so they aren't auto-shown as a meaningless repeated column;
+ * path is kept for write-back purposes.
+ */
+export function syntheticBaseFile(path: string): FileMeta {
+  return { ...EMPTY_FILE, name: "", basename: "", path };
 }
 
 export interface Row {

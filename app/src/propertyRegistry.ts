@@ -24,8 +24,11 @@ export async function refreshPropertyRegistry(): Promise<void> {
 // Hydrate + wire SSE only in a real browser. `serverVersion` constructs a global
 // EventSource at import time, which doesn't exist under `bun test` (headless) — so
 // we gate the whole side-effecting block (and defer that import) behind that check.
-// The seed-{} accessor above is always available, which is all the unit test asserts.
-if (typeof EventSource !== "undefined") {
+// We also require `window`: some test files stub a bare global EventSource to import
+// browser modules headlessly, and that stub alone must not kick off hydration (it
+// would pollute this module-level singleton for other test files). A real browser
+// always has both. The seed-{} accessor above is always available regardless.
+if (typeof window !== "undefined" && typeof EventSource !== "undefined") {
   createRoot(() => {
     void refreshPropertyRegistry();
     let lastSeen = -1;

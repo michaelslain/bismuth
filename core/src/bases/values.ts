@@ -1,8 +1,6 @@
 export interface Link { __link: true; path: string; display?: string; }
-export interface Duration { __duration: true; ms: number; }
 
 export function isLink(v: unknown): v is Link { return !!v && typeof v === "object" && (v as Link).__link === true; }
-export function isDuration(v: unknown): v is Duration { return !!v && typeof v === "object" && (v as Duration).__duration === true; }
 
 export function truthy(v: unknown): boolean {
   if (v === null || v === undefined) return false;

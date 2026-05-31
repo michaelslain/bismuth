@@ -1,7 +1,7 @@
 import { For } from 'solid-js'
 import { currentView, currentDate, showCategoryPanel, settings } from '../state'
 import { ViewType } from '../types'
-import { toDateStr, addDays } from '../dates'
+import { toDateStr, addDays, weekRange } from '../dates'
 
 const VIEWS: { id: ViewType; label: string }[] = [
   { id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }, { id: '3day', label: '3 Day' }, { id: 'day', label: 'Day' },
@@ -34,9 +34,8 @@ function headerLabel(): string {
   if (v === 'month') return d.toLocaleString('default', { month: 'long', year: 'numeric' })
 
   if (v === 'week') {
-    const offset = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay()
-    const start = addDays(d, offset)
-    return `${toDateStr(start)} – ${toDateStr(addDays(start, 6))}`
+    const [ws, we] = weekRange(d, mondayFirst)
+    return `${ws} – ${we}`
   }
 
   if (v === '3day') return `${toDateStr(d)} – ${toDateStr(addDays(d, 2))}`

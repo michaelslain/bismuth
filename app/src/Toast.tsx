@@ -1,5 +1,6 @@
 // app/src/Toast.tsx
 import { createSignal, For } from "solid-js";
+import { Button } from "./ui/Button";
 
 export type Toast = {
   id: number;
@@ -48,7 +49,7 @@ export function ToastHost() {
               border: "1px solid var(--border)",
               "border-radius": "8px",
               padding: "8px 14px",
-              "box-shadow": "0 4px 16px rgba(0,0,0,0.3)",
+              "box-shadow": "var(--shadow-menu)",
               "font-size": "13px",
               color: "var(--fg)",
               display: "flex",
@@ -58,22 +59,16 @@ export function ToastHost() {
           >
             <span>{t.message}</span>
             {t.action && (
-              <button
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "var(--accent)",
-                  cursor: "pointer",
-                  "font-weight": "600",
-                  padding: 0,
-                }}
+              <Button
+                variant="plain"
+                size="sm"
                 onClick={() => {
                   t.action!.onClick();
                   dismissToast(t.id);
                 }}
               >
                 {t.action.label}
-              </button>
+              </Button>
             )}
           </div>
         )}

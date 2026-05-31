@@ -1,6 +1,5 @@
 // app/src/tabIds.ts
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
-export const SETTINGS_TAB = "::settings";
 export const CALENDAR_TAB = "::calendar";
 export const EMPTY_PANE = "::empty";
 // Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".

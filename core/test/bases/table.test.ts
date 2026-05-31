@@ -39,6 +39,23 @@ test("pipe characters in cell values survive a round-trip (escaped)", () => {
   expect(back[0].note.a).toBe("before | after");
 });
 
+test("a cell containing the literal text ' P ' is not corrupted into a pipe", () => {
+  // Regression: the escaped-pipe sentinel used to be the ordinary string " P ",
+  // so any real cell value containing that text was rewritten into a "|".
+  const rows = parseMarkdownTable(["| a |", "| --- |", "| keep P safe |"].join("\n"), { name: "T", path: "T.md" });
+  expect(rows.length).toBe(1);
+  expect(rows[0].note.a).toBe("keep P safe");
+  // And it round-trips back unchanged.
+  const out = rowsToMarkdownTable(["a"], rows);
+  const back = parseMarkdownTable(out, { name: "T", path: "T.md" });
+  expect(back[0].note.a).toBe("keep P safe");
+});
+
+test("a cell with both ' P ' text and an escaped pipe keeps both literally", () => {
+  const rows = parseMarkdownTable(["| a |", "| --- |", "| has P and \\| pipe |"].join("\n"), { name: "T", path: "T.md" });
+  expect(rows[0].note.a).toBe("has P and | pipe");
+});
+
 test("newlines in a cell value are flattened, not breaking the table", () => {
   const rows = parseMarkdownTable(["| a | b |", "| --- | --- |", "| 1 | x |"].join("\n"), { name: "T", path: "T.md" });
   rows[0].note.a = "line1\nline2";

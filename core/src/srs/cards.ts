@@ -24,15 +24,20 @@ function renderCloze(text: string, n: number): [string, string] {
   return [question, answer];
 }
 
-/** The rendered question shown for sub-card `sub` of a parsed card. */
-function subQuestion(pc: ParsedCard, sub: number): string {
+/** Return [question, answer] for sub-card `sub` of a parsed card. */
+function subCard(pc: ParsedCard, sub: number): [string, string] {
   if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
-    return sub === 0 ? pc.front : pc.back;
+    return sub === 0 ? [pc.front, pc.back] : [pc.back, pc.front];
   }
   if (pc.type === "cloze") {
-    return renderCloze(pc.clozeText ?? "", sub)[0];
+    return renderCloze(pc.clozeText ?? "", sub);
   }
-  return pc.front;
+  return [pc.front, pc.back];
+}
+
+/** The rendered question shown for sub-card `sub` of a parsed card. */
+function subQuestion(pc: ParsedCard, sub: number): string {
+  return subCard(pc, sub)[0];
 }
 
 /** Expand a ParsedCard into its sub-card Card objects. */
@@ -40,14 +45,14 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
   const out: Card[] = [];
   for (let sub = 0; sub < pc.subCount; sub++) {
     const sched = pc.scheduling[sub];
-    const answer = getSubAnswer(pc, sub);
+    const [question, answer] = subCard(pc, sub);
 
     out.push({
       id: `${notePath}::${cardIndex}::${sub}`,
       notePath,
       deck,
       type: pc.type,
-      question: subQuestion(pc, sub),
+      question,
       answer,
       due: sched ? sched.due : null,
       interval: sched ? sched.interval : 0,
@@ -55,16 +60,6 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
     });
   }
   return out;
-}
-
-function getSubAnswer(pc: ParsedCard, sub: number): string {
-  if (pc.type === "single-reversed" || pc.type === "multi-reversed") {
-    return sub === 0 ? pc.back : pc.front;
-  }
-  if (pc.type === "cloze") {
-    return renderCloze(pc.clozeText ?? "", sub)[1];
-  }
-  return pc.back;
 }
 
 export async function collectCards(vault: string): Promise<Card[]> {
@@ -100,13 +95,17 @@ export async function noteCards(vault: string, notePath: string): Promise<Card[]
   return out;
 }
 
+function isDue(card: Card, today: string): boolean {
+  return card.due === null || card.due <= today;
+}
+
 export async function collectDecks(vault: string, today: string): Promise<Deck[]> {
   const cards = await collectCards(vault);
   const map = new Map<string, Deck>();
   for (const c of cards) {
     const d = map.get(c.deck) ?? { name: c.deck, total: 0, due: 0 };
     d.total++;
-    if (c.due === null || c.due <= today) d.due++;
+    if (isDue(c, today)) d.due++;
     map.set(c.deck, d);
   }
   return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -115,7 +114,7 @@ export async function collectDecks(vault: string, today: string): Promise<Deck[]
 export async function dueCards(vault: string, today: string, deck?: string): Promise<Card[]> {
   const cards = await collectCards(vault);
   return cards.filter(
-    (c) => (deck === undefined || c.deck === deck) && (c.due === null || c.due <= today),
+    (c) => (deck === undefined || c.deck === deck) && isDue(c, today),
   );
 }
 

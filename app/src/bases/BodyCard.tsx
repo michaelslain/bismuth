@@ -2,6 +2,7 @@ import { createSignal, createMemo, For, Show, onMount } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { renderValue } from "./renderValue";
+import { Button } from "../ui/Button";
 import styles from "./BaseView.module.css";
 
 // Matches a markdown checklist line: indent, the check char, then the text.
@@ -49,18 +50,25 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
     return out;
   });
 
-  // Rewrite a single line by its index in the full file, persist, and re-derive.
-  async function writeLine(lineIndex: number, newLine: string) {
+  function buildLine(indent: string, checked: boolean, text: string): string {
+    return `${indent}- [${checked ? "x" : " "}] ${text}`;
+  }
+
+  /** Split content into lines, apply mutator, join, persist. */
+  async function commit(mutate: (lines: string[]) => void): Promise<void> {
     const lines = content().split("\n");
-    if (lineIndex < 0 || lineIndex >= lines.length) return;
-    lines[lineIndex] = newLine;
+    mutate(lines);
     const next = lines.join("\n");
     setContent(next);
     await api.write(props.row.file.path, next);
   }
 
-  function buildLine(indent: string, checked: boolean, text: string): string {
-    return `${indent}- [${checked ? "x" : " "}] ${text}`;
+  // Rewrite a single line by its index in the full file, persist, and re-derive.
+  async function writeLine(lineIndex: number, newLine: string) {
+    await commit((lines) => {
+      if (lineIndex < 0 || lineIndex >= lines.length) return;
+      lines[lineIndex] = newLine;
+    });
   }
 
   async function toggle(item: TodoItem) {
@@ -73,24 +81,20 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
   }
 
   async function removeItem(item: TodoItem) {
-    const lines = content().split("\n");
-    if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
-    lines.splice(item.lineIndex, 1);
-    const next = lines.join("\n");
-    setContent(next);
-    await api.write(props.row.file.path, next);
+    await commit((lines) => {
+      if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
+      lines.splice(item.lineIndex, 1);
+    });
   }
 
   let listEl: HTMLDivElement | undefined;
 
   // Append a new empty todo to the end of the file, then focus its input.
   async function addItem() {
-    const lines = content().split("\n");
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-    lines.push("- [ ] ");
-    const next = lines.join("\n");
-    setContent(next);
-    await api.write(props.row.file.path, next);
+    await commit((lines) => {
+      if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+      lines.push("- [ ] ");
+    });
     queueMicrotask(() => {
       const inputs = listEl?.querySelectorAll<HTMLInputElement>(`.${styles.todoText}`);
       inputs?.[inputs.length - 1]?.focus();
@@ -101,14 +105,12 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
   // Enter on any line creates the next one with matching indent). Persists the
   // current text of `item` along the way so the user doesn't lose what they typed.
   async function addAfter(item: TodoItem, currentText: string) {
-    const lines = content().split("\n");
-    if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
-    lines[item.lineIndex] = buildLine(item.indent, item.checked, currentText);
-    const newLine = `${item.indent}- [ ] `;
-    lines.splice(item.lineIndex + 1, 0, newLine);
-    const next = lines.join("\n");
-    setContent(next);
-    await api.write(props.row.file.path, next);
+    await commit((lines) => {
+      if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
+      lines[item.lineIndex] = buildLine(item.indent, item.checked, currentText);
+      const newLine = `${item.indent}- [ ] `;
+      lines.splice(item.lineIndex + 1, 0, newLine);
+    });
     // Focus the newly inserted input — it sits at the position the new item now
     // occupies in the rendered list (count of checklist lines up to and including
     // the new index in the file).
@@ -149,20 +151,20 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
                     }
                   }}
                 />
-                <button
-                  type="button"
+                <Button
+                  variant="plain"
                   class={styles.todoRemove}
                   title="Remove item"
                   onClick={() => void removeItem(item)}
                 >
                   ×
-                </button>
+                </Button>
               </div>
             )}
           </For>
-          <button type="button" class={styles.todoAdd} onClick={() => void addItem()}>
+          <Button variant="plain" class={styles.todoAdd} onClick={() => void addItem()}>
             + Add item
-          </button>
+          </Button>
         </div>
       </Show>
     </div>

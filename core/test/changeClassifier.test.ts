@@ -32,6 +32,18 @@ test("diffFingerprints: adding a tag marks graph dirty only", () => {
   expect(diffFingerprints(prev, next)).toEqual({ graph: true, tree: false });
 });
 
+test("extractFingerprint ignores tags/links inside fenced code", () => {
+  const fp = extractFingerprint("```\n#codetag\nsee [[Code Link]]\n```\nReal #prose");
+  expect(fp.tags).toBe("prose");
+  expect(fp.links).toBe("");
+});
+
+test("diffFingerprints: editing only a code-fence tag/link is not graph dirty", () => {
+  const prev = extractFingerprint("intro\n```\n#a [[A]]\n```\ntail #keep");
+  const next = extractFingerprint("intro\n```\n#b [[B]]\n```\ntail #keep");
+  expect(diffFingerprints(prev, next)).toEqual({ graph: false, tree: false });
+});
+
 test("diffFingerprints: changing the icon marks tree dirty only", () => {
   const prev = extractFingerprint(`---\nicon: 📕\n---\nbody [[A]]`);
   const next = extractFingerprint(`---\nicon: 📗\n---\nbody [[A]]`);

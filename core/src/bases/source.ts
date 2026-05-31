@@ -4,6 +4,7 @@ import { buildVaultRows } from "../basesData";
 import { buildTaskRows, filterTaskRows } from "./tasksData";
 import { parseBaseFile } from "./parse";
 import { passesFilter } from "./filters";
+import { toContext } from "./query";
 import { readNote } from "../files";
 
 export interface SourceCtx {
@@ -58,7 +59,7 @@ export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<R
       rows = rows.filter((r) => paths.has(r.file.path));
     }
     if (!spec.where) return rows;
-    return rows.filter((r) => passesFilter(spec.where!, { file: r.file, note: r.note, formula: r.formula }));
+    return rows.filter((r) => passesFilter(spec.where!, toContext(r)));
   }
 
   // tasks — optionally scoped to the notes a referenced base selects.

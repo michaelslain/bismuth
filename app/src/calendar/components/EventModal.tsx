@@ -4,6 +4,8 @@ import { categories, showEventModal, recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { toDateStr } from '../dates'
 import { refreshEvents } from '../refresh'
+import { Modal } from '../../ui/Modal'
+import { Field } from '../../ui/Field'
 
 const uuid = () => crypto.randomUUID()
 const RECURRENCE_TYPES: RecurrenceType[] = ['daily', 'weekly', 'biweekly', 'monthly']
@@ -22,7 +24,7 @@ export function EventModal(props: { store: EventStore }) {
   }
 
   const [title, setTitle] = createSignal(editing?.title ?? '')
-  const [date, setDate] = createSignal(editing?.date ?? modal.date ?? toDateStr(new Date()))
+  const [date, setDate] = createSignal(defaultDate)
   const [startTime, setStartTime] = createSignal(editing?.startTime ?? modal.startTime ?? '')
   const [endTime, setEndTime] = createSignal(editing?.endTime ?? modal.endTime ?? '')
   const [allDay, setAllDay] = createSignal(!editing?.startTime && !modal.startTime)
@@ -57,7 +59,7 @@ export function EventModal(props: { store: EventStore }) {
       ...(link() ? { link: link() } : {}),
       ...(description() ? { description: description() } : {}),
       ...(category() ? { category: category() } : {}),
-      ...(recType() ? { recurrence: { type: recType() as RecurrenceType, daysOfWeek: recDays().length ? recDays() : undefined, startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: editing?.recurrence?.seriesId ?? uuid() } } : {}),
+      ...(recType() ? { recurrence: { type: recType() as RecurrenceType, ...(recType() === 'weekly' || recType() === 'biweekly' ? { daysOfWeek: recDays().length ? recDays() : undefined } : {}), startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: editing?.recurrence?.seriesId ?? uuid() } } : {}),
     }
 
     if (editing && editing.recurrence && modal!.masterId && modal!.occurrenceDate) {
@@ -77,11 +79,11 @@ export function EventModal(props: { store: EventStore }) {
   }
 
   onMount(() => {
+    // Escape-to-close is handled by <Modal>; this keeps the calendar-specific
+    // Enter-to-submit / Backspace-to-delete shortcuts.
     function onKey(e: KeyboardEvent): void {
       const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Escape') {
-        showEventModal.value = null
-      } else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
         e.preventDefault()
         handleSave()
       } else if (e.key === 'Backspace' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
@@ -94,51 +96,49 @@ export function EventModal(props: { store: EventStore }) {
   })
 
   return (
-    <div class="modal-overlay" onClick={() => (showEventModal.value = null)}>
-      <div class="event-modal" onClick={e => e.stopPropagation()}>
-        <h3>{editing ? 'Edit Event' : 'New Event'}</h3>
-        <label>Title<input value={title()} onInput={e => setTitle(e.currentTarget.value)} /></label>
-        <label>Date<input type="date" value={date()} onInput={e => setDate(e.currentTarget.value)} /></label>
-        <label><input type="checkbox" checked={allDay()} onChange={e => setAllDay(e.currentTarget.checked)} /> All day</label>
-        <Show when={!allDay()}>
-          <label>Start<input type="time" value={startTime()} onInput={e => setStartTime(e.currentTarget.value)} /></label>
-          <label>End<input type="time" value={endTime()} onInput={e => setEndTime(e.currentTarget.value)} /></label>
+    <Modal onClose={() => (showEventModal.value = null)} class="event-modal">
+      <h3>{editing ? 'Edit Event' : 'New Event'}</h3>
+      <Field label="Title"><input value={title()} onInput={e => setTitle(e.currentTarget.value)} /></Field>
+      <Field label="Date"><input type="date" value={date()} onInput={e => setDate(e.currentTarget.value)} /></Field>
+      <label><input type="checkbox" checked={allDay()} onChange={e => setAllDay(e.currentTarget.checked)} /> All day</label>
+      <Show when={!allDay()}>
+        <Field label="Start"><input type="time" value={startTime()} onInput={e => setStartTime(e.currentTarget.value)} /></Field>
+        <Field label="End"><input type="time" value={endTime()} onInput={e => setEndTime(e.currentTarget.value)} /></Field>
+      </Show>
+      <Field label="Location"><input value={location()} onInput={e => setLocation(e.currentTarget.value)} /></Field>
+      <Field label="Link"><input value={link()} onInput={e => setLink(e.currentTarget.value)} /></Field>
+      <Field label="Description"><textarea value={description()} onInput={e => setDescription(e.currentTarget.value)} /></Field>
+      <Field label="Category">
+        <select value={category()} onChange={e => setCategory(e.currentTarget.value)}>
+          <option value="">None</option>
+          <For each={categories.value}>{c => <option value={c.name}>{c.name}</option>}</For>
+        </select>
+      </Field>
+      <Field label="Recurrence">
+        <select value={recType()} onChange={e => setRecType(e.currentTarget.value as RecurrenceType | '')}>
+          <option value="">None</option>
+          <For each={RECURRENCE_TYPES}>{t => <option value={t}>{t}</option>}</For>
+        </select>
+      </Field>
+      <Show when={recType()}>
+        <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
+          <div class="day-picker">
+            <For each={DOW}>{([label, i]) => (
+              <button type="button" class={recDays().includes(i) ? 'active' : ''}
+                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</button>
+            )}</For>
+          </div>
         </Show>
-        <label>Location<input value={location()} onInput={e => setLocation(e.currentTarget.value)} /></label>
-        <label>Link<input value={link()} onInput={e => setLink(e.currentTarget.value)} /></label>
-        <label>Description<textarea value={description()} onInput={e => setDescription(e.currentTarget.value)} /></label>
-        <label>Category
-          <select value={category()} onChange={e => setCategory(e.currentTarget.value)}>
-            <option value="">None</option>
-            <For each={categories.value}>{c => <option value={c.name}>{c.name}</option>}</For>
-          </select>
-        </label>
-        <label>Recurrence
-          <select value={recType()} onChange={e => setRecType(e.currentTarget.value as RecurrenceType | '')}>
-            <option value="">None</option>
-            <For each={RECURRENCE_TYPES}>{t => <option value={t}>{t}</option>}</For>
-          </select>
-        </label>
-        <Show when={recType()}>
-          <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
-            <div class="day-picker">
-              <For each={DOW}>{([label, i]) => (
-                <button type="button" class={recDays().includes(i) ? 'active' : ''}
-                  onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</button>
-              )}</For>
-            </div>
-          </Show>
-          <label>Start date<input type="date" value={recStart()} onInput={e => setRecStart(e.currentTarget.value)} /></label>
-          <label>End date (optional)<input type="date" value={recEnd()} onInput={e => setRecEnd(e.currentTarget.value)} /></label>
+        <Field label="Start date"><input type="date" value={recStart()} onInput={e => setRecStart(e.currentTarget.value)} /></Field>
+        <Field label="End date (optional)"><input type="date" value={recEnd()} onInput={e => setRecEnd(e.currentTarget.value)} /></Field>
+      </Show>
+      <div class="modal-actions">
+        <Show when={editing}>
+          <button onClick={handleDelete} style={{ 'margin-right': 'auto', color: 'var(--text-error)' }}>Delete</button>
         </Show>
-        <div class="modal-actions">
-          <Show when={editing}>
-            <button onClick={handleDelete} style={{ 'margin-right': 'auto', color: 'var(--text-error)' }}>Delete</button>
-          </Show>
-          <button onClick={handleSave}>Save</button>
-          <button onClick={() => (showEventModal.value = null)}>Cancel</button>
-        </div>
+        <button onClick={handleSave}>Save</button>
+        <button onClick={() => (showEventModal.value = null)}>Cancel</button>
       </div>
-    </div>
+    </Modal>
   )
 }

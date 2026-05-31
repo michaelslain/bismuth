@@ -1,7 +1,7 @@
 import { createSignal, For, Show, batch, onMount, onCleanup } from "solid-js";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { api } from "../api";
-import { renderValue, columnLabel } from "./renderValue";
+import { CardBody } from "./CardBody";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
@@ -220,21 +220,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                           }
                         }}
                       >
-                        <For each={cols()}>
-                          {(c, j) => (
-                            <Show
-                              when={j() === 0}
-                              fallback={
-                                <div class={styles.cardField}>
-                                  <span class={styles.cardKey}>{columnLabel(c, props.config)}</span>
-                                  <span>{renderValue(c, row)}</span>
-                                </div>
-                              }
-                            >
-                              <div class={styles.cardTitle}>{renderValue(c, row)}</div>
-                            </Show>
-                          )}
-                        </For>
+                        <CardBody cols={cols()} row={row} config={props.config} />
                       </div>
                     </>
                   )}

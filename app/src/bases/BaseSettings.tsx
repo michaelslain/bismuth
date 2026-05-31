@@ -1,6 +1,9 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
 import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
+import { capitalize, columnLabel } from "./renderValue";
+import { Button } from "../ui/Button";
+import { Field } from "../ui/Field";
 
 interface FieldDef {
   key: string;
@@ -26,10 +29,6 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
 
 // Record view types get column-visibility + sort + group-by config.
 const RECORD_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map"];
-
-function propLabel(id: string): string {
-  return id.replace(/^(file|note|formula|this)\./, "");
-}
 
 function columnsOf(rows: Row[]): string[] {
   const set = new Set<string>();
@@ -107,22 +106,21 @@ export function BaseSettings(props: {
 
   return (
     <div class="srs-panel">
-      <h3>{`${props.type[0].toUpperCase()}${props.type.slice(1)} settings`}</h3>
+      <h3>{`${capitalize(props.type)} settings`}</h3>
 
       {/* Field-binding types: flashcards / calendar */}
       <Show when={fields().length > 0}>
         <div class="srs-grid">
           <For each={fields()}>
             {(f) => (
-              <label class="srs-field">
-                <span>{f.label}</span>
+              <Field class="srs-field" label={f.label}>
                 <input type="text" value={form()[f.key]} placeholder={f.def} onInput={(e) => setForm({ ...form(), [f.key]: e.currentTarget.value })} />
-              </label>
+              </Field>
             )}
           </For>
         </div>
         <Show when={props.type === "flashcards"}>
-          <p class="deck-empty" style={{ "font-size": "12px" }}>
+          <p class="ui-empty" style={{ "font-size": "12px" }}>
             Scheduling uses the standard SM-2 algorithm (fixed, not configurable). Use <strong>Cram</strong> in the deck to review everything without affecting scheduling.
           </p>
         </Show>
@@ -132,7 +130,7 @@ export function BaseSettings(props: {
       <Show when={isRecord()}>
         <div class="vs-section">
           <h4>Columns</h4>
-          <p class="deck-empty" style={{ "font-size": "12px" }}>Check to show or hide. Drag the column headers in the table to reorder.</p>
+          <p class="ui-empty" style={{ "font-size": "12px" }}>Check to show or hide. Drag the column headers in the table to reorder.</p>
           <For each={cols()}>
             {(item, i) => (
               <label class="vs-check">
@@ -143,53 +141,49 @@ export function BaseSettings(props: {
                   title={item.visible && visibleCount() <= 1 ? "At least one column must stay visible" : undefined}
                   onChange={() => toggle(i())}
                 />
-                {propLabel(item.col)}
+                {columnLabel(item.col, props.config)}
               </label>
             )}
           </For>
         </div>
 
         <div class="srs-grid">
-          <label class="srs-field">
-            <span>Sort by</span>
+          <Field class="srs-field" label="Sort by">
             <select value={sortProp()} onChange={(e) => setSortProp(e.currentTarget.value)}>
               <option value="">None</option>
-              <For each={allCols()}>{(c) => <option value={c}>{propLabel(c)}</option>}</For>
+              <For each={allCols()}>{(c) => <option value={c}>{columnLabel(c, props.config)}</option>}</For>
             </select>
-          </label>
-          <label class="srs-field">
-            <span>Sort direction</span>
+          </Field>
+          <Field class="srs-field" label="Sort direction">
             <select value={sortDir()} onChange={(e) => setSortDir(e.currentTarget.value as "ASC" | "DESC")}>
               <option value="ASC">Ascending</option>
               <option value="DESC">Descending</option>
             </select>
-          </label>
-          <label class="srs-field">
-            <span>Group by</span>
+          </Field>
+          <Field class="srs-field" label="Group by">
             <select value={groupProp()} onChange={(e) => setGroupProp(e.currentTarget.value)}>
               <option value="">None</option>
-              <For each={allCols()}>{(c) => <option value={c}>{propLabel(c)}</option>}</For>
+              <For each={allCols()}>{(c) => <option value={c}>{columnLabel(c, props.config)}</option>}</For>
             </select>
-          </label>
+          </Field>
           <Show when={groupProp()}>
-            <label class="srs-field">
-              <span>Group direction</span>
+            <Field class="srs-field" label="Group direction">
               <select value={groupDir()} onChange={(e) => setGroupDir(e.currentTarget.value as "ASC" | "DESC")}>
                 <option value="ASC">Ascending</option>
                 <option value="DESC">Descending</option>
               </select>
-            </label>
+            </Field>
           </Show>
         </div>
       </Show>
 
       <Show when={!isRecord() && fields().length === 0}>
-        <p class="deck-empty">No extra settings for this view type yet.</p>
+        <p class="ui-empty">No extra settings for this view type yet.</p>
       </Show>
 
       <div class="grade-row">
-        <button class="card-btn good" onClick={save}>Save</button>
-        <button class="card-btn" onClick={props.onSaved}>Close</button>
+        <Button variant="primary" class="card-btn good" onClick={save}>Save</Button>
+        <Button variant="primary" onClick={props.onSaved}>Close</Button>
       </div>
     </div>
   );

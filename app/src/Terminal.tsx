@@ -13,7 +13,7 @@ function buildAnsiPalette(paletteKey: string, fg: string, bg: string) {
   const hexes = (PALETTES[paletteKey] ?? PALETTES.aurora).map((n) =>
     "#" + n.toString(16).padStart(6, "0"),
   );
-  // Cycle palette across the 6 hue slots in order: red, green, yellow, blue, magenta, cyan.
+  // Cycle 5 palette colors (mod) across 6 hue slots: red, green, yellow, blue, magenta, cyan.
   const cycle = (i: number) => hexes[i % hexes.length];
   const lighten = (hex: string, pct: number) => {
     const n = parseInt(hex.slice(1), 16);
@@ -72,7 +72,7 @@ function buildExtendedAnsi(paletteKey: string): string[] {
       for (let b6 = 0; b6 < 6; b6++) {
         const r = stops[r6], g = stops[g6], b = stops[b6];
         const c = closest(r, g, b);
-        // 60% original, 40% palette tint.
+        // 25% original, 75% palette tint.
         out.push(hex(mix(r, c.r, 0.75), mix(g, c.g, 0.75), mix(b, c.b, 0.75)));
       }
     }
@@ -105,6 +105,13 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
   let fit: FitAddon | undefined;
   let ws: WebSocket | undefined;
   let term: Xterm | undefined;
+  // B8/B20: Hoist the remaining post-await resources to component scope so the
+  // synchronous onCleanup (registered before the font-load await) can tear them
+  // down even if the tab is closed mid-await.
+  let ro: ResizeObserver | undefined;
+  let cursorEl: HTMLDivElement | undefined;
+  let downHandler: ((e: MouseEvent) => void) | undefined;
+  let upHandler: ((e: MouseEvent) => void) | undefined;
 
   const sendResize = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
@@ -134,12 +141,44 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
   });
 
   onMount(async () => {
+    // B8/B20: Register cleanup synchronously, BEFORE the font-load await. onMount
+    // is async, so if the tab is closed while `document.fonts.load(...)` is still
+    // pending, the component's owner is disposed before we'd otherwise reach the
+    // onCleanup at the end of the body — Solid only runs cleanups registered while
+    // the owner is alive. By registering here (synchronously, while the owner is
+    // still alive) and closing over the component-scoped refs, we guarantee that
+    // whatever has been created so far gets torn down. `disposed` lets the
+    // post-await body bail out so it doesn't create resources after teardown.
+    let disposed = false;
+    // Hoisted so the synchronous cleanup below can reference them without hitting
+    // a temporal-dead-zone error if it runs during the await (they stay undefined).
+    let renderSub: { dispose: () => void } | undefined;
+    let cursorMoveSub: { dispose: () => void } | undefined;
+    let dataListener: { dispose: () => void } | undefined;
+    onCleanup(() => {
+      disposed = true;
+      try { ro?.disconnect(); } catch {}
+      try { dataListener?.dispose(); } catch {}
+      try { renderSub?.dispose(); } catch {}
+      try { cursorMoveSub?.dispose(); } catch {}
+      try { cursorEl?.remove(); } catch {}
+      if (downHandler) try { container.removeEventListener("mousedown", downHandler); } catch {}
+      if (upHandler) try { container.removeEventListener("mouseup", upHandler); } catch {}
+      try { ws?.close(); } catch {}
+      try { term?.dispose(); } catch {}
+    });
+
     // xterm.js measures font metrics at construction time. If Monaspace Xenon
     // hasn't loaded yet, the grid is sized for the fallback font and characters
     // drift out of their cells. Wait for the actual font to be ready.
     try {
       await document.fonts.load(`13px 'Monaspace Xenon'`);
     } catch { /* font load failed; we'll render with fallback */ }
+
+    // B8/B20: If the tab was closed during the await above, the synchronous
+    // onCleanup has already run — bail out so we don't open a WebSocket / Xterm
+    // whose teardown would never fire.
+    if (disposed) return;
 
     // Read CSS variables for terminal theme colors.
     const style = getComputedStyle(document.documentElement);
@@ -177,12 +216,12 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // Custom cursor overlay that glides smoothly between positions — xterm's native
     // cursor is a class transferred between inline spans, so CSS transitions don't
     // apply. We render our own absolutely-positioned div and animate transform.
-    const cursorEl = document.createElement("div");
+    cursorEl = document.createElement("div");
     cursorEl.className = "xterm-custom-cursor";
     container.appendChild(cursorEl);
 
     const updateCursor = () => {
-      if (!term) return;
+      if (!term || !cursorEl) return;
       const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
       if (!rowsEl) return;
       const cellW = rowsEl.clientWidth / term.cols;
@@ -194,16 +233,16 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       cursorEl.style.height = `${cellH}px`;
     };
 
-    const renderSub = term.onRender(() => updateCursor());
-    const cursorMoveSub = term.onCursorMove(() => updateCursor());
+    renderSub = term.onRender(() => updateCursor());
+    cursorMoveSub = term.onCursorMove(() => updateCursor());
     updateCursor();
 
     // Fix 3: Click-to-position cursor on the current prompt line (Warp-style).
     // Track mousedown position so we only treat single-point clicks as cursor jumps,
     // not drag-to-select.
     let mdX = -1, mdY = -1;
-    const downHandler = (e: MouseEvent) => { mdX = e.clientX; mdY = e.clientY; };
-    const upHandler = (e: MouseEvent) => {
+    downHandler = (e: MouseEvent) => { mdX = e.clientX; mdY = e.clientY; };
+    upHandler = (e: MouseEvent) => {
       if (Math.abs(e.clientX - mdX) > 3 || Math.abs(e.clientY - mdY) > 3) return; // dragged → ignore
       if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
       const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
@@ -246,7 +285,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
     // Terminal → backend: stdin frames prefixed with 0x00.
     // Fix 3: use module-scoped `enc` instead of allocating per keystroke.
-    const dataListener = term.onData((s) => {
+    dataListener = term.onData((s) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const encoded = enc.encode(s);
       const frame = new Uint8Array(1 + encoded.length);
@@ -258,7 +297,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // Observe container size changes and refit the terminal.
     // Fix 2: guard against zero-size rect (fired when container is display:none)
     // to avoid propagating degenerate dimensions to the PTY.
-    const ro = new ResizeObserver((entries) => {
+    ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (!rect || rect.width === 0 || rect.height === 0) return;
       try {
@@ -270,21 +309,10 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     });
     ro.observe(container);
 
-    onCleanup(() => {
-      ro.disconnect();
-      dataListener.dispose();
-      renderSub.dispose();
-      cursorMoveSub.dispose();
-      try { cursorEl.remove(); } catch {}
-      container.removeEventListener("mousedown", downHandler);
-      container.removeEventListener("mouseup", upHandler);
-      try {
-        ws?.close();
-      } catch {
-        /* ignore */
-      }
-      term?.dispose();
-    });
+    // B8/B20: All teardown is handled by the synchronous onCleanup registered at
+    // the top of onMount (before the font-load await), closing over the
+    // component-scoped refs. That guarantees cleanup runs even if the tab is closed
+    // while the font is still loading.
   });
 
   // Render a single container div. The parent controls visibility via display:none;

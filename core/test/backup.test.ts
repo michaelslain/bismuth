@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,6 +23,25 @@ test("ensureRepo inits a git repo; commitVault commits changes locally", async (
   expect(count).toBe("1");
   const remotes = (await $`git -C ${dir} remote`.text()).trim();
   expect(remotes).toBe("");
+});
+
+test("ensureExclude does not throw when .git/info dir is absent (existing repo / worktree)", async () => {
+  // Simulate a pre-existing git repo where .git/info/ was never created.
+  const dir = mkdtempSync(join(tmpdir(), "oa-bk-noinfo-"));
+  await $`git -C ${dir} init -q`.quiet();
+  await $`git -C ${dir} config user.email "vault@local"`.quiet();
+  await $`git -C ${dir} config user.name "OA Test"`.quiet();
+  // Remove the info/ subdirectory to reproduce the edge-case.
+  const infoDir = join(dir, ".git", "info");
+  if (existsSync(infoDir)) rmSync(infoDir, { recursive: true, force: true });
+
+  // ensureRepo (and thereby ensureExclude) must not throw.
+  await expect(ensureRepo(dir)).resolves.toBeUndefined();
+
+  // commitVault must succeed end-to-end even without .git/info/.
+  await writeNote(dir, "note.md", "# Test");
+  const committed = await commitVault(dir, "snapshot without info dir");
+  expect(committed).toBe(true);
 });
 
 test("commitVault never tracks settings.yaml", async () => {

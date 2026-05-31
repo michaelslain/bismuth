@@ -226,11 +226,10 @@ export class LabelLayer {
   }
 
   /** Assign label priority: lower number renders first and can occlude higher numbers. */
-  private priorityOf(id: string, inAlwaysOn: boolean, isDiscovery: boolean): number {
+  private priorityOf(id: string, inAlwaysOn: boolean): number {
     if (id === this.hoveredId) return 0; // hovered node always shows
     if (inAlwaysOn) return 2;            // top hubs / active file
-    if (isDiscovery) return 4;           // near-camera discovery nodes
-    return 9;                             // fallback (unreachable in normal flow)
+    return 4;                             // near-camera discovery nodes
   }
 
   /**
@@ -399,12 +398,13 @@ export class LabelLayer {
       return true;
     };
 
-    const acceptedIds = new Set<string>();
-    for (const c of cands) if (accept(c)) acceptedIds.add(c.id);
+    const acceptedById = new Map<string, Cand>();
+    for (const c of cands) if (accept(c)) acceptedById.set(c.id, c);
 
     // Apply visibility + per-sprite state.
     for (const [id, sprite] of this.sprites) {
-      if (!acceptedIds.has(id)) { sprite.visible = false; continue; }
+      const accepted = acceptedById.get(id);
+      if (!accepted) { sprite.visible = false; continue; }
       const n = nodeById.get(id)!;
       // LOCAL node position — the sprite is a child of the rotating group, so the group's transform
       // places it in the world. This makes it track the idle spin every frame (no jitter) even
@@ -414,8 +414,7 @@ export class LabelLayer {
       const sx = entry.cssW / args.screenH * 2;
       const sy = entry.cssH / args.screenH * 2;
       sprite.scale.set(sx, sy, 1);
-      const opacity = cands.find((c) => c.id === id)?.opacity ?? 1;
-      sprite.material.opacity = opacity;
+      sprite.material.opacity = accepted.opacity;
       sprite.visible = true;
     }
   }
@@ -435,23 +434,4 @@ export class LabelLayer {
     this.parent = null;
   }
 
-  /** Test helper / introspection — number of currently-allocated sprites. */
-  spriteCount(): number {
-    return this.sprites.size;
-  }
-
-  /** Get sprite by id (used by visibility pass — see Task 6). */
-  getSprite(id: string): THREE.Sprite | undefined {
-    return this.sprites.get(id);
-  }
-
-  /** Iterate (id, sprite) pairs. */
-  entries(): IterableIterator<[string, THREE.Sprite]> {
-    return this.sprites.entries();
-  }
-
-  /** Current node list (kept in sync via setGraph). */
-  getNodes(): LabelNode[] {
-    return this.nodes;
-  }
 }

@@ -1,16 +1,10 @@
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { Row, FileMeta } from "./types";
+import type { Row } from "./types";
+import { syntheticBaseFile } from "./types";
 import { parseMarkdownTable } from "./table";
 
-const EMPTY_FILE: Omit<FileMeta, "name" | "path" | "basename"> = {
-  folder: "",
-  ext: "md",
-  size: 0,
-  ctime: 0,
-  mtime: 0,
-  tags: [],
-  links: [],
-};
+// Re-export for callers that expect the helper to live here.
+export { EMPTY_FILE, syntheticBaseFile } from "./types";
 
 function looksLikeTable(body: string): boolean {
   // a GFM table: a header line with a pipe followed by a |---|---| separator
@@ -41,7 +35,7 @@ export function parseRows(body: string, meta: { name: string; path: string }): R
   return doc
     .filter((r) => r && typeof r === "object")
     .map((note) => ({
-      file: { ...EMPTY_FILE, name: "", basename: "", path: meta.path },
+      file: syntheticBaseFile(meta.path),
       note: note as Record<string, unknown>,
       formula: {},
     }));

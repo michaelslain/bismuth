@@ -28,6 +28,18 @@ export function addDays(d: Date, n: number): Date {
   return result
 }
 
+/** Returns the first day of the ISO week (Monday) or Sunday week containing `d`. */
+export function startOfWeek(d: Date, mondayFirst: boolean): Date {
+  const offset = mondayFirst ? -((d.getDay() + 6) % 7) : -d.getDay()
+  return addDays(d, offset)
+}
+
+/** Returns [startDateStr, endDateStr] for the week containing `d`. */
+export function weekRange(d: Date, mondayFirst: boolean): [string, string] {
+  const start = startOfWeek(d, mondayFirst)
+  return [toDateStr(start), toDateStr(addDays(start, 6))]
+}
+
 export function expandRecurrence(recurrence: Recurrence, rangeStart: string, rangeEnd: string): string[] {
   const dates: string[] = []
   const start = new Date(recurrence.startDate + 'T00:00:00')
@@ -42,6 +54,11 @@ export function expandRecurrence(recurrence: Recurrence, rangeStart: string, ran
   return dates
 }
 
+/** Number of days in the calendar month containing `d` (local). */
+function daysInMonth(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+}
+
 function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
   const d = new Date(dateStr + 'T00:00:00')
   const start = new Date(r.startDate + 'T00:00:00')
@@ -53,6 +70,12 @@ function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
     const matchesDow = r.daysOfWeek?.includes(dow) ?? dow === start.getDay()
     return matchesDow && Math.floor(diffDays / 7) % 2 === 0
   }
-  if (r.type === 'monthly') return d.getDate() === start.getDate()
+  if (r.type === 'monthly') {
+    // Clamp the start day-of-month to the last day of the target month, so a
+    // series on the 29th/30th/31st falls back to the month's last day instead
+    // of silently skipping shorter months (e.g. 31st → Feb 28/29).
+    const targetDay = Math.min(start.getDate(), daysInMonth(d))
+    return d.getDate() === targetDay
+  }
   return false
 }

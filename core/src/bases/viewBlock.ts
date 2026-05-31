@@ -1,6 +1,5 @@
 import type { ViewBlock, ViewType, SourceSpec } from "./types";
-
-const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
+import { VIEW_TYPES } from "./types";
 
 /**
  * Parse a ```view block body into a ViewBlock spec.

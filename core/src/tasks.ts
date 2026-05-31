@@ -3,7 +3,7 @@
 // and 0-indexed line so the line can be toggled back in place.
 
 import { listMarkdown, readNote } from "./files";
-import { todayISO } from "./dates";
+import { addDaysISO } from "./dates";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
@@ -74,6 +74,7 @@ export function parseTaskLine(line: string, path: string, lineNo: number): Task 
     if (rest.includes(emoji)) {
       priority = p;
       rest = rest.split(emoji).join(" ");
+      break;
     }
   }
 
@@ -126,9 +127,70 @@ export function extractTasks(content: string, path: string): Task[] {
 }
 
 
+// Advance a single ISO date by one period of the given Obsidian-Tasks recurrence rule.
+// Supports the core natural-language forms: "every day", "every N days", "every week",
+// "every N weeks", "every month(s)", "every year(s)", and "every weekday". Returns null
+// when the rule isn't recognized (caller then leaves the date untouched).
+function advanceDateByRecurrence(iso: string, rule: string): string | null {
+  const r = rule.toLowerCase().trim();
+
+  // "every weekday" — next Monday–Friday.
+  if (/^every\s+weekday$/.test(r)) {
+    let next = addDaysISO(iso, 1);
+    // getUTCDay(): 0 = Sunday, 6 = Saturday.
+    while ([0, 6].includes(new Date(next + "T00:00:00Z").getUTCDay())) {
+      next = addDaysISO(next, 1);
+    }
+    return next;
+  }
+
+  const m = /^every\s+(?:(\d+)\s+)?(day|week|month|year)s?$/.exec(r);
+  if (!m) return null;
+  const n = m[1] ? parseInt(m[1], 10) : 1;
+  const unit = m[2];
+  if (unit === "day") return addDaysISO(iso, n);
+  if (unit === "week") return addDaysISO(iso, n * 7);
+
+  // Month/year advance by calendar field (UTC-safe), clamping overflow days
+  // (e.g. Jan 31 + 1 month → Feb 28/29) the same way Obsidian/moment does.
+  const d = new Date(iso + "T00:00:00Z");
+  const day = d.getUTCDate();
+  if (unit === "month") d.setUTCMonth(d.getUTCMonth() + n);
+  else d.setUTCFullYear(d.getUTCFullYear() + n);
+  // If the day-of-month overflowed into the next month, clamp to that month's last day.
+  if (d.getUTCDate() !== day) d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
+}
+
+// Advance every schedulable date signifier present in a task body by one recurrence
+// period. Returns the rewritten body plus a flag for whether any date was actually
+// advanced — used to skip spawning a useless next occurrence when the recurring task
+// has no reference date (Obsidian only rolls a recurrence that carries a date).
+function advanceRecurringBody(body: string, rule: string): { body: string; advanced: boolean } {
+  let out = body;
+  let advanced = false;
+  for (const [emoji] of DATE_FIELDS) {
+    // Only advance the schedulable dates; done/created/cancelled don't recur forward.
+    if (emoji === "✅" || emoji === "➕" || emoji === "❌") continue;
+    const re = new RegExp(emoji + "\\s*(\\d{4}-\\d{2}-\\d{2})");
+    const dm = re.exec(out);
+    if (dm) {
+      const next = advanceDateByRecurrence(dm[1], rule);
+      if (next) {
+        out = out.replace(dm[0], `${emoji} ${next}`);
+        advanced = true;
+      }
+    }
+  }
+  return { body: out, advanced };
+}
+
 /**
  * Flip a task line between done and not-done.
  * - Completing: set the box to `x`; append `✅ <today>` unless a done-date is already present.
+ *   If the task carries a 🔁 recurrence, a fresh NOT-done copy of the line (recurrence kept,
+ *   due/scheduled/start dates advanced one period, no ✅) is inserted ABOVE the completed
+ *   one — matching the Obsidian Tasks plugin. The returned string then spans two lines.
  * - Un-completing: set the box to a space; strip any `✅ <date>` signifier.
  * The bullet is normalized to `-`. Throws if the line is not a task.
  */
@@ -145,7 +207,20 @@ export function toggleTaskLine(line: string, today: string): string {
   }
   const hasDoneDate = /✅\s*\d{4}-\d{2}-\d{2}/.test(body);
   const withDate = hasDoneDate ? body.trimEnd() : `${body.trimEnd()} ✅ ${today}`;
-  return `${indent}- [x] ${withDate}${cr}`;
+  const completed = `${indent}- [x] ${withDate}`;
+
+  // Recurring task: spawn the next occurrence above the completed line. Each emitted
+  // line keeps the original's trailing CR so CRLF files stay consistent. Skip when the
+  // rule is unrecognized or there's no date to advance (nothing meaningful to roll).
+  const task = parseTaskLine(bare, "", 0);
+  if (task?.recurrence) {
+    const { body: nextBody, advanced } = advanceRecurringBody(body.trimEnd(), task.recurrence);
+    if (advanced) {
+      const nextOccurrence = `${indent}- [ ] ${nextBody}`;
+      return `${nextOccurrence}${cr}\n${completed}${cr}`;
+    }
+  }
+  return `${completed}${cr}`;
 }
 
 /** Read every markdown file in the vault and return all checkbox tasks across them. */

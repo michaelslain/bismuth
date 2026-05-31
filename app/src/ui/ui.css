@@ -1,0 +1,82 @@
+/* app/src/ui/ui.css — styles for the shared primitives in app/src/ui/.
+   Imported once (side-effect) by each primitive; Vite dedupes. These consolidate
+   the button / modal / field / empty-state CSS that was previously copy-pasted
+   under names like .card-btn, .empty-pane-btn, .icon-btn, .srs-icon-btn,
+   .cram-toggle, .srcBtn, .modal-overlay, .srs-field, .deck-empty, .loading. */
+
+/* ── Button ──────────────────────────────────────────────────────────────── */
+.btn {
+  font: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  line-height: 1.4;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+}
+.btn:disabled { opacity: 0.4; cursor: default; }
+
+/* primary — the default bordered + panel text button (was .card-btn/.reveal-btn) */
+.btn--primary:hover:not(:disabled) { border-color: var(--accent); }
+.btn--primary.is-active { border-color: var(--accent); }
+
+/* ghost — bordered, transparent bg, dimmed until hover/active
+   (was .empty-pane-btn/.cram-toggle/.srs-icon-btn/.srcBtn) */
+.btn--ghost { background: transparent; color: var(--text-muted); }
+.btn--ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
+.btn--ghost.is-active { color: var(--accent); border-color: var(--accent); }
+
+/* danger — ghost that turns red on hover (was .srs-icon-btn.danger) */
+.btn--danger { background: transparent; color: var(--text-muted); }
+.btn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
+
+/* icon — borderless, transparent, opacity-driven (was .icon-btn) */
+.btn--icon {
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  opacity: 0.5;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-size: 15px;
+  line-height: 1;
+}
+.btn--icon:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
+.btn--icon.is-active { opacity: 1; }
+
+/* plain — no border/bg chrome, just a clickable text run (was .tab/.exit-btn-ish) */
+.btn--plain { border: none; background: transparent; color: var(--text-muted); padding: 4px 8px; }
+.btn--plain:hover:not(:disabled) { color: var(--fg); }
+.btn--plain.is-active { color: var(--fg); }
+
+/* sizes */
+.btn--sm { padding: 3px 10px; font-size: 12px; }
+.btn--lg { padding: 10px 22px; font-size: 15px; border-radius: 7px; }
+
+/* ── SegmentedToggle ─────────────────────────────────────────────────────── */
+.segmented { display: inline-flex; align-items: center; gap: 2px; }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.ui-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ── Field (label-wraps-control) ─────────────────────────────────────────── */
+.ui-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.ui-field > span { opacity: 0.85; }
+
+/* ── EmptyState / Loading ────────────────────────────────────────────────── */
+.ui-empty { color: var(--text-muted); }
+.ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
+.ui-loading { padding: 24px; color: var(--text-muted); }

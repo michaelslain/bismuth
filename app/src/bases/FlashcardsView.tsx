@@ -1,8 +1,16 @@
 import { createSignal, createMemo, Show, For } from "solid-js";
 import { api } from "../api";
+import { Button } from "../ui/Button";
+import { EmptyState } from "../ui/EmptyState";
 import { renderMarkdown } from "./markdown";
 import { Icon } from "../icons/Icon";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
+
+// Pure review-queue logic lives in its own module so it can be unit-tested headlessly
+// without importing this component (lucide-solid icons, Solid client-only code). Import
+// for local use, and re-export to preserve the existing `./FlashcardsView` public surface.
+import { buildQueue, nextPosAfterGrade, type QueueItem } from "./flashcardsQueue";
+export { buildQueue, nextPosAfterGrade, type QueueItem };
 
 /**
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
@@ -29,14 +37,7 @@ export function FlashcardsView(props: {
   const [cram, setCram] = createSignal(false);
 
   // The review queue: due cards normally; ALL cards in cram mode (order preserved).
-  const queue = createMemo(() => {
-    const all = props.rows.map((r, index) => ({ r, index }));
-    if (cram()) return all;
-    return all.filter(({ r }) => {
-      const d = r.note[dueField()];
-      return d == null || d === "" || String(d) <= today;
-    });
-  });
+  const queue = createMemo(() => buildQueue(props.rows, dueField(), today, cram()));
 
   const [pos, setPos] = createSignal(0);
   const [revealed, setRevealed] = createSignal(false);
@@ -48,10 +49,16 @@ export function FlashcardsView(props: {
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
     if (!c) return;
-    // Cram mode never writes scheduling — it's practice, not review.
-    if (!cram() && props.basePath) await api.reviewCardRow(props.basePath, c.index, response);
     setRevealed(false);
-    setPos(pos() + 1);
+    // Cram mode never writes scheduling — it's practice, not review.
+    const persisted = !cram() && !!props.basePath;
+    // Track the card by its stable row index (c.index), not the positional queue
+    // offset: reviewCardRow pushes the card's due date forward so it drops out of
+    // the due-only queue on the onReviewed refetch. The shorter queue shifts the
+    // next card into the current pos, so we stay put (mirrors deleteCurrent)
+    // rather than incrementing into a queue whose membership just changed.
+    if (persisted) await api.reviewCardRow(props.basePath!, c.index, response);
+    setPos(nextPosAfterGrade(pos(), { cram: cram(), persisted }));
     if (!cram()) props.onReviewed();
   };
 
@@ -116,27 +123,30 @@ export function FlashcardsView(props: {
     <div class="flashcards-host">
       <div class="srs-bar">
         <Show when={props.basePath}>
-          <button class="srs-icon-btn" title="Add a card" onClick={openAdd} disabled={busy()}>
+          <Button variant="ghost" size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
             + Add card
-          </button>
+          </Button>
           <Show when={current() !== null}>
-            <button
-              class="srs-icon-btn danger"
+            <Button
+              variant="danger"
+              size="sm"
               title="Delete the current card"
               onClick={deleteCurrent}
               disabled={busy()}
             >
               <Icon value="X" size={14} />
-            </button>
+            </Button>
           </Show>
         </Show>
-        <button
-          class={`cram-toggle ${cram() ? "on" : ""}`}
+        <Button
+          variant="ghost"
+          size="sm"
+          active={cram()}
           title="Cram: review every card, no scheduling changes"
           onClick={toggleCram}
         >
           {cram() ? <><Icon value="Zap" size={12} /> Cram mode</> : "Cram"}
-        </button>
+        </Button>
       </div>
 
       <Show when={adding()}>
@@ -159,12 +169,12 @@ export function FlashcardsView(props: {
             />
           </label>
           <div class="card-add-actions">
-            <button class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
+            <Button variant="primary" size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
               Cancel
-            </button>
-            <button class="card-btn good" onClick={saveAdd} disabled={busy()}>
+            </Button>
+            <Button variant="primary" size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
               Save card
-            </button>
+            </Button>
           </div>
         </div>
       </Show>
@@ -172,23 +182,19 @@ export function FlashcardsView(props: {
       <Show
         when={queue().length > 0}
         fallback={
-          <div class="review-done">
-            <h2>{cram() ? "No cards in this deck" : "No cards due"}</h2>
-            <p class="deck-empty">
-              <Show when={!cram()} fallback={<>Add rows with <code>front</code> / <code>back</code> columns.</>}>
-                Nothing due — hit <strong>Cram</strong> above to review everything anyway.
-              </Show>
-            </p>
-          </div>
+          <EmptyState title={cram() ? "No cards in this deck" : "No cards due"}>
+            <Show when={!cram()} fallback={<>Add rows with <code>front</code> / <code>back</code> columns.</>}>
+              Nothing due — hit <strong>Cram</strong> above to review everything anyway.
+            </Show>
+          </EmptyState>
         }
       >
         <Show
           when={current() !== null}
           fallback={
-            <div class="review-done">
-              <h2>{cram() ? "Cram complete" : "Done reviewing"}</h2>
-              <button class="card-btn" onClick={restart}>Review again</button>
-            </div>
+            <EmptyState title={cram() ? "Cram complete" : "Done reviewing"}>
+              <Button variant="primary" size="lg" class="card-btn" onClick={restart}>Review again</Button>
+            </EmptyState>
           }
         >
           <div class="review">
@@ -226,12 +232,12 @@ export function FlashcardsView(props: {
 
             <Show
               when={revealed()}
-              fallback={<button class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</button>}
+              fallback={<Button variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</Button>}
             >
               <div class="grade-row">
-                <button class="card-btn hard" onClick={() => grade("hard")}>Hard</button>
-                <button class="card-btn good" onClick={() => grade("good")}>Good</button>
-                <button class="card-btn easy" onClick={() => grade("easy")}>Easy</button>
+                <Button variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</Button>
+                <Button variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</Button>
+                <Button variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</Button>
               </div>
             </Show>
           </div>

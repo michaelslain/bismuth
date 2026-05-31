@@ -2,7 +2,7 @@ import { For, Index } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { toDateStr, formatGutterHour, formatTime } from '../../dates'
-import { showEventModal, dragState, categories as categoriesSignal, settings } from '../../state'
+import { showEventModal, dragState, settings } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 
@@ -23,6 +23,14 @@ function snap(m: number): number {
 
 function clamp(m: number): number {
   return Math.max(0, Math.min(MAX_MINUTES, m))
+}
+
+function eventMinutes(e: { startTime?: string; endTime?: string }): { startMin: number; endMin: number } {
+  const [sh, sm] = (e.startTime ?? '00:00').split(':').map(Number)
+  const startMin = sh * 60 + sm
+  const [eh, em] = (e.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+  const endMin = eh * 60 + em
+  return { startMin, endMin }
 }
 
 function yToMinutes(y: number, colHeight: number): number {
@@ -85,12 +93,10 @@ export function TimeGrid(props: Props) {
     if (!col) return
 
     const rect = col.getBoundingClientRect()
-    const [sh, sm] = (event.startTime ?? '00:00').split(':').map(Number)
-    const eventStartMinutes = sh * 60 + sm
+    const { startMin: eventStartMinutes, endMin: eventEndMinutes } = eventMinutes(event)
     const clickMinutes = yToMinutes(e.clientY - rect.top, rect.height)
     const offsetMinutes = clickMinutes - eventStartMinutes
-    const [eh, em] = (event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
-    const durationMinutes = (eh * 60 + em) - eventStartMinutes
+    const durationMinutes = eventEndMinutes - eventStartMinutes
     const startY = e.clientY
     let dragging = false
 
@@ -136,11 +142,10 @@ export function TimeGrid(props: Props) {
       color = 'var(--interactive-accent)'
     } else {
       startMin = state.startMinutes
-      const [sh, sm] = (state.event.startTime ?? '00:00').split(':').map(Number)
-      const [eh, em] = (state.event.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
-      const duration = (eh * 60 + em) - (sh * 60 + sm)
+      const { startMin: evStart, endMin: evEnd } = eventMinutes(state.event)
+      const duration = evEnd - evStart
       endMin = clamp(startMin + duration)
-      color = categoriesSignal.value.find(c => c.name === state.event.category)?.color ?? 'var(--interactive-accent)'
+      color = props.categories.find(c => c.name === state.event.category)?.color ?? 'var(--interactive-accent)'
     }
 
     if (endMin <= startMin) endMin = startMin + 15
@@ -204,10 +209,9 @@ export function TimeGrid(props: Props) {
                     <div class="time-grid-hour-block"><div class="time-grid-hour-cell" /><div class="time-grid-half-cell" /></div>
                   )}</Index>
                   <For each={props.events.filter(e => e.date === ds && e.startTime)}>{e => {
-                    const [sh, sm] = (e.startTime ?? '00:00').split(':').map(Number)
-                    const [eh, em] = (e.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
-                    const top = ((sh * 60 + sm) / (24 * 60)) * GRID_PX
-                    const duration = eh * 60 + em - (sh * 60 + sm)
+                    const { startMin, endMin: evEndMin } = eventMinutes(e)
+                    const top = (startMin / (24 * 60)) * GRID_PX
+                    const duration = evEndMin - startMin
                     const visualDuration = duration <= 30 ? duration + 15 : duration
                     const height = Math.max((visualDuration / (24 * 60)) * GRID_PX - 3, 8)
                     const drag = dragState.value

@@ -4,7 +4,7 @@ import { evaluate } from "./evaluate";
 import { passesFilter, combineFilters } from "./filters";
 import { compare, toNumber } from "./values";
 
-function toContext(row: Row, hostThis?: Record<string, unknown>): EvalContext {
+export function toContext(row: Row, hostThis?: Record<string, unknown>): EvalContext {
   return { file: row.file, note: row.note, formula: row.formula, this: hostThis };
 }
 

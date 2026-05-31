@@ -48,10 +48,20 @@ test('editFollowing preserves recurrence-rule edits (type/daysOfWeek) on the new
     .toEqual(['2026-05-04', '2026-05-11', '2026-05-18', '2026-05-25'])
 })
 
-test('category delete reassigns events', async () => {
+test('category delete with no reassignTo clears the category (events become uncategorized)', async () => {
   const s = await freshStore()
   await s.addCategory({ name: 'work', color: '#fff' })
   await s.addEvent({ title: 'A', date: '2026-05-10', category: 'work' })
   await s.deleteCategory('work')
   expect(s.getEventsForRange('2026-05-01', '2026-05-31')[0].category).toBeUndefined()
+})
+
+test('category delete reassigns events to an explicit stable default target', async () => {
+  const s = await freshStore()
+  await s.addCategory({ name: 'Uncategorized', color: '#ccc' })
+  await s.addCategory({ name: 'work', color: '#fff' })
+  await s.addEvent({ title: 'A', date: '2026-05-10', category: 'work' })
+  // Deleting 'work' moves its events to the stable default, not an arbitrary neighbor.
+  await s.deleteCategory('work', 'Uncategorized')
+  expect(s.getEventsForRange('2026-05-01', '2026-05-31')[0].category).toBe('Uncategorized')
 })

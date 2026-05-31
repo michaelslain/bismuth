@@ -47,9 +47,9 @@
 }
 
 .tabs { display: flex; gap: 4px; }
-.tab { padding: 6px 12px; background: transparent; border: none; cursor: pointer; color: var(--oa-muted); border-bottom: 2px solid transparent; transition: color 120ms ease; }
+.tab { padding: 6px 12px; background: transparent; border: none; cursor: pointer; color: var(--oa-muted); border-bottom: 2px solid transparent; border-radius: 0; transition: color 120ms ease; }
 .tab:hover { color: var(--fg); }
-.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.tab.active, .tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
 .loading { padding: 24px; color: var(--oa-muted); }
 
 .table { border-collapse: collapse; width: 100%; font-size: 13px; }

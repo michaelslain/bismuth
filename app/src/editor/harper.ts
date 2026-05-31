@@ -74,6 +74,29 @@ function prewarmOnIdle(): void {
   else setTimeout(start, 600);
 }
 
+// Minimal slice of EditorView we need to re-validate a span at apply time.
+// (Narrow on purpose so the guard is pure and unit-testable without a real view.)
+export interface DocSlicer {
+  state: { doc: { sliceString(from: number, to: number): string } };
+}
+
+/** True iff the document still holds the originally-flagged text at [from, to).
+ *  Guards out-of-band quick-fixes (surfaced via the shared right-click menu, not
+ *  CM's diagnostic pipeline) against stale offsets after the doc has changed: if
+ *  the user edits elsewhere before applying a fix, the baked-in offsets may now
+ *  point at unrelated text, so applying the change would corrupt the document. */
+export function spanStillMatches(
+  view: DocSlicer,
+  from: number,
+  to: number,
+  flagged: string,
+): boolean {
+  const doc = view.state.doc;
+  // sliceString clamps out-of-range offsets, so an offset now past EOF returns a
+  // shorter string than `flagged` and correctly fails the equality check.
+  return doc.sliceString(from, to) === flagged;
+}
+
 /** Map one Harper Lint (scalar-indexed, relative to the linted body slice) to a
  *  CM Diagnostic at absolute document offsets, with quick-fix + dict/ignore actions. */
 function lintToDiagnostic(
@@ -88,6 +111,9 @@ function lintToDiagnostic(
   const from = bodyFrom + scalarToUtf16(bodyText, span.start);
   const to = bodyFrom + scalarToUtf16(bodyText, span.end);
   const flagged = view.state.doc.sliceString(from, to);
+  // Spelling vs grammar/style/agreement — computed once and reused for both the
+  // squiggle color (markClass) and the "Add to dictionary" gate.
+  const isSpelling = /spell/i.test(lint.lint_kind());
 
   const actions: Action[] = [];
   for (const sug of lint.suggestions()) {
@@ -95,12 +121,20 @@ function lintToDiagnostic(
     actions.push({
       name: replacement === "" ? "Remove" : `→ ${replacement}`,
       apply(v: EditorView) {
-        v.dispatch({ changes: { from, to, insert: replacement } });
+        // These quick-fixes are surfaced out-of-band via the shared right-click
+        // menu, so CM's diagnostic pipeline doesn't remap/clear them when the doc
+        // changes between lint resolution and apply. Re-validate the span: only
+        // dispatch if it still holds the originally-flagged text, else no-op.
+        if (spanStillMatches(v, from, to, flagged)) {
+          v.dispatch({ changes: { from, to, insert: replacement } });
+        }
       },
     });
   }
-  // "Add to dictionary" for misspellings: persist the word and re-import live.
-  if (flagged) {
+  // "Add to dictionary" only for spelling lints — adding a multi-word grammar
+  // phrase (e.g. "a apple") as a dictionary word is meaningless and pollutes the
+  // user dictionary.
+  if (isSpelling && flagged) {
     actions.push({
       name: "Add to dictionary",
       apply() {
@@ -127,7 +161,7 @@ function lintToDiagnostic(
     severity: "error",
     message: lint.message(),
     // Spelling → red, everything else Harper flags (grammar/style/agreement…) → blue.
-    markClass: /spell/i.test(lint.lint_kind()) ? SPELL_MARK : GRAMMAR_MARK,
+    markClass: isSpelling ? SPELL_MARK : GRAMMAR_MARK,
     actions,
   };
 }
