@@ -10,12 +10,12 @@
 //   emojilib           → keyword arrays per emoji char
 //   SPECIAL_CHARS      → hand-authored typographic / math / arrow / currency symbols
 //
-// Output entry shape (kept in sync with EmojiEntry in app/src/editor/emoji.ts):
-//   { char: string; name: string; keywords: string[] }
-//   `name` is the shortcode (slug, underscored); `keywords` is everything searchable.
+// Output entries are EmojiEntry (imported from app/src/editor/emoji.ts — one source of
+// truth): `name` is the shortcode (slug, underscored); `keywords` is everything searchable.
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import type { EmojiEntry } from "../app/src/editor/emoji"; // single source of truth for the shape
 
 // --- defensive module loading (CJS default-export shapes vary) -------------------
 function unwrap<T>(m: any): T {
@@ -26,9 +26,7 @@ const byEmoji = unwrap<Record<string, { name: string; slug: string; group?: stri
   await import("unicode-emoji-json"),
 );
 
-export type EmojiEntry = { char: string; name: string; keywords: string[] };
-
-// Normalize a free-text token into a lowercase keyword; keep +/- (for :+1:/:-1:).
+// Normalize a free-text token to a lowercase keyword.
 function kw(s: string): string {
   return s.toLowerCase().trim();
 }

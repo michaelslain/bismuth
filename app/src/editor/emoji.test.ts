@@ -111,6 +111,23 @@ test("dataset: every curated POPULAR shortcode resolves (catches silent drops)",
   expect(searchEmoji("").length).toBeGreaterThanOrEqual(40);
 });
 
+test("dataset: dual-glyph shortcodes resolve deterministically, typographic char first", () => {
+  // 6 shortcodes carry both an emoji and a hand-authored typographic glyph. The codepoint
+  // tie-break fixes the order — the lower-codepoint typographic char leads, the emoji
+  // follows, and both stay reachable. Regression guard for the "shadowing" review finding.
+  const pairs: [string, string, string][] = [
+    ["divide", "÷", "➗"],
+    ["cross_mark", "✗", "❌"],
+    ["dagger", "†", "🗡️"],
+    ["copyright", "©", "©️"],
+    ["registered", "®", "®️"],
+    ["infinity", "∞", "♾️"],
+  ];
+  for (const [name, first, second] of pairs) {
+    expect(searchEmoji(name).slice(0, 2).map((e) => e.char)).toEqual([first, second]);
+  }
+});
+
 test("rankEmoji: respects the limit", () => {
   // "smile" matches three entries; limit 2 caps it.
   expect(rankEmoji(FIXTURE, "smile", 2).length).toBe(2);
