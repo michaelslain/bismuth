@@ -1,9 +1,27 @@
 import { parse as parseYaml } from "yaml";
-import type { BaseConfig, ViewConfig, SortSpec } from "./types";
+import type { BaseConfig, ViewConfig, SortSpec, ViewType, ParsedBase } from "./types";
+import { parseRows } from "./rows";
+import { normalizeSource } from "./sourceSpec";
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   return [];
+}
+
+const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
+function isValidType(t: unknown): t is ViewType {
+  return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
+}
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+function safeYaml(text: string): Record<string, unknown> | null {
+  try {
+    const d = parseYaml(text);
+    return d && typeof d === "object" ? (d as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeSort(raw: unknown): SortSpec[] | undefined {
@@ -42,11 +60,20 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
   return undefined;
 }
 
+// Coerce a `columnWidths` map (propertyId -> px) into a clean number map. Tolerates
+// values that round-tripped through YAML as strings ("240"); drops non-finite/non-positive.
+function normalizeColumnWidths(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
-
-  const isValidType = (t: unknown): t is "cards" | "list" | "kanban" | "map" =>
-    t === "cards" || t === "list" || t === "kanban" || t === "map";
 
   const type = isValidType(o.type) ? o.type : "table";
   const name = typeof o.name === "string" && o.name.length ? o.name : "Untitled view";
@@ -57,6 +84,7 @@ function normalizeView(raw: unknown): ViewConfig {
     : undefined;
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined;
   const columns = Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined;
+  const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
   const lng = typeof o.lng === "string" ? o.lng : undefined;
   const zoom = typeof o.zoom === "number" ? o.zoom : undefined;
@@ -77,10 +105,24 @@ function normalizeView(raw: unknown): ViewConfig {
     summaries,
     cardContent,
     columns,
+    columnWidths,
     lat,
     lng,
     zoom,
     center,
+    source: o.source as ViewConfig["source"],
+    // calendar field bindings
+    dateField: strOrUndef(o.dateField),
+    startTimeField: strOrUndef(o.startTimeField),
+    endTimeField: strOrUndef(o.endTimeField),
+    recurrenceField: strOrUndef(o.recurrenceField),
+    categoryField: strOrUndef(o.categoryField),
+    // flashcards field bindings
+    frontField: strOrUndef(o.frontField),
+    backField: strOrUndef(o.backField),
+    dueField: strOrUndef(o.dueField),
+    easeField: strOrUndef(o.easeField),
+    intervalField: strOrUndef(o.intervalField),
   };
 }
 
@@ -99,6 +141,12 @@ export function parseBase(text: string): BaseConfig {
   const rawViews = asArray<unknown>(o.views);
   const views: ViewConfig[] = rawViews.map(normalizeView);
   if (views.length === 0) views.push({ type: "table", name: "Table" });
+
+  // A top-level `columnWidths` (how the table view persists resizes via a flat
+  // setProperty) configures the default view — unless that view already declared
+  // its own. This mirrors the top-level order/sort/group handling in parseBaseFile.
+  const topWidths = normalizeColumnWidths(o.columnWidths);
+  if (topWidths && !views[0].columnWidths) views[0].columnWidths = topWidths;
 
   const properties = o.properties && typeof o.properties === "object"
     ? Object.fromEntries(
@@ -120,5 +168,73 @@ export function parseBase(text: string): BaseConfig {
       ? Object.fromEntries(Object.entries(o.formulas as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
       : undefined;
 
-  return { filters: o.filters as BaseConfig["filters"], formulas, properties, views };
+  return {
+    filters: o.filters as BaseConfig["filters"],
+    formulas,
+    properties,
+    views,
+    source: normalizeSource(o.source, o),
+    schema: o.schema as BaseConfig["schema"],
+  };
+}
+
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+/**
+ * Parse a `type: base` markdown file: YAML frontmatter (config) + optional GFM table (rows).
+ * `view: <type>` is shorthand for a single default view. Reuses parseBase() for the config.
+ */
+export function parseBaseFile(text: string, meta: { name: string; path: string }): ParsedBase {
+  const m = text.match(FM_RE);
+  const fmText = m ? m[1] : "";
+  const body = m ? m[2] : text;
+  const config = fmText ? parseBase(fmText) : { views: [] as ViewConfig[] };
+  const raw = fmText ? safeYaml(fmText) : null;
+
+  // `view: <type>` shorthand wins only when no explicit `views:` array was given.
+  if (raw && isValidType(raw.view) && !Array.isArray(raw.views)) {
+    config.views = [{ type: raw.view, name: capitalize(raw.view) }];
+  }
+  if (!config.views || config.views.length === 0) {
+    config.views = [{ type: "table", name: "Table" }];
+  }
+  if (raw?.schema && typeof raw.schema === "object") {
+    config.schema = raw.schema as BaseConfig["schema"];
+  }
+  // Normalize string OR object `source` (+ top-level from/where/ref) into a SourceSpec.
+  if (raw) {
+    const s = normalizeSource(raw.source, raw);
+    if (s) config.source = s;
+  }
+  // Top-level field-binding keys configure the default view (so the settings UI can
+  // persist them with a flat `setProperty`, no nested `views:` editing needed).
+  if (raw && config.views[0]) {
+    const FIELD_KEYS = [
+      "frontField", "backField", "dueField",
+      "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
+    ] as const;
+    for (const k of FIELD_KEYS) {
+      if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
+    }
+    // Top-level view shaping (visible columns / sort / group / group-order) configures the default view too.
+    if (Array.isArray(raw.order)) config.views[0].order = (raw.order as unknown[]).map(String);
+    if (Array.isArray(raw.columns)) config.views[0].columns = (raw.columns as unknown[]).map(String);
+    const s = normalizeSort(raw.sort);
+    if (s) config.views[0].sort = s;
+    const g = normalizeGroupBy(raw.groupBy);
+    if (g) config.views[0].groupBy = g;
+    const widths = normalizeColumnWidths(raw.columnWidths);
+    if (widths) config.views[0].columnWidths = widths;
+    // cards view: `cardContent: body` renders each note's body as an interactive todo
+    // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
+    // nested `views:` block.
+    if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
+  }
+
+  const rows = parseRows(body, meta);
+  return { config, rows };
+}
+
+function capitalize(s: string): string {
+  return s.length ? s[0].toUpperCase() + s.slice(1) : s;
 }

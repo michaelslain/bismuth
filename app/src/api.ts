@@ -5,7 +5,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
-import type { Row } from "../../core/src/bases/types";
+import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
@@ -34,13 +34,7 @@ async function post(path: string, body: unknown): Promise<Response> {
   return r;
 }
 
-/** POST JSON and parse response; throw the server's error text on a non-2xx. */
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const r = await post(path, body);
-  return r.json() as Promise<T>;
-}
-
-/** PUT JSON; throw the server's error text on a non-2xx. */
+/** PUT JSON; throw the server's error text on a non-2xx. Used for file writes (PUT /file). */
 async function put(path: string, body: unknown): Promise<Response> {
   const r = await fetch(`${BASE}${path}`, {
     method: "PUT",
@@ -49,6 +43,12 @@ async function put(path: string, body: unknown): Promise<Response> {
   });
   await checkOk(r);
   return r;
+}
+
+/** POST JSON and parse response; throw the server's error text on a non-2xx. */
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const r = await post(path, body);
+  return r.json() as Promise<T>;
 }
 
 async function getText(path: string): Promise<string> {
@@ -76,6 +76,13 @@ export const api = {
   vaultData: () => getJson<Row[]>("/vault-data"),
   schema: () => getJson<Schema>("/schema"),
   settings: () => getJson<Record<string, unknown>>("/settings"),
+  base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
+  // Single source resolver: resolve a SourceSpec to Row[] server-side, following
+  // base composition + scoped tasks. Replaces the per-kind client-side resolver.
+  resolveRows: (spec: SourceSpec) => postJson<Row[]>("/rows", { spec }),
+  rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
+  rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
+  rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
@@ -88,6 +95,9 @@ export const api = {
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
+  // Row-based review for a flashcard base: advances the row's due/ease/interval columns.
+  reviewCardRow: (file: string, index: number, response: "hard" | "good" | "easy") =>
+    post("/cards/review", { file, index, response }),
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
 };

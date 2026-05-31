@@ -8,12 +8,16 @@ import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
+import { parseBaseFile } from "./bases/parse";
+import { resolveSource } from "./bases/source";
+import { upsertRow, deleteRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
+import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
-import type { Row } from "./bases/types";
+import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { initializeSettings, getVaultSchema, serializeSettingsForFrontend } from "./settings";
@@ -245,6 +249,21 @@ export function createServer(cfg: CoreConfig) {
       return Response.json(cachedRows);
     },
 
+    "GET /base": async (_, url) => {
+      const path = requireQueryParam(url, "file");
+      // readNote() runs the path through resolveInVault (rejects traversal) and
+      // throws on a missing file — both surface as 404, with no separate
+      // exists() probe that could leak existence or race the read.
+      let text: string;
+      try {
+        text = await readNote(cfg.vault, path);
+      } catch {
+        return new Response("not found", { status: 404 });
+      }
+      const name = path.split("/").pop()!.replace(/\.md$/, "");
+      return Response.json(parseBaseFile(text, { name, path }));
+    },
+
     "GET /file": async (_, url) => {
       const path = requireQueryParam(url, "path");
       const noteText = await readNoteOrEmpty(cfg.vault, path);
@@ -286,6 +305,15 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /tasks": async (_, __) => {
       return Response.json(await collectVaultTasks(cfg.vault));
+    },
+
+    // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)
+    // to Row[], following base composition + scoped tasks. Read-only despite POST
+    // (the body carries the spec), so it lives here, not in mutatingRoutes.
+    "POST /rows": async (req, __) => {
+      const { spec } = (await req.json()) as { spec: SourceSpec };
+      const rows = await resolveSource(spec, { root: cfg.vault, today: todayISO() });
+      return Response.json(rows);
     },
 
     "POST /backup": async (_, __) => {
@@ -394,6 +422,35 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.path,
     ),
 
+    "POST /row/update": mutatingHandler(
+      async (req) => {
+        // index === null => append a new row; otherwise replace the row at index.
+        const { file, index, note } = (await req.json()) as {
+          file: string;
+          index: number | null;
+          note: Record<string, unknown>;
+        };
+        const text = await readNoteOrEmpty(cfg.vault, file);
+        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const next = upsertRow(text, { name, path: file }, index ?? null, note);
+        await writeNote(cfg.vault, file, next);
+        return new Response("ok");
+      },
+      (b) => b.file,
+    ),
+
+    "POST /row/delete": mutatingHandler(
+      async (req) => {
+        const { file, index } = (await req.json()) as { file: string; index: number };
+        const text = await readNote(cfg.vault, file);
+        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const next = deleteRow(text, { name, path: file }, index);
+        await writeNote(cfg.vault, file, next);
+        return new Response("ok");
+      },
+      (b) => b.file,
+    ),
+
     "POST /tasks/toggle": mutatingHandler(
       async (req) => {
         const { path, line } = (await req.json()) as { path: string; line: number };
@@ -411,11 +468,30 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /cards/review": mutatingHandler(
       async (req) => {
-        const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
-        await applyReview(cfg.vault, id, response, todayISO(), question);
+        const body = (await req.json()) as {
+          id?: string;
+          response: ReviewResponse;
+          question?: string;
+          file?: string;
+          index?: number;
+        };
+        // Row-based review (flashcard base): advance scheduling columns on the row.
+        if (body.file != null && body.index != null) {
+          const text = await readNote(cfg.vault, body.file);
+          const name = body.file.split("/").pop()!.replace(/\.md$/, "");
+          const { rows } = parseBaseFile(text, { name, path: body.file });
+          const row = rows[body.index];
+          if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
+          const note = applyReviewToRow(row.note, body.response, todayISO());
+          const next = upsertRow(text, { name, path: body.file }, body.index, note);
+          await writeNote(cfg.vault, body.file, next);
+          return new Response("ok");
+        }
+        // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
+        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question);
         return new Response("ok");
       },
-      // No single path — leave paths empty.
+      (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
   };
 

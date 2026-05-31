@@ -167,3 +167,95 @@ test("hostThis flows into filters / formulas / groupBy as `this.*`", () => {
   const alpha = res.groups[0].rows.find((r) => r.file.name === "alpha")!;
   expect(alpha.formula.adj).toBe(20); // 10 * 2
 });
+
+// "Do Now" urgency buckets: a date formula grouped via formula.* — proves date
+// arithmetic works in groupBy. Uses a string-literal duration (today() + "7d");
+// note duration("7d") would NOT compose with + (it returns a number, not a Date).
+test("urgency buckets via a date formula + groupBy formula.*", () => {
+  function ymd(offsetDays: number): string {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offsetDays);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const taskRows: Row[] = [
+    row("overdue", { description: "a", due: ymd(-3) }),
+    row("soon", { description: "b", due: ymd(3) }),
+    row("later", { description: "c", due: ymd(30) }),
+    row("nodate", { description: "d" }),
+  ];
+  const cfg: BaseConfig = {
+    formulas: {
+      urgency: 'if(!due, "No date", if(date(due) < today(), "Overdue", if(date(due) <= today() + "7d", "This week", "Later")))',
+    },
+    views: [{ type: "list", name: "DoNow", groupBy: { property: "formula.urgency" } }],
+  };
+  const res = runView(cfg, taskRows, 0);
+  const byKey = Object.fromEntries(res.groups.map((g) => [g.key, g.rows.map((r) => r.file.name)]));
+  expect(byKey["Overdue"]).toEqual(["overdue"]);
+  expect(byKey["This week"]).toEqual(["soon"]);
+  expect(byKey["Later"]).toEqual(["later"]);
+  expect(byKey["No date"]).toEqual(["nodate"]);
+});
+
+// duration() now composes with + (returns ms; Date + ms → shifted Date), so the
+// natural `today() + duration("7d")` form buckets identically to the "7d" literal.
+test("urgency buckets work with duration() too (composes with +)", () => {
+  function ymd(offsetDays: number): string {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + offsetDays);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const taskRows: Row[] = [
+    row("overdue", { due: ymd(-3) }),
+    row("soon", { due: ymd(3) }),
+    row("later", { due: ymd(30) }),
+  ];
+  const cfg: BaseConfig = {
+    formulas: {
+      urgency: 'if(date(due) < today(), "Overdue", if(date(due) <= today() + duration("7d"), "This week", "Later"))',
+    },
+    views: [{ type: "list", name: "DoNow", groupBy: { property: "formula.urgency" } }],
+  };
+  const res = runView(cfg, taskRows, 0);
+  const byKey = Object.fromEntries(res.groups.map((g) => [g.key, g.rows.map((r) => r.file.name)]));
+  expect(byKey["Overdue"]).toEqual(["overdue"]);
+  expect(byKey["This week"]).toEqual(["soon"]);
+  expect(byKey["Later"]).toEqual(["later"]);
+});
+
+test("default group order is type-aware (numeric, not string-alphabetical)", () => {
+  const r2 = row("a", { n: 2 });
+  const r10 = row("b", { n: 10 });
+  const r1 = row("c", { n: 1 });
+  const cfg: BaseConfig = { views: [{ type: "table", name: "V", groupBy: { property: "note.n" } }] };
+  const res = runView(cfg, [r10, r2, r1], 0);
+  expect(res.groups.map((g) => g.key)).toEqual(["1", "2", "10"]); // numeric, not "1","10","2"
+});
+
+test("explicit columns order groups in a non-kanban (list) view", () => {
+  const rows2: Row[] = [
+    row("a", { bucket: "Later" }),
+    row("b", { bucket: "Overdue" }),
+    row("c", { bucket: "This week" }),
+    row("d", { bucket: "Mystery" }), // not declared -> appended
+  ];
+  const cfg: BaseConfig = {
+    views: [{ type: "list", name: "V", groupBy: { property: "note.bucket" }, columns: ["Overdue", "This week", "Later"] }],
+  };
+  const res = runView(cfg, rows2, 0);
+  expect(res.groups.map((g) => g.key)).toEqual(["Overdue", "This week", "Later", "Mystery"]);
+});
+
+test("non-kanban omits an empty declared group; kanban keeps it", () => {
+  const rows3: Row[] = [row("a", { s: "todo" })];
+  const listCfg: BaseConfig = {
+    views: [{ type: "list", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+  };
+  expect(runView(listCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo"]); // "done" empty -> omitted
+  const kanbanCfg: BaseConfig = {
+    views: [{ type: "kanban", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+  };
+  expect(runView(kanbanCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo", "done"]); // "done" kept as drop target
+});
