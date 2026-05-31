@@ -12,6 +12,8 @@ import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { harperSpellcheck } from "./editor/harper";
 import { harperBodyRange } from "./editor/harperBody";
+import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
+import { propertyRegistry } from "./propertyRegistry";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
 import "./Editor.css";
@@ -103,7 +105,19 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       keymap.of([...defaultKeymap, ...historyKeymap]),
       markdown(),
       basesBlock(() => path),
-      vaultCompletion({ getNotes: props.noteNames, getTags: props.tagNames }),
+      vaultCompletion({
+        getNotes: props.noteNames,
+        getTags: props.tagNames,
+        getSchema: propertyRegistry,
+        inFrontmatter: isInFrontmatter,
+      }),
+      yamlSchema({
+        getSchema: propertyRegistry,
+        mode: "frontmatter",
+        // Filename-based link resolution: a [[Target]] resolves when some note
+        // candidate's label matches (wikilink semantics — name, not path).
+        resolveLink: (target) => props.noteNames().some((n) => n.label === target),
+      }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
