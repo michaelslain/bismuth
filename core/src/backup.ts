@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, appendFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { $ } from "bun";
 
@@ -8,6 +8,17 @@ export function snapshotMessage(now: Date = new Date()): string {
   return `vault snapshot ${stamp}`;
 }
 
+const EXCLUDE_LINE = "settings.yaml";
+
+/** Ensure .git/info/exclude ignores the per-vault settings file (idempotent). */
+function ensureExclude(dir: string): void {
+  const excludePath = join(dir, ".git", "info", "exclude");
+  let current = "";
+  try { current = readFileSync(excludePath, "utf8"); } catch { /* file may not exist yet */ }
+  if (current.split("\n").includes(EXCLUDE_LINE)) return;
+  appendFileSync(excludePath, `\n${EXCLUDE_LINE}\n`);
+}
+
 /** git init if needed + set a local identity so commits never block. Never adds a remote. */
 export async function ensureRepo(dir: string): Promise<void> {
   if (!existsSync(join(dir, ".git"))) {
@@ -15,6 +26,9 @@ export async function ensureRepo(dir: string): Promise<void> {
     await $`git -C ${dir} config user.email "vault@local"`.quiet();
     await $`git -C ${dir} config user.name "Obsidian Alternative"`.quiet();
   }
+  // .git/info/exclude exists after init; ensureExclude runs every time
+  // (idempotent) so existing vaults pick up the rule on their next backup.
+  ensureExclude(dir);
 }
 
 /** Stage everything and commit. Returns false if there was nothing to commit. Local only. */
