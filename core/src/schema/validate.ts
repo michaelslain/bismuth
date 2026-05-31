@@ -2,6 +2,7 @@
 import type {
   PropertyType,
   Schema,
+  SchemaEntry,
   Diagnostic,
   ValidateContext,
   ValidateMode,
@@ -156,6 +157,28 @@ export function validateValue(
     return null;
   }
 
+  return null;
+}
+
+/**
+ * Validate a value against a full SchemaEntry: the type check first, then a
+ * soft min/max range warning for numeric values. Returns null when clean.
+ */
+export function validateEntry(
+  entry: SchemaEntry,
+  value: unknown,
+  ctx?: ValidateContext,
+): Diagnostic | null {
+  const typeDiag = validateValue(entry.type, value, ctx);
+  if (typeDiag) return typeDiag;
+  if (typeof value === "number") {
+    if (entry.min !== undefined && value < entry.min) {
+      return warn(`expected a value >= ${entry.min}`);
+    }
+    if (entry.max !== undefined && value > entry.max) {
+      return warn(`expected a value <= ${entry.max}`);
+    }
+  }
   return null;
 }
 
