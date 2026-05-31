@@ -174,7 +174,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
-                settingsCompletion(() => SETTINGS_SCHEMA),
+                settingsCompletion(() => SETTINGS_SCHEMA, iconNames),
               ]
             : []),
         ]

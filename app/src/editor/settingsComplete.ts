@@ -7,6 +7,7 @@
 import { autocompletion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
+import { commandLabel } from "../../../core/src/commands";
 
 // Property types a user can assign in the `properties:` registry section.
 const PROPERTY_TYPES = ["string", "number", "boolean", "date", "datetime", "file", "list"];
@@ -33,9 +34,15 @@ export function docInfo(entry: SchemaEntry): string {
   return entry.doc ?? "";
 }
 
-/** The nested fields of an object-typed entry, or null for scalars. */
+/** The nested fields available under an entry: object fields directly, or a
+ *  list-of-object's item fields (so list items complete their keys). null for scalars. */
 function fieldsOf(entry: SchemaEntry | undefined): Schema | null {
-  if (entry && typeof entry.type === "object" && entry.type.kind === "object") return entry.type.fields;
+  if (!entry) return null;
+  const t = entry.type;
+  if (typeof t === "object" && t.kind === "object") return t.fields;
+  if (typeof t === "object" && t.kind === "list" && t.item && typeof t.item === "object" && t.item.kind === "object") {
+    return t.item.fields;
+  }
   return null;
 }
 
@@ -68,42 +75,62 @@ function scopeAt(root: Schema, ctx: CompletionContext, lineNumber: number, inden
   return { schema: root, sectionKey: null };
 }
 
-function settingsSource(getSchema: () => Schema): CompletionSource {
+export function settingsCompletionSource(
+  getSchema: () => Schema,
+  getIconNames: () => string[],
+): CompletionSource {
   return (ctx: CompletionContext): CompletionResult | null => {
     const root = getSchema();
     const line = ctx.state.doc.lineAt(ctx.pos);
     const before = line.text.slice(0, ctx.pos - line.from);
     const indent = (before.match(/^\s*/)?.[0] ?? "").length;
 
-    // VALUE position: "key: <partial>"
-    const val = before.match(/^\s*([\w-]+):\s*(\S*)$/);
+    // VALUE position: "key: <partial>" or "- key: <partial>" (list item).
+    const val = before.match(/^\s*-?\s*([\w-]+):\s*(\S*)$/);
     if (val) {
       const [, key, typed] = val;
       if (!ctx.explicit && typed.length === 0) return null;
       const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
-      const options = sectionKey === "properties" ? PROPERTY_TYPES : valueOptions(schema[key]?.type ?? "string");
+      const fieldType = sectionKey === "properties" ? "string" : (schema[key]?.type ?? "string");
+
+      // icon-typed field -> Lucide icon names.
+      if (fieldType === "icon") {
+        const p = typed.toLowerCase();
+        const options = getIconNames()
+          .filter((n) => n.toLowerCase().startsWith(p))
+          .slice(0, 50)
+          .map((label) => ({ label, type: "enum" }));
+        if (!options.length) return null;
+        return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
+      }
+
+      const raw = sectionKey === "properties" ? PROPERTY_TYPES : valueOptions(fieldType);
+      if (!raw.length) return null;
+      const p = typed.toLowerCase();
+      const options = raw
+        .filter((v) => v.toLowerCase().startsWith(p))
+        .map((label) => {
+          const detail = commandLabel(label); // non-undefined only for command ids
+          return detail ? { label, type: "enum", detail } : { label, type: "enum" };
+        });
       if (!options.length) return null;
-      return {
-        from: ctx.pos - typed.length,
-        options: options.map((label) => ({ label, type: "enum" })),
-        validFor: /^[\w-]*$/,
-      };
+      return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
     }
 
-    // KEY position: just an (optionally indented) partial word, no colon yet.
-    const keyM = before.match(/^\s*([\w-]*)$/);
+    // KEY position: an (optionally `- `-prefixed) partial word, no colon yet.
+    const keyM = before.match(/^\s*-?\s*([\w-]*)$/);
     if (keyM) {
       const typed = keyM[1];
-      if (!ctx.explicit && typed.length === 0) return null; // don't auto-pop on blank lines
+      if (!ctx.explicit && typed.length === 0) return null;
       const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
-      if (sectionKey === "properties") return null; // registry keys are user-defined names
-      // detail = "<type> <range>" inline; info = the doc string in the hover tooltip,
-      // so the user sees what each setting does and its valid values without docs in the file.
-      const options = Object.entries(schema).map(([name, e]) => {
-        const detail = [typeLabel(e.type), rangeLabel(e)].filter(Boolean).join(" ");
-        const info = docInfo(e);
-        return { label: name, type: "property", detail, ...(info ? { info } : {}) };
-      });
+      if (sectionKey === "properties") return null;
+      const options = Object.entries(schema)
+        .filter(([name]) => name.toLowerCase().startsWith(typed.toLowerCase()))
+        .map(([name, e]) => {
+          const detail = [typeLabel(e.type), rangeLabel(e)].filter(Boolean).join(" ");
+          const info = docInfo(e);
+          return { label: name, type: "property", detail, ...(info ? { info } : {}) };
+        });
       if (!options.length) return null;
       return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
     }
@@ -111,6 +138,6 @@ function settingsSource(getSchema: () => Schema): CompletionSource {
   };
 }
 
-export function settingsCompletion(getSchema: () => Schema): Extension {
-  return autocompletion({ override: [settingsSource(getSchema)] });
+export function settingsCompletion(getSchema: () => Schema, getIconNames: () => string[]): Extension {
+  return autocompletion({ override: [settingsCompletionSource(getSchema, getIconNames)] });
 }
