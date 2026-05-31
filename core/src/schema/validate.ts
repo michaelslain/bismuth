@@ -7,6 +7,7 @@ import type {
   ValidateMode,
 } from "./types";
 import { extractWikilinks } from "../wikilinks";
+import { parseList } from "./coerce";
 
 /** Pull the link target from a value: "[[Target|Display]]" -> "Target", else the raw string. */
 function linkTarget(value: string): string {
@@ -133,7 +134,28 @@ export function validateValue(
     );
   }
 
-  // list + object compound types handled in a later task.
+  if (type.kind === "list") {
+    const items = Array.isArray(value) ? value : parseList(value);
+    if (!type.item) return null;
+    for (let i = 0; i < items.length; i++) {
+      const inner = validateValue(type.item, items[i], ctx);
+      if (inner) return { ...inner, path: [String(i)] };
+    }
+    return null;
+  }
+
+  if (type.kind === "object") {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return err("expected an object");
+    }
+    const obj = value as Record<string, unknown>;
+    for (const [key, entry] of Object.entries(type.fields)) {
+      const inner = validateValue(entry.type, obj[key], ctx);
+      if (inner) return { ...inner, path: [key, ...inner.path] };
+    }
+    return null;
+  }
+
   return null;
 }
 
