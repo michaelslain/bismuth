@@ -145,3 +145,26 @@ test("collectVaultTasks scans every markdown file in the vault", async () => {
   expect(byDesc["task b"].path).toBe("sub/b.md");
   expect(byDesc["task c"].line).toBe(2);
 });
+
+import { collectTasksFromPaths } from "../src/tasks";
+import { writeNote } from "../src/files";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("collectTasksFromPaths only scans the given paths", async () => {
+  const root = mkdtempSync(join(tmpdir(), "oa-scoped-"));
+  await writeNote(root, "keep/a.md", "- [ ] inside keep");
+  await writeNote(root, "keep/b.md", "no tasks here");
+  await writeNote(root, "other/c.md", "- [ ] outside keep");
+
+  const tasks = await collectTasksFromPaths(root, ["keep/a.md", "keep/b.md"]);
+  expect(tasks.map((t) => t.description)).toEqual(["inside keep"]);
+});
+
+test("collectTasksFromPaths skips unreadable paths", async () => {
+  const root = mkdtempSync(join(tmpdir(), "oa-scoped2-"));
+  await writeNote(root, "keep/a.md", "- [ ] real task");
+  const tasks = await collectTasksFromPaths(root, ["keep/a.md", "keep/missing.md"]);
+  expect(tasks.map((t) => t.description)).toEqual(["real task"]);
+});

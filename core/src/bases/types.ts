@@ -1,8 +1,19 @@
 // ---- The base config (parsed .base YAML) ----
+export type { Recurrence, RecurrenceType } from "./recurrence";
+
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
+// All view kinds a view can render. Calendar + flashcards are the unified additions.
+export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards";
+
+// Where a view's rows come from. Default is { kind: "base" } for a type:base file.
+export type SourceSpec =
+  | { kind: "base"; ref?: string }                  // ref = "[[Other Base]]"; resolves that base's OWN source (composition)
+  | { kind: "notes"; where?: string; from?: string } // vault notes filtered by a Bases expression; from = "[[Base]]" scopes to that base's notes
+  | { kind: "tasks"; where?: string; from?: string }; // vault checkbox tasks; from = "[[Base]]" scopes tasks to that base's notes (not the whole vault)
+
 export interface ViewConfig {
-  type: "table" | "cards" | "list" | "kanban" | "map";
+  type: ViewType;
   name: string;
   limit?: number;
   filters?: FilterNode;
@@ -11,10 +22,15 @@ export interface ViewConfig {
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
   cardContent?: "properties" | "body";   // cards view: what to render inside each card
-  // Kanban: fixed group keys + order. Without this, columns are derived from data —
-  // dragging the last card out makes the column vanish. With it, every listed key
-  // shows up as a column even when empty, and the order follows the declared list.
+  // Explicit group order for a grouped view: groups appear in this declared order,
+  // with any data-only keys appended (ordered by value). Kanban additionally shows
+  // every listed key as a column even when empty (so a column doesn't vanish when its
+  // last card is dragged out); other view types only show declared groups that have
+  // rows. Without this, groups are ordered by the group value (type-aware), not the
+  // declared list.
   columns?: string[];
+  // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
+  columnWidths?: Record<string, number>;
   // Map view: which property ids carry geo coords. Defaults to bare "lat" / "lng"
   // (matched to frontmatter). Use "note.x" or "formula.y" for custom property
   // namespaces. zoom + center seed the initial framing.
@@ -22,6 +38,20 @@ export interface ViewConfig {
   lng?: string;
   zoom?: number;
   center?: { lat: number; lng: number };
+  // Per-view source override (falls back to BaseConfig.source, then { kind: "base" }).
+  source?: SourceSpec;
+  // Calendar view: which columns carry the date/time/recurrence/category fields.
+  dateField?: string;          // default "date"
+  startTimeField?: string;     // default "startTime"
+  endTimeField?: string;       // default "endTime"
+  recurrenceField?: string;    // default "recurrence"
+  categoryField?: string;      // default "category"
+  // Flashcards view: which columns carry the card fields + SM-2 scheduling state.
+  frontField?: string;         // default "front"
+  backField?: string;          // default "back"
+  dueField?: string;           // default "due"
+  easeField?: string;          // default "ease"
+  intervalField?: string;      // default "interval"
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
@@ -34,6 +64,9 @@ export interface BaseConfig {
   // `order: [...]` still wins — that's the per-view opt-in.
   properties?: Record<string, { displayName?: string; hidden?: boolean }>;
   views: ViewConfig[];
+  // Unified additions:
+  source?: SourceSpec;                     // base-level default source for all views
+  schema?: Record<string, string>;         // column -> type ("text"|"date"|"time"|"number"|"checkbox"|"list"|"link")
 }
 
 // ---- The data model (one Row per note) ----
@@ -76,4 +109,25 @@ export interface EvalContext {
 export interface Scope {
   bindings: Record<string, unknown>;
   parent?: Scope;
+}
+
+// ---- Unified source/view additions ----
+
+// Parsed result of a `type: base` markdown file: its config + its own inline rows
+// (rows is empty for a notes/tasks-source base that has no markdown table).
+export interface ParsedBase {
+  config: BaseConfig;
+  rows: Row[];
+}
+
+// A ```view block parsed from a note body. `source` is undefined when the block
+// references neither a base (`of:`) nor a task query (`tasks:`) — the host then
+// renders an empty state instead of dumping the whole vault.
+export interface ViewBlock {
+  source?: SourceSpec;
+  as: ViewType;
+  where?: string;
+  sort?: SortSpec[];
+  group?: string;
+  limit?: number;
 }

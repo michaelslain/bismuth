@@ -97,6 +97,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
   - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/tasks/toggle`, `/cards/review`
+  - POST reads (not mutations): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
@@ -140,7 +141,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
 - `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, calendar, tasks, flashcards, or terminal
-- `tabIds.ts` — Sentinel ids for non-file pane contents (`::settings`, `::graph`, `::tasks`, `::terminal`, etc.)
+- `tabIds.ts` — Sentinel ids for non-file pane contents (`::settings`, `::graph`, `::terminal`, etc.)
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
 - `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock` (embed Bases view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
@@ -148,7 +149,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
 - `SettingsPage.tsx` — Appearance (theme, accent, fonts), graph (2D/3D mode, labels, label-hub count), editor
 - `palette/` — `CommandPalette`, `QuickSwitcher`, shared `PaletteModal`
-- `TasksPage.tsx` / `Flashcards.tsx` — Top-level views for tasks and SRS, both routable via sentinel ids
+- `Flashcards.tsx` — Top-level SRS review view, routable via a sentinel id
 - `Terminal.tsx` / `Terminal.css` — xterm.js terminal tab, WebSocket-backed by `core/src/terminal.ts`
 - `Toast.tsx`, `telemetry.ts` — Toast notifications, lightweight client telemetry (SSE errors, poll catch-ups)
 - `serverVersion.ts` — Single `EventSource` to `/events` plus fallback `/version` poll
@@ -189,6 +190,17 @@ Obsidian-Bases-compatible query/view system. A `.base` YAML file declares filter
 
 Bases can also be embedded inside a note via a code block; the editor extension `editor/basesBlock.ts` renders them inline.
 
+**Sources & composition** (`sourceSpec.ts`, `source.ts`): every base/view resolves a `SourceSpec` to a uniform `Row[]`:
+- `{ kind: "base", ref }` — render another base; **resolves that base's OWN source recursively** (composition), not just its static table rows.
+- `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expression; `from: [[Base]]` scopes to that base's notes.
+- `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: [[Base]]` scopes extraction to that base's notes (NOT the whole vault). No `from` = degenerate global case.
+
+Frontmatter accepts a string (`source: notes where #book`, plus top-level `from:`/`ref:`) or an object; `normalizeSource()` coerces both. `resolveSource`/`resolveBaseRows` are cycle-guarded (a `seen` set). All resolution is **server-side** via `POST /rows {spec}` (one resolver); `BaseView.resolveRows` is just `inlineRows ?? api.resolveRows(spec)`.
+
+A ` ```view ` block references a base (`of: [[Base]]`) or runs a task query (`tasks: <dsl>`, optionally `from: [[Base]]`). It does **not** iterate notes itself — that's a base's job. A block with neither `of:` nor `tasks:` has no source and renders an empty state.
+
+**Scoped-tasks example** (Google Keep → Do Now): a `Google Keep` base with `source: notes` + `where: file.inFolder("Google Keep")` (cards view); a `Do Now` base with `source: tasks` + `from: "[[Google Keep]]"` (list, grouped) shows only the tasks inside Google Keep's notes.
+
 ### Calendar (`app/src/calendar/`)
 
 Standalone calendar feature with its own state store and views.
@@ -202,13 +214,13 @@ Standalone calendar feature with its own state store and views.
 - `components/` — `EventChip`, `EventModal`, `RecurrenceDialog`, `CategoryPanel`, `Toolbar`
 - `components/views/` — `MonthView`, `ThreeDayView`, `TimeGrid`
 
-### Tasks (`core/src/tasks*.ts` + `app/src/TasksPage.tsx`)
+### Tasks (`core/src/tasks*.ts`)
 
-Obsidian-Tasks-compatible task system:
-- `core/src/tasks.ts` — Extract task items from markdown (status, due/scheduled/start dates, recurrence, tags)
+Obsidian-Tasks-compatible task system. Tasks are not a standalone subsystem — they are a **base source** (`source: tasks`, optionally `from: [[Base]]` to scope to a base's notes). There is no global Tasks page; a focused list is just a base. See the Bases "Sources & composition" section.
+- `core/src/tasks.ts` — Extract task items from markdown (status, due/scheduled/start dates, recurrence, tags); `collectTasksFromPaths` scopes extraction to a note subset
 - `core/src/tasks-query.ts` — Query DSL (`not done`, `due before tomorrow`, etc.)
-- `editor/tasksQuery.ts` — CodeMirror extension that renders an inline query result block inside a note
-- `TasksPage.tsx` — Full-screen task list view
+- `core/src/bases/taskRow.ts` — `taskToRow`/`filterTaskRows`: project tasks as base `Row`s so any view renders them
+- `editor/tasksQuery.ts` — CodeMirror extension that renders an inline ` ```tasks ` query block inside a note (the lightweight throwaway path)
 - `POST /tasks/toggle` — Server-side toggle endpoint (rewrites the markdown line)
 
 ### Flashcards / SRS (`core/src/srs/` + `app/src/Flashcards.tsx`)
@@ -226,7 +238,7 @@ In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over Web
 
 ### Panes / Tabs
 
-A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::tasks`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
+A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
 ## Module Organization
 
@@ -275,7 +287,6 @@ app/src/
 ├── GraphView.tsx        # Graph view shell
 ├── graph/               # Renderer + label layer + collide
 ├── SettingsPage.tsx     # Settings UI
-├── TasksPage.tsx        # Tasks view
 ├── Flashcards.tsx       # SRS review view
 ├── Terminal.tsx         # xterm.js terminal tab
 ├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map)

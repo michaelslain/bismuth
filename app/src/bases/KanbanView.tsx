@@ -137,7 +137,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
   async function handleDrop(group: ResultGroup): Promise<void> {
     const path = draggedPath;
     const insertAt = overIndex();
-    const fromCol = fromCol();
+    const from = fromCol();
     clearDrag();
     if (!path) return;
 
@@ -155,7 +155,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
     const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
 
     // Cross-column move: write status first, then order (same file, sequential to avoid races).
-    if (statusKey !== null && fromCol !== group.key) {
+    if (statusKey !== null && from !== group.key) {
       await api.setProperty(path, statusKey, group.key);
     }
     await api.setProperty(path, ORDER_KEY, i);

@@ -160,3 +160,14 @@ export async function collectVaultTasks(root: string): Promise<Task[]> {
   }
   return out;
 }
+
+/**
+ * Like collectVaultTasks, but restricted to an explicit set of vault-relative note
+ * paths — the basis for scoped tasks (`source: tasks from [[Base]]`). Unreadable
+ * paths are skipped. Reuses the pure per-file extractTasks so task fields, file path,
+ * and line numbers stay identical (write-back relies on path+line).
+ */
+export async function collectTasksFromPaths(root: string, paths: string[]): Promise<Task[]> {
+  const contents = await Promise.all(paths.map((p) => readNote(root, p).catch(() => "")));
+  return paths.flatMap((p, i) => extractTasks(contents[i], p));
+}

@@ -14,6 +14,7 @@ import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
+import { viewBlock } from "./editor/viewBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { settingsCompletion } from "./editor/settingsComplete";
 import { editorContextMenu } from "./editor/contextMenu";
@@ -182,6 +183,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...base,
           markdown(),
           basesBlock(() => path),
+          viewBlock(() => path),
           vaultCompletion({
             getNotes: props.noteNames,
             getTags: props.tagNames,

@@ -102,6 +102,91 @@ body { background: var(--bg); color: var(--fg); }
 .exit-btn { opacity: 0.7; font-size: 13px; }
 .review-done { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
 
+/* Flip card (FlashcardsView base view): reveal flips to the back; front stays as a small caption. */
+.flip-card { width: 100%; min-height: 260px; perspective: 1200px; cursor: pointer; }
+.flip-inner { position: relative; width: 100%; min-height: 260px; transition: transform 0.5s; transform-style: preserve-3d; }
+.flip-card.flipped .flip-inner { transform: rotateY(180deg); }
+/* Entrance: a NEW card remounts (keyed by row index) and plays a crisp, snappy scale+fade in.
+   The flip (rotateY) is a separate transition on the persistent element, so switching cards never
+   flips backward — it just appears. Animating the outer .flip-card (2D) leaves the inner 3D flip intact. */
+.card-appear { animation: card-appear 150ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes card-appear {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-appear { animation: none; }
+  .flip-inner { transition: none; }
+}
+.flip-face {
+  position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  padding: 32px; box-sizing: border-box; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+}
+.flip-back { transform: rotateY(180deg); border-color: var(--accent); }
+.card-front-label { font-family: "Lora", serif; font-size: 13px; opacity: 0.5; text-align: center; }
+/* Card prose: Lora serif by default; monospace only for `code`/```fences```. Markdown-rendered. */
+.card-md { font-family: "Lora", serif; font-size: 20px; line-height: 1.55; text-align: center; color: var(--fg); max-width: 100%; }
+.card-md p { margin: 0 0 8px; }
+.card-md p:last-child { margin-bottom: 0; }
+.card-md ul, .card-md ol { text-align: left; margin: 6px 0; padding-left: 22px; }
+.card-md li { margin: 2px 0; }
+.card-md h1, .card-md h2, .card-md h3 { font-family: "Lora", serif; margin: 4px 0 8px; }
+.card-md strong { font-weight: 700; }
+.card-md em { font-style: italic; }
+.card-md a { color: var(--accent); }
+.card-md img { max-width: 100%; border-radius: 6px; }
+.card-md code { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 0.88em; background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
+.card-md pre { text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 0.85em; background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.card-md pre code { background: none; padding: 0; }
+
+/* Cram toggle + per-view settings panel (flashcard/base views) */
+.srs-bar { width: 100%; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.cram-toggle { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); opacity: 0.7; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.cram-toggle:hover { opacity: 1; border-color: var(--accent); }
+.cram-toggle.on { opacity: 1; border-color: var(--accent); color: var(--accent); }
+/* Unobtrusive add/delete-card controls, sitting next to Cram in the top bar. */
+.srs-icon-btn {
+  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--fg);
+  opacity: 0.7; padding: 3px 12px; font-size: 12px; cursor: pointer; font-family: inherit; line-height: 1.4;
+}
+.srs-icon-btn:hover:not(:disabled) { opacity: 1; border-color: var(--accent); }
+.srs-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.srs-icon-btn.danger:hover:not(:disabled) { border-color: #e06c75; color: #e06c75; }
+/* Inline "add card" form: Front/Back textareas + Save, matching app vars. */
+.card-add-form {
+  max-width: 640px; margin: 12px auto 0; width: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+  animation: card-appear 150ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.card-add-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; opacity: 0.85; }
+.card-add-field textarea {
+  font-family: "Lora", serif; font-size: 16px; line-height: 1.5; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
+  padding: 10px 12px; min-height: 64px; resize: vertical; box-sizing: border-box;
+}
+.card-add-field textarea:focus { outline: none; border-color: var(--accent); }
+.card-add-field textarea::placeholder { opacity: 0.45; }
+.card-add-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.srs-panel { max-width: 640px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.srs-panel h3 { margin: 0; }
+.srs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.srs-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; opacity: 0.85; }
+.srs-field input { padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; }
+.srs-field input:focus { outline: none; border-color: var(--accent); }
+.srs-field select { padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; }
+.srs-field select:focus { outline: none; border-color: var(--accent); }
+/* Record-view column visibility/order list */
+.vs-section { display: flex; flex-direction: column; gap: 4px; }
+.vs-section h4 { margin: 0; font-size: 13px; }
+.vs-col { display: flex; align-items: center; gap: 6px; }
+.vs-mini { width: 24px; padding: 2px 0; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; color: var(--fg); cursor: pointer; font-size: 11px; }
+.vs-mini:disabled { opacity: 0.3; cursor: default; }
+.vs-mini:hover:not(:disabled) { border-color: var(--accent); }
+.vs-check { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+
 /* --- Pane splits (omnitabs) --- */
 .pane-split { display: flex; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .pane-split.row { flex-direction: row; }

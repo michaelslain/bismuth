@@ -2,14 +2,13 @@
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
 import { Switch, Match } from "solid-js";
-import { Editor } from "./Editor";
+import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
-import { TasksPage } from "./TasksPage";
 import { BaseView } from "./bases/BaseView";
 import { EmptyPane } from "./EmptyPane";
 import type { NoteCandidate } from "./editor/wikilink";
-import { CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE } from "./tabIds";
+import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE, isSentinel } from "./tabIds";
 
 export function PaneContent(props: {
   path: string;
@@ -23,9 +22,10 @@ export function PaneContent(props: {
   return (
     <Switch
       fallback={
-        <Editor
+        <FileView
           path={props.path}
           onSaved={props.onSaved}
+          onOpen={props.onOpen}
           noteNames={props.noteNames}
           tagNames={props.tagNames}
         />
@@ -36,9 +36,6 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
-      </Match>
-      <Match when={props.path === TASKS_TAB}>
-        <TasksPage onOpen={props.onOpen} />
       </Match>
       <Match when={props.path === EMPTY_PANE}>
         <EmptyPane onOpenFile={props.onOpenQuickSwitcher} onNewTerminal={props.onNewTerminal} />
@@ -52,6 +49,12 @@ export function PaneContent(props: {
             scrollback survive tab/pane switches. App.tsx measures this host's
             bounding rect to position the overlay over this exact pane body. */}
         <div data-terminal-host={props.path} style={{ width: "100%", height: "100%" }} />
+      </Match>
+      {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
+          Tasks page was removed) falls back to an empty pane rather than trying
+          to load it as a note. */}
+      <Match when={isSentinel(props.path)}>
+        <EmptyPane onOpenFile={props.onOpenQuickSwitcher} onNewTerminal={props.onNewTerminal} />
       </Match>
     </Switch>
   );
