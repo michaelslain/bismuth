@@ -183,3 +183,14 @@ test("setSettingInFile ignores an empty path", async () => {
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).theme).toBe("dark");
 });
+
+import { loadAppConfig } from "../src/settings";
+
+test("loadAppConfig returns file values merged over defaults, typed", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "graph:\n  repulsion: -22\n");
+  const cfg = await loadAppConfig(vault);
+  expect((cfg.graph as any).repulsion).toBe(-22);    // from file
+  expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
+  expect((cfg.appearance as any).theme).toBe("dark"); // schema default
+});

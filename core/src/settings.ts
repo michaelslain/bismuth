@@ -147,3 +147,13 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
   delete (out as Record<string, unknown>).properties;
   return out;
 }
+
+// The typed, file-merged-over-defaults config the backend reads at runtime (layout
+// forces, file-watch debounce, SRS scheduler, …). Same merge as the frontend feed,
+// just named + typed for backend consumers. The `properties` registry is excluded.
+export type AppConfig = typeof DEFAULTS;
+
+/** Load the backend runtime config (settings.yaml merged over DEFAULTS). */
+export async function loadAppConfig(vault: string): Promise<AppConfig> {
+  return (await serializeSettingsForFrontend(vault)) as AppConfig;
+}
