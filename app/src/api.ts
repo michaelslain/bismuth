@@ -6,6 +6,7 @@ import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
 import type { Row } from "../../core/src/bases/types";
+import type { Schema } from "../../core/src/schema/types";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
@@ -60,6 +61,7 @@ export const api = {
   version: () =>
     getJson<{ version: number }>("/version"),
   vaultData: () => getJson<Row[]>("/vault-data"),
+  schema: () => getJson<Schema>("/schema"),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
