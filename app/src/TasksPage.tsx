@@ -1,8 +1,7 @@
 // app/src/TasksPage.tsx
-// The Tasks view, rendered as a tab (sentinel "::tasks", like Settings). Fetches all
-// vault tasks, offers status filters + text search, groups them by source file, and
-// toggles completion in place via the backend. Styled with the same CSS-var inline
-// style convention as SettingsPage.
+// The Tasks view, rendered as a tab (sentinel "::tasks"). Fetches all vault tasks,
+// offers status filters + text search, groups them by source file, and toggles
+// completion in place via the backend. Styled with CSS-var inline styles.
 import { createSignal, onMount, For, Show, createMemo } from "solid-js";
 import { api } from "./api";
 import { pushToast } from "./Toast";
