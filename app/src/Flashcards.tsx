@@ -1,5 +1,7 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { api } from "./api";
+import { Button } from "./ui/Button";
+import { EmptyState, Loading } from "./ui/EmptyState";
 import type { Card } from "../../core/src/srs/types";
 
 /** Focused review of the flashcards in a single note. */
@@ -37,26 +39,22 @@ export function Flashcards(props: { note: string }) {
 
   return (
     <div class="flashcards-host">
-      <Show when={!loading()} fallback={<p class="deck-empty">Loading…</p>}>
+      <Show when={!loading()} fallback={<Loading />}>
         <Show
           when={cards().length > 0}
           fallback={
-            <div class="review-done">
-              <h2>No flashcards in “{noteName()}”</h2>
-              <p class="deck-empty">
-                Add cards to this note like <code>question::answer</code>, or a multi-line card with{" "}
-                <code>?</code> on its own line.
-              </p>
-            </div>
+            <EmptyState title={`No flashcards in “${noteName()}”`}>
+              Add cards to this note like <code>question::answer</code>, or a multi-line card with{" "}
+              <code>?</code> on its own line.
+            </EmptyState>
           }
         >
           <Show
             when={current() !== null}
             fallback={
-              <div class="review-done">
-                <h2>Done reviewing “{noteName()}”</h2>
-                <button class="card-btn" onClick={loadCards}>Review again</button>
-              </div>
+              <EmptyState title={`Done reviewing “${noteName()}”`}>
+                <Button variant="primary" size="lg" class="card-btn" onClick={loadCards}>Review again</Button>
+              </EmptyState>
             }
           >
             <div class="review">
@@ -64,13 +62,13 @@ export function Flashcards(props: { note: string }) {
               <div class="card-face question">{current()!.question}</div>
               <Show
                 when={revealed()}
-                fallback={<button class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</button>}
+                fallback={<Button variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</Button>}
               >
                 <div class="card-face answer">{current()!.answer}</div>
                 <div class="grade-row">
-                  <button class="card-btn hard" onClick={() => grade("hard")}>Hard</button>
-                  <button class="card-btn good" onClick={() => grade("good")}>Good</button>
-                  <button class="card-btn easy" onClick={() => grade("easy")}>Easy</button>
+                  <Button variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</Button>
+                  <Button variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</Button>
+                  <Button variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</Button>
                 </div>
               </Show>
             </div>

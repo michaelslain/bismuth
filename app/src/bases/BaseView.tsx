@@ -1,4 +1,4 @@
-import { createSignal, createResource, createMemo, For, Show, Switch, Match } from "solid-js";
+import { createSignal, createResource, createMemo, onMount, Show, Switch, Match } from "solid-js";
 import { api } from "../api";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
@@ -12,6 +12,10 @@ import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
 import { Icon } from "../icons/Icon";
+import { capitalize } from "./renderValue";
+import { Button } from "../ui/Button";
+import { SegmentedToggle } from "../ui/SegmentedToggle";
+import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
 
 interface Loaded {
@@ -19,10 +23,6 @@ interface Loaded {
   spec?: SourceSpec;          // undefined for a view block with no of:/tasks: → empty state
   inlineRows: Row[] | null;
   basePath?: string;
-}
-
-function capitalize(s: string): string {
-  return s.length ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
 function refToPath(ref?: string): string {
@@ -34,20 +34,14 @@ function refToPath(ref?: string): string {
 /** Raw source editor for a base file — a textarea + Save, used by the per-view Source toggle. */
 function SourceEditor(props: { path: string; onClose: () => void }) {
   const [text, setText] = createSignal<string | null>(null);
-  createResource(
-    () => props.path,
-    async (p) => {
-      setText(await api.read(p));
-      return true;
-    },
-  );
+  onMount(async () => setText(await api.read(props.path)));
   const save = async () => {
     if (text() != null) await api.write(props.path, text()!);
     props.onClose();
   };
   return (
     <div class={styles.source}>
-      <Show when={text() != null} fallback={<div class={styles.loading}>Loading…</div>}>
+      <Show when={text() != null} fallback={<Loading />}>
         <textarea
           class={styles.sourceArea}
           value={text()!}
@@ -56,8 +50,8 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         />
       </Show>
       <div class={styles.sourceBar}>
-        <button onClick={save}>Save</button>
-        <button onClick={props.onClose}>Cancel</button>
+        <Button variant="primary" onClick={save}>Save</Button>
+        <Button variant="primary" onClick={props.onClose}>Cancel</Button>
       </div>
     </div>
   );
@@ -112,19 +106,13 @@ export function BaseView(props: {
     return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null };
   }
 
-  // Single resolution path: an own-rows base already has its rows parsed client-side;
-  // everything else (notes / tasks / base-ref) is resolved server-side via /rows, which
-  // follows base composition + scoped tasks. No per-kind logic duplicated here anymore.
-  async function resolveRows(spec: SourceSpec | undefined, inlineRows: Row[] | null): Promise<Row[]> {
-    if (inlineRows) return inlineRows;
-    if (!spec) return [];
-    return api.resolveRows(spec);
-  }
-
   const sig = createMemo(() => JSON.stringify({ p: props.path, s: props.source, v: props.view }));
   const [data, { refetch }] = createResource(sig, async () => {
     const loaded = await loadConfig();
-    const rows = await resolveRows(loaded.spec, loaded.inlineRows);
+    // Single resolution path: an own-rows base already has its rows parsed client-side;
+    // everything else (notes / tasks / base-ref) is resolved server-side via /rows, which
+    // follows base composition + scoped tasks. No per-kind logic duplicated here anymore.
+    const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.spec) : []);
     return { ...loaded, rows };
   });
 
@@ -153,95 +141,88 @@ export function BaseView(props: {
       <Show when={(data()?.config.views.length ?? 0) > 1 || editPath()}>
         <div class={styles.bar}>
           <Show when={(data()?.config.views.length ?? 0) > 1}>
-            <div class={styles.tabs}>
-              <For each={data()!.config.views}>
-                {(v, i) => (
-                  <button
-                    class={`${styles.tab} ${i() === activeView() ? styles.active : ""}`}
-                    onClick={() => setActiveView(i())}
-                  >
-                    {v.name}
-                  </button>
-                )}
-              </For>
-            </div>
+            <SegmentedToggle
+              class={styles.tabs}
+              variant="plain"
+              segmentClass={styles.tab}
+              value={activeView()}
+              onChange={setActiveView}
+              options={data()!.config.views.map((v, i) => ({ id: i, label: v.name }))}
+            />
           </Show>
           <Show when={editPath()}>
             <div class={styles.barRight}>
-              <button class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
+              <Button variant="ghost" class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
                 {settingsMode() ? <><Icon value="X" size={14} /> Close</> : <><Icon value="Settings" size={14} /> Settings</>}
-              </button>
-              <button class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
+              </Button>
+              <Button variant="ghost" class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
                 {sourceMode() ? <><Icon value="X" size={14} /> Close source</> : <><Icon value="Code" size={14} /> Source</>}
-              </button>
+              </Button>
             </div>
           </Show>
         </div>
       </Show>
 
       <div class={styles.body}>
-        <Switch
-          fallback={
-            <Show when={data()} fallback={<div class={styles.loading}>Loading…</div>}>
-              <Switch
-                fallback={
-                  <div class={styles.base}>
-                    <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
-                      {(res) => (
-                        <Switch
-                  fallback={
-                    <TableView
-                      result={res()}
-                      config={data()!.config}
-                      onReorder={data()!.basePath ? (c) => { void api.setProperty(data()!.basePath!, "order", c).then(refetch); } : undefined}
-                      widths={res().view.columnWidths}
-                      onWidthsChange={data()!.basePath ? (cw) => { void api.setProperty(data()!.basePath!, "columnWidths", cw); } : undefined}
-                    />
-                  }
-                >
-                          <Match when={res().view.type === "kanban"}>
-                            <KanbanView result={res()} config={data()!.config} onChange={refetch} />
-                          </Match>
-                          <Match when={res().view.type === "cards"}>
-                            <CardsView result={res()} config={data()!.config} />
-                          </Match>
-                          <Match when={res().view.type === "list"}>
-                            <ListView result={res()} config={data()!.config} />
-                          </Match>
-                          <Match when={res().view.type === "map"}>
-                            <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
-                          </Match>
-                        </Switch>
-                      )}
-                    </Show>
-                  </div>
-                }
-              >
-                <Match when={activeType() === "flashcards"}>
-                  <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
-                </Match>
-                <Match when={activeType() === "calendar"}>
-                  <CalendarView basePath={data()!.basePath} onChange={refetch} />
-                </Match>
-              </Switch>
-            </Show>
-          }
-        >
-          <Match when={sourceMode()}>
-            <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
-          </Match>
-          <Match when={settingsMode() && !!data()}>
-            <div class={styles.base}>
-              <BaseSettings
-                type={activeType()}
-                config={data()!.config}
-                basePath={data()!.basePath}
-                rows={data()!.rows}
-                onSaved={() => { setSettingsMode(false); refetch(); }}
-              />
-            </div>
-          </Match>
-        </Switch>
+        <Show when={sourceMode()}>
+          <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
+        </Show>
+        <Show when={settingsMode() && !!data()}>
+          <div class={styles.base}>
+            <BaseSettings
+              type={activeType()}
+              config={data()!.config}
+              basePath={data()!.basePath}
+              rows={data()!.rows}
+              onSaved={() => { setSettingsMode(false); refetch(); }}
+            />
+          </div>
+        </Show>
+        <Show when={!sourceMode() && !settingsMode()}>
+          <Show when={data()} fallback={<Loading />}>
+            <Switch
+              fallback={
+                <div class={styles.base}>
+                  <Show when={result()} fallback={<Loading />}>
+                    {(res) => (
+                      <Switch
+                        fallback={
+                          <TableView
+                            result={res()}
+                            config={data()!.config}
+                            onReorder={data()!.basePath ? (c) => { void api.setProperty(data()!.basePath!, "order", c).then(refetch); } : undefined}
+                            widths={res().view.columnWidths}
+                            onWidthsChange={data()!.basePath ? (cw) => { void api.setProperty(data()!.basePath!, "columnWidths", cw); } : undefined}
+                          />
+                        }
+                      >
+                        <Match when={res().view.type === "kanban"}>
+                          <KanbanView result={res()} config={data()!.config} onChange={refetch} />
+                        </Match>
+                        <Match when={res().view.type === "cards"}>
+                          <CardsView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "list"}>
+                          <ListView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "map"}>
+                          <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
+                        </Match>
+                      </Switch>
+                    )}
+                  </Show>
+                </div>
+              }
+            >
+              <Match when={activeType() === "flashcards"}>
+                <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
+              </Match>
+              <Match when={activeType() === "calendar"}>
+                <CalendarView basePath={data()!.basePath} onChange={refetch} />
+              </Match>
+            </Switch>
+          </Show>
+        </Show>
       </div>
     </div>
   );

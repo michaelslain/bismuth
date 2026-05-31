@@ -29,6 +29,11 @@ export function addDaysStr(dateStr: string, n: number): string {
   return toDateStr(addDays(new Date(dateStr + "T00:00:00"), n));
 }
 
+/** Number of days in the calendar month containing `d` (local). */
+function daysInMonth(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
 export function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
   const d = new Date(dateStr + "T00:00:00");
   const start = new Date(r.startDate + "T00:00:00");
@@ -40,7 +45,13 @@ export function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
     const matchesDow = r.daysOfWeek?.includes(dow) ?? dow === start.getDay();
     return matchesDow && Math.floor(diffDays / 7) % 2 === 0;
   }
-  if (r.type === "monthly") return d.getDate() === start.getDate();
+  if (r.type === "monthly") {
+    // Clamp the start day-of-month to the last day of the target month, so a
+    // series on the 29th/30th/31st falls back to the month's last day instead
+    // of silently skipping shorter months (e.g. 31st → Feb 28/29).
+    const targetDay = Math.min(start.getDate(), daysInMonth(d));
+    return d.getDate() === targetDay;
+  }
   return false;
 }
 

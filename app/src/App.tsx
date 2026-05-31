@@ -21,8 +21,9 @@ import {
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
-  serializeTabs, deserializeTabs,
+  serializeTabs, deserializeTabs, resolveFocus,
 } from "./panes";
+import { Button } from "./ui/Button";
 import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
@@ -237,8 +238,7 @@ export default function App() {
       closeTabById(at.id);
       return;
     }
-    const ls = leaves(nextRoot);
-    const focusId = ls.some((l) => l.id === at.focusId) ? at.focusId : ls[0].id;
+    const focusId = resolveFocus(nextRoot, at.focusId);
     updateActiveTab((t) => ({ ...t, root: nextRoot, focusId }));
   };
   const closeFocusedPane = () => {
@@ -387,9 +387,7 @@ export default function App() {
       for (const t of ts) {
         const root = pruneMissing(t.root, (c) => !hit(c));
         if (!root) continue;
-        const ls = leaves(root);
-        const focusId = ls.some((l) => l.id === t.focusId) ? t.focusId : ls[0].id;
-        next.push({ ...t, root, focusId });
+        next.push({ ...t, root, focusId: resolveFocus(root, t.focusId) });
       }
       if (!next.some((t) => t.id === activeTabId())) setActiveTabId(next[0]?.id ?? null);
       return next;
@@ -576,9 +574,9 @@ export default function App() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
-          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></button>
-          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></button>
-          <button class="icon-btn" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></button>
+          <Button variant="icon" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></Button>
+          <Button variant="icon" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></Button>
+          <Button variant="icon" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></Button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />

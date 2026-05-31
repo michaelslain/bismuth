@@ -72,3 +72,23 @@ test("wikilinks spanning multiple lines work", () => {
   // Behavior depends on regex; verify it doesn't crash
   expect(Array.isArray(extractWikilinks(md))).toBe(true);
 });
+
+test("wikilinks inside a fenced code block are NOT extracted", () => {
+  const md = "Real [[Outside]]\n```\nsee [[Inside]]\n```\nmore [[Also Outside]]";
+  expect(extractWikilinks(md).sort()).toEqual(["Also Outside", "Outside"]);
+});
+
+test("wikilinks inside an inline code span are NOT extracted", () => {
+  const md = "Use `[[NotALink]]` but [[RealLink]] counts.";
+  expect(extractWikilinks(md)).toEqual(["RealLink"]);
+});
+
+test("tilde-fenced code block also hides wikilinks", () => {
+  const md = "[[Before]]\n~~~\n[[Hidden]]\n~~~\n[[After]]";
+  expect(extractWikilinks(md).sort()).toEqual(["After", "Before"]);
+});
+
+test("unterminated fenced block hides links to end of document", () => {
+  const md = "[[Before]]\n```\n[[StillHidden]]\nno closing fence";
+  expect(extractWikilinks(md)).toEqual(["Before"]);
+});

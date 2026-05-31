@@ -32,7 +32,7 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
         "border-radius": "6px",
         padding: "4px",
         "min-width": "150px",
-        "box-shadow": "0 4px 16px rgba(0,0,0,0.3)",
+        "box-shadow": "var(--shadow-menu)",
         "font-size": "13px",
       }}
       onClick={(e) => e.stopPropagation()}
@@ -44,7 +44,7 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
               padding: "5px 10px",
               cursor: "pointer",
               "border-radius": "4px",
-              color: item.danger ? "#e5534b" : "var(--fg)",
+              color: item.danger ? "var(--danger)" : "var(--fg)",
               "user-select": "none",
             }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent)")}

@@ -32,9 +32,3 @@ export interface CalendarSettings {
   weekStartsOnMonday: boolean
   militaryTime: boolean
 }
-
-export const DEFAULT_SETTINGS: CalendarSettings = {
-  defaultView: 'week',
-  weekStartsOnMonday: true,
-  militaryTime: false,
-}

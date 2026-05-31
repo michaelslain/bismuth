@@ -6,7 +6,7 @@ export type EdgeKind = "link" | "message" | "about" | "tag";
 // so cross-brain-linked nodes aren't stranded far from their cluster when the other brain is hidden.
 export const SECOND_BRAIN_KINDS = new Set<NodeKind>(["note", "tag"]);
 export const THIRD_BRAIN_KINDS = new Set<NodeKind>(["memory"]);
-export type NodeState = "idle" | "awake" | "dead";
+export type NodeState = "idle" | "awake";
 
 export interface GraphNode {
   id: string;

@@ -17,6 +17,7 @@ const PRIORITY_RANK: Record<Priority, number> = {
 
 const DATE_FIELDS = ["due", "scheduled", "start", "done", "created", "cancelled"] as const;
 type DateField = (typeof DATE_FIELDS)[number];
+const DATE_ALT = DATE_FIELDS.join("|");
 
 function resolveDateExpr(expr: string, today: string): string | null {
   const e = expr.trim().toLowerCase();
@@ -51,7 +52,7 @@ function parseLeaf(raw: string, today: string): Predicate | null {
       : (t) => t.priority === target;
   }
 
-  m = s.match(/^(due|scheduled|start|done|created|cancelled)(?: (before|after))? (.+)$/);
+  m = s.match(new RegExp(`^(${DATE_ALT})(?: (before|after))? (.+)$`));
   if (m) {
     const field = m[1] as DateField;
     const cmp = m[2] as "before" | "after" | undefined;
@@ -184,7 +185,7 @@ export function runTaskQuery(allTasks: Task[], query: string, today: string): Qu
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
 
-    const sortM = trimmed.match(/^sort by (priority|due|scheduled|start|done|created|cancelled|description)(?: (reverse))?$/i);
+    const sortM = trimmed.match(new RegExp(`^sort by (priority|${DATE_ALT}|description)(?: (reverse))?$`, "i"));
     if (sortM) {
       sorters.push(makeSorter(sortM[1].toLowerCase(), !!sortM[2]));
       continue;

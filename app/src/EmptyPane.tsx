@@ -2,6 +2,7 @@
 // Placeholder shown when a pane has no content yet. The user fills it by dragging
 // a file in, clicking "Open file…" (quick switcher), or "New terminal".
 import { Icon } from "./icons/Icon";
+import { Button } from "./ui/Button";
 
 type Props = {
   onOpenFile: () => void;
@@ -19,7 +20,7 @@ export function EmptyPane(props: Props) {
         "align-items": "center",
         "justify-content": "center",
         gap: "12px",
-        color: "var(--text-muted, #888)",
+        color: "var(--text-muted)",
         "user-select": "none",
       }}
     >
@@ -30,22 +31,24 @@ export function EmptyPane(props: Props) {
         Drag a file here, or:
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
-        <button
+        <Button
+          variant="ghost"
           class="empty-pane-btn"
           onClick={props.onOpenFile}
           onMouseDown={(e) => e.stopPropagation()}
           style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
           <Icon value="FolderOpen" size={14} /> Open file…
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           class="empty-pane-btn"
           onClick={props.onNewTerminal}
           onMouseDown={(e) => e.stopPropagation()}
           style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
           <Icon value="SquareTerminal" size={14} /> New terminal
-        </button>
+        </Button>
       </div>
     </div>
   );

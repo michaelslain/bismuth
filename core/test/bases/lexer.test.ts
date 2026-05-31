@@ -29,3 +29,23 @@ test("handles single-quoted strings and escaped quotes", () => {
 test("recognizes keywords", () => {
   expect(lex("true false null").map((t) => t.kind)).toEqual(["true", "false", "null"]);
 });
+
+test("a malformed numeric literal '1.2.3' stops at the second dot (no NaN token)", () => {
+  const toks = lex("1.2.3");
+  // 1.2 is a valid number; the second dot is a member-access dot, then 3.
+  expect(toks.map((t) => t.kind)).toEqual(["number", "dot", "number"]);
+  expect(toks[0]).toMatchObject({ kind: "number", value: 1.2 });
+  expect(toks[2]).toMatchObject({ kind: "number", value: 3 });
+  // Regression: the old scanner sliced "1.2.3" whole, yielding Number("1.2.3") === NaN.
+  for (const t of toks) {
+    if (t.kind === "number") expect(Number.isNaN(t.value as number)).toBe(false);
+  }
+});
+
+test("'1..2' does not collapse into a NaN number token", () => {
+  const toks = lex("1..2");
+  expect(toks[0]).toMatchObject({ kind: "number", value: 1 });
+  for (const t of toks) {
+    if (t.kind === "number") expect(Number.isNaN(t.value as number)).toBe(false);
+  }
+});

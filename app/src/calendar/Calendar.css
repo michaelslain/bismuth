@@ -8,7 +8,7 @@
   --text-normal: var(--fg);
   --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
   --text-faint: color-mix(in srgb, var(--fg) 40%, transparent);
-  --text-error: #e5534b;
+  --text-error: var(--danger);
   --font-interface: "Monaspace Xenon", ui-monospace, monospace;
   --font-text: "Monaspace Xenon", ui-monospace, monospace;
 }
@@ -81,7 +81,8 @@
 .event-modal h3 { margin: 0; }
 .event-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
 .event-modal input, .event-modal select, .event-modal textarea { padding: 6px 8px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); font-family: var(--font-text); }
-.event-modal textarea { min-height: 80px; resize: none; }.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.event-modal textarea { min-height: 80px; resize: none; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .day-picker { display: flex; gap: 4px; flex-wrap: wrap; }
 /* day-picker chips inherit the shared button style; selected days get an accent tint
    (matches the app's selection states like .tab.active / .palette-row.selected). */

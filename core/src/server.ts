@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { watch } from "node:fs";
-import { createSseRegistry } from "./sse";
+import { createSseRegistry, formatEvent } from "./sse";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
@@ -216,11 +216,11 @@ export function createServer(cfg: CoreConfig) {
           // Send initial snapshot so client knows current version without waiting for next invalidation.
           if (version > 0) {
             controller.enqueue(
-              new TextEncoder().encode(`data: {"version":${version},"paths":[]}\n\n`),
+              enc.encode(formatEvent({ version, paths: [] })),
             );
           }
           // SSE comment keeps TCP connection alive past Bun's default 10s idleTimeout.
-          const ping = new TextEncoder().encode(`: keepalive\n\n`);
+          const ping = enc.encode(`: keepalive\n\n`);
           heartbeat = setInterval(() => {
             try {
               controller.enqueue(ping);
@@ -374,26 +374,22 @@ export function createServer(cfg: CoreConfig) {
     pathOf?: (body: any) => string | string[] | undefined,
   ): Handler {
     return async (req, url) => {
-      try {
-        // Tee the body so we can both read it for path extraction and pass it to run.
-        const cloned = req.clone();
-        const res = await run(req, url);
-        let paths: string[] = [];
-        if (pathOf) {
-          try {
-            const body = await cloned.json();
-            const p = pathOf(body);
-            if (typeof p === "string") paths = [p];
-            else if (Array.isArray(p)) paths = p;
-          } catch {
-            // body wasn't JSON — that's fine, we just won't know the path
-          }
+      // Tee the body so we can both read it for path extraction and pass it to run.
+      const cloned = req.clone();
+      const res = await run(req, url);
+      let paths: string[] = [];
+      if (pathOf) {
+        try {
+          const body = await cloned.json();
+          const p = pathOf(body);
+          if (typeof p === "string") paths = [p];
+          else if (Array.isArray(p)) paths = p;
+        } catch {
+          // body wasn't JSON — that's fine, we just won't know the path
         }
-        await invalidate(...paths);
-        return res;
-      } catch (e) {
-        throw new Error((e as Error).message);
       }
+      await invalidate(...paths);
+      return res;
     };
   }
 
@@ -538,6 +534,9 @@ export function createServer(cfg: CoreConfig) {
         if (line < 0 || line >= lines.length) {
           throw new Error("line out of range");
         }
+        // toggleTaskLine may return TWO lines (recurrence: the next occurrence is
+        // inserted above the completed one, separated by "\n"). Splicing the result
+        // back as a single array slot keeps that ordering after join("\n").
         lines[line] = toggleTaskLine(lines[line], todayISO());
         await writeNote(cfg.vault, path, lines.join("\n"));
         return new Response("ok");

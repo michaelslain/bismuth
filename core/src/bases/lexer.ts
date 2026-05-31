@@ -60,7 +60,20 @@ export function lex(src: string): Token[] {
     // Number literals
     if (c >= "0" && c <= "9") {
       let j = i;
-      while (j < n && ((src[j] >= "0" && src[j] <= "9") || src[j] === ".")) j++;
+      let dotSeen = false;
+      while (j < n) {
+        const ch = src[j];
+        if (ch >= "0" && ch <= "9") {
+          j++;
+        } else if (ch === "." && !dotSeen) {
+          // Only the first dot is part of the number; a second dot (1.2.3) or a
+          // member access ends the literal so it never collapses to a NaN token.
+          dotSeen = true;
+          j++;
+        } else {
+          break;
+        }
+      }
       toks.push({ kind: "number", value: Number(src.slice(i, j)), pos: i });
       i = j;
       continue;

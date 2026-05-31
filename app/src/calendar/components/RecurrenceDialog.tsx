@@ -2,6 +2,7 @@ import { recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
 import { Show } from 'solid-js'
+import { Modal } from '../../ui/Modal'
 
 export function RecurrenceDialog(props: { store: EventStore }) {
   async function handle(scope: 'one' | 'all' | 'following'): Promise<void> {
@@ -36,18 +37,16 @@ export function RecurrenceDialog(props: { store: EventStore }) {
 
   return (
     <Show when={recurrenceAction.value}>
-      <div class="modal-overlay" onClick={() => (recurrenceAction.value = null)}>
-        <div class="recurrence-dialog" onClick={e => e.stopPropagation()}>
-          <h3>{recurrenceAction.value!.type === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}</h3>
-          <p>Which occurrences do you want to {recurrenceAction.value!.type}?</p>
-          <div class="recurrence-dialog-actions">
-            <button onClick={() => handle('one')}>Just this one</button>
-            <button onClick={() => handle('following')}>This and following</button>
-            <button onClick={() => handle('all')}>All</button>
-            <button onClick={() => (recurrenceAction.value = null)}>Cancel</button>
-          </div>
+      <Modal onClose={() => (recurrenceAction.value = null)} class="recurrence-dialog">
+        <h3>{recurrenceAction.value!.type === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}</h3>
+        <p>Which occurrences do you want to {recurrenceAction.value!.type}?</p>
+        <div class="recurrence-dialog-actions">
+          <button onClick={() => handle('one')}>Just this one</button>
+          <button onClick={() => handle('following')}>This and following</button>
+          <button onClick={() => handle('all')}>All</button>
+          <button onClick={() => (recurrenceAction.value = null)}>Cancel</button>
         </div>
-      </div>
+      </Modal>
     </Show>
   )
 }

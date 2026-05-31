@@ -29,7 +29,43 @@ export const settings = {
     })
   },
 }
-export const currentView = createBox<ViewType>(settings.value.defaultView)
+// `userSwitchedView` flips the first time anything writes `currentView.value`
+// (e.g. the Toolbar view buttons). CalendarPage's one-shot hydration effect uses
+// it to avoid clobbering a manual view switch with the saved defaultView once the
+// async settings hydration lands. The box value itself is seeded from the
+// synchronous DEFAULTS; the saved defaultView is reconciled in CalendarPage.
+export let userSwitchedView = false
+let setCurrentViewRaw: (v: ViewType) => void
+function createViewBox(initial: ViewType) {
+  const [get, set] = createSignal<ViewType>(initial)
+  setCurrentViewRaw = (v: ViewType) => set(() => v)
+  return {
+    get value() { return get() },
+    set value(v: ViewType) { userSwitchedView = true; set(() => v) },
+  }
+}
+export const currentView = createViewBox(settings.value.defaultView)
+
+// Apply the saved defaultView WITHOUT marking it as a manual user switch. Used by
+// CalendarPage's one-shot hydration effect so the box reconciles with the
+// asynchronously-hydrated settings.value.defaultView on first paint.
+export function applyDefaultView(v: ViewType) {
+  setCurrentViewRaw(v)
+}
+
+// Pure decision for CalendarPage's hydration effect: given the (possibly just
+// hydrated) saved default, the current view, and whether the user has manually
+// switched, return the view to apply or null for "leave it alone". A manual
+// switch always wins; otherwise reconcile the seeded view to the saved default.
+export function reconcileDefaultView(
+  savedDefault: ViewType,
+  current: ViewType,
+  switched: boolean,
+): ViewType | null {
+  if (switched) return null
+  if (current === savedDefault) return null
+  return savedDefault
+}
 export const currentDate = createBox<Date>(new Date())
 export const events = createBox<CalendarEvent[]>([])
 export const categories = createBox<Category[]>([])

@@ -3,11 +3,16 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
 import { Icon } from "../icons/Icon";
 
+export function capitalize(s: string): string {
+  return s.length ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
 export function columnLabel(id: string, config: BaseConfig): string {
   const customLabel = config.properties?.[id]?.displayName;
   if (customLabel) return customLabel;
   if (id.startsWith("file.")) return id.slice(5);
   if (id.startsWith("note.")) return id.slice(5);
+  if (id.startsWith("this.")) return id.slice(5);
   if (id.startsWith("formula.")) return id.slice(8);
   return id;
 }
