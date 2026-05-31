@@ -145,7 +145,7 @@ export default function App() {
   // structural changes can fire several graph-dirty events in quick succession;
   // debouncing collapses them into one rebuild (~100-150ms each) instead of a
   // flicker.
-  const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, 300);
+  const scheduleGraphRefresh = debounce(() => { refreshGraph(); }, () => settings.graph.refreshDebounceMs);
 
   const displayGraph = createMemo<GraphData>(() => {
     const currentMode = mode();

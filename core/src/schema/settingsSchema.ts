@@ -34,6 +34,13 @@ export const SETTINGS_SCHEMA: Schema = {
     viewMode: { type: enumType(["2d", "3d"]), default: "3d", doc: "3d = volumetric orbit; 2d = flat birdseye." },
     showGraphLabels: { type: "boolean", default: true, doc: "Master toggle for in-scene labels." },
     graphLabelHubCount: { type: "number", default: 10, min: 0, max: 30, doc: "Top-degree nodes that always get a label." },
+    nodeSizeMinMult: { type: "number", default: 0.4, min: 0.1, max: 1, doc: "Size multiplier for a 0/1-degree leaf node (the smallest dots)." },
+    nodeSizeDegreeGain: { type: "number", default: 0.45, min: 0.1, max: 1.5, doc: "How fast node size grows with sqrt(link count)." },
+    nodeSizeMaxMult: { type: "number", default: 6, min: 2, max: 12, doc: "Ceiling on node size (biggest hub vs a leaf)." },
+    edgeColor: { type: "string", default: "#bdcaf2", doc: "Link (edge) color (hex)." },
+    backgroundColor: { type: "string", default: "#0e0e11", doc: "Graph canvas background color (hex)." },
+    mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
+    refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
   }),
   editor: object({
     livePreview: { type: "boolean", default: true, doc: "Render markdown inline as you type." },

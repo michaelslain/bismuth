@@ -40,6 +40,13 @@ export interface Settings {
     viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
     showGraphLabels: boolean;     // master toggle for in-scene labels
     graphLabelHubCount: number;   // number of top-degree nodes that always get a label (0..30)
+    nodeSizeMinMult: number;      // size multiplier for a 0/1-degree leaf
+    nodeSizeDegreeGain: number;   // size growth per sqrt(degree)
+    nodeSizeMaxMult: number;      // ceiling on node size multiplier
+    edgeColor: string;            // hex, link color
+    backgroundColor: string;      // hex, graph canvas background
+    mapDefaultZoom: number;       // default zoom for the Bases map view
+    refreshDebounceMs: number;    // ms before rebuilding the graph after edits
   };
   editor: {
     livePreview: boolean;
