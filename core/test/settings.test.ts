@@ -153,3 +153,33 @@ test("reconcile leaves a corrupt file untouched", async () => {
   await reconcileSettings(vault);
   expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
 });
+
+import { setSettingInFile } from "../src/settings";
+
+test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "# hdr\nappearance:\n  theme: dark\n  myCustom: 1\ngraph:\n  spin: true\n");
+  await setSettingInFile(vault, ["appearance", "theme"], "light");
+  const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).theme).toBe("light");
+  expect((data.appearance as any).myCustom).toBe(1);  // unknown preserved
+  expect((data.graph as any).spin).toBe(true);          // sibling preserved
+  expect(raw).toContain("# hdr");                        // comment preserved
+});
+
+test("setSettingInFile creates the file (via reconcile) when absent, then sets the key", async () => {
+  const vault = await emptyVault();
+  await setSettingInFile(vault, ["graph", "nodeSize"], 12);
+  const { data } = (await readSettings(vault))!;
+  expect((data.graph as any).nodeSize).toBe(12);
+  expect((data.appearance as any).theme).toBe("dark"); // reconcile seeded the rest
+});
+
+test("setSettingInFile ignores an empty path", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n");
+  await setSettingInFile(vault, [], "x");
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).theme).toBe("dark");
+});

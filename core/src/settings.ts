@@ -112,6 +112,21 @@ export async function reconcileSettings(vault: string): Promise<void> {
 }
 
 /**
+ * Merge a single value at `path` into settings.yaml in place, preserving every
+ * other key, all comments, and key order. Reconciles first so the file exists and
+ * is fully shaped. This is the backend's single write path for settings, so a
+ * frontend toggle can never clobber comments or the `properties:` registry.
+ */
+export async function setSettingInFile(vault: string, path: string[], value: unknown): Promise<void> {
+  if (!path.length) return;
+  await reconcileSettings(vault); // ensure the file exists + is shaped
+  const raw = await readNote(vault, SETTINGS_FILE);
+  const doc = parseDocument(raw);
+  doc.setIn(path, value);
+  await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+}
+
+/**
  * Merge the settings.yaml file over DEFAULTS via a per-key typeof check, so a
  * corrupt/partial file degrades to defaults. The `properties` registry is
  * delivered separately (GET /schema) and excluded here.

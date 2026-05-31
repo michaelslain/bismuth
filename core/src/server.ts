@@ -20,7 +20,7 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -411,6 +411,21 @@ export function createServer(cfg: CoreConfig) {
         return new Response("ok");
       },
       (b) => b.path,
+    ),
+
+    "POST /set-setting": mutatingHandler(
+      async (req) => {
+        // The single backend write path for settings.yaml: merge one value at `path`
+        // in place (preserving comments + the properties registry + unknown keys).
+        // Frontend toggles call this instead of rewriting the whole file.
+        const body = (await req.json()) as { path?: unknown; value?: unknown };
+        if (!Array.isArray(body.path) || !body.path.every((s) => typeof s === "string")) {
+          return new Response("bad path", { status: 400 });
+        }
+        await setSettingInFile(cfg.vault, body.path as string[], body.value);
+        return Response.json({ ok: true });
+      },
+      () => SETTINGS_FILE, // invalidate settings.yaml so subscribers re-hydrate
     ),
 
     "POST /set-property": mutatingHandler(
