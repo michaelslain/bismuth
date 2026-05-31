@@ -568,6 +568,31 @@ test("createServer writes a settings.yaml on boot when missing", async () => {
   }
 });
 
+test("editing settings.yaml refreshes GET /schema without restart", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "settings.yaml", "properties:\n  due: date\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const before = await (await fetch(`${base}/schema`)).json();
+    expect(before.due.type).toBe("date");
+    expect(before.rating).toBeUndefined();
+
+    // Rewrite via PUT /file (the path the frontend uses) then poll the schema.
+    await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "settings.yaml", contents: "properties:\n  rating: number\n" }),
+    });
+
+    const after = await (await fetch(`${base}/schema`)).json();
+    expect(after.rating.type).toBe("number");
+    expect(after.due).toBeUndefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /events streams a version event after a mutating call", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

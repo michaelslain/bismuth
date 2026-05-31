@@ -39,6 +39,11 @@ export function extractFingerprint(content: string): Fingerprint {
   };
 }
 
+/** True when a changed path is the vault settings file (drives registry re-parse + SSE). */
+export function isSettingsPath(path: string): boolean {
+  return path === "settings.yaml";
+}
+
 /**
  * Compare a file's previous and current fingerprints.
  * - A missing prev (new/first-seen file) or missing next (deleted file) is

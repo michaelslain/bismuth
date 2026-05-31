@@ -15,7 +15,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
-import { createChangeTracker } from "./changeClassifier";
+import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { initializeSettings, getVaultSchema, serializeSettingsForFrontend } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
@@ -94,6 +94,13 @@ export function createServer(cfg: CoreConfig) {
     const notePaths: string[] = [];
     for (const p of paths) {
       if (isHidden(p)) continue;
+      if (isSettingsPath(p)) {
+        // settings.yaml drives the property registry + appearance — both graph
+        // and tree consumers should refetch; /schema reads it fresh on demand.
+        graph = true;
+        tree = true;
+        continue;
+      }
       if (!p.endsWith(".md")) { graph = true; tree = true; continue; }
       notePaths.push(p);
     }
