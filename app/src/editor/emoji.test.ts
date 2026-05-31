@@ -168,6 +168,45 @@ test("searchEmoji: a lone colon (empty query) returns the curated popular set", 
   expect(r[0].char).toBe("😂"); // face_with_tears_of_joy is #1 most-used
 });
 
+// --- fuzzy name matching (typos / transpositions via edit distance) ------------
+
+test("searchEmoji: a transposition in the name resolves to the right glyph, ranked #1", () => {
+  // "rocekt" (rocket transposed) has no substring match — only edit distance finds it,
+  // and a 1-edit transposition ranks it first.
+  expect(searchEmoji("rocekt")[0].char).toBe("🚀");
+});
+
+test("searchEmoji: a one-letter typo resolves to the right glyph, ranked #1", () => {
+  expect(searchEmoji("thnik")[0].char).toBe("🤔"); // thinking
+  expect(searchEmoji("skul")[0].char).toBe("💀"); // skull
+  expect(searchEmoji("chekc")[0].char).toBe("✅"); // check (transposition)
+});
+
+test("searchEmoji: a misspelled name still surfaces the right family", () => {
+  // "smlie"/"smiel" land on a smiling face; "hart" surfaces a heart; "prty" a party glyph.
+  const smiles = new Set(["🙂", "😊", "😀", "😄", "😁", "😍", "☺️"]);
+  expect(searchEmoji("smlie").slice(0, 5).some((e) => smiles.has(e.char))).toBe(true);
+  expect(searchEmoji("hart").some((e) => e.char === "❤️" || e.char === "♥️")).toBe(true);
+  expect(searchEmoji("prty").slice(0, 5).some((e) => e.char === "🎉")).toBe(true);
+});
+
+test("searchEmoji: clean spellings keep their crisp #1 (fuzzy only fills the tail)", () => {
+  expect(searchEmoji("fire")[0].char).toBe("🔥");
+  expect(searchEmoji("rocket")[0].char).toBe("🚀");
+  expect(searchEmoji("party")[0].char).toBe("🎉");
+  expect(searchEmoji("thinking")[0].char).toBe("🤔");
+});
+
+test("searchEmoji: a far-off garbage query returns nothing (tight edit budget)", () => {
+  // 6 random chars are >2 edits from any shortcode token → no fuzzy noise.
+  expect(searchEmoji("xqzkbw")).toEqual([]);
+});
+
+test("rankEmoji: queries under 3 chars stay crisp (no fuzzy noise)", () => {
+  // A non-substring 2-char query returns nothing rather than loose fuzzy guesses.
+  expect(rankEmoji(FIXTURE, "zx")).toEqual([]);
+});
+
 test("searchEmoji: special characters are present in the real dataset", () => {
   expect(searchEmoji("emdash")[0]?.char).toBe("—");
   expect(searchEmoji("arrow_right")[0]?.char).toBe("→");

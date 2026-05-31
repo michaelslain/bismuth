@@ -3,36 +3,11 @@
 // CodeMirror imports here, so these run under `bun test` without a browser. Mirrors
 // the structure of tag.ts / wikilink.ts. The dataset (emoji + special characters) is
 // a generated, committed JSON artifact (see scripts/gen-emoji.ts) — zero runtime dep.
-import Fuse from "fuse.js";
 import rawData from "./emoji-data.json";
 
 export type EmojiEntry = { char: string; name: string; keywords: string[] };
 
 export const EMOJI_DATA: EmojiEntry[] = rawData as EmojiEntry[];
-
-// Fuzzy fallback config, mirroring the command palette (PaletteModal.tsx) for
-// consistency: typo-tolerant, position-independent. `name` (the shortcode) outweighs
-// `keywords` so a fuzzy shortcode hit ranks above a fuzzy alias hit.
-const FUSE_OPTIONS = {
-  keys: [
-    { name: "name", weight: 0.7 },
-    { name: "keywords", weight: 0.3 },
-  ],
-  threshold: 0.4,
-  ignoreLocation: true,
-};
-
-// Fuse builds an O(n) index; cache one per dataset array so searchEmoji() (always the
-// same EMOJI_DATA reference) indexes once, while test fixtures get their own.
-const fuseCache = new WeakMap<EmojiEntry[], Fuse<EmojiEntry>>();
-function fuseFor(entries: EmojiEntry[]): Fuse<EmojiEntry> {
-  let f = fuseCache.get(entries);
-  if (!f) {
-    f = new Fuse(entries, FUSE_OPTIONS);
-    fuseCache.set(entries, f);
-  }
-  return f;
-}
 
 // Curated "most-used" shortcodes (unicode-emoji-json slugs), highest-frequency first.
 // Used to (a) fill the popup the instant a lone `:` is typed and (b) bias common emojis
@@ -87,6 +62,74 @@ function score(e: EmojiEntry, q: string): number | null {
   return null;
 }
 
+// --- fuzzy (typo-tolerant) matching on emoji NAME tokens -----------------------
+// We want a mistyped emoji NAME to still find the emoji: `rocekt` → rocket, `hart` →
+// heart, `smlie` → smile. Fuse's bitap is poor at this on our data (it matched `hart`
+// to "chart" and missed transpositions like `rocekt`), so we use Damerau-Levenshtein
+// edit distance — which counts a transposition (rocekt↔rocket) as ONE edit — compared
+// against each entry's individual NAME tokens (the shortcode split on `_`) plus its
+// keyword tokens. Matching per-token, not against the whole descriptive slug, is what
+// makes `hart` reach `red_heart` (token "heart") without drowning in long-slug noise.
+
+// Optimal string alignment (Damerau-Levenshtein restricted to adjacent transpositions).
+// Early-exits once the running minimum exceeds `max` so most comparisons stop fast.
+function editDistance(a: string, b: string, max: number): number {
+  const al = a.length, bl = b.length;
+  if (Math.abs(al - bl) > max) return max + 1;
+  let prev2: number[] = [];
+  let prev = new Array(bl + 1);
+  let curr = new Array(bl + 1);
+  for (let j = 0; j <= bl; j++) prev[j] = j;
+  for (let i = 1; i <= al; i++) {
+    curr[0] = i;
+    let rowMin = curr[0];
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      let v = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        v = Math.min(v, prev2[j - 2] + 1); // transposition
+      }
+      curr[j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    if (rowMin > max) return max + 1; // whole row already worse than allowed
+    prev2 = prev;
+    prev = curr;
+    curr = new Array(bl + 1);
+  }
+  return prev[bl];
+}
+
+// Allowed edits scale with query length: short queries must match tightly (1 edit),
+// longer ones tolerate more. Capped so a 4-char query can't fuzz into anything.
+function maxEditsFor(qlen: number): number {
+  if (qlen <= 3) return 1;
+  if (qlen <= 6) return 2;
+  return 3;
+}
+
+// The searchable tokens for an entry: the shortcode split on `_`, the whole shortcode,
+// and the keywords. Deduped. (e.g. red_heart → ["red","heart","red_heart","love",...].)
+function tokensFor(e: EmojiEntry): string[] {
+  return [...new Set([...e.name.split("_"), e.name, ...e.keywords])];
+}
+
+// Best (smallest) edit distance from the query to any of the entry's tokens, within
+// `max`. Returns max+1 ("no fuzzy match") if nothing is close enough. Only tokens of
+// comparable length are compared (length filter inside editDistance handles the rest).
+function fuzzyDistance(e: EmojiEntry, q: string, max: number): number {
+  let best = max + 1;
+  for (const t of tokensFor(e)) {
+    if (!t) continue;
+    const d = editDistance(q, t, Math.min(max, best - 1 < 0 ? 0 : best - 1));
+    if (d < best) {
+      best = d;
+      if (best === 0) break;
+    }
+  }
+  return best;
+}
+
 // Keep the first occurrence of each glyph (special chars carry alias shortcodes for one
 // character), capped at `limit`.
 function dedupeByChar(list: EmojiEntry[], limit: number): EmojiEntry[] {
@@ -104,8 +147,9 @@ function dedupeByChar(list: EmojiEntry[], limit: number): EmojiEntry[] {
 // Pure ranked search over an explicit dataset (so tests can use a small fixture).
 // An EMPTY query (a lone `:`) returns the curated most-used set in popularity order, so
 // the popup is useful the instant `:` is typed. For a real query: precise tiered matches
-// (exact/prefix/substring on shortcode + keywords) come FIRST, then a Fuse fuzzy fallback
-// catches typos and skipped letters (`:prty` → 🎉, `:smlie` → 😊). Deduped by glyph.
+// (exact/prefix/substring on shortcode + keywords) come FIRST; then a typo-tolerant fuzzy
+// pass over the emoji name tokens catches misspellings (`:rocekt`→🚀, `:hart`→❤️,
+// `:smlie`→🙂). Results are deduped by glyph.
 export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): EmojiEntry[] {
   const q = query.toLowerCase().trim();
 
@@ -122,9 +166,13 @@ export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): Emo
 
   // Phase 1 — precise tiered matches.
   const scored: { e: EmojiEntry; s: number }[] = [];
+  const exactChars = new Set<string>();
   for (const e of entries) {
     const s = score(e, q);
-    if (s !== null) scored.push({ e, s });
+    if (s !== null) {
+      scored.push({ e, s });
+      exactChars.add(e.char);
+    }
   }
   // score → popularity → shorter shortcode → alphabetical → glyph codepoint. The final
   // key makes the order total, so dual-glyph shortcodes (e.g. :divide = ÷ and ➗) resolve
@@ -139,11 +187,26 @@ export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): Emo
   );
   const ranked = scored.map((x) => x.e);
 
-  // Phase 2 — fuzzy fallback, appended AFTER precise matches so exact hits stay on top.
-  // Gated to ≥3 chars (a 1–2 char query is better served by the crisp tiered matches; short
-  // fuzzy queries are noisy). dedupeByChar drops glyphs already surfaced in phase 1.
+  // Phase 2 — typo-tolerant fuzzy pass over name tokens, appended AFTER precise matches
+  // so clean queries keep their crisp top hits. Gated to ≥3-char queries (shorter ones
+  // are well served by the tiered matches and would fuzz too loosely).
   if (q.length >= 3) {
-    ranked.push(...fuseFor(entries).search(q).map((r) => r.item));
+    const max = maxEditsFor(q.length);
+    const fuzzy: { e: EmojiEntry; d: number }[] = [];
+    for (const e of entries) {
+      if (exactChars.has(e.char)) continue; // already in phase 1
+      const d = fuzzyDistance(e, q, max);
+      if (d <= max) fuzzy.push({ e, d });
+    }
+    // closer edit distance first, then popularity, then shorter shortcode, then codepoint.
+    fuzzy.sort(
+      (a, b) =>
+        a.d - b.d ||
+        popRank(a.e.name) - popRank(b.e.name) ||
+        a.e.name.length - b.e.name.length ||
+        (a.e.char < b.e.char ? -1 : a.e.char > b.e.char ? 1 : 0),
+    );
+    ranked.push(...fuzzy.map((x) => x.e));
   }
 
   return dedupeByChar(ranked, limit);
