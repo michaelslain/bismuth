@@ -1,14 +1,15 @@
 import { createSignal, createMemo, Show } from "solid-js";
 import { api } from "../api";
+import { renderMarkdown } from "./markdown";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
 
 /**
- * Flashcards view over a base's rows. Reads front/back/due from each row by the
- * view's field bindings (defaults front/back/due) and reviews due cards via SM-2,
- * writing scheduling columns back to the base file by table-row index.
+ * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
+ * Reviewing flips the card to the back (with the front kept as a small caption) and writes
+ * SM-2 scheduling back to the base file. Card faces render markdown (Lora serif; `code` mono).
  *
- * Operates on the raw rows in table order (index === array position), so review
- * write-back targets the correct row without threading an identity through runView.
+ * Operates on raw rows in table order (index === array position) so write-back targets the
+ * right row without threading an identity through runView.
  */
 export function FlashcardsView(props: {
   rows: Row[];
@@ -22,7 +23,6 @@ export function FlashcardsView(props: {
   const dueField = () => view().dueField ?? "due";
   const today = new Date().toISOString().slice(0, 10);
 
-  // Due = no due date yet, or due on/before today. Keep the original table index.
   const due = createMemo(() =>
     props.rows
       .map((r, index) => ({ r, index }))
@@ -36,8 +36,8 @@ export function FlashcardsView(props: {
   const [revealed, setRevealed] = createSignal(false);
 
   const current = () => (pos() < due().length ? due()[pos()] : null);
-  const frontOf = (r: Row) => String(r.note[frontField()] ?? "");
-  const backOf = (r: Row) => String(r.note[backField()] ?? "");
+  const frontHtml = (r: Row) => renderMarkdown(String(r.note[frontField()] ?? ""));
+  const backHtml = (r: Row) => renderMarkdown(String(r.note[backField()] ?? ""));
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
@@ -76,12 +76,27 @@ export function FlashcardsView(props: {
         >
           <div class="review">
             <div class="review-progress">{pos() + 1} / {due().length}</div>
-            <div class="card-face question">{frontOf(current()!.r)}</div>
+
+            {/* Click the card to flip; flipped face shows the back, with the front as a small caption. */}
+            <div
+              class={`flip-card ${revealed() ? "flipped" : ""}`}
+              onClick={() => !revealed() && setRevealed(true)}
+            >
+              <div class="flip-inner">
+                <div class="flip-face flip-front">
+                  <div class="card-md" innerHTML={frontHtml(current()!.r)} />
+                </div>
+                <div class="flip-face flip-back">
+                  <div class="card-front-label" innerHTML={frontHtml(current()!.r)} />
+                  <div class="card-md" innerHTML={backHtml(current()!.r)} />
+                </div>
+              </div>
+            </div>
+
             <Show
               when={revealed()}
               fallback={<button class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</button>}
             >
-              <div class="card-face answer">{backOf(current()!.r)}</div>
               <div class="grade-row">
                 <button class="card-btn hard" onClick={() => grade("hard")}>Hard</button>
                 <button class="card-btn good" onClick={() => grade("good")}>Good</button>
