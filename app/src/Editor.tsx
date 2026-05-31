@@ -13,6 +13,8 @@ import { vaultCompletion } from "./editor/autocomplete";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
+import { isSettingsBuffer } from "./editor/settingsBuffer";
+import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
@@ -111,13 +113,22 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
         getSchema: propertyRegistry,
         inFrontmatter: isInFrontmatter,
       }),
-      yamlSchema({
-        getSchema: propertyRegistry,
-        mode: "frontmatter",
-        // Filename-based link resolution: a [[Target]] resolves when some note
-        // candidate's label matches (wikilink semantics — name, not path).
-        resolveLink: (target) => props.noteNames().some((n) => n.label === target),
-      }),
+      // The vault-root settings.yaml is validated as a whole document against the
+      // fixed app-settings schema; every other buffer validates its frontmatter
+      // slice against the vault property registry.
+      isSettingsBuffer(path)
+        ? yamlSchema({
+            getSchema: () => SETTINGS_SCHEMA,
+            mode: "settings" as const,
+            resolveLink: () => true, // unused in settings mode; contract requires it
+          })
+        : yamlSchema({
+            getSchema: propertyRegistry,
+            mode: "frontmatter",
+            // Filename-based link resolution: a [[Target]] resolves when some note
+            // candidate's label matches (wikilink semantics — name, not path).
+            resolveLink: (target) => props.noteNames().some((n) => n.label === target),
+          }),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),

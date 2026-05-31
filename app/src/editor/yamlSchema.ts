@@ -27,9 +27,11 @@ interface RangedDiagnostic {
 }
 
 /**
- * Pure: slice the frontmatter body, parse it, validate against the schema, and map each
- * Diagnostic.path (a key path) to the document char range of its line. Returns [] when
- * there's no frontmatter or the YAML is malformed (tolerant, like parseFrontmatter).
+ * Pure: validate a YAML body, then map each Diagnostic.path (a key path) to the
+ * document char range of its line. In `frontmatter` mode the body is the `---`-fenced
+ * slice; in `settings` mode the WHOLE document is the body (settings.yaml has no fence),
+ * so the entire file is validated against SETTINGS_SCHEMA. Returns [] when there's no
+ * body or the YAML is malformed (tolerant, like parseFrontmatter).
  */
 export function diagnosticsForFrontmatter(
   doc: string,
@@ -37,11 +39,23 @@ export function diagnosticsForFrontmatter(
   resolveLink: (target: string) => boolean,
   mode: ValidateMode = "frontmatter",
 ): RangedDiagnostic[] {
-  const fm = extractFrontmatterBoundary(doc);
-  if (!fm) return [];
+  // Settings.yaml is a fenceless document — validate the whole body from offset 0.
+  // Notes validate only their frontmatter slice.
+  let bodyText: string;
+  let bodyFrom: number;
+  if (mode === "settings") {
+    bodyText = doc;
+    bodyFrom = 0;
+  } else {
+    const fm = extractFrontmatterBoundary(doc);
+    if (!fm) return [];
+    bodyText = fm.text;
+    bodyFrom = fm.from;
+  }
+
   let parsed: unknown;
   try {
-    parsed = parseYaml(fm.text) ?? {};
+    parsed = parseYaml(bodyText) ?? {};
   } catch {
     return []; // malformed YAML → no schema diagnostics (yaml lang lint can flag syntax)
   }
@@ -49,9 +63,9 @@ export function diagnosticsForFrontmatter(
   const diags = validateDocument(parsed, schema, { mode, ctx: { resolveLink } });
   // Build a quick lookup from the body's lines to their absolute char offsets so we can
   // map a diagnostic's top-level key to the line where it appears.
-  const bodyLines = fm.text.split("\n");
+  const bodyLines = bodyText.split("\n");
   const lineOffsets: number[] = [];
-  let acc = fm.from;
+  let acc = bodyFrom;
   for (const l of bodyLines) {
     lineOffsets.push(acc);
     acc += l.length + 1; // +1 for the newline
