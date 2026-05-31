@@ -2,11 +2,11 @@ import { For, Show, createSignal, createEffect, on } from "solid-js";
 import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
 import { canonicalId } from "../../../core/src/bases/query";
 import { renderValue, columnLabel } from "./renderValue";
+import { settings } from "../settings";
 import styles from "./BaseView.module.css";
 
 // Pixels from the right edge of a header that count as the resize grab zone.
 const RESIZE_GRAB_PX = 10;
-const MIN_COL_PX = 60;
 
 export function TableView(props: {
   result: ViewResult;
@@ -116,7 +116,7 @@ export function TableView(props: {
     const startW = seed[col] ?? ths[idx]?.offsetWidth ?? 120;
     setW(seed);
     const onMove = (ev: PointerEvent) =>
-      setW({ ...seed, [col]: Math.max(MIN_COL_PX, Math.round(startW + (ev.clientX - startX))) });
+      setW({ ...seed, [col]: Math.max(settings.ui.tableMinColWidth, Math.round(startW + (ev.clientX - startX))) });
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

@@ -20,7 +20,8 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { initializeSettings, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE, readFolderIcons, setFolderIcon } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon } from "./settings";
+import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -50,11 +51,19 @@ function requireQueryParam(url: URL, param: string): string {
 type Handler = (req: Request, url: URL, cfg: CoreConfig) => Promise<Response> | Response;
 
 export function createServer(cfg: CoreConfig) {
-  // First launch: write a fully-commented settings.yaml from SETTINGS_SCHEMA.
-  // Fire-and-forget so server start stays synchronous; the file lands within ms.
-  // Swallow failures (e.g. a non-existent/read-only vault dir in tests) so a
-  // missing-config write can never take the whole server down on boot.
-  void initializeSettings(cfg.vault).catch(() => {});
+  // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
+  // defaults file if absent, or fill in any keys added since the file was written
+  // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
+  // server start stays synchronous; the write lands within ms. Swallow failures
+  // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
+  // whole server down on boot.
+  void reconcileSettings(cfg.vault).catch(() => {});
+
+  // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
+  // from DEFAULTS so timings are sane before the async load lands, then refreshed on
+  // boot and whenever settings.yaml changes (see classifyVault).
+  let appConfig: AppConfig = SETTINGS_DEFAULTS as AppConfig;
+  void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
 
   let cachedGraph: GraphData | null = null;
   let cachedTree: TreeEntry[] | null = null;
@@ -101,6 +110,8 @@ export function createServer(cfg: CoreConfig) {
       if (isSettingsPath(p)) {
         // settings.yaml drives the property registry + appearance — both graph
         // and tree consumers should refetch; /schema reads it fresh on demand.
+        // Also refresh the backend runtime config (debounce, heartbeat, …).
+        void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
         graph = true;
         tree = true;
         continue;
@@ -161,7 +172,7 @@ export function createServer(cfg: CoreConfig) {
         if (memory) dirty.graph = true;
         applyDirty(unknown ? [] : vaultPaths, dirty);
       })();
-    }, 250);
+    }, appConfig.server.fileWatchDebounceMs);
   }
 
   async function readNoteOrEmpty(vault: string, path: string): Promise<string> {
@@ -216,7 +227,7 @@ export function createServer(cfg: CoreConfig) {
             } catch {
               // controller already closed
             }
-          }, 5000);
+          }, appConfig.server.sseHeartbeatMs);
         },
         cancel() {
           clearInterval(heartbeat);
@@ -278,10 +289,11 @@ export function createServer(cfg: CoreConfig) {
     "GET /file": async (_, url) => {
       const path = requireQueryParam(url, "path");
       // settings.yaml is opened as a normal file, but a vault that never had one
-      // must not surface a blank editor — materialize the schema defaults on first
-      // open. Idempotent (no-op if present); the boot init can't be relied on alone
-      // since it's fire-and-forget and a long-running server may predate the file.
-      if (path === SETTINGS_FILE) await initializeSettings(cfg.vault);
+      // must not surface a blank editor — reconcile the schema defaults on open
+      // (writes a full file if absent; fills any missing keys otherwise). Idempotent
+      // and write-only-if-changed; the boot reconcile can't be relied on alone since
+      // it's fire-and-forget and a long-running server may predate a schema change.
+      if (path === SETTINGS_FILE) await reconcileSettings(cfg.vault);
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       return new Response(noteText, { status: 200 });
     },
@@ -421,6 +433,21 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.path,
     ),
 
+    "POST /set-setting": mutatingHandler(
+      async (req) => {
+        // The single backend write path for settings.yaml: merge one value at `path`
+        // in place (preserving comments + the properties registry + unknown keys).
+        // Frontend toggles call this instead of rewriting the whole file.
+        const body = (await req.json()) as { path?: unknown; value?: unknown };
+        if (!Array.isArray(body.path) || !body.path.every((s) => typeof s === "string")) {
+          return new Response("bad path", { status: 400 });
+        }
+        await setSettingInFile(cfg.vault, body.path as string[], body.value);
+        return Response.json({ ok: true });
+      },
+      () => SETTINGS_FILE, // invalidate settings.yaml so subscribers re-hydrate
+    ),
+
     "POST /set-property": mutatingHandler(
       async (req) => {
         // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
@@ -534,13 +561,13 @@ export function createServer(cfg: CoreConfig) {
           const { rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
           if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
-          const note = applyReviewToRow(row.note, body.response, todayISO());
+          const note = applyReviewToRow(row.note, body.response, todayISO(), appConfig.srs);
           const next = upsertRow(text, { name, path: body.file }, body.index, note);
           await writeNote(cfg.vault, body.file, next);
           return new Response("ok");
         }
         // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
-        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question);
+        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question, appConfig.srs);
         return new Response("ok");
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty

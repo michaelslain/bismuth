@@ -2,17 +2,18 @@ import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
 import { Icon } from '../../icons/Icon'
+import { settings } from '../../settings'
 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
-  const [newColor, setNewColor] = createSignal('#4a90e2')
+  const [newColor, setNewColor] = createSignal(settings.calendar.defaultCategoryColor)
 
   async function handleAdd(): Promise<void> {
     if (!newName().trim()) return
     await props.store.addCategory({ name: newName().trim(), color: newColor() })
     categories.value = props.store.getCategories()
     setNewName('')
-    setNewColor('#4a90e2')
+    setNewColor(settings.calendar.defaultCategoryColor)
   }
 
   async function handleDelete(name: string): Promise<void> {

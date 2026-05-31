@@ -2,6 +2,7 @@ import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup }
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue } from "./renderValue";
+import { settings } from "../settings";
 import styles from "./BaseView.module.css";
 
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
@@ -66,7 +67,7 @@ export function MapView(props: {
     const v = props.result.view;
     if (v.center && typeof v.zoom === "number") return { center: v.center, zoom: v.zoom };
     const ms = markers();
-    if (ms.length === 0) return { center: { lat: 20, lng: 0 }, zoom: 2 };
+    if (ms.length === 0) return { center: { lat: 20, lng: 0 }, zoom: settings.graph.mapDefaultZoom };
     if (ms.length === 1) return { center: { lat: ms[0].lat, lng: ms[0].lng }, zoom: 10 };
     let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
     for (const m of ms) {
@@ -86,7 +87,7 @@ export function MapView(props: {
         return { center: { lat: cLat, lng: cLng }, zoom: z };
       }
     }
-    return { center: { lat: cLat, lng: cLng }, zoom: 2 };
+    return { center: { lat: cLat, lng: cLng }, zoom: settings.graph.mapDefaultZoom };
   });
 
   const [center, setCenter] = createSignal(initialView().center);

@@ -8,6 +8,30 @@ export const MAX_INTERVAL = 36525;
 export const MIN_EASE = 130;
 export const EASE_STEP = 20;
 
+/** Tunable SM-2 parameters (settings.srs). Field names match the schema so the
+ *  backend's appConfig.srs is itself a valid SrsConfig (identity mapping). */
+export interface SrsConfig {
+  baseEase: number;              // starting ease for a new card
+  easyBonus: number;             // extra interval multiplier on an "easy" review
+  lapsesIntervalChange: number;  // interval multiplier on a "hard" review
+  minEase: number;               // floor on ease
+  easeStep: number;              // ease change per review
+  easyGraduatingInterval: number; // days until next review when a new card is rated "easy"
+  goodGraduatingInterval: number; // days until next review when a new card is rated "good"/"hard"
+}
+
+/** Defaults equal to the historic hardcoded constants — used when no config is passed
+ *  (keeps tests and non-server callers behaving exactly as before). */
+export const DEFAULT_SRS: SrsConfig = {
+  baseEase: BASE_EASE,
+  easyBonus: EASY_BONUS,
+  lapsesIntervalChange: LAPSES_INTERVAL_CHANGE,
+  minEase: MIN_EASE,
+  easeStep: EASE_STEP,
+  easyGraduatingInterval: 4,
+  goodGraduatingInterval: 1,
+};
+
 /**
  * Compute the next schedule for a single sub-card.
  * `prev` is null for a brand-new card.
@@ -16,34 +40,35 @@ export function schedule(
   prev: SchedulingInfo | null,
   response: ReviewResponse,
   today: string,
+  cfg: SrsConfig = DEFAULT_SRS,
 ): SchedulingInfo {
   const { interval, ease } = prev === null
-    ? scheduleNew(response)
-    : scheduleExisting(prev, response);
+    ? scheduleNew(response, cfg)
+    : scheduleExisting(prev, response, cfg);
 
   const clampedInterval = Math.max(1, Math.min(interval, MAX_INTERVAL));
   return { due: addDaysISO(today, clampedInterval), interval: clampedInterval, ease };
 }
 
-function scheduleNew(response: ReviewResponse): { interval: number; ease: number } {
+function scheduleNew(response: ReviewResponse, cfg: SrsConfig): { interval: number; ease: number } {
   if (response === "easy") {
-    return { interval: 4, ease: BASE_EASE + EASE_STEP };
+    return { interval: cfg.easyGraduatingInterval, ease: cfg.baseEase + cfg.easeStep };
   }
-  return { interval: 1, ease: BASE_EASE };
+  return { interval: cfg.goodGraduatingInterval, ease: cfg.baseEase };
 }
 
-function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse): { interval: number; ease: number } {
+function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse, cfg: SrsConfig): { interval: number; ease: number } {
   let ease = prev.ease;
   let interval: number;
 
   if (response === "hard") {
-    ease = Math.max(MIN_EASE, ease - EASE_STEP);
-    interval = Math.max(1, Math.round(prev.interval * LAPSES_INTERVAL_CHANGE));
+    ease = Math.max(cfg.minEase, ease - cfg.easeStep);
+    interval = Math.max(1, Math.round(prev.interval * cfg.lapsesIntervalChange));
   } else if (response === "good") {
     interval = Math.round(prev.interval * (ease / 100));
   } else {
-    ease = ease + EASE_STEP;
-    interval = Math.round(prev.interval * (ease / 100) * EASY_BONUS);
+    ease = ease + cfg.easeStep;
+    interval = Math.round(prev.interval * (ease / 100) * cfg.easyBonus);
   }
 
   return { interval, ease };

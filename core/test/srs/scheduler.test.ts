@@ -3,11 +3,20 @@ import {
   schedule,
   formatScheduling,
   parseScheduling,
+  DEFAULT_SRS,
 } from "../../src/srs/scheduler";
 import { addDaysISO } from "../../src/dates";
 import type { SchedulingInfo } from "../../src/srs/types";
 
 const TODAY = "2026-05-27";
+
+test("a custom SrsConfig overrides the SM-2 constants", () => {
+  const cfg = { ...DEFAULT_SRS, baseEase: 300, easyGraduatingInterval: 7, goodGraduatingInterval: 2 };
+  expect(schedule(null, "good", TODAY, cfg).interval).toBe(2);  // goodGraduatingInterval
+  const easy = schedule(null, "easy", TODAY, cfg);
+  expect(easy.interval).toBe(7);                                 // easyGraduatingInterval
+  expect(easy.ease).toBe(320);                                   // baseEase + easeStep(20)
+});
 
 test("new card: good -> interval 1, ease 250", () => {
   const r = schedule(null, "good", TODAY);
