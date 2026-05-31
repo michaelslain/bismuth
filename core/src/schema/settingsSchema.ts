@@ -22,6 +22,12 @@ export const SETTINGS_SCHEMA: Schema = {
     theme: { type: enumType(["dark", "light"]), default: "dark", doc: "Color theme." },
     editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
     editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
+    sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },
+    sidebarGraphHeight: { type: "number", default: 305, min: 200, max: 500, doc: "Height of the mini graph panel in the sidebar (px)." },
+    uiFontSize: { type: "number", default: 13, min: 11, max: 16, doc: "Base UI font size — sidebar, tabs, menus (px)." },
+    tabFontSize: { type: "number", default: 12, min: 11, max: 14, doc: "Editor tab label font size (px)." },
+    sidebarIconFontSize: { type: "number", default: 15, min: 12, max: 20, doc: "Sidebar header icon button size (px)." },
+    paletteInputFontSize: { type: "number", default: 15, min: 13, max: 18, doc: "Command palette search-input font size (px)." },
   }),
   graph: object({
     spin: { type: "boolean", default: true, doc: "Idle rotation of the graph." },
@@ -57,6 +63,10 @@ export const SETTINGS_SCHEMA: Schema = {
     defaultView: { type: enumType(CALENDAR_VIEWS), default: "week", doc: "Default calendar view." },
     weekStartsOnMonday: { type: "boolean", default: true, doc: "Start the week on Monday." },
     militaryTime: { type: "boolean", default: false, doc: "Use 24-hour time." },
+  }),
+  ui: object({
+    paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
+    paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
   }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.

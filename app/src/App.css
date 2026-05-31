@@ -22,10 +22,10 @@
 button { outline: none; }
 body, html, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--fg); }
-.layout { display: grid; grid-template-columns: 280px 1fr; height: 100vh; font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace; }
+.layout { display: grid; grid-template-columns: var(--sidebar-width, 280px) 1fr; height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; }
 .sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
 .sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
-.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; height: 305px; }
+.sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; height: var(--sidebar-graph-height, 305px); }
 .sidebar-graph.collapsed { display: none; }
 .graph-slot-main { width: 100%; height: 100%; }
 /* Single graph element, snapped over whichever slot is active (see App.tsx).
@@ -33,20 +33,20 @@ body { background: var(--bg); color: var(--fg); }
 .graph-floater { position: fixed; z-index: 2; overflow: hidden; }
 .sidebar-icons { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sidebar canvas { display: block; }
-.icon-btn { background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: 15px; line-height: 1; padding: 4px 6px; border-radius: 4px; }
+.icon-btn { background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: var(--sidebar-icon-font-size, 15px); line-height: 1; padding: 4px 6px; border-radius: 4px; }
 .icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; }
 .tabbar { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--panel); }
-.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: var(--tab-font-size, 12px); cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; }
 .tab.active { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tab-x { opacity: 0.5; padding: 0 2px; border-radius: 3px; }
 .tab-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
-.palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); overflow: hidden; }
-.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: 15px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); padding: 14px 16px; border-bottom: 1px solid var(--border); }
 .palette-input::placeholder { color: var(--fg); opacity: 0.4; }
 .palette-list { overflow-y: auto; padding: 6px; }
 .palette-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
@@ -214,6 +214,6 @@ body { background: var(--bg); color: var(--fg); }
 .pane-dropzone.right { right: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.up { left: 0; top: 0; width: 100%; height: 50%; }
 .pane-dropzone.down { left: 0; bottom: 0; width: 100%; height: 50%; }
-.pane-divider { flex: 0 0 5px; background: var(--border); cursor: col-resize; }
+.pane-divider { flex: 0 0 var(--pane-divider-width, 5px); background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }

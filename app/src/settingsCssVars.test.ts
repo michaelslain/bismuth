@@ -16,4 +16,13 @@ describe("settingsToCssVars", () => {
     s.appearance.editorFont = "Comic Sans";
     expect(settingsToCssVars(s)["--editor-font"]).toBe("Comic Sans");
   });
+
+  it("maps appearance/ui sizing to px vars and passes CSS lengths through", () => {
+    const vars = settingsToCssVars(DEFAULTS);
+    expect(vars["--sidebar-width"]).toBe("280px");
+    expect(vars["--ui-font-size"]).toBe("13px");
+    expect(vars["--tab-font-size"]).toBe("12px");
+    expect(vars["--pane-divider-width"]).toBe("5px");
+    expect(vars["--palette-top-offset"]).toBe("12vh"); // CSS length passed through verbatim
+  });
 });

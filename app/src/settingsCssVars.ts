@@ -13,6 +13,14 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--accent": a.accent,
     "--editor-font": FONT_STACKS[a.editorFont] ?? a.editorFont,
     "--editor-font-size": a.editorFontSize + "px",
+    "--sidebar-width": a.sidebarWidth + "px",
+    "--sidebar-graph-height": a.sidebarGraphHeight + "px",
+    "--ui-font-size": a.uiFontSize + "px",
+    "--tab-font-size": a.tabFontSize + "px",
+    "--sidebar-icon-font-size": a.sidebarIconFontSize + "px",
+    "--palette-input-font-size": a.paletteInputFontSize + "px",
+    "--palette-top-offset": s.ui.paletteTopOffset,
+    "--pane-divider-width": s.ui.paneDividerWidth + "px",
   };
 }
 

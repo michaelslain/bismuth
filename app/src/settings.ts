@@ -28,6 +28,12 @@ export interface Settings {
     theme: Theme;
     editorFont: string;  // key into FONT_STACKS
     editorFontSize: number; // px
+    sidebarWidth: number;        // px
+    sidebarGraphHeight: number;  // px
+    uiFontSize: number;          // px
+    tabFontSize: number;         // px
+    sidebarIconFontSize: number; // px
+    paletteInputFontSize: number; // px
   };
   graph: {
     spin: boolean;
@@ -62,6 +68,10 @@ export interface Settings {
     defaultView: "month" | "week" | "3day" | "day";
     weekStartsOnMonday: boolean;
     militaryTime: boolean;
+  };
+  ui: {
+    paletteTopOffset: string;  // CSS length, e.g. "12vh"
+    paneDividerWidth: number;  // px
   };
 }
 
