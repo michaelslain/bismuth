@@ -24,3 +24,16 @@ test("ensureRepo inits a git repo; commitVault commits changes locally", async (
   const remotes = (await $`git -C ${dir} remote`.text()).trim();
   expect(remotes).toBe("");
 });
+
+test("commitVault never tracks settings.yaml", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-backup-"));
+  await writeNote(vault, "note.md", "# Note\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n");
+
+  const committed = await commitVault(vault, "snapshot");
+  expect(committed).toBe(true);
+
+  const tracked = (await $`git -C ${vault} ls-files`.text()).trim().split("\n");
+  expect(tracked).toContain("note.md");
+  expect(tracked).not.toContain("settings.yaml");
+});
