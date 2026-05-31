@@ -56,4 +56,7 @@ describe("binLabel", () => {
   test("month label is 'Mon YYYY'", () => {
     expect(binLabel("2026-05-01", "month")).toBe("May 2026");
   });
+  test("week label uses the Monday key's date", () => {
+    expect(binLabel("2026-05-25", "week")).toBe("May 25");
+  });
 });

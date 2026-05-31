@@ -45,5 +45,6 @@ export function binLabel(key: string, bin: Bin): string {
   const day = key.slice(0, 10);
   const d = new Date(day + "T00:00:00");
   if (bin === "month") return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+  // day and week both label by date — week keys are always the Monday produced by binKey.
   return `${MONTHS[d.getMonth()]} ${d.getDate()}`;
 }
