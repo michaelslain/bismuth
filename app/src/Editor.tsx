@@ -11,8 +11,8 @@ import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { harperSpellcheck } from "./editor/harper";
-import { harperBodyRange } from "./editor/harperBody";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
+import { frontmatterBodyRange } from "./editor/frontmatterUtils";
 import { propertyRegistry } from "./propertyRegistry";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
@@ -125,7 +125,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       // Default-on until the spine's SETTINGS_SCHEMA adds `editor.spellcheck`; a
       // missing key reads as enabled (only an explicit `false` disables Harper).
       ...((ed as { spellcheck?: boolean }).spellcheck !== false
-        ? [harperSpellcheck({ getBodyRange: harperBodyRange })]
+        ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })]
         : []),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return;

@@ -1,6 +1,6 @@
 // app/src/editor/frontmatterUtils.test.ts
 import { test, expect } from "bun:test";
-import { extractFrontmatterBoundary } from "./frontmatterUtils";
+import { extractFrontmatterBoundary, frontmatterBodyRange } from "./frontmatterUtils";
 
 test("returns the YAML body range between the --- fences", () => {
   const doc = "---\ntitle: Hi\ntags: a, b\n---\n\nBody text";
@@ -51,4 +51,39 @@ test("body offset lands on line 2 (the line after the opening fence)", () => {
   const r = extractFrontmatterBoundary(doc)!;
   // Everything from the start of line 1 up to r.from is exactly "---\n" (4 chars).
   expect(doc.slice(0, r.from)).toBe("---\n");
+});
+
+// --- frontmatterBodyRange (Harper body-skip adapter) ---
+
+test("frontmatterBodyRange: no frontmatter -> whole document is body", () => {
+  const doc = "Just some prose with a typo.";
+  expect(frontmatterBodyRange(doc)).toEqual({ from: 0, to: doc.length });
+});
+
+test("frontmatterBodyRange: closed frontmatter -> body starts after the closing fence", () => {
+  const doc = "---\ntitle: Hi\ntags: a, b\n---\nBody text here.";
+  const bodyStart = doc.indexOf("Body text here.");
+  expect(frontmatterBodyRange(doc)).toEqual({ from: bodyStart, to: doc.length });
+});
+
+test("frontmatterBodyRange: handles CRLF line endings", () => {
+  const doc = "---\r\ntitle: Hi\r\n---\r\nBody.";
+  const bodyStart = doc.indexOf("Body.");
+  expect(frontmatterBodyRange(doc)).toEqual({ from: bodyStart, to: doc.length });
+});
+
+test("frontmatterBodyRange: unterminated frontmatter is treated as plain body", () => {
+  const doc = "---\ntitle: Hi\nstill going";
+  expect(frontmatterBodyRange(doc)).toEqual({ from: 0, to: doc.length });
+});
+
+test("frontmatterBodyRange: empty body after frontmatter -> from === to === length", () => {
+  const doc = "---\ntitle: Hi\n---\n";
+  expect(frontmatterBodyRange(doc)).toEqual({ from: doc.length, to: doc.length });
+});
+
+test("frontmatterBodyRange: empty frontmatter (immediate close) skips both fences", () => {
+  const doc = "---\n---\nbody";
+  const bodyStart = doc.indexOf("body");
+  expect(frontmatterBodyRange(doc)).toEqual({ from: bodyStart, to: doc.length });
 });

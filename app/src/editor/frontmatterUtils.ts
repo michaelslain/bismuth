@@ -35,3 +35,24 @@ export function extractFrontmatterBoundary(doc: string): FrontmatterRange | null
   }
   return { from, to, text: doc.slice(from, to) };
 }
+
+/**
+ * Char range of the markdown *body* — everything after a leading YAML frontmatter block
+ * (past the closing `---` fence + its newline), or the whole doc when there's no
+ * frontmatter. Used by Harper's body-skip so property values aren't spell-checked.
+ *
+ * `extractFrontmatterBoundary` returns the frontmatter CONTENT range (`to` is the end of
+ * the body text, before the closing fence). This advances past the closing `---\n` line.
+ */
+export function frontmatterBodyRange(doc: string): { from: number; to: number } {
+  const fm = extractFrontmatterBoundary(doc);
+  if (!fm) return { from: 0, to: doc.length };
+  // Find the closing fence: the first `---` line at or after the content end. The slice
+  // from fm.to begins with the (optional) newline that precedes the closing fence.
+  const closeRe = /^---[ \t]*(?:\r?\n|$)/m;
+  const after = doc.slice(fm.to);
+  const m = closeRe.exec(after);
+  if (!m) return { from: 0, to: doc.length }; // shouldn't happen (boundary already matched)
+  const from = fm.to + m.index + m[0].length; // past the closing fence + its newline
+  return { from, to: doc.length };
+}
