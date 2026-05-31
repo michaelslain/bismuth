@@ -102,6 +102,7 @@ export interface Settings {
     easyGraduatingInterval: number;
     goodGraduatingInterval: number;
   };
+  toolbar: Array<{ command: string; icon: string; tooltip?: string }>;
 }
 
 // Alias so anything importing the canonical `AppSettings` name from the app gets
