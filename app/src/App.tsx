@@ -8,12 +8,12 @@ import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { settings, FONT_STACKS } from "./settings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
-import { ToastHost, pushToast } from "./Toast";
+import { ToastHost } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE, isSentinel, contentLabel } from "./tabIds";
+import { SETTINGS_TAB, TASKS_TAB, TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -185,16 +185,8 @@ export default function App() {
     setActiveTabId(tab.id);
   };
   const openSettings = () => openFile(SETTINGS_TAB);
-  const openCalendar = () => openFile(CALENDAR_TAB);
   const openTasks = () => openFile(TASKS_TAB);
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
-  // Review the flashcards in whichever note is focused in the active tab.
-  const reviewCurrentNote = () => {
-    const at = activeTab();
-    const cur = at ? leaves(at.root).find((l) => l.id === at.focusId)?.content : null;
-    if (cur && !isSentinel(cur)) openFile(FLASHCARDS_PREFIX + cur);
-    else pushToast("Open a note to review its flashcards");
-  };
 
   // Apply Appearance settings to the document: theme + accent + editor font/size,
   // surfaced as CSS variables that App.css and the editor theme read.
@@ -488,9 +480,7 @@ export default function App() {
         <div class="sidebar-icons">
           <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
-          <button class="icon-btn" title="Review this note's flashcards" onClick={reviewCurrentNote}>🃏</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
-          <button class="icon-btn" title="Calendar" onClick={openCalendar}>📅</button>
           <button class="icon-btn" title="Tasks" onClick={openTasks}>✓</button>
           <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
         </div>
