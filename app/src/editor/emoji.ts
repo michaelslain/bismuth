@@ -3,11 +3,36 @@
 // CodeMirror imports here, so these run under `bun test` without a browser. Mirrors
 // the structure of tag.ts / wikilink.ts. The dataset (emoji + special characters) is
 // a generated, committed JSON artifact (see scripts/gen-emoji.ts) — zero runtime dep.
+import Fuse from "fuse.js";
 import rawData from "./emoji-data.json";
 
 export type EmojiEntry = { char: string; name: string; keywords: string[] };
 
 export const EMOJI_DATA: EmojiEntry[] = rawData as EmojiEntry[];
+
+// Fuzzy fallback config, mirroring the command palette (PaletteModal.tsx) for
+// consistency: typo-tolerant, position-independent. `name` (the shortcode) outweighs
+// `keywords` so a fuzzy shortcode hit ranks above a fuzzy alias hit.
+const FUSE_OPTIONS = {
+  keys: [
+    { name: "name", weight: 0.7 },
+    { name: "keywords", weight: 0.3 },
+  ],
+  threshold: 0.4,
+  ignoreLocation: true,
+};
+
+// Fuse builds an O(n) index; cache one per dataset array so searchEmoji() (always the
+// same EMOJI_DATA reference) indexes once, while test fixtures get their own.
+const fuseCache = new WeakMap<EmojiEntry[], Fuse<EmojiEntry>>();
+function fuseFor(entries: EmojiEntry[]): Fuse<EmojiEntry> {
+  let f = fuseCache.get(entries);
+  if (!f) {
+    f = new Fuse(entries, FUSE_OPTIONS);
+    fuseCache.set(entries, f);
+  }
+  return f;
+}
 
 // Curated "most-used" shortcodes (unicode-emoji-json slugs), highest-frequency first.
 // Used to (a) fill the popup the instant a lone `:` is typed and (b) bias common emojis
@@ -78,8 +103,9 @@ function dedupeByChar(list: EmojiEntry[], limit: number): EmojiEntry[] {
 
 // Pure ranked search over an explicit dataset (so tests can use a small fixture).
 // An EMPTY query (a lone `:`) returns the curated most-used set in popularity order, so
-// the popup is useful the instant `:` is typed. For a real query, results are scored,
-// then tie-broken by popularity → shorter shortcode → alphabetical, and deduped by glyph.
+// the popup is useful the instant `:` is typed. For a real query: precise tiered matches
+// (exact/prefix/substring on shortcode + keywords) come FIRST, then a Fuse fuzzy fallback
+// catches typos and skipped letters (`:prty` → 🎉, `:smlie` → 😊). Deduped by glyph.
 export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): EmojiEntry[] {
   const q = query.toLowerCase().trim();
 
@@ -94,6 +120,7 @@ export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): Emo
   // emoji search. `:+1`/`:-1` still pass because they contain a digit.
   if (!/[a-z0-9]/.test(q)) return [];
 
+  // Phase 1 — precise tiered matches.
   const scored: { e: EmojiEntry; s: number }[] = [];
   for (const e of entries) {
     const s = score(e, q);
@@ -110,7 +137,16 @@ export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): Emo
       a.e.name.localeCompare(b.e.name) ||
       (a.e.char < b.e.char ? -1 : a.e.char > b.e.char ? 1 : 0),
   );
-  return dedupeByChar(scored.map((x) => x.e), limit);
+  const ranked = scored.map((x) => x.e);
+
+  // Phase 2 — fuzzy fallback, appended AFTER precise matches so exact hits stay on top.
+  // Gated to ≥3 chars (a 1–2 char query is better served by the crisp tiered matches; short
+  // fuzzy queries are noisy). dedupeByChar drops glyphs already surfaced in phase 1.
+  if (q.length >= 3) {
+    ranked.push(...fuseFor(entries).search(q).map((r) => r.item));
+  }
+
+  return dedupeByChar(ranked, limit);
 }
 
 // Ranked search over the bundled dataset.
