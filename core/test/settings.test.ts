@@ -48,3 +48,28 @@ test("getVaultSchema is empty when there is no settings.yaml", async () => {
   const vault = await emptyVault();
   expect(await getVaultSchema(vault)).toEqual({});
 });
+
+import { initializeSettings } from "../src/settings";
+import { parse as parseYaml } from "yaml";
+
+test("initializeSettings writes a commented defaults file when missing", async () => {
+  const vault = await emptyVault();
+  await initializeSettings(vault);
+  const res = await readSettings(vault);
+  expect(res).not.toBeNull();
+  // Doc comments appear for documented keys.
+  expect(res!.raw).toContain("# Accent color");
+  // The materialized defaults parse back to the DEFAULTS object shape.
+  const parsed = parseYaml(res!.raw) as Record<string, any>;
+  expect(parsed.appearance.theme).toBe("dark");
+  expect(parsed.graph.viewMode).toBe("3d");
+  expect(parsed.calendar.defaultView).toBe("week");
+});
+
+test("initializeSettings does not clobber an existing file", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: light\n");
+  await initializeSettings(vault);
+  const res = await readSettings(vault);
+  expect(res!.data).toEqual({ appearance: { theme: "light" } });
+});
