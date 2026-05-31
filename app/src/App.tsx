@@ -15,12 +15,15 @@ import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
 import {
-  type Tab, type PaneNode, type Dir, type Rect, makeTab,
+  type Tab, type PaneNode, type Leaf, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
+  reorderTabs, splitLeafWithNode, replacePaneWithPane, detachLeafToTab,
   serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
+import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
+import type { Zone as DropZone } from "./dnd/geometry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import "./App.css";
 
@@ -273,26 +276,100 @@ export default function App() {
     });
   };
 
-  // Drag a pane by its header onto another pane to rearrange the layout. If the target
-  // is an empty placeholder, fill it with the dragged pane's content (no split) and
-  // collapse the source's slot.
-  const handleMovePane = (targetId: string, draggedId: string, dir: Dir) => {
+  // === Unified tab/pane drag (see dnd/viewDrag.ts) ===
+  // Tabs and panes are interchangeable draggable "views". The controller resolves
+  // a (descriptor, target) on drop; the handlers below map each combination onto a
+  // pure model op.
+
+  // Drop a tab onto a pane of the ACTIVE tab. Center (or an empty target) fills the
+  // pane in place for a single-pane tab; an edge splits in that direction. Any
+  // multi-pane tab grafts its whole subtree (layout preserved). The source tab is
+  // consumed. Dragging the active tab onto its own panes is a no-op.
+  const dropTabOnPane = (srcTabId: string, targetLeafId: string, zone: DropZone) => {
+    if (srcTabId === activeTabId()) return;
+    const src = tabs().find((t) => t.id === srcTabId);
     const at = activeTab();
-    if (!at) return;
-    if (draggedId === targetId) return;
-    const target = leaves(at.root).find((l) => l.id === targetId);
+    if (!src || !at) return;
+    const srcLeaf = src.root.kind === "leaf" ? (src.root as Leaf) : null;
+    const target = leaves(at.root).find((l) => l.id === targetLeafId);
+    const fillsInPlace = zone === "center" || target?.content === EMPTY_PANE;
+    setTabs((ts) =>
+      ts
+        .filter((t) => t.id !== srcTabId)
+        .map((t) => {
+          if (t.id !== activeTabId()) return t;
+          if (srcLeaf && fillsInPlace) {
+            return { ...t, root: setContent(t.root, targetLeafId, srcLeaf.content), focusId: targetLeafId };
+          }
+          const dir = zone === "up" || zone === "down" ? "col" : "row";
+          const nodeFirst = zone === "left" || zone === "up";
+          const { root } = splitLeafWithNode(t.root, targetLeafId, dir, src.root, nodeFirst);
+          const focusId = src.root.kind === "leaf" ? src.root.id : leaves(src.root)[0].id;
+          return { ...t, root, focusId };
+        }),
+    );
+  };
+
+  // Drop a pane onto another pane within the active tab. Center replaces the target
+  // (closing the source); an edge moves/splits. An empty target is filled in place.
+  const dropPaneOnPane = (srcLeafId: string, targetLeafId: string, zone: DropZone) => {
+    const at = activeTab();
+    if (!at || srcLeafId === targetLeafId) return;
+    const target = leaves(at.root).find((l) => l.id === targetLeafId);
     if (target?.content === EMPTY_PANE) {
-      const dragged = leaves(at.root).find((l) => l.id === draggedId);
-      if (!dragged) return;
-      const afterClose = closeLeaf(at.root, draggedId);
-      if (!afterClose) return;
-      const filled = setContent(afterClose, targetId, dragged.content);
-      updateActiveTab((t) => ({ ...t, root: filled, focusId: targetId }));
+      const dragged = leaves(at.root).find((l) => l.id === srcLeafId);
+      const afterClose = dragged ? closeLeaf(at.root, srcLeafId) : null;
+      if (!afterClose || !dragged) return;
+      updateActiveTab((t) => ({ ...t, root: setContent(afterClose, targetLeafId, dragged.content), focusId: targetLeafId }));
       return;
     }
-    const result = movePane(at.root, draggedId, targetId, dir);
-    if (!result) return;
-    updateActiveTab((t) => ({ ...t, root: result.root, focusId: result.focusId }));
+    const res =
+      zone === "center"
+        ? replacePaneWithPane(at.root, targetLeafId, srcLeafId)
+        : movePane(at.root, srcLeafId, targetLeafId, zone);
+    if (res) updateActiveTab((t) => ({ ...t, root: res.root, focusId: res.focusId }));
+  };
+
+  // Detach a pane out to a new top-level tab at the strip insertion index, and focus it.
+  const detachPaneToTab = (srcTabId: string, leafId: string, index: number) => {
+    const res = detachLeafToTab(tabs(), srcTabId, leafId, index);
+    if (!res) return;
+    setTabs(res.tabs);
+    setActiveTabId(res.newTabId);
+  };
+
+  const viewDrag = createViewDrag((descriptor: DragDescriptor, target: DropTarget) => {
+    if (descriptor.kind === "tab") {
+      if (target.kind === "tabstrip") setTabs((ts) => reorderTabs(ts, descriptor.tabId, target.index));
+      else dropTabOnPane(descriptor.tabId, target.leafId, target.zone);
+    } else {
+      if (target.kind === "tabstrip") detachPaneToTab(descriptor.tabId, descriptor.leafId, target.index);
+      else dropPaneOnPane(descriptor.leafId, target.leafId, target.zone);
+    }
+  });
+  const drag = viewDrag.state;
+
+  // While dragging a tab, neighbors slide to open a gap at the live drop slot
+  // (Chrome-style). Returns the px shift for the chip at `index`; 0 otherwise.
+  const draggingTabId = (): string | null => {
+    const d = drag();
+    return d.active && d.descriptor?.kind === "tab" ? d.descriptor.tabId : null;
+  };
+  const stripDropIndex = (): number | null => {
+    const d = drag();
+    return d.active && d.target?.kind === "tabstrip" ? d.target.index : null;
+  };
+  const tabShift = (index: number): number => {
+    const d = drag();
+    const dragId = draggingTabId();
+    const dropI = stripDropIndex();
+    if (!dragId || dropI === null || d.descriptor?.kind !== "tab") return 0;
+    const from = tabs().findIndex((t) => t.id === dragId);
+    if (from === -1 || index === from) return 0;
+    const w = d.descriptor.width;
+    if (from < dropI && index > from && index < dropI) return -w;
+    if (from > dropI && index >= dropI && index < from) return w;
+    return 0;
   };
 
   // Delete: drop any leaf whose content is the deleted path (or a file beneath a deleted
@@ -494,18 +571,32 @@ export default function App() {
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
-        <div class="tabbar">
+        <div class="tabbar" data-tabstrip="true">
           <For each={tabs()}>
-            {(t) => (
-              <div
-                class={`tab${activeTabId() === t.id ? " active" : ""}`}
-                onClick={() => setActiveTabId(t.id)}
-              >
-                <span>{tabBarLabel(t)}</span>
-                <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
-              </div>
+            {(t, i) => (
+              <>
+                <Show when={stripDropIndex() === i() && !draggingTabId()}>
+                  <div class="tab-caret" />
+                </Show>
+                <div
+                  class={`tab${activeTabId() === t.id ? " active" : ""}`}
+                  classList={{ dragging: draggingTabId() === t.id }}
+                  data-tab-chip="true"
+                  style={{ transform: `translateX(${tabShift(i())}px)` }}
+                  onPointerDown={(e) => {
+                    if ((e.target as HTMLElement).classList.contains("tab-x")) return;
+                    viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
+                  }}
+                >
+                  <span>{tabBarLabel(t)}</span>
+                  <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
+                </div>
+              </>
             )}
           </For>
+          <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
+            <div class="tab-caret" />
+          </Show>
         </div>
         <div class="editor-body" ref={editorBodyEl} style={{ position: "relative" }}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
@@ -521,7 +612,8 @@ export default function App() {
                 onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
                 onClose={closePane}
                 onDropFile={dropFileOnPane}
-                onMovePane={handleMovePane}
+                dragState={drag}
+                onStartPaneDrag={(e, leafId, label) => viewDrag.startPane(e, activeTabId()!, leafId, label)}
                 // Graph refresh is driven entirely by the server's SSE `dirty`
                 // signal now (it knows whether a save changed any connection), so
                 // a save itself needs no client-side graph poke.
@@ -583,6 +675,21 @@ export default function App() {
       </Show>
       <Show when={editorMenu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setEditorMenu(null)} />}
+      </Show>
+      {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
+          so elementFromPoint resolves the drop target beneath it. */}
+      <Show when={drag().active && drag().descriptor}>
+        <div
+          class="drag-ghost"
+          classList={{ pane: drag().descriptor?.kind === "pane" }}
+          style={{
+            left: `${drag().x - drag().grabDX}px`,
+            top: `${drag().y - drag().grabDY}px`,
+            "min-width": `${drag().descriptor?.width ?? 0}px`,
+          }}
+        >
+          {drag().descriptor?.label}
+        </div>
       </Show>
       <ToastHost />
     </div>
