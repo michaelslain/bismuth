@@ -19,7 +19,7 @@ For first-time setup without existing vaults, see **Creating Test Vaults** below
 
 ## Project Overview
 
-**Three Brains** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces:
+**Three Brains** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
 
 - **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with Claude-bot memory
 - **cli**: Command-line interface for managing vaults (`oa` binary)
@@ -241,6 +241,15 @@ In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over Web
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
+## Workspace Management
+
+The three workspaces are linked via Bun's `workspaces` feature in the root `package.json`:
+- `core` exports `@oa/core` (backend library)
+- `app` imports `@oa/core` for the UI
+- `cli` imports `@oa/core` for command-line operations
+
+To add a dependency to a workspace: `cd <workspace> && bun add <package>`. Use `bun install` (root) to sync all workspaces.
+
 ## Module Organization
 
 ```
@@ -323,6 +332,34 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 3. Frontend receives the SSE event and re-fetches `/graph` (or just the touched `/file`)
 4. A low-frequency `/version` poll catches up if the SSE connection silently dies
 
+### Hot-Reload Behavior
+
+During `bun run dev`:
+- **Frontend (Vite)**: Hot-reload on .tsx/.css changes; preserves editor state and graph navigation
+- **Backend server**: Restarts on core/src changes; reconnects client automatically via SSE fallback poll
+- **Settings**: Changes to `settings.yaml` are picked up on next request (no server restart needed)
+- **Asset imports**: Changed icon/image files hot-reload via Vite; no manual restart required
+
+Note: File-system watch debounces 250ms. If you edit a note twice within 250ms, only the second edit triggers an update.
+
+### Cache & Debugging Patterns
+
+**Graph not updating after editing .md:**
+1. Wait for file-watch debounce (250ms) + frontend poll catchup (≤5s)
+2. Check `/version` endpoint: `curl http://localhost:4321/version | jq .version`
+3. Check SSE connection: open browser DevTools, Network tab, look for `/events` stream
+4. If SSE is closed: the connection silently died (proxy/sleep); fallback poll (`serverVersion.ts`) will catch it within 5s
+
+**Debug cache invalidation:**
+- SSE payload includes `dirty: {graph, tree}` flags
+- Graph rebuild only if `dirty.graph=true`; same for tree
+- Content-only edits (no wikilink/tag/icon changes) set `dirty.graph=false` to skip expensive rebuild
+
+**Terminal not responding:**
+- Check WebSocket connection on `/terminal` (DevTools → Network → WS)
+- PTY process may have crashed; check backend console for `terminal.ts` errors
+- Restart the app to spawn a fresh PTY
+
 ### Performance considerations
 - **Graph caching**: Only rebuilds when vault/memory files change (fs-watch + debounce)
 - **Backend-precomputed layouts**: `layout.ts` produces both 2D and 3D positions on the server; the renderer morphs between them instead of running a force sim in the browser
@@ -355,6 +392,28 @@ The schema is the single source of truth; defaults must equal the current hardco
 1. Run `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` manually
 2. Call `curl http://localhost:4321/graph | jq` to inspect graph structure
 3. Check `core/test/vault.test.ts` or `core/test/engine.test.ts` for examples
+
+### Extending Features
+
+**Adding a new API endpoint:**
+1. Define the handler in `server.ts` routes (read) or mutatingRoutes (write)
+2. Read-only endpoints go in `routes`; write endpoints go in `mutatingRoutes` (auto-invalidates cache + broadcasts SSE)
+3. Test in `core/test/server.test.ts`; add a test case with sample vault
+
+**Adding a Bases function:**
+1. Add the function signature to `core/src/bases/functions.ts` (maps function name → implementation)
+2. Update `core/src/bases/query.ts` to handle the return type in aggregation
+3. Add tests in `core/test/bases/query.test.ts`
+
+**Adding an SRS scheduler variant:**
+1. Extend `core/src/srs/scheduler.ts` with new algorithm (SM-2 variant, custom decay, etc.)
+2. Update `core/src/schema/settingsSchema.ts` to expose config options (e.g., `srs.algorithm`)
+3. Thread config into `applyReview` calls; see `core/src/srs/reviewer.ts`
+
+**Adding a graph node/edge kind:**
+1. Update `NodeKind` / `EdgeKind` types in `core/src/graph.ts`
+2. Update builders: `buildVaultGraph` (vault.ts), `buildMemoryGraph` (memory.ts), `buildAgentGraph` (agents.ts)
+3. Update frontend filtering in `App.tsx` if the mode ("2nd", "3rd", "both", "agents") should hide/show it
 
 ## Key Concepts
 

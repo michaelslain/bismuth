@@ -6,17 +6,13 @@ import { parseBaseFile } from "./parse";
 import { passesFilter } from "./filters";
 import { toContext } from "./query";
 import { readNote } from "../files";
+import { refToPath } from "./sourceSpec";
 
 export interface SourceCtx {
   root: string;
   today?: string;
   /** Base file paths already entered, for cycle protection across composition. */
   seen?: Set<string>;
-}
-
-function refToPath(ref: string): string {
-  const r = ref.replace(/^\[\[/, "").replace(/\]\]$/, "");
-  return r.endsWith(".md") || r.endsWith(".base") ? r : `${r}.md`;
 }
 
 /**

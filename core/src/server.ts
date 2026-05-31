@@ -397,7 +397,7 @@ export function createServer(cfg: CoreConfig) {
     "POST /move": mutatingHandler(
       async (req) => {
         const { from, to } = (await req.json()) as { from: string; to: string };
-        moveEntry(cfg.vault, from, to);
+        await moveEntry(cfg.vault, from, to);
         return new Response("ok");
       },
       (b) => [b.from, b.to],
@@ -566,7 +566,8 @@ export function createServer(cfg: CoreConfig) {
           return new Response("ok");
         }
         // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
-        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question, appConfig.srs);
+        if (!body.id) return new Response("missing cardId", { status: 400 });
+        await applyReview(cfg.vault, body.id, body.response, todayISO(), body.question, appConfig.srs);
         return new Response("ok");
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty

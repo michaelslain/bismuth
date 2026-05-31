@@ -2,6 +2,7 @@ import { createSignal, createResource, createMemo, onMount, Show, Switch, Match 
 import { api } from "../api";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
+import { refToPath } from "../../../core/src/bases/sourceSpec";
 import type { BaseConfig, Row, ViewResult, SourceSpec, ViewBlock } from "../../../core/src/bases/types";
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
@@ -23,12 +24,6 @@ interface Loaded {
   spec?: SourceSpec;          // undefined for a view block with no of:/tasks: → empty state
   inlineRows: Row[] | null;
   basePath?: string;
-}
-
-function refToPath(ref?: string): string {
-  const bare = (ref ?? "").replace(/^\[\[/, "").replace(/\]\]$/, "");
-  if (!bare) return "";
-  return bare.endsWith(".md") || bare.endsWith(".base") ? bare : `${bare}.md`;
 }
 
 /** Raw source editor for a base file — a textarea + Save, used by the per-view Source toggle. */

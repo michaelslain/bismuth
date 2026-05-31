@@ -59,3 +59,10 @@ function prune<T extends Record<string, unknown>>(o: T): T {
   for (const k of Object.keys(o)) if (o[k] === undefined) delete o[k];
   return o;
 }
+
+/** Convert a wikilink ref to a file path. Handles both [[Base]] and [[Base.md]] formats. */
+export function refToPath(ref?: string): string {
+  if (!ref) return "";
+  const r = ref.replace(/^\[\[/, "").replace(/\]\]$/, "");
+  return r.endsWith(".md") || r.endsWith(".base") ? r : `${r}.md`;
+}
