@@ -25,6 +25,25 @@ test("deleteRow removes a row by index", () => {
   expect(out).toContain("| 2 | B |");
 });
 
+test("deleteRow preserves a column even when remaining rows have it empty", () => {
+  const file = [
+    "---", "type: base", "view: table", "---", "",
+    "| id | name | status |",
+    "| --- | --- | --- |",
+    "| 1 | Alice | active |",
+    "| 2 | Bob |  |",
+  ].join("\n");
+  const out = deleteRow(file, META, 0); // remove Alice; Bob has empty status
+  expect(out).toContain("| id | name | status |"); // status column not lost
+  expect(out).toContain("| 2 | Bob |  |");
+});
+
+test("upsertRow keeps the existing header column order", () => {
+  const file = ["---", "type: base", "---", "", "| id | name |", "| --- | --- |", "| 1 | A |"].join("\n");
+  const out = upsertRow(file, META, null, { name: "B", id: 2 }); // keys in reverse order
+  expect(out.split("\n").find((l) => l.startsWith("| id"))).toBe("| id | name |");
+});
+
 test("upsertRow into an empty (table-less) base creates the table", () => {
   const empty = ["---", "type: base", "view: table", "---", ""].join("\n");
   const out = upsertRow(empty, META, null, { id: 1, title: "A" });

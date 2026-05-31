@@ -29,7 +29,7 @@ export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<R
   // base: read the referenced base file's own table rows
   const ref = (spec.ref ?? "").replace(/^\[\[/, "").replace(/\]\]$/, "");
   if (!ref) return [];
-  const path = ref.endsWith(".md") ? ref : `${ref}.md`;
+  const path = ref.endsWith(".md") || ref.endsWith(".base") ? ref : `${ref}.md`;
   let text: string;
   try {
     text = await readNote(ctx.root, path);

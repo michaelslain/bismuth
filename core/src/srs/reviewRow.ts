@@ -12,7 +12,7 @@ export function applyReviewToRow(
   today: string,
 ): Record<string, unknown> {
   const prev =
-    note.due == null
+    note.due == null || note.due === ""
       ? null
       : {
           due: note.due as string,

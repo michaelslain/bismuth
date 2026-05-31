@@ -236,10 +236,15 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /base": async (_, url) => {
       const path = requireQueryParam(url, "file");
-      if (!(await Bun.file(join(cfg.vault, path)).exists())) {
+      // readNote() runs the path through resolveInVault (rejects traversal) and
+      // throws on a missing file — both surface as 404, with no separate
+      // exists() probe that could leak existence or race the read.
+      let text: string;
+      try {
+        text = await readNote(cfg.vault, path);
+      } catch {
         return new Response("not found", { status: 404 });
       }
-      const text = await readNote(cfg.vault, path);
       const name = path.split("/").pop()!.replace(/\.md$/, "");
       return Response.json(parseBaseFile(text, { name, path }));
     },

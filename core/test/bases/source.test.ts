@@ -35,6 +35,14 @@ test("resolveSource('base') reads a base file's own table rows", async () => {
   expect(rows[0].note.title).toBe("Hi");
 });
 
+test("resolveSource('base') resolves a ref that already carries a .base extension", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-src-"));
+  await writeNote(dir, "Legacy.base", "views:\n  - type: table\n    name: L");
+  // a .base ref must not become Legacy.base.md
+  const rows = await resolveSource({ kind: "base", ref: "[[Legacy.base]]" }, { root: dir });
+  expect(Array.isArray(rows)).toBe(true); // resolves the file, not a .md sibling
+});
+
 test("resolveSource('base') with a missing ref returns []", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-src-"));
   const rows = await resolveSource({ kind: "base", ref: "Nope" }, { root: dir });
