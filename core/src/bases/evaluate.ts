@@ -139,6 +139,7 @@ function evalBinary(op: string, leftExpr: Expr, rightExpr: Expr, ctx: EvalContex
 }
 
 function evalPlus(l: unknown, r: unknown): unknown {
+  // String-literal duration ("7d") added to a Date/number.
   const dur = parseDurationMs(l) || parseDurationMs(r);
   if (dur && (l instanceof Date || r instanceof Date)) {
     const base = l instanceof Date ? l : (r as Date);
@@ -148,6 +149,10 @@ function evalPlus(l: unknown, r: unknown): unknown {
     const base = typeof l === "number" ? l : (r as number);
     return base + dur;
   }
+  // A numeric ms offset (e.g. from duration("7d")) added to a Date shifts the date,
+  // so duration() composes with + just like a "7d" literal does.
+  if (l instanceof Date && typeof r === "number") return new Date(l.getTime() + r);
+  if (r instanceof Date && typeof l === "number") return new Date(r.getTime() + l);
   if (typeof l === "string" || typeof r === "string") return `${stringify(l)}${stringify(r)}`;
   return toNumber(l) + toNumber(r);
 }
@@ -158,6 +163,8 @@ function evalMinus(l: unknown, r: unknown): unknown {
     if (l instanceof Date) return new Date(l.getTime() - dur);
     if (typeof l === "number") return l - dur;
   }
+  // Date minus a numeric ms offset (e.g. duration("7d")) → shifted date.
+  if (l instanceof Date && typeof r === "number") return new Date(l.getTime() - r);
   return toNumber(l) - toNumber(r);
 }
 
