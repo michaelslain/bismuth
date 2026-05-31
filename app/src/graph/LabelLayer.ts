@@ -3,6 +3,7 @@
 // canvas textures (cached by label string), and exposes a per-frame updateVisibility() hook.
 // All sprites use sizeAttenuation:false so they hold a constant on-screen size at any distance.
 import * as THREE from "three";
+import { renderedPixelRadius, selectVisibleLabels, type LabelCandidate } from "./labelSelection";
 
 const FONT_PX = 6;         // CSS px before DPR scaling — tiny, ambient annotation
 const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
@@ -32,6 +33,16 @@ const DISCOVERY_ZOOM_IN = 0.7;
 // orbiting the camera actually changes which labels show. Without this the alwaysOn set (top
 // hubs) would look static under orbit.
 const NEAREST_AT_REST = 6;
+// --- 2D label gate (replaces the camera-distance "discovery" metric, which in the top-down 2D
+// camera degenerated to radius-from-screen-center). A node's filename shows when its on-screen dot
+// radius (degree-scaled point size ÷ worldPerPixel) clears LABEL_2D_THRESHOLD_PX — so importance
+// (degree) and zoom decide visibility, never how far the node sits from center. Big hubs clear the
+// bar while zoomed out; leaves reveal as you zoom in.
+const LABEL_2D_THRESHOLD_PX = 6;
+// Screen-space declutter grid: at most one label per cell, highest-degree (largest rendered) wins.
+const LABEL_2D_GRID_CELL = 64;
+// Hysteresis: a label already shown clears at a lower threshold so it doesn't flicker at the edge.
+const LABEL_2D_HYSTERESIS = 0.75;
 
 export type LabelNode = {
   id: string;
@@ -39,6 +50,25 @@ export type LabelNode = {
   x?: number;
   y?: number;
   z?: number;
+};
+
+type LabelVisibilityArgs = {
+  camera: THREE.PerspectiveCamera;
+  group: THREE.Group;
+  viewMode: "2d" | "3d";
+  screenW: number;
+  screenH: number;
+  focalDistance: number;                       // camera.position.distanceTo(controls.target)
+  cloudCenter: THREE.Vector3;
+  cloudRadius: number;
+  worldPerPixel: number;
+  wppDefault: number;
+  // 2D rendered-size gate inputs (ignored by the 3D path):
+  nodeSize: number;                            // cfg.nodeSize (base point size)
+  fovDeg: number;                              // camera.fov
+  scaleById: Map<string, number>;              // per-node degree size multiplier (baseScales)
+  activeFileId: string | null;                 // open file → always labeled
+  searchMatches?: Set<string>;                 // search hits → always labeled (escape hatch)
 };
 
 /** Round-rect path on a canvas 2D context. */
@@ -100,6 +130,7 @@ export class LabelLayer {
   private alwaysOn = new Set<string>();
   private hoveredId: string | null = null;
   private enabled = true;
+  private shown2d = new Set<string>(); // last frame's accepted 2D label set (for reveal hysteresis)
 
   /** Attach to the node group (so sprites rotate with it). Called once at WebGLRenderer.mount(). */
   mount(parent: THREE.Object3D): void {
@@ -126,6 +157,7 @@ export class LabelLayer {
    */
   hideAll(): void {
     for (const s of this.sprites.values()) s.visible = false;
+    this.shown2d.clear();
   }
 
   /** Lookup or build the texture for a label string. */
@@ -190,6 +222,7 @@ export class LabelLayer {
     }
 
     this.nodes = nodes;
+    this.shown2d.clear();
   }
 
   /** Assign label priority: lower number renders first and can occlude higher numbers. */
@@ -201,23 +234,64 @@ export class LabelLayer {
   }
 
   /**
-   * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
-   * via the same throttle as crowding. Shows always-on candidates (hover, active, self, top-N hubs)
-   * plus 3D near-band discovery nodes, with depth-fade opacity in 3D mode.
+   * 2D label selection: gate on each node's rendered on-screen size (degree-scaled dot radius ÷
+   * worldPerPixel), then a screen-space grid keeps the worthiest per cell. NO dependence on a
+   * node's distance from screen center — the bug this replaces. Hover / active-file / search hits
+   * are forced through the gate; an already-shown label clears at a lower threshold (hysteresis) so
+   * it doesn't flicker at the boundary.
    */
-  updateVisibility(args: {
-    camera: THREE.PerspectiveCamera;
-    group: THREE.Group;
-    viewMode: "2d" | "3d";
-    screenW: number;
-    screenH: number;
-    focalDistance: number;                       // camera.position.distanceTo(controls.target)
-    cloudCenter: THREE.Vector3;
-    cloudRadius: number;
-    worldPerPixel: number;
-    wppDefault: number;
-  }): void {
+  private update2D(args: LabelVisibilityArgs): void {
+    const nodeById = new Map<string, LabelNode>();
+    for (const n of this.nodes) nodeById.set(n.id, n);
+    args.group.updateMatrixWorld();
+    const m = args.group.matrixWorld;
+    const v = new THREE.Vector3();
+    const proj = new THREE.Vector3();
+    const forcedOf = (id: string) =>
+      id === this.hoveredId || id === args.activeFileId || (args.searchMatches?.has(id) ?? false);
+
+    const cands: LabelCandidate[] = [];
+    for (const n of this.nodes) {
+      const entry = this.textureCache.get(n.label);
+      if (!entry) continue;
+      v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
+      proj.copy(v).project(args.camera);
+      if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1 || proj.z > 1) continue;
+      const px = (proj.x * 0.5 + 0.5) * args.screenW;
+      const py = (-proj.y * 0.5 + 0.5) * args.screenH;
+      const scale = args.scaleById.get(n.id) ?? 1;
+      const renderedPx = renderedPixelRadius(args.nodeSize, scale, args.fovDeg, args.worldPerPixel);
+      const forced = forcedOf(n.id);
+      // Hysteresis: a label shown last frame survives down to a lower threshold (no edge flicker).
+      const eff = this.shown2d.has(n.id) ? LABEL_2D_THRESHOLD_PX * LABEL_2D_HYSTERESIS : LABEL_2D_THRESHOLD_PX;
+      if (!forced && renderedPx < eff) continue;
+      cands.push({ id: n.id, px, py, w: entry.cssW, h: entry.cssH, renderedPx, forced });
+    }
+
+    // Size gate already applied above → pass thresholdPx 0 so selectVisibleLabels only runs the
+    // grid declutter + cap (forced labels bypass the cap; biggest rendered wins a contested cell).
+    const accepted = selectVisibleLabels(cands, { thresholdPx: 0, gridCell: LABEL_2D_GRID_CELL, perCell: 1 });
+    this.shown2d = accepted;
+
+    for (const [id, sprite] of this.sprites) {
+      if (!accepted.has(id)) { sprite.visible = false; continue; }
+      const n = nodeById.get(id)!;
+      sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
+      const entry = this.textureCache.get(n.label)!;
+      sprite.scale.set((entry.cssW / args.screenH) * 2, (entry.cssH / args.screenH) * 2, 1);
+      sprite.material.opacity = 1;
+      sprite.visible = true;
+    }
+  }
+
+  /**
+   * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
+   * via the same throttle as crowding. 2D uses the rendered-size gate (update2D); 3D shows always-on
+   * candidates (hover, active, self, top-N hubs) plus near-band discovery nodes with depth fade.
+   */
+  updateVisibility(args: LabelVisibilityArgs): void {
     if (!this.enabled || this.sprites.size === 0) return;
+    if (args.viewMode === "2d") { this.update2D(args); return; }
     const nodeById = new Map<string, LabelNode>();
     for (const n of this.nodes) nodeById.set(n.id, n);
 

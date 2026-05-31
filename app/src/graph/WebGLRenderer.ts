@@ -227,6 +227,8 @@ type N3 = SimNode & {
   label: string;
   kind: NodeKind;
   folder?: string;
+  community?: number;          // Louvain community id (color + cluster grouping), from the backend
+  communityLabel?: string;     // exemplar name for the community (highest-degree member's label)
   // Backend-precomputed target layouts for each mode — the 2D↔3D tween morphs straight to these
   // (no re-settle). Populated from the graph's position/position2d in render().
   pos3d?: [number, number, number];
@@ -333,6 +335,8 @@ export class WebGLRenderer {
   // the whole-graph pose captured before the first frame — restoring the original pivot and axes.
   private framed = false;
   private homePose: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  private history: { pos: THREE.Vector3; target: THREE.Vector3 }[] = []; // camera-pose back-stack (cluster tours / node hops)
+  private searchMatches = new Set<string>();                            // graph-search hits → forced labels
 
   // 3D depth fog — centroid + radius of the node cloud, refreshed in fitCamera; the fog near/far
   // are derived from the live camera distance to this centroid so they track orbit/zoom.
@@ -438,10 +442,18 @@ export class WebGLRenderer {
     // modifiers (Cmd/Ctrl+Z is undo) and while typing in an input/editor. The empty-space case is
     // gated on pointerInside so a stray "z" elsewhere doesn't jump the camera.
     this.keyHandler = (e: KeyboardEvent) => {
+      const ae = document.activeElement as HTMLElement | null;
+      const typing = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
+      // Escape steps back through the camera history (cluster tour / node hops). Gated on
+      // pointerInside so it doesn't hijack Escape from modals or the editor elsewhere.
+      if (e.key === "Escape") {
+        if (typing || !this.pointerInside) return;
+        if (this.framed || this.history.length > 0) this.back();
+        return;
+      }
       if (e.key !== "z" && e.key !== "Z") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const ae = document.activeElement as HTMLElement | null;
-      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      if (typing) return;
       if (this.hoveredId) this.frameNode(this.hoveredId);
       else if (this.pointerInside) this.frameAll();
     };
@@ -577,15 +589,41 @@ export class WebGLRenderer {
    * in, since there's no meaningful plane to square up to.
    */
   private frameNode(id: string) {
-    const focus = this.nodes.find((n) => n.id === id);
-    if (!focus) return;
+    if (!this.nodes.some((n) => n.id === id)) return;
     const ids = this.neighborsOf(id);
     ids.add(id);
+    this.frameIds(ids, 1.4); // 1.4 = a touch of breathing room around the cluster
+  }
+
+  /**
+   * Glide so an arbitrary subset of nodes fills the view, centered, viewed down the normal of the
+   * subset's best-fit plane (PCA: thinnest principal axis) so members fan across the screen instead
+   * of stacking edge-on. Distance fits the in-plane (perpendicular-to-view) radius to the FOV. The
+   * shared primitive behind frameNode (one node + neighbors) and frameSubset (a whole cluster).
+   */
+  private frameIds(ids: Set<string>, margin: number) {
     const subset = this.nodes.filter((n) => ids.has(n.id));
+    if (subset.length === 0) return;
 
     const center = new THREE.Vector3();
     for (const n of subset) center.add(new THREE.Vector3(n.x ?? 0, n.y ?? 0, n.z ?? 0));
     center.divideScalar(subset.length);
+
+    // 2D stays top-down: pan + zoom to the subset, never tilt to a PCA plane (that would break the
+    // flat map). View direction is fixed straight down (+Z) and the fit radius is the in-plane spread.
+    if (this.viewMode === "2d") {
+      center.z = 0;
+      let r2 = this.cfg.nodeSize * 1.5;
+      for (const n of subset) {
+        const d = Math.hypot((n.x ?? 0) - center.x, (n.y ?? 0) - center.y);
+        if (d > r2) r2 = d;
+      }
+      if (!this.framed) this.homePose = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
+      this.framed = true;
+      this.userControlled = true;
+      this.glideToFraming(center, new THREE.Vector3(0, 0, 1), r2, margin);
+      return;
+    }
 
     // View direction: normal of the cluster's best-fit plane (smallest principal axis), oriented to
     // stay on the camera's current side so we square up rather than flip around. Falls back to the
@@ -623,7 +661,92 @@ export class WebGLRenderer {
     if (!this.framed) this.homePose = { pos: this.camera.position.clone(), target: this.controls.target.clone() };
     this.framed = true;
     this.userControlled = true; // deliberate framing — don't let auto-fit pull it back
-    this.glideToFraming(center, viewDir, r, 1.4); // 1.4 = a touch of breathing room around the cluster
+    this.glideToFraming(center, viewDir, r, margin);
+  }
+
+  // --- Public navigation API. Wraps the (private) glide engine; every jump pushes the prior pose
+  // onto a history stack so back()/Escape can retrace a cluster tour or node walk. ---
+
+  /** Fly to a node and its 1-hop neighborhood, framed and clarified. */
+  focusNode(id: string): void {
+    if (!this.nodes.some((n) => n.id === id)) return;
+    this.pushHistory();
+    this.frameNode(id);
+  }
+
+  /** Fly to an arbitrary set of nodes (e.g. a whole cluster) and frame them together. */
+  frameSubset(ids: string[]): void {
+    const set = new Set(ids.filter((id) => this.nodes.some((n) => n.id === id)));
+    if (set.size === 0) return;
+    this.pushHistory();
+    this.frameIds(set, 1.25);
+  }
+
+  /** Fly back to the whole-graph overview (public Home/reset). */
+  resetView(): void {
+    this.pushHistory();
+    this.frameAll();
+  }
+
+  /** Step back to the previous camera pose; falls back to the overview when history is empty. */
+  back(): void {
+    const pose = this.history.pop();
+    if (pose) {
+      this.clearFrame();
+      this.userControlled = false;
+      this.glideToPose(pose);
+    } else {
+      this.frameAll();
+    }
+  }
+
+  private pushHistory() {
+    this.history.push({ pos: this.camera.position.clone(), target: this.controls.target.clone() });
+    if (this.history.length > 20) this.history.shift();
+  }
+
+  /** Glide to an explicit camera pose (history back-step). */
+  private glideToPose(pose: { pos: THREE.Vector3; target: THREE.Vector3 }) {
+    this.controls.enableDamping = false;
+    this.camTween = {
+      start: performance.now(),
+      posFrom: this.camera.position.clone(),
+      posTo: pose.pos.clone(),
+      tgtFrom: this.controls.target.clone(),
+      tgtTo: pose.target.clone(),
+    };
+  }
+
+  /** Node list for the graph search box: id/label/folder/community. */
+  getNodesForUI(): { id: string; label: string; folder?: string; community?: number; communityLabel?: string }[] {
+    return this.nodes.map((n) => ({
+      id: n.id, label: n.label, folder: n.folder, community: n.community, communityLabel: n.communityLabel,
+    }));
+  }
+
+  /** Per-community centroid + members + color, for the cluster legend's fly-to. */
+  getCommunityCentroids(): Map<number, { label: string; ids: string[]; color: string; centroid: [number, number, number]; count: number }> {
+    const groups = new Map<number, N3[]>();
+    for (const n of this.nodes) {
+      if (n.community == null) continue;
+      let arr = groups.get(n.community);
+      if (!arr) { arr = []; groups.set(n.community, arr); }
+      arr.push(n);
+    }
+    const out = new Map<number, { label: string; ids: string[]; color: string; centroid: [number, number, number]; count: number }>();
+    for (const [community, members] of groups) {
+      let cx = 0, cy = 0, cz = 0;
+      for (const n of members) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
+      const k = members.length || 1;
+      out.set(community, {
+        label: members[0].communityLabel ?? `Cluster ${community}`,
+        ids: members.map((n) => n.id),
+        color: "#" + this.colorFor(members[0]).getHexString(),
+        centroid: [cx / k, cy / k, cz / k],
+        count: members.length,
+      });
+    }
+    return out;
   }
 
   /**
@@ -889,6 +1012,10 @@ export class WebGLRenderer {
     const wpp = this.worldPerPixel();
     if (this.wppDefaultForLabels === 0 || !this.userControlled) this.wppDefaultForLabels = wpp;
     const focalDistance = this.camera.position.distanceTo(this.controls.target);
+    // Per-node degree size multiplier (baseScales is aligned to this.nodes) → the 2D rendered-size
+    // label gate. Defaults to 1 when scales aren't built yet (pre-first-settle).
+    const scaleById = new Map<string, number>();
+    for (let i = 0; i < this.nodes.length; i++) scaleById.set(this.nodes[i].id, this.baseScales[i] ?? 1);
     this.labels.updateVisibility({
       camera: this.camera,
       group: this.group,
@@ -900,6 +1027,11 @@ export class WebGLRenderer {
       cloudRadius: this.cloudRadius,
       worldPerPixel: wpp,
       wppDefault: this.wppDefaultForLabels,
+      nodeSize: this.cfg.nodeSize,
+      fovDeg: this.camera.fov,
+      scaleById,
+      activeFileId: this.activeFileId,
+      searchMatches: this.searchMatches,
     });
   }
 
@@ -980,14 +1112,19 @@ export class WebGLRenderer {
 
   /** Determine node color from kind (notes by folder, tags/memory/agents by label, self is lavender). */
   private colorFor(n: N3): THREE.Color {
+    // Color by Louvain community when the backend stamped one (the chosen cluster driver). Falls back
+    // to the per-kind scheme for sub-views/agents where community is absent.
     switch (n.kind) {
       case "note":
+        if (n.community != null) return this.paletteColor("community:" + n.community);
         return this.paletteColor("folder:" + (n.folder ?? "(root)"));
       case "tag":
         return this.paletteColor("tag:" + n.label);
       case "memory":
+        if (n.community != null) return this.paletteColor("community:" + n.community);
         return this.paletteColor("mem:" + n.label);
       case "agent":
+        if (n.community != null) return this.paletteColor("community:" + n.community);
         return this.paletteColor("agent:" + n.label);
       default:
         return new THREE.Color(0xbdcaf2); // self node (lavender)
@@ -1077,6 +1214,11 @@ export class WebGLRenderer {
     if (this.activeFileId === id) return;
     this.activeFileId = id;
     this.refreshAlwaysOnLabels();
+  }
+
+  /** Graph-search hits whose labels are forced visible (escape hatch for the 2D density gate). */
+  setSearchMatches(ids: Set<string>) {
+    this.searchMatches = ids;
   }
 
   /** Configure OrbitControls for 2D (pan-only) or 3D (orbit) mode. */
