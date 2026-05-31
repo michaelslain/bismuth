@@ -73,3 +73,32 @@ test("initializeSettings does not clobber an existing file", async () => {
   const res = await readSettings(vault);
   expect(res!.data).toEqual({ appearance: { theme: "light" } });
 });
+
+import { serializeSettingsForFrontend } from "../src/settings";
+
+test("serializeSettingsForFrontend returns defaults when no file exists", async () => {
+  const vault = await emptyVault();
+  const data = await serializeSettingsForFrontend(vault);
+  expect((data.appearance as any).theme).toBe("dark");
+  expect((data.graph as any).viewMode).toBe("3d");
+});
+
+test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    "settings.yaml",
+    "appearance:\n  theme: light\n  accent: 42\ngraph:\n  nodeSize: 9\n",
+  );
+  const data = await serializeSettingsForFrontend(vault);
+  expect((data.appearance as any).theme).toBe("light");   // valid string, applied
+  expect((data.appearance as any).accent).toBe("#6496ff"); // 42 is wrong type → default
+  expect((data.graph as any).nodeSize).toBe(9);            // valid number, applied
+});
+
+test("serializeSettingsForFrontend omits the properties registry section", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "properties:\n  due: date\n");
+  const data = await serializeSettingsForFrontend(vault);
+  expect(data.properties).toBeUndefined();
+});
