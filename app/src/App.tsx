@@ -5,7 +5,8 @@ import { FileTree } from "./FileTree";
 import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
-import { settings, FONT_STACKS } from "./settings";
+import { settings } from "./settings";
+import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost } from "./Toast";
@@ -196,16 +197,10 @@ export default function App() {
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
 
-  // Apply Appearance settings to the document: theme + accent + editor font/size,
-  // surfaced as CSS variables that App.css and the editor theme read.
-  createEffect(() => {
-    const a = settings.appearance;
-    const root = document.documentElement;
-    root.setAttribute("data-theme", a.theme);
-    root.style.setProperty("--accent", a.accent);
-    root.style.setProperty("--editor-font", FONT_STACKS[a.editorFont] ?? a.editorFont);
-    root.style.setProperty("--editor-font-size", a.editorFontSize + "px");
-  });
+  // Apply settings to the document as CSS custom properties (theme, accent, fonts,
+  // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
+  // adding a CSS-driven setting is one line there + one var() in the stylesheet.
+  createEffect(() => applyCssVars(settings));
   // Persist tab/pane layout whenever it changes.
   createEffect(() => {
     localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
