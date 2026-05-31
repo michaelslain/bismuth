@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { parse, Document, YAMLMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry } from "./schema/registry";
-import { SETTINGS_SCHEMA } from "./schema/settingsSchema";
+import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
 import type { Schema, SchemaEntry } from "./schema/types";
 
 export const SETTINGS_FILE = "settings.yaml";
@@ -60,4 +60,26 @@ export async function initializeSettings(vault: string): Promise<void> {
   const doc = new Document();
   doc.contents = schemaToMap(doc, SETTINGS_SCHEMA);
   await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+}
+
+/**
+ * Merge the settings.yaml file over DEFAULTS via a per-key typeof check, so a
+ * corrupt/partial file degrades to defaults. The `properties` registry is
+ * delivered separately (GET /schema) and excluded here.
+ */
+export async function serializeSettingsForFrontend(vault: string): Promise<Record<string, unknown>> {
+  const out = structuredClone(DEFAULTS) as Record<string, Record<string, unknown>>;
+  const res = await readSettings(vault);
+  const data = res?.data ?? {};
+  for (const section of Object.keys(out)) {
+    const stored = data[section];
+    if (!stored || typeof stored !== "object") continue;
+    const target = out[section];
+    for (const key of Object.keys(target)) {
+      const v = (stored as Record<string, unknown>)[key];
+      if (typeof v === typeof target[key]) target[key] = v;
+    }
+  }
+  delete (out as Record<string, unknown>).properties;
+  return out;
 }
