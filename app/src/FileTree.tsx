@@ -93,10 +93,12 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   const refresh = () => refetch();
 
   // Set (or clear, when `icon` is "") a node's icon. Files store it in their
-  // `icon:` frontmatter; folders have none, so theirs lives in settings.yaml.
+  // `icon:` frontmatter (clearing removes the key entirely); folders have none,
+  // so theirs lives in settings.yaml (clearing removes that entry).
   async function applyIcon(node: TreeNode, isDir: boolean, icon: string) {
     try {
       if (isDir) await api.setFolderIcon(node.path, icon);
+      else if (icon === "") await api.deleteProperty(node.path, "icon");
       else await api.setProperty(node.path, "icon", icon);
       await refresh();
     } catch (e) {

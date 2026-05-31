@@ -472,6 +472,45 @@ test("POST /set-property returns 404 for a path that doesn't exist (no silent cr
   }
 });
 
+test("POST /delete-property removes a frontmatter key, keeping the others", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/delete-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "housing.md", key: "priority" }),
+    });
+    expect(res.status).toBe(200);
+    const meta = await (await fetch(`${base}/meta?path=housing.md`)).json();
+    expect(meta.priority).toBeUndefined();
+    expect(meta.status).toBe("in-progress"); // siblings preserved
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /delete-property drops the whole block when removing the last key (no empty fence)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await writeNote(vault, "iconned.md", "---\nicon: House\n---\n# Title\n\nbody\n");
+    const res = await fetch(`${base}/delete-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "iconned.md", key: "icon" }),
+    });
+    expect(res.status).toBe(200);
+    const raw = await readNote(vault, "iconned.md");
+    expect(raw).toBe("# Title\n\nbody\n");
+    expect(raw).not.toContain("---");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /move bumps the version so the sidebar refetches", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

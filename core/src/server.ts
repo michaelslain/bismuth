@@ -5,7 +5,7 @@ import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
-import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
+import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import { parseBaseFile } from "./bases/parse";
@@ -427,6 +427,21 @@ export function createServer(cfg: CoreConfig) {
           return new Response("note not found", { status: 404 });
         }
         const next = setFrontmatterKey(raw, key, value);
+        await writeNote(cfg.vault, path, next);
+        return new Response("ok");
+      },
+      (b) => b.path,
+    ),
+
+    "POST /delete-property": mutatingHandler(
+      async (req) => {
+        // Remove a single frontmatter key (e.g. resetting a note's icon to default).
+        const { path, key } = (await req.json()) as { path: string; key: string };
+        const raw = await readNoteOrEmpty(cfg.vault, path);
+        if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+          return new Response("note not found", { status: 404 });
+        }
+        const next = deleteFrontmatterKey(raw, key);
         await writeNote(cfg.vault, path, next);
         return new Response("ok");
       },

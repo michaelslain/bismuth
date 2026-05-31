@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseFrontmatter, setFrontmatterKey } from "../src/frontmatter";
+import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "../src/frontmatter";
 
 test("parses YAML frontmatter and returns the body", () => {
   const md = `---\nstatus: in-progress\npriority: 1\ntags: [a, b]\n---\n# Title\nbody text`;
@@ -176,6 +176,34 @@ test("setFrontmatterKey can set array and object values", () => {
   const { data } = parseFrontmatter(out);
   expect(data.tags).toEqual(["a", "b"]);
   expect(data.status).toBe("todo");
+});
+
+test("deleteFrontmatterKey removes a key but keeps the others and the body", () => {
+  const md = `---\nicon: House\nstatus: todo\n---\n# Note\nbody text`;
+  const out = deleteFrontmatterKey(md, "icon");
+  const { data, body } = parseFrontmatter(out);
+  expect(data.icon).toBeUndefined();
+  expect(data.status).toBe("todo");
+  expect(body).toContain("# Note");
+  expect(body).toContain("body text");
+});
+
+test("deleteFrontmatterKey drops the whole block when the last key is removed (no empty fence/line)", () => {
+  const md = `---\nicon: House\n---\nThis is the body.\n`;
+  const out = deleteFrontmatterKey(md, "icon");
+  expect(out).toBe("This is the body.\n");
+  expect(out).not.toContain("---");
+  expect(out.startsWith("\n")).toBe(false); // no leading blank line
+});
+
+test("deleteFrontmatterKey is a no-op when the key is absent", () => {
+  const md = `---\nstatus: todo\n---\nbody`;
+  expect(deleteFrontmatterKey(md, "icon")).toBe(md);
+});
+
+test("deleteFrontmatterKey is a no-op when the note has no frontmatter", () => {
+  const md = `# Just a note\n\ncontent`;
+  expect(deleteFrontmatterKey(md, "icon")).toBe(md);
 });
 
 test("setFrontmatterKey preserves flow-style arrays on untouched keys", () => {
