@@ -11,6 +11,7 @@ import { MapView } from "./MapView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
+import { Icon } from "../icons/Icon";
 import styles from "./BaseView.module.css";
 
 interface Loaded {
@@ -168,10 +169,10 @@ export function BaseView(props: {
           <Show when={editPath()}>
             <div class={styles.barRight}>
               <button class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
-                {settingsMode() ? "✕ Close" : "⚙ Settings"}
+                {settingsMode() ? <><Icon value="X" size={14} /> Close</> : <><Icon value="Settings" size={14} /> Settings</>}
               </button>
               <button class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
-                {sourceMode() ? "✕ Close source" : "</> Source"}
+                {sourceMode() ? <><Icon value="X" size={14} /> Close source</> : <><Icon value="Code" size={14} /> Source</>}
               </button>
             </div>
           </Show>

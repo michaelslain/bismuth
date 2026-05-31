@@ -4,7 +4,8 @@
 import { Show, createSignal, type Accessor } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
-import { contentLabel } from "./tabIds";
+import { Icon } from "./icons/Icon";
+import { contentLabel, contentIcon } from "./tabIds";
 import type { DragState } from "./dnd/viewDrag";
 import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -94,6 +95,9 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
             props.onStartPaneDrag(e, props.node.id, contentLabel(props.node.content));
           }}
         >
+          <Show when={contentIcon(props.node.content)}>
+            {(icon) => <Icon value={icon()} size={13} />}
+          </Show>
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
           <span
             class="pane-header-x"

@@ -8,6 +8,7 @@ export type PropertyType =
   | "date"
   | "datetime"
   | "file"
+  | "icon"
   | { kind: "enum"; values: string[]; caseInsensitive?: boolean }
   | { kind: "list"; item?: PropertyType }
   | { kind: "object"; fields: Schema };

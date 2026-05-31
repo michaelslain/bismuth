@@ -33,6 +33,7 @@
         "fuse.js": "^7.3.0",
         "harper.js": "^2.0.0",
         "katex": "^0.17.0",
+        "lucide-solid": "^1.17.0",
         "marked": "^18.0.4",
         "solid-js": "^1.9.3",
         "three": "^0.184.0",
@@ -428,6 +429,8 @@
     "katex": ["katex@0.17.0", "", { "dependencies": { "commander": "^8.3.0" }, "bin": { "katex": "cli.js" } }, "sha512-Vdw0ATsQ9V+LuegM/BTwQqV/6cTl5lbGcIrU+BCgLxyf6bo38ybOr372tuSIxir3CN720flu1meYR6XzNMwQnw=="],
 
     "lru-cache": ["lru-cache@5.1.1", "", { "dependencies": { "yallist": "^3.0.2" } }, "sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w=="],
+
+    "lucide-solid": ["lucide-solid@1.17.0", "", { "peerDependencies": { "solid-js": "^1.4.7" } }, "sha512-CBmYwkhv+zhldhWomlaRJY18rmBUTeDxyFCNkXIqKdeYUdCgu5aMQ8dx9VAkpFRYacz1Y72oeiKND080qwJhGw=="],
 
     "marked": ["marked@18.0.4", "", { "bin": { "marked": "bin/marked.js" } }, "sha512-c/BTaKzg0G6ezQx97DAkYU7k0HM6ys0FqYeKBL6hlBByZwy+ycA1+f0vDdjMHKKeEjdgkx0GOv9Il6D+85cOqA=="],
 

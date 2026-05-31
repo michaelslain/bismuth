@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
+import { Icon } from "../icons/Icon";
 
 export function columnLabel(id: string, config: BaseConfig): string {
   const customLabel = config.properties?.[id]?.displayName;
@@ -34,7 +35,7 @@ export function renderValue(id: string, row: Row): JSX.Element {
   }
 
   if (typeof v === "boolean") {
-    return <span>{v ? "✓" : ""}</span>;
+    return <span>{v ? <Icon value="Check" size={14} /> : ""}</span>;
   }
 
   if (v instanceof Date) {

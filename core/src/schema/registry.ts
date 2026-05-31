@@ -8,6 +8,7 @@ export const BUILTIN_PROPERTIES: Schema = {
   tags: { type: { kind: "list", item: "string" } },
   aliases: { type: { kind: "list", item: "string" } },
   cssclasses: { type: { kind: "list", item: "string" } },
+  icon: { type: "icon", doc: 'Icon for this note (a Lucide icon name like "House" or an emoji).' },
 };
 
 const SCALAR_TYPES = new Set([
@@ -17,6 +18,7 @@ const SCALAR_TYPES = new Set([
   "date",
   "datetime",
   "file",
+  "icon",
 ]);
 
 /** Parse a single type token (string or object form) into a PropertyType. */

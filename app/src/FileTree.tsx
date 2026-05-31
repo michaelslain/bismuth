@@ -6,9 +6,8 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { pushToast } from "./Toast";
 import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
-
-const FOLDER_ICON = "📁";
-const FILE_ICON = "📝";
+import { Icon } from "./icons/Icon";
+import { IconPicker } from "./icons/IconPicker";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
@@ -26,7 +25,9 @@ function buildTree(entries: TreeEntry[]): TreeNode {
         cur.children!.set(part, { name: part, path: acc, children: isDir ? new Map() : undefined });
       }
       const node = cur.children!.get(part)!;
-      if (isLeaf && kind !== "dir" && icon) node.icon = icon;
+      // Custom icon for the entry's own node — files (frontmatter `icon`) and
+      // folders (folder-icon override surfaced on dir entries) alike.
+      if (isLeaf && icon) node.icon = icon;
       cur = node;
     });
   }
@@ -87,8 +88,23 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     });
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [iconPicker, setIconPicker] = createSignal<{ node: TreeNode; isDir: boolean } | null>(null);
 
   const refresh = () => refetch();
+
+  // Set (or clear, when `icon` is "") a node's icon. Files store it in their
+  // `icon:` frontmatter (clearing removes the key entirely); folders have none,
+  // so theirs lives in settings.yaml (clearing removes that entry).
+  async function applyIcon(node: TreeNode, isDir: boolean, icon: string) {
+    try {
+      if (isDir) await api.setFolderIcon(node.path, icon);
+      else if (icon === "") await api.deleteProperty(node.path, "icon");
+      else await api.setProperty(node.path, "icon", icon);
+      await refresh();
+    } catch (e) {
+      pushToast(`Set icon failed: ${(e as Error).message}`);
+    }
+  }
 
   // Optimistic local edits: apply the change to the tree instantly so the UI
   // reflects it without waiting for a /tree round-trip (which contends with the
@@ -179,6 +195,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       items.push({ label: "New File", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", onSelect: () => doCreate(node.path, "dir") });
     }
+    items.push({ label: "Set Icon…", onSelect: () => setIconPicker({ node, isDir }) });
     items.push({ label: "Rename", onSelect: () => setEditing(node.path) });
     items.push({ label: "Delete", danger: true, onSelect: () => doDelete(node) });
     return items;
@@ -242,6 +259,17 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       />
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
+      </Show>
+      <Show when={iconPicker()}>
+        {(p) => (
+          <IconPicker
+            title={`Set icon — ${p().node.name}`}
+            current={p().node.icon}
+            onPick={(name) => applyIcon(p().node, p().isDir, name)}
+            onClear={() => applyIcon(p().node, p().isDir, "")}
+            onClose={() => setIconPicker(null)}
+          />
+        )}
       </Show>
     </div>
   );
@@ -334,6 +362,7 @@ function Level(props: {
           <div>
             <div
               style={{
+                display: "flex", "align-items": "center", gap: "4px",
                 padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8,
                 "user-select": "none",
                 background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
@@ -347,7 +376,8 @@ function Level(props: {
               onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON}{" "}
+              <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
+              <Icon value={child.icon} fallback={props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <Show when={props.editing === child.path} fallback={child.name}>
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
               </Show>
@@ -364,7 +394,7 @@ function Level(props: {
           </div>
         ) : (
           <div
-            style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
+            style={{ display: "flex", "align-items": "center", gap: "4px", padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
             onDragStart={(e) => {
               e.stopPropagation();
@@ -377,7 +407,7 @@ function Level(props: {
             onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            {child.icon ?? FILE_ICON}{" "}
+            <Icon value={child.icon} fallback="FileText" size={16} class="ft-icon" />
             <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
             </Show>

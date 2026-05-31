@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
 import { writeNote, readNote } from "../src/files";
+import { readSettings } from "../src/settings";
 import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
@@ -154,6 +155,101 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
     const entries = await (await fetch(`${base}/tree`)).json();
     expect(entries).toContainEqual({ path: "fire.md", icon: "🔥", kind: "file" });
     expect(entries).toContainEqual({ path: "plain.md", kind: "file" });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-icon sets a directory icon surfaced on GET /tree", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-"));
+  await writeNote(dir, "projects/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/folder-icon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "projects", icon: "Folder" }),
+    });
+    expect(res.status).toBe(200);
+
+    const entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "projects", icon: "Folder", kind: "dir" });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-icon with empty icon removes a previously-set directory icon", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-clear-"));
+  await writeNote(dir, "projects/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (body: unknown) =>
+    fetch(`${base}/folder-icon`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    await post({ path: "projects", icon: "Folder" });
+    let entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "projects", icon: "Folder", kind: "dir" });
+
+    await post({ path: "projects", icon: "" });
+    entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "projects", kind: "dir" });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-icon persists folderIcons into settings.yaml", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-persist-"));
+  await writeNote(dir, "projects/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/folder-icon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "projects", icon: "Folder" }),
+    });
+    const res = await readSettings(dir);
+    expect(res).not.toBeNull();
+    expect((res!.data.folderIcons as Record<string, unknown>).projects).toBe("Folder");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-icon bumps the version so the sidebar refetches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-ver-"));
+  await writeNote(dir, "projects/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    await fetch(`${base}/folder-icon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "projects", icon: "Folder" }),
+    });
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-icon rejects a path that escapes the vault", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-esc-"));
+  await writeNote(dir, "projects/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/folder-icon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "../escape", icon: "Folder" }),
+    });
+    expect(res.status).toBe(400);
   } finally {
     server.stop(true);
   }
@@ -371,6 +467,45 @@ test("POST /set-property returns 404 for a path that doesn't exist (no silent cr
     expect(res.status).toBe(404);
     // The endpoint must NOT have created the file as a side effect.
     expect(await Bun.file(`${vault}/no-such-note.md`).exists()).toBe(false);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /delete-property removes a frontmatter key, keeping the others", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/delete-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "housing.md", key: "priority" }),
+    });
+    expect(res.status).toBe(200);
+    const meta = await (await fetch(`${base}/meta?path=housing.md`)).json();
+    expect(meta.priority).toBeUndefined();
+    expect(meta.status).toBe("in-progress"); // siblings preserved
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /delete-property drops the whole block when removing the last key (no empty fence)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await writeNote(vault, "iconned.md", "---\nicon: House\n---\n# Title\n\nbody\n");
+    const res = await fetch(`${base}/delete-property`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "iconned.md", key: "icon" }),
+    });
+    expect(res.status).toBe(200);
+    const raw = await readNote(vault, "iconned.md");
+    expect(raw).toBe("# Title\n\nbody\n");
+    expect(raw).not.toContain("---");
   } finally {
     server.stop(true);
   }

@@ -1,6 +1,8 @@
 // app/src/EmptyPane.tsx
 // Placeholder shown when a pane has no content yet. The user fills it by dragging
 // a file in, clicking "Open file…" (quick switcher), or "New terminal".
+import { Icon } from "./icons/Icon";
+
 type Props = {
   onOpenFile: () => void;
   onNewTerminal: () => void;
@@ -32,15 +34,17 @@ export function EmptyPane(props: Props) {
           class="empty-pane-btn"
           onClick={props.onOpenFile}
           onMouseDown={(e) => e.stopPropagation()}
+          style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
-          Open file…
+          <Icon value="FolderOpen" size={14} /> Open file…
         </button>
         <button
           class="empty-pane-btn"
           onClick={props.onNewTerminal}
           onMouseDown={(e) => e.stopPropagation()}
+          style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
-          {">_"} New terminal
+          <Icon value="SquareTerminal" size={14} /> New terminal
         </button>
       </div>
     </div>
