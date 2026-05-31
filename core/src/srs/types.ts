@@ -7,6 +7,18 @@ export type CardType =
 
 export type ReviewResponse = "hard" | "good" | "easy";
 
+/** Tunable SM-2 parameters. A flashcard base may override any of these via its `srs:` frontmatter. */
+export interface SrsConfig {
+  baseEase: number;        // starting ease for a new card (e.g. 250 = 2.5x)
+  easeStep: number;        // ease change on hard/easy (e.g. 20)
+  minEase: number;         // ease floor (e.g. 130)
+  easyBonus: number;       // extra interval multiplier on "easy" (e.g. 1.3)
+  hardFactor: number;      // interval multiplier on "hard" (e.g. 0.5)
+  newGoodInterval: number; // days for a new card graded good (e.g. 1)
+  newEasyInterval: number; // days for a new card graded easy (e.g. 4)
+  maxInterval: number;     // interval ceiling in days (e.g. 36525)
+}
+
 /** Per-sub-card scheduling state. A card with no entry yet is treated as new/unreviewed. */
 export interface SchedulingInfo {
   due: string;       // "YYYY-MM-DD"

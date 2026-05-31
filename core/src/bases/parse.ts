@@ -154,6 +154,7 @@ export function parseBase(text: string): BaseConfig {
     views,
     source: o.source as BaseConfig["source"],
     schema: o.schema as BaseConfig["schema"],
+    srs: o.srs as BaseConfig["srs"],
   };
 }
 
@@ -182,6 +183,9 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   }
   if (raw?.source && typeof raw.source === "object") {
     config.source = raw.source as BaseConfig["source"];
+  }
+  if (raw?.srs && typeof raw.srs === "object") {
+    config.srs = raw.srs as BaseConfig["srs"];
   }
 
   const rows = parseMarkdownTable(body, meta);

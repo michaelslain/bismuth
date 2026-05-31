@@ -15,6 +15,7 @@ import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
+import { resolveSrsConfig } from "./srs/scheduler";
 import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
@@ -445,10 +446,10 @@ export function createServer(cfg: CoreConfig) {
         if (body.file != null && body.index != null) {
           const text = await readNote(cfg.vault, body.file);
           const name = body.file.split("/").pop()!.replace(/\.md$/, "");
-          const { rows } = parseBaseFile(text, { name, path: body.file });
+          const { config, rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
           if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
-          const note = applyReviewToRow(row.note, body.response, todayISO());
+          const note = applyReviewToRow(row.note, body.response, todayISO(), resolveSrsConfig(config.srs));
           const next = upsertRow(text, { name, path: body.file }, body.index, note);
           await writeNote(cfg.vault, body.file, next);
           return new Response("ok");
