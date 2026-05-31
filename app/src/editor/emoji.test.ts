@@ -85,6 +85,32 @@ test("rankEmoji: among equal-score matches, the more popular one ranks first", (
   expect(rankEmoji(items, "smile")[0].char).toBe("😄");
 });
 
+test("rankEmoji: punctuation-only queries are rejected; :+1 / :-1 still resolve", () => {
+  expect(rankEmoji(FIXTURE, "-")).toEqual([]);
+  expect(rankEmoji(FIXTURE, "+")).toEqual([]);
+  expect(rankEmoji(FIXTURE, "_")).toEqual([]);
+  // a digit keeps it a real search against the real dataset
+  expect(searchEmoji("+1").length).toBeGreaterThan(0);
+  expect(searchEmoji("-1").length).toBeGreaterThan(0);
+});
+
+test("rankEmoji: dual-glyph shortcodes resolve deterministically by codepoint", () => {
+  const items: EmojiEntry[] = [
+    { char: "➗", name: "divide", keywords: ["divide"] }, // U+2797
+    { char: "÷", name: "divide", keywords: ["divide"] }, // U+00F7
+  ];
+  // Both score 0 on the exact name; the codepoint tie-break is total, so the order is
+  // fixed regardless of input order — ÷ (U+00F7) sorts before ➗ (U+2797).
+  expect(rankEmoji(items, "divide").map((e) => e.char)).toEqual(["÷", "➗"]);
+  expect(rankEmoji([...items].reverse(), "divide").map((e) => e.char)).toEqual(["÷", "➗"]);
+});
+
+test("dataset: every curated POPULAR shortcode resolves (catches silent drops)", () => {
+  // The empty-query popup IS the curated most-used set; a missing slug would be silently
+  // skipped, shrinking this. We curate 41 char-unique entries — catch a mass drop.
+  expect(searchEmoji("").length).toBeGreaterThanOrEqual(40);
+});
+
 test("rankEmoji: respects the limit", () => {
   // "smile" matches three entries; limit 2 caps it.
   expect(rankEmoji(FIXTURE, "smile", 2).length).toBe(2);

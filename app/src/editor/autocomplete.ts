@@ -157,6 +157,10 @@ function emojiSource(): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
+    // Inside an open `[[wikilink`, let the wikilink source own the popup — wikilink names
+    // can contain spaces, so the emoji rule (`:` after whitespace) would otherwise
+    // double-fire and mix note + emoji suggestions in one list.
+    if (matchWikilinkPrefix(textBefore)) return null;
     const match = matchEmojiPrefix(textBefore);
     if (!match) return null;
 

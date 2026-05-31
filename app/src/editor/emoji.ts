@@ -90,17 +90,25 @@ export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): Emo
     return dedupeByChar(popular, limit);
   }
 
+  // A non-empty query with no letter/digit (`:-`, `:+`, `:_`) is punctuation noise, not an
+  // emoji search. `:+1`/`:-1` still pass because they contain a digit.
+  if (!/[a-z0-9]/.test(q)) return [];
+
   const scored: { e: EmojiEntry; s: number }[] = [];
   for (const e of entries) {
     const s = score(e, q);
     if (s !== null) scored.push({ e, s });
   }
+  // score → popularity → shorter shortcode → alphabetical → glyph codepoint. The final
+  // key makes the order total, so dual-glyph shortcodes (e.g. :divide = ÷ and ➗) resolve
+  // deterministically instead of relying on sort stability + dataset insertion order.
   scored.sort(
     (a, b) =>
       a.s - b.s ||
       popRank(a.e.name) - popRank(b.e.name) ||
       a.e.name.length - b.e.name.length ||
-      a.e.name.localeCompare(b.e.name),
+      a.e.name.localeCompare(b.e.name) ||
+      (a.e.char < b.e.char ? -1 : a.e.char > b.e.char ? 1 : 0),
   );
   return dedupeByChar(scored.map((x) => x.e), limit);
 }
