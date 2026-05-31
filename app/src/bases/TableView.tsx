@@ -26,6 +26,7 @@ export function TableView(props: {
   const startReorder = (fromIdx: number, e: PointerEvent) => {
     if (!props.onReorder) return;
     e.preventDefault();
+    document.body.style.userSelect = "none";
     setDragIdx(fromIdx);
     const ths = headerEls();
     const onMove = (ev: PointerEvent) => {
@@ -39,6 +40,7 @@ export function TableView(props: {
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
       const to = overIdx();
       setDragIdx(null);
       setOverIdx(null);
@@ -53,11 +55,19 @@ export function TableView(props: {
     window.addEventListener("pointerup", onUp);
   };
 
+  // th pointerdown: within 8px of the right edge → resize that column; else reorder.
+  // Doing the split on the th itself (not a thin child handle) makes the hit-test reliable.
+  const onHeaderPointerDown = (col: string, idx: number, e: PointerEvent) => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (props.onWidthsChange && rect.right - e.clientX <= 8) startResize(col, e);
+    else startReorder(idx, e);
+  };
+
   // Pointer-based column resize. Seeds unset widths from rendered header widths so the
   // switch to fixed layout doesn't jump.
   const startResize = (col: string, e: PointerEvent) => {
     e.preventDefault();
-    e.stopPropagation();
+    document.body.style.userSelect = "none";
     const ths = headerEls();
     const seed: Record<string, number> = { ...w() };
     cols().forEach((c, i) => {
@@ -70,6 +80,7 @@ export function TableView(props: {
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      document.body.style.userSelect = "";
       props.onWidthsChange?.(w());
     };
     window.addEventListener("pointermove", onMove);
@@ -91,11 +102,11 @@ export function TableView(props: {
             {(c, i) => (
               <th
                 classList={{ [styles.thDrag]: !!props.onReorder, [styles.thOver]: overIdx() === i() }}
-                onPointerDown={(e) => startReorder(i(), e)}
+                onPointerDown={(e) => onHeaderPointerDown(c, i(), e)}
               >
                 <span class={styles.thLabel}>{columnLabel(c, props.config)}</span>
                 <Show when={props.onWidthsChange}>
-                  <span class={styles.thResize} onPointerDown={(e) => startResize(c, e)} />
+                  <span class={styles.thResize} />
                 </Show>
               </th>
             )}

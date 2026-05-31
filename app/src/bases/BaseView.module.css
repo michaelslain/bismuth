@@ -59,8 +59,8 @@
 .thDrag:active { cursor: grabbing; }
 .thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
 .thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
-.thResize { position: absolute; top: 0; right: -5px; width: 11px; height: 100%; cursor: col-resize; user-select: none; z-index: 2; touch-action: none; }
-.thResize:hover { box-shadow: inset -2px 0 0 0 var(--accent); }
+/* col-resize cursor cue near the edge; its pointerdown bubbles to the th, which does the hit-test. */
+.thResize { position: absolute; top: 0; right: -5px; width: 11px; height: 100%; cursor: col-resize; }
 .table td { overflow: hidden; text-overflow: ellipsis; }
 .groupRow td { font-weight: 600; background: var(--oa-surface); }
 .summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }
