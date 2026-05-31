@@ -145,9 +145,15 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
     const stored = data[section];
     if (!stored || typeof stored !== "object") continue;
     const target = out[section];
+    const sectionSchema = settingsSchema[section as keyof typeof settingsSchema];
     for (const key of Object.keys(target)) {
       const v = (stored as Record<string, unknown>)[key];
-      if (typeof v === typeof target[key]) target[key] = v;
+      if (typeof v !== typeof target[key]) continue;
+      const keySchema = sectionSchema?.[key as keyof typeof sectionSchema] as any;
+      if (keySchema?.min !== undefined && typeof v === "number" && v < keySchema.min) continue;
+      if (keySchema?.max !== undefined && typeof v === "number" && v > keySchema.max) continue;
+      if (keySchema?.enum !== undefined && !keySchema.enum.includes(v)) continue;
+      target[key] = v;
     }
   }
   delete (out as Record<string, unknown>).properties;

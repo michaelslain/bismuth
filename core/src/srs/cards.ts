@@ -127,9 +127,14 @@ export async function applyReview(
   expectedQuestion?: string,
   cfg: SrsConfig = DEFAULT_SRS,
 ): Promise<void> {
-  const [notePath, cardIdxStr, subIdxStr] = cardId.split("::");
+  const parts = cardId.split("::");
+  if (parts.length !== 3) throw new Error(`invalid cardId format: ${cardId}`);
+  const [notePath, cardIdxStr, subIdxStr] = parts;
   const cardIndex = Number(cardIdxStr);
   const subIndex = Number(subIdxStr);
+  if (!Number.isFinite(cardIndex) || !Number.isFinite(subIndex)) {
+    throw new Error(`invalid cardId indices: ${cardId}`);
+  }
 
   const text = await readNote(vault, notePath);
   const { body } = parseFrontmatter(text);

@@ -60,6 +60,11 @@ es.onmessage = (e) => {
 };
 es.onerror = (e) => recordSseError(e);
 
+// Close EventSource on page unload to prevent connection leaks
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => es.close());
+}
+
 setInterval(async () => {
   try {
     const { version: v } = await api.version();

@@ -20,6 +20,7 @@ function reassemble(text: string, rows: Row[]): string {
 
 /** Insert (index === null) or replace (index >= 0) a row in a base file. */
 export function upsertRow(text: string, meta: Meta, index: number | null, note: Record<string, unknown>): string {
+  if (!meta.name || !meta.path) throw new Error("meta.name and meta.path are required");
   const { rows } = parseBaseFile(text, meta);
   const newRow: Row = { file: rows[0]?.file ?? emptyFile(meta), note, formula: {} };
   if (index == null) rows.push(newRow);
