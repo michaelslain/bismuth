@@ -3,7 +3,7 @@
 import { test, expect } from "bun:test";
 import {
   makeTab, makeLeaf, splitLeaf, setContent, leaves,
-  reorderTabs, splitLeafWithNode, detachLeafToTab, replacePaneWithPane,
+  reorderTabs, splitLeafWithNode, detachLeafToTab, replacePaneWithPane, replaceLeafWithNode,
   type Split, type Leaf, type Tab,
 } from "./panes";
 
@@ -155,4 +155,35 @@ test("replacePaneWithPane is a no-op onto itself", () => {
   const t = splitTab();
   const aId = (t.root as Split).a.id;
   expect(replacePaneWithPane(t.root, aId, aId)).toBeNull();
+});
+
+// --- replaceLeafWithNode (multi-pane tab → empty/center, in place) -------
+
+test("replaceLeafWithNode swaps a leaf for a grafted subtree, preserving its layout", () => {
+  // build target tree a.md | ::empty
+  const t0 = makeLeaf("a.md");
+  const built = splitLeaf(t0, t0.id, "row");
+  const targetId = (built.root as Split).b.id;
+  const withEmpty = setContent(built.root, targetId, "::empty");
+  // build a multi-pane subtree (x1 / x2)
+  const x = makeLeaf("x1.md");
+  const sub = splitLeaf(x, x.id, "col").root;
+  const named = setContent(sub, (sub as Split).b.id, "x2.md");
+  const out = replaceLeafWithNode(withEmpty, targetId, named) as Split;
+  expect((out.a as Leaf).content).toBe("a.md"); // untouched side
+  expect(out.b.kind).toBe("split"); // the ::empty leaf became the subtree (no stray empty)
+  expect(leaves(out.b).map((l) => l.content)).toEqual(["x1.md", "x2.md"]);
+  expect(leaves(out).some((l) => l.content === "::empty")).toBe(false);
+});
+
+test("replaceLeafWithNode on a single-leaf root returns the node itself", () => {
+  const root = makeLeaf("a.md");
+  const node = makeLeaf("x.md");
+  expect(replaceLeafWithNode(root, root.id, node)).toBe(node);
+});
+
+test("replaceLeafWithNode leaves the tree unchanged when the leaf id is missing", () => {
+  const root = makeLeaf("a.md");
+  const node = makeLeaf("x.md");
+  expect(replaceLeafWithNode(root, "nope", node)).toBe(root);
 });

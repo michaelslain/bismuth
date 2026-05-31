@@ -63,6 +63,9 @@ body { background: var(--bg); color: var(--fg); }
 
 /* While any view drag is in progress: grabbing cursor + no accidental text selection. */
 html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
+/* …and let drops pass through the always-mounted terminal overlay to the pane-leaf
+   beneath it (the overlay's host placeholder lives inside the leaf). */
+html.view-dragging .terminal-overlay { pointer-events: none; }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }

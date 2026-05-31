@@ -15,10 +15,10 @@ import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
 import {
-  type Tab, type PaneNode, type Leaf, type Dir, type Rect, makeTab,
+  type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
-  reorderTabs, splitLeafWithNode, replacePaneWithPane, detachLeafToTab,
+  reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
   serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
@@ -290,22 +290,29 @@ export default function App() {
     const src = tabs().find((t) => t.id === srcTabId);
     const at = activeTab();
     if (!src || !at) return;
-    const srcLeaf = src.root.kind === "leaf" ? (src.root as Leaf) : null;
+    const srcLeaf = src.root.kind === "leaf" ? src.root : null;
     const target = leaves(at.root).find((l) => l.id === targetLeafId);
     const fillsInPlace = zone === "center" || target?.content === EMPTY_PANE;
+    const subtreeFocus = leaves(src.root)[0].id; // first leaf of the moved view
     setTabs((ts) =>
       ts
         .filter((t) => t.id !== srcTabId)
         .map((t) => {
           if (t.id !== activeTabId()) return t;
-          if (srcLeaf && fillsInPlace) {
-            return { ...t, root: setContent(t.root, targetLeafId, srcLeaf.content), focusId: targetLeafId };
+          if (fillsInPlace) {
+            // Replace the target pane in place: a single-pane tab sets the content;
+            // a multi-pane tab grafts its whole subtree (so no stray empty/old leaf
+            // is left beside it).
+            const root = srcLeaf
+              ? setContent(t.root, targetLeafId, srcLeaf.content)
+              : replaceLeafWithNode(t.root, targetLeafId, src.root);
+            return { ...t, root, focusId: srcLeaf ? targetLeafId : subtreeFocus };
           }
+          // Edge zone on a non-empty target: split, grafting the source beside it.
           const dir = zone === "up" || zone === "down" ? "col" : "row";
           const nodeFirst = zone === "left" || zone === "up";
           const { root } = splitLeafWithNode(t.root, targetLeafId, dir, src.root, nodeFirst);
-          const focusId = src.root.kind === "leaf" ? src.root.id : leaves(src.root)[0].id;
-          return { ...t, root, focusId };
+          return { ...t, root, focusId: subtreeFocus };
         }),
     );
   };
@@ -635,7 +642,7 @@ export default function App() {
             {(id) => {
               const rect = () => terminalHostRects().get(id);
               return (
-                <div style={{
+                <div class="terminal-overlay" style={{
                   position: "absolute",
                   left: rect() ? `${rect()!.x}px` : "0",
                   top: rect() ? `${rect()!.y}px` : "0",

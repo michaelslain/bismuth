@@ -6,7 +6,7 @@ import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import { contentLabel } from "./tabIds";
 import type { DragState } from "./dnd/viewDrag";
-import type { Zone } from "./dnd/geometry";
+import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
 
 type PaneTreeProps = {
@@ -39,14 +39,10 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
   let el!: HTMLDivElement;
 
   // Which half of the pane the cursor is over → which direction a file drop splits.
+  // File drops always split (never replace), so this uses the edge-only helper.
   const getDropDir = (e: DragEvent): Dir => {
     const r = el.getBoundingClientRect();
-    const fx = (e.clientX - r.left) / r.width - 0.5;
-    const fy = (e.clientY - r.top) / r.height - 0.5;
-    if (Math.abs(fx) >= Math.abs(fy)) {
-      return fx < 0 ? "left" : "right";
-    }
-    return fy < 0 ? "up" : "down";
+    return nearestEdge({ x: r.left, y: r.top, w: r.width, h: r.height }, e.clientX, e.clientY);
   };
 
   // Drop-zone to highlight: a file drag (HTML5) reports an edge; a view drag
@@ -152,13 +148,17 @@ export function PaneTree(props: PaneTreeProps) {
                 : (ev.clientY - rect.top) / rect.height;
             props.onResize(split().id, Math.min(0.92, Math.max(0.08, ratio)));
           };
+          // pointercancel (OS pointer takeover) must end the drag too, or the
+          // listeners leak and .pane-split stays stuck in its no-transition state.
           const up = () => {
             setResizing(false);
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
+            window.removeEventListener("pointercancel", up);
           };
           window.addEventListener("pointermove", move);
           window.addEventListener("pointerup", up);
+          window.addEventListener("pointercancel", up);
         };
         return (
           <div

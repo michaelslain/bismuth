@@ -11,15 +11,23 @@ export type Rect = { x: number; y: number; w: number; h: number };
 // outside splits along its nearest edge.
 const CENTER_HALF = 0.18;
 
+// Nearest edge of a rect to a point — horizontal wins diagonal ties. No center
+// band: used directly by file-tree drops (which always split) and as the edge
+// half of dropZoneForPoint.
+export function nearestEdge(rect: Rect, x: number, y: number): Exclude<Zone, "center"> {
+  const fx = (x - rect.x) / rect.w - 0.5;
+  const fy = (y - rect.y) / rect.h - 0.5;
+  if (Math.abs(fx) >= Math.abs(fy)) return fx < 0 ? "left" : "right";
+  return fy < 0 ? "up" : "down";
+}
+
 // Which drop zone a point falls in within a pane rect. The middle band replaces;
-// outside it, the nearest edge wins, with horizontal taking diagonal ties (matches
-// the prior pane getDropDir behavior).
+// outside it, the nearest edge wins.
 export function dropZoneForPoint(rect: Rect, x: number, y: number): Zone {
   const fx = (x - rect.x) / rect.w - 0.5;
   const fy = (y - rect.y) / rect.h - 0.5;
   if (Math.abs(fx) <= CENTER_HALF && Math.abs(fy) <= CENTER_HALF) return "center";
-  if (Math.abs(fx) >= Math.abs(fy)) return fx < 0 ? "left" : "right";
-  return fy < 0 ? "up" : "down";
+  return nearestEdge(rect, x, y);
 }
 
 // Insertion index (0..n) where a dragged chip would land among `chips` (in DOM

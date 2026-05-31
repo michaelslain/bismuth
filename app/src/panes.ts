@@ -148,7 +148,7 @@ export function splitLeafWithNode(
   dir: "row" | "col",
   node: PaneNode,
   nodeFirst: boolean,
-): { root: PaneNode; newNodeId: string } {
+): { root: PaneNode } {
   const walk = (n: PaneNode): PaneNode => {
     if (n.kind === "leaf") {
       if (n.id !== targetId) return n;
@@ -158,7 +158,20 @@ export function splitLeafWithNode(
     }
     return { ...n, a: walk(n.a), b: walk(n.b) };
   };
-  return { root: walk(root), newNodeId: node.id };
+  return { root: walk(root) };
+}
+
+// Replace the target leaf in place with `node` (a leaf or a whole subtree),
+// keeping `node`'s identity/layout. Used when a multi-pane tab is dropped onto
+// an empty pane or a pane's center — the pane *becomes* that layout rather than
+// splitting beside it (which would orphan the old/empty leaf). Unchanged if the
+// leaf id is absent.
+export function replaceLeafWithNode(root: PaneNode, leafId: string, node: PaneNode): PaneNode {
+  const walk = (n: PaneNode): PaneNode => {
+    if (n.kind === "leaf") return n.id === leafId ? node : n;
+    return { ...n, a: walk(n.a), b: walk(n.b) };
+  };
+  return walk(root);
 }
 
 // Center-drop: move the source pane's content into the target pane, then close

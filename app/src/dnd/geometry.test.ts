@@ -1,7 +1,22 @@
 import { describe, expect, it } from "bun:test";
-import { dropZoneForPoint, insertionIndexForX, type Rect } from "./geometry";
+import { dropZoneForPoint, nearestEdge, insertionIndexForX, type Rect } from "./geometry";
 
 const R: Rect = { x: 0, y: 0, w: 100, h: 100 };
+
+describe("nearestEdge", () => {
+  it("always returns an edge — no center band", () => {
+    expect(nearestEdge(R, 50, 50)).toBe("right"); // dead center → horizontal tie → right
+    expect(nearestEdge(R, 45, 50)).toBe("left");
+    expect(nearestEdge(R, 50, 45)).toBe("up");
+    expect(nearestEdge(R, 50, 55)).toBe("down");
+  });
+
+  it("agrees with dropZoneForPoint outside the center band", () => {
+    for (const [x, y] of [[8, 50], [92, 50], [50, 8], [50, 92]] as const) {
+      expect(nearestEdge(R, x, y)).toBe(dropZoneForPoint(R, x, y));
+    }
+  });
+});
 
 describe("dropZoneForPoint", () => {
   it("returns center for a point in the middle band", () => {

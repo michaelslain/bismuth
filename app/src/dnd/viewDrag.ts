@@ -103,6 +103,7 @@ export function createViewDrag(
   function cleanup(): void {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onCancel);
     window.removeEventListener("keydown", onKey);
     setDraggingClass(false);
     pending = null;
@@ -120,6 +121,13 @@ export function createViewDrag(
     cleanup();
   }
 
+  // The OS can steal the pointer mid-drag (touch/pen gesture takeover, swipe-back,
+  // a system menu) and fire pointercancel INSTEAD of pointerup. Abort cleanly so we
+  // never leak the window listeners or leave the ghost stuck on screen.
+  function onCancel(): void {
+    cleanup();
+  }
+
   function onKey(e: KeyboardEvent): void {
     if (e.key === "Escape") cleanup();
   }
@@ -132,6 +140,7 @@ export function createViewDrag(
     tap = onTap ?? null;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
     window.addEventListener("keydown", onKey);
   }
 
