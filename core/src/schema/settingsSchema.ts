@@ -76,6 +76,15 @@ export const SETTINGS_SCHEMA: Schema = {
     fileWatchDebounceMs: { type: "number", default: 250, min: 50, max: 2000, doc: "Coalesce rapid file changes for this long before rebuilding caches (ms)." },
     sseHeartbeatMs: { type: "number", default: 5000, min: 1000, max: 30000, doc: "Keepalive ping interval for the live-update stream (ms)." },
   }),
+  srs: object({
+    baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },
+    easyBonus: { type: "number", default: 1.3, min: 1, max: 2, doc: "Extra interval multiplier when a card is rated 'easy'." },
+    lapsesIntervalChange: { type: "number", default: 0.5, min: 0.1, max: 1, doc: "Interval multiplier when a card is rated 'hard' (lapse penalty)." },
+    minEase: { type: "number", default: 130, min: 50, max: 250, doc: "Floor on a card's ease factor." },
+    easeStep: { type: "number", default: 20, min: 5, max: 50, doc: "Ease change per review." },
+    easyGraduatingInterval: { type: "number", default: 4, min: 1, max: 14, doc: "Days until next review when a new card is rated 'easy'." },
+    goodGraduatingInterval: { type: "number", default: 1, min: 1, max: 3, doc: "Days until next review when a new card is rated 'good'/'hard'." },
+  }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.
   properties: { type: { kind: "object", fields: {} }, doc: "Vault property registry: map each frontmatter key to a type." },

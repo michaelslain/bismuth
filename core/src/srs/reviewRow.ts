@@ -1,4 +1,4 @@
-import { schedule } from "./scheduler";
+import { schedule, DEFAULT_SRS, type SrsConfig } from "./scheduler";
 import type { ReviewResponse } from "./types";
 
 /**
@@ -10,6 +10,7 @@ export function applyReviewToRow(
   note: Record<string, unknown>,
   response: ReviewResponse,
   today: string,
+  cfg: SrsConfig = DEFAULT_SRS,
 ): Record<string, unknown> {
   const prev =
     note.due == null || note.due === ""
@@ -19,6 +20,6 @@ export function applyReviewToRow(
           interval: (note.interval as number) ?? 0,
           ease: (note.ease as number) ?? 250,
         };
-  const next = schedule(prev, response, today);
+  const next = schedule(prev, response, today, cfg);
   return { ...note, due: next.due, interval: next.interval, ease: next.ease };
 }

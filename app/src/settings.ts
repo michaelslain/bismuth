@@ -81,6 +81,15 @@ export interface Settings {
     fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
     sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
+  srs: {
+    baseEase: number;
+    easyBonus: number;
+    lapsesIntervalChange: number;
+    minEase: number;
+    easeStep: number;
+    easyGraduatingInterval: number;
+    goodGraduatingInterval: number;
+  };
 }
 
 // Alias so anything importing the canonical `AppSettings` name from the app gets

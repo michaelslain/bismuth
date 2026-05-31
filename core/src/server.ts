@@ -514,13 +514,13 @@ export function createServer(cfg: CoreConfig) {
           const { rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
           if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
-          const note = applyReviewToRow(row.note, body.response, todayISO());
+          const note = applyReviewToRow(row.note, body.response, todayISO(), appConfig.srs);
           const next = upsertRow(text, { name, path: body.file }, body.index, note);
           await writeNote(cfg.vault, body.file, next);
           return new Response("ok");
         }
         // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
-        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question);
+        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question, appConfig.srs);
         return new Response("ok");
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
