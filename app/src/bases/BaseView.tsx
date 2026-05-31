@@ -17,8 +17,8 @@ import styles from "./BaseView.module.css";
 interface Loaded {
   config: BaseConfig;
   spec: SourceSpec;
-  inlineRows: Row[] | null; // own table rows for a base source; null otherwise
-  basePath?: string; // the base file to write row mutations back to
+  inlineRows: Row[] | null;
+  basePath?: string;
 }
 
 function capitalize(s: string): string {
@@ -31,12 +31,42 @@ function refToPath(ref?: string): string {
   return bare.endsWith(".md") || bare.endsWith(".base") ? bare : `${bare}.md`;
 }
 
+/** Raw source editor for a base file — a textarea + Save, used by the per-view Source toggle. */
+function SourceEditor(props: { path: string; onClose: () => void }) {
+  const [text, setText] = createSignal<string | null>(null);
+  createResource(
+    () => props.path,
+    async (p) => {
+      setText(await api.read(p));
+      return true;
+    },
+  );
+  const save = async () => {
+    if (text() != null) await api.write(props.path, text()!);
+    props.onClose();
+  };
+  return (
+    <div class={styles.source}>
+      <Show when={text() != null} fallback={<div class={styles.loading}>Loading…</div>}>
+        <textarea
+          class={styles.sourceArea}
+          value={text()!}
+          spellcheck={false}
+          onInput={(e) => setText(e.currentTarget.value)}
+        />
+      </Show>
+      <div class={styles.sourceBar}>
+        <button onClick={save}>Save</button>
+        <button onClick={props.onClose}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
- * Inputs (mutually exclusive, in priority order):
- *   - `view`:   a parsed ```view block spec
- *   - `path`:   a `type: base` .md file (own table rows) or a legacy .base file (notes query)
- *   - `source`: inline ```base YAML (legacy; queries notes)
+ * Inputs (priority order): `view` (a ```view block spec), `path` (a type:base / .base file),
+ * or `source` (inline ```base YAML).
  */
 export function BaseView(props: {
   path?: string;
@@ -93,7 +123,6 @@ export function BaseView(props: {
       if (!spec.where) return rows;
       return rows.filter((r) => passesFilter(spec.where!, { file: r.file, note: r.note, formula: r.formula }));
     }
-    // base
     if (inlineRows) return inlineRows;
     const path = refToPath(spec.ref);
     if (!path) return [];
@@ -108,69 +137,90 @@ export function BaseView(props: {
   });
 
   const [activeView, setActiveView] = createSignal(0);
+  const [sourceMode, setSourceMode] = createSignal(false);
 
   const activeType = createMemo(() => {
     const d = data();
     if (!d || d.config.views.length === 0) return "table";
     return d.config.views[Math.min(activeView(), d.config.views.length - 1)].type;
   });
+  const fullPane = () => activeType() === "calendar" || activeType() === "flashcards";
 
   const result = createMemo<ViewResult | null>(() => {
     const d = data();
-    if (!d) return null;
-    // calendar/flashcards render from raw ordered rows, not the runView pipeline
-    if (activeType() === "calendar" || activeType() === "flashcards") return null;
+    if (!d || fullPane()) return null;
     const idx = Math.min(activeView(), d.config.views.length - 1);
     return runView(d.config, d.rows, idx, hostMeta());
   });
 
+  const editPath = () => data()?.basePath;
+
   return (
-    <div class={styles.base}>
-      <Show when={(data()?.config.views.length ?? 0) > 1}>
-        <div class={styles.tabs}>
-          <For each={data()!.config.views}>
-            {(v, i) => (
-              <button
-                class={`${styles.tab} ${i() === activeView() ? styles.active : ""}`}
-                onClick={() => setActiveView(i())}
-              >
-                {v.name}
-              </button>
-            )}
-          </For>
+    <div class={styles.host}>
+      <Show when={(data()?.config.views.length ?? 0) > 1 || editPath()}>
+        <div class={styles.bar}>
+          <Show when={(data()?.config.views.length ?? 0) > 1}>
+            <div class={styles.tabs}>
+              <For each={data()!.config.views}>
+                {(v, i) => (
+                  <button
+                    class={`${styles.tab} ${i() === activeView() ? styles.active : ""}`}
+                    onClick={() => setActiveView(i())}
+                  >
+                    {v.name}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
+          <Show when={editPath()}>
+            <button class={styles.srcBtn} onClick={() => setSourceMode(!sourceMode())}>
+              {sourceMode() ? "✕ Close source" : "</> Source"}
+            </button>
+          </Show>
         </div>
       </Show>
-      <Show when={data()} fallback={<div class={styles.loading}>Loading…</div>}>
-        <Switch
-          fallback={
-            <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
-              {(res) => (
-                <Switch fallback={<TableView result={res()} config={data()!.config} />}>
-                  <Match when={res().view.type === "kanban"}>
-                    <KanbanView result={res()} config={data()!.config} onChange={refetch} />
-                  </Match>
-                  <Match when={res().view.type === "cards"}>
-                    <CardsView result={res()} config={data()!.config} />
-                  </Match>
-                  <Match when={res().view.type === "list"}>
-                    <ListView result={res()} config={data()!.config} />
-                  </Match>
-                  <Match when={res().view.type === "map"}>
-                    <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
-                  </Match>
-                </Switch>
-              )}
-            </Show>
-          }
+
+      <div class={styles.body}>
+        <Show
+          when={!sourceMode()}
+          fallback={<SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />}
         >
-          <Match when={activeType() === "flashcards"}>
-            <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
-          </Match>
-          <Match when={activeType() === "calendar"}>
-            <CalendarView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onChange={refetch} onOpen={props.onOpen} />
-          </Match>
-        </Switch>
-      </Show>
+          <Show when={data()} fallback={<div class={styles.loading}>Loading…</div>}>
+            <Switch
+              fallback={
+                <div class={styles.base}>
+                  <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
+                    {(res) => (
+                      <Switch fallback={<TableView result={res()} config={data()!.config} />}>
+                        <Match when={res().view.type === "kanban"}>
+                          <KanbanView result={res()} config={data()!.config} onChange={refetch} />
+                        </Match>
+                        <Match when={res().view.type === "cards"}>
+                          <CardsView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "list"}>
+                          <ListView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "map"}>
+                          <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
+                        </Match>
+                      </Switch>
+                    )}
+                  </Show>
+                </div>
+              }
+            >
+              <Match when={activeType() === "flashcards"}>
+                <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
+              </Match>
+              <Match when={activeType() === "calendar"}>
+                <CalendarView basePath={data()!.basePath} onChange={refetch} />
+              </Match>
+            </Switch>
+          </Show>
+        </Show>
+      </div>
     </div>
   );
 }
