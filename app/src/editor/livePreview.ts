@@ -278,5 +278,9 @@ export const livePreview = [
     ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-math-inline": { display: "inline-block", "vertical-align": "middle" },
     ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
+    ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
+    ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
+    ".cm-lintRange-error": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"6\" height=\"3\"><path d=\"m0 3 l3 -3 l3 3\" fill=\"none\" stroke=\"%23e5484d\"/></svg>') left bottom repeat-x" },
+    ".cm-lintRange-warning": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"6\" height=\"3\"><path d=\"m0 3 l3 -3 l3 3\" fill=\"none\" stroke=\"%23f5a623\"/></svg>') left bottom repeat-x" },
   }),
 ];
