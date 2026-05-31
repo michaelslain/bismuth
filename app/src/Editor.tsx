@@ -133,11 +133,8 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
       ...(ed.livePreview ? [livePreview, tasksQuery] : []),
-      // Default-on until the spine's SETTINGS_SCHEMA adds `editor.spellcheck`; a
-      // missing key reads as enabled (only an explicit `false` disables Harper).
-      ...((ed as { spellcheck?: boolean }).spellcheck !== false
-        ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })]
-        : []),
+      // Harper spell + grammar check, toggled by editor.spellcheck (default true).
+      ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return;
         // A reload we pulled from disk isn't a user edit — don't autosave it

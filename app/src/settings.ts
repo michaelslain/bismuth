@@ -42,6 +42,7 @@ export interface Settings {
     livePreview: boolean;
     lineNumbers: boolean;
     lineWrapping: boolean;
+    spellcheck: boolean; // spell + grammar check the note body (Harper)
     autoSaveDelay: number; // ms of idle before save
   };
   vault: {
