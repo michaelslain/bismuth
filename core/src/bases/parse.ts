@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import type { BaseConfig, ViewConfig, SortSpec, ViewType, ParsedBase } from "./types";
-import { parseMarkdownTable } from "./table";
+import { parseRows } from "./rows";
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -193,9 +193,15 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     for (const k of FIELD_KEYS) {
       if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
     }
+    // Top-level view shaping (visible columns / sort / group) configures the default view too.
+    if (Array.isArray(raw.order)) config.views[0].order = (raw.order as unknown[]).map(String);
+    const s = normalizeSort(raw.sort);
+    if (s) config.views[0].sort = s;
+    const g = normalizeGroupBy(raw.groupBy);
+    if (g) config.views[0].groupBy = g;
   }
 
-  const rows = parseMarkdownTable(body, meta);
+  const rows = parseRows(body, meta);
   return { config, rows };
 }
 

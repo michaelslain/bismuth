@@ -2,11 +2,9 @@
 // frontmatter intact across saves (only the events table + categories change) and
 // renders categories as an idiomatic YAML list of {name, color}.
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { parseMarkdownTable, rowsToMarkdownTable } from "../../../core/src/bases/table";
+import { parseRows, serializeRows } from "../../../core/src/bases/rows";
 import type { Row } from "../../../core/src/bases/types";
 import type { CalendarEvent, Category, Recurrence } from "../calendar/types";
-
-const COLS = ["id", "title", "date", "startTime", "endTime", "location", "link", "description", "category", "recurrence"];
 
 function str(v: unknown): string | undefined {
   return v === undefined || v === null || v === "" ? undefined : String(v);
@@ -74,7 +72,7 @@ export function parseCalendarFile(text: string): ParsedCalendar {
     }
     body = m[2];
   }
-  const rows = parseMarkdownTable(body, { name: "", path: "" });
+  const rows = parseRows(body, { name: "", path: "" });
   return { frontmatter, events: rows.map(rowToEvent) };
 }
 
@@ -89,6 +87,6 @@ export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
  */
 export function serializeCalendarFile(frontmatter: Record<string, unknown>, events: CalendarEvent[]): string {
   const fm = stringifyYaml(frontmatter).trimEnd();
-  const table = rowsToMarkdownTable(COLS, events.map(eventToRow));
-  return `---\n${fm}\n---\n\n${table}\n`;
+  const body = serializeRows(events.map(eventToRow));
+  return body ? `---\n${fm}\n---\n\n${body}\n` : `---\n${fm}\n---\n`;
 }
