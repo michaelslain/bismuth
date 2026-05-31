@@ -1,5 +1,5 @@
 // core/test/settings.test.ts
-import { test, expect } from "bun:test";
+import { test, expect, describe, it } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -137,7 +137,7 @@ test("serializeSettingsForFrontend includes the folderIcons map", async () => {
   expect(data.folderIcons).toEqual({ projects: "Folder" });
 });
 
-import { serializeSettingsForFrontend } from "../src/settings";
+import { serializeSettingsForFrontend, SETTINGS_FILE } from "../src/settings";
 
 test("serializeSettingsForFrontend returns defaults when no file exists", async () => {
   const vault = await emptyVault();
@@ -252,4 +252,52 @@ test("loadAppConfig returns file values merged over defaults, typed", async () =
   expect((cfg.graph as any).repulsion).toBe(-22);    // from file
   expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
   expect((cfg.appearance as any).theme).toBe("dark"); // schema default
+});
+
+// --- toolbar serialization ---
+
+function freshVault(): string {
+  return mkdtempSync(join(tmpdir(), "oa-toolbar-"));
+}
+
+describe("toolbar serialization", () => {
+  it("seeds the default toolbar into a fresh settings.yaml and serializes it", async () => {
+    const vault = freshVault();
+    await reconcileSettings(vault); // writes a fresh settings.yaml with defaults
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.toolbar).toEqual([
+      { command: "new-note", icon: "FilePlus" },
+      { command: "new-folder", icon: "FolderPlus" },
+      { command: "terminal", icon: "SquareTerminal" },
+    ]);
+  });
+
+  it("passes a user-defined toolbar list through, dropping malformed items", async () => {
+    const vault = freshVault();
+    await Bun.write(
+      join(vault, SETTINGS_FILE),
+      [
+        "toolbar:",
+        "  - command: settings",
+        "    icon: Settings",
+        "    tooltip: Preferences",
+        "  - command: graph-both",
+        "  - icon: Bug",
+        "  - command: terminal",
+        "    icon: SquareTerminal",
+      ].join("\n"),
+    );
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.toolbar).toEqual([
+      { command: "settings", icon: "Settings", tooltip: "Preferences" },
+      { command: "terminal", icon: "SquareTerminal" },
+    ]);
+  });
+
+  it("honors an explicit empty toolbar", async () => {
+    const vault = freshVault();
+    await Bun.write(join(vault, SETTINGS_FILE), "toolbar: []\n");
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.toolbar).toEqual([]);
+  });
 });
