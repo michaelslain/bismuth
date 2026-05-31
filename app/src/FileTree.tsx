@@ -11,6 +11,11 @@ import { IconPicker } from "./icons/IconPicker";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
+// Extensions hidden in the tree's display labels (and re-applied on rename),
+// just like Obsidian hides `.md`. Markdown notes and YAML configs alike.
+const STRIP_EXT = /\.(md|yaml|yml)$/i;
+const displayName = (name: string) => name.replace(STRIP_EXT, "");
+
 function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
   for (const { path, icon, kind } of entries) {
@@ -328,8 +333,9 @@ function EditableLabel(props: {
     const raw = inputRef?.value.trim() ?? "";
     props.setEditing(null);
     if (!raw || raw === initial) return; // no-op
-    // Preserve the .md extension for files if the user dropped it.
-    const newName = !props.isDir && !raw.endsWith(".md") ? `${raw}.md` : raw;
+    // Re-apply the original hidden extension (.md/.yaml/.yml) if the user dropped it.
+    const ext = props.isDir ? "" : (initial.match(STRIP_EXT)?.[0] ?? "");
+    const newName = ext && !raw.toLowerCase().endsWith(ext.toLowerCase()) ? `${raw}${ext}` : raw;
     const from = props.node.path;
     const to = joinPath(parentOf(from), newName);
     props.optimisticRename(from, to); // instant; reverted via refresh() on failure
@@ -353,10 +359,10 @@ function EditableLabel(props: {
     <input
       ref={(el) => {
         inputRef = el;
-        // Select the editable stem (filename without .md) so typing replaces it.
+        // Select the editable stem (filename without its extension) so typing replaces it.
         queueMicrotask(() => {
           el.focus();
-          const dot = !props.isDir && el.value.endsWith(".md") ? el.value.length - 3 : -1;
+          const dot = props.isDir ? -1 : el.value.search(STRIP_EXT);
           el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
         });
       }}
@@ -396,6 +402,10 @@ function Level(props: {
     <For each={sortedChildren(props.node)}>
       {(child) => {
         const indent = `${props.depth * 12 + 6}px`;
+        // Files have no chevron, so without compensation their icon sits left of a
+        // sibling folder's icon. Add the chevron (14) + gap (4) so file icons align
+        // under the folder's icon and read as nested inside it.
+        const fileIndent = `${props.depth * 12 + 6 + 18}px`;
         return child.children ? (
           <div>
             <div
@@ -411,7 +421,6 @@ function Level(props: {
               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
               onDragEnd={() => props.endDrag()}
               onClick={() => { if (props.editing !== child.path) props.toggle(child.path); }}
-              onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
               <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
@@ -432,16 +441,15 @@ function Level(props: {
           </div>
         ) : (
           <div
-            style={{ display: "flex", "align-items": "center", gap: "4px", padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
+            style={{ display: "flex", "align-items": "center", gap: "4px", padding: "2px 4px", "padding-left": fileIndent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
             onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}
             onClick={() => { if (props.editing !== child.path) props.onOpen(child.path); }}
-            onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
             <Icon value={child.icon} fallback="FileText" size={16} class="ft-icon" />
-            <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
+            <Show when={props.editing === child.path} fallback={displayName(child.name)}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
             </Show>
           </div>
