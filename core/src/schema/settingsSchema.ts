@@ -39,6 +39,7 @@ export const SETTINGS_SCHEMA: Schema = {
     livePreview: { type: "boolean", default: true, doc: "Render markdown inline as you type." },
     lineNumbers: { type: "boolean", default: false, doc: "Show line numbers." },
     lineWrapping: { type: "boolean", default: true, doc: "Wrap long lines." },
+    spellcheck: { type: "boolean", default: true, doc: "Spell + grammar check the note body (Harper)." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
   }),
   vault: object({

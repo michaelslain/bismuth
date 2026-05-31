@@ -77,7 +77,7 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
       spin: true, spinSpeed: 0.0015, palette: "aurora", repulsion: -10, linkDistance: 5,
       centering: 0.13, nodeSize: 6, viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10,
     },
-    editor: { livePreview: true, lineNumbers: false, lineWrapping: true, autoSaveDelay: 800 },
+    editor: { livePreview: true, lineNumbers: false, lineWrapping: true, spellcheck: true, autoSaveDelay: 800 },
     vault: { backupOnSave: true },
     calendar: { defaultView: "week", weekStartsOnMonday: true, militaryTime: false },
     properties: {},
