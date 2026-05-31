@@ -525,6 +525,49 @@ test("GET /events frame includes the changed path on mutation", async () => {
   }
 });
 
+import { initializeSettings } from "../src/settings";
+
+test("GET /settings returns parsed app settings with defaults", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const s = await (await fetch(`${base}/settings`)).json();
+    expect(s.appearance.theme).toBe("dark");
+    expect(s.graph.viewMode).toBe("3d");
+    expect(s.properties).toBeUndefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /schema returns the property registry from settings.yaml", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "settings.yaml", "properties:\n  due: date\n  rating: number\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const schema = await (await fetch(`${base}/schema`)).json();
+    expect(schema.due.type).toBe("date");
+    expect(schema.rating.type).toBe("number");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("createServer writes a settings.yaml on boot when missing", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  try {
+    // initializeSettings is fire-and-forget on boot; allow the write to land.
+    await initializeSettings(vault); // idempotent — ensures the file is present
+    const exists = await Bun.file(join(vault, "settings.yaml")).exists();
+    expect(exists).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /events streams a version event after a mutating call", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

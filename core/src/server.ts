@@ -16,6 +16,7 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker } from "./changeClassifier";
+import { initializeSettings, getVaultSchema, serializeSettingsForFrontend } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -45,6 +46,12 @@ function requireQueryParam(url: URL, param: string): string {
 type Handler = (req: Request, url: URL, cfg: CoreConfig) => Promise<Response> | Response;
 
 export function createServer(cfg: CoreConfig) {
+  // First launch: write a fully-commented settings.yaml from SETTINGS_SCHEMA.
+  // Fire-and-forget so server start stays synchronous; the file lands within ms.
+  // Swallow failures (e.g. a non-existent/read-only vault dir in tests) so a
+  // missing-config write can never take the whole server down on boot.
+  void initializeSettings(cfg.vault).catch(() => {});
+
   let cachedGraph: GraphData | null = null;
   let cachedTree: TreeEntry[] | null = null;
   let cachedRows: Row[] | null = null;
@@ -254,6 +261,16 @@ export function createServer(cfg: CoreConfig) {
     "GET /config": async (_, __) => {
       // Read-only view of how core was launched — surfaced in the settings page.
       return Response.json({ vault: cfg.vault, memory: cfg.memory ?? null });
+    },
+
+    "GET /settings": async (_, __) => {
+      // Parsed app settings (file merged over defaults) for frontend hydration.
+      return Response.json(await serializeSettingsForFrontend(cfg.vault));
+    },
+
+    "GET /schema": async (_, __) => {
+      // Property registry (from settings.yaml `properties:`) for note validation + autocomplete.
+      return Response.json(await getVaultSchema(cfg.vault));
     },
 
     "GET /agent-graph": async (_, __) => {
