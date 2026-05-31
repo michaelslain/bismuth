@@ -1,4 +1,4 @@
-import type { ReviewResponse, SchedulingInfo, SrsConfig } from "./types";
+import type { ReviewResponse, SchedulingInfo } from "./types";
 import { addDaysISO } from "../dates";
 
 export const BASE_EASE = 250;
@@ -8,67 +8,42 @@ export const MAX_INTERVAL = 36525;
 export const MIN_EASE = 130;
 export const EASE_STEP = 20;
 
-/** Default SM-2 parameters; a flashcard base overrides any subset via its `srs:` frontmatter. */
-export const DEFAULT_SRS_CONFIG: SrsConfig = {
-  baseEase: BASE_EASE,
-  easeStep: EASE_STEP,
-  minEase: MIN_EASE,
-  easyBonus: EASY_BONUS,
-  hardFactor: LAPSES_INTERVAL_CHANGE,
-  newGoodInterval: 1,
-  newEasyInterval: 4,
-  maxInterval: MAX_INTERVAL,
-};
-
-/** Merge a partial per-deck override onto the defaults (ignoring non-finite values). */
-export function resolveSrsConfig(partial?: Partial<SrsConfig> | null): SrsConfig {
-  const out = { ...DEFAULT_SRS_CONFIG };
-  if (partial) {
-    for (const k of Object.keys(DEFAULT_SRS_CONFIG) as (keyof SrsConfig)[]) {
-      const v = partial[k];
-      if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
-    }
-  }
-  return out;
-}
-
 /**
  * Compute the next schedule for a single sub-card.
- * `prev` is null for a brand-new card. `cfg` defaults to the standard SM-2 params.
+ * `prev` is null for a brand-new card.
  */
 export function schedule(
   prev: SchedulingInfo | null,
   response: ReviewResponse,
   today: string,
-  cfg: SrsConfig = DEFAULT_SRS_CONFIG,
 ): SchedulingInfo {
   const { interval, ease } = prev === null
-    ? scheduleNew(response, cfg)
-    : scheduleExisting(prev, response, cfg);
+    ? scheduleNew(response)
+    : scheduleExisting(prev, response);
 
-  const clampedInterval = Math.max(1, Math.min(interval, cfg.maxInterval));
+  const clampedInterval = Math.max(1, Math.min(interval, MAX_INTERVAL));
   return { due: addDaysISO(today, clampedInterval), interval: clampedInterval, ease };
 }
 
-function scheduleNew(response: ReviewResponse, cfg: SrsConfig): { interval: number; ease: number } {
+function scheduleNew(response: ReviewResponse): { interval: number; ease: number } {
   if (response === "easy") {
-    return { interval: cfg.newEasyInterval, ease: cfg.baseEase + cfg.easeStep };
+    return { interval: 4, ease: BASE_EASE + EASE_STEP };
   }
-  return { interval: cfg.newGoodInterval, ease: cfg.baseEase };
+  return { interval: 1, ease: BASE_EASE };
 }
 
-function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse, cfg: SrsConfig): { interval: number; ease: number } {
+function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse): { interval: number; ease: number } {
   let ease = prev.ease;
   let interval: number;
 
   if (response === "hard") {
-    ease = Math.max(cfg.minEase, ease - cfg.easeStep);
-    interval = Math.max(1, Math.round(prev.interval * cfg.hardFactor));
+    ease = Math.max(MIN_EASE, ease - EASE_STEP);
+    interval = Math.max(1, Math.round(prev.interval * LAPSES_INTERVAL_CHANGE));
   } else if (response === "good") {
     interval = Math.round(prev.interval * (ease / 100));
   } else {
-    ease = ease + cfg.easeStep;
-    interval = Math.round(prev.interval * (ease / 100) * cfg.easyBonus);
+    ease = ease + EASE_STEP;
+    interval = Math.round(prev.interval * (ease / 100) * EASY_BONUS);
   }
 
   return { interval, ease };

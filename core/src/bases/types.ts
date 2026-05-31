@@ -1,6 +1,5 @@
 // ---- The base config (parsed .base YAML) ----
 export type { Recurrence, RecurrenceType } from "./recurrence";
-export type { SrsConfig } from "../srs/types";
 
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
@@ -63,7 +62,6 @@ export interface BaseConfig {
   // Unified additions:
   source?: SourceSpec;                     // base-level default source for all views
   schema?: Record<string, string>;         // column -> type ("text"|"date"|"time"|"number"|"checkbox"|"list"|"link")
-  srs?: Partial<import("../srs/types").SrsConfig>; // per-deck SM-2 overrides (flashcard bases)
 }
 
 // ---- The data model (one Row per note) ----

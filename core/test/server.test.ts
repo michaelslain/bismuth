@@ -644,21 +644,3 @@ test("POST /cards/review (row-based) advances a flashcard base row", async () =>
     server.stop(true);
   }
 });
-
-test("POST /cards/review honors the deck's srs config", async () => {
-  const { vault, memory } = await makeSampleVault();
-  await writeNote(vault, "Deck.md", "---\ntype: base\nview: flashcards\nsrs: { newGoodInterval: 5 }\n---\n\n| front | back | due | ease | interval |\n| --- | --- | --- | --- | --- |\n| q | a |  | 250 | 0 |");
-  const server = createServer({ vault, memory, port: 0 });
-  const base = `http://localhost:${server.port}`;
-  try {
-    await fetch(`${base}/cards/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file: "Deck.md", index: 0, response: "good" }),
-    });
-    const data = await (await fetch(`${base}/base?file=Deck.md`)).json();
-    expect(data.rows[0].note.interval).toBe(5); // custom newGoodInterval, not the default 1
-  } finally {
-    server.stop(true);
-  }
-});

@@ -91,26 +91,3 @@ test("interval is clamped to MAX_INTERVAL", () => {
   const r = schedule(prev, "good", "2026-05-27");
   expect(r.interval).toBe(36525);
 });
-
-import { resolveSrsConfig, DEFAULT_SRS_CONFIG } from "../../src/srs/scheduler";
-
-test("resolveSrsConfig merges a partial override onto defaults", () => {
-  const cfg = resolveSrsConfig({ newGoodInterval: 3, baseEase: 300 });
-  expect(cfg.newGoodInterval).toBe(3);
-  expect(cfg.baseEase).toBe(300);
-  expect(cfg.easyBonus).toBe(DEFAULT_SRS_CONFIG.easyBonus); // untouched
-});
-
-test("schedule honors a custom config for a new card", () => {
-  const cfg = resolveSrsConfig({ newGoodInterval: 2, baseEase: 300 });
-  const s = schedule(null, "good", "2026-05-30", cfg);
-  expect(s.interval).toBe(2);
-  expect(s.ease).toBe(300);
-  expect(s.due).toBe("2026-06-01");
-});
-
-test("schedule with default config matches the legacy constants", () => {
-  const s = schedule(null, "good", "2026-05-30");
-  expect(s.interval).toBe(1);
-  expect(s.ease).toBe(250);
-});
