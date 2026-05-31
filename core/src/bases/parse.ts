@@ -183,6 +183,17 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   if (raw?.source && typeof raw.source === "object") {
     config.source = raw.source as BaseConfig["source"];
   }
+  // Top-level field-binding keys configure the default view (so the settings UI can
+  // persist them with a flat `setProperty`, no nested `views:` editing needed).
+  if (raw && config.views[0]) {
+    const FIELD_KEYS = [
+      "frontField", "backField", "dueField",
+      "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
+    ] as const;
+    for (const k of FIELD_KEYS) {
+      if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
+    }
+  }
 
   const rows = parseMarkdownTable(body, meta);
   return { config, rows };

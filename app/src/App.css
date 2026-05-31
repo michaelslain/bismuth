@@ -129,6 +129,18 @@ body { background: var(--bg); color: var(--fg); }
 .card-md pre { text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 0.85em; background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 .card-md pre code { background: none; padding: 0; }
 
+/* Cram toggle + per-view settings panel (flashcard/base views) */
+.srs-bar { width: 100%; display: flex; justify-content: flex-end; }
+.cram-toggle { background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--fg); opacity: 0.7; padding: 3px 12px; font-size: 12px; cursor: pointer; }
+.cram-toggle:hover { opacity: 1; border-color: var(--accent); }
+.cram-toggle.on { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.srs-panel { max-width: 640px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.srs-panel h3 { margin: 0; }
+.srs-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.srs-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; opacity: 0.85; }
+.srs-field input { padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font: inherit; }
+.srs-field input:focus { outline: none; border-color: var(--accent); }
+
 /* --- Pane splits (omnitabs) --- */
 .pane-split { display: flex; width: 100%; height: 100%; min-height: 0; min-width: 0; }
 .pane-split.row { flex-direction: row; }

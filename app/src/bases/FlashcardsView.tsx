@@ -5,11 +5,9 @@ import type { BaseConfig, Row } from "../../../core/src/bases/types";
 
 /**
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
- * Reviewing flips the card to the back (with the front kept as a small caption) and writes
- * SM-2 scheduling back to the base file. Card faces render markdown (Lora serif; `code` mono).
- *
- * Operates on raw rows in table order (index === array position) so write-back targets the
- * right row without threading an identity through runView.
+ * Reviewing flips to the back (front kept as a small caption) and writes fixed-SM-2 scheduling
+ * back to the row. Cram mode reviews ALL cards ignoring due dates and never changes scheduling.
+ * Faces render markdown (Lora serif; `code` monospace).
  */
 export function FlashcardsView(props: {
   rows: Row[];
@@ -23,45 +21,69 @@ export function FlashcardsView(props: {
   const dueField = () => view().dueField ?? "due";
   const today = new Date().toISOString().slice(0, 10);
 
-  const due = createMemo(() =>
-    props.rows
-      .map((r, index) => ({ r, index }))
-      .filter(({ r }) => {
-        const d = r.note[dueField()];
-        return d == null || d === "" || String(d) <= today;
-      }),
-  );
+  const [cram, setCram] = createSignal(false);
+
+  // The review queue: due cards normally; ALL cards in cram mode (order preserved).
+  const queue = createMemo(() => {
+    const all = props.rows.map((r, index) => ({ r, index }));
+    if (cram()) return all;
+    return all.filter(({ r }) => {
+      const d = r.note[dueField()];
+      return d == null || d === "" || String(d) <= today;
+    });
+  });
 
   const [pos, setPos] = createSignal(0);
   const [revealed, setRevealed] = createSignal(false);
 
-  const current = () => (pos() < due().length ? due()[pos()] : null);
+  const current = () => (pos() < queue().length ? queue()[pos()] : null);
   const frontHtml = (r: Row) => renderMarkdown(String(r.note[frontField()] ?? ""));
   const backHtml = (r: Row) => renderMarkdown(String(r.note[backField()] ?? ""));
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
-    if (!c || !props.basePath) return;
-    await api.reviewCardRow(props.basePath, c.index, response);
+    if (!c) return;
+    // Cram mode never writes scheduling — it's practice, not review.
+    if (!cram() && props.basePath) await api.reviewCardRow(props.basePath, c.index, response);
     setRevealed(false);
     setPos(pos() + 1);
-    props.onReviewed();
+    if (!cram()) props.onReviewed();
   };
 
   const restart = () => {
     setPos(0);
     setRevealed(false);
-    props.onReviewed();
+    if (!cram()) props.onReviewed();
+  };
+
+  const toggleCram = () => {
+    setCram(!cram());
+    setPos(0);
+    setRevealed(false);
   };
 
   return (
     <div class="flashcards-host">
+      <div class="srs-bar">
+        <button
+          class={`cram-toggle ${cram() ? "on" : ""}`}
+          title="Cram: review every card, no scheduling changes"
+          onClick={toggleCram}
+        >
+          {cram() ? "● Cram mode" : "Cram"}
+        </button>
+      </div>
+
       <Show
-        when={due().length > 0}
+        when={queue().length > 0}
         fallback={
           <div class="review-done">
-            <h2>No cards due</h2>
-            <p class="deck-empty">Add rows with <code>front</code> / <code>back</code> columns to this base.</p>
+            <h2>{cram() ? "No cards in this deck" : "No cards due"}</h2>
+            <p class="deck-empty">
+              <Show when={!cram()} fallback={<>Add rows with <code>front</code> / <code>back</code> columns.</>}>
+                Nothing due — hit <strong>Cram</strong> above to review everything anyway.
+              </Show>
+            </p>
           </div>
         }
       >
@@ -69,15 +91,17 @@ export function FlashcardsView(props: {
           when={current() !== null}
           fallback={
             <div class="review-done">
-              <h2>Done reviewing</h2>
+              <h2>{cram() ? "Cram complete" : "Done reviewing"}</h2>
               <button class="card-btn" onClick={restart}>Review again</button>
             </div>
           }
         >
           <div class="review">
-            <div class="review-progress">{pos() + 1} / {due().length}</div>
+            <div class="review-progress">
+              {pos() + 1} / {queue().length}
+              <Show when={cram()}> · cram (not scheduled)</Show>
+            </div>
 
-            {/* Click the card to flip; flipped face shows the back, with the front as a small caption. */}
             <div
               class={`flip-card ${revealed() ? "flipped" : ""}`}
               onClick={() => !revealed() && setRevealed(true)}

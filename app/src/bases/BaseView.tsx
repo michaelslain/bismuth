@@ -12,6 +12,7 @@ import { KanbanView } from "./KanbanView";
 import { MapView } from "./MapView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
+import { BaseSettings } from "./BaseSettings";
 import styles from "./BaseView.module.css";
 
 interface Loaded {
@@ -138,6 +139,7 @@ export function BaseView(props: {
 
   const [activeView, setActiveView] = createSignal(0);
   const [sourceMode, setSourceMode] = createSignal(false);
+  const [settingsMode, setSettingsMode] = createSignal(false);
 
   const activeType = createMemo(() => {
     const d = data();
@@ -174,52 +176,70 @@ export function BaseView(props: {
             </div>
           </Show>
           <Show when={editPath()}>
-            <button class={styles.srcBtn} onClick={() => setSourceMode(!sourceMode())}>
-              {sourceMode() ? "✕ Close source" : "</> Source"}
-            </button>
+            <div class={styles.barRight}>
+              <button class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
+                {settingsMode() ? "✕ Close" : "⚙ Settings"}
+              </button>
+              <button class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
+                {sourceMode() ? "✕ Close source" : "</> Source"}
+              </button>
+            </div>
           </Show>
         </div>
       </Show>
 
       <div class={styles.body}>
-        <Show
-          when={!sourceMode()}
-          fallback={<SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />}
+        <Switch
+          fallback={
+            <Show when={data()} fallback={<div class={styles.loading}>Loading…</div>}>
+              <Switch
+                fallback={
+                  <div class={styles.base}>
+                    <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
+                      {(res) => (
+                        <Switch fallback={<TableView result={res()} config={data()!.config} />}>
+                          <Match when={res().view.type === "kanban"}>
+                            <KanbanView result={res()} config={data()!.config} onChange={refetch} />
+                          </Match>
+                          <Match when={res().view.type === "cards"}>
+                            <CardsView result={res()} config={data()!.config} />
+                          </Match>
+                          <Match when={res().view.type === "list"}>
+                            <ListView result={res()} config={data()!.config} />
+                          </Match>
+                          <Match when={res().view.type === "map"}>
+                            <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
+                          </Match>
+                        </Switch>
+                      )}
+                    </Show>
+                  </div>
+                }
+              >
+                <Match when={activeType() === "flashcards"}>
+                  <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
+                </Match>
+                <Match when={activeType() === "calendar"}>
+                  <CalendarView basePath={data()!.basePath} onChange={refetch} />
+                </Match>
+              </Switch>
+            </Show>
+          }
         >
-          <Show when={data()} fallback={<div class={styles.loading}>Loading…</div>}>
-            <Switch
-              fallback={
-                <div class={styles.base}>
-                  <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
-                    {(res) => (
-                      <Switch fallback={<TableView result={res()} config={data()!.config} />}>
-                        <Match when={res().view.type === "kanban"}>
-                          <KanbanView result={res()} config={data()!.config} onChange={refetch} />
-                        </Match>
-                        <Match when={res().view.type === "cards"}>
-                          <CardsView result={res()} config={data()!.config} />
-                        </Match>
-                        <Match when={res().view.type === "list"}>
-                          <ListView result={res()} config={data()!.config} />
-                        </Match>
-                        <Match when={res().view.type === "map"}>
-                          <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
-                        </Match>
-                      </Switch>
-                    )}
-                  </Show>
-                </div>
-              }
-            >
-              <Match when={activeType() === "flashcards"}>
-                <FlashcardsView rows={data()!.rows} config={data()!.config} basePath={data()!.basePath} onReviewed={refetch} />
-              </Match>
-              <Match when={activeType() === "calendar"}>
-                <CalendarView basePath={data()!.basePath} onChange={refetch} />
-              </Match>
-            </Switch>
-          </Show>
-        </Show>
+          <Match when={sourceMode()}>
+            <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
+          </Match>
+          <Match when={settingsMode() && !!data()}>
+            <div class={styles.base}>
+              <BaseSettings
+                type={activeType()}
+                config={data()!.config}
+                basePath={data()!.basePath}
+                onSaved={() => { setSettingsMode(false); refetch(); }}
+              />
+            </div>
+          </Match>
+        </Switch>
       </div>
     </div>
   );
