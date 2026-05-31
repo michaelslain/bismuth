@@ -182,16 +182,52 @@ export function validateEntry(
   return null;
 }
 
-// validateDocument is implemented in a later task.
+/**
+ * Walk a parsed document object against a Schema and collect diagnostics.
+ * - Known keys: validated via validateEntry (type + range).
+ * - Unknown keys: info (frontmatter) / warning (settings).
+ * - Missing required keys: ignored (frontmatter) / error (settings).
+ */
 export function validateDocument(
   parsed: unknown,
   schema: Schema,
   opts: { mode: ValidateMode; ctx?: ValidateContext },
 ): Diagnostic[] {
-  void parsed;
-  void schema;
-  void opts;
-  return [];
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return [];
+  }
+  const obj = parsed as Record<string, unknown>;
+  const out: Diagnostic[] = [];
+
+  for (const [key, value] of Object.entries(obj)) {
+    const entry = schema[key];
+    if (!entry) {
+      out.push({
+        path: [key],
+        severity: opts.mode === "settings" ? "warning" : "info",
+        message: `unknown property: ${key}`,
+      });
+      continue;
+    }
+    const diag = validateEntry(entry, value, opts.ctx);
+    if (diag) out.push({ ...diag, path: [key, ...diag.path] });
+  }
+
+  if (opts.mode === "settings") {
+    for (const [key, entry] of Object.entries(schema)) {
+      if (!entry.required) continue;
+      const v = obj[key];
+      if (v === undefined || v === null) {
+        out.push({
+          path: [key],
+          severity: "error",
+          message: `missing required property: ${key}`,
+        });
+      }
+    }
+  }
+
+  return out;
 }
 
 export { err, warn };
