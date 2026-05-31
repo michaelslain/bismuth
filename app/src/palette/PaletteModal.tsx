@@ -5,12 +5,13 @@
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import Fuse from "fuse.js";
+import { Icon } from "../icons/Icon";
 
 export type PaletteItem = {
   id: string;
   label: string;
   sublabel?: string; // muted secondary text (e.g. a folder path)
-  icon?: string; // optional leading emoji
+  icon?: string; // optional leading icon (Lucide name or emoji)
 };
 
 type Match = { item: PaletteItem; indices: number[] }; // indices = matched chars in label
@@ -154,7 +155,7 @@ export function PaletteModal(props: Props) {
                   onClick={() => props.onSelect(r.item)}
                 >
                   <Show when={r.item.icon}>
-                    <span class="palette-icon">{r.item.icon}</span>
+                    <span class="palette-icon"><Icon value={r.item.icon!} size={15} /></span>
                   </Show>
                   <span class="palette-label">
                     <Highlight text={r.item.label} indices={r.indices} />

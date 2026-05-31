@@ -4,7 +4,8 @@
 import { Show, createSignal } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
-import { contentLabel } from "./tabIds";
+import { Icon } from "./icons/Icon";
+import { contentLabel, contentIcon } from "./tabIds";
 import type { NoteCandidate } from "./editor/wikilink";
 
 type PaneTreeProps = {
@@ -88,6 +89,9 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
             if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
           }}
         >
+          <Show when={contentIcon(props.node.content)}>
+            {(icon) => <Icon value={icon()} size={13} />}
+          </Show>
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
           <span
             class="pane-header-x"

@@ -1,6 +1,7 @@
 import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
+import { Icon } from '../../icons/Icon'
 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
@@ -49,7 +50,7 @@ export function CategoryPanel(props: { store: EventStore }) {
               <div class="category-row">
                 <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
                 <span>{c.name}</span>
-                <button onClick={() => handleDelete(c.name)}>✕</button>
+                <button onClick={() => handleDelete(c.name)}><Icon value="X" size={12} /></button>
               </div>
             )}</For>
           </div>

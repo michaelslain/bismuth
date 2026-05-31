@@ -10,12 +10,14 @@ import { api } from "../api";
 import { runTaskQuery } from "../../../core/src/tasks-query";
 import type { Task, Priority } from "../../../core/src/tasks";
 import { todayISO } from "../../../core/src/dates";
+import { lucideIconSpan } from "../icons/iconElement";
 
 const OPEN = /^\s*```+\s*tasks\s*$/i; // opening fence with the "tasks" info string
 const CLOSE = /^\s*```+\s*$/; // a bare fence line
 
-const PRIORITY_LABEL: Record<Priority, string> = {
-  highest: "🔺", high: "⏫", medium: "🔼", low: "🔽", lowest: "⏬", none: "",
+// Lucide icon per priority (highest→lowest as a run of up/neutral/down chevrons).
+const PRIORITY_ICON: Record<Priority, string | null> = {
+  highest: "ChevronsUp", high: "ChevronUp", medium: "Equal", low: "ChevronDown", lowest: "ChevronsDown", none: null,
 };
 
 class TasksQueryWidget extends WidgetType {
@@ -46,16 +48,32 @@ class TasksQueryWidget extends WidgetType {
       view.focus();
     });
 
+    // Solid roots mounted for inline icons; disposed on every re-render and on destroy.
+    const iconDisposers: (() => void)[] = [];
+    const clearIcons = () => {
+      for (const d of iconDisposers) d();
+      iconDisposers.length = 0;
+    };
+    // Build an icon span and track its disposer so it's cleaned up with the widget.
+    const icon = (name: string, size: number): HTMLSpanElement => {
+      const { el, dispose } = lucideIconSpan(name, size);
+      iconDisposers.push(dispose);
+      return el;
+    };
+    (root as HTMLElement & { __clearIcons?: () => void }).__clearIcons = clearIcons;
+
     const render = async () => {
       let all: Task[];
       try {
         all = await api.tasks();
       } catch (e) {
+        clearIcons();
         root.replaceChildren();
         root.textContent = `tasks: failed to load (${(e as Error).message})`;
         return;
       }
       const { tasks, errors } = runTaskQuery(all, this.query, todayISO());
+      clearIcons();
       root.replaceChildren();
 
       for (const err of errors) {
@@ -91,10 +109,16 @@ class TasksQueryWidget extends WidgetType {
         });
         row.appendChild(box);
 
+        const priIcon = PRIORITY_ICON[t.priority];
+        if (priIcon) {
+          const p = icon(priIcon, 14);
+          p.className = "cm-tasks-pri";
+          row.appendChild(p);
+        }
+
         const text = document.createElement("span");
         text.className = "cm-tasks-text" + (t.status === "done" ? " done" : "");
-        const pri = PRIORITY_LABEL[t.priority];
-        text.textContent = (pri ? pri + " " : "") + t.description;
+        text.textContent = t.description;
         text.title = t.path;
         // No click handler: clicking the text (like the rest of the block) lets the caret
         // enter the block and reveal the raw query source for editing.
@@ -103,13 +127,15 @@ class TasksQueryWidget extends WidgetType {
         if (t.due) {
           const due = document.createElement("span");
           due.className = "cm-tasks-due" + (t.due < todayISO() && t.status !== "done" ? " overdue" : "");
-          due.textContent = "📅 " + t.due;
+          due.appendChild(icon("Calendar", 12));
+          due.appendChild(document.createTextNode(" " + t.due));
           row.appendChild(due);
         }
         if (t.recurrence) {
           const rec = document.createElement("span");
           rec.className = "cm-tasks-rec";
-          rec.textContent = "🔁 " + t.recurrence;
+          rec.appendChild(icon("Repeat", 12));
+          rec.appendChild(document.createTextNode(" " + t.recurrence));
           row.appendChild(rec);
         }
 
@@ -142,6 +168,8 @@ class TasksQueryWidget extends WidgetType {
   destroy(dom: HTMLElement): void {
     const timer = (dom as HTMLElement & { __tasksTimer?: number }).__tasksTimer;
     if (timer !== undefined) window.clearInterval(timer);
+    // Tear down the Solid roots backing the inline Lucide icons.
+    (dom as HTMLElement & { __clearIcons?: () => void }).__clearIcons?.();
   }
 
   ignoreEvent(): boolean {
@@ -208,9 +236,10 @@ export const tasksQuery: Extension = [
     ".cm-tasks-check": { cursor: "pointer", margin: "0" },
     ".cm-tasks-text": { flex: "1", "min-width": "0" },
     ".cm-tasks-text.done": { "text-decoration": "line-through", opacity: "0.5" },
-    ".cm-tasks-due": { "font-size": "0.85em", opacity: "0.7", "white-space": "nowrap" },
+    ".cm-tasks-pri": { display: "inline-flex", "flex-shrink": "0", opacity: "0.8" },
+    ".cm-tasks-due": { display: "inline-flex", "align-items": "center", gap: "3px", "font-size": "0.85em", opacity: "0.7", "white-space": "nowrap" },
     ".cm-tasks-due.overdue": { color: "var(--accent, #b00020)" },
-    ".cm-tasks-rec": { "font-size": "0.85em", opacity: "0.5", "white-space": "nowrap" },
+    ".cm-tasks-rec": { display: "inline-flex", "align-items": "center", gap: "3px", "font-size": "0.85em", opacity: "0.5", "white-space": "nowrap" },
     ".cm-tasks-error": { color: "var(--accent, #b00020)", "font-size": "0.85em", "font-family": "monospace" },
     ".cm-tasks-empty": { opacity: "0.5", "font-style": "italic" },
   }),

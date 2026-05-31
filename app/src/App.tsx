@@ -14,7 +14,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
+import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -471,7 +471,7 @@ export default function App() {
   // numbered by their position among the open terminal tabs.
   function tabBarLabel(t: Tab): string {
     const ls = leaves(t.root);
-    if (ls.length > 1) return `⊞ ${ls.length} panes`;
+    if (ls.length > 1) return `${ls.length} panes`;
     const content = ls[0].content;
     if (content.startsWith(TERMINAL_PREFIX)) {
       const termTabs = tabs().filter((tt) => {
@@ -481,6 +481,13 @@ export default function App() {
       return contentLabel(content, termTabs.indexOf(t) + 1);
     }
     return contentLabel(content);
+  }
+
+  // Lucide icon name for a tab: a split-pane glyph for "omnitab"s, else the content's icon.
+  function tabBarIcon(t: Tab): string | undefined {
+    const ls = leaves(t.root);
+    if (ls.length > 1) return "Columns2";
+    return contentIcon(ls[0].content);
   }
 
   return (
@@ -502,6 +509,9 @@ export default function App() {
                 class={`tab${activeTabId() === t.id ? " active" : ""}`}
                 onClick={() => setActiveTabId(t.id)}
               >
+                <Show when={tabBarIcon(t)}>
+                  {(icon) => <Icon value={icon()} size={13} />}
+                </Show>
                 <span>{tabBarLabel(t)}</span>
                 <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
               </div>
