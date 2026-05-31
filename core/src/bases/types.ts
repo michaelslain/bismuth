@@ -1,4 +1,6 @@
 // ---- The base config (parsed .base YAML) ----
+export type { Recurrence, RecurrenceType } from "./recurrence";
+
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
 // All view kinds a view can render. Calendar + flashcards are the unified additions.
