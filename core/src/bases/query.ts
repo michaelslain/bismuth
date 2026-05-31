@@ -128,29 +128,29 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
   if (view.groupBy) {
     const dir = view.groupBy.direction === "DESC" ? -1 : 1;
     const map = new Map<string, Row[]>();
+    const rawByKey = new Map<string, unknown>(); // key -> the group's raw value, for type-aware sorting
     for (const r of filtered) {
-      const key = String(resolveProperty(view.groupBy.property, r, hostThis) ?? "");
-      if (!map.has(key)) map.set(key, []);
+      const raw = resolveProperty(view.groupBy.property, r, hostThis);
+      const key = String(raw ?? "");
+      if (!map.has(key)) { map.set(key, []); rawByKey.set(key, raw); }
       map.get(key)!.push(r);
     }
-    // Kanban with explicit `columns: [...]`: lock the declared keys + order, and
-    // append any data-only keys at the end so unexpected values still surface.
-    // Without this an empty column would vanish on the last drag-out.
-    if (view.type === "kanban" && view.columns && view.columns.length) {
-      const declared = view.columns;
-      const declaredSet = new Set(declared);
-      const ordered: ResultGroup[] = declared.map((key) => ({
-        key, rows: applyLimit(map.get(key) ?? [], view.limit),
-      }));
-      const extras = [...map.entries()]
-        .filter(([key]) => !declaredSet.has(key))
-        .sort((a, b) => a[0].localeCompare(b[0]) * dir)
-        .map(([key, rs]) => ({ key, rows: applyLimit(rs, view.limit) }));
-      groups = [...ordered, ...extras];
+    const groupOf = (key: string): ResultGroup => ({ key, rows: applyLimit(map.get(key) ?? [], view.limit) });
+    // Default group order is by the group's RAW value (type-aware: numbers numerically,
+    // dates chronologically), honoring groupBy.direction — NOT string-alphabetical.
+    const byValue = (a: string, b: string) => compare(rawByKey.get(a), rawByKey.get(b)) * dir;
+
+    if (view.columns && view.columns.length) {
+      // Explicit group order via `columns: [...]`, for ANY grouped view (generalized
+      // from kanban). Declared keys come first in the given order; kanban keeps empty
+      // declared groups as drop targets, other views show a declared group only when it
+      // has rows. Data-only keys not in the list are appended, ordered by value.
+      const declaredSet = new Set(view.columns);
+      const declared = view.columns.filter((key) => view.type === "kanban" || map.has(key)).map(groupOf);
+      const extras = [...map.keys()].filter((key) => !declaredSet.has(key)).sort(byValue).map(groupOf);
+      groups = [...declared, ...extras];
     } else {
-      groups = [...map.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]) * dir)
-        .map(([key, rs]) => ({ key, rows: applyLimit(rs, view.limit) }));
+      groups = [...map.keys()].sort(byValue).map(groupOf);
     }
   } else {
     groups = [{ key: "", rows: applyLimit(filtered, view.limit) }];

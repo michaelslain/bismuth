@@ -22,9 +22,12 @@ export interface ViewConfig {
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
   cardContent?: "properties" | "body";   // cards view: what to render inside each card
-  // Kanban: fixed group keys + order. Without this, columns are derived from data —
-  // dragging the last card out makes the column vanish. With it, every listed key
-  // shows up as a column even when empty, and the order follows the declared list.
+  // Explicit group order for a grouped view: groups appear in this declared order,
+  // with any data-only keys appended (ordered by value). Kanban additionally shows
+  // every listed key as a column even when empty (so a column doesn't vanish when its
+  // last card is dragged out); other view types only show declared groups that have
+  // rows. Without this, groups are ordered by the group value (type-aware), not the
+  // declared list.
   columns?: string[];
   // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
   columnWidths?: Record<string, number>;

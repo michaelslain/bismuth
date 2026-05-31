@@ -55,3 +55,11 @@ test("top-level cardContent: body folds into the default view", () => {
   expect(config.views[0].type).toBe("cards");
   expect(config.views[0].cardContent).toBe("body");
 });
+
+test("top-level columns folds into the default view (explicit group order)", () => {
+  const { config } = parseBaseFile(
+    "---\ntype: base\nview: list\ngroupBy: { property: formula.urgency }\ncolumns: [Overdue, This week, Later]\n---\n",
+    { name: "DoNow", path: "DoNow.md" },
+  );
+  expect(config.views[0].columns).toEqual(["Overdue", "This week", "Later"]);
+});

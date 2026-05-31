@@ -224,3 +224,38 @@ test("urgency buckets work with duration() too (composes with +)", () => {
   expect(byKey["This week"]).toEqual(["soon"]);
   expect(byKey["Later"]).toEqual(["later"]);
 });
+
+test("default group order is type-aware (numeric, not string-alphabetical)", () => {
+  const r2 = row("a", { n: 2 });
+  const r10 = row("b", { n: 10 });
+  const r1 = row("c", { n: 1 });
+  const cfg: BaseConfig = { views: [{ type: "table", name: "V", groupBy: { property: "note.n" } }] };
+  const res = runView(cfg, [r10, r2, r1], 0);
+  expect(res.groups.map((g) => g.key)).toEqual(["1", "2", "10"]); // numeric, not "1","10","2"
+});
+
+test("explicit columns order groups in a non-kanban (list) view", () => {
+  const rows2: Row[] = [
+    row("a", { bucket: "Later" }),
+    row("b", { bucket: "Overdue" }),
+    row("c", { bucket: "This week" }),
+    row("d", { bucket: "Mystery" }), // not declared -> appended
+  ];
+  const cfg: BaseConfig = {
+    views: [{ type: "list", name: "V", groupBy: { property: "note.bucket" }, columns: ["Overdue", "This week", "Later"] }],
+  };
+  const res = runView(cfg, rows2, 0);
+  expect(res.groups.map((g) => g.key)).toEqual(["Overdue", "This week", "Later", "Mystery"]);
+});
+
+test("non-kanban omits an empty declared group; kanban keeps it", () => {
+  const rows3: Row[] = [row("a", { s: "todo" })];
+  const listCfg: BaseConfig = {
+    views: [{ type: "list", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+  };
+  expect(runView(listCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo"]); // "done" empty -> omitted
+  const kanbanCfg: BaseConfig = {
+    views: [{ type: "kanban", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+  };
+  expect(runView(kanbanCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo", "done"]); // "done" kept as drop target
+});
