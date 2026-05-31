@@ -23,7 +23,7 @@ import { frontmatterBodyRange } from "./editor/frontmatterUtils";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
-import type { NoteCandidate } from "./editor/wikilink";
+import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
 import "./Editor.css";
 
@@ -208,16 +208,20 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...extensions,
           EditorView.domEventHandlers({
             mousedown: (e, view) => {
-              const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
+              // `false` = nearest-position mode: precise mode returns null when the click
+              // lands between glyphs or on padding, which made links intermittently dead.
+              const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY }, false);
               if (pos == null) return false;
               const line = view.state.doc.lineAt(pos);
               for (const m of line.text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
                 const s = line.from + (m.index ?? 0), en = s + m[0].length;
                 if (pos >= s && pos <= en) {
-                  // Strip an optional "|alias" and "#heading" to get the target note name.
-                  const target = m[1].split("|")[0].split("#")[0].trim();
-                  // A missing target opens as a new empty note (read falls back to "" above).
-                  window.dispatchEvent(new CustomEvent("oa-open", { detail: target + ".md" }));
+                  const { target } = parseWikilink(m[1]);
+                  // Wikilinks are filename-based: resolve the basename to its real vault
+                  // path so subfolder notes open (and highlight) correctly. An unresolved
+                  // target opens as a new note at the typed name (read falls back to "").
+                  const resolved = resolveNotePath(target, props.noteNames());
+                  window.dispatchEvent(new CustomEvent("oa-open", { detail: (resolved ?? target) + ".md" }));
                   return true;
                 }
               }
