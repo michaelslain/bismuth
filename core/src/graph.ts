@@ -18,6 +18,10 @@ export interface GraphNode {
   position?: [number, number, number];
   /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */
   position2d?: [number, number];
+  /** Louvain community id (stable color/group key), attached by the backend. */
+  community?: number;
+  /** Exemplar name for the node's community (highest-degree member's label). */
+  communityLabel?: string;
 }
 export interface GraphEdge {
   from: string;

@@ -1,5 +1,10 @@
-import { describe, expect, it } from "bun:test";
-import { computeAlwaysOnSet } from "./labelSelection";
+import { describe, expect, it, test } from "bun:test";
+import {
+  computeAlwaysOnSet,
+  renderedPixelRadius,
+  selectVisibleLabels,
+  type LabelCandidate,
+} from "./labelSelection";
 
 type N = { id: string; kind: "note" | "memory" | "agent" | "tag" };
 type E = { source: string; target: string };
@@ -74,4 +79,45 @@ describe("computeAlwaysOnSet", () => {
     const set = computeAlwaysOnSet(nodes, edges, null, 1);
     expect(set.has("a") || set.has("b")).toBe(true);
   });
+});
+
+const C = (o: Partial<LabelCandidate> & { id: string }): LabelCandidate => ({
+  px: 0, py: 0, w: 40, h: 12, renderedPx: 10, forced: false, ...o,
+});
+const OPTS = { thresholdPx: 6, gridCell: 64, perCell: 1 };
+
+test("rendered size grows with degree-scale and with zoom-in (smaller worldPerPixel)", () => {
+  expect(renderedPixelRadius(10, 2, 60, 1)).toBeGreaterThan(renderedPixelRadius(10, 1, 60, 1));
+  expect(renderedPixelRadius(10, 1, 60, 0.5)).toBeGreaterThan(renderedPixelRadius(10, 1, 60, 1));
+});
+
+test("selection is independent of position/radius-from-center", () => {
+  // Two identical nodes, one centered one far off-center, far apart so no grid collision.
+  const centered = C({ id: "center", px: 500, py: 500, renderedPx: 10 });
+  const rim = C({ id: "rim", px: 40, py: 40, renderedPx: 10 });
+  const got = selectVisibleLabels([centered, rim], OPTS);
+  expect(got.has("center")).toBe(true);
+  expect(got.has("rim")).toBe(true); // position must NOT decide
+});
+
+test("below threshold is dropped unless forced", () => {
+  const small = C({ id: "small", px: 100, py: 100, renderedPx: 3 });
+  expect(selectVisibleLabels([small], OPTS).has("small")).toBe(false);
+  const forced = C({ id: "small", px: 100, py: 100, renderedPx: 3, forced: true });
+  expect(selectVisibleLabels([forced], OPTS).has("small")).toBe(true);
+});
+
+test("grid cap keeps the worthiest (largest renderedPx) in a contested cell", () => {
+  const big = C({ id: "big", px: 10, py: 10, renderedPx: 30 });
+  const small = C({ id: "small", px: 12, py: 12, renderedPx: 8 });
+  const got = selectVisibleLabels([big, small], OPTS);
+  expect(got.has("big")).toBe(true);
+  expect(got.has("small")).toBe(false);
+});
+
+test("forced labels survive a contested cell alongside the worthiest", () => {
+  const big = C({ id: "big", px: 10, py: 10, renderedPx: 30 });
+  const forcedSmall = C({ id: "f", px: 12, py: 12, renderedPx: 1, forced: true });
+  const got = selectVisibleLabels([big, forcedSmall], OPTS);
+  expect(got.has("f")).toBe(true);
 });

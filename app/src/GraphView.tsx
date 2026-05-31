@@ -3,6 +3,8 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
 import { settings, setSettings, PALETTES } from "./settings";
+import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
+import { GraphSearch, type SearchItem } from "./GraphSearch";
 
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
 function hoverLabel(node: HoverNode): string {
@@ -26,6 +28,25 @@ export function GraphView(props: {
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
   const [fps, setFps] = createSignal<number | null>(null);
+  const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
+  const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
+  // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
+  // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
+  const [menuOpen, setMenuOpen] = createSignal(false);
+  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
+
+  // Rebuild legend rows + search items from the renderer's current node set. Called after each
+  // render() so the cluster directory tracks the live graph.
+  const refreshUiData = () => {
+    const centroids = renderer.getCommunityCentroids();
+    const rows: ClusterRow[] = [...centroids.entries()].map(([community, c]) => ({
+      community, label: c.label, count: c.count, color: c.color, ids: c.ids,
+    }));
+    setLegendRows(rows);
+    setSearchItems(
+      renderer.getNodesForUI().map((n) => ({ id: n.id, label: n.label, sub: n.communityLabel ?? n.folder })),
+    );
+  };
 
   onMount(() => {
     renderer.mount(
@@ -39,13 +60,13 @@ export function GraphView(props: {
     );
     renderer.setFpsCallback(setFps);
     mounted = true;
-    if (lastGraph) renderer.render(lastGraph);
+    if (lastGraph) { renderer.render(lastGraph); refreshUiData(); }
   });
 
   createEffect(() => {
     const g = props.graph;
     lastGraph = g;
-    if (mounted) renderer.render(g);
+    if (mounted) { renderer.render(g); refreshUiData(); }
   });
 
   // Push graph settings (spin/palette/physics/size) to the renderer whenever they change.
@@ -102,10 +123,56 @@ export function GraphView(props: {
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
+        <Show when={props.fill && menuOpen()}>
+          <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto" }}>
+            {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
+            <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
+              <button
+                title="Reset view to whole graph"
+                onClick={() => renderer.resetView()}
+                style={{ ...baseButtonStyle, flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(232,232,235,0.9)", padding: "6px 8px" }}
+              >
+                Reset view
+              </button>
+              <button
+                title="Close menu"
+                onClick={closeMenu}
+                style={{ ...baseButtonStyle, background: "rgba(20,20,24,0.6)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(220,220,225,0.8)", "font-size": "12px", padding: "6px 9px" }}
+              >
+                ✕
+              </button>
+            </div>
+            {/* Section 2 — search. */}
+            <GraphSearch
+              items={searchItems()}
+              onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
+              onFly={(id) => { renderer.setSearchMatches(new Set([id])); renderer.focusNode(id); }}
+              onClose={closeMenu}
+            />
+            {/* Section 3 — clusters, captioned + scrollable. */}
+            <div style={{ display: "flex", "flex-direction": "column", gap: "4px", flex: 1, "min-height": 0 }}>
+              <div style={{ "font-size": "9px", "letter-spacing": "0.09em", "text-transform": "uppercase", color: "rgba(200,200,200,0.4)", padding: "0 3px", "flex-shrink": 0 }}>
+                Clusters
+              </div>
+              <div style={{ flex: 1, "min-height": 0 }}>
+                <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
+              </div>
+            </div>
+          </div>
+        </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
-          <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+          <div style={{ display: "flex", gap: "2px", "align-items": "stretch", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
             <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
+            <Show when={props.fill}>
+              <button
+                style={{ ...getBtnStyle(menuOpen()), "font-size": "16px", "line-height": 1, padding: "2px 9px" }}
+                title="Graph tools — search, clusters, reset"
+                onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
+              >
+                ☰
+              </button>
+            </Show>
           </div>
           <Show when={hovered()}>
             {(node) => (
