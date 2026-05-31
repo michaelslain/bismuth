@@ -6,6 +6,43 @@ import type {
   ValidateContext,
   ValidateMode,
 } from "./types";
+import { extractWikilinks } from "../wikilinks";
+
+/** Pull the link target from a value: "[[Target|Display]]" -> "Target", else the raw string. */
+function linkTarget(value: string): string {
+  const links = extractWikilinks(value);
+  if (links.length > 0) return links[0];
+  return value.trim();
+}
+
+/** Levenshtein distance for nearest-match enum suggestions. */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const row = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i++) {
+    let prev = row[0];
+    row[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = row[j];
+      row[j] = Math.min(
+        row[j] + 1,
+        row[j - 1] + 1,
+        prev + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      prev = tmp;
+    }
+  }
+  return row[n];
+}
+
+/** Closest configured value(s) to `value`, nearest first. */
+function nearestEnum(values: string[], value: string): string[] {
+  return [...values]
+    .map((v) => ({ v, d: editDistance(v.toLowerCase(), value.toLowerCase()) }))
+    .sort((a, b) => a.d - b.d)
+    .map((x) => x.v);
+}
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -74,13 +111,29 @@ export function validateValue(
         }
         return err("expected a date-time (ISO-8601)");
       }
-      case "file":
-        // handled in a later task
-        return null;
+      case "file": {
+        if (!ctx?.resolveLink) return null;
+        const target = typeof value === "string" ? linkTarget(value) : String(value);
+        return ctx.resolveLink(target)
+          ? null
+          : warn(`"${target}" not found in vault`);
+      }
     }
   }
 
-  // Object/enum/list compound types handled in later tasks.
+  if (type.kind === "enum") {
+    const str = String(value);
+    const match = type.caseInsensitive
+      ? type.values.some((v) => v.toLowerCase() === str.toLowerCase())
+      : type.values.includes(str);
+    if (match) return null;
+    return err(
+      `expected one of: ${type.values.join(", ")}`,
+      nearestEnum(type.values, str).slice(0, 3),
+    );
+  }
+
+  // list + object compound types handled in a later task.
   return null;
 }
 
