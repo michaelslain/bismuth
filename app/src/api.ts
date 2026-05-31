@@ -100,4 +100,7 @@ export const api = {
     post("/cards/review", { file, index, response }),
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
+  // Persist a single setting by path (the backend merges it into settings.yaml in
+  // place, preserving comments + the property registry + unknown keys).
+  setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
 };

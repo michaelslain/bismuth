@@ -3,13 +3,16 @@
 // hardcoded values, so a fresh install behaves exactly as before. The store is
 // seeded SYNCHRONOUSLY from DEFAULTS (no white-screen on first paint), then
 // hydrated from the vault's settings.yaml via GET /settings and persisted back
-// through a debounced PUT /file. DEFAULTS is imported from the spine
+// by PATCHing only the keys that changed (POST /set-setting), so the backend can
+// merge each change in place without clobbering comments, the property registry,
+// or unknown keys. DEFAULTS is imported from the spine
 // (core/src/schema/settingsSchema.ts) so the synchronous seed can never drift
 // from the file the backend writes (single source of truth).
 import { createStore, reconcile } from "solid-js/store";
 import { createEffect, createRoot } from "solid-js";
 import { stringify } from "yaml";
 import { api } from "./api";
+import { diffLeaves } from "./settingsDiff";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
 
 export type Theme = "dark" | "light";
@@ -148,9 +151,10 @@ export function firstLaunchImport(
   return imported;
 }
 
-// Track the YAML body we last wrote so the SSE echo of our own write doesn't
-// trigger a redundant re-hydrate (mirrors Editor.tsx's lastIgnoredVersion).
-let lastWritten = "";
+// The store state we believe is on disk. The persister diffs the live store against
+// it to PATCH only changed leaves; the SSE handler resets it after applying server
+// data so our own write-echoes don't bounce back as redundant re-hydrates.
+let lastSnapshot: Record<string, unknown> = structuredClone(_DEFAULTS) as unknown as Record<string, unknown>;
 let persistTimer: ReturnType<typeof setTimeout> | undefined;
 let hydrated = false;
 
@@ -162,22 +166,25 @@ async function hydrateFromServer(): Promise<void> {
     return; // backend unreachable — keep the synchronous defaults seed
   }
 
-  // First-launch: import legacy localStorage into settings.yaml once.
+  // First-launch: import legacy localStorage into settings.yaml once. The server is
+  // bare defaults at this point (firstLaunchImport guards on that), so a one-time
+  // whole-file write loses no comments/unknowns; reconcile shapes it on next open.
   const legacy = typeof localStorage !== "undefined" ? localStorage.getItem(LEGACY_KEY) : null;
   const imported = firstLaunchImport(legacy, data);
   if (imported) {
-    const body = stringify(imported);
-    lastWritten = body;
     try {
-      await api.write("settings.yaml", body);
+      await api.write("settings.yaml", stringify(imported));
       if (typeof localStorage !== "undefined") localStorage.removeItem(LEGACY_KEY);
     } catch { /* leave legacy in place; retry next launch */ }
     setSettings(reconcile(imported));
+    lastSnapshot = structuredClone(imported) as unknown as Record<string, unknown>;
     hydrated = true;
     return;
   }
 
-  setSettings(reconcile(mergeServerSettings(data)));
+  const merged = mergeServerSettings(data);
+  setSettings(reconcile(merged));
+  lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>;
   hydrated = true;
 }
 
@@ -189,8 +196,9 @@ if (typeof window !== "undefined") {
       // 1. Hydrate once on boot.
       void hydrateFromServer();
 
-      // 2. Re-hydrate when the SSE stream reports a settings.yaml change that
-      //    isn't the echo of our own write.
+      // 2. Re-hydrate when the SSE stream reports a settings.yaml change. If the
+      //    merged server state already equals the live store it's our own write
+      //    echoing back (or a no-op) — skip to avoid clobbering an in-flight edit.
       createEffect(() => {
         const change = lastChange();
         if (change.version <= 0) return;
@@ -198,23 +206,29 @@ if (typeof window !== "undefined") {
         void (async () => {
           let data: Record<string, unknown>;
           try { data = await api.settings(); } catch { return; }
-          if (stringify(mergeServerSettings(data)) === lastWritten) return; // our echo
-          setSettings(reconcile(mergeServerSettings(data)));
+          const merged = mergeServerSettings(data);
+          if (JSON.stringify(merged) === JSON.stringify(settings)) return; // our echo / no-op
+          setSettings(reconcile(merged));
+          lastSnapshot = structuredClone(merged) as unknown as Record<string, unknown>;
         })();
       });
 
       // 3. Persist on change: optimistic in-memory apply already happened via
-      //    setSettings callers; debounce the disk write. Skip writes until the
-      //    first hydrate completes so we don't clobber the file with the seed.
+      //    setSettings callers; debounce, then PATCH only the leaves that changed
+      //    since lastSnapshot. Skip until the first hydrate completes so we don't
+      //    persist the synchronous defaults seed over the user's file.
       createEffect(() => {
         const snapshot = JSON.stringify(settings); // track all fields
         if (!hydrated) return;
         void snapshot;
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
-          const body = stringify(structuredClone(settings));
-          lastWritten = body;
-          api.write("settings.yaml", body).catch(() => { /* surfaced elsewhere */ });
+          const current = JSON.parse(JSON.stringify(settings)) as Record<string, unknown>;
+          const changes = diffLeaves(lastSnapshot, current);
+          lastSnapshot = current;
+          for (const { path, value } of changes) {
+            api.setSetting(path, value).catch(() => { /* surfaced elsewhere */ });
+          }
         }, 600);
       });
     });
