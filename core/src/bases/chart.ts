@@ -1,7 +1,7 @@
 import type { Row, ViewConfig } from "./types";
 import { resolveProperty } from "./query";
 import { toNumber } from "./values";
-import { binKey, binLabel, type Bin } from "../dates";
+import { binKey, binLabel, addDaysISO, type Bin } from "../dates";
 
 export type Aggregate = "sum" | "avg" | "count" | "min" | "max";
 export type { Bin };
@@ -127,4 +127,28 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
     isDate,
     valueLabel: agg === "count" ? "count" : (y ?? "count"),
   };
+}
+
+export interface HeatCell { date: string; value: number | null; }
+
+/** Lay date-binned points into a GitHub-style grid: array of week columns, each 7 cells (Mon..Sun). */
+export function buildHeatmapWeeks(points: ChartPoint[]): { weeks: HeatCell[][] } {
+  const byDate = new Map<string, number>();
+  for (const p of points) if (p.date) byDate.set(p.date, p.value);
+  const dates = [...byDate.keys()].sort();
+  if (dates.length === 0) return { weeks: [] };
+
+  const start = binKey(dates[0], "week"); // Monday on/before first point
+  const end = dates[dates.length - 1];
+
+  const weeks: HeatCell[][] = [];
+  let col: HeatCell[] = [];
+  let cursor = start;
+  while (cursor <= end || col.length > 0) {
+    col.push({ date: cursor, value: byDate.has(cursor) ? byDate.get(cursor)! : null });
+    if (col.length === 7) { weeks.push(col); col = []; }
+    cursor = addDaysISO(cursor, 1);
+    if (cursor > end && col.length === 0) break;
+  }
+  return { weeks };
 }

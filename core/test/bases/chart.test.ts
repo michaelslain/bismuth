@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildChartData } from "../../src/bases/chart";
+import { buildChartData, buildHeatmapWeeks } from "../../src/bases/chart";
 import type { Row, ViewConfig } from "../../src/bases/types";
 import { EMPTY_FILE } from "../../src/bases/types";
 
@@ -79,5 +79,26 @@ describe("buildChartData", () => {
     const rows = [row({ cat: "b", g: 2 }), row({ cat: "a", g: 2 })];
     const d = buildChartData(rows, view({ x: "cat", y: "g", aggregate: "sum" }));
     expect(d.points.map((p) => p.key)).toEqual(["a", "b"]);
+  });
+});
+
+describe("buildHeatmapWeeks", () => {
+  test("lays out day points into Monday-started week columns", () => {
+    // 2026-05-25 (Mon) .. 2026-05-27 (Wed)
+    const points = [
+      { key: "2026-05-25", label: "", value: 1, date: "2026-05-25" },
+      { key: "2026-05-27", label: "", value: 4, date: "2026-05-27" },
+    ];
+    const { weeks } = buildHeatmapWeeks(points);
+    expect(weeks.length).toBe(1);
+    expect(weeks[0].length).toBe(7);
+    expect(weeks[0][0]).toEqual({ date: "2026-05-25", value: 1 });
+    expect(weeks[0][1]).toEqual({ date: "2026-05-26", value: null }); // gap day
+    expect(weeks[0][2]).toEqual({ date: "2026-05-27", value: 4 });
+    expect(weeks[0][6].value).toBe(null); // Sunday, no data
+  });
+
+  test("empty points -> no weeks", () => {
+    expect(buildHeatmapWeeks([]).weeks).toEqual([]);
   });
 });
