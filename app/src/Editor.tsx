@@ -4,6 +4,8 @@ import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
+import { yaml } from "@codemirror/lang-yaml";
+import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 import { api } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
@@ -64,6 +66,12 @@ const editorTheme = EditorView.theme({
   },
 });
 
+// Config buffers (settings.yaml etc.) are CODE, not prose: monospace, tighter
+// line-height. Applied after editorTheme so it overrides the prose font.
+const codeFontTheme = EditorView.theme({
+  ".cm-scroller": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace", lineHeight: "1.55" },
+});
+
 export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -101,49 +109,64 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     // Read editor settings here so this effect re-runs (rebuilding the view) when
     // any of them change — that re-applies live preview / gutter / wrapping toggles.
     const ed = settings.editor;
-    const extensions = [
+
+    // Autosave: skip disk-pulled reloads so we don't loop against externally
+    // rewritten files (e.g. DAEMON.md).
+    const autosave = EditorView.updateListener.of((u) => {
+      if (!u.docChanged) return;
+      if (u.transactions.some((tr) => tr.annotation(ExternalReload))) return;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => save(path, u.state.doc.toString()), settings.editor.autoSaveDelay);
+    });
+
+    // Shared base for every buffer: editing, theme, gutters, autosave.
+    const base = [
       history(),
       drawSelection(),
       keymap.of([...defaultKeymap, ...historyKeymap]),
-      markdown(),
-      basesBlock(() => path),
-      vaultCompletion({
-        getNotes: props.noteNames,
-        getTags: props.tagNames,
-        getSchema: propertyRegistry,
-        inFrontmatter: isInFrontmatter,
-      }),
-      // The vault-root settings.yaml is validated as a whole document against the
-      // fixed app-settings schema; every other buffer validates its frontmatter
-      // slice against the vault property registry.
-      isSettingsBuffer(path)
-        ? yamlSchema({
-            getSchema: () => SETTINGS_SCHEMA,
-            mode: "settings" as const,
-            resolveLink: () => true, // unused in settings mode; contract requires it
-          })
-        : yamlSchema({
+      editorTheme,
+      ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
+      ...(ed.lineNumbers ? [lineNumbers()] : []),
+      autosave,
+    ];
+
+    // Config buffers render as YAML CODE — monospace, syntax-highlighted, NO
+    // markdown rendering and NO spell/grammar check. settings.yaml additionally
+    // validates the whole document against the fixed app-settings schema.
+    const isYaml = path.endsWith(".yaml") || path.endsWith(".yml");
+    const extensions = isYaml
+      ? [
+          ...base,
+          yaml(),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          codeFontTheme,
+          ...(isSettingsBuffer(path)
+            ? [yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true })]
+            : []),
+        ]
+      : [
+          // Note buffers: markdown + live preview, autocomplete, frontmatter
+          // validation, and spell/grammar checking.
+          ...base,
+          markdown(),
+          basesBlock(() => path),
+          vaultCompletion({
+            getNotes: props.noteNames,
+            getTags: props.tagNames,
+            getSchema: propertyRegistry,
+            inFrontmatter: isInFrontmatter,
+          }),
+          yamlSchema({
             getSchema: propertyRegistry,
             mode: "frontmatter",
             // Filename-based link resolution: a [[Target]] resolves when some note
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
-      editorTheme,
-      ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
-      ...(ed.lineNumbers ? [lineNumbers()] : []),
-      ...(ed.livePreview ? [livePreview, tasksQuery] : []),
-      // Harper spell + grammar check, toggled by editor.spellcheck (default true).
-      ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
-      EditorView.updateListener.of((u) => {
-        if (!u.docChanged) return;
-        // A reload we pulled from disk isn't a user edit — don't autosave it
-        // back (that loops against externally-rewritten files like DAEMON.md).
-        if (u.transactions.some((tr) => tr.annotation(ExternalReload))) return;
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => save(path, u.state.doc.toString()), settings.editor.autoSaveDelay);
-      }),
-    ];
+          ...(ed.livePreview ? [livePreview, tasksQuery] : []),
+          // Harper spell + grammar check, toggled by editor.spellcheck (default true).
+          ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
+        ];
 
     view = new EditorView({
       parent: host,
