@@ -5,7 +5,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
-import type { Row } from "../../core/src/bases/types";
+import type { Row, ParsedBase } from "../../core/src/bases/types";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
@@ -60,6 +60,7 @@ export const api = {
   version: () =>
     getJson<{ version: number }>("/version"),
   vaultData: () => getJson<Row[]>("/vault-data"),
+  base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),

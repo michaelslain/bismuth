@@ -565,3 +565,21 @@ test("GET /events streams a version event after a mutating call", async () => {
     server.stop(true);
   }
 });
+
+test("GET /base returns config + rows for a type:base file", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "Cal.md", "---\ntype: base\nview: calendar\n---\n\n| title | date |\n| --- | --- |\n| X | 2026-06-01 |");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/base?file=Cal.md`);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.config.views[0].type).toBe("calendar");
+    expect(data.rows[0].note.title).toBe("X");
+    const missing = await fetch(`${base}/base?file=Nope.md`);
+    expect(missing.status).toBe(404);
+  } finally {
+    server.stop(true);
+  }
+});

@@ -8,6 +8,7 @@ import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
+import { parseBaseFile } from "./bases/parse";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
@@ -229,6 +230,16 @@ export function createServer(cfg: CoreConfig) {
     "GET /vault-data": async (_, __) => {
       if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
       return Response.json(cachedRows);
+    },
+
+    "GET /base": async (_, url) => {
+      const path = requireQueryParam(url, "file");
+      if (!(await Bun.file(join(cfg.vault, path)).exists())) {
+        return new Response("not found", { status: 404 });
+      }
+      const text = await readNote(cfg.vault, path);
+      const name = path.split("/").pop()!.replace(/\.md$/, "");
+      return Response.json(parseBaseFile(text, { name, path }));
     },
 
     "GET /file": async (_, url) => {
