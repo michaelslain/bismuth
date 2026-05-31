@@ -316,6 +316,7 @@ export class WebGLRenderer {
   private crowdZoom = 1;                               // current zoom ratio vs default framing (brightens edges as you zoom in)
   private baseEdgeColors: Float32Array = new Float32Array(0); // per-vertex edge colors (endpoint gradient)
   private hlActive = false; // true while a highlight transition is in progress; cleared when settled
+  private highlightedSet: Set<string> | null = null; // persistent cluster highlight (survives mouse-out)
   private userControlled = false; // once the user zooms/drags, stop auto-fitting the camera
   private interactHandler?: () => void;
   private keyHandler?: (e: KeyboardEvent) => void;
@@ -682,8 +683,23 @@ export class WebGLRenderer {
     this.frameIds(set, 1.25);
   }
 
+  /** Highlight a set of nodes (e.g. a clicked cluster): brighten them, dim the rest, until cleared.
+   *  Persists through mouse-out (hover temporarily overrides, then this returns). */
+  highlightNodes(ids: string[]): void {
+    this.highlightedSet = ids.length ? new Set(ids) : null;
+    this.setHighlightTargets();
+  }
+
+  /** Drop any cluster highlight, back to the resting palette. */
+  clearHighlight(): void {
+    if (!this.highlightedSet) return;
+    this.highlightedSet = null;
+    this.setHighlightTargets();
+  }
+
   /** Fly back to the whole-graph overview (public Home/reset). */
   resetView(): void {
+    this.clearHighlight();
     this.pushHistory();
     this.frameAll();
   }
@@ -739,6 +755,7 @@ export class WebGLRenderer {
     }
     const out = new Map<number, { label: string; ids: string[]; color: string; centroid: [number, number, number]; count: number }>();
     for (const [community, members] of groups) {
+      if (members.length < 2) continue; // a lone note isn't a cluster — keep it out of the legend
       let cx = 0, cy = 0, cz = 0;
       for (const n of members) { cx += n.x ?? 0; cy += n.y ?? 0; cz += n.z ?? 0; }
       const k = members.length || 1;
@@ -893,6 +910,18 @@ export class WebGLRenderer {
     if (this.tgtI.length !== this.nodes.length) return;
     const id = this.hoveredId;
     if (!id) {
+      // No hover: if a cluster is highlighted, brighten its members and dim the rest; else rest.
+      if (this.highlightedSet) {
+        const set = this.highlightedSet;
+        for (let i = 0; i < this.nodes.length; i++) this.tgtI[i] = set.has(this.nodes[i].id) ? 1 : -1;
+        for (let i = 0; i < this.resolvedLinks.length && i < this.tgtE.length; i++) {
+          const { s, t } = this.resolvedLinks[i];
+          this.tgtE[i] = set.has(s.id) && set.has(t.id) ? 1 : this.edgeIntensity(i, EDGE_DIM);
+        }
+        this.hlActive = true;
+        this.rewriteEdgePositions();
+        return;
+      }
       this.tgtI.fill(0); // 0 = resting palette color (no hover)
       for (let i = 0; i < this.tgtE.length; i++) this.tgtE[i] = this.edgeIntensity(i, EDGE_BASE);
       this.hlActive = true;

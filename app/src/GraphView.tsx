@@ -33,7 +33,7 @@ export function GraphView(props: {
   // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
   // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); };
+  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
 
   // Rebuild legend rows + search items from the renderer's current node set. Called after each
   // render() so the cluster directory tracks the live graph.
@@ -123,15 +123,6 @@ export function GraphView(props: {
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
-        <Show when={props.fill && !menuOpen()}>
-          <button
-            title="Graph tools — search, clusters, reset"
-            onClick={() => setMenuOpen(true)}
-            style={{ ...baseButtonStyle, position: "absolute", top: "8px", right: "8px", background: "rgba(20,20,24,0.6)", color: "rgba(232,232,235,0.92)", "font-size": "14px", "line-height": 1, padding: "6px 9px", "pointer-events": "auto" }}
-          >
-            ☰
-          </button>
-        </Show>
         <Show when={props.fill && menuOpen()}>
           <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto" }}>
             {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
@@ -164,15 +155,24 @@ export function GraphView(props: {
                 Clusters
               </div>
               <div style={{ flex: 1, "min-height": 0 }}>
-                <ClusterLegend rows={legendRows()} onFocus={(ids) => renderer.frameSubset(ids)} />
+                <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
               </div>
             </div>
           </div>
         </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
-          <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+          <div style={{ display: "flex", gap: "2px", "align-items": "stretch", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
             <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
+            <Show when={props.fill}>
+              <button
+                style={{ ...getBtnStyle(menuOpen()), "font-size": "16px", "line-height": 1, padding: "2px 9px" }}
+                title="Graph tools — search, clusters, reset"
+                onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
+              >
+                ☰
+              </button>
+            </Show>
           </div>
           <Show when={hovered()}>
             {(node) => (
