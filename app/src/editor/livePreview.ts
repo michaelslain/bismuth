@@ -280,7 +280,6 @@ export const livePreview = [
     // "properties = purple / 3rd-brain" category color.
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
-      "font-size": "0.85em",
       background: "color-mix(in srgb, #b89cff 7%, transparent)",
       "box-shadow": "inset 2px 0 0 color-mix(in srgb, #b89cff 55%, transparent)",
     },

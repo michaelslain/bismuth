@@ -2,7 +2,7 @@
 // CM6 glue for schema-driven YAML validation + autocomplete of note frontmatter
 // (and settings.yaml, via mode). The pure mapping logic (diagnosticsForFrontmatter)
 // is exported separately so it runs under `bun test` without a browser.
-import { linter, type Diagnostic as CmDiagnostic } from "@codemirror/lint";
+import { linter, type Diagnostic as CmDiagnostic, type Action } from "@codemirror/lint";
 import type { CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -100,16 +100,33 @@ export function isInFrontmatter(ctx: CompletionContext): boolean {
 function schemaLinter(opts: YamlSchemaOpts) {
   return linter((view: EditorView): CmDiagnostic[] => {
     const doc = view.state.doc.toString();
-    return diagnosticsForFrontmatter(doc, opts.getSchema(), opts.resolveLink, opts.mode).map((d) => ({
-      from: d.from,
-      to: d.to,
-      severity: d.severity,
-      message: d.message,
-      // Category color: property/settings validation marks are purple (3rd-brain),
-      // distinct from red spelling / blue grammar. Styled in livePreview's theme.
-      markClass: "property-mark",
-    }));
-  }, { delay: 350 });
+    return diagnosticsForFrontmatter(doc, opts.getSchema(), opts.resolveLink, opts.mode).map((d) => {
+      const diag: CmDiagnostic = {
+        from: d.from,
+        to: d.to,
+        severity: d.severity,
+        message: d.message,
+        // Category color: property/settings validation marks are purple (3rd-brain),
+        // distinct from red spelling / blue grammar. Styled in livePreview's theme.
+        markClass: "property-mark",
+      };
+      // Enum nearest-match suggestions → "replace the value" quick-fixes, so the
+      // shared right-click menu offers the same kind of fix as spelling/grammar.
+      if (d.suggestions?.length) {
+        const lineText = view.state.doc.sliceString(d.from, d.to);
+        const colon = lineText.indexOf(":");
+        if (colon >= 0) {
+          const valFrom = d.from + colon + 1 + (lineText.slice(colon + 1).match(/^\s*/)?.[0].length ?? 0);
+          diag.actions = d.suggestions.map((s): Action => ({
+            name: `→ ${s}`,
+            apply: (v: EditorView) => v.dispatch({ changes: { from: valFrom, to: d.to, insert: s } }),
+          }));
+        }
+      }
+      return diag;
+    });
+    // No hover boxes — fixes live in the shared right-click menu (editorContextMenu).
+  }, { delay: 350, tooltipFilter: () => [] });
 }
 
 /** The CM6 extension: just the linter. Autocomplete sources are merged into the single

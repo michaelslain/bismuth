@@ -1,54 +1,6 @@
 /* app/src/Editor.css */
 
-/* Squiggles (spell=red, grammar=blue, property=purple) are drawn by markClass in
-   livePreview's EditorView.theme. This file owns only the right-click menu. */
-
-/* Right-click suggestions menu for a spell/grammar mark. */
-.harper-menu {
-  position: fixed;
-  z-index: 1000;
-  min-width: 184px;
-  max-width: 300px;
-  padding: 4px;
-  /* Solid app background (like the command palette) — --panel is near-transparent. */
-  background: var(--bg, #0e0e11);
-  border: 1px solid var(--border, #33333a);
-  border-radius: 10px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.38);
-  /* Match the app UI font (command palette / chrome), not the editor's prose font. */
-  font: 13px/1.5 "Monaspace Xenon", ui-monospace, monospace;
-  color: var(--fg, #ececf0);
-  user-select: none;
-}
-.harper-menu-header {
-  padding: 6px 10px 8px;
-  font-size: 11px;
-  line-height: 1.35;
-  opacity: 0.55;
-  white-space: normal;
-}
-.harper-menu-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 6px 10px;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-.harper-menu-item:hover {
-  background: color-mix(in srgb, var(--accent, #6496ff) 22%, transparent);
-}
-.harper-menu-empty {
-  padding: 6px 10px;
-  font-style: italic;
-  opacity: 0.5;
-}
-.harper-menu-sep {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border, #33333a);
-}
+/* Editor visuals live elsewhere now:
+   - squiggles (spell=red, grammar=blue, property=purple) → livePreview's EditorView.theme
+   - the right-click menu → the shared <ContextMenu> component (App.tsx), driven by
+     editor/contextMenu.ts. This file is intentionally (nearly) empty. */
