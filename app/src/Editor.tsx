@@ -3,6 +3,8 @@ import { createEffect, createMemo, onCleanup } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { startCompletion } from "@codemirror/autocomplete";
+import { forceLinting } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
@@ -13,6 +15,8 @@ import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
+import { settingsCompletion } from "./editor/settingsComplete";
+import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
@@ -68,9 +72,10 @@ const editorTheme = EditorView.theme({
 });
 
 // Config buffers (settings.yaml etc.) are CODE, not prose: monospace, tighter
-// line-height. Applied after editorTheme so it overrides the prose font.
+// line-height. !important so it beats editorTheme's prose font (CM facet
+// precedence is earlier-wins, and editorTheme comes first in the array).
 const codeFontTheme = EditorView.theme({
-  ".cm-scroller": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace", lineHeight: "1.55" },
+  ".cm-scroller": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace !important", lineHeight: "1.55" },
 });
 
 // YAML syntax colors pulled from the app theme (keys = accent, bools/numbers =
@@ -101,6 +106,15 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     props.onSaved();
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
   };
+
+  // Re-validate the open buffer when the property registry changes — e.g. you add
+  // a property to settings.yaml's `properties:` section. CM linters only re-run on
+  // doc changes, so an external registry update needs an explicit re-lint or the
+  // note would keep showing stale "unknown property" marks.
+  createEffect(() => {
+    propertyRegistry(); // track: re-run whenever the registry signal updates
+    if (view) forceLinting(view);
+  });
 
   createEffect(async () => {
     const path = currentPath();
@@ -135,11 +149,14 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const base = [
       history(),
       drawSelection(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
+      keymap.of([{ key: "Ctrl-Space", run: startCompletion }, ...defaultKeymap, ...historyKeymap]),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
       autosave,
+      // Right-click a spelling / grammar / property mark → the shared app menu.
+      editorContextMenu(),
     ];
 
     // Config buffers render as YAML CODE — monospace, syntax-highlighted, NO
@@ -153,7 +170,10 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           syntaxHighlighting(yamlHighlight),
           codeFontTheme,
           ...(isSettingsBuffer(path)
-            ? [yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true })]
+            ? [
+                yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
+                settingsCompletion(() => SETTINGS_SCHEMA),
+              ]
             : []),
         ]
       : [

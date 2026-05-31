@@ -21,7 +21,7 @@ import {
   serializeTabs, deserializeTabs,
 } from "./panes";
 import { PaneTree } from "./PaneTree";
-import { ContextMenu } from "./ContextMenu";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 import "./App.css";
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network */
@@ -118,6 +118,15 @@ export default function App() {
   const [palette, setPalette] = createSignal<"command" | "file" | null>(null);
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
   const [paneMenu, setPaneMenu] = createSignal<{ leafId: string; x: number; y: number } | null>(null);
+  // Right-click menu for an editor mark (spelling / grammar / property suggestions),
+  // emitted by editor/contextMenu.ts as an 'oa-context-menu' event. Rendered with the
+  // SAME <ContextMenu> component as the pane menu — one menu style across the app.
+  const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  onMount(() => {
+    const onCtx = (e: Event) => setEditorMenu((e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail);
+    window.addEventListener("oa-context-menu", onCtx);
+    onCleanup(() => window.removeEventListener("oa-context-menu", onCtx));
+  });
 
   // The graph is a single persistent element that morphs between two slots: the
   // sidebar square (when a file/settings tab is active) and the full main pane
@@ -583,6 +592,9 @@ export default function App() {
             ]}
           />
         )}
+      </Show>
+      <Show when={editorMenu()}>
+        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setEditorMenu(null)} />}
       </Show>
       <ToastHost />
     </div>
