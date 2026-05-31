@@ -6,10 +6,13 @@ import { linter, forEachDiagnostic, forceLinting, type Diagnostic, type Action }
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
-// markClass on every Harper diagnostic. Two jobs: (1) lets the right-click menu
-// tell a spellcheck mark apart from a frontmatter type diagnostic; (2) lets the
-// hover-tooltip filter suppress only Harper's boxes (suggestions live in the menu).
-const HARPER_MARK = "harper-error";
+// markClass per Harper diagnostic, chosen by lint kind: spelling vs grammar. It
+// drives the squiggle color (red vs blue, styled in livePreview's theme) and lets
+// the right-click menu + tooltip filter recognise Harper marks (their suggestions
+// live in the menu, so Harper's hover box is suppressed).
+const SPELL_MARK = "spell-mark";
+const GRAMMAR_MARK = "grammar-mark";
+const HARPER_MARKS = new Set<string>([SPELL_MARK, GRAMMAR_MARK]);
 import { WorkerLinter, Dialect, type Lint } from "harper.js";
 // Harper 2.x requires a BinaryModule to construct a Linter. The `harper.js/binary`
 // subpath ships a ready-made module that loads the WASM from its own URL — which is
@@ -122,7 +125,8 @@ function lintToDiagnostic(
     to,
     severity: "error",
     message: lint.message(),
-    markClass: HARPER_MARK,
+    // Spelling → red, everything else Harper flags (grammar/style/agreement…) → blue.
+    markClass: /spell/i.test(lint.lint_kind()) ? SPELL_MARK : GRAMMAR_MARK,
     actions,
   };
 }
@@ -231,7 +235,9 @@ function harperContextMenu(): Extension {
       if (pos == null) return false;
       const hits: { from: number; to: number; d: Diagnostic }[] = [];
       forEachDiagnostic(view.state, (d, from, to) => {
-        if (d.markClass === HARPER_MARK && pos >= from && pos <= to) hits.push({ from, to, d });
+        if (d.markClass && HARPER_MARKS.has(d.markClass) && pos >= from && pos <= to) {
+          hits.push({ from, to, d });
+        }
       });
       if (hits.length === 0) return false;
       event.preventDefault();
@@ -260,10 +266,11 @@ export function harperSpellcheck(opts: HarperOpts): Extension {
       },
       {
         delay: 400,
-        // No hover box for spellcheck marks — their suggestions live in the
-        // right-click menu. Other linters' tooltips (e.g. frontmatter type
+        // No hover box for Harper marks — their suggestions live in the
+        // right-click menu. Other linters' tooltips (e.g. property type
         // errors) pass through untouched.
-        tooltipFilter: (diagnostics) => diagnostics.filter((d) => d.markClass !== HARPER_MARK),
+        tooltipFilter: (diagnostics) =>
+          diagnostics.filter((d) => !(d.markClass && HARPER_MARKS.has(d.markClass))),
       },
     ),
     harperContextMenu(),

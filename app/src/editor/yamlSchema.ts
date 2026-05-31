@@ -105,6 +105,9 @@ function schemaLinter(opts: YamlSchemaOpts) {
       to: d.to,
       severity: d.severity,
       message: d.message,
+      // Category color: property/settings validation marks are purple (3rd-brain),
+      // distinct from red spelling / blue grammar. Styled in livePreview's theme.
+      markClass: "property-mark",
     }));
   }, { delay: 350 });
 }
