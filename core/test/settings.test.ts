@@ -106,3 +106,50 @@ test("serializeSettingsForFrontend omits the properties registry section", async
   const data = await serializeSettingsForFrontend(vault);
   expect(data.properties).toBeUndefined();
 });
+
+import { reconcileSettings } from "../src/settings";
+import { readFileSync } from "node:fs";
+
+test("reconcile fills a missing top-level section with its defaults", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: light\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).theme).toBe("light");    // user value kept
+  expect((data.appearance as any).accent).toBe("#6496ff");  // missing default added
+  expect((data.graph as any).spin).toBe(true);              // missing section added
+});
+
+test("reconcile preserves unknown keys", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  myCustomKey: 42\n");
+  await reconcileSettings(vault);
+  const { data } = (await readSettings(vault))!;
+  expect((data.appearance as any).myCustomKey).toBe(42);
+});
+
+test("reconcile preserves comments", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", "# my notes\nappearance:\n  theme: dark # inline\n");
+  await reconcileSettings(vault);
+  const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+  expect(raw).toContain("# my notes");
+  expect(raw).toContain("# inline");
+});
+
+test("reconcile is a no-op write when nothing is missing", async () => {
+  const vault = await emptyVault();
+  await reconcileSettings(vault); // absent -> writes full defaults
+  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await reconcileSettings(vault); // second run must not rewrite
+  const after = readFileSync(join(vault, "settings.yaml"), "utf8");
+  expect(after).toBe(before);
+});
+
+test("reconcile leaves a corrupt file untouched", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await reconcileSettings(vault);
+  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
+});
