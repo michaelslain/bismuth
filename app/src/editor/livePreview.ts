@@ -274,7 +274,16 @@ export const livePreview = [
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
     ".cm-li": { "padding-left": "2px" },
     ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", background: "rgba(140,140,140,0.10)", "font-size": "0.92em" },
-    ".cm-frontmatter": { opacity: "0.5", "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em" },
+    // Properties block: distinguished as a REGION (faint purple band + a purple
+    // left bar via inset shadow, so no text shift) rather than by dimming — keeps
+    // the text and the purple validation squiggles at full strength. Ties to the
+    // "properties = purple / 3rd-brain" category color.
+    ".cm-frontmatter": {
+      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-size": "0.85em",
+      background: "color-mix(in srgb, #b89cff 7%, transparent)",
+      "box-shadow": "inset 2px 0 0 color-mix(in srgb, #b89cff 55%, transparent)",
+    },
     ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-math-inline": { display: "inline-block", "vertical-align": "middle" },
     ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
