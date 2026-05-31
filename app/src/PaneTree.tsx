@@ -1,7 +1,7 @@
 // app/src/PaneTree.tsx
 // Recursively renders one tab's pane tree. A leaf renders PaneContent and reports
 // focus/clicks; a split renders two children with a draggable divider between them.
-import { Show, createSignal } from "solid-js";
+import { Show, createSignal, onCleanup } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import { contentLabel } from "./tabIds";
@@ -131,6 +131,11 @@ export function PaneTree(props: PaneTreeProps) {
         // While dragging the divider, sizes must track the cursor exactly — suppress the
         // flex-basis transition (see .pane-split.resizing in App.css) for the duration.
         const [resizing, setResizing] = createSignal(false);
+        // Teardown for an in-flight divider drag. Hoisted to the split-branch scope so
+        // onCleanup can detach the window listeners if this node unmounts mid-drag
+        // (e.g. an external oa-deleted/oa-moved/close event rewrites the tab tree before
+        // pointerup fires), avoiding leaked listeners + setResizing on a disposed scope.
+        let endDrag: (() => void) | null = null;
         const startDrag = (e: PointerEvent) => {
           e.preventDefault();
           setResizing(true);
@@ -143,13 +148,19 @@ export function PaneTree(props: PaneTreeProps) {
             props.onResize(split().id, Math.min(0.92, Math.max(0.08, ratio)));
           };
           const up = () => {
+            endDrag = null;
             setResizing(false);
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
           };
+          endDrag = up;
           window.addEventListener("pointermove", move);
           window.addEventListener("pointerup", up);
         };
+        // If the split unmounts mid-drag, run the same teardown so the move/up listeners
+        // are removed from window. setResizing is a no-op here (scope is disposing) but
+        // the listener detachment is the point.
+        onCleanup(() => endDrag?.());
         return (
           <div
             ref={container}

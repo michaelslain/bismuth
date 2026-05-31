@@ -1,6 +1,5 @@
 // app/src/tabIds.ts
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
-export const SETTINGS_TAB = "::settings";
 export const CALENDAR_TAB = "::calendar";
 export const EMPTY_PANE = "::empty";
 // Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
@@ -21,7 +20,6 @@ function noteName(path: string): string {
 // `terminalIndex` lets the caller pass the 1-based position among open terminal tabs
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
-  if (content === SETTINGS_TAB) return "⚙ Settings";
   if (content === CALENDAR_TAB) return "📅 Calendar";
   if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "🃏 " + noteName(content.slice(FLASHCARDS_PREFIX.length));

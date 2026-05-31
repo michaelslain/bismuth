@@ -1,5 +1,5 @@
-import { existsSync, appendFileSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
 import { $ } from "bun";
 
 /** Human-readable snapshot label, e.g. "vault snapshot 2026-05-27 14:30". */
@@ -16,7 +16,10 @@ function ensureExclude(dir: string): void {
   let current = "";
   try { current = readFileSync(excludePath, "utf8"); } catch { /* file may not exist yet */ }
   if (current.split("\n").includes(EXCLUDE_LINE)) return;
-  appendFileSync(excludePath, `\n${EXCLUDE_LINE}\n`);
+  try {
+    mkdirSync(dirname(excludePath), { recursive: true });
+    appendFileSync(excludePath, `\n${EXCLUDE_LINE}\n`);
+  } catch { /* non-standard .git layout (worktree, partial clone) — degrade gracefully */ }
 }
 
 /** git init if needed + set a local identity so commits never block. Never adds a remote. */

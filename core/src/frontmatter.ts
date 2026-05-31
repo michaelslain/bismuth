@@ -48,7 +48,9 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
     return `---\n${out}---\n${body}`;
   } catch {
     // Malformed YAML: fall back to a clean rewrite via the parsed object.
-    const { data } = parseFrontmatter(md);
+    // Reuse the already-extracted fmText and body instead of re-running parseFrontmatter(md).
+    let data: Record<string, unknown> = {};
+    try { data = (parse(fmText) ?? {}) as Record<string, unknown>; } catch { data = {}; }
     data[key] = value;
     return `---\n${stringify(data)}---\n${body}`;
   }

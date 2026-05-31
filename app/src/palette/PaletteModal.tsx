@@ -3,8 +3,8 @@
 // a fuzzy-filtered, keyboard-navigable list. Knows nothing about commands or files —
 // callers pass `items` and an `onSelect`. See CommandPalette.tsx / QuickSwitcher.tsx.
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
-import { Portal } from "solid-js/web";
 import Fuse from "fuse.js";
+import { Modal } from "../ui/Modal";
 
 export type PaletteItem = {
   id: string;
@@ -63,7 +63,7 @@ export function PaletteModal(props: Props) {
 
   const fuse = createMemo(() => {
     return new Fuse(props.items, {
-      keys: ["label", "sublabel"],
+      keys: ["label"],
       includeMatches: true,
       ignoreLocation: true,
       threshold: 0.4,
@@ -120,11 +120,12 @@ export function PaletteModal(props: Props) {
         e.preventDefault();
         setSelected((s) => Math.max(s - 1, 0));
         break;
-      case "Enter":
+      case "Enter": {
         e.preventDefault();
         const r = results()[selected()];
         if (r) props.onSelect(r.item);
         break;
+      }
       case "Escape":
         e.preventDefault();
         props.onClose();
@@ -133,44 +134,40 @@ export function PaletteModal(props: Props) {
   }
 
   return (
-    <Portal>
-      <div class="palette-overlay" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
-        <div class="palette-panel">
-          <input
-            ref={inputRef}
-            class="palette-input"
-            placeholder={props.placeholder}
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-            onKeyDown={onKeyDown}
-          />
-          <div class="palette-list" ref={listRef}>
-            <For each={results()}>
-              {(r, i) => (
-                <div
-                  class="palette-row"
-                  classList={{ selected: selected() === i() }}
-                  onMouseEnter={() => setSelected(i())}
-                  onClick={() => props.onSelect(r.item)}
-                >
-                  <Show when={r.item.icon}>
-                    <span class="palette-icon">{r.item.icon}</span>
-                  </Show>
-                  <span class="palette-label">
-                    <Highlight text={r.item.label} indices={r.indices} />
-                  </span>
-                  <Show when={r.item.sublabel}>
-                    <span class="palette-sub">{r.item.sublabel}</span>
-                  </Show>
-                </div>
-              )}
-            </For>
-            <Show when={results().length === 0}>
-              <div class="palette-empty">{props.emptyText ?? "No matches"}</div>
-            </Show>
-          </div>
-        </div>
+    <Modal onClose={props.onClose} class="palette-panel">
+      <input
+        ref={inputRef}
+        class="palette-input"
+        placeholder={props.placeholder}
+        value={query()}
+        onInput={(e) => setQuery(e.currentTarget.value)}
+        onKeyDown={onKeyDown}
+      />
+      <div class="palette-list" ref={listRef}>
+        <For each={results()}>
+          {(r, i) => (
+            <div
+              class="palette-row"
+              classList={{ selected: selected() === i() }}
+              onMouseEnter={() => setSelected(i())}
+              onClick={() => props.onSelect(r.item)}
+            >
+              <Show when={r.item.icon}>
+                <span class="palette-icon">{r.item.icon}</span>
+              </Show>
+              <span class="palette-label">
+                <Highlight text={r.item.label} indices={r.indices} />
+              </span>
+              <Show when={r.item.sublabel}>
+                <span class="palette-sub">{r.item.sublabel}</span>
+              </Show>
+            </div>
+          )}
+        </For>
+        <Show when={results().length === 0}>
+          <div class="palette-empty">{props.emptyText ?? "No matches"}</div>
+        </Show>
       </div>
-    </Portal>
+    </Modal>
   );
 }

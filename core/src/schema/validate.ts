@@ -232,4 +232,3 @@ export function validateDocument(
   return out;
 }
 
-export { err, warn };

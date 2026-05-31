@@ -4,18 +4,11 @@ import { listMarkdown, readNote } from "./files";
 import { parseFrontmatter } from "./frontmatter";
 import { extractTags } from "./tags";
 import { extractWikilinks } from "./wikilinks";
+import { pathParts } from "./vault";
 import type { FileMeta, Row } from "./bases/types";
 
 function fileMeta(root: string, rel: string, tags: string[], links: string[]): FileMeta {
-  // Parse folder and filename from path
-  const lastSlash = rel.lastIndexOf("/");
-  const folder = lastSlash >= 0 ? rel.slice(0, lastSlash) : "";
-  const filename = lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel;
-
-  // Parse name and extension from filename
-  const lastDot = filename.lastIndexOf(".");
-  const name = lastDot >= 0 ? filename.slice(0, lastDot) : filename;
-  const ext = lastDot >= 0 ? filename.slice(lastDot + 1) : "";
+  const { name, ext, folder } = pathParts(rel);
 
   // Get file stats if available
   let size = 0, ctime = 0, mtime = 0;

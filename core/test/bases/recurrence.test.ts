@@ -23,6 +23,26 @@ test("endDate truncates recurrence", () => {
   expect(expandRecurrence(r, "2026-05-01", "2026-05-10")).toEqual(["2026-05-01", "2026-05-02"]);
 });
 
+test("monthly on the 31st clamps to the last day of shorter months", () => {
+  const r = { type: "monthly" as const, startDate: "2026-01-31", seriesId: "s" };
+  // 2026 is not a leap year → Feb has 28 days, so the 31st series lands on Feb 28.
+  expect(expandRecurrence(r, "2026-02-01", "2026-02-28")).toEqual(["2026-02-28"]);
+  // April has 30 days → clamps to the 30th, not skipped.
+  expect(expandRecurrence(r, "2026-04-01", "2026-04-30")).toEqual(["2026-04-30"]);
+  // March has 31 days → exact match, no clamping (and only one match in the month).
+  expect(expandRecurrence(r, "2026-03-01", "2026-03-31")).toEqual(["2026-03-31"]);
+});
+
+test("monthly on the 29th matches Feb's last day in a non-leap year", () => {
+  const r = { type: "monthly" as const, startDate: "2026-01-29", seriesId: "s" };
+  expect(expandRecurrence(r, "2026-02-01", "2026-02-28")).toEqual(["2026-02-28"]);
+});
+
+test("monthly on the 29th matches Feb 29 in a leap year", () => {
+  const r = { type: "monthly" as const, startDate: "2024-01-29", seriesId: "s" };
+  expect(expandRecurrence(r, "2024-02-01", "2024-02-29")).toEqual(["2024-02-29"]);
+});
+
 test("splitRecurrence truncates before split date and returns the tail", () => {
   const rec = { type: "weekly" as const, daysOfWeek: [1], startDate: "2026-06-01", seriesId: "s1" };
   const [before, after] = splitRecurrence(rec, "2026-06-15");

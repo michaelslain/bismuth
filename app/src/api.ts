@@ -69,11 +69,8 @@ export const api = {
   backup: () => post("/backup", {}).then(() => {}),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
-  config: () =>
-    getJson<{ vault: string; memory: string | null }>("/config"),
   version: () =>
     getJson<{ version: number }>("/version"),
-  vaultData: () => getJson<Row[]>("/vault-data"),
   schema: () => getJson<Schema>("/schema"),
   settings: () => getJson<Record<string, unknown>>("/settings"),
   base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),

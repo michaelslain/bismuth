@@ -54,7 +54,7 @@ export function buildAgentGraph(statePath?: string): GraphData {
   const now = Date.now();
   const nodes: GraphNode[] = Object.values(agents).map((agent) => {
     const lastSeenMs = new Date(agent.last_seen).getTime();
-    const state = now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle" as const;
+    const state = now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle";
     return { id: agent.id, label: agentLabel(agent), kind: "agent" as const, state };
   });
 

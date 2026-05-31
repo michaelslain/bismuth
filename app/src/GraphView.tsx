@@ -1,8 +1,17 @@
 // app/src/GraphView.tsx
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
+import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
 import { settings, setSettings, PALETTES } from "./settings";
+import { SegmentedToggle } from "./ui/SegmentedToggle";
+
+/** Shared dark-pill recipe for the hover/fps HUD readouts (S26). */
+const hudPill: JSX.CSSProperties = {
+  background: "rgba(20,20,24,0.65)",
+  "font-family": "inherit",
+  "border-radius": "4px",
+};
 
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
 function hoverLabel(node: HoverNode): string {
@@ -73,49 +82,50 @@ export function GraphView(props: {
 
   onCleanup(() => renderer.destroy());
 
-  const baseButtonStyle = {
-    border: "none",
-    cursor: "pointer",
-    "font-size": "10px",
-    "font-family": "inherit",
-    padding: "2px 8px",
-    "border-radius": "3px",
-    "text-transform": "uppercase",
-    "letter-spacing": "0.04em",
-  } as const;
-
-  const getBtnStyle = (active: boolean) => ({
-    ...baseButtonStyle,
-    background: active ? "rgba(255,255,255,0.15)" : "transparent",
-    color: active ? "#e8e8e8" : "rgba(200,200,200,0.55)",
-  } as const);
-
   const setViewMode = (m: "2d" | "3d") => setSettings("graph", "viewMode", m);
 
   return (
     <div style={{ display: "flex", "flex-direction": "column", height: props.fill ? "100%" : undefined }}>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "center", padding: "5px 6px", gap: "2px" }}>
-        <button style={getBtnStyle(props.mode === "2nd")} onClick={() => props.setMode("2nd")}>2nd</button>
-        <button style={getBtnStyle(props.mode === "3rd")} onClick={() => props.setMode("3rd")}>3rd</button>
-        <button style={getBtnStyle(props.mode === "both")} onClick={() => props.setMode("both")}>Both</button>
-        <button style={getBtnStyle(props.mode === "agents")} onClick={() => props.setMode("agents")}>Agents</button>
+      <div style={{ display: "flex", "align-items": "center", "justify-content": "center", padding: "5px 6px" }}>
+        <SegmentedToggle
+          value={props.mode}
+          onChange={props.setMode}
+          variant="ghost"
+          size="sm"
+          segmentClass="graph-seg"
+          options={[
+            { id: "2nd", label: "2nd" },
+            { id: "3rd", label: "3rd" },
+            { id: "both", label: "Both" },
+            { id: "agents", label: "Agents" },
+          ]}
+        />
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
-          <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
-            <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
-            <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
+          <div style={{ "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+            <SegmentedToggle
+              value={settings.graph.viewMode}
+              onChange={setViewMode}
+              variant="ghost"
+              size="sm"
+              segmentClass="graph-seg"
+              options={[
+                { id: "2d", label: "2D" },
+                { id: "3d", label: "3D" },
+              ]}
+            />
           </div>
           <Show when={hovered()}>
             {(node) => (
-              <span style={{ "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", background: "rgba(20,20,24,0.65)", color: "rgba(232,232,232,0.92)", "font-size": "11px", "font-family": "inherit", padding: "2px 8px", "border-radius": "4px" }}>
+              <span style={{ ...hudPill, "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "rgba(232,232,232,0.92)", "font-size": "11px", padding: "2px 8px" }}>
                 {hoverLabel(node())}
               </span>
             )}
           </Show>
           <Show when={fps() !== null}>
-            <span style={{ "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "rgba(20,20,24,0.55)", color: "rgba(200,200,200,0.7)", "font-size": "10px", "font-family": "inherit", padding: "2px 7px", "border-radius": "4px" }}>
+            <span style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "rgba(20,20,24,0.55)", color: "rgba(200,200,200,0.7)", "font-size": "10px", padding: "2px 7px" }}>
               {fps()} fps
             </span>
           </Show>

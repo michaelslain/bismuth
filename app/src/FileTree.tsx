@@ -41,41 +41,77 @@ function sortedChildren(node: TreeNode): TreeNode[] {
   });
 }
 
-/** Parent dir and join path into a single namespace to reduce duplication. */
-namespace Path {
-  export function parent(path: string): string {
-    const i = path.lastIndexOf("/");
-    return i === -1 ? "" : path.slice(0, i);
-  }
-
-  export function join(dir: string, name: string): string {
-    return dir ? `${dir}/${name}` : name;
-  }
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
 }
 
-const parentOf = Path.parent;
-const joinPath = Path.join;
+function joinPath(dir: string, name: string): string {
+  return dir ? `${dir}/${name}` : name;
+}
+
+/**
+ * Pure decision for the SSE-driven tree refresh. Decides whether to refetch and
+ * what `lastSeen` becomes. Extracted from the effect so the gating logic is unit
+ * testable without Solid's effect scheduling.
+ *
+ * Gating (B3): while the user is editing/dragging, OR an optimistic
+ * move/rename/create/delete is still awaiting its server round-trip
+ * (`pendingOps > 0`), we DEFER — return `refetch: false` WITHOUT advancing
+ * `lastSeen`, so the change is picked up once the guard clears and the tracked
+ * signals re-run the effect. Otherwise we consume the version (advance
+ * `lastSeen`) and refetch unless the change was content-only (`dirty.tree`
+ * false); an absent `dirty` means "unknown", so refetch to be safe.
+ */
+export function decideTreeRefresh(args: {
+  change: { version: number; dirty?: { tree: boolean } };
+  lastSeen: number;
+  editing: boolean;
+  dragging: boolean;
+  pendingOps: number;
+}): { refetch: boolean; nextLastSeen: number } {
+  const { change, lastSeen, editing, dragging, pendingOps } = args;
+  if (change.version === lastSeen) return { refetch: false, nextLastSeen: lastSeen };
+  if (editing || dragging || pendingOps > 0) return { refetch: false, nextLastSeen: lastSeen };
+  return { refetch: change.dirty?.tree !== false, nextLastSeen: change.version };
+}
 
 export function FileTree(props: { onOpen: (path: string) => void }) {
   const [files, { refetch, mutate }] = createResource(() => api.tree());
   const [editing, setEditing] = createSignal<string | null>(null);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [dropTarget, setDropTarget] = createSignal<string | null>(null);
-  // React to server changes instead of blind polling.
+  // Count of optimistic ops (move/rename/create/delete) whose server round-trip
+  // is still outstanding. While > 0, the optimistic tree is the source of truth
+  // and an SSE-driven refetch could clobber it with a stale snapshot taken
+  // before the mutation landed. Signal (not a plain ref) so the refresh effect
+  // re-runs and picks up any deferred change once the op settles back to 0.
+  const [pendingOps, setPendingOps] = createSignal(0);
+  // Run an optimistic op's server call, holding off SSE refetches until it settles.
+  // Returns the call's result so callers (e.g. delete → trashPath) stay intact.
+  const trackPending = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    setPendingOps((n) => n + 1);
+    try {
+      return await fn();
+    } finally {
+      setPendingOps((n) => n - 1);
+    }
+  };
+  // React to server changes instead of blind polling. The effect tracks
+  // editing()/dragPath()/pendingOps() so it re-runs (and applies any deferred
+  // change) once an in-flight edit/drag/optimistic op clears — see
+  // decideTreeRefresh for the gating rationale (B3).
   let lastSeen = 0;
   createEffect(() => {
-    const c = lastChange();
-    if (c.version === lastSeen) return;
-    // Pause while the user is editing/dragging — rebuilding the tree tears down the
-    // inline input or drag source. Don't advance lastSeen, so the change is picked
-    // up once editing ends (this effect re-runs when editing()/dragPath() clear).
-    if (editing() !== null || dragPath() !== null) return;
-    lastSeen = c.version;
-    // The server tells us whether a change altered tree structure or an icon. A
-    // pure content edit (dirty.tree === false) leaves the tree as-is — no rescan.
-    // Absent `dirty` (poll/reconnect) means "unknown", so refetch to be safe.
-    if (c.dirty?.tree === false) return;
-    refetch();
+    const { refetch: doFetch, nextLastSeen } = decideTreeRefresh({
+      change: lastChange(),
+      lastSeen,
+      editing: editing() !== null,
+      dragging: dragPath() !== null,
+      pendingOps: pendingOps(),
+    });
+    lastSeen = nextLastSeen;
+    if (doFetch) refetch();
   });
 
   const [open, setOpen] = createSignal<Set<string>>(new Set());
@@ -87,8 +123,6 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     });
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
-
-  const refresh = () => refetch();
 
   // Optimistic local edits: apply the change to the tree instantly so the UI
   // reflects it without waiting for a /tree round-trip (which contends with the
@@ -111,7 +145,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     setUndoStack((s) => s.filter((u) => u.trashPath !== entry.trashPath));
     try {
       await api.restore(entry.trashPath, entry.to);
-      await refresh();
+      await refetch();
       pushToast(`Restored ${entry.name}`);
     } catch (e) {
       pushToast(`Restore failed: ${(e as Error).message}`);
@@ -147,12 +181,12 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     // Close any open tab for the deleted file (or files under a deleted folder).
     window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
     try {
-      const { trashPath } = await api.del(node.path);
+      const { trashPath } = await trackPending(() => api.del(node.path));
       const entry = { trashPath, to: node.path, name: node.name };
       setUndoStack((s) => [entry, ...s]);
       pushToast(`Deleted ${node.name}`, { label: "Undo", onClick: () => restoreDeleted(entry) });
     } catch (e) {
-      await refresh();
+      await refetch();
       pushToast(`Delete failed: ${(e as Error).message}`);
     }
   }
@@ -164,10 +198,10 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
     setEditing(path);
     try {
-      await api.create(path, kind);
+      await trackPending(() => api.create(path, kind));
     } catch (e) {
       setEditing(null);
-      await refresh();
+      await refetch();
       pushToast(`Create failed: ${(e as Error).message}`);
     }
   }
@@ -204,9 +238,9 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
     if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
     try {
-      await api.move(from, to);
+      await trackPending(() => api.move(from, to));
     } catch (e) {
-      await refresh();
+      await refetch();
       pushToast(`Move failed: ${(e as Error).message}`);
     }
   }
@@ -215,6 +249,23 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     setDragPath(null);
     setDropTarget(null);
   };
+
+  /**
+   * Shared drag-start handler for both file and folder rows.
+   * `isFile` controls whether the MIME payload for pane-drop is written:
+   *   - files:   setData is called so a pane can accept a drop-to-split (PaneTree DRAG_MIME).
+   *   - folders: setData is intentionally omitted — panes open files, not directories,
+   *              so folder drags only participate in tree re-ordering, not pane splitting.
+   */
+  function makeDragStart(path: string, isFile: boolean) {
+    return (e: DragEvent) => {
+      e.stopPropagation();
+      setDragPath(path);
+      if (isFile) {
+        e.dataTransfer?.setData("application/x-oa-path", path);
+      }
+    };
+  }
 
   return (
     <div
@@ -231,14 +282,16 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
         onMenu={openMenuFor}
         editing={editing()}
         setEditing={setEditing}
-        refresh={refresh}
+        refresh={refetch}
         optimisticRename={optimisticRename}
+        trackPending={trackPending}
         dragPath={dragPath()}
         setDragPath={setDragPath}
         dropTarget={dropTarget()}
         setDropTarget={setDropTarget}
         moveInto={moveInto}
         endDrag={endDrag}
+        makeDragStart={makeDragStart}
       />
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
@@ -251,6 +304,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
 function EditableLabel(props: {
   node: TreeNode; isDir: boolean; setEditing: (p: string | null) => void; refresh: () => void;
   optimisticRename: (from: string, to: string) => void;
+  trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
@@ -272,7 +326,7 @@ function EditableLabel(props: {
     // Keep any open tab pointing at the renamed path.
     window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
     try {
-      await api.move(from, to);
+      await props.trackPending(() => api.move(from, to));
     } catch (e) {
       props.refresh();
       pushToast(`Rename failed: ${(e as Error).message}`);
@@ -322,9 +376,11 @@ function Level(props: {
   onMenu: (node: TreeNode, e: MouseEvent) => void;
   editing: string | null; setEditing: (p: string | null) => void; refresh: () => void;
   optimisticRename: (from: string, to: string) => void;
+  trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
   dragPath: string | null; setDragPath: (p: string | null) => void;
   dropTarget: string | null; setDropTarget: (p: string | null) => void;
   moveInto: (targetDir: string) => void; endDrag: () => void;
+  makeDragStart: (path: string, isFile: boolean) => (e: DragEvent) => void;
 }) {
   return (
     <For each={sortedChildren(props.node)}>
@@ -339,47 +395,42 @@ function Level(props: {
                 background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
               }}
               draggable={props.editing !== child.path}
-              onDragStart={(e) => { e.stopPropagation(); props.setDragPath(child.path); }}
+              onDragStart={props.makeDragStart(child.path, false)}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
               onDragEnd={() => props.endDrag()}
-              onClick={() => props.editing === child.path || props.toggle(child.path)}
+              onClick={() => { if (props.editing !== child.path) props.toggle(child.path); }}
               onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
               {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON}{" "}
               <Show when={props.editing === child.path} fallback={child.name}>
-                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
+                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
               </Show>
             </div>
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
                 onOpen={props.onOpen} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
-                optimisticRename={props.optimisticRename}
+                optimisticRename={props.optimisticRename} trackPending={props.trackPending}
                 dragPath={props.dragPath} setDragPath={props.setDragPath}
                 dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
-                moveInto={props.moveInto} endDrag={props.endDrag} />
+                moveInto={props.moveInto} endDrag={props.endDrag} makeDragStart={props.makeDragStart} />
             </Show>
           </div>
         ) : (
           <div
             style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              props.setDragPath(child.path);
-              // Expose the path so a pane can accept it as a drop-to-split (see PaneTree).
-              e.dataTransfer?.setData("application/x-oa-path", child.path);
-            }}
+            onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}
-            onClick={() => props.editing === child.path || props.onOpen(child.path)}
+            onClick={() => { if (props.editing !== child.path) props.onOpen(child.path); }}
             onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
             {child.icon ?? FILE_ICON}{" "}
             <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
-              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
+              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
             </Show>
           </div>
         );

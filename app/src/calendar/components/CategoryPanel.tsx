@@ -1,6 +1,7 @@
 import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
+import { Modal } from '../../ui/Modal'
 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
@@ -15,7 +16,12 @@ export function CategoryPanel(props: { store: EventStore }) {
   }
 
   async function handleDelete(name: string): Promise<void> {
-    const reassign = categories.value.filter(c => c.name !== name)[0]?.name
+    // Reassign orphaned events to a stable default category if one exists
+    // ('Uncategorized' / 'Default'); otherwise clear the category so events
+    // become uncategorized rather than silently moved to an arbitrary neighbor.
+    const reassign = categories.value.find(
+      c => c.name !== name && (c.name === 'Uncategorized' || c.name === 'Default'),
+    )?.name
     await props.store.deleteCategory(name, reassign)
     categories.value = props.store.getCategories()
   }
@@ -26,11 +32,10 @@ export function CategoryPanel(props: { store: EventStore }) {
   }
 
   onMount(() => {
+    // Escape-to-close is handled by <Modal>; this keeps Enter-to-add.
     function onKey(e: KeyboardEvent): void {
       const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Escape') {
-        showCategoryPanel.value = false
-      } else if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
         e.preventDefault()
         handleAdd()
       }
@@ -41,26 +46,24 @@ export function CategoryPanel(props: { store: EventStore }) {
 
   return (
     <Show when={showCategoryPanel.value}>
-      <div class="modal-overlay" onClick={() => (showCategoryPanel.value = false)}>
-        <div class="category-panel" onClick={e => e.stopPropagation()}>
-          <h3>Categories</h3>
-          <div class="category-list">
-            <For each={categories.value}>{c => (
-              <div class="category-row">
-                <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
-                <span>{c.name}</span>
-                <button onClick={() => handleDelete(c.name)}>✕</button>
-              </div>
-            )}</For>
-          </div>
-          <div class="category-add-row">
-            <input type="color" value={newColor()} onInput={e => setNewColor(e.currentTarget.value)} />
-            <input placeholder="Category name" value={newName()} onInput={e => setNewName(e.currentTarget.value)} />
-            <button onClick={handleAdd}>Add</button>
-          </div>
-          <div class="modal-actions"><button onClick={() => (showCategoryPanel.value = false)}>Done</button></div>
+      <Modal onClose={() => (showCategoryPanel.value = false)} class="category-panel">
+        <h3>Categories</h3>
+        <div class="category-list">
+          <For each={categories.value}>{c => (
+            <div class="category-row">
+              <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
+              <span>{c.name}</span>
+              <button onClick={() => handleDelete(c.name)}>✕</button>
+            </div>
+          )}</For>
         </div>
-      </div>
+        <div class="category-add-row">
+          <input type="color" value={newColor()} onInput={e => setNewColor(e.currentTarget.value)} />
+          <input placeholder="Category name" value={newName()} onInput={e => setNewName(e.currentTarget.value)} />
+          <button onClick={handleAdd}>Add</button>
+        </div>
+        <div class="modal-actions"><button onClick={() => (showCategoryPanel.value = false)}>Done</button></div>
+      </Modal>
     </Show>
   )
 }

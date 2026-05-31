@@ -2,7 +2,7 @@ import { For, Index, Show } from 'solid-js'
 import { currentDate, events, categories, showEventModal, settings } from '../../state'
 import { EventStore } from '../../EventStore'
 import { EventChip } from '../EventChip'
-import { toDateStr } from '../../dates'
+import { toDateStr, startOfWeek } from '../../dates'
 
 const DAYS_SUN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAYS_MON = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -15,8 +15,9 @@ export function MonthView(props: { store: EventStore }) {
   const today = toDateStr(new Date())
 
   const cells = () => {
-    const rawFirstDay = new Date(year(), month(), 1).getDay()
-    const firstDay = mondayFirst() ? (rawFirstDay + 6) % 7 : rawFirstDay
+    const firstOfMonth = new Date(year(), month(), 1)
+    const weekStart = startOfWeek(firstOfMonth, mondayFirst())
+    const firstDay = Math.round((firstOfMonth.getTime() - weekStart.getTime()) / 86400000)
     const daysInMonth = new Date(year(), month() + 1, 0).getDate()
     const c: (number | null)[] = [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]
     while (c.length % 7 !== 0) c.push(null)

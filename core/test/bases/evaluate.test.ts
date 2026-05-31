@@ -71,3 +71,24 @@ test("date arithmetic: Date + duration string -> shifted Date", () => {
   const mtimePlus = evaluate(parseExpr('file.mtime + "1d"'), c) as number;
   expect(mtimePlus).toBe(base + 86_400_000);
 });
+
+test("date + '0d' honors the zero-length duration (regression: || dropped 0)", () => {
+  const base = new Date("2026-05-27T00:00:00Z").getTime();
+  const c = ctx({
+    note: { d: new Date("2026-05-27T00:00:00Z") },
+    file: { name: "x", basename: "x", path: "x.md", folder: "", ext: "md", size: 0, ctime: 0, mtime: base, tags: [], links: [] },
+  });
+  // 0d parses to 0 ms; + must add it (yielding the same instant), not skip the
+  // duration branch and fall through to string concat. - already did this.
+  const plus0 = evaluate(parseExpr('d + "0d"'), c) as Date;
+  expect(plus0 instanceof Date).toBe(true);
+  expect(plus0.getTime()).toBe(base);
+  const minus0 = evaluate(parseExpr('d - "0d"'), c) as Date;
+  expect(minus0.getTime()).toBe(base);
+  // Numeric + zero duration stays numeric (not a stringified concat).
+  const numPlus0 = evaluate(parseExpr('file.mtime + "0d"'), c) as number;
+  expect(numPlus0).toBe(base);
+  // The duration("0d") path composes the same way.
+  const durPlus0 = evaluate(parseExpr('d + duration("0d")'), c) as Date;
+  expect(durPlus0.getTime()).toBe(base);
+});

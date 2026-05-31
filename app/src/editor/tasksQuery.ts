@@ -4,15 +4,14 @@
 // renders the matching rows. Block-replacing decorations must come from a StateField, not a
 // ViewPlugin (CodeMirror disallows view-plugin block decorations), so this is separate from
 // the inline livePreview ViewPlugin.
-import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { type Extension } from "@codemirror/state";
+import { EditorView, WidgetType } from "@codemirror/view";
+import { fenceBlockField } from "./fenceBlock";
 import { api } from "../api";
+import { onServerChange } from "../serverVersion";
 import { runTaskQuery } from "../../../core/src/tasks-query";
 import type { Task, Priority } from "../../../core/src/tasks";
 import { todayISO } from "../../../core/src/dates";
-
-const OPEN = /^\s*```+\s*tasks\s*$/i; // opening fence with the "tasks" info string
-const CLOSE = /^\s*```+\s*$/; // a bare fence line
 
 const PRIORITY_LABEL: Record<Priority, string> = {
   highest: "🔺", high: "⏫", medium: "🔼", low: "🔽", lowest: "⏬", none: "",
@@ -119,29 +118,17 @@ class TasksQueryWidget extends WidgetType {
 
     render();
 
-    // Keep the query live: poll the backend version and re-evaluate when the vault
-    // changes (a task toggled here or edited anywhere bumps it), so results never go stale.
-    let lastVersion = -1;
-    const timer = window.setInterval(async () => {
-      try {
-        const { version } = await api.version();
-        if (lastVersion === -1) lastVersion = version; // record baseline on first poll
-        else if (version !== lastVersion) {
-          lastVersion = version;
-          render();
-        }
-      } catch {
-        /* network hiccup — try again next tick */
-      }
-    }, 3000);
-    (root as HTMLElement & { __tasksTimer?: number }).__tasksTimer = timer;
+    // Keep the query live: re-evaluate whenever the vault changes.
+    // Uses the shared server-change feed (SSE + poll) so we don't spin up a
+    // per-widget interval — one global poll covers all widgets.
+    const unsub = onServerChange(() => render());
+    (root as HTMLElement & { __tasksUnsub?: () => void }).__tasksUnsub = unsub;
 
     return root;
   }
 
   destroy(dom: HTMLElement): void {
-    const timer = (dom as HTMLElement & { __tasksTimer?: number }).__tasksTimer;
-    if (timer !== undefined) window.clearInterval(timer);
+    (dom as HTMLElement & { __tasksUnsub?: () => void }).__tasksUnsub?.();
   }
 
   ignoreEvent(): boolean {
@@ -149,54 +136,8 @@ class TasksQueryWidget extends WidgetType {
   }
 }
 
-function build(state: EditorState): DecorationSet {
-  const doc = state.doc;
-  const head = state.selection.main.head;
-  const decos: Range<Decoration>[] = [];
-
-  let i = 1;
-  while (i <= doc.lines) {
-    const line = doc.line(i);
-    if (OPEN.test(line.text)) {
-      // collect query lines until the closing fence
-      const queryLines: string[] = [];
-      let j = i + 1;
-      while (j <= doc.lines && !CLOSE.test(doc.line(j).text)) {
-        queryLines.push(doc.line(j).text);
-        j++;
-      }
-      if (j <= doc.lines) {
-        const blockFrom = line.from;
-        const blockTo = doc.line(j).to;
-        const cursorInside = head >= blockFrom && head <= blockTo;
-        if (!cursorInside) {
-          decos.push(
-            Decoration.replace({
-              widget: new TasksQueryWidget(queryLines.join("\n")),
-              block: true,
-            }).range(blockFrom, blockTo),
-          );
-        }
-        i = j + 1;
-        continue;
-      }
-    }
-    i++;
-  }
-  return Decoration.set(decos, true);
-}
-
-const field = StateField.define<DecorationSet>({
-  create: (state) => build(state),
-  update(deco, tr) {
-    if (tr.docChanged || tr.selection) return build(tr.state);
-    return deco.map(tr.changes);
-  },
-  provide: (f) => EditorView.decorations.from(f),
-});
-
 export const tasksQuery: Extension = [
-  field,
+  fenceBlockField("tasks", (body) => new TasksQueryWidget(body)),
   EditorView.theme({
     ".cm-tasks-query": {
       border: "1px solid var(--border, #444)",

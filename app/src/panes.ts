@@ -72,6 +72,13 @@ export function leaves(root: PaneNode): Leaf[] {
   return root.kind === "leaf" ? [root] : [...leaves(root.a), ...leaves(root.b)];
 }
 
+// After a tree was pruned/rebuilt, keep the old focus if its leaf survived, else fall
+// back to the first surviving leaf. The single source of truth for the focus invariant.
+export function resolveFocus(root: PaneNode, preferred: string): string {
+  const ls = leaves(root);
+  return ls.some((l) => l.id === preferred) ? preferred : ls[0].id;
+}
+
 export function leafCount(node: PaneNode): number {
   return node.kind === "leaf" ? 1 : leafCount(node.a) + leafCount(node.b);
 }
@@ -260,9 +267,7 @@ export function deserializeTabs(
     if (!pruned) continue;
     const idMap = new Map<string, string>();
     const root = reassignIds(pruned, idMap);
-    const ls = leaves(root);
-    const mappedFocus = idMap.get(t.focusId);
-    const focusId = mappedFocus && ls.some((l) => l.id === mappedFocus) ? mappedFocus : ls[0].id;
+    const focusId = resolveFocus(root, idMap.get(t.focusId) ?? "");
     const tabId = newId();
     tabIdMap.set(t.id, tabId);
     tabs.push({ id: tabId, root, focusId });

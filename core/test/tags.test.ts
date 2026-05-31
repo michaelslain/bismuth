@@ -109,10 +109,15 @@ test("tags at start of text are extracted", () => {
   expect(tags).toEqual(["start"]);
 });
 
-test("tags inside code blocks are still extracted (current behavior)", () => {
+test("tags inside a fenced code block are NOT extracted", () => {
   const tags = extractTags({}, "```\n#notag\n```\n#realtag");
-  // Verify behavior - may extract both or just realtag
-  expect(Array.isArray(tags)).toBe(true);
+  expect(tags).toEqual(["realtag"]);
+});
+
+test("tags inside an inline code span are NOT extracted", () => {
+  // A shell snippet like `git commit -m '#fix'` must not register a #fix tag.
+  const tags = extractTags({}, "Run `git commit -m '#fix'` then add #real");
+  expect(tags).toEqual(["real"]);
 });
 
 test("frontmatter object with empty tags array", () => {

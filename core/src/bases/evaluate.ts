@@ -139,13 +139,17 @@ function evalBinary(op: string, leftExpr: Expr, rightExpr: Expr, ctx: EvalContex
 }
 
 function evalPlus(l: unknown, r: unknown): unknown {
-  // String-literal duration ("7d") added to a Date/number.
-  const dur = parseDurationMs(l) || parseDurationMs(r);
-  if (dur && (l instanceof Date || r instanceof Date)) {
+  // String-literal duration ("7d") added to a Date/number. Pick whichever side
+  // parses as a duration (not NaN); a 0-length duration ("0d" → 0) is still a
+  // valid duration and must be honored, matching evalMinus's NaN-based check.
+  const durL = parseDurationMs(l);
+  const durR = parseDurationMs(r);
+  const dur = !Number.isNaN(durL) ? durL : durR;
+  if (!Number.isNaN(dur) && (l instanceof Date || r instanceof Date)) {
     const base = l instanceof Date ? l : (r as Date);
     return new Date(base.getTime() + dur);
   }
-  if (dur && (typeof l === "number" || typeof r === "number")) {
+  if (!Number.isNaN(dur) && (typeof l === "number" || typeof r === "number")) {
     const base = typeof l === "number" ? l : (r as number);
     return base + dur;
   }
@@ -171,9 +175,8 @@ function evalMinus(l: unknown, r: unknown): unknown {
 // Comparison where a missing/incomparable operand must not throw and must
 // make ordered comparisons (> < >= <=) false.
 function cmpSafe(l: unknown, r: unknown): number {
-  if (l === null || l === undefined || r === null || r === undefined) return NaN as unknown as number;
-  const c = compare(l, r);
-  return c;
+  if (l == null || r == null) return NaN;
+  return compare(l, r);
 }
 
 function stringify(v: unknown): string {

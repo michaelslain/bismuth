@@ -18,6 +18,17 @@ test("merges vault + memory and adds cross-brain about edges", async () => {
   });
 });
 
+test("path-style memory reference [[folder/Note]] creates an about edge", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-eng-pathabout-"));
+  const mem = mkdtempSync(join(tmpdir(), "oa-eng-pathabout-mem-"));
+  await writeNote(vault, "reading/Deep Note.md", "# Deep Note");
+  await writeNote(mem, "profile.md", "About [[reading/Deep Note]].");
+  const g = await buildGraph(vault, mem);
+  expect(g.edges).toContainEqual({
+    from: "mem:profile", to: "reading/Deep Note", kind: "about",
+  });
+});
+
 test("works with no memory dir", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-eng-v2-"));
   await writeNote(vault, "a.md", "# A");

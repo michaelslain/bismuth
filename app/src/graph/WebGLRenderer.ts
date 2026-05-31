@@ -787,10 +787,6 @@ export class WebGLRenderer {
     this.rewriteEdgePositions(); // cull crowded non-focused edges for this hover
   }
 
-  /**
-   * Recompute crowding when the camera pose (or idle-spin rotation) has changed since the last
-   * computation. Crowding is screen-space, so any view change can alter it. Cheap no-op when still.
-   */
   /** World units spanned by one screen pixel at the camera's focus distance (both 2D and 3D). */
   private worldPerPixel(): number {
     const dist = this.camera.position.distanceTo(this.controls.target) || 1;
@@ -798,6 +794,10 @@ export class WebGLRenderer {
     return (2 * dist * Math.tan(((this.camera.fov * Math.PI) / 180) / 2)) / hpx;
   }
 
+  /**
+   * Recompute crowding when the camera pose (or idle-spin rotation) has changed since the last
+   * computation. Crowding is screen-space, so any view change can alter it. Cheap no-op when still.
+   */
   private refreshCrowdingIfMoved() {
     if (this.resolvedLinks.length === 0) return;
     // While the layout is in motion (sim settling on first load, or a 2D/3D tween) the node
@@ -1249,6 +1249,11 @@ export class WebGLRenderer {
     attr.needsUpdate = true;
     this.curI.fill(0);
     this.tgtI.fill(0); // clear any in-progress hover highlight
+    // If the pointer is still over a node, re-derive edge/node highlight targets from the
+    // fresh base colors so edges and nodes stay consistent on a mid-hover palette change.
+    // Without this the edge buffer remains in its hover state (focused bright, others culled)
+    // while the node buffer has snapped back to flat resting colors — a half-hovered view.
+    if (this.hoveredId) this.setHighlightTargets();
   }
 
   /**
@@ -1311,7 +1316,6 @@ export class WebGLRenderer {
     }
   }
 
-  /** Remove all `oa-graphpos:*` entries except the one we want to keep (frees quota). */
   /** Remove all `oa-graphpos:*` entries except the one we want to keep (frees quota). */
   private evictOtherPositionCaches(keepKey: string) {
     try {
@@ -1446,7 +1450,6 @@ export class WebGLRenderer {
    * a warm load the handful of nodes the live graph added since last settle sit next to where they
    * belong instead of at a random point — good enough to render without running the global settle.
    */
-  /** Place new (uncached) nodes at the average position of their already-positioned neighbors. */
   private placeNearNeighbors(uncached: N3[]) {
     const isNew = new Set(uncached.map((n) => n.id));
     const neighborSum = new Map<string, { x: number; y: number; z: number; count: number }>();

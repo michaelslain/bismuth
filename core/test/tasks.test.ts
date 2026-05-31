@@ -127,6 +127,98 @@ test("todayISO formats a Date as YYYY-MM-DD", () => {
   expect(todayISO(new Date("2026-05-27T15:00:00Z"))).toBe("2026-05-27");
 });
 
+// --- Recurring-task completion (B16): completing spawns the next occurrence ---
+
+test("completing a daily recurring task inserts a not-done copy with due advanced by 1 day", () => {
+  const out = toggleTaskLine("- [ ] water plants 🔁 every day 📅 2026-05-31", "2026-05-31");
+  // New occurrence above, completed line below.
+  expect(out).toBe(
+    "- [ ] water plants 🔁 every day 📅 2026-06-01\n" +
+      "- [x] water plants 🔁 every day 📅 2026-05-31 ✅ 2026-05-31",
+  );
+});
+
+test("the spawned recurrence copy is not-done and carries no done date", () => {
+  const out = toggleTaskLine("- [ ] standup 🔁 every day 📅 2026-05-31", "2026-05-31");
+  const lines = out.split("\n");
+  expect(lines).toHaveLength(2);
+  expect(lines[0].startsWith("- [ ] ")).toBe(true); // next occurrence, not done
+  expect(lines[0]).not.toContain("✅");
+  expect(lines[1].startsWith("- [x] ")).toBe(true); // completed
+  expect(lines[1]).toContain("✅ 2026-05-31");
+});
+
+test("completing a non-recurring task is unchanged (single line, no copy)", () => {
+  const out = toggleTaskLine("- [ ] buy milk 📅 2026-05-31", "2026-05-31");
+  expect(out).toBe("- [x] buy milk 📅 2026-05-31 ✅ 2026-05-31");
+  expect(out).not.toContain("\n");
+});
+
+test("recurrence with only a scheduled date advances scheduled (no due)", () => {
+  const out = toggleTaskLine("- [ ] review 🔁 every day ⏳ 2026-05-31", "2026-05-31");
+  expect(out).toBe(
+    "- [ ] review 🔁 every day ⏳ 2026-06-01\n" +
+      "- [x] review 🔁 every day ⏳ 2026-05-31 ✅ 2026-05-31",
+  );
+});
+
+test("weekly recurrence advances the due date by 7 days", () => {
+  const out = toggleTaskLine("- [ ] groceries 🔁 every week 📅 2026-05-31", "2026-05-31");
+  expect(out.split("\n")[0]).toBe("- [ ] groceries 🔁 every week 📅 2026-06-07");
+});
+
+test("'every N days' recurrence advances by N days", () => {
+  const out = toggleTaskLine("- [ ] meds 🔁 every 3 days 📅 2026-05-31", "2026-05-31");
+  expect(out.split("\n")[0]).toBe("- [ ] meds 🔁 every 3 days 📅 2026-06-03");
+});
+
+test("monthly recurrence advances by a calendar month, clamping overflow", () => {
+  const out = toggleTaskLine("- [ ] rent 🔁 every month 📅 2026-01-31", "2026-05-31");
+  // Jan 31 + 1 month clamps to Feb 28 (2026 is not a leap year).
+  expect(out.split("\n")[0]).toBe("- [ ] rent 🔁 every month 📅 2026-02-28");
+});
+
+test("'every weekday' recurrence skips the weekend", () => {
+  // 2026-05-29 is a Friday; next weekday is Monday 2026-06-01.
+  const out = toggleTaskLine("- [ ] standup 🔁 every weekday 📅 2026-05-29", "2026-05-29");
+  expect(out.split("\n")[0]).toBe("- [ ] standup 🔁 every weekday 📅 2026-06-01");
+});
+
+test("recurrence advances multiple date signifiers together", () => {
+  const out = toggleTaskLine(
+    "- [ ] plan 🔁 every day 📅 2026-05-31 ⏳ 2026-05-30 🛫 2026-05-29",
+    "2026-05-31",
+  );
+  expect(out.split("\n")[0]).toBe(
+    "- [ ] plan 🔁 every day 📅 2026-06-01 ⏳ 2026-05-31 🛫 2026-05-30",
+  );
+});
+
+test("recurring completion preserves a trailing CR on both emitted lines", () => {
+  const out = toggleTaskLine("- [ ] x 🔁 every day 📅 2026-05-31\r", "2026-05-31");
+  expect(out).toBe(
+    "- [ ] x 🔁 every day 📅 2026-06-01\r\n" + "- [x] x 🔁 every day 📅 2026-05-31 ✅ 2026-05-31\r",
+  );
+});
+
+test("recurring task with no reference date spawns no next occurrence", () => {
+  const out = toggleTaskLine("- [ ] floss 🔁 every day", "2026-05-31");
+  expect(out).toBe("- [x] floss 🔁 every day ✅ 2026-05-31");
+  expect(out).not.toContain("\n");
+});
+
+test("unrecognized recurrence rule does not spawn a next occurrence", () => {
+  const out = toggleTaskLine("- [ ] odd 🔁 every blue moon 📅 2026-05-31", "2026-05-31");
+  expect(out).toBe("- [x] odd 🔁 every blue moon 📅 2026-05-31 ✅ 2026-05-31");
+  expect(out).not.toContain("\n");
+});
+
+test("un-completing a recurring task stays a single line (no new occurrence)", () => {
+  const out = toggleTaskLine("- [x] water plants 🔁 every day 📅 2026-05-31 ✅ 2026-05-31", "2026-05-31");
+  expect(out).toBe("- [ ] water plants 🔁 every day 📅 2026-05-31");
+  expect(out).not.toContain("\n");
+});
+
 import { collectVaultTasks } from "../src/tasks";
 import { writeNote } from "../src/files";
 import { mkdtempSync } from "node:fs";

@@ -52,7 +52,7 @@ const editorTheme = EditorView.theme({
     border: "1px solid var(--border)",
     borderRadius: "8px",
     backgroundColor: "var(--bg)",
-    boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+    boxShadow: "var(--shadow-popup)",
     fontFamily: "'Monaspace Xenon', monospace",
     overflow: "hidden",
   },
@@ -85,7 +85,7 @@ const codeFontTheme = EditorView.theme({
 const yamlHighlight = HighlightStyle.define([
   { tag: [t.comment, t.lineComment, t.blockComment], color: "color-mix(in srgb, var(--fg) 48%, transparent)", fontStyle: "italic" },
   { tag: [t.propertyName, t.definition(t.propertyName)], color: "var(--accent)" },
-  { tag: [t.bool, t.atom, t.keyword, t.number], color: "#b89cff" },
+  { tag: [t.bool, t.atom, t.keyword, t.number], color: "var(--accent-purple)" },
   { tag: [t.string, t.special(t.string)], color: "color-mix(in srgb, var(--fg) 88%, transparent)" },
   { tag: [t.separator, t.punctuation, t.bracket, t.brace], color: "color-mix(in srgb, var(--fg) 45%, transparent)" },
 ]);

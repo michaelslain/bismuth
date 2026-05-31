@@ -1,22 +1,18 @@
-import { basename } from "node:path";
-import { buildVaultGraph, noteId } from "./vault";
+import { buildVaultGraph, resolveLinkTarget } from "./vault";
 import { buildMemoryGraph } from "./memory";
 import { mergeGraphs, type GraphData, type GraphEdge } from "./graph";
-import { listMarkdown } from "./files";
 
 export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<GraphData> {
-  const vault = await buildVaultGraph(vaultDir);
+  const { graph: vault, byBase: vaultByBase, byPath: vaultByPath } = await buildVaultGraph(vaultDir);
   if (!memoryDir) return vault;
 
   const memory = await buildMemoryGraph(memoryDir);
-  const vaultByBase = new Map<string, string>();
-  for (const rel of await listMarkdown(vaultDir)) {
-    vaultByBase.set(basename(noteId(rel)), noteId(rel));
-  }
   const about: GraphEdge[] = [];
   for (const [base, targets] of memory.links) {
     for (const t of targets) {
-      const toId = vaultByBase.get(t);
+      // Resolve memory→vault "about" links by full path first, then basename, so a
+      // path-qualified [[folder/Note]] reference in a memory note still links across.
+      const toId = resolveLinkTarget(t, vaultByBase, vaultByPath);
       if (toId) about.push({ from: `mem:${base}`, to: toId, kind: "about" });
     }
   }
