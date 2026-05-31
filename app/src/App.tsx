@@ -152,7 +152,7 @@ export default function App() {
   });
 
   const noteCandidates = createMemo<NoteCandidate[]>(() =>
-    graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, folder: n.folder })),
+    graph().nodes.filter((n) => n.kind === "note").map((n) => ({ label: n.label, path: n.id, folder: n.folder })),
   );
 
   const tagCandidates = createMemo<string[]>(() =>

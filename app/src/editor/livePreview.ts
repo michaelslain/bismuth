@@ -2,6 +2,7 @@
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { type Range, type Text } from "@codemirror/state";
 import katex from "katex";
+import { wikilinkVisibleRange } from "./wikilink";
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
@@ -61,6 +62,27 @@ function pushInline(
     if (!onCursor) {
       deco.push(hide.range(s, innerStart));
       deco.push(hide.range(innerEnd, end));
+    }
+  }
+}
+
+/** Style each `[[wikilink]]` on a line — revealing only the basename/alias and hiding
+ *  the brackets + folder path off the cursor line. Used for both body and frontmatter
+ *  lines so links in properties get the same treatment. Click handling lives in Editor.tsx. */
+function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number, onCursor: boolean) {
+  for (const m of text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
+    const s = lineFrom + (m.index ?? 0);
+    const end = s + m[0].length;
+    const { from: visFrom, to: visTo } = wikilinkVisibleRange(m[1], s);
+    if (visTo <= visFrom) {
+      // Degenerate token (e.g. empty basename like "[[#heading]]"): underline the whole thing.
+      deco.push(wikilink.range(s, end));
+      continue;
+    }
+    deco.push(wikilink.range(visFrom, visTo));
+    if (!onCursor) {
+      if (visFrom > s) deco.push(hide.range(s, visFrom));
+      if (end > visTo) deco.push(hide.range(visTo, end));
     }
   }
 }
@@ -138,9 +160,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const onCursor = line.number === cursorLine;
       const text = line.text;
 
-      // frontmatter: dim lines and skip inline markdown
+      // frontmatter: dim lines and skip inline markdown — but still highlight any
+      // wikilinks (e.g. a `source: "[[Note]]"` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
         deco.push(frontmatterLine.range(line.from));
+        pushWikilinks(deco, text, line.from, onCursor);
         pos = line.to + 1;
         continue;
       }
@@ -217,11 +241,8 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         }
       }
 
-      // wikilinks [[target]] — underline; click handled in Editor.tsx
-      for (const m of text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
-        const s = line.from + (m.index ?? 0);
-        deco.push(wikilink.range(s, s + m[0].length));
-      }
+      // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
+      pushWikilinks(deco, text, line.from, onCursor);
 
       pos = line.to + 1;
     }
