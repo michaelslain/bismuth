@@ -6,9 +6,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { pushToast } from "./Toast";
 import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
-
-const FOLDER_ICON = "📁";
-const FILE_ICON = "📝";
+import { Icon } from "./icons/Icon";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
@@ -26,7 +24,9 @@ function buildTree(entries: TreeEntry[]): TreeNode {
         cur.children!.set(part, { name: part, path: acc, children: isDir ? new Map() : undefined });
       }
       const node = cur.children!.get(part)!;
-      if (isLeaf && kind !== "dir" && icon) node.icon = icon;
+      // Custom icon for the entry's own node — files (frontmatter `icon`) and
+      // folders (folder-icon override surfaced on dir entries) alike.
+      if (isLeaf && icon) node.icon = icon;
       cur = node;
     });
   }
@@ -334,6 +334,7 @@ function Level(props: {
           <div>
             <div
               style={{
+                display: "flex", "align-items": "center", gap: "4px",
                 padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8,
                 "user-select": "none",
                 background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
@@ -347,7 +348,8 @@ function Level(props: {
               onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
-              {props.open.has(child.path) ? "▾" : "▸"} {FOLDER_ICON}{" "}
+              <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
+              <Icon value={child.icon} fallback={props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <Show when={props.editing === child.path} fallback={child.name}>
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
               </Show>
@@ -364,7 +366,7 @@ function Level(props: {
           </div>
         ) : (
           <div
-            style={{ padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
+            style={{ display: "flex", "align-items": "center", gap: "4px", padding: "2px 4px", "padding-left": indent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
             onDragStart={(e) => {
               e.stopPropagation();
@@ -377,7 +379,7 @@ function Level(props: {
             onDblClick={(e) => { e.stopPropagation(); props.setEditing(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            {child.icon ?? FILE_ICON}{" "}
+            <Icon value={child.icon} fallback="FileText" size={16} class="ft-icon" />
             <Show when={props.editing === child.path} fallback={child.name.replace(/\.md$/, "")}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} />
             </Show>

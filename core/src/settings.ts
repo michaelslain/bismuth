@@ -4,7 +4,7 @@
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
 import { join } from "node:path";
-import { parse, Document, YAMLMap } from "yaml";
+import { parse, parseDocument, Document, YAMLMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
 import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
@@ -72,6 +72,12 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
   const res = await readSettings(vault);
   const data = res?.data ?? {};
   for (const section of Object.keys(out)) {
+    // folderIcons is a free-form map, not a fixed key set — pass the whole stored
+    // map through (the per-key typeof overlay below only handles known leaves).
+    if (section === "folderIcons") {
+      (out as Record<string, unknown>).folderIcons = readFolderIconsFrom(data);
+      continue;
+    }
     const stored = data[section];
     if (!stored || typeof stored !== "object") continue;
     const target = out[section];
@@ -82,4 +88,54 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
   }
   delete (out as Record<string, unknown>).properties;
   return out;
+}
+
+/** Pull a clean `{folderPath: iconName}` string map out of parsed settings data. */
+function readFolderIconsFrom(data: Record<string, unknown>): Record<string, string> {
+  const raw = data.folderIcons;
+  const out: Record<string, string> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof v === "string" && v.length > 0) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Read the per-folder icon map from settings.yaml. Absent file / section → {}. */
+export async function readFolderIcons(vault: string): Promise<Record<string, string>> {
+  const res = await readSettings(vault);
+  if (!res) return {};
+  return readFolderIconsFrom(res.data);
+}
+
+/**
+ * Set or clear a folder's icon and persist settings.yaml in place.
+ * A non-empty icon sets folderIcons[path]; an empty/missing icon deletes it.
+ * Initializes a fresh settings.yaml first if none exists, then edits only the
+ * folderIcons node via the YAML CST so the rest of the file is preserved.
+ */
+export async function setFolderIcon(vault: string, path: string, icon: string | null | undefined): Promise<void> {
+  await initializeSettings(vault); // no-op if present; guarantees a file to edit
+  const raw = await readNote(vault, SETTINGS_FILE);
+  let doc;
+  try {
+    doc = parseDocument(raw);
+  } catch {
+    doc = new Document();
+  }
+  if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+    doc.contents = new YAMLMap();
+  }
+  let map = doc.getIn(["folderIcons"]);
+  if (!(map instanceof YAMLMap)) {
+    map = new YAMLMap();
+    doc.setIn(["folderIcons"], map);
+  }
+  if (icon && icon.length > 0) {
+    (map as YAMLMap).set(path, icon);
+  } else {
+    (map as YAMLMap).delete(path);
+  }
+  await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
 }

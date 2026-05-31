@@ -9,10 +9,14 @@ function objectFields(entry: SchemaEntry): Schema {
   throw new Error("expected an object section");
 }
 
-test("SETTINGS_SCHEMA nests the four app sections plus calendar and properties", () => {
+test("SETTINGS_SCHEMA nests the four app sections plus calendar, properties and folderIcons", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "calendar", "editor", "graph", "properties", "vault"].sort(),
+    ["appearance", "calendar", "editor", "folderIcons", "graph", "properties", "vault"].sort(),
   );
+});
+
+test("folderIcons section is an empty object schema (the per-folder icon map placeholder)", () => {
+  expect(SETTINGS_SCHEMA.folderIcons.type).toEqual({ kind: "object", fields: {} });
 });
 
 test("appearance.accent is a string default #6496ff", () => {
@@ -81,6 +85,7 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
     vault: { backupOnSave: true },
     calendar: { defaultView: "week", weekStartsOnMonday: true, militaryTime: false },
     properties: {},
+    folderIcons: {},
   });
 });
 

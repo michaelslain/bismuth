@@ -2,6 +2,7 @@
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
+import { Icon } from "./icons/Icon";
 import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
@@ -486,9 +487,9 @@ export default function App() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
-          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
-          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
-          <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
+          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></button>
+          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></button>
+          <button class="icon-btn" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />

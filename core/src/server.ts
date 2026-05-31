@@ -20,7 +20,7 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { initializeSettings, getVaultSchema, serializeSettingsForFrontend } from "./settings";
+import { initializeSettings, getVaultSchema, serializeSettingsForFrontend, readFolderIcons, setFolderIcon } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -241,7 +241,18 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /tree": async (_, __) => {
       if (cachedTree === null) cachedTree = await listTree(cfg.vault);
-      return Response.json(cachedTree);
+      // Overlay per-folder icons (stored in settings.yaml) onto directory entries.
+      // Done per-request on a shallow copy so a folder-icon change is reflected
+      // even when the underlying file tree (cachedTree) hasn't structurally changed
+      // and so we never mutate the cache with a value tied to a specific request.
+      const folderIcons = await readFolderIcons(cfg.vault);
+      const entries = cachedTree.map((e) => {
+        if (e.kind === "dir" && folderIcons[e.path]) {
+          return { ...e, icon: folderIcons[e.path] };
+        }
+        return e;
+      });
+      return Response.json(entries);
     },
 
     "GET /vault-data": async (_, __) => {
@@ -449,6 +460,27 @@ export function createServer(cfg: CoreConfig) {
         return new Response("ok");
       },
       (b) => b.file,
+    ),
+
+    "POST /folder-icon": mutatingHandler(
+      async (req) => {
+        // Assign (or clear) an icon for a folder. Folders have no frontmatter, so
+        // the mapping lives in settings.yaml and is overlaid onto /tree dir entries.
+        const { path, icon } = (await req.json()) as { path: string; icon?: string | null };
+        if (typeof path !== "string" || path.length === 0) {
+          return new Response("missing path", { status: 400 });
+        }
+        // Reject traversal / absolute paths — folder paths are vault-relative.
+        const segments = path.split("/");
+        if (path.startsWith("/") || segments.some((s) => s === ".." || s === ".")) {
+          return new Response("invalid path", { status: 400 });
+        }
+        await setFolderIcon(cfg.vault, path, icon ?? "");
+        return new Response("ok");
+      },
+      // settings.yaml change → invalidate broadly; pass its path so classifyVault
+      // marks both graph & tree dirty (isSettingsPath), refreshing /tree.
+      () => "settings.yaml",
     ),
 
     "POST /tasks/toggle": mutatingHandler(
