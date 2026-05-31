@@ -40,6 +40,17 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+/** PUT JSON; throw the server's error text on a non-2xx. */
+async function put(path: string, body: unknown): Promise<Response> {
+  const r = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await checkOk(r);
+  return r;
+}
+
 async function getText(path: string): Promise<string> {
   const r = await fetch(`${BASE}${path}`);
   await checkOk(r);
@@ -51,8 +62,10 @@ export const api = {
   agentGraph: () => getJson<GraphData>("/agent-graph"),
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
+  // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
+  // editor autosave + settings.yaml persistence actually reach disk.
   write: (path: string, contents: string) =>
-    post("/file", { path, contents }).then(() => {}),
+    put("/file", { path, contents }).then(() => {}),
   backup: () => post("/backup", {}).then(() => {}),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
