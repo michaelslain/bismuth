@@ -20,7 +20,7 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { initializeSettings, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
+import { reconcileSettings, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -50,11 +50,13 @@ function requireQueryParam(url: URL, param: string): string {
 type Handler = (req: Request, url: URL, cfg: CoreConfig) => Promise<Response> | Response;
 
 export function createServer(cfg: CoreConfig) {
-  // First launch: write a fully-commented settings.yaml from SETTINGS_SCHEMA.
-  // Fire-and-forget so server start stays synchronous; the file lands within ms.
-  // Swallow failures (e.g. a non-existent/read-only vault dir in tests) so a
-  // missing-config write can never take the whole server down on boot.
-  void initializeSettings(cfg.vault).catch(() => {});
+  // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
+  // defaults file if absent, or fill in any keys added since the file was written
+  // (preserving the user's values, comments, and unknown keys). Fire-and-forget so
+  // server start stays synchronous; the write lands within ms. Swallow failures
+  // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
+  // whole server down on boot.
+  void reconcileSettings(cfg.vault).catch(() => {});
 
   let cachedGraph: GraphData | null = null;
   let cachedTree: TreeEntry[] | null = null;
@@ -267,10 +269,11 @@ export function createServer(cfg: CoreConfig) {
     "GET /file": async (_, url) => {
       const path = requireQueryParam(url, "path");
       // settings.yaml is opened as a normal file, but a vault that never had one
-      // must not surface a blank editor — materialize the schema defaults on first
-      // open. Idempotent (no-op if present); the boot init can't be relied on alone
-      // since it's fire-and-forget and a long-running server may predate the file.
-      if (path === SETTINGS_FILE) await initializeSettings(cfg.vault);
+      // must not surface a blank editor — reconcile the schema defaults on open
+      // (writes a full file if absent; fills any missing keys otherwise). Idempotent
+      // and write-only-if-changed; the boot reconcile can't be relied on alone since
+      // it's fire-and-forget and a long-running server may predate a schema change.
+      if (path === SETTINGS_FILE) await reconcileSettings(cfg.vault);
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       return new Response(noteText, { status: 200 });
     },
