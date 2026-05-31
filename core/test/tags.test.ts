@@ -46,6 +46,22 @@ test("comma-separated frontmatter string tags are split individually", () => {
   expect(tags.sort()).toEqual(["bar", "foo"]);
 });
 
+test("multi-word frontmatter tag is NOT split on internal whitespace", () => {
+  // Comma is the only separator; a single multi-word tag stays intact.
+  const tags = extractTags({ tags: "science fiction" }, "");
+  expect(tags).toEqual(["science fiction"]);
+});
+
+test("comma-separated multi-word frontmatter tags split on commas only", () => {
+  const tags = extractTags({ tags: "science fiction, russian lit" }, "");
+  expect(tags.sort()).toEqual(["russian lit", "science fiction"]);
+});
+
+test("frontmatter array tags with internal spaces are preserved", () => {
+  const tags = extractTags({ tags: ["science fiction", "russian"] }, "");
+  expect(tags.sort()).toEqual(["russian", "science fiction"]);
+});
+
 test("tags with numbers are extracted", () => {
   const tags = extractTags({}, "#tag1 #tag2");
   expect(tags.sort()).toEqual(["tag1", "tag2"]);
@@ -132,5 +148,5 @@ test("special characters in tags are handled", () => {
 
 test("whitespace-only frontmatter tags returns empty", () => {
   const tags = extractTags({ tags: "   " }, "");
-  expect(tags.length).toBeLessThanOrEqual(1);
+  expect(tags).toEqual([]);
 });
