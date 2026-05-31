@@ -1,0 +1,9 @@
+/* app/src/Editor.css */
+
+/* Harper spell/grammar squiggle. CM6 attaches `.harper-error` via the diagnostic's
+   markClass; the wavy red underline (not a background) reads as a spellcheck mark. */
+.cm-content .harper-error {
+  text-decoration: underline wavy var(--error, #e5534b);
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
