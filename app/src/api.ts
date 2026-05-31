@@ -33,6 +33,17 @@ async function post(path: string, body: unknown): Promise<Response> {
   return r;
 }
 
+/** PUT JSON; throw the server's error text on a non-2xx. Used for file writes (PUT /file). */
+async function put(path: string, body: unknown): Promise<Response> {
+  const r = await fetch(`${BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  await checkOk(r);
+  return r;
+}
+
 /** POST JSON and parse response; throw the server's error text on a non-2xx. */
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const r = await post(path, body);
@@ -51,7 +62,7 @@ export const api = {
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
   write: (path: string, contents: string) =>
-    post("/file", { path, contents }).then(() => {}),
+    put("/file", { path, contents }).then(() => {}),
   backup: () => post("/backup", {}).then(() => {}),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
