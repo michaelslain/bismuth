@@ -2,9 +2,14 @@
 // CM6 spell + grammar checking via Harper (WASM, in-browser). App-only: never
 // import this from core/ (the $bunfs WASM path bug). The pure offset/body/store
 // logic lives in sibling modules and is unit-tested headless; this file is the glue.
-import { linter, type Diagnostic, type Action } from "@codemirror/lint";
-import type { EditorView } from "@codemirror/view";
+import { linter, forEachDiagnostic, forceLinting, type Diagnostic, type Action } from "@codemirror/lint";
+import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
+
+// markClass on every Harper diagnostic. Two jobs: (1) lets the right-click menu
+// tell a spellcheck mark apart from a frontmatter type diagnostic; (2) lets the
+// hover-tooltip filter suppress only Harper's boxes (suggestions live in the menu).
+const HARPER_MARK = "harper-error";
 import { WorkerLinter, Dialect, type Lint } from "harper.js";
 // Harper 2.x requires a BinaryModule to construct a Linter. The `harper.js/binary`
 // subpath ships a ready-made module that loads the WASM from its own URL — which is
@@ -117,23 +122,150 @@ function lintToDiagnostic(
     to,
     severity: "error",
     message: lint.message(),
-    markClass: "harper-error",
+    markClass: HARPER_MARK,
     actions,
   };
 }
 
+// ---- right-click suggestions menu -------------------------------------------
+// Spellcheck suggestions are shown ONLY on right-click (not on hover), in a small
+// styled menu — the default lint hover tooltip is suppressed via tooltipFilter.
+
+let openMenu: HTMLElement | null = null;
+
+function closeHarperMenu(): void {
+  if (openMenu) {
+    openMenu.remove();
+    openMenu = null;
+  }
+  document.removeEventListener("mousedown", onDocMouseDown, true);
+  document.removeEventListener("keydown", onKeyDown, true);
+  window.removeEventListener("scroll", closeHarperMenu, true);
+  window.removeEventListener("resize", closeHarperMenu, true);
+}
+
+function onDocMouseDown(e: MouseEvent): void {
+  if (openMenu && !openMenu.contains(e.target as Node)) closeHarperMenu();
+}
+
+function onKeyDown(e: KeyboardEvent): void {
+  if (e.key === "Escape") closeHarperMenu();
+}
+
+function menuItem(label: string, onClick: () => void): HTMLButtonElement {
+  const item = document.createElement("button");
+  item.className = "harper-menu-item";
+  item.textContent = label;
+  item.addEventListener("click", onClick);
+  return item;
+}
+
+function showHarperMenu(
+  view: EditorView,
+  x: number,
+  y: number,
+  message: string,
+  from: number,
+  to: number,
+  actions: readonly Action[],
+): void {
+  closeHarperMenu();
+  const menu = document.createElement("div");
+  menu.className = "harper-menu";
+
+  if (message) {
+    const header = document.createElement("div");
+    header.className = "harper-menu-header";
+    header.textContent = message;
+    menu.appendChild(header);
+  }
+
+  const run = (action: Action) => () => {
+    action.apply(view, from, to);
+    closeHarperMenu();
+    // Suggestions edit the doc (re-lints automatically); dict/ignore don't, so
+    // nudge a re-lint to clear the squiggle once the async update lands.
+    setTimeout(() => forceLinting(view), 50);
+    view.focus();
+  };
+
+  const isSuggestion = (a: Action) => a.name.startsWith("→") || a.name === "Remove";
+  const suggestions = actions.filter(isSuggestion);
+  const meta = actions.filter((a) => !isSuggestion(a));
+
+  if (suggestions.length) {
+    for (const a of suggestions) menu.appendChild(menuItem(a.name, run(a)));
+  } else {
+    const none = document.createElement("div");
+    none.className = "harper-menu-empty";
+    none.textContent = "No suggestions";
+    menu.appendChild(none);
+  }
+
+  if (meta.length) {
+    const sep = document.createElement("div");
+    sep.className = "harper-menu-sep";
+    menu.appendChild(sep);
+    for (const a of meta) menu.appendChild(menuItem(a.name, run(a)));
+  }
+
+  document.body.appendChild(menu);
+  // Keep the menu inside the viewport.
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+
+  openMenu = menu;
+  document.addEventListener("mousedown", onDocMouseDown, true);
+  document.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("scroll", closeHarperMenu, true);
+  window.addEventListener("resize", closeHarperMenu, true);
+}
+
+/** Right-click over a Harper mark → show the suggestions menu (suppresses the
+ *  native context menu only there; elsewhere the default menu is untouched). */
+function harperContextMenu(): Extension {
+  return EditorView.domEventHandlers({
+    contextmenu(event, view) {
+      const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+      if (pos == null) return false;
+      const hits: { from: number; to: number; d: Diagnostic }[] = [];
+      forEachDiagnostic(view.state, (d, from, to) => {
+        if (d.markClass === HARPER_MARK && pos >= from && pos <= to) hits.push({ from, to, d });
+      });
+      if (hits.length === 0) return false;
+      event.preventDefault();
+      // Stop the event reaching the pane's onContextMenu (PaneTree.tsx), which
+      // would otherwise pop the app's editor context menu on top of ours.
+      event.stopPropagation();
+      const { from, to, d } = hits[hits.length - 1];
+      showHarperMenu(view, event.clientX, event.clientY, d.message, from, to, d.actions ?? []);
+      return true;
+    },
+  });
+}
+
 export function harperSpellcheck(opts: HarperOpts): Extension {
   prewarmOnIdle();
-  return linter(
-    async (view): Promise<Diagnostic[]> => {
-      await ensureSetup();
-      const doc = view.state.doc.toString();
-      const { from, to } = opts.getBodyRange(doc);
-      if (to <= from) return [];
-      const bodyText = doc.slice(from, to);
-      const lints = await getLinter().lint(bodyText, { language: "markdown" });
-      return lints.map((l) => lintToDiagnostic(view, bodyText, from, l));
-    },
-    { delay: 400 },
-  );
+  return [
+    linter(
+      async (view): Promise<Diagnostic[]> => {
+        await ensureSetup();
+        const doc = view.state.doc.toString();
+        const { from, to } = opts.getBodyRange(doc);
+        if (to <= from) return [];
+        const bodyText = doc.slice(from, to);
+        const lints = await getLinter().lint(bodyText, { language: "markdown" });
+        return lints.map((l) => lintToDiagnostic(view, bodyText, from, l));
+      },
+      {
+        delay: 400,
+        // No hover box for spellcheck marks — their suggestions live in the
+        // right-click menu. Other linters' tooltips (e.g. frontmatter type
+        // errors) pass through untouched.
+        tooltipFilter: (diagnostics) => diagnostics.filter((d) => d.markClass !== HARPER_MARK),
+      },
+    ),
+    harperContextMenu(),
+  ];
 }

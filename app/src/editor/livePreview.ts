@@ -280,7 +280,10 @@ export const livePreview = [
     ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
     ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
     ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
-    ".cm-lintRange-error": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"6\" height=\"3\"><path d=\"m0 3 l3 -3 l3 3\" fill=\"none\" stroke=\"%23e5484d\"/></svg>') left bottom repeat-x" },
-    ".cm-lintRange-warning": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"6\" height=\"3\"><path d=\"m0 3 l3 -3 l3 3\" fill=\"none\" stroke=\"%23f5a623\"/></svg>') left bottom repeat-x" },
+    // Soft, smooth (sine, not zig-zag) pastel squiggles — reads as a gentle
+    // spell/type mark rather than a harsh error stripe.
+    ".cm-lintRange-error": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23ff9ea0\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
+    ".cm-lintRange-warning": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23f2c17d\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
+    ".cm-lintRange-info": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23999999\" stroke-width=\"1\"/></svg>') left bottom repeat-x" },
   }),
 ];
