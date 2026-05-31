@@ -27,6 +27,10 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--term-cursor-width": s.terminal.cursorWidth + "px",
     "--term-cursor-glide": s.terminal.cursorGlideMs + "ms",
     "--term-cursor-blink": s.terminal.cursorBlinkSeconds + "s",
+    "--card-grid-min": s.ui.cardGridMinWidth + "px",
+    "--kanban-col-min": s.ui.kanbanColumnMinWidth + "px",
+    "--kanban-col-max": s.ui.kanbanColumnMaxWidth + "px",
+    "--map-min-height": s.ui.mapMinHeight + "px",
   };
 }
 

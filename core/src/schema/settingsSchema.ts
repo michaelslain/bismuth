@@ -71,6 +71,11 @@ export const SETTINGS_SCHEMA: Schema = {
   ui: object({
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
+    cardGridMinWidth: { type: "number", default: 220, min: 150, max: 360, doc: "Minimum card width in the Bases cards view (px)." },
+    kanbanColumnMinWidth: { type: "number", default: 248, min: 180, max: 360, doc: "Minimum Bases kanban column width (px)." },
+    kanbanColumnMaxWidth: { type: "number", default: 288, min: 220, max: 420, doc: "Maximum Bases kanban column width (px)." },
+    mapMinHeight: { type: "number", default: 480, min: 300, max: 800, doc: "Minimum height of the Bases map view (px)." },
+    tableMinColWidth: { type: "number", default: 60, min: 30, max: 150, doc: "Minimum column width when resizing a Bases table (px)." },
   }),
   server: object({
     fileWatchDebounceMs: { type: "number", default: 250, min: 50, max: 2000, doc: "Coalesce rapid file changes for this long before rebuilding caches (ms)." },

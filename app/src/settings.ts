@@ -76,6 +76,11 @@ export interface Settings {
   ui: {
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px
+    cardGridMinWidth: number;     // px
+    kanbanColumnMinWidth: number; // px
+    kanbanColumnMaxWidth: number; // px
+    mapMinHeight: number;         // px
+    tableMinColWidth: number;     // px
   };
   server: {
     fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
