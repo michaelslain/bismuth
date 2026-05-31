@@ -54,6 +54,9 @@ export const SETTINGS_SCHEMA: Schema = {
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.
   properties: { type: { kind: "object", fields: {} }, doc: "Vault property registry: map each frontmatter key to a type." },
+  // Per-folder icons. Free-form `{folderPath: iconName}` (folders have no
+  // frontmatter), seeded empty and written via POST /folder-icon.
+  folderIcons: { type: { kind: "object", fields: {} }, doc: "Per-folder icons: map a folder path to a Lucide icon name or emoji." },
 };
 
 /** Recursively materialize the `default` of every leaf into a plain nested object. */

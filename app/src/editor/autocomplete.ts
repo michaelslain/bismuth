@@ -80,6 +80,15 @@ export function matchPropertyKeyPrefix(textBefore: string): { from: number; quer
   return { from: 0, query: textBefore };
 }
 
+// An `icon:` VALUE. Complete the (single) icon name after the colon. Returns the
+// prefix typed so far so the source can filter Lucide names by it.
+export function matchIconValue(textBefore: string): { from: number; query: string } | null {
+  const m = textBefore.match(/^icon:\s*(.*)$/);
+  if (!m) return null;
+  const valueStart = textBefore.length - m[1].length;
+  return { from: valueStart, query: m[1].trim() };
+}
+
 // A `tags:` VALUE is a comma-separated list. Complete the segment after the last comma.
 export function matchTagListItem(textBefore: string): { from: number; query: string } | null {
   const m = textBefore.match(/^tags:\s*(.*)$/);
@@ -126,6 +135,30 @@ function enumValueSource(getSchema: () => Schema, inFrontmatter: (ctx: Completio
     const options: Completion[] = valueSuggestions(type, m[2].trim()).map((v) => ({ label: v }));
     if (options.length === 0) return null;
     return { from, options, validFor: /^[^,\n]*$/ };
+  };
+}
+
+// Icon-name completion for the `icon:` property value. Lucide names are supplied
+// by the caller (getIconNames) so this module stays free of the lucide import
+// (which can't be loaded outside a DOM). Emoji are still allowed — this only
+// *suggests* Lucide names; it never blocks other input.
+function iconValueSource(getIconNames: () => string[], inFrontmatter: (ctx: CompletionContext) => boolean): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
+    if (!inFrontmatter(context)) return null;
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    const match = matchIconValue(textBefore);
+    if (!match) return null;
+    const from = line.from + match.from;
+    const q = match.query.toLowerCase();
+    // Prefix match first, then substring — keeps the most likely names on top.
+    const names = getIconNames();
+    const ranked = q
+      ? names.filter((n) => n.toLowerCase().startsWith(q)).concat(names.filter((n) => !n.toLowerCase().startsWith(q) && n.toLowerCase().includes(q)))
+      : names;
+    const options: Completion[] = ranked.slice(0, 50).map((name) => ({ label: name, type: "keyword" }));
+    if (options.length === 0) return null;
+    return { from, options, validFor: /^[^\n]*$/ };
   };
 }
 
@@ -186,12 +219,14 @@ export function vaultCompletion(opts: {
   getNotes: () => NoteCandidate[];
   getTags: () => string[];
   getSchema: () => Schema;
+  getIconNames: () => string[];
   inFrontmatter: (ctx: CompletionContext) => boolean;
 }): Extension {
   return autocompletion({
     override: [
       // frontmatter-position sources (gated by inFrontmatter)
       propertyKeySource(opts.getSchema, opts.inFrontmatter),
+      iconValueSource(opts.getIconNames, opts.inFrontmatter),
       enumValueSource(opts.getSchema, opts.inFrontmatter),
       tagListSource(opts.getTags, opts.inFrontmatter),
       // body-position sources

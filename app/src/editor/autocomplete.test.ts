@@ -1,6 +1,6 @@
 // app/src/editor/autocomplete.test.ts
 import { test, expect } from "bun:test";
-import { matchPropertyKeyPrefix, matchTagListItem } from "./autocomplete";
+import { matchPropertyKeyPrefix, matchTagListItem, matchIconValue } from "./autocomplete";
 
 // A property key is being typed at the very start of a frontmatter line (no value yet).
 test("matchPropertyKeyPrefix: bare key prefix at line start", () => {
@@ -35,4 +35,22 @@ test("matchTagListItem: trims leading whitespace of the segment", () => {
 
 test("matchTagListItem: null for a non-tags key", () => {
   expect(matchTagListItem("status: do")).toBeNull();
+});
+
+// Icon value: completes the icon name after `icon:`.
+test("matchIconValue: bare prefix right after the key", () => {
+  expect(matchIconValue("icon: Hou")).toEqual({ from: 6, query: "Hou" });
+});
+
+test("matchIconValue: empty value matches an empty query (offer all)", () => {
+  expect(matchIconValue("icon: ")).toEqual({ from: 6, query: "" });
+});
+
+test("matchIconValue: skips the whitespace after the colon (from points at the name)", () => {
+  // "icon:   Car" — three spaces consumed by \s*, so `from` is the 'C' at index 8.
+  expect(matchIconValue("icon:   Car")).toEqual({ from: 8, query: "Car" });
+});
+
+test("matchIconValue: null for a non-icon key", () => {
+  expect(matchIconValue("status: do")).toBeNull();
 });

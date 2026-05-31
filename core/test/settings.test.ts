@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
 import { readSettings, getVaultSchema } from "../src/settings";
+import { keySuggestions } from "../src/schema/suggest";
+import { validateDocument } from "../src/schema/validate";
 
 async function emptyVault(): Promise<string> {
   return mkdtempSync(join(tmpdir(), "oa-settings-"));
@@ -47,9 +49,30 @@ test("getVaultSchema parses the properties section into a registry", async () =>
 test("getVaultSchema returns only the built-in properties when there is no settings.yaml", async () => {
   const vault = await emptyVault();
   const schema = await getVaultSchema(vault);
-  // Built-ins are always known (tags/aliases/cssclasses); no user properties.
-  expect(Object.keys(schema).sort()).toEqual(["aliases", "cssclasses", "tags"]);
+  // Built-ins are always known (tags/aliases/cssclasses/icon); no user properties.
+  expect(Object.keys(schema).sort()).toEqual(["aliases", "cssclasses", "icon", "tags"]);
   expect(schema.tags.type).toEqual({ kind: "list", item: "string" });
+});
+
+test("icon is a built-in known property of type 'icon'", async () => {
+  const vault = await emptyVault();
+  const schema = await getVaultSchema(vault);
+  expect(schema.icon).toBeDefined();
+  expect(schema.icon.type).toBe("icon");
+});
+
+test("keySuggestions includes the built-in icon key for prefix 'ic' and ''", async () => {
+  const vault = await emptyVault();
+  const schema = await getVaultSchema(vault);
+  expect(keySuggestions(schema, "ic")).toContain("icon");
+  expect(keySuggestions(schema, "")).toContain("icon");
+});
+
+test("an icon frontmatter value (emoji OR arbitrary string) validates with zero diagnostics", async () => {
+  const vault = await emptyVault();
+  const schema = await getVaultSchema(vault);
+  expect(validateDocument({ icon: "🪶" }, schema, { mode: "frontmatter" })).toEqual([]);
+  expect(validateDocument({ icon: "House" }, schema, { mode: "frontmatter" })).toEqual([]);
 });
 
 import { initializeSettings } from "../src/settings";
@@ -76,6 +99,42 @@ test("initializeSettings does not clobber an existing file", async () => {
   await initializeSettings(vault);
   const res = await readSettings(vault);
   expect(res!.data).toEqual({ appearance: { theme: "light" } });
+});
+
+import { readFolderIcons, setFolderIcon } from "../src/settings";
+
+test("readFolderIcons returns {} when settings.yaml is absent", async () => {
+  const vault = await emptyVault();
+  expect(await readFolderIcons(vault)).toEqual({});
+});
+
+test("setFolderIcon persists a folder icon into settings.yaml", async () => {
+  const vault = await emptyVault();
+  await setFolderIcon(vault, "projects", "Folder");
+  expect(await readFolderIcons(vault)).toEqual({ projects: "Folder" });
+  const res = await readSettings(vault);
+  expect((res!.data.folderIcons as Record<string, unknown>).projects).toBe("Folder");
+});
+
+test("setFolderIcon with an empty icon deletes the entry", async () => {
+  const vault = await emptyVault();
+  await setFolderIcon(vault, "projects", "Folder");
+  await setFolderIcon(vault, "projects", "");
+  expect(await readFolderIcons(vault)).toEqual({});
+});
+
+test("initializeSettings seeds folderIcons as an empty map", async () => {
+  const vault = await emptyVault();
+  await initializeSettings(vault);
+  const parsed = parseYaml((await readSettings(vault))!.raw) as Record<string, any>;
+  expect(parsed.folderIcons).toEqual({});
+});
+
+test("serializeSettingsForFrontend includes the folderIcons map", async () => {
+  const vault = await emptyVault();
+  await setFolderIcon(vault, "projects", "Folder");
+  const data = await serializeSettingsForFrontend(vault);
+  expect(data.folderIcons).toEqual({ projects: "Folder" });
 });
 
 import { serializeSettingsForFrontend } from "../src/settings";

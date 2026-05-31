@@ -16,6 +16,7 @@ import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
 import { viewBlock } from "./editor/viewBlock";
 import { vaultCompletion } from "./editor/autocomplete";
+import { iconNames } from "./icons/registry";
 import { settingsCompletion } from "./editor/settingsComplete";
 import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
@@ -188,6 +189,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             getNotes: props.noteNames,
             getTags: props.tagNames,
             getSchema: propertyRegistry,
+            getIconNames: iconNames,
             inFrontmatter: isInFrontmatter,
           }),
           yamlSchema({

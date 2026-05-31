@@ -53,3 +53,37 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
     return `---\n${stringify(data)}---\n${body}`;
   }
 }
+
+/**
+ * Remove a single frontmatter key from a note, returning the rewritten markdown.
+ * Preserves the rest of the YAML (order, formatting, other keys) and the body.
+ * If the key isn't present, the note is returned unchanged. If removing the key
+ * empties the frontmatter, the whole `---` block is dropped (no dangling fence or
+ * blank line is left behind).
+ */
+export function deleteFrontmatterKey(md: string, key: string): string {
+  const m = md.match(FRONTMATTER_REGEX);
+  if (!m) return md; // no frontmatter — nothing to delete
+  const fmText = m[1];
+  const body = md.slice(m[0].length);
+  try {
+    const doc = parseDocument(fmText);
+    if (!doc.has(key)) return md; // key absent — leave the file untouched
+    doc.delete(key);
+    const remaining = doc.toJSON();
+    // Last key removed → emit just the body so no empty `---\n---` block lingers.
+    if (remaining == null || (typeof remaining === "object" && Object.keys(remaining).length === 0)) {
+      return body;
+    }
+    let out = doc.toString({ flowCollectionPadding: false });
+    if (!out.endsWith("\n")) out += "\n";
+    return `---\n${out}---\n${body}`;
+  } catch {
+    // Malformed YAML: fall back to a clean rewrite via the parsed object.
+    const { data } = parseFrontmatter(md);
+    if (!(key in data)) return md;
+    delete data[key];
+    if (Object.keys(data).length === 0) return body;
+    return `---\n${stringify(data)}---\n${body}`;
+  }
+}

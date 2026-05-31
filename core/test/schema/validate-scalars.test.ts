@@ -67,6 +67,19 @@ test("date rejects month 13", () => {
   expect(validateValue("date", "2026-13-01")!.message).toBe("expected a date (YYYY-MM-DD)");
 });
 
+test("icon accepts any string (a Lucide icon name) with no diagnostic", () => {
+  expect(validateValue("icon", "House")).toBeNull();
+});
+
+test("icon accepts an emoji value with no diagnostic", () => {
+  expect(validateValue("icon", "🪶")).toBeNull();
+});
+
+test("icon treats null/undefined as valid (like every other type)", () => {
+  expect(validateValue("icon", null)).toBeNull();
+  expect(validateValue("icon", undefined)).toBeNull();
+});
+
 test("datetime accepts valid ISO-8601", () => {
   expect(validateValue("datetime", "2026-06-01T12:30:00Z")).toBeNull();
 });

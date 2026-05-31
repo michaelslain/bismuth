@@ -44,3 +44,8 @@ test("valueSuggestions for boolean offers true/false", () => {
 test("valueSuggestions for a non-enumerable scalar returns []", () => {
   expect(valueSuggestions("string", "x")).toEqual([]);
 });
+
+test("valueSuggestions for the icon type returns [] (frontend supplies icon names)", () => {
+  expect(valueSuggestions("icon", "")).toEqual([]);
+  expect(valueSuggestions("icon", "Ho")).toEqual([]);
+});

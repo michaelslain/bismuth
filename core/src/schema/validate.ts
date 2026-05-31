@@ -83,6 +83,7 @@ export function validateValue(
   if (typeof type === "string") {
     switch (type) {
       case "string":
+      case "icon": // a Lucide icon name OR an emoji — any string is valid, never flagged
         return null;
       case "number":
         return typeof value === "number" && !Number.isNaN(value)

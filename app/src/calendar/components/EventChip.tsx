@@ -5,6 +5,7 @@ import { showEventModal, settings, events, recurrenceAction } from '../state'
 import { formatTime } from '../dates'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
+import { Icon } from '../../icons/Icon'
 
 interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[]; store: EventStore }
 
@@ -84,7 +85,7 @@ export function EventChip(props: Props) {
         >
           <Show when={props.event.location}><span class="event-chip-location">{props.event.location}</span></Show>
           <Show when={props.event.link}>
-            <span class="event-chip-link" onClick={e => { e.stopPropagation(); window.open(props.event.link!, '_blank') }}>🔗</span>
+            <span class="event-chip-link" onClick={e => { e.stopPropagation(); window.open(props.event.link!, '_blank') }}><Icon value="Link" size={12} /></span>
           </Show>
         </div>
       </Show>

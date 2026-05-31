@@ -2,6 +2,7 @@
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
 import { FileTree } from "./FileTree";
+import { Icon } from "./icons/Icon";
 import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
@@ -13,7 +14,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
+import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -557,7 +558,7 @@ export default function App() {
   // numbered by their position among the open terminal tabs.
   function tabBarLabel(t: Tab): string {
     const ls = leaves(t.root);
-    if (ls.length > 1) return `⊞ ${ls.length} panes`;
+    if (ls.length > 1) return `${ls.length} panes`;
     const content = ls[0].content;
     if (content.startsWith(TERMINAL_PREFIX)) {
       const termTabs = tabs().filter((tt) => {
@@ -569,13 +570,20 @@ export default function App() {
     return contentLabel(content);
   }
 
+  // Lucide icon name for a tab: a split-pane glyph for "omnitab"s, else the content's icon.
+  function tabBarIcon(t: Tab): string | undefined {
+    const ls = leaves(t.root);
+    if (ls.length > 1) return "Columns2";
+    return contentIcon(ls[0].content);
+  }
+
   return (
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
-          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
-          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
-          <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
+          <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></button>
+          <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></button>
+          <button class="icon-btn" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
@@ -598,6 +606,9 @@ export default function App() {
                     viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
                   }}
                 >
+                  <Show when={tabBarIcon(t)}>
+                    {(icon) => <Icon value={icon()} size={13} />}
+                  </Show>
                   <span>{tabBarLabel(t)}</span>
                   <span class="tab-x" onClick={(e) => closeTab(t.id, e)}>×</span>
                 </div>

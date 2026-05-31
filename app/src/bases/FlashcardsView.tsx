@@ -1,6 +1,7 @@
 import { createSignal, createMemo, Show, For } from "solid-js";
 import { api } from "../api";
 import { renderMarkdown } from "./markdown";
+import { Icon } from "../icons/Icon";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
 
 /**
@@ -125,7 +126,7 @@ export function FlashcardsView(props: {
               onClick={deleteCurrent}
               disabled={busy()}
             >
-              ✕
+              <Icon value="X" size={14} />
             </button>
           </Show>
         </Show>
@@ -134,7 +135,7 @@ export function FlashcardsView(props: {
           title="Cram: review every card, no scheduling changes"
           onClick={toggleCram}
         >
-          {cram() ? "● Cram mode" : "Cram"}
+          {cram() ? <><Icon value="Zap" size={12} /> Cram mode</> : "Cram"}
         </button>
       </div>
 
