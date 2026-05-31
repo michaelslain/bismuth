@@ -151,7 +151,9 @@ export function validateValue(
     }
     const obj = value as Record<string, unknown>;
     for (const [key, entry] of Object.entries(type.fields)) {
-      const inner = validateValue(entry.type, obj[key], ctx);
+      // validateEntry (not validateValue) so nested fields get soft min/max
+      // range checks too — our settings.yaml nests every tunable under a section.
+      const inner = validateEntry(entry, obj[key], ctx);
       if (inner) return { ...inner, path: [key, ...inner.path] };
     }
     return null;
