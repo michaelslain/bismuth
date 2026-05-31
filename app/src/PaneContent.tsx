@@ -6,6 +6,7 @@ import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
 import { BaseView } from "./bases/BaseView";
+import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import type { NoteCandidate } from "./editor/wikilink";
 import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel } from "./tabIds";
@@ -37,15 +38,8 @@ export function PaneContent(props: {
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
       </Match>
-      {/* TEMPORARY spike route (T1) — replaced by <SheetView/> in T4. */}
       <Match when={props.path.endsWith(".sheet")}>
-        {(() => {
-          let el!: HTMLDivElement;
-          import("./sheet/univerSheet").then(({ mountSheet }) =>
-            mountSheet({ container: el, onChange: () => console.log("[sheet] changed") }),
-          );
-          return <div ref={el} style={{ width: "100%", height: "100%" }} />;
-        })()}
+        <SheetView path={props.path} onSaved={props.onSaved} />
       </Match>
       <Match when={props.path.endsWith(".base")}>
         <BaseView path={props.path} onOpen={props.onOpen} />
