@@ -1,12 +1,24 @@
 // app/src/settings.ts
 // The single source of user-configurable settings. Defaults equal today's
-// hardcoded values, so a fresh install behaves exactly as before. Persisted to
-// localStorage; hydrated through the pure `loadSettings` so it stays testable.
-import { createStore } from "solid-js/store";
+// hardcoded values, so a fresh install behaves exactly as before. The store is
+// seeded SYNCHRONOUSLY from DEFAULTS (no white-screen on first paint), then
+// hydrated from the vault's settings.yaml via GET /settings and persisted back
+// through a debounced PUT /file. DEFAULTS is imported from the spine
+// (core/src/schema/settingsSchema.ts) so the synchronous seed can never drift
+// from the file the backend writes (single source of truth).
+import { createStore, reconcile } from "solid-js/store";
 import { createEffect, createRoot } from "solid-js";
+import { stringify } from "yaml";
+import { api } from "./api";
+import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
 
 export type Theme = "dark" | "light";
 
+// The structural shape the frontend store consumes. Mirrors the spine's
+// SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
+// as Record<string, unknown>; this precise interface keeps the ~5 consumers —
+// App.tsx / Editor.tsx / GraphView.tsx / Terminal.tsx — typed). DEFAULTS below
+// is the spine object cast to this shape, so there is still ONE DEFAULTS.
 export interface Settings {
   appearance: {
     accent: string;      // hex, drives accent-tinted UI (active tab, selection)
@@ -35,7 +47,25 @@ export interface Settings {
   vault: {
     backupOnSave: boolean; // gate the git snapshot taken on every save
   };
+  calendar: {
+    defaultView: "month" | "week" | "3day" | "day";
+    weekStartsOnMonday: boolean;
+    militaryTime: boolean;
+  };
 }
+
+// Alias so anything importing the canonical `AppSettings` name from the app gets
+// the precise shape (the spine's own AppSettings is the loose derived type).
+export type AppSettings = Settings;
+
+// Re-export the spine's DEFAULTS as the single source of truth. It is structurally
+// a superset (it also carries the empty `properties` registry, which the frontend
+// ignores); cast to Settings for the precise consumer-facing type.
+const SETTINGS_DEFAULTS = DEFAULTS as unknown as Settings;
+export { SETTINGS_DEFAULTS as DEFAULTS };
+// Local alias used throughout this module.
+const _DEFAULTS: Settings = SETTINGS_DEFAULTS;
+void (DEFAULTS satisfies SpineSettings);
 
 // Editor font choices → full CSS font stacks. Lora + Monaspace ship via @fontsource.
 export const FONT_STACKS: Record<string, string> = {
@@ -44,7 +74,6 @@ export const FONT_STACKS: Record<string, string> = {
   Georgia: "Georgia, 'Times New Roman', serif",
   "system-ui": "system-ui, -apple-system, sans-serif",
 };
-export const EDITOR_FONTS = Object.keys(FONT_STACKS);
 
 // Node palettes. "aurora" is the current hardcoded pink→blue set.
 export const PALETTES: Record<string, number[]> = {
@@ -53,67 +82,146 @@ export const PALETTES: Record<string, number[]> = {
   forest: [0x51cf66, 0x2f9e44, 0x66d9e8, 0x099268, 0xa9e34b],
   mono: [0xe8e8e8, 0xc2c2c2, 0x9a9a9a, 0x767676, 0xd6d6d6],
 };
-export const PALETTE_KEYS = Object.keys(PALETTES);
-
-export const DEFAULTS: Settings = {
-  appearance: { accent: "#6496ff", theme: "dark", editorFont: "Lora", editorFontSize: 16 },
-  graph: { spin: true, spinSpeed: 0.0015, palette: "aurora", repulsion: -10, linkDistance: 5, centering: 0.13, nodeSize: 6, viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10 },
-  editor: { livePreview: true, lineNumbers: false, lineWrapping: true, autoSaveDelay: 800 },
-  vault: { backupOnSave: true },
-};
-
-const KEY = "three-brains.settings";
 
 /**
- * Merge a stored JSON blob over DEFAULTS. Pure and DOM-free so it can be tested.
- * Only known keys with a matching type are taken from storage; anything missing,
- * malformed, or unexpected falls back to the default — so old/partial blobs and
- * newly-added settings both resolve safely.
+ * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked
+ * merge. Pure and DOM-free. Only known keys whose stored type matches the default
+ * type are taken; anything missing, malformed, or unexpected falls back to the
+ * default. This is the single funnel for both localStorage blobs and server JSON,
+ * so a corrupt settings.yaml degrades to defaults instead of poisoning the store.
  */
-export function loadSettings(raw: string | null): Settings {
-  const out = structuredClone(DEFAULTS);
-  if (!raw) return out;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return out;
-  }
-
-  if (!parsed || typeof parsed !== "object") return out;
+export function mergeServerSettings(parsed: unknown): Settings {
+  const out = structuredClone(_DEFAULTS) as Record<string, unknown>;
+  if (!parsed || typeof parsed !== "object") return out as unknown as Settings;
   const p = parsed as Record<string, unknown>;
 
-  // Merge each section from storage into the corresponding default section
-  for (const section of Object.keys(out) as (keyof Settings)[]) {
+  for (const section of Object.keys(out)) {
     const stored = p[section];
-    if (typeof stored !== "object") continue;
-
-    const target = out[section] as Record<string, unknown>;
-    for (const key of Object.keys(target)) {
+    if (!stored || typeof stored !== "object") continue;
+    const target = out[section];
+    if (!target || typeof target !== "object") continue;
+    const tgt = target as Record<string, unknown>;
+    for (const key of Object.keys(tgt)) {
       const storedValue = (stored as Record<string, unknown>)[key];
-      // Only apply if type matches (handles schema evolution gracefully)
-      if (typeof storedValue === typeof target[key]) target[key] = storedValue;
+      if (typeof storedValue === typeof tgt[key]) tgt[key] = storedValue;
     }
   }
-
-  return out;
+  return out as unknown as Settings;
 }
 
-const initial =
-  typeof localStorage !== "undefined" ? loadSettings(localStorage.getItem(KEY)) : structuredClone(DEFAULTS);
+/**
+ * Merge a stored JSON *string* (localStorage) over DEFAULTS. Delegates to
+ * `mergeServerSettings` after JSON.parse so both paths share one merge.
+ */
+export function loadSettings(raw: string | null): Settings {
+  if (!raw) return structuredClone(_DEFAULTS);
+  try {
+    return mergeServerSettings(JSON.parse(raw));
+  } catch {
+    return structuredClone(_DEFAULTS);
+  }
+}
 
-const [settings, setSettings] = createStore<Settings>(initial);
+// --- Synchronous seed: never empty at first paint (consumers deref two levels
+// deep with no optional chaining, so the store must always be fully shaped). ---
+const [settings, setSettings] = createStore<Settings>(structuredClone(_DEFAULTS));
 
-// Persist on any change (browser only — no-op under tests / SSR).
-if (typeof localStorage !== "undefined") {
-  createRoot(() => {
-    createEffect(() => localStorage.setItem(KEY, JSON.stringify(settings)));
+const LEGACY_KEY = "three-brains.settings";
+
+/**
+ * Decide the one-time first-launch import. If a legacy localStorage blob exists
+ * AND the server's settings.yaml is still bare defaults, return the merged
+ * settings to seed the file from. Otherwise return null (nothing to import).
+ * Pure + testable.
+ */
+export function firstLaunchImport(
+  legacyRaw: string | null,
+  serverData: unknown,
+): Settings | null {
+  if (!legacyRaw) return null;
+  const server = mergeServerSettings(serverData);
+  const isBareDefaults = JSON.stringify(server) === JSON.stringify(_DEFAULTS);
+  if (!isBareDefaults) return null;
+  const imported = loadSettings(legacyRaw);
+  if (JSON.stringify(imported) === JSON.stringify(_DEFAULTS)) return null;
+  return imported;
+}
+
+// Track the YAML body we last wrote so the SSE echo of our own write doesn't
+// trigger a redundant re-hydrate (mirrors Editor.tsx's lastIgnoredVersion).
+let lastWritten = "";
+let persistTimer: ReturnType<typeof setTimeout> | undefined;
+let hydrated = false;
+
+async function hydrateFromServer(): Promise<void> {
+  let data: Record<string, unknown>;
+  try {
+    data = await api.settings();
+  } catch {
+    return; // backend unreachable — keep the synchronous defaults seed
+  }
+
+  // First-launch: import legacy localStorage into settings.yaml once.
+  const legacy = typeof localStorage !== "undefined" ? localStorage.getItem(LEGACY_KEY) : null;
+  const imported = firstLaunchImport(legacy, data);
+  if (imported) {
+    const body = stringify(imported);
+    lastWritten = body;
+    try {
+      await api.write("settings.yaml", body);
+      if (typeof localStorage !== "undefined") localStorage.removeItem(LEGACY_KEY);
+    } catch { /* leave legacy in place; retry next launch */ }
+    setSettings(reconcile(imported));
+    hydrated = true;
+    return;
+  }
+
+  setSettings(reconcile(mergeServerSettings(data)));
+  hydrated = true;
+}
+
+if (typeof window !== "undefined") {
+  // Dynamic import so pure `bun test` runs never load serverVersion.ts, which
+  // instantiates an EventSource at module scope (undefined outside the browser).
+  void import("./serverVersion").then(({ lastChange }) => {
+    createRoot(() => {
+      // 1. Hydrate once on boot.
+      void hydrateFromServer();
+
+      // 2. Re-hydrate when the SSE stream reports a settings.yaml change that
+      //    isn't the echo of our own write.
+      createEffect(() => {
+        const change = lastChange();
+        if (change.version <= 0) return;
+        if (!change.paths.includes("settings.yaml")) return;
+        void (async () => {
+          let data: Record<string, unknown>;
+          try { data = await api.settings(); } catch { return; }
+          if (stringify(mergeServerSettings(data)) === lastWritten) return; // our echo
+          setSettings(reconcile(mergeServerSettings(data)));
+        })();
+      });
+
+      // 3. Persist on change: optimistic in-memory apply already happened via
+      //    setSettings callers; debounce the disk write. Skip writes until the
+      //    first hydrate completes so we don't clobber the file with the seed.
+      createEffect(() => {
+        const snapshot = JSON.stringify(settings); // track all fields
+        if (!hydrated) return;
+        void snapshot;
+        clearTimeout(persistTimer);
+        persistTimer = setTimeout(() => {
+          const body = stringify(structuredClone(settings));
+          lastWritten = body;
+          api.write("settings.yaml", body).catch(() => { /* surfaced elsewhere */ });
+        }, 600);
+      });
+    });
   });
 }
 
 export function resetSettings() {
-  setSettings(structuredClone(DEFAULTS));
+  setSettings(reconcile(structuredClone(_DEFAULTS)));
 }
 
 export { settings, setSettings };
