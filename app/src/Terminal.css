@@ -12,11 +12,11 @@
   position: absolute;
   top: 0;
   left: 0;
-  width: 2px;
+  width: var(--term-cursor-width, 2px);
   background: var(--fg);
   pointer-events: none;
-  transition: transform 70ms ease-out;
-  animation: xterm-caret-blink 1.2s steps(1) infinite;
+  transition: transform var(--term-cursor-glide, 70ms) ease-out;
+  animation: xterm-caret-blink var(--term-cursor-blink, 1.2s) steps(1) infinite;
   will-change: transform;
   z-index: 5;
 }

@@ -93,7 +93,7 @@
 .summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }
 
 .cards { display: flex; flex-direction: column; gap: 12px; }
-.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: 12px; }
 .card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--oa-surface-2); }
 .cardTitle { font-weight: 600; margin-bottom: 8px; }
 .cardField { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
@@ -117,7 +117,7 @@
 .groupHeader { font-weight: 600; margin: 8px 0 4px; }
 
 /* ---- Map ---- */
-.mapWrap { flex: 1 1 auto; min-height: 480px; display: flex; }
+.mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
 .map {
   position: relative;
   flex: 1 1 auto;
@@ -187,8 +187,8 @@
 .kanbanColumn {
   display: flex;
   flex-direction: column;
-  min-width: 248px;
-  max-width: 288px;
+  min-width: var(--kanban-col-min, 248px);
+  max-width: var(--kanban-col-max, 288px);
   flex: 0 0 auto;
   padding: 10px;
   background: var(--oa-surface);

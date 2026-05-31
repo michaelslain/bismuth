@@ -890,3 +890,46 @@ test("POST /rows resolves a scoped-tasks spec via base composition", async () =>
     server.stop(true);
   }
 });
+
+test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
+  const { vault } = await makeSampleVault();
+  // Seed a settings.yaml with a comment + a custom key + the properties registry.
+  await writeNote(vault, "settings.yaml", "# my settings\nappearance:\n  theme: dark\n  myCustom: 7\nproperties:\n  due: date\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/set-setting`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ["appearance", "theme"], value: "light" }),
+    });
+    expect(res.status).toBe(200);
+
+    const settings = await (await fetch(`${base}/settings`)).json();
+    expect(settings.appearance.theme).toBe("light");      // changed key
+    expect(settings.appearance.accent).toBe("#6496ff");    // reconciled default present
+
+    const raw = await readNote(vault, "settings.yaml");
+    expect(raw).toContain("# my settings");                // comment preserved
+    expect(raw).toContain("myCustom: 7");                  // unknown key preserved
+    expect(raw).toContain("due: date");                    // properties registry preserved
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-setting rejects a non-array path with 400", async () => {
+  const { vault } = await makeSampleVault();
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/set-setting`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "appearance.theme", value: "light" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});

@@ -96,7 +96,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 **Key modules**:
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
-  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/tasks/toggle`, `/cards/review`
+  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/tasks/toggle`, `/cards/review`
   - POST reads (not mutations): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
@@ -147,7 +147,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
-- `SettingsPage.tsx` — Appearance (theme, accent, fonts), graph (2D/3D mode, labels, label-hub count), editor
+- Settings have **no GUI page** — the "settings page" is `settings.yaml` opened in the editor, with schema-aware autocomplete (`editor/settingsComplete.ts`, shows each key's doc + valid range) and lint (`editor/yamlSchema.ts`). The schema (`core/src/schema/settingsSchema.ts`) is the single source of truth.
 - `palette/` — `CommandPalette`, `QuickSwitcher`, shared `PaletteModal`
 - `Flashcards.tsx` — Top-level SRS review view, routable via a sentinel id
 - `Terminal.tsx` / `Terminal.css` — xterm.js terminal tab, WebSocket-backed by `core/src/terminal.ts`
@@ -156,7 +156,8 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `bases/` — Bases view renderers (Table, Cards, Kanban, List, Map, plus shared `renderValue`)
 - `calendar/` — Calendar feature: see "Calendar" section below
 - `api.ts` — HTTP client for core endpoints
-- `settings.ts` — Settings state, localStorage persistence (tested in `settings.test.ts`)
+- `settings.ts` — Settings store: seeded synchronously from the spine `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves via `POST /set-setting` (see `settingsDiff.ts`) so the backend can merge in place without clobbering comments / the property registry. Precise `Settings` interface mirrors the schema (kept honest by `settings.parity.test.ts`).
+- `settingsCssVars.ts` — Projects appearance/ui/calendar/terminal settings into `:root` CSS custom properties; stylesheets reference them via `var(--name, fallback)`. Add a CSS-driven setting = one schema entry + one line here + one `var()` in CSS.
 
 **Graph rendering**:
 - `graph/WebGLRenderer.ts` — Three.js renderer for both 2D (flat birdseye) and 3D (volumetric orbit) modes, morphing between the backend's precomputed layouts
@@ -286,7 +287,6 @@ app/src/
 ├── ContextMenu.tsx      # Right-click menu
 ├── GraphView.tsx        # Graph view shell
 ├── graph/               # Renderer + label layer + collide
-├── SettingsPage.tsx     # Settings UI
 ├── Flashcards.tsx       # SRS review view
 ├── Terminal.tsx         # xterm.js terminal tab
 ├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map)
@@ -294,7 +294,9 @@ app/src/
 ├── palette/             # Command palette + quick switcher
 ├── serverVersion.ts     # SSE subscription + version poll
 ├── api.ts               # HTTP client
-├── settings.ts          # State + localStorage
+├── settings.ts          # Store: sync seed + hydrate + per-key PATCH persist
+├── settingsCssVars.ts   # settings → :root CSS custom properties
+├── settingsDiff.ts      # pure leaf-diff for per-key persistence
 ├── Toast.tsx
 ├── telemetry.ts
 ├── App.css              # Global styles + CSS variables
@@ -340,10 +342,14 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 2. Update extractors (e.g., `buildVaultGraph()` in `vault.ts`) to emit new nodes/edges
 3. Update frontend graph filtering in `App.tsx` if needed (e.g., "2nd brain" excludes memory nodes)
 
-### Adding UI settings
-1. Add setting to `settings.ts` (state + localStorage key)
-2. Add UI control to `SettingsPage.tsx`
-3. If it affects rendering: add CSS variable or pass to renderer in `GraphView.tsx`
+### Adding a setting
+The schema is the single source of truth; defaults must equal the current hardcoded value so upgrades are behaviorally a no-op.
+1. Add an entry (type, `default`, `min`/`max` or enum, a clear `doc`) to the right section of `core/src/schema/settingsSchema.ts`. New top-level section? Add it there. `DEFAULTS`, the YAML autocomplete, and the linter pick it up automatically; on next app open `reconcileSettings` adds the key to existing `settings.yaml` files (preserving user values/comments/unknown keys).
+2. Add the matching field to the `Settings` interface in `app/src/settings.ts` (`settings.parity.test.ts` fails until schema ↔ interface match).
+3. Wire the consumer:
+   - **CSS-driven** (looks/sizes/spacing/colors): add a `--var` mapping in `app/src/settingsCssVars.ts` and reference `var(--name, <fallback>)` in the stylesheet.
+   - **Frontend logic**: read `settings.<section>.<key>` directly (the store is reactive).
+   - **Backend** (layout/debounce/SRS/etc.): read from `appConfig.<section>.<key>` in `core/src/server.ts` (cached via `loadAppConfig`, reloaded on settings change); thread into the module. User edits persist through `POST /set-setting`, which merges one key in place.
 
 ### Debugging graph construction
 1. Run `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` manually

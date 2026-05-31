@@ -99,12 +99,9 @@ const MAX_PIXEL_RATIO = 2;
 // dim effect (and the brightness changes are eased, so stepped recomputes still look smooth).
 const CROWD_RECOMPUTE_FRAMES = 10;
 
-// Node size scales with connection count (degree), Obsidian-style. Wide range so leaf nodes
-// read as small dots while hubs clearly pop: multiplier = clamp(MIN + GAIN*sqrt(degree), MIN, MAX).
-// sqrt keeps mid-range growth smooth; the sub-1 MIN floor shrinks low-degree nodes below base.
-const SIZE_MIN_MULT = 0.4;     // multiplier for a 0/1-degree leaf — well under base, so a small dot
-const SIZE_DEGREE_GAIN = 0.45; // size multiplier added per sqrt(degree)
-const SIZE_MAX_MULT = 6;       // ceiling so the biggest hub is ~6x base (not unbounded)
+// Node size scales with connection count (degree), Obsidian-style. The MIN/GAIN/MAX
+// multipliers now live in settings (graph.nodeSize*), read via this.cfg at the use site:
+// multiplier = clamp(MIN + GAIN*sqrt(degree), MIN, MAX). sqrt keeps mid-range growth smooth.
 
 // 3D depth cue: linear fog toward the background color, so nodes/edges deeper in the cloud
 // fade out and read as "further away". near/far track the live camera→centroid distance and
@@ -125,6 +122,11 @@ export interface GraphConfig {
   viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
   showGraphLabels: boolean;
   graphLabelHubCount: number;
+  nodeSizeMinMult: number;    // multiplier for a 0/1-degree leaf
+  nodeSizeDegreeGain: number; // size added per sqrt(degree)
+  nodeSizeMaxMult: number;    // ceiling multiplier (biggest hub)
+  edgeColor: number;          // link color (0xRRGGBB)
+  backgroundColor: number;    // canvas background (0xRRGGBB)
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -138,6 +140,11 @@ const DEFAULT_CONFIG: GraphConfig = {
   viewMode: "3d",
   showGraphLabels: true,
   graphLabelHubCount: 10,
+  nodeSizeMinMult: 0.4,
+  nodeSizeDegreeGain: 0.45,
+  nodeSizeMaxMult: 6,
+  edgeColor: EDGE_COLOR,
+  backgroundColor: 0x0e0e11,
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -371,10 +378,10 @@ export class WebGLRenderer {
 
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0e0e11);
+    this.scene.background = new THREE.Color(this.cfg.backgroundColor);
     // Linear depth fog toward the background → nodes deeper in the cloud fade out (3D depth cue).
     // near/far are recomputed each frame in updateFog (and pushed out of range in flat 2D).
-    this.scene.fog = new THREE.Fog(0x0e0e11, 1, 1000);
+    this.scene.fog = new THREE.Fog(this.cfg.backgroundColor, 1, 1000);
 
     // Camera
     const w = el.clientWidth || 320;
@@ -1197,6 +1204,13 @@ export class WebGLRenderer {
 
     if (cfg.palette !== prev.palette && this.pointsMesh) this.recolorNodes();
 
+    // Background color applies instantly; edge color + node-size multipliers apply on the
+    // next graph render (re-settle below covers a size change).
+    if (cfg.backgroundColor !== prev.backgroundColor) {
+      this.scene.background = new THREE.Color(cfg.backgroundColor);
+      if (this.scene.fog) (this.scene.fog as THREE.Fog).color = new THREE.Color(cfg.backgroundColor);
+    }
+
     // nodeSize feeds the per-node collide radius, so a size change must recompute collide (and re-settle).
     if (this.sim && (cfg.repulsion !== prev.repulsion || cfg.linkDistance !== prev.linkDistance || cfg.centering !== prev.centering || cfg.nodeSize !== prev.nodeSize)) {
       (this.sim.force("charge") as any)?.strength(cfg.repulsion);
@@ -1755,7 +1769,7 @@ export class WebGLRenderer {
     const scales = new Float32Array(this.nodes.length);
     for (let i = 0; i < this.nodes.length; i++) {
       const d = deg.get(this.nodes[i].id) ?? 0;
-      scales[i] = Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(d));
+      scales[i] = Math.min(this.cfg.nodeSizeMaxMult, this.cfg.nodeSizeMinMult + this.cfg.nodeSizeDegreeGain * Math.sqrt(d));
     }
     return scales;
   }
@@ -1822,7 +1836,7 @@ export class WebGLRenderer {
     const linePos = new Float32Array(lineCount * 6); // 2 vertices * 3 components
     const lineColors = new Float32Array(lineCount * 6);
     this.baseEdgeColors = new Float32Array(lineCount * 6);
-    const ec = new THREE.Color(EDGE_COLOR);
+    const ec = new THREE.Color(this.cfg.edgeColor);
     const ecc = [ec.r, ec.g, ec.b];
     for (let i = 0; i < lineCount; i++) {
       for (let k = 0; k < 6; k++) {

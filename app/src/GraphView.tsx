@@ -11,6 +11,12 @@ function hoverLabel(node: HoverNode): string {
   return node.kind === "note" ? `${node.id}.md` : node.label;
 }
 
+/** Parse a "#rrggbb" hex color to the 0xRRGGBB int the renderer wants; fall back on garbage. */
+function hexToInt(hex: string, fallback: number): number {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec((hex ?? "").trim());
+  return m ? parseInt(m[1], 16) : fallback;
+}
+
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
 export function GraphView(props: {
@@ -83,6 +89,11 @@ export function GraphView(props: {
       viewMode: gs.viewMode,
       showGraphLabels: gs.showGraphLabels,
       graphLabelHubCount: gs.graphLabelHubCount,
+      nodeSizeMinMult: gs.nodeSizeMinMult,
+      nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
+      nodeSizeMaxMult: gs.nodeSizeMaxMult,
+      edgeColor: hexToInt(gs.edgeColor, 0xbdcaf2),
+      backgroundColor: hexToInt(gs.backgroundColor, 0x0e0e11),
     });
   });
 

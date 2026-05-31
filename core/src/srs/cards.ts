@@ -2,7 +2,7 @@ import { listMarkdown, readNote, writeNote } from "../files";
 import { parseFrontmatter } from "../frontmatter";
 import { extractTags } from "../tags";
 import { parseCards, deckPathsFromTags, CLOZE_RE } from "./parser";
-import { schedule, formatScheduling, BASE_EASE, SR_COMMENT_RE } from "./scheduler";
+import { schedule, formatScheduling, BASE_EASE, SR_COMMENT_RE, DEFAULT_SRS, type SrsConfig } from "./scheduler";
 import type { Card, Deck, ParsedCard, ReviewResponse, SchedulingInfo } from "./types";
 
 /** Deck for a note: first flashcard deck path found, or null if not a flashcard note. */
@@ -126,6 +126,7 @@ export async function applyReview(
   response: ReviewResponse,
   today: string,
   expectedQuestion?: string,
+  cfg: SrsConfig = DEFAULT_SRS,
 ): Promise<void> {
   const [notePath, cardIdxStr, subIdxStr] = cardId.split("::");
   const cardIndex = Number(cardIdxStr);
@@ -147,9 +148,9 @@ export async function applyReview(
   const entries: SchedulingInfo[] = [];
   for (let s = 0; s < pc.subCount; s++) {
     const prev = pc.scheduling[s] ?? null;
-    if (s === subIndex) entries.push(schedule(prev, response, today));
+    if (s === subIndex) entries.push(schedule(prev, response, today, cfg));
     else if (prev) entries.push(prev);
-    else entries.push(schedule(null, response, today));
+    else entries.push(schedule(null, response, today, cfg));
   }
 
   const newBody = rewriteCardSchedule(body, pc, formatScheduling(entries));
