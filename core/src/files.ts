@@ -44,6 +44,10 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
         out.push(entry);
       } else if (d.name.endsWith(".base")) {
         out.push({ path: rel, kind: "file" });
+      } else if (d.name.endsWith(".yaml") || d.name.endsWith(".yml")) {
+        // Config files (settings.yaml) are real vault files — show them in the
+        // tree so they're opened/edited like anything else, no special chrome.
+        out.push({ path: rel, kind: "file" });
       }
     }
   };

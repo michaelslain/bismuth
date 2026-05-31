@@ -489,7 +489,6 @@ export default function App() {
           <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
           <button class="icon-btn" title="Review this note's flashcards" onClick={reviewCurrentNote}>🃏</button>
-          <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
           <button class="icon-btn" title="Calendar" onClick={openCalendar}>📅</button>
           <button class="icon-btn" title="Tasks" onClick={openTasks}>✓</button>
           <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
