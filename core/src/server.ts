@@ -20,7 +20,7 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { initializeSettings, getVaultSchema, serializeSettingsForFrontend } from "./settings";
+import { initializeSettings, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -266,6 +266,11 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /file": async (_, url) => {
       const path = requireQueryParam(url, "path");
+      // settings.yaml is opened as a normal file, but a vault that never had one
+      // must not surface a blank editor — materialize the schema defaults on first
+      // open. Idempotent (no-op if present); the boot init can't be relied on alone
+      // since it's fire-and-forget and a long-running server may predate the file.
+      if (path === SETTINGS_FILE) await initializeSettings(cfg.vault);
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       return new Response(noteText, { status: 200 });
     },
