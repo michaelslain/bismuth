@@ -1,9 +1,26 @@
 import { parse as parseYaml } from "yaml";
-import type { BaseConfig, ViewConfig, SortSpec } from "./types";
+import type { BaseConfig, ViewConfig, SortSpec, ViewType, ParsedBase } from "./types";
+import { parseMarkdownTable } from "./table";
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   return [];
+}
+
+const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
+function isValidType(t: unknown): t is ViewType {
+  return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
+}
+function strOrUndef(v: unknown): string | undefined {
+  return typeof v === "string" ? v : undefined;
+}
+function safeYaml(text: string): Record<string, unknown> | null {
+  try {
+    const d = parseYaml(text);
+    return d && typeof d === "object" ? (d as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeSort(raw: unknown): SortSpec[] | undefined {
@@ -45,9 +62,6 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
-  const isValidType = (t: unknown): t is "cards" | "list" | "kanban" | "map" =>
-    t === "cards" || t === "list" || t === "kanban" || t === "map";
-
   const type = isValidType(o.type) ? o.type : "table";
   const name = typeof o.name === "string" && o.name.length ? o.name : "Untitled view";
   const limit = typeof o.limit === "number" ? o.limit : undefined;
@@ -81,6 +95,19 @@ function normalizeView(raw: unknown): ViewConfig {
     lng,
     zoom,
     center,
+    source: o.source as ViewConfig["source"],
+    // calendar field bindings
+    dateField: strOrUndef(o.dateField),
+    startTimeField: strOrUndef(o.startTimeField),
+    endTimeField: strOrUndef(o.endTimeField),
+    recurrenceField: strOrUndef(o.recurrenceField),
+    categoryField: strOrUndef(o.categoryField),
+    // flashcards field bindings
+    frontField: strOrUndef(o.frontField),
+    backField: strOrUndef(o.backField),
+    dueField: strOrUndef(o.dueField),
+    easeField: strOrUndef(o.easeField),
+    intervalField: strOrUndef(o.intervalField),
   };
 }
 
@@ -120,5 +147,47 @@ export function parseBase(text: string): BaseConfig {
       ? Object.fromEntries(Object.entries(o.formulas as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
       : undefined;
 
-  return { filters: o.filters as BaseConfig["filters"], formulas, properties, views };
+  return {
+    filters: o.filters as BaseConfig["filters"],
+    formulas,
+    properties,
+    views,
+    source: o.source as BaseConfig["source"],
+    schema: o.schema as BaseConfig["schema"],
+  };
+}
+
+const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+
+/**
+ * Parse a `type: base` markdown file: YAML frontmatter (config) + optional GFM table (rows).
+ * `view: <type>` is shorthand for a single default view. Reuses parseBase() for the config.
+ */
+export function parseBaseFile(text: string, meta: { name: string; path: string }): ParsedBase {
+  const m = text.match(FM_RE);
+  const fmText = m ? m[1] : "";
+  const body = m ? m[2] : text;
+  const config = fmText ? parseBase(fmText) : { views: [] as ViewConfig[] };
+  const raw = fmText ? safeYaml(fmText) : null;
+
+  // `view: <type>` shorthand wins only when no explicit `views:` array was given.
+  if (raw && isValidType(raw.view) && !Array.isArray(raw.views)) {
+    config.views = [{ type: raw.view, name: capitalize(raw.view) }];
+  }
+  if (!config.views || config.views.length === 0) {
+    config.views = [{ type: "table", name: "Table" }];
+  }
+  if (raw?.schema && typeof raw.schema === "object") {
+    config.schema = raw.schema as BaseConfig["schema"];
+  }
+  if (raw?.source && typeof raw.source === "object") {
+    config.source = raw.source as BaseConfig["source"];
+  }
+
+  const rows = parseMarkdownTable(body, meta);
+  return { config, rows };
+}
+
+function capitalize(s: string): string {
+  return s.length ? s[0].toUpperCase() + s.slice(1) : s;
 }
