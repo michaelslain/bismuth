@@ -25,8 +25,19 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}/;
 
 function toISODate(v: unknown): string | null {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
-  if (typeof v === "string" && ISO_DATE.test(v)) return v.slice(0, 10);
+  if (typeof v === "string" && ISO_DATE.test(v)) {
+    const s = v.slice(0, 10);
+    return Number.isNaN(new Date(s + "T00:00:00").getTime()) ? null : s;
+  }
   return null;
+}
+
+// A value counts as numeric for y auto-detection only if it's a real number or a
+// numeric string — NOT a boolean (toNumber(true)===1 would mis-pick a done/flag column).
+function isNumericValue(v: unknown): boolean {
+  if (typeof v === "number") return !Number.isNaN(v);
+  if (typeof v === "string") return v.trim() !== "" && !Number.isNaN(Number(v));
+  return false;
 }
 
 function candidateCols(rows: Row[]): string[] {
@@ -54,7 +65,7 @@ function autoX(rows: Row[], cols: string[]): string | undefined {
 function autoY(rows: Row[], cols: string[], x?: string): string | undefined {
   for (const c of cols) {
     if (c === x) continue;
-    if (fractionMatching(rows, c, (v) => !Number.isNaN(toNumber(v))) >= 0.5) return c;
+    if (fractionMatching(rows, c, isNumericValue) >= 0.5) return c;
   }
   return undefined;
 }
@@ -85,7 +96,9 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
     if (isDate) {
       const iso = toISODate(x ? resolveProperty(x, r) : null);
       if (!iso) continue;
-      key = binKey(iso, bin); label = binLabel(key, bin); date = bin === "day" ? key : undefined;
+      key = binKey(iso, bin);
+      label = binLabel(key, bin);
+      date = bin === "day" ? key : undefined;
     } else {
       const raw = x ? resolveProperty(x, r) : "";
       key = String(raw ?? ""); label = key;
@@ -104,7 +117,7 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
   }));
 
   if (isDate) points.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-  else points.sort((a, b) => b.value - a.value);
+  else points.sort((a, b) => b.value - a.value || a.key.localeCompare(b.key));
 
   const values = points.map((p) => p.value);
   return {
@@ -112,6 +125,6 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
     min: values.length ? Math.min(...values) : 0,
     max: values.length ? Math.max(...values) : 0,
     isDate,
-    valueLabel: y ?? "count",
+    valueLabel: agg === "count" ? "count" : (y ?? "count"),
   };
 }

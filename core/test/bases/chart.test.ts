@@ -60,4 +60,24 @@ describe("buildChartData", () => {
     expect(d.points).toEqual([]);
     expect(d.max).toBe(0);
   });
+
+  test("does not auto-pick a boolean column as the value (uses count)", () => {
+    const rows = [row({ date: "2026-05-01", done: true }), row({ date: "2026-05-01", done: false })];
+    const d = buildChartData(rows, view({}));
+    expect(d.valueLabel).toBe("count");
+    expect(d.points[0].value).toBe(2);
+  });
+
+  test("count mode labels as 'count' even with an explicit y", () => {
+    const rows = [row({ date: "2026-05-01", glasses: 5 }), row({ date: "2026-05-01", glasses: 3 })];
+    const d = buildChartData(rows, view({ x: "date", y: "glasses", aggregate: "count" }));
+    expect(d.valueLabel).toBe("count");
+    expect(d.points[0].value).toBe(2);
+  });
+
+  test("category ties break by key for determinism", () => {
+    const rows = [row({ cat: "b", g: 2 }), row({ cat: "a", g: 2 })];
+    const d = buildChartData(rows, view({ x: "cat", y: "g", aggregate: "sum" }));
+    expect(d.points.map((p) => p.key)).toEqual(["a", "b"]);
+  });
 });
