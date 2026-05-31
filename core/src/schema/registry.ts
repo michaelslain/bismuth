@@ -1,6 +1,15 @@
 // core/src/schema/registry.ts
 import type { PropertyType, Schema, SchemaEntry } from "./types";
 
+/** Always-known frontmatter properties (Obsidian-style), so notes never flag them
+ *  as unknown even if the user hasn't listed them. User `properties:` entries with
+ *  the same name override these. */
+export const BUILTIN_PROPERTIES: Schema = {
+  tags: { type: { kind: "list", item: "string" } },
+  aliases: { type: { kind: "list", item: "string" } },
+  cssclasses: { type: { kind: "list", item: "string" } },
+};
+
 const SCALAR_TYPES = new Set([
   "string",
   "number",

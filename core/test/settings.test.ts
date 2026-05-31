@@ -44,21 +44,25 @@ test("getVaultSchema parses the properties section into a registry", async () =>
   expect(schema.status.type).toEqual({ kind: "enum", values: ["todo", "doing", "done"] });
 });
 
-test("getVaultSchema is empty when there is no settings.yaml", async () => {
+test("getVaultSchema returns only the built-in properties when there is no settings.yaml", async () => {
   const vault = await emptyVault();
-  expect(await getVaultSchema(vault)).toEqual({});
+  const schema = await getVaultSchema(vault);
+  // Built-ins are always known (tags/aliases/cssclasses); no user properties.
+  expect(Object.keys(schema).sort()).toEqual(["aliases", "cssclasses", "tags"]);
+  expect(schema.tags.type).toEqual({ kind: "list", item: "string" });
 });
 
 import { initializeSettings } from "../src/settings";
 import { parse as parseYaml } from "yaml";
 
-test("initializeSettings writes a commented defaults file when missing", async () => {
+test("initializeSettings writes a clean (comment-free) defaults file when missing", async () => {
   const vault = await emptyVault();
   await initializeSettings(vault);
   const res = await readSettings(vault);
   expect(res).not.toBeNull();
-  // Doc comments appear for documented keys.
-  expect(res!.raw).toContain("# Accent color");
+  // No comment LINES — discovery is via the editor's Ctrl-Space autocomplete.
+  // (The accent value "#6496ff" contains '#' but isn't a comment, so match line-start.)
+  expect(res!.raw).not.toMatch(/^\s*#/m);
   // The materialized defaults parse back to the DEFAULTS object shape.
   const parsed = parseYaml(res!.raw) as Record<string, any>;
   expect(parsed.appearance.theme).toBe("dark");

@@ -6,7 +6,7 @@
 import { join } from "node:path";
 import { parse, Document, YAMLMap } from "yaml";
 import { readNote, writeNote } from "./files";
-import { loadRegistry } from "./schema/registry";
+import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
 import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
 import type { Schema, SchemaEntry } from "./schema/types";
 
@@ -29,14 +29,16 @@ export async function readSettings(vault: string): Promise<ReadSettingsResult | 
   return { raw, data };
 }
 
-/** Parse the `properties:` section of settings.yaml into a validation Schema. */
+/** Parse the `properties:` section of settings.yaml into a validation Schema,
+ *  merged over the built-in properties (tags/aliases/cssclasses). */
 export async function getVaultSchema(vault: string): Promise<Schema> {
   const res = await readSettings(vault);
-  if (!res) return {};
-  return loadRegistry(res.data.properties);
+  if (!res) return { ...BUILTIN_PROPERTIES };
+  return { ...BUILTIN_PROPERTIES, ...loadRegistry(res.data.properties) };
 }
 
-/** Build a YAMLMap from a Schema, materializing defaults and attaching `doc` as commentBefore. */
+/** Build a YAMLMap from a Schema, materializing defaults. No comments — settings
+ *  are discovered via the editor's Ctrl-Space autocomplete, not inline docs. */
 function schemaToMap(doc: Document, schema: Schema): YAMLMap {
   const map = new YAMLMap();
   for (const [key, entry] of Object.entries(schema) as [string, SchemaEntry][]) {
@@ -46,14 +48,12 @@ function schemaToMap(doc: Document, schema: Schema): YAMLMap {
     } else {
       valueNode = doc.createNode(entry.default ?? null);
     }
-    const pair = doc.createPair(key, valueNode);
-    if (entry.doc) (pair.key as any).commentBefore = ` ${entry.doc}`;
-    map.items.push(pair);
+    map.items.push(doc.createPair(key, valueNode));
   }
   return map;
 }
 
-/** On first launch, write a fully-commented settings.yaml from SETTINGS_SCHEMA. No-op if present. */
+/** On first launch, write a clean (comment-free) settings.yaml from SETTINGS_SCHEMA. No-op if present. */
 export async function initializeSettings(vault: string): Promise<void> {
   const full = join(vault, SETTINGS_FILE);
   if (await Bun.file(full).exists()) return;
