@@ -21,6 +21,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--palette-input-font-size": a.paletteInputFontSize + "px",
     "--palette-top-offset": s.ui.paletteTopOffset,
     "--pane-divider-width": s.ui.paneDividerWidth + "px",
+    "--prose-line-height": String(s.editor.lineHeight),
   };
 }
 

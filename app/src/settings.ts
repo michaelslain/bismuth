@@ -60,6 +60,7 @@ export interface Settings {
     lineWrapping: boolean;
     spellcheck: boolean; // spell + grammar check the note body (Harper)
     autoSaveDelay: number; // ms of idle before save
+    lineHeight: number;    // editor prose line height (multiplier)
   };
   vault: {
     backupOnSave: boolean; // gate the git snapshot taken on every save
@@ -72,6 +73,10 @@ export interface Settings {
   ui: {
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px
+  };
+  server: {
+    fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
+    sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
 }
 

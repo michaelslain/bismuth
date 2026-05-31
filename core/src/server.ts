@@ -20,7 +20,8 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, SETTINGS_FILE } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE } from "./settings";
+import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -57,6 +58,12 @@ export function createServer(cfg: CoreConfig) {
   // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
   // whole server down on boot.
   void reconcileSettings(cfg.vault).catch(() => {});
+
+  // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
+  // from DEFAULTS so timings are sane before the async load lands, then refreshed on
+  // boot and whenever settings.yaml changes (see classifyVault).
+  let appConfig: AppConfig = SETTINGS_DEFAULTS as AppConfig;
+  void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
 
   let cachedGraph: GraphData | null = null;
   let cachedTree: TreeEntry[] | null = null;
@@ -103,6 +110,8 @@ export function createServer(cfg: CoreConfig) {
       if (isSettingsPath(p)) {
         // settings.yaml drives the property registry + appearance — both graph
         // and tree consumers should refetch; /schema reads it fresh on demand.
+        // Also refresh the backend runtime config (debounce, heartbeat, …).
+        void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
         graph = true;
         tree = true;
         continue;
@@ -163,7 +172,7 @@ export function createServer(cfg: CoreConfig) {
         if (memory) dirty.graph = true;
         applyDirty(unknown ? [] : vaultPaths, dirty);
       })();
-    }, 250);
+    }, appConfig.server.fileWatchDebounceMs);
   }
 
   async function readNoteOrEmpty(vault: string, path: string): Promise<string> {
@@ -218,7 +227,7 @@ export function createServer(cfg: CoreConfig) {
             } catch {
               // controller already closed
             }
-          }, 5000);
+          }, appConfig.server.sseHeartbeatMs);
         },
         cancel() {
           clearInterval(heartbeat);

@@ -54,6 +54,7 @@ export const SETTINGS_SCHEMA: Schema = {
     lineWrapping: { type: "boolean", default: true, doc: "Wrap long lines." },
     spellcheck: { type: "boolean", default: true, doc: "Spell + grammar check the note body (Harper)." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
+    lineHeight: { type: "number", default: 1.65, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
   }),
   vault: object({
     backupOnSave: { type: "boolean", default: true, doc: "Take a git snapshot after every save." },
@@ -67,6 +68,10 @@ export const SETTINGS_SCHEMA: Schema = {
   ui: object({
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
+  }),
+  server: object({
+    fileWatchDebounceMs: { type: "number", default: 250, min: 50, max: 2000, doc: "Coalesce rapid file changes for this long before rebuilding caches (ms)." },
+    sseHeartbeatMs: { type: "number", default: 5000, min: 1000, max: 30000, doc: "Keepalive ping interval for the live-update stream (ms)." },
   }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.

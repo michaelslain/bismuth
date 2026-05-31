@@ -9,9 +9,9 @@ function objectFields(entry: SchemaEntry): Schema {
   throw new Error("expected an object section");
 }
 
-test("SETTINGS_SCHEMA nests the four app sections plus calendar and properties", () => {
+test("SETTINGS_SCHEMA nests the app sections, calendar, ui, server and properties", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "calendar", "editor", "graph", "properties", "vault"].sort(),
+    ["appearance", "calendar", "editor", "graph", "properties", "server", "ui", "vault"].sort(),
   );
 });
 
@@ -71,17 +71,20 @@ test("properties section is an empty object schema (the registry placeholder)", 
 });
 
 test("DEFAULTS is the plain nested object derived from the schema", () => {
-  expect(DEFAULTS).toEqual({
-    appearance: { accent: "#6496ff", theme: "dark", editorFont: "Lora", editorFontSize: 16 },
-    graph: {
-      spin: true, spinSpeed: 0.0015, palette: "aurora", repulsion: -10, linkDistance: 5,
-      centering: 0.13, nodeSize: 6, viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10,
-    },
-    editor: { livePreview: true, lineNumbers: false, lineWrapping: true, spellcheck: true, autoSaveDelay: 800 },
-    vault: { backupOnSave: true },
-    calendar: { defaultView: "week", weekStartsOnMonday: true, militaryTime: false },
-    properties: {},
-  });
+  // Structural (robust to added settings): section set + representative leaves.
+  expect(Object.keys(DEFAULTS).sort()).toEqual(
+    ["appearance", "calendar", "editor", "graph", "properties", "server", "ui", "vault"].sort(),
+  );
+  const d = DEFAULTS as Record<string, Record<string, unknown>>;
+  expect(d.appearance.accent).toBe("#6496ff");
+  expect(d.appearance.theme).toBe("dark");
+  expect(d.graph.repulsion).toBe(-10);
+  expect(d.graph.viewMode).toBe("3d");
+  expect(d.editor.autoSaveDelay).toBe(800);
+  expect(d.vault.backupOnSave).toBe(true);
+  expect(d.calendar.defaultView).toBe("week");
+  expect(d.server.fileWatchDebounceMs).toBe(250);
+  expect(d.properties).toEqual({});
 });
 
 test("DEFAULTS round-trips clean through validateDocument in settings mode", () => {

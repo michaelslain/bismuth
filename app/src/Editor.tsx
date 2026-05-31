@@ -38,7 +38,7 @@ const ExternalReload = Annotation.define<boolean>();
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "var(--fg)", height: "100%" },
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "1.65", overflow: "auto" },
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto" },
   ".cm-content": { caretColor: "var(--fg)", padding: "12px 16px" },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--fg)",
