@@ -2,6 +2,7 @@
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { type Range, type Text } from "@codemirror/state";
 import katex from "katex";
+import { extractFrontmatterBoundary } from "./frontmatterUtils";
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
@@ -83,17 +84,17 @@ function computeBlockRegions(doc: Text): BlockRegions {
     else if (inFence) codeLines.add(i);
   }
 
-  // precompute YAML frontmatter lines (only if first line is exactly "---")
+  // precompute YAML frontmatter lines from the shared boundary helper (single source
+  // of truth for the fence range, also used by validation + autocomplete + Harper).
   const frontmatterLines = new Set<number>();
-  if (doc.lines >= 1 && doc.line(1).text === "---") {
-    frontmatterLines.add(1);
-    let closed = false;
-    for (let i = 2; i <= doc.lines; i++) {
-      frontmatterLines.add(i);
-      if (doc.line(i).text === "---") { closed = true; break; }
+  const fmRange = extractFrontmatterBoundary(doc.toString());
+  if (fmRange) {
+    const firstLine = doc.lineAt(fmRange.from).number;     // line after the opening fence
+    const lastBodyLine = fmRange.to > fmRange.from ? doc.lineAt(fmRange.to).number : firstLine - 1;
+    // include the opening fence line, the body lines, and the closing fence line
+    for (let i = firstLine - 1; i <= lastBodyLine + 1; i++) {
+      if (i >= 1 && i <= doc.lines) frontmatterLines.add(i);
     }
-    // if the frontmatter was never closed, don't treat it as frontmatter
-    if (!closed) frontmatterLines.clear();
   }
 
   // precompute GFM table line sets (scan whole doc)
