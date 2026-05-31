@@ -45,6 +45,18 @@ export function GraphView(props: {
   const [fps, setFps] = createSignal<number | null>(null);
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
+  // Shared base for the small graph-overlay buttons (Reset / Close in the tools panel).
+  const baseButtonStyle = {
+    border: "none",
+    cursor: "pointer",
+    "font-size": "10px",
+    "font-family": "inherit",
+    padding: "2px 8px",
+    "border-radius": "3px",
+    "text-transform": "uppercase",
+    "letter-spacing": "0.04em",
+  } as const;
+
   // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
   // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
   const [menuOpen, setMenuOpen] = createSignal(false);

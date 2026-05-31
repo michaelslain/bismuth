@@ -20,7 +20,6 @@ function noteName(path: string): string {
 // `terminalIndex` lets the caller pass the 1-based position among open terminal tabs
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
-  if (content === SETTINGS_TAB) return "Settings";
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
@@ -31,7 +30,6 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 // Lucide icon NAME for a pane/tab content id, or undefined for plain notes / empty panes.
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
-  if (content === SETTINGS_TAB) return "Settings";
   if (content === CALENDAR_TAB) return "Calendar";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
