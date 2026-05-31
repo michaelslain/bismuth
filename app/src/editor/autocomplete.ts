@@ -4,9 +4,28 @@ import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
 import { matchTagPrefix } from "./tag";
+import { matchEmojiPrefix, searchEmoji } from "./emoji";
 import { keySuggestions, valueSuggestions } from "../../../core/src/schema/suggest";
 import { normalizeTag } from "../../../core/src/schema/coerce";
 import type { Schema, PropertyType } from "../../../core/src/schema/types";
+
+// Shared insert for every completion source: replace [from,to) with `insert`, put the
+// cursor `cursorOffset` chars past `from`, and tag the change as a picked completion so
+// CM's bookkeeping (closing the popup, etc.) stays correct. One place, not copy-pasted.
+function applyInsert(
+  view: EditorView,
+  completion: Completion,
+  from: number,
+  to: number,
+  insert: string,
+  cursorOffset: number,
+) {
+  view.dispatch({
+    changes: { from, to, insert },
+    selection: { anchor: from + cursorOffset },
+    annotations: pickedCompletion.of(completion),
+  });
+}
 
 // `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (avoids
 // double `]]` when one is already ahead). `getNotes` is read lazily per popup open.
@@ -24,11 +43,7 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         const after = view.state.doc.sliceString(applyTo, applyTo + 2);
         const { insert, cursorOffset } = buildInsert(n.label, after === "]]");
-        view.dispatch({
-          changes: { from: applyFrom, to: applyTo, insert },
-          selection: { anchor: applyFrom + cursorOffset },
-          annotations: pickedCompletion.of(completion),
-        });
+        applyInsert(view, completion, applyFrom, applyTo, insert, cursorOffset);
       },
     }));
     return { from, options, validFor: /^[^\]\n]*$/ };
@@ -48,11 +63,7 @@ function tagSource(getTags: () => string[]): CompletionSource {
     const options = getTags().map((name) => ({
       label: name,
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
-        view.dispatch({
-          changes: { from: applyFrom, to: applyTo, insert: name },
-          selection: { anchor: applyFrom + name.length },
-          annotations: pickedCompletion.of(completion),
-        });
+        applyInsert(view, completion, applyFrom, applyTo, name, name.length);
       },
     }));
     return { from, options, validFor: /^[\w/-]*$/ };
@@ -137,9 +148,36 @@ function tagListSource(getTags: () => string[], inFrontmatter: (ctx: CompletionC
   };
 }
 
+// `:emoji:` and special-character completion, sharing the same popup as wikilinks and
+// tags. CM's built-in filter only matches the option label, which would drop keyword
+// hits (`:happy` → 😄), so we set `filter: false`, rank ourselves, and re-query each
+// keystroke (no `validFor`). `apply` inserts the raw glyph, replacing the `:query[:]`.
+// The dataset is a generated, committed JSON artifact (see scripts/gen-emoji.ts).
+function emojiSource(): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    const match = matchEmojiPrefix(textBefore);
+    if (!match) return null;
+
+    const from = line.from + match.from;
+    const to = line.from + match.to;
+    const options: Completion[] = searchEmoji(match.query).map((e) => ({
+      label: `${e.char}  :${e.name}:`,
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+        applyInsert(view, completion, applyFrom, applyTo, e.char, e.char.length);
+      },
+    }));
+    if (options.length === 0) return null;
+    // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
+    return { from, to, options, filter: false };
+  };
+}
+
 // Combined editor completion: property keys/enums/tag-lists (frontmatter) plus
-// `[[wikilinks]]` and `#tags` (body) — all in ONE config. Multiple autocompletion()
-// extensions would conflict, so every source lives in this single override array.
+// `[[wikilinks]]`, `#tags`, and `:emoji:`/special chars (body) — all in ONE config.
+// Multiple autocompletion() extensions would conflict, so every source lives in this
+// single override array.
 export function vaultCompletion(opts: {
   getNotes: () => NoteCandidate[];
   getTags: () => string[];
@@ -152,9 +190,10 @@ export function vaultCompletion(opts: {
       propertyKeySource(opts.getSchema, opts.inFrontmatter),
       enumValueSource(opts.getSchema, opts.inFrontmatter),
       tagListSource(opts.getTags, opts.inFrontmatter),
-      // body-position sources (unchanged)
+      // body-position sources
       wikilinkSource(opts.getNotes),
       tagSource(opts.getTags),
+      emojiSource(),
     ],
   });
 }
