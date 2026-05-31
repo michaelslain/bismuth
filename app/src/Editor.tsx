@@ -10,8 +10,11 @@ import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
 import { basesBlock } from "./editor/basesBlock";
 import { vaultCompletion } from "./editor/autocomplete";
+import { harperSpellcheck } from "./editor/harper";
+import { harperBodyRange } from "./editor/harperBody";
 import type { NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
+import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
 // so the autosave listener can skip it. Without this, reloading an external
@@ -105,6 +108,11 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
       ...(ed.livePreview ? [livePreview, tasksQuery] : []),
+      // Default-on until the spine's SETTINGS_SCHEMA adds `editor.spellcheck`; a
+      // missing key reads as enabled (only an explicit `false` disables Harper).
+      ...((ed as { spellcheck?: boolean }).spellcheck !== false
+        ? [harperSpellcheck({ getBodyRange: harperBodyRange })]
+        : []),
       EditorView.updateListener.of((u) => {
         if (!u.docChanged) return;
         // A reload we pulled from disk isn't a user edit — don't autosave it
