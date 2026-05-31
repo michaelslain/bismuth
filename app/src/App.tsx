@@ -13,7 +13,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE, isSentinel, contentLabel } from "./tabIds";
+import { CALENDAR_TAB, TASKS_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EMPTY_PANE, isSentinel, contentLabel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -184,7 +184,7 @@ export default function App() {
     setTabs((ts) => [...ts, tab]);
     setActiveTabId(tab.id);
   };
-  const openSettings = () => openFile(SETTINGS_TAB);
+  const openSettings = () => openFile("settings.yaml");
   const openCalendar = () => openFile(CALENDAR_TAB);
   const openTasks = () => openFile(TASKS_TAB);
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
