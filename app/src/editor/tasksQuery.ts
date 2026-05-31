@@ -60,18 +60,28 @@ class TasksQueryWidget extends WidgetType {
       iconDisposers.push(dispose);
       return el;
     };
-    (root as HTMLElement & { __clearIcons?: () => void }).__clearIcons = clearIcons;
+    // render() is async (awaits the fetch). If the widget is destroyed mid-await,
+    // bailing here prevents rebuilding rows — and leaking the Solid icon roots they
+    // would mount — after teardown already disposed everything.
+    let destroyed = false;
+    (root as HTMLElement & { __destroy?: () => void }).__destroy = () => {
+      destroyed = true;
+      clearIcons();
+    };
 
     const render = async () => {
+      if (destroyed) return;
       let all: Task[];
       try {
         all = await api.tasks();
       } catch (e) {
+        if (destroyed) return;
         clearIcons();
         root.replaceChildren();
         root.textContent = `tasks: failed to load (${(e as Error).message})`;
         return;
       }
+      if (destroyed) return;
       const { tasks, errors } = runTaskQuery(all, this.query, todayISO());
       clearIcons();
       root.replaceChildren();
@@ -168,8 +178,9 @@ class TasksQueryWidget extends WidgetType {
   destroy(dom: HTMLElement): void {
     const timer = (dom as HTMLElement & { __tasksTimer?: number }).__tasksTimer;
     if (timer !== undefined) window.clearInterval(timer);
-    // Tear down the Solid roots backing the inline Lucide icons.
-    (dom as HTMLElement & { __clearIcons?: () => void }).__clearIcons?.();
+    // Mark destroyed (stops any in-flight async render from rebuilding) and tear
+    // down the Solid roots backing the inline Lucide icons.
+    (dom as HTMLElement & { __destroy?: () => void }).__destroy?.();
   }
 
   ignoreEvent(): boolean {
