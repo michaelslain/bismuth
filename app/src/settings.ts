@@ -91,7 +91,7 @@ export const PALETTES: Record<string, number[]> = {
  * so a corrupt settings.yaml degrades to defaults instead of poisoning the store.
  */
 export function mergeServerSettings(parsed: unknown): Settings {
-  const out = structuredClone(_DEFAULTS) as Record<string, unknown>;
+  const out = structuredClone(_DEFAULTS) as unknown as Record<string, unknown>;
   if (!parsed || typeof parsed !== "object") return out as unknown as Settings;
   const p = parsed as Record<string, unknown>;
 
