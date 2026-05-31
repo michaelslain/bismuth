@@ -280,10 +280,15 @@ export const livePreview = [
     ".cm-math-block": { display: "inline-block", "vertical-align": "middle" },
     ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
     ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
-    // Soft, smooth (sine, not zig-zag) pastel squiggles — reads as a gentle
-    // spell/type mark rather than a harsh error stripe.
-    ".cm-lintRange-error": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23ff9ea0\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
-    ".cm-lintRange-warning": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23f2c17d\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
-    ".cm-lintRange-info": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23999999\" stroke-width=\"1\"/></svg>') left bottom repeat-x" },
+    // Squiggles are colored by CATEGORY (via each diagnostic's markClass), not by
+    // severity — so the severity-based cm-lintRange backgrounds are neutralized and
+    // the smooth pastel sine wave is drawn per mark: red=spelling, blue=grammar,
+    // purple=properties/settings (3rd-brain).
+    ".cm-lintRange-error": { background: "none" },
+    ".cm-lintRange-warning": { background: "none" },
+    ".cm-lintRange-info": { background: "none" },
+    ".spell-mark": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23ff9ea0\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
+    ".grammar-mark": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%238fb4ff\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
+    ".property-mark": { "background": "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"8\" height=\"4\"><path d=\"M0 3 Q2 1 4 3 T8 3\" fill=\"none\" stroke=\"%23b89cff\" stroke-width=\"1.1\"/></svg>') left bottom repeat-x" },
   }),
 ];

@@ -1,12 +1,7 @@
 /* app/src/Editor.css */
 
-/* Harper spell/grammar marks rely on the shared smooth pastel lint squiggle
-   (.cm-lintRange-error in livePreview's theme). The markClass is kept only so the
-   right-click menu can identify spellcheck marks — it adds no decoration of its
-   own (otherwise the word would get a double squiggle). */
-.cm-content .harper-error {
-  text-decoration: none;
-}
+/* Squiggles (spell=red, grammar=blue, property=purple) are drawn by markClass in
+   livePreview's EditorView.theme. This file owns only the right-click menu. */
 
 /* Right-click suggestions menu for a spell/grammar mark. */
 .harper-menu {
