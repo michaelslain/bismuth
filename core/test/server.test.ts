@@ -624,3 +624,23 @@ test("POST /row/update appends a new row when index is null", async () => {
     server.stop(true);
   }
 });
+
+test("POST /cards/review (row-based) advances a flashcard base row", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "Deck.md", "---\ntype: base\nview: flashcards\n---\n\n| front | back | due | ease | interval |\n| --- | --- | --- | --- | --- |\n| 2+2 | 4 |  | 250 | 0 |");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/cards/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: "Deck.md", index: 0, response: "good" }),
+    });
+    expect(res.ok).toBe(true);
+    const data = await (await fetch(`${base}/base?file=Deck.md`)).json();
+    expect(data.rows[0].note.interval).toBe(1);
+    expect(typeof data.rows[0].note.due).toBe("string");
+  } finally {
+    server.stop(true);
+  }
+});

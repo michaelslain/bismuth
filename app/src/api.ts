@@ -76,6 +76,9 @@ export const api = {
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
+  // Row-based review for a flashcard base: advances the row's due/ease/interval columns.
+  reviewCardRow: (file: string, index: number, response: "hard" | "good" | "easy") =>
+    post("/cards/review", { file, index, response }),
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
 };

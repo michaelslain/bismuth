@@ -14,6 +14,7 @@ import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
+import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
@@ -428,11 +429,30 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /cards/review": mutatingHandler(
       async (req) => {
-        const { id, response, question } = (await req.json()) as { id: string; response: ReviewResponse; question?: string };
-        await applyReview(cfg.vault, id, response, todayISO(), question);
+        const body = (await req.json()) as {
+          id?: string;
+          response: ReviewResponse;
+          question?: string;
+          file?: string;
+          index?: number;
+        };
+        // Row-based review (flashcard base): advance scheduling columns on the row.
+        if (body.file != null && body.index != null) {
+          const text = await readNote(cfg.vault, body.file);
+          const name = body.file.split("/").pop()!.replace(/\.md$/, "");
+          const { rows } = parseBaseFile(text, { name, path: body.file });
+          const row = rows[body.index];
+          if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
+          const note = applyReviewToRow(row.note, body.response, todayISO());
+          const next = upsertRow(text, { name, path: body.file }, body.index, note);
+          await writeNote(cfg.vault, body.file, next);
+          return new Response("ok");
+        }
+        // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
+        await applyReview(cfg.vault, body.id!, body.response, todayISO(), body.question);
         return new Response("ok");
       },
-      // No single path — leave paths empty.
+      (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
   };
 
