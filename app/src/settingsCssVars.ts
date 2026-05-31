@@ -24,6 +24,9 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--prose-line-height": String(s.editor.lineHeight),
     "--month-cell-min-h": s.calendar.monthCellMinHeight + "px",
     "--time-gutter-width": s.calendar.timeGutterWidth + "px",
+    "--term-cursor-width": s.terminal.cursorWidth + "px",
+    "--term-cursor-glide": s.terminal.cursorGlideMs + "ms",
+    "--term-cursor-blink": s.terminal.cursorBlinkSeconds + "s",
   };
 }
 

@@ -151,8 +151,8 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     term = new Xterm({
       cursorBlink: false,
       fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
-      fontSize: 13,
-      lineHeight: 1.5,
+      fontSize: settings.terminal.fontSize,
+      lineHeight: settings.terminal.lineHeight,
       theme: {
         background: bg,
         foreground: fg,

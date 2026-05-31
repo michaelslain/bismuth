@@ -76,6 +76,13 @@ export const SETTINGS_SCHEMA: Schema = {
     fileWatchDebounceMs: { type: "number", default: 250, min: 50, max: 2000, doc: "Coalesce rapid file changes for this long before rebuilding caches (ms)." },
     sseHeartbeatMs: { type: "number", default: 5000, min: 1000, max: 30000, doc: "Keepalive ping interval for the live-update stream (ms)." },
   }),
+  terminal: object({
+    fontSize: { type: "number", default: 13, min: 9, max: 20, doc: "Terminal font size (px)." },
+    lineHeight: { type: "number", default: 1.5, min: 1.2, max: 2, doc: "Terminal line height (multiplier)." },
+    cursorWidth: { type: "number", default: 2, min: 1, max: 4, doc: "Terminal cursor bar width (px)." },
+    cursorGlideMs: { type: "number", default: 70, min: 20, max: 200, doc: "Cursor glide animation duration (ms)." },
+    cursorBlinkSeconds: { type: "number", default: 1.2, min: 0.6, max: 2, doc: "Cursor blink cycle duration (seconds)." },
+  }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },
     easyBonus: { type: "number", default: 1.3, min: 1, max: 2, doc: "Extra interval multiplier when a card is rated 'easy'." },

@@ -81,6 +81,13 @@ export interface Settings {
     fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
     sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
+  terminal: {
+    fontSize: number;          // px
+    lineHeight: number;        // multiplier
+    cursorWidth: number;       // px
+    cursorGlideMs: number;     // ms
+    cursorBlinkSeconds: number; // s
+  };
   srs: {
     baseEase: number;
     easyBonus: number;
