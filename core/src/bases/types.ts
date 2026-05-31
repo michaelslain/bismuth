@@ -1,8 +1,17 @@
 // ---- The base config (parsed .base YAML) ----
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
+// All view kinds a view can render. Calendar + flashcards are the unified additions.
+export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards";
+
+// Where a view's rows come from. Default is { kind: "base" } for a type:base file.
+export type SourceSpec =
+  | { kind: "base"; ref?: string }       // own table rows; ref = "[[Other Base]]" when a view block points elsewhere
+  | { kind: "notes"; where?: string }    // vault notes filtered by a Bases expression
+  | { kind: "tasks"; where?: string };   // vault checkbox tasks filtered by the Tasks DSL
+
 export interface ViewConfig {
-  type: "table" | "cards" | "list" | "kanban" | "map";
+  type: ViewType;
   name: string;
   limit?: number;
   filters?: FilterNode;
@@ -22,6 +31,20 @@ export interface ViewConfig {
   lng?: string;
   zoom?: number;
   center?: { lat: number; lng: number };
+  // Per-view source override (falls back to BaseConfig.source, then { kind: "base" }).
+  source?: SourceSpec;
+  // Calendar view: which columns carry the date/time/recurrence/category fields.
+  dateField?: string;          // default "date"
+  startTimeField?: string;     // default "startTime"
+  endTimeField?: string;       // default "endTime"
+  recurrenceField?: string;    // default "recurrence"
+  categoryField?: string;      // default "category"
+  // Flashcards view: which columns carry the card fields + SM-2 scheduling state.
+  frontField?: string;         // default "front"
+  backField?: string;          // default "back"
+  dueField?: string;           // default "due"
+  easeField?: string;          // default "ease"
+  intervalField?: string;      // default "interval"
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
@@ -34,6 +57,9 @@ export interface BaseConfig {
   // `order: [...]` still wins — that's the per-view opt-in.
   properties?: Record<string, { displayName?: string; hidden?: boolean }>;
   views: ViewConfig[];
+  // Unified additions:
+  source?: SourceSpec;                     // base-level default source for all views
+  schema?: Record<string, string>;         // column -> type ("text"|"date"|"time"|"number"|"checkbox"|"list"|"link")
 }
 
 // ---- The data model (one Row per note) ----
@@ -76,4 +102,23 @@ export interface EvalContext {
 export interface Scope {
   bindings: Record<string, unknown>;
   parent?: Scope;
+}
+
+// ---- Unified source/view additions ----
+
+// Parsed result of a `type: base` markdown file: its config + its own inline rows
+// (rows is empty for a notes/tasks-source base that has no markdown table).
+export interface ParsedBase {
+  config: BaseConfig;
+  rows: Row[];
+}
+
+// A ```view block parsed from a note body.
+export interface ViewBlock {
+  source: SourceSpec;
+  as: ViewType;
+  where?: string;
+  sort?: SortSpec[];
+  group?: string;
+  limit?: number;
 }
