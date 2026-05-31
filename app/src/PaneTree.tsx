@@ -1,10 +1,12 @@
 // app/src/PaneTree.tsx
 // Recursively renders one tab's pane tree. A leaf renders PaneContent and reports
 // focus/clicks; a split renders two children with a draggable divider between them.
-import { Show, createSignal } from "solid-js";
+import { Show, createSignal, type Accessor } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import { contentLabel } from "./tabIds";
+import type { DragState } from "./dnd/viewDrag";
+import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
 
 type PaneTreeProps = {
@@ -16,7 +18,8 @@ type PaneTreeProps = {
   onMenu: (leafId: string, x: number, y: number) => void;
   onClose: (leafId: string) => void;
   onDropFile: (leafId: string, path: string, dir: Dir) => void;
-  onMovePane: (targetId: string, draggedId: string, dir: Dir) => void;
+  dragState: Accessor<DragState>;
+  onStartPaneDrag: (e: PointerEvent, leafId: string, label: string) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
   onOpenQuickSwitcher: () => void;
@@ -26,23 +29,32 @@ type PaneTreeProps = {
 };
 
 const DRAG_MIME = "application/x-oa-path"; // a file dragged from the tree
-const PANE_MIME = "application/x-oa-pane"; // a pane dragged by its header (carries leaf id)
 
-// A single pane: renders its content, reports focus/right-click, and accepts a file
-// dragged from the tree as a drop-to-split (the highlighted half shows where it lands).
+// A single pane: renders its content, reports focus/right-click, accepts a file
+// dragged from the tree (HTML5 drag → split), and is a drop target for the
+// pointer-events view-drag (tabs/panes). The highlighted zone shows where a drop
+// lands — an edge splits, the center replaces.
 function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
-  const [dropDir, setDropDir] = createSignal<Dir | null>(null);
+  const [fileDropDir, setFileDropDir] = createSignal<Dir | null>(null);
   let el!: HTMLDivElement;
 
-  // Which half of the pane the cursor is over → which direction the split will go.
+  // Which half of the pane the cursor is over → which direction a file drop splits.
+  // File drops always split (never replace), so this uses the edge-only helper.
   const getDropDir = (e: DragEvent): Dir => {
     const r = el.getBoundingClientRect();
-    const fx = (e.clientX - r.left) / r.width - 0.5;
-    const fy = (e.clientY - r.top) / r.height - 0.5;
-    if (Math.abs(fx) >= Math.abs(fy)) {
-      return fx < 0 ? "left" : "right";
+    return nearestEdge({ x: r.left, y: r.top, w: r.width, h: r.height }, e.clientX, e.clientY);
+  };
+
+  // Drop-zone to highlight: a file drag (HTML5) reports an edge; a view drag
+  // (tab/pane) reports its live zone when this pane is the current target.
+  const activeZone = (): Zone | null => {
+    const fd = fileDropDir();
+    if (fd) return fd;
+    const d = props.dragState();
+    if (d.active && d.target?.kind === "pane" && d.target.leafId === props.node.id) {
+      return d.target.zone;
     }
-    return fy < 0 ? "up" : "down";
+    return null;
   };
 
   return (
@@ -50,6 +62,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
       ref={el}
       class="pane-leaf"
       classList={{ focused: props.node.id === props.focusId }}
+      data-pane-leaf={props.node.id}
       onMouseDown={() => props.onFocus(props.node.id)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -57,21 +70,15 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
       }}
       onDragOver={(e) => {
         const types = e.dataTransfer?.types;
-        if (!types || (!types.includes(DRAG_MIME) && !types.includes(PANE_MIME))) return;
+        if (!types || !types.includes(DRAG_MIME)) return; // only file-tree drags
         e.preventDefault(); // allow drop
-        setDropDir(getDropDir(e));
+        setFileDropDir(getDropDir(e));
       }}
-      onDragLeave={() => setDropDir(null)}
+      onDragLeave={() => setFileDropDir(null)}
       onDrop={(e) => {
-        const dir = dropDir();
-        setDropDir(null);
+        const dir = fileDropDir();
+        setFileDropDir(null);
         if (!dir) return;
-        const paneId = e.dataTransfer?.getData(PANE_MIME);
-        if (paneId) {
-          e.preventDefault();
-          props.onMovePane(props.node.id, paneId, dir);
-          return;
-        }
         const path = e.dataTransfer?.getData(DRAG_MIME);
         if (path) {
           e.preventDefault();
@@ -82,10 +89,9 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
       <Show when={props.showHeader}>
         <div
           class="pane-header"
-          draggable={true}
-          onDragStart={(e) => {
-            e.dataTransfer?.setData(PANE_MIME, props.node.id);
-            if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).classList.contains("pane-header-x")) return;
+            props.onStartPaneDrag(e, props.node.id, contentLabel(props.node.content));
           }}
         >
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
@@ -113,8 +119,8 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           tagNames={props.tagNames}
         />
       </div>
-      <Show when={dropDir()}>
-        {(d) => <div class={`pane-dropzone ${d()}`} />}
+      <Show when={activeZone()}>
+        {(z) => <div class={`pane-dropzone ${z()}`} />}
       </Show>
     </div>
   );
@@ -142,13 +148,17 @@ export function PaneTree(props: PaneTreeProps) {
                 : (ev.clientY - rect.top) / rect.height;
             props.onResize(split().id, Math.min(0.92, Math.max(0.08, ratio)));
           };
+          // pointercancel (OS pointer takeover) must end the drag too, or the
+          // listeners leak and .pane-split stays stuck in its no-transition state.
           const up = () => {
             setResizing(false);
             window.removeEventListener("pointermove", move);
             window.removeEventListener("pointerup", up);
+            window.removeEventListener("pointercancel", up);
           };
           window.addEventListener("pointermove", move);
           window.addEventListener("pointerup", up);
+          window.addEventListener("pointercancel", up);
         };
         return (
           <div

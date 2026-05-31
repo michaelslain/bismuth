@@ -37,11 +37,35 @@ body { background: var(--bg); color: var(--fg); }
 .icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; }
-.tabbar { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--panel); }
-.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; }
+.tabbar { display: flex; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--panel); position: relative; }
+.tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; user-select: none; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease; }
 .tab.active { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
 .tab-x { opacity: 0.5; padding: 0 2px; border-radius: 3px; }
 .tab-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
+
+/* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
+   a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
+.tab-caret { width: 2px; align-self: stretch; margin: 3px 0; background: var(--accent); border-radius: 2px; box-shadow: 0 0 6px var(--accent); flex: 0 0 auto; }
+
+/* Floating ghost that follows the cursor during a tab/pane drag. */
+.drag-ghost {
+  position: fixed; z-index: 1000; pointer-events: none;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font-size: 12px; white-space: nowrap;
+  max-width: 280px; overflow: hidden; text-overflow: ellipsis;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--accent); border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  opacity: 0.96; transform: scale(1.02); transform-origin: top left;
+}
+.drag-ghost.pane { border-style: dashed; }
+
+/* While any view drag is in progress: grabbing cursor + no accidental text selection. */
+html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
+/* …and let drops pass through the always-mounted terminal overlay to the pane-leaf
+   beneath it (the overlay's host placeholder lives inside the leaf). */
+html.view-dragging .terminal-overlay { pointer-events: none; }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }
@@ -209,11 +233,12 @@ body { background: var(--bg); color: var(--fg); }
 .empty-pane-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); opacity: 0.7; cursor: pointer; font-size: 12px; padding: 5px 10px; border-radius: 4px; font-family: inherit; }
 .empty-pane-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); border-color: var(--accent); }
 /* Drop-to-split indicator: highlights the half where a file dragged from the tree will land. */
-.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); }
+.pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: 3px; }
 .pane-dropzone.left { left: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.right { right: 0; top: 0; width: 50%; height: 100%; }
 .pane-dropzone.up { left: 0; top: 0; width: 100%; height: 50%; }
 .pane-dropzone.down { left: 0; bottom: 0; width: 100%; height: 50%; }
+.pane-dropzone.center { inset: 0; background: color-mix(in srgb, var(--accent) 28%, transparent); } /* replace the whole pane */
 .pane-divider { flex: 0 0 5px; background: var(--border); cursor: col-resize; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }

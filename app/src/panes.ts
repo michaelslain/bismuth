@@ -122,6 +122,100 @@ export function movePane(
   return { root: setContent(splitRoot, moved, dragged.content), focusId: moved };
 }
 
+// Reorder a tab to a target insertion index (0..n, as produced by the drag
+// controller from chip midpoints). The index is in the *original* array's
+// coordinates; we adjust for the removal of the moved tab so dropping a tab
+// just left or right of its own slot is a no-op. Unknown id → unchanged.
+export function reorderTabs(tabs: Tab[], tabId: string, toIndex: number): Tab[] {
+  const from = tabs.findIndex((t) => t.id === tabId);
+  if (from === -1) return tabs;
+  const adjusted = from < toIndex ? toIndex - 1 : toIndex;
+  const clamped = Math.max(0, Math.min(adjusted, tabs.length - 1));
+  if (clamped === from) return tabs;
+  const next = tabs.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(clamped, 0, moved);
+  return next;
+}
+
+// Split the target leaf and graft an existing subtree `node` (a leaf or a whole
+// split) into one half — `nodeFirst` puts it on side a (left/up), else side b
+// (right/down). Unlike splitLeaf, `node` keeps its identity and internal layout,
+// so a multi-pane tab dropped onto a pane preserves its structure.
+export function splitLeafWithNode(
+  root: PaneNode,
+  targetId: string,
+  dir: "row" | "col",
+  node: PaneNode,
+  nodeFirst: boolean,
+): { root: PaneNode } {
+  const walk = (n: PaneNode): PaneNode => {
+    if (n.kind === "leaf") {
+      if (n.id !== targetId) return n;
+      const a = nodeFirst ? node : n;
+      const b = nodeFirst ? n : node;
+      return { kind: "split", id: newId(), dir, ratio: 0.5, a, b };
+    }
+    return { ...n, a: walk(n.a), b: walk(n.b) };
+  };
+  return { root: walk(root) };
+}
+
+// Replace the target leaf in place with `node` (a leaf or a whole subtree),
+// keeping `node`'s identity/layout. Used when a multi-pane tab is dropped onto
+// an empty pane or a pane's center — the pane *becomes* that layout rather than
+// splitting beside it (which would orphan the old/empty leaf). Unchanged if the
+// leaf id is absent.
+export function replaceLeafWithNode(root: PaneNode, leafId: string, node: PaneNode): PaneNode {
+  const walk = (n: PaneNode): PaneNode => {
+    if (n.kind === "leaf") return n.id === leafId ? node : n;
+    return { ...n, a: walk(n.a), b: walk(n.b) };
+  };
+  return walk(root);
+}
+
+// Center-drop: move the source pane's content into the target pane, then close
+// the source (collapsing its split). Returns the new root + focus (the target),
+// or null onto itself / missing panes / when the source is the only pane.
+export function replacePaneWithPane(
+  root: PaneNode,
+  targetId: string,
+  srcId: string,
+): { root: PaneNode; focusId: string } | null {
+  if (targetId === srcId) return null;
+  const src = leaves(root).find((l) => l.id === srcId);
+  if (!src) return null;
+  if (!leaves(root).some((l) => l.id === targetId)) return null;
+  const closed = closeLeaf(setContent(root, targetId, src.content), srcId);
+  if (closed === null) return null;
+  return { root: closed, focusId: targetId };
+}
+
+// Detach a pane (leaf) from its tab into a fresh top-level tab inserted at
+// `toIndex`. The source tab keeps its remaining panes (its split collapses); a
+// focus pointing at the detached pane is reset to a survivor. Returns null for
+// an unknown tab/leaf or when the pane is its tab's only one (no split to leave).
+export function detachLeafToTab(
+  tabs: Tab[],
+  srcTabId: string,
+  leafId: string,
+  toIndex: number,
+): { tabs: Tab[]; newTabId: string } | null {
+  const src = tabs.find((t) => t.id === srcTabId);
+  if (!src) return null;
+  const leaf = leaves(src.root).find((l) => l.id === leafId);
+  if (!leaf) return null;
+  const afterClose = closeLeaf(src.root, leafId);
+  if (afterClose === null) return null;
+  const ls = leaves(afterClose);
+  const focusId = ls.some((l) => l.id === src.focusId) ? src.focusId : ls[0].id;
+  const newTab = makeTab(leaf.content);
+  const next = tabs.map((t) => (t.id === srcTabId ? { ...t, root: afterClose, focusId } : t));
+  const clamped = Math.max(0, Math.min(toIndex, next.length));
+  next.splice(clamped, 0, newTab);
+  return { tabs: next, newTabId: newTab.id };
+}
+
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Dir = "left" | "right" | "up" | "down";
 
