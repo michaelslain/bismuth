@@ -9,11 +9,30 @@ export type EmojiEntry = { char: string; name: string; keywords: string[] };
 
 export const EMOJI_DATA: EmojiEntry[] = rawData as EmojiEntry[];
 
-// A `:emoji` token is a `:` at start-of-line or after whitespace, followed by ≥1 of
-// `[A-Za-z0-9_+-]`, with an optional closing `:`. Requiring whitespace/line-start
-// before the `:` excludes `key: value`, `http://x`, and `12:30`; requiring ≥1 query
-// char excludes a lone `:` (no popup noise). `$` anchors to the cursor (end of textBefore).
-const EMOJI = /(?:^|\s)(:[A-Za-z0-9_+-]+:?)$/;
+// Curated "most-used" shortcodes (unicode-emoji-json slugs), highest-frequency first.
+// Used to (a) fill the popup the instant a lone `:` is typed and (b) bias common emojis
+// higher among filtered matches. Every entry is verified to resolve against the dataset.
+const POPULAR: string[] = [
+  "face_with_tears_of_joy", "red_heart", "smiling_face_with_heart_eyes", "rolling_on_the_floor_laughing",
+  "loudly_crying_face", "thumbs_up", "folded_hands", "fire", "smiling_face_with_smiling_eyes",
+  "smiling_face_with_hearts", "face_blowing_a_kiss", "beaming_face_with_smiling_eyes", "grinning_face",
+  "winking_face", "slightly_smiling_face", "smiling_face_with_sunglasses", "thinking_face", "party_popper",
+  "sparkles", "hundred_points", "check_mark_button", "eyes", "rocket", "clapping_hands", "raising_hands",
+  "pleading_face", "grinning_face_with_sweat", "smirking_face", "crying_face", "person_shrugging",
+  "person_facepalming", "waving_hand", "face_with_rolling_eyes", "star_struck", "flexed_biceps",
+  "ok_hand", "victory_hand", "grinning_squinting_face", "thumbs_down", "skull", "sparkling_heart",
+];
+
+// shortcode -> popularity rank (0 = most popular).
+const POP_RANK = new Map<string, number>(POPULAR.map((name, i) => [name, i]));
+const popRank = (name: string): number => POP_RANK.get(name) ?? Number.MAX_SAFE_INTEGER;
+
+// A `:emoji` token is a `:` at start-of-line or after whitespace, then zero-or-more of
+// `[A-Za-z0-9_+-]`, with an optional closing `:`. Requiring whitespace/line-start before
+// the `:` excludes `key: value`, `http://x`, and `12:30`. A LONE `:` matches (empty query)
+// so the popup opens instantly, Notion-style; Escape dismisses it, leaving the colon as
+// literal text. `$` anchors to the cursor (end of textBefore).
+const EMOJI = /(?:^|\s)(:[A-Za-z0-9_+-]*:?)$/;
 
 // Returns line-relative offsets: `from` at the `:` (so accepting replaces the whole
 // `:query[:]`), `to` at the cursor, and the bare `query` (no colons).
@@ -43,29 +62,47 @@ function score(e: EmojiEntry, q: string): number | null {
   return null;
 }
 
-// Pure ranked search over an explicit dataset (so tests can use a small fixture).
-// Ties break by shorter shortcode then alphabetical; results are deduped by glyph so
-// the same character never appears twice (special chars carry alias shortcodes).
-export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): EmojiEntry[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return [];
-  const scored: { e: EmojiEntry; s: number }[] = [];
-  for (const e of entries) {
-    const s = score(e, q);
-    if (s !== null) scored.push({ e, s });
-  }
-  scored.sort(
-    (a, b) => a.s - b.s || a.e.name.length - b.e.name.length || a.e.name.localeCompare(b.e.name),
-  );
+// Keep the first occurrence of each glyph (special chars carry alias shortcodes for one
+// character), capped at `limit`.
+function dedupeByChar(list: EmojiEntry[], limit: number): EmojiEntry[] {
   const out: EmojiEntry[] = [];
   const seen = new Set<string>();
-  for (const { e } of scored) {
+  for (const e of list) {
     if (seen.has(e.char)) continue;
     seen.add(e.char);
     out.push(e);
     if (out.length >= limit) break;
   }
   return out;
+}
+
+// Pure ranked search over an explicit dataset (so tests can use a small fixture).
+// An EMPTY query (a lone `:`) returns the curated most-used set in popularity order, so
+// the popup is useful the instant `:` is typed. For a real query, results are scored,
+// then tie-broken by popularity → shorter shortcode → alphabetical, and deduped by glyph.
+export function rankEmoji(entries: EmojiEntry[], query: string, limit = 50): EmojiEntry[] {
+  const q = query.toLowerCase().trim();
+
+  if (!q) {
+    const popular = entries
+      .filter((e) => POP_RANK.has(e.name))
+      .sort((a, b) => popRank(a.name) - popRank(b.name));
+    return dedupeByChar(popular, limit);
+  }
+
+  const scored: { e: EmojiEntry; s: number }[] = [];
+  for (const e of entries) {
+    const s = score(e, q);
+    if (s !== null) scored.push({ e, s });
+  }
+  scored.sort(
+    (a, b) =>
+      a.s - b.s ||
+      popRank(a.e.name) - popRank(b.e.name) ||
+      a.e.name.length - b.e.name.length ||
+      a.e.name.localeCompare(b.e.name),
+  );
+  return dedupeByChar(scored.map((x) => x.e), limit);
 }
 
 // Ranked search over the bundled dataset.

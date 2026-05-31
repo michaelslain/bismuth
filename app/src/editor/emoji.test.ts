@@ -27,19 +27,20 @@ test("matchEmojiPrefix: allows underscores (special-char shortcodes)", () => {
   expect(matchEmojiPrefix(":arrow_right")).toEqual({ from: 0, to: 12, query: "arrow_right" });
 });
 
-test("matchEmojiPrefix: null for a lone colon (no popup noise)", () => {
-  expect(matchEmojiPrefix(":")).toBeNull();
-  expect(matchEmojiPrefix("hi :")).toBeNull();
+test("matchEmojiPrefix: a lone colon matches an empty query (instant popup)", () => {
+  expect(matchEmojiPrefix(":")).toEqual({ from: 0, to: 1, query: "" });
+  expect(matchEmojiPrefix("hi :")).toEqual({ from: 3, to: 4, query: "" });
 });
 
 test("matchEmojiPrefix: null when the colon follows a word char (key:, http://, 12:30)", () => {
   expect(matchEmojiPrefix("key: value")).toBeNull();
   expect(matchEmojiPrefix("http://x")).toBeNull();
   expect(matchEmojiPrefix("12:30")).toBeNull();
+  expect(matchEmojiPrefix("Note:")).toBeNull(); // colon right after a word — not an emoji trigger
 });
 
-test("matchEmojiPrefix: null for a double colon", () => {
-  expect(matchEmojiPrefix("::")).toBeNull();
+test("matchEmojiPrefix: a double colon matches an empty query", () => {
+  expect(matchEmojiPrefix("::")).toEqual({ from: 0, to: 2, query: "" });
 });
 
 // --- rankEmoji (pure, fixture) -------------------------------------------------
@@ -69,9 +70,19 @@ test("rankEmoji: special-character lookup by shortcode", () => {
   expect(rankEmoji(FIXTURE, "emdash")[0].char).toBe("—");
 });
 
-test("rankEmoji: empty query yields nothing", () => {
-  expect(rankEmoji(FIXTURE, "")).toEqual([]);
-  expect(rankEmoji(FIXTURE, "   ")).toEqual([]);
+test("rankEmoji: empty query returns the popular entries present, in popularity order", () => {
+  // FIXTURE contains two curated populars (grinning_face, slightly_smiling_face); a lone
+  // ":" surfaces them ordered by popularity, not the non-popular `grin`/`emdash`.
+  expect(rankEmoji(FIXTURE, "").map((e) => e.name)).toEqual(["grinning_face", "slightly_smiling_face"]);
+  expect(rankEmoji(FIXTURE, "   ").map((e) => e.name)).toEqual(["grinning_face", "slightly_smiling_face"]);
+});
+
+test("rankEmoji: among equal-score matches, the more popular one ranks first", () => {
+  const items: EmojiEntry[] = [
+    { char: "🅰", name: "zzz_obscure", keywords: ["smile"] }, // not curated → low priority
+    { char: "😄", name: "grinning_face", keywords: ["smile"] }, // curated popular
+  ];
+  expect(rankEmoji(items, "smile")[0].char).toBe("😄");
 });
 
 test("rankEmoji: respects the limit", () => {
@@ -105,6 +116,13 @@ test("dataset: every entry has a glyph, a shortcode, and keywords", () => {
 test("searchEmoji: keyword search works against real data", () => {
   // "happy" should surface at least one smiling face from the real emoji set.
   expect(searchEmoji("happy").length).toBeGreaterThan(0);
+});
+
+test("searchEmoji: a lone colon (empty query) returns the curated popular set", () => {
+  const r = searchEmoji("");
+  expect(r.length).toBeGreaterThan(10);
+  expect(r.length).toBeLessThanOrEqual(50);
+  expect(r[0].char).toBe("😂"); // face_with_tears_of_joy is #1 most-used
 });
 
 test("searchEmoji: special characters are present in the real dataset", () => {
