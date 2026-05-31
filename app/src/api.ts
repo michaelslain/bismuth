@@ -62,6 +62,7 @@ export const api = {
     getJson<{ version: number }>("/version"),
   vaultData: () => getJson<Row[]>("/vault-data"),
   schema: () => getJson<Schema>("/schema"),
+  settings: () => getJson<Record<string, unknown>>("/settings"),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
