@@ -13,7 +13,7 @@ test("parseMarkdownTable reads headers and rows into Row.note", () => {
   expect(rows[0].note.title).toBe("Dentist");
   expect(rows[0].note.date).toBe("2026-06-03");
   expect(rows[0].note.done).toBe(true); // "true"/"false" coerced to boolean
-  expect(rows[0].file.name).toBe("Calendar");
+  expect(rows[0].file.name).toBe(""); // base rows aren't distinct notes
   expect(rows[0].file.path).toBe("Calendar.md");
 });
 

@@ -26,6 +26,8 @@ export interface ViewConfig {
   // dragging the last card out makes the column vanish. With it, every listed key
   // shows up as a column even when empty, and the order follows the declared list.
   columns?: string[];
+  // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
+  columnWidths?: Record<string, number>;
   // Map view: which property ids carry geo coords. Defaults to bare "lat" / "lng"
   // (matched to frontmatter). Use "note.x" or "formula.y" for custom property
   // namespaces. zoom + center seed the initial framing.

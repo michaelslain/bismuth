@@ -199,6 +199,9 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     if (s) config.views[0].sort = s;
     const g = normalizeGroupBy(raw.groupBy);
     if (g) config.views[0].groupBy = g;
+    if (raw.columnWidths && typeof raw.columnWidths === "object") {
+      config.views[0].columnWidths = raw.columnWidths as Record<string, number>;
+    }
   }
 
   const rows = parseRows(body, meta);

@@ -55,6 +55,13 @@
 .table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .table th, .table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 .table th { font-weight: 600; color: var(--oa-muted); }
+.thDrag { cursor: grab; user-select: none; position: relative; }
+.thDrag:active { cursor: grabbing; }
+.thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
+.thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
+.thResize { position: absolute; top: 0; right: -5px; width: 11px; height: 100%; cursor: col-resize; user-select: none; z-index: 2; touch-action: none; }
+.thResize:hover { box-shadow: inset -2px 0 0 0 var(--accent); }
+.table td { overflow: hidden; text-overflow: ellipsis; }
 .groupRow td { font-weight: 600; background: var(--oa-surface); }
 .summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }
 

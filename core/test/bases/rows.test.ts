@@ -10,7 +10,8 @@ test("parseRows reads a YAML list body into Row.note", () => {
   expect(rows[0].note.title).toBe("Capital");
   expect(rows[0].note.rating).toBe(4); // numbers stay numbers
   expect(rows[1].note.author).toBe("Rooney");
-  expect(rows[0].file.name).toBe("Library");
+  expect(rows[0].file.name).toBe(""); // base rows aren't distinct notes
+  expect(rows[0].file.path).toBe("Library.md");
 });
 
 test("parseRows preserves multi-line cell content", () => {

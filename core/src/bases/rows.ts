@@ -36,10 +36,12 @@ export function parseRows(body: string, meta: { name: string; path: string }): R
     return [];
   }
   if (!Array.isArray(doc)) return [];
+  // Base rows are not distinct notes — leave file.name empty (path keeps the base file
+  // for write-back) so it isn't auto-shown as a meaningless repeated column.
   return doc
     .filter((r) => r && typeof r === "object")
     .map((note) => ({
-      file: { ...EMPTY_FILE, name: meta.name, basename: meta.name, path: meta.path },
+      file: { ...EMPTY_FILE, name: "", basename: "", path: meta.path },
       note: note as Record<string, unknown>,
       formula: {},
     }));

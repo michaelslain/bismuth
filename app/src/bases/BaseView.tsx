@@ -197,7 +197,17 @@ export function BaseView(props: {
                   <div class={styles.base}>
                     <Show when={result()} fallback={<div class={styles.loading}>Loading…</div>}>
                       {(res) => (
-                        <Switch fallback={<TableView result={res()} config={data()!.config} />}>
+                        <Switch
+                  fallback={
+                    <TableView
+                      result={res()}
+                      config={data()!.config}
+                      onReorder={data()!.basePath ? (c) => { void api.setProperty(data()!.basePath!, "order", c).then(refetch); } : undefined}
+                      widths={res().view.columnWidths}
+                      onWidthsChange={data()!.basePath ? (cw) => { void api.setProperty(data()!.basePath!, "columnWidths", cw); } : undefined}
+                    />
+                  }
+                >
                           <Match when={res().view.type === "kanban"}>
                             <KanbanView result={res()} config={data()!.config} onChange={refetch} />
                           </Match>
@@ -235,6 +245,7 @@ export function BaseView(props: {
                 type={activeType()}
                 config={data()!.config}
                 basePath={data()!.basePath}
+                rows={data()!.rows}
                 onSaved={() => { setSettingsMode(false); refetch(); }}
               />
             </div>

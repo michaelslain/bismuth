@@ -55,7 +55,10 @@ function hiddenIds(base: BaseConfig): Set<string> {
 }
 
 function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
-  const cols = new Set<string>(["file.name"]);
+  const cols = new Set<string>();
+  // Seed file.name only when rows are distinct notes (notes source). Base-source rows
+  // share a synthetic file.name (the base's own name), so it's meaningless as a column.
+  if (rows.some((r) => r.file?.name)) cols.add("file.name");
   for (const r of rows) for (const k of Object.keys(r.note)) cols.add(`note.${k}`);
   // Drop any column the base has flagged hidden. Match on both the raw column id
   // (`note.order`) and the bare frontmatter name (`order`) — users may have
