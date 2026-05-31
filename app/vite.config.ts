@@ -8,6 +8,11 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [solid()],
 
+  // Harper ships a large WASM blob it loads itself; let Vite serve it as-is
+  // rather than attempting to pre-bundle it through esbuild (which mangles the
+  // inlined worker + WASM path resolution).
+  optimizeDeps: { exclude: ["harper.js"] },
+
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
