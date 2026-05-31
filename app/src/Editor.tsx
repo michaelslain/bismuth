@@ -5,7 +5,8 @@ import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
 import { api } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
@@ -71,6 +72,17 @@ const editorTheme = EditorView.theme({
 const codeFontTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace", lineHeight: "1.55" },
 });
+
+// YAML syntax colors pulled from the app theme (keys = accent, bools/numbers =
+// 3rd-brain purple, strings = near-fg, comments = dim italic) so config files
+// read as part of the app, not a generic code editor.
+const yamlHighlight = HighlightStyle.define([
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "color-mix(in srgb, var(--fg) 48%, transparent)", fontStyle: "italic" },
+  { tag: [t.propertyName, t.definition(t.propertyName)], color: "var(--accent)" },
+  { tag: [t.bool, t.atom, t.keyword, t.number], color: "#b89cff" },
+  { tag: [t.string, t.special(t.string)], color: "color-mix(in srgb, var(--fg) 88%, transparent)" },
+  { tag: [t.separator, t.punctuation, t.bracket, t.brace], color: "color-mix(in srgb, var(--fg) 45%, transparent)" },
+]);
 
 export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
@@ -138,7 +150,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       ? [
           ...base,
           yaml(),
-          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+          syntaxHighlighting(yamlHighlight),
           codeFontTheme,
           ...(isSettingsBuffer(path)
             ? [yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true })]
