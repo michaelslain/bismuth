@@ -62,7 +62,7 @@ export async function buildVaultGraph(root: string): Promise<VaultGraphResult> {
     const label = parts.name;
     notes.push({ id, label, kind: "note", folder: parts.topFolder });
     byBase.set(label, id);
-    byPath.set(rel, id);
+    byPath.set(id, id);
   }
 
   // Read all contents in parallel
