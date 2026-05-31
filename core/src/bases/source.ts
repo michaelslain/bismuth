@@ -9,34 +9,64 @@ import { readNote } from "../files";
 export interface SourceCtx {
   root: string;
   today?: string;
+  /** Base file paths already entered, for cycle protection across composition. */
+  seen?: Set<string>;
 }
 
-/** Resolve a view's source (base | notes | tasks) to a uniform Row[]. */
-export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<Row[]> {
-  const today = ctx.today ?? new Date().toISOString().slice(0, 10);
+function refToPath(ref: string): string {
+  const r = ref.replace(/^\[\[/, "").replace(/\]\]$/, "");
+  return r.endsWith(".md") || r.endsWith(".base") ? r : `${r}.md`;
+}
 
-  if (spec.kind === "tasks") {
-    const rows = await buildTaskRows(ctx.root);
-    return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
-  }
+/**
+ * Resolve a base FILE to its rows, following its OWN declared source (composition).
+ * An own-rows base (no `source:`) returns its inline table rows; a base whose source
+ * is notes/tasks/another-base re-runs that source. Cycles terminate via `seen`.
+ */
+export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row[]> {
+  const seen = ctx.seen ?? new Set<string>();
+  if (seen.has(path)) return []; // cycle: A -> ... -> A
+  seen.add(path);
 
-  if (spec.kind === "notes") {
-    const rows = await buildVaultRows(ctx.root);
-    if (!spec.where) return rows;
-    return rows.filter((r) => passesFilter(spec.where, { file: r.file, note: r.note, formula: r.formula }));
-  }
-
-  // base: read the referenced base file's own table rows
-  const ref = (spec.ref ?? "").replace(/^\[\[/, "").replace(/\]\]$/, "");
-  if (!ref) return [];
-  const path = ref.endsWith(".md") || ref.endsWith(".base") ? ref : `${ref}.md`;
   let text: string;
   try {
     text = await readNote(ctx.root, path);
   } catch {
     return [];
   }
-  const name = basename(path).replace(/\.md$/, "");
-  const { rows } = parseBaseFile(text, { name, path });
-  return rows;
+  const name = basename(path).replace(/\.(md|base)$/, "");
+  const { config, rows } = parseBaseFile(text, { name, path });
+  // No declared source => inline (own-rows) base: return its table rows.
+  if (!config.source) return rows;
+  return resolveSource(config.source, { ...ctx, seen });
+}
+
+/** Resolve any source (base | notes | tasks) to a uniform Row[]. */
+export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<Row[]> {
+  const today = ctx.today ?? new Date().toISOString().slice(0, 10);
+
+  if (spec.kind === "base") {
+    if (!spec.ref) return [];
+    return resolveBaseRows(refToPath(spec.ref), ctx);
+  }
+
+  if (spec.kind === "notes") {
+    let rows = await buildVaultRows(ctx.root);
+    if (spec.from) {
+      const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
+      const paths = new Set(scoped.map((r) => r.file.path));
+      rows = rows.filter((r) => paths.has(r.file.path));
+    }
+    if (!spec.where) return rows;
+    return rows.filter((r) => passesFilter(spec.where!, { file: r.file, note: r.note, formula: r.formula }));
+  }
+
+  // tasks — optionally scoped to the notes a referenced base selects.
+  let paths: string[] | undefined;
+  if (spec.from) {
+    const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
+    paths = [...new Set(scoped.map((r) => r.file.path))].filter(Boolean);
+  }
+  const rows = await buildTaskRows(ctx.root, paths);
+  return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
 }

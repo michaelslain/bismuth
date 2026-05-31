@@ -8,9 +8,9 @@ export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar
 
 // Where a view's rows come from. Default is { kind: "base" } for a type:base file.
 export type SourceSpec =
-  | { kind: "base"; ref?: string }       // own table rows; ref = "[[Other Base]]" when a view block points elsewhere
-  | { kind: "notes"; where?: string }    // vault notes filtered by a Bases expression
-  | { kind: "tasks"; where?: string };   // vault checkbox tasks filtered by the Tasks DSL
+  | { kind: "base"; ref?: string }                  // ref = "[[Other Base]]"; resolves that base's OWN source (composition)
+  | { kind: "notes"; where?: string; from?: string } // vault notes filtered by a Bases expression; from = "[[Base]]" scopes to that base's notes
+  | { kind: "tasks"; where?: string; from?: string }; // vault checkbox tasks; from = "[[Base]]" scopes tasks to that base's notes (not the whole vault)
 
 export interface ViewConfig {
   type: ViewType;
@@ -117,9 +117,11 @@ export interface ParsedBase {
   rows: Row[];
 }
 
-// A ```view block parsed from a note body.
+// A ```view block parsed from a note body. `source` is undefined when the block
+// references neither a base (`of:`) nor a task query (`tasks:`) — the host then
+// renders an empty state instead of dumping the whole vault.
 export interface ViewBlock {
-  source: SourceSpec;
+  source?: SourceSpec;
   as: ViewType;
   where?: string;
   sort?: SortSpec[];

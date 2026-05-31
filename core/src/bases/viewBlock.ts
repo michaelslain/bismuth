@@ -5,14 +5,19 @@ const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "cale
 /**
  * Parse a ```view block body into a ViewBlock spec.
  *
- * Keys:
- *   of:    [[Base]]                  -> base source
- *   from:  notes where <expr>        -> notes source (Bases expression filter)
- *   from:  tasks where <dsl>         -> tasks source (Tasks DSL filter)
+ * A view references a base or runs a task query — it does NOT iterate notes itself
+ * (that is a base's job, via `source: notes`). Keys:
+ *   of:    [[Base]]                  -> render that base (follows the base's own source)
+ *   tasks: <dsl>                     -> a task query (Tasks DSL; empty = all)
+ *   from:  [[Base]]                  -> scope the task query to that base's notes
  *   as:    table|cards|list|kanban|map|calendar|flashcards   (default table)
  *   where: <expr>                    -> per-view filter
  *   group: <field>
  *   limit: <n>
+ *
+ * `of:` and `tasks:` are mutually exclusive; if both are present, `of:` wins.
+ * With neither, source is undefined and the host renders an empty state (rather than
+ * dumping the whole vault, which the old `from: notes` did).
  */
 export function parseViewBlock(src: string): ViewBlock {
   const kv: Record<string, string> = {};
@@ -23,16 +28,13 @@ export function parseViewBlock(src: string): ViewBlock {
     if (i > 0) kv[l.slice(0, i).trim()] = l.slice(i + 1).trim();
   }
 
-  let source: SourceSpec;
+  let source: SourceSpec | undefined;
   if (kv.of) {
     source = { kind: "base", ref: kv.of };
-  } else if (kv.from) {
-    const m = kv.from.match(/^(notes|tasks)(?:\s+where\s+(.+))?$/i);
-    const kind = (m?.[1]?.toLowerCase() ?? "notes") as "notes" | "tasks";
-    const where = m?.[2]?.trim();
-    source = { kind, where: where || undefined };
-  } else {
-    source = { kind: "notes" };
+  } else if ("tasks" in kv) {
+    source = { kind: "tasks" };
+    if (kv.tasks) source.where = kv.tasks;
+    if (kv.from) source.from = kv.from;
   }
 
   const as = (VIEW_TYPES as string[]).includes(kv.as) ? (kv.as as ViewType) : "table";

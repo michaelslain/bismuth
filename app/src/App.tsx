@@ -13,7 +13,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { SETTINGS_TAB, TASKS_TAB, TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
+import { SETTINGS_TAB, TERMINAL_PREFIX, EMPTY_PANE, contentLabel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -185,7 +185,6 @@ export default function App() {
     setActiveTabId(tab.id);
   };
   const openSettings = () => openFile(SETTINGS_TAB);
-  const openTasks = () => openFile(TASKS_TAB);
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
 
   // Apply Appearance settings to the document: theme + accent + editor font/size,
@@ -481,7 +480,6 @@ export default function App() {
           <button class="icon-btn" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}>📄</button>
           <button class="icon-btn" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}>🗂️</button>
           <button class="icon-btn" title="Settings" onClick={openSettings}>⚙</button>
-          <button class="icon-btn" title="Tasks" onClick={openTasks}>✓</button>
           <button class="icon-btn" title="Open terminal" onClick={openTerminal}>{">_"}</button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>

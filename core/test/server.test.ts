@@ -644,3 +644,25 @@ test("POST /cards/review (row-based) advances a flashcard base row", async () =>
     server.stop(true);
   }
 });
+
+test("POST /rows resolves a scoped-tasks spec via base composition", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-rows-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-rows-mem-"));
+  await writeNote(vault, "Keep.md", '---\ntype: base\nsource: notes\nwhere: file.hasTag("keep")\n---\n');
+  await writeNote(vault, "keep/x.md", "---\ntags: [keep]\n---\n- [ ] scoped task");
+  await writeNote(vault, "other/y.md", "- [ ] unscoped task");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const rows = await (
+      await fetch(`${base}/rows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: { kind: "tasks", from: "[[Keep]]" } }),
+      })
+    ).json();
+    expect(rows.map((r: any) => r.note.description)).toEqual(["scoped task"]);
+  } finally {
+    server.stop(true);
+  }
+});

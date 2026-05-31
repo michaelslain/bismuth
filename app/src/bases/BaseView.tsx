@@ -2,8 +2,6 @@ import { createSignal, createResource, createMemo, For, Show, Switch, Match } fr
 import { api } from "../api";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
-import { passesFilter } from "../../../core/src/bases/filters";
-import { taskToRow, filterTaskRows } from "../../../core/src/bases/taskRow";
 import type { BaseConfig, Row, ViewResult, SourceSpec, ViewBlock } from "../../../core/src/bases/types";
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
@@ -17,7 +15,7 @@ import styles from "./BaseView.module.css";
 
 interface Loaded {
   config: BaseConfig;
-  spec: SourceSpec;
+  spec?: SourceSpec;          // undefined for a view block with no of:/tasks: → empty state
   inlineRows: Row[] | null;
   basePath?: string;
 }
@@ -96,7 +94,7 @@ export function BaseView(props: {
           },
         ],
       };
-      return { config, spec: v.source, inlineRows: null, basePath: v.source.kind === "base" ? refToPath(v.source.ref) : undefined };
+      return { config, spec: v.source, inlineRows: null, basePath: v.source?.kind === "base" ? refToPath(v.source.ref) : undefined };
     }
     if (props.path) {
       const text = await api.read(props.path);
@@ -113,21 +111,13 @@ export function BaseView(props: {
     return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null };
   }
 
-  async function resolveRows(spec: SourceSpec, inlineRows: Row[] | null): Promise<Row[]> {
-    const today = new Date().toISOString().slice(0, 10);
-    if (spec.kind === "tasks") {
-      const rows = (await api.tasks()).map(taskToRow);
-      return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
-    }
-    if (spec.kind === "notes") {
-      const rows = await api.vaultData();
-      if (!spec.where) return rows;
-      return rows.filter((r) => passesFilter(spec.where!, { file: r.file, note: r.note, formula: r.formula }));
-    }
+  // Single resolution path: an own-rows base already has its rows parsed client-side;
+  // everything else (notes / tasks / base-ref) is resolved server-side via /rows, which
+  // follows base composition + scoped tasks. No per-kind logic duplicated here anymore.
+  async function resolveRows(spec: SourceSpec | undefined, inlineRows: Row[] | null): Promise<Row[]> {
     if (inlineRows) return inlineRows;
-    const path = refToPath(spec.ref);
-    if (!path) return [];
-    return (await api.base(path)).rows;
+    if (!spec) return [];
+    return api.resolveRows(spec);
   }
 
   const sig = createMemo(() => JSON.stringify({ p: props.path, s: props.source, v: props.view }));

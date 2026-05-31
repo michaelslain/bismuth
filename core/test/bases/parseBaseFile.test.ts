@@ -49,3 +49,9 @@ test("parseBaseFile handles a file with no frontmatter", () => {
   expect(rows[0].note.a).toBe(1);
   expect(config.views.length).toBeGreaterThanOrEqual(1);
 });
+
+test("top-level cardContent: body folds into the default view", () => {
+  const { config } = parseBaseFile('---\ntype: base\nview: cards\ncardContent: body\n---\n', { name: "Keep", path: "Keep.md" });
+  expect(config.views[0].type).toBe("cards");
+  expect(config.views[0].cardContent).toBe("body");
+});

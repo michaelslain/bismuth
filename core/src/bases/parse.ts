@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
 import type { BaseConfig, ViewConfig, SortSpec, ViewType, ParsedBase } from "./types";
 import { parseRows } from "./rows";
+import { normalizeSource } from "./sourceSpec";
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -172,7 +173,7 @@ export function parseBase(text: string): BaseConfig {
     formulas,
     properties,
     views,
-    source: o.source as BaseConfig["source"],
+    source: normalizeSource(o.source, o),
     schema: o.schema as BaseConfig["schema"],
   };
 }
@@ -200,8 +201,10 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   if (raw?.schema && typeof raw.schema === "object") {
     config.schema = raw.schema as BaseConfig["schema"];
   }
-  if (raw?.source && typeof raw.source === "object") {
-    config.source = raw.source as BaseConfig["source"];
+  // Normalize string OR object `source` (+ top-level from/where/ref) into a SourceSpec.
+  if (raw) {
+    const s = normalizeSource(raw.source, raw);
+    if (s) config.source = s;
   }
   // Top-level field-binding keys configure the default view (so the settings UI can
   // persist them with a flat `setProperty`, no nested `views:` editing needed).
@@ -221,6 +224,10 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     if (g) config.views[0].groupBy = g;
     const widths = normalizeColumnWidths(raw.columnWidths);
     if (widths) config.views[0].columnWidths = widths;
+    // cards view: `cardContent: body` renders each note's body as an interactive todo
+    // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
+    // nested `views:` block.
+    if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
   }
 
   const rows = parseRows(body, meta);

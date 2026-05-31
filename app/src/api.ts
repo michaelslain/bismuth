@@ -5,7 +5,7 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 import type { GraphData, TreeEntry } from "../../core/src/graph";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
-import type { Row, ParsedBase } from "../../core/src/bases/types";
+import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
@@ -72,6 +72,9 @@ export const api = {
     getJson<{ version: number }>("/version"),
   vaultData: () => getJson<Row[]>("/vault-data"),
   base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
+  // Single source resolver: resolve a SourceSpec to Row[] server-side, following
+  // base composition + scoped tasks. Replaces the per-kind client-side resolver.
+  resolveRows: (spec: SourceSpec) => postJson<Row[]>("/rows", { spec }),
   rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
   rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
   rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),

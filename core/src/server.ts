@@ -9,6 +9,7 @@ import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import { parseBaseFile } from "./bases/parse";
+import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
@@ -16,7 +17,7 @@ import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
-import type { Row } from "./bases/types";
+import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker } from "./changeClassifier";
 
@@ -280,6 +281,15 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /tasks": async (_, __) => {
       return Response.json(await collectVaultTasks(cfg.vault));
+    },
+
+    // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)
+    // to Row[], following base composition + scoped tasks. Read-only despite POST
+    // (the body carries the spec), so it lives here, not in mutatingRoutes.
+    "POST /rows": async (req, __) => {
+      const { spec } = (await req.json()) as { spec: SourceSpec };
+      const rows = await resolveSource(spec, { root: cfg.vault, today: todayISO() });
+      return Response.json(rows);
     },
 
     "POST /backup": async (_, __) => {
