@@ -61,6 +61,9 @@ export const api = {
     getJson<{ version: number }>("/version"),
   vaultData: () => getJson<Row[]>("/vault-data"),
   base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
+  rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
+  rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
+  rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),

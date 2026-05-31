@@ -583,3 +583,44 @@ test("GET /base returns config + rows for a type:base file", async () => {
     server.stop(true);
   }
 });
+
+test("POST /row/update edits a base row and bumps version", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "Cal.md", "---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    const res = await fetch(`${base}/row/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: "Cal.md", index: 0, note: { id: 1, title: "Z" } }),
+    });
+    expect(res.ok).toBe(true);
+    const data = await (await fetch(`${base}/base?file=Cal.md`)).json();
+    expect(data.rows[0].note.title).toBe("Z");
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /row/update appends a new row when index is null", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "Cal.md", "---\ntype: base\nview: table\n---\n\n| id | title |\n| --- | --- |\n| 1 | A |");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/row/update`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: "Cal.md", index: null, note: { id: 2, title: "B" } }),
+    });
+    const data = await (await fetch(`${base}/base?file=Cal.md`)).json();
+    expect(data.rows.length).toBe(2);
+    expect(data.rows[1].note.title).toBe("B");
+  } finally {
+    server.stop(true);
+  }
+});

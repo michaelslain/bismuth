@@ -9,6 +9,7 @@ import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import { parseBaseFile } from "./bases/parse";
+import { upsertRow, deleteRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
@@ -379,6 +380,35 @@ export function createServer(cfg: CoreConfig) {
         return new Response("ok");
       },
       (b) => b.path,
+    ),
+
+    "POST /row/update": mutatingHandler(
+      async (req) => {
+        // index === null => append a new row; otherwise replace the row at index.
+        const { file, index, note } = (await req.json()) as {
+          file: string;
+          index: number | null;
+          note: Record<string, unknown>;
+        };
+        const text = await readNoteOrEmpty(cfg.vault, file);
+        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const next = upsertRow(text, { name, path: file }, index ?? null, note);
+        await writeNote(cfg.vault, file, next);
+        return new Response("ok");
+      },
+      (b) => b.file,
+    ),
+
+    "POST /row/delete": mutatingHandler(
+      async (req) => {
+        const { file, index } = (await req.json()) as { file: string; index: number };
+        const text = await readNote(cfg.vault, file);
+        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const next = deleteRow(text, { name, path: file }, index);
+        await writeNote(cfg.vault, file, next);
+        return new Response("ok");
+      },
+      (b) => b.file,
     ),
 
     "POST /tasks/toggle": mutatingHandler(
