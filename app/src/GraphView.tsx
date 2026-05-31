@@ -3,6 +3,8 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
 import { settings, setSettings, PALETTES } from "./settings";
+import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
+import { GraphSearch, type SearchItem } from "./GraphSearch";
 
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
 function hoverLabel(node: HoverNode): string {
@@ -26,6 +28,23 @@ export function GraphView(props: {
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
   const [fps, setFps] = createSignal<number | null>(null);
+  const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
+  const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
+  const [showLegend, setShowLegend] = createSignal(false);
+  const [showSearch, setShowSearch] = createSignal(false);
+
+  // Rebuild legend rows + search items from the renderer's current node set. Called after each
+  // render() so the cluster directory tracks the live graph.
+  const refreshUiData = () => {
+    const centroids = renderer.getCommunityCentroids();
+    const rows: ClusterRow[] = [...centroids.entries()].map(([community, c]) => ({
+      community, label: c.label, count: c.count, color: c.color, ids: c.ids,
+    }));
+    setLegendRows(rows);
+    setSearchItems(
+      renderer.getNodesForUI().map((n) => ({ id: n.id, label: n.label, sub: n.communityLabel ?? n.folder })),
+    );
+  };
 
   onMount(() => {
     renderer.mount(
@@ -39,13 +58,13 @@ export function GraphView(props: {
     );
     renderer.setFpsCallback(setFps);
     mounted = true;
-    if (lastGraph) renderer.render(lastGraph);
+    if (lastGraph) { renderer.render(lastGraph); refreshUiData(); }
   });
 
   createEffect(() => {
     const g = props.graph;
     lastGraph = g;
-    if (mounted) renderer.render(g);
+    if (mounted) { renderer.render(g); refreshUiData(); }
   });
 
   // Push graph settings (spin/palette/physics/size) to the renderer whenever they change.
@@ -102,10 +121,29 @@ export function GraphView(props: {
       </div>
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
+        <Show when={showLegend()}>
+          <div style={{ position: "absolute", top: "6px", right: "6px", "max-width": "210px", "pointer-events": "auto" }}>
+            <ClusterLegend rows={legendRows()} onFocus={(ids) => renderer.frameSubset(ids)} />
+          </div>
+        </Show>
+        <Show when={showSearch()}>
+          <div style={{ position: "absolute", top: "6px", left: "50%", transform: "translateX(-50%)", "pointer-events": "auto" }}>
+            <GraphSearch
+              items={searchItems()}
+              onFly={(id) => renderer.focusNode(id)}
+              onClose={() => setShowSearch(false)}
+            />
+          </div>
+        </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <button style={getBtnStyle(settings.graph.viewMode === "2d")} onClick={() => setViewMode("2d")}>2D</button>
             <button style={getBtnStyle(settings.graph.viewMode === "3d")} onClick={() => setViewMode("3d")}>3D</button>
+          </div>
+          <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+            <button style={getBtnStyle(false)} title="Reset view to whole graph" onClick={() => renderer.resetView()}>Reset</button>
+            <button style={getBtnStyle(showLegend())} title="Toggle cluster legend" onClick={() => setShowLegend((v) => !v)}>Clusters</button>
+            <button style={getBtnStyle(showSearch())} title="Search nodes / fly to" onClick={() => setShowSearch((v) => !v)}>Search</button>
           </div>
           <Show when={hovered()}>
             {(node) => (
