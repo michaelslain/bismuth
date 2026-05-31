@@ -59,6 +59,18 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
   return undefined;
 }
 
+// Coerce a `columnWidths` map (propertyId -> px) into a clean number map. Tolerates
+// values that round-tripped through YAML as strings ("240"); drops non-finite/non-positive.
+function normalizeColumnWidths(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+    if (Number.isFinite(n) && n > 0) out[k] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
@@ -71,6 +83,7 @@ function normalizeView(raw: unknown): ViewConfig {
     : undefined;
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined;
   const columns = Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined;
+  const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
   const lng = typeof o.lng === "string" ? o.lng : undefined;
   const zoom = typeof o.zoom === "number" ? o.zoom : undefined;
@@ -91,6 +104,7 @@ function normalizeView(raw: unknown): ViewConfig {
     summaries,
     cardContent,
     columns,
+    columnWidths,
     lat,
     lng,
     zoom,
@@ -126,6 +140,12 @@ export function parseBase(text: string): BaseConfig {
   const rawViews = asArray<unknown>(o.views);
   const views: ViewConfig[] = rawViews.map(normalizeView);
   if (views.length === 0) views.push({ type: "table", name: "Table" });
+
+  // A top-level `columnWidths` (how the table view persists resizes via a flat
+  // setProperty) configures the default view — unless that view already declared
+  // its own. This mirrors the top-level order/sort/group handling in parseBaseFile.
+  const topWidths = normalizeColumnWidths(o.columnWidths);
+  if (topWidths && !views[0].columnWidths) views[0].columnWidths = topWidths;
 
   const properties = o.properties && typeof o.properties === "object"
     ? Object.fromEntries(
@@ -199,9 +219,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     if (s) config.views[0].sort = s;
     const g = normalizeGroupBy(raw.groupBy);
     if (g) config.views[0].groupBy = g;
-    if (raw.columnWidths && typeof raw.columnWidths === "object") {
-      config.views[0].columnWidths = raw.columnWidths as Record<string, number>;
-    }
+    const widths = normalizeColumnWidths(raw.columnWidths);
+    if (widths) config.views[0].columnWidths = widths;
   }
 
   const rows = parseRows(body, meta);

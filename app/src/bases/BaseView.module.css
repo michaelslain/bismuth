@@ -59,8 +59,35 @@
 .thDrag:active { cursor: grabbing; }
 .thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
 .thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
-/* col-resize cursor cue near the edge; its pointerdown bubbles to the th, which does the hit-test. */
-.thResize { position: absolute; top: 0; right: -5px; width: 11px; height: 100%; cursor: col-resize; }
+/* A resizable header is always relatively-positioned so the edge handle can anchor. */
+.thResizable { position: relative; }
+/* When the pointer is in the right-edge grab zone, the whole cell shows col-resize
+   (overrides the .thDrag grab cursor) so the affordance is obvious. */
+.thAtEdge, .thAtEdge:active { cursor: col-resize !important; }
+/* Visible resize handle pinned to the right edge. A 12px grab strip; a 2px line
+   inside it lights up on hover so users can see where to grab. */
+.thResize {
+  position: absolute;
+  top: 0;
+  right: -6px;
+  width: 12px;
+  height: 100%;
+  cursor: col-resize;
+  /* Center a thin separator line inside the strip. */
+  display: flex;
+  justify-content: center;
+}
+.thResize::after {
+  content: "";
+  width: 2px;
+  height: 60%;
+  align-self: center;
+  background: var(--border);
+  border-radius: 1px;
+  transition: background 120ms ease;
+}
+.thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
+.thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
 .table td { overflow: hidden; text-overflow: ellipsis; }
 .groupRow td { font-weight: 600; background: var(--oa-surface); }
 .summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }

@@ -1,4 +1,4 @@
-import { createSignal, createMemo, Show } from "solid-js";
+import { createSignal, createMemo, Show, For } from "solid-js";
 import { api } from "../api";
 import { renderMarkdown } from "./markdown";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
@@ -8,6 +8,10 @@ import type { BaseConfig, Row } from "../../../core/src/bases/types";
  * Reviewing flips to the back (front kept as a small caption) and writes fixed-SM-2 scheduling
  * back to the row. Cram mode reviews ALL cards ignoring due dates and never changes scheduling.
  * Faces render markdown (Lora serif; `code` monospace).
+ *
+ * Animation: the 3D flip (rotateY) only plays when revealing the SAME card (front -> back on
+ * "Show answer"). Advancing to a NEW card remounts the card element (keyed by row index), so it
+ * resets to the front instantly and plays a crisp scale+fade entrance instead of flipping backward.
  */
 export function FlashcardsView(props: {
   rows: Row[];
@@ -62,9 +66,69 @@ export function FlashcardsView(props: {
     setRevealed(false);
   };
 
+  // ── Add / delete card UI ──────────────────────────────────────────────
+  const [adding, setAdding] = createSignal(false);
+  const [draftFront, setDraftFront] = createSignal("");
+  const [draftBack, setDraftBack] = createSignal("");
+  const [busy, setBusy] = createSignal(false);
+
+  const openAdd = () => {
+    setDraftFront("");
+    setDraftBack("");
+    setAdding(true);
+  };
+
+  const saveAdd = async () => {
+    if (!props.basePath || busy()) return;
+    const front = draftFront().trim();
+    const back = draftBack().trim();
+    if (!front && !back) {
+      setAdding(false);
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.rowCreate(props.basePath, { [frontField()]: front, [backField()]: back });
+      setAdding(false);
+      props.onReviewed();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const deleteCurrent = async () => {
+    const c = current();
+    if (!c || !props.basePath || busy()) return;
+    if (!confirm("Delete this card?")) return;
+    setBusy(true);
+    try {
+      await api.rowDelete(props.basePath, c.index);
+      setRevealed(false);
+      // Stay at the same position; the queue shifts the next card into place.
+      props.onReviewed();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div class="flashcards-host">
       <div class="srs-bar">
+        <Show when={props.basePath}>
+          <button class="srs-icon-btn" title="Add a card" onClick={openAdd} disabled={busy()}>
+            + Add card
+          </button>
+          <Show when={current() !== null}>
+            <button
+              class="srs-icon-btn danger"
+              title="Delete the current card"
+              onClick={deleteCurrent}
+              disabled={busy()}
+            >
+              ✕
+            </button>
+          </Show>
+        </Show>
         <button
           class={`cram-toggle ${cram() ? "on" : ""}`}
           title="Cram: review every card, no scheduling changes"
@@ -73,6 +137,36 @@ export function FlashcardsView(props: {
           {cram() ? "● Cram mode" : "Cram"}
         </button>
       </div>
+
+      <Show when={adding()}>
+        <div class="card-add-form">
+          <label class="card-add-field">
+            <span>Front</span>
+            <textarea
+              autofocus
+              value={draftFront()}
+              onInput={(e) => setDraftFront(e.currentTarget.value)}
+              placeholder="Question / prompt…"
+            />
+          </label>
+          <label class="card-add-field">
+            <span>Back</span>
+            <textarea
+              value={draftBack()}
+              onInput={(e) => setDraftBack(e.currentTarget.value)}
+              placeholder="Answer…"
+            />
+          </label>
+          <div class="card-add-actions">
+            <button class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
+              Cancel
+            </button>
+            <button class="card-btn good" onClick={saveAdd} disabled={busy()}>
+              Save card
+            </button>
+          </div>
+        </div>
+      </Show>
 
       <Show
         when={queue().length > 0}
@@ -102,20 +196,32 @@ export function FlashcardsView(props: {
               <Show when={cram()}> · cram (not scheduled)</Show>
             </div>
 
-            <div
-              class={`flip-card ${revealed() ? "flipped" : ""}`}
-              onClick={() => !revealed() && setRevealed(true)}
-            >
-              <div class="flip-inner">
-                <div class="flip-face flip-front">
-                  <div class="card-md" innerHTML={frontHtml(current()!.r)} />
+            {/*
+              Keyed by the row index via <For> over a single-element array: <For> reconciles by
+              item value, so when the current card's index changes the element is disposed and a
+              fresh one is created (instant reset to front + entrance anim). When only the row data
+              refreshes (same index) the value is unchanged, so it does NOT remount. The flip is a
+              transform transition on the persistent element, so it only animates when toggling
+              `revealed` on the SAME (already-mounted) card — never a backward flip between cards.
+            */}
+            <For each={[current()!.index]}>
+              {() => (
+                <div
+                  class={`flip-card card-appear ${revealed() ? "flipped" : ""}`}
+                  onClick={() => !revealed() && setRevealed(true)}
+                >
+                  <div class="flip-inner">
+                    <div class="flip-face flip-front">
+                      <div class="card-md" innerHTML={frontHtml(current()!.r)} />
+                    </div>
+                    <div class="flip-face flip-back">
+                      <div class="card-front-label" innerHTML={frontHtml(current()!.r)} />
+                      <div class="card-md" innerHTML={backHtml(current()!.r)} />
+                    </div>
+                  </div>
                 </div>
-                <div class="flip-face flip-back">
-                  <div class="card-front-label" innerHTML={frontHtml(current()!.r)} />
-                  <div class="card-md" innerHTML={backHtml(current()!.r)} />
-                </div>
-              </div>
-            </div>
+              )}
+            </For>
 
             <Show
               when={revealed()}
