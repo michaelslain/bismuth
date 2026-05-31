@@ -331,6 +331,7 @@ export class LabelLayer {
     const candidates = new Set<string>(this.alwaysOn);
     for (const id of discovery) candidates.add(id);
     if (this.hoveredId) candidates.add(this.hoveredId);
+    if (args.searchMatches) for (const id of args.searchMatches) candidates.add(id); // search hits → labeled in 3D too
 
     // Project each candidate to pixel coords; drop those outside the viewport.
     const camToCenter = cam.distanceTo(args.cloudCenter);
@@ -378,7 +379,8 @@ export class LabelLayer {
       opacity *= zoomFade;
       const inAlwaysOn = this.alwaysOn.has(id);
       const isDiscovery = !inAlwaysOn && discovery.has(id);
-      const priority = this.priorityOf(id, inAlwaysOn, isDiscovery);
+      // Search hits rank just under hover (1) so a flown-to / previewed match isn't occluded away.
+      const priority = args.searchMatches?.has(id) ? 1 : this.priorityOf(id, inAlwaysOn, isDiscovery);
       cands.push({ id, px, py, w, h, priority, opacity });
     }
 

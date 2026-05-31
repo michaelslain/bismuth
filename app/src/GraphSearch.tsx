@@ -1,10 +1,10 @@
 // app/src/GraphSearch.tsx
 // Presentational graph-scoped search overlay. A text input over a case-insensitive,
-// substring-filtered, keyboard-navigable list of graph nodes. ArrowUp/Down move the
-// selection AND fly to it live (onFly), Enter confirms, Esc closes. Pure props in /
-// callbacks out — it knows nothing about the renderer; GraphView supplies `items` and
-// wires `onFly`/`onClose`. Reuses the keyboard/list behavior of palette/PaletteModal but
-// styled as a small graph overlay (rgba(20,20,24,0.55) chrome, 10–11px, inherit font).
+// substring-filtered, keyboard-navigable list of graph nodes. ArrowUp/Down (and hover)
+// PREVIEW the highlighted node — onPreview lights up its label without moving the camera;
+// Enter / click COMMIT — onFly flies the camera there. Esc closes. Pure props in / callbacks
+// out — it knows nothing about the renderer; GraphView supplies `items` and wires the
+// callbacks. Styled as a small graph overlay (rgba(20,20,24,0.55) chrome, 10–11px).
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 
 export interface SearchItem {
@@ -18,7 +18,8 @@ const MAX_RESULTS = 30;
 
 export function GraphSearch(props: {
   items: SearchItem[];
-  onFly: (id: string) => void; // Enter / click / live arrow-nav → fly to one node
+  onPreview?: (id: string) => void; // arrow-nav / hover → highlight (force label), no camera move
+  onFly: (id: string) => void;      // Enter / click → commit: fly the camera to the node
   onClose: () => void;
 }) {
   const [query, setQuery] = createSignal("");
@@ -38,10 +39,15 @@ export function GraphSearch(props: {
     return base.slice(0, MAX_RESULTS);
   });
 
-  // Reset the highlighted row to the top whenever the query changes.
+  // Reset the highlighted row to the top whenever the query changes, and preview that top match
+  // (highlight its label) so typing surfaces where the best match is — without flying the camera.
   createEffect(() => {
-    query();
+    const q = query();
     setSelected(0);
+    if (q.trim()) {
+      const top = results()[0];
+      if (top) props.onPreview?.(top.id);
+    }
   });
 
   // Keep the highlighted row scrolled into view.
@@ -55,14 +61,15 @@ export function GraphSearch(props: {
 
   onMount(() => inputRef?.focus());
 
-  // Move selection and fly to the newly highlighted node live.
+  // Move selection and PREVIEW the newly highlighted node (label highlight only; no camera move,
+  // so holding an arrow doesn't thrash a 450ms glide or flood the camera history).
   function move(delta: number): void {
     const n = results().length;
     if (n === 0) return;
     const next = Math.max(0, Math.min(selected() + delta, n - 1));
     setSelected(next);
     const item = results()[next];
-    if (item) props.onFly(item.id);
+    if (item) props.onPreview?.(item.id);
   }
 
   function onKeyDown(e: KeyboardEvent): void {
@@ -129,7 +136,7 @@ export function GraphSearch(props: {
             <div
               data-row
               classList={{ selected: selected() === i() }}
-              onMouseEnter={() => setSelected(i())}
+              onMouseEnter={() => { setSelected(i()); props.onPreview?.(item.id); }}
               onClick={() => props.onFly(item.id)}
               style={{
                 display: "flex",

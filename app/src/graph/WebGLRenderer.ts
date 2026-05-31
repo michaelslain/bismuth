@@ -701,6 +701,10 @@ export class WebGLRenderer {
   }
 
   private pushHistory() {
+    // Coalesce rapid jumps: if a glide is already in flight the camera is mid-interpolation, so its
+    // position isn't a meaningful "previous pose" — skip the push (the in-flight glide's origin was
+    // already captured by the push that started it). Keeps back()/Escape stepping through settled poses.
+    if (this.camTween) return;
     this.history.push({ pos: this.camera.position.clone(), target: this.controls.target.clone() });
     if (this.history.length > 20) this.history.shift();
   }

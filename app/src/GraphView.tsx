@@ -130,8 +130,9 @@ export function GraphView(props: {
           <div style={{ position: "absolute", top: "6px", left: "50%", transform: "translateX(-50%)", "pointer-events": "auto" }}>
             <GraphSearch
               items={searchItems()}
-              onFly={(id) => renderer.focusNode(id)}
-              onClose={() => setShowSearch(false)}
+              onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
+              onFly={(id) => { renderer.setSearchMatches(new Set([id])); renderer.focusNode(id); }}
+              onClose={() => { renderer.setSearchMatches(new Set()); setShowSearch(false); }}
             />
           </div>
         </Show>
@@ -143,7 +144,7 @@ export function GraphView(props: {
           <div style={{ display: "flex", gap: "2px", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <button style={getBtnStyle(false)} title="Reset view to whole graph" onClick={() => renderer.resetView()}>Reset</button>
             <button style={getBtnStyle(showLegend())} title="Toggle cluster legend" onClick={() => setShowLegend((v) => !v)}>Clusters</button>
-            <button style={getBtnStyle(showSearch())} title="Search nodes / fly to" onClick={() => setShowSearch((v) => !v)}>Search</button>
+            <button style={getBtnStyle(showSearch())} title="Search nodes / fly to" onClick={() => { const v = !showSearch(); setShowSearch(v); if (!v) renderer.setSearchMatches(new Set()); }}>Search</button>
           </div>
           <Show when={hovered()}>
             {(node) => (
