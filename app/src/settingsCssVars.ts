@@ -22,6 +22,8 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--palette-top-offset": s.ui.paletteTopOffset,
     "--pane-divider-width": s.ui.paneDividerWidth + "px",
     "--prose-line-height": String(s.editor.lineHeight),
+    "--month-cell-min-h": s.calendar.monthCellMinHeight + "px",
+    "--time-gutter-width": s.calendar.timeGutterWidth + "px",
   };
 }
 

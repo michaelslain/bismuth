@@ -69,6 +69,9 @@ export interface Settings {
     defaultView: "month" | "week" | "3day" | "day";
     weekStartsOnMonday: boolean;
     militaryTime: boolean;
+    monthCellMinHeight: number;   // px
+    timeGutterWidth: number;      // px
+    defaultCategoryColor: string; // hex
   };
   ui: {
     paletteTopOffset: string;  // CSS length, e.g. "12vh"

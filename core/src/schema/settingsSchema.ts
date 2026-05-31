@@ -64,6 +64,9 @@ export const SETTINGS_SCHEMA: Schema = {
     defaultView: { type: enumType(CALENDAR_VIEWS), default: "week", doc: "Default calendar view." },
     weekStartsOnMonday: { type: "boolean", default: true, doc: "Start the week on Monday." },
     militaryTime: { type: "boolean", default: false, doc: "Use 24-hour time." },
+    monthCellMinHeight: { type: "number", default: 80, min: 50, max: 160, doc: "Minimum height of a day cell in month view (px)." },
+    timeGutterWidth: { type: "number", default: 50, min: 40, max: 80, doc: "Width of the hour-label gutter in week/day views (px)." },
+    defaultCategoryColor: { type: "string", default: "#4a90e2", doc: "Default color for a newly created event category (hex)." },
   }),
   ui: object({
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },

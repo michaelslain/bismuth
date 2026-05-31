@@ -43,7 +43,7 @@
 .month-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--background-modifier-border); }
 .month-day-name { text-align: center; padding: 4px; font-size: 0.8em; font-weight: 600; color: var(--text-muted); }
 .month-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; overflow-y: auto; }
-.month-cell { border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); padding: 4px; min-height: 80px; cursor: pointer; overflow: hidden; }
+.month-cell { border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); padding: 4px; min-height: var(--month-cell-min-h, 80px); cursor: pointer; overflow: hidden; }
 .month-cell:hover { background: var(--background-modifier-hover); }
 .month-cell.empty { background: var(--background-secondary); cursor: default; }
 .month-cell.today .month-cell-number { background: var(--interactive-accent); color: var(--text-on-accent); border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
@@ -52,7 +52,7 @@
 .time-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .time-grid-day-header { flex: 1; text-align: center; padding: 4px; font-size: 0.8em; font-weight: 600; border-right: 1px solid var(--background-modifier-border); }
 .time-grid-day-header.today { color: var(--interactive-accent); }
-.time-gutter { width: 50px; flex-shrink: 0; border-right: 1px solid var(--background-modifier-border); }
+.time-gutter { width: var(--time-gutter-width, 50px); flex-shrink: 0; border-right: 1px solid var(--background-modifier-border); }
 .time-grid-allday-cell { flex: 1; padding: 2px; border-right: 1px solid var(--background-modifier-border); }
 .time-grid-body { flex: 1; overflow-y: auto; }
 .time-grid-columns { display: flex; flex-direction: column; }
@@ -60,7 +60,7 @@
 .time-grid-sticky-header { display: flex; border-bottom: 1px solid var(--background-modifier-border); }
 .time-grid-allday-row { display: flex; border-bottom: 1px solid var(--background-modifier-border); min-height: 28px; }
 .time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
-.time-gutter-col { width: 50px; flex-shrink: 0; }
+.time-gutter-col { width: var(--time-gutter-width, 50px); flex-shrink: 0; }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
 .time-gutter-hour { flex: 1; font-size: 0.7em; color: var(--text-muted); padding-right: 4px; text-align: right; border-right: 1px solid var(--background-modifier-border); box-sizing: border-box; }
 .time-gutter-half { flex: 1; font-size: 0.65em; color: var(--text-faint); padding-right: 4px; text-align: right; border-right: 1px solid var(--background-modifier-border); box-sizing: border-box; }
