@@ -418,117 +418,25 @@ The schema is the single source of truth; defaults must equal the current hardco
 2. Call `curl http://localhost:4321/graph | jq` to inspect graph structure
 3. Check `core/test/vault.test.ts` or `core/test/engine.test.ts` for examples
 
-### Extending Features
-
-**Adding a new API endpoint:**
-1. Define the handler in `server.ts` routes (read) or mutatingRoutes (write)
-2. Read-only endpoints go in `routes`; write endpoints go in `mutatingRoutes` (auto-invalidates cache + broadcasts SSE)
-3. Test in `core/test/server.test.ts`; add a test case with sample vault
-
-**Adding a Bases function:**
+### Adding a Bases function
 1. Add the function signature to `core/src/bases/functions.ts` (maps function name → implementation)
 2. Update `core/src/bases/query.ts` to handle the return type in aggregation
 3. Add tests in `core/test/bases/query.test.ts`
 
-**Adding an SRS scheduler variant:**
+### Adding an SRS scheduler variant
 1. Extend `core/src/srs/scheduler.ts` with new algorithm (SM-2 variant, custom decay, etc.)
-2. Update `core/src/schema/settingsSchema.ts` to expose config options (e.g., `srs.algorithm`)
-3. Thread config into `applyReview` calls; see `core/src/srs/reviewer.ts`
+2. Expose config in `core/src/schema/settingsSchema.ts` (e.g., `srs.algorithm`); thread into `applyReview` (`core/src/srs/reviewer.ts`)
 
-**Adding a graph node/edge kind:**
-1. Update `NodeKind` / `EdgeKind` types in `core/src/graph.ts`
-2. Update builders: `buildVaultGraph` (vault.ts), `buildMemoryGraph` (memory.ts), `buildAgentGraph` (agents.ts)
-3. Update frontend filtering in `App.tsx` if the mode ("2nd", "3rd", "both", "agents") should hide/show it
+## Error Handling
 
-## Error Handling Patterns
+Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENOENT", "File not found")` (factory, picks status from code) or `new AppError(code, msg, status)`. `mutatingHandler` in `server.ts` maps `AppError.statusCode` to the HTTP response; generic `Error` → 500. Codes → status: `ENOENT`/`CARD_NOT_FOUND` 404, `EACCES` 403, `EEXIST`/`CARD_CONTENT_CHANGED` 409, `EINVAL`/`PARSE_ERROR`/`CARD_FORMAT_ERROR`/`BASE_CYCLE` 400, `INTERNAL_ERROR` 500.
 
-All errors in the backend use the `AppError` class (`core/src/error.ts`) with typed error codes and HTTP status codes.
+## Shared Helpers (avoid re-duplicating)
 
-**Creating errors:**
-```typescript
-import { AppError, createError } from "./error.ts";
-
-// Using createError() factory (recommended):
-throw createError("ENOENT", "File not found");  // 404 automatically
-throw createError("EACCES", "Permission denied");  // 403 automatically
-throw createError("CARD_NOT_FOUND", "Card not found");  // 404 automatically
-throw createError("EINVAL", "Invalid path", 400);  // Custom status if needed
-
-// Direct construction:
-throw new AppError("ENOENT", "File not found", 404);
-```
-
-**Error codes and HTTP status:**
-- **ENOENT** (404): File/resource not found
-- **EACCES** (403): Permission denied
-- **EEXIST** (409): Resource already exists
-- **EINVAL** (400): Invalid input or arguments
-- **PARSE_ERROR** (400): Failed to parse input
-- **CARD_NOT_FOUND** (404): SRS card not found
-- **CARD_FORMAT_ERROR** (400): Invalid card format
-- **CARD_CONTENT_CHANGED** (409): Card content modified externally
-- **BASE_CYCLE** (400): Circular base references detected
-- **INTERNAL_ERROR** (500): Unexpected server error
-
-**Server routing:**
-The `mutatingHandler` in `server.ts` catches `AppError` and automatically maps `statusCode` to the HTTP response. Generic `Error` objects are coerced to 500 (internal error). Frontend receives the correct HTTP status for each error scenario (allowing distinction between user errors vs server errors).
-
-## Resilience Patterns
-
-### Connection State Management
-
-The frontend (`app/src/serverVersion.ts`) implements a sophisticated connection state machine for robustness when the backend is unreachable or temporarily offline.
-
-**Connection states:**
-- `connected` — EventSource is open; normal 5-second poll interval
-- `disconnected` — EventSource closed or errored; aggressive 1-second polling
-- `reconnecting` — Attempting to re-establish EventSource after error
-
-**When connection is lost:**
-1. User sees a persistent warning toast: "Connection lost. Retrying..."
-2. Poll interval switches from 5s to 1s (5× more aggressive)
-3. Frontend attempts reconnection via aggressive polling
-4. When poll succeeds, EventSource automatically re-connects
-5. On successful reconnection, state returns to `connected`, toast auto-dismisses
-
-**Why this pattern:**
-- Pure SSE is fragile on mobile/unstable networks (can silently die)
-- Fallback `/version` poll catches disconnects automatically
-- Aggressive polling during disconnection reduces perceived lag
-- Toast feedback prevents users from thinking the app is frozen
-- No exponential backoff needed since main goal is recovery, not reducing server load
-
-**Debugging:**
-- Check `currentConnectionState` signal in `app/src/serverVersion.ts`
-- Monitor EventSource state in DevTools (Network → WS)
-- Check `/version` poll interval (should be 1s when disconnected, 5s when connected)
-
-### Helper Consolidation Patterns
-
-**Graph builder consolidation** (`core/src/graphBuilder.ts`):
-Both `buildVaultGraph()` and `buildMemoryGraph()` use the shared `buildGraphFromNotes()` helper to eliminate duplication. When adding a new graph source (e.g., agent interactions), use this pattern:
-
-```typescript
-// Instead of duplicating file walk + read + index logic:
-const { nodes, edges, byBase, byPath } = await buildGraphFromNotes(
-  root,
-  (relPath) => ({ id: `prefix:${relPath}`, label: relPath.replace(/\.md$/, "") }), // nodeBuilder
-  (nodeId, content, byBase, byPath) => extractEdges(content, byBase, byPath)  // edgeExtractor
-);
-```
-
-**File walk consolidation** (`core/src/files.ts`):
-Both `listTree()` and `listTemplates()` use the shared `walkDir()` helper. When traversing directories, use this pattern:
-
-```typescript
-const files = await walkDir(root, (entry, rel) => {
-  if (entry.isDirectory()) return true;  // Include all dirs, still recurse
-  return entry.name.endsWith(".md");     // Include only .md files
-});
-```
-
-**Frontmatter mutation consolidation** (`core/src/frontmatter.ts`):
-The `mutateFrontmatter()` helper preserves YAML formatting when edits occur. Uses the `yaml` Document API, with graceful fallback to stringify for malformed input. Preserves comments, key order, flow arrays, and other formatting details.
+- **`core/src/graphBuilder.ts` `buildGraphFromNotes(root, nodeBuilder, edgeExtractor)`** — file walk + read + index used by both `vault.ts` and `memory.ts`. Use it for any new graph source.
+- **`core/src/files.ts` `walkDir(root, filter)`** — recursive dir walk behind `listTree`/`listTemplates`; filter returns `true`/`false`/`{data}`.
+- **`core/src/frontmatter.ts` `mutateFrontmatter(yaml, mutate)`** — edits frontmatter via the `yaml` Document API (preserves comments/key order/flow arrays), falls back to stringify on malformed input.
+- **Resilience**: `app/src/serverVersion.ts` tracks a `ConnectionState` (connected/disconnected/reconnecting). On SSE loss it shows a "Connection lost" toast and polls `/version` at 1s (vs 5s) until reconnect, then auto-dismisses.
 
 ## Key Concepts
 
@@ -598,14 +506,3 @@ Common test files:
 - **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches a file named `Another Note.md` anywhere in the vault, even in different folders. Ambiguous matches are undefined behavior.
 - **Memory graph requires Claude-bot memory directory**: If `OA_MEMORY` points to a non-existent or empty directory, the memory graph will be empty. Set up sample notes in memory directory to see "3rd brain" mode.
 - **Concurrent agent port conflicts**: Running multiple instances on the same machine requires port overrides; see "Running Multiple Agents Concurrently" section. Default 4321/1420 will only work for one instance.
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| `OA_VAULT: not set` when running `bun run dev` | Set environment variable: `export OA_VAULT="/path/to/vault"` before running |
-| `OA_MEMORY: not set` | Set environment variable: `export OA_MEMORY="/path/to/memory"` before running |
-| Backend on :4321 doesn't respond | Check that `core/src/server.ts` started (look for "Server running" message) |
-| Frontend on :5173 shows connection error | Backend may be crashed; check that OA_VAULT and OA_MEMORY directories exist and are readable |
-| Graph nodes not updating after editing .md | Wait for file-watch debounce (250ms) + frontend version poll (may take a second or two) |
-| Tests fail with file permission errors | Ensure test helper can create temp directories in `/tmp` (or adjust `core/test/helpers.ts` path) |
