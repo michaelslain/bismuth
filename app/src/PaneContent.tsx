@@ -6,6 +6,7 @@ import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
 import { BaseView } from "./bases/BaseView";
+import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import type { NoteCandidate } from "./editor/wikilink";
 import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel } from "./tabIds";
@@ -36,6 +37,9 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
+      </Match>
+      <Match when={props.path.endsWith(".sheet")}>
+        <SheetView path={props.path} onSaved={props.onSaved} />
       </Match>
       <Match when={props.path.endsWith(".base")}>
         <BaseView path={props.path} onOpen={props.onOpen} />

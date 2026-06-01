@@ -1,0 +1,79 @@
+/* app/src/sheet/univer-theme.css
+   Make Univer's DOM chrome (ribbon, toolbar, menus, dialogs) feel native to the
+   app. Univer's chrome is Tailwind utilities that reference `var(--univer-*)`
+   color tokens with !important, so we recolor by overriding the VARIABLES (not the
+   properties) — no specificity fight. Everything is scoped to `.oa-sheet` (the
+   adapter's container) so it never leaks to the rest of the app. The mapped values
+   read the app's own `--accent` / `--fg` / `--border` / etc., which already flip
+   with the app's light/dark theme, so the sheet chrome follows the app theme. */
+
+/* Use the app's monospace everywhere in the chrome (the single biggest cohesion
+   win). Cell text is canvas-rendered by Univer and unaffected — that's intended. */
+.oa-sheet,
+.oa-sheet * {
+  font-family: "Monaspace Xenon", ui-monospace, monospace !important;
+}
+
+.oa-sheet {
+  /* Accent ramp → the app accent (active ribbon tab, primary buttons, focus ring,
+     selection chrome). Light stops become translucent accent tints; mid/strong
+     stops become the accent itself. */
+  --univer-primary-50: color-mix(in srgb, var(--accent) 14%, transparent);
+  --univer-primary-100: color-mix(in srgb, var(--accent) 22%, transparent);
+  --univer-primary-200: color-mix(in srgb, var(--accent) 34%, transparent);
+  --univer-primary-300: var(--accent);
+  --univer-primary-400: var(--accent);
+  --univer-primary-500: var(--accent);
+  --univer-primary-600: var(--accent);
+  --univer-primary-700: color-mix(in srgb, var(--accent) 82%, black);
+  --univer-primary-900: color-mix(in srgb, var(--accent) 28%, transparent);
+
+  /* Danger ramp → the app danger color. */
+  --univer-red-300: var(--danger, #e5534b);
+  --univer-red-400: var(--danger, #e5534b);
+  --univer-red-500: var(--danger, #e5534b);
+  --univer-red-600: var(--danger, #e5534b);
+}
+
+/* Ribbon tabs (Start / Formulas / Data) → the app's SegmentedToggle look — the
+   2D/3D control (`.graph-seg` in App.css): a faint track, inactive tabs muted, and
+   the ACTIVE tab as a neutral "pill" (fg text on a subtle fill), NOT accent text.
+   We can't embed the Solid <SegmentedToggle> inside Univer's DOM, so this mirrors
+   its CSS. The ribbon header is the `select-none h-9` row; tabs carry `px-2`. */
+.oa-sheet .univer-select-none.univer-h-9 > div {
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important; /* faint track */
+  border-radius: 5px !important;
+  padding: 2px !important;
+  gap: 2px !important;
+}
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 3px !important;
+  font-weight: 400 !important;
+  font-size: 10px !important;        /* tiny uppercase, exactly like the 2D/3D control */
+  letter-spacing: 0.04em !important;
+  text-transform: uppercase !important;
+  padding: 2px 8px !important;
+  color: var(--text-muted) !important;
+}
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
+  color: var(--fg) !important;
+}
+/* the active tab carries a `text-primary*` utility → neutral pill (graph-seg active) */
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
+  color: var(--fg) !important;
+  background: color-mix(in srgb, var(--fg) 16%, transparent) !important;
+}
+
+/* Popover / menu / dropdown / toolbar surfaces → the app surfaces. In dark mode
+   Univer uses the gray-600..900 stops only for surfaces / borders / hover (never
+   text — dark-mode text uses the light gray stops), so remapping these tokens is
+   safe and recolors all chrome surfaces at once. Scoped to .univer-dark so light
+   mode (Univer's white surfaces, already close to the app's light bg) is untouched. */
+.oa-sheet .univer-dark {
+  --univer-gray-900: var(--bg);                                    /* toolbar / outer track */
+  --univer-gray-800: color-mix(in srgb, var(--bg), var(--fg) 5%);  /* popovers, menus, dropdowns */
+  --univer-gray-700: color-mix(in srgb, var(--bg), var(--fg) 9%);  /* inputs, subtle hover */
+  --univer-gray-600: var(--border);                                /* borders, strong hover */
+}

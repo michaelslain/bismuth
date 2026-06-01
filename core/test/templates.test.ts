@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { expandTemplate } from "../src/templates";
+import { expandTemplate, TEMPLATE_TOKENS } from "../src/templates";
 
 // Fixed clock: local Sunday May 31 2026, 14:09:05
 // new Date(year, monthIndex, day, hours, minutes, seconds)
@@ -172,4 +172,12 @@ test("no tokens → text unchanged, cursorOffset equals length", () => {
 test("multiple valid tokens in one template", () => {
   const { text } = expandTemplate("# {{title}}\nCreated: {{date}}\nTime: {{time}}", ctx);
   expect(text).toBe("# My Note\nCreated: 2026-05-31\nTime: 14:09");
+});
+
+test("every TEMPLATE_TOKENS entry is recognised by expandTemplate (catalog ↔ parser stay in sync)", () => {
+  for (const t of TEMPLATE_TOKENS) {
+    // A recognised token never survives verbatim: date/time/title expand to text,
+    // {{cursor}} expands to "". An UNrecognised token would be emitted unchanged.
+    expect(expandTemplate(t.token, ctx).text).not.toBe(t.token);
+  }
 });
