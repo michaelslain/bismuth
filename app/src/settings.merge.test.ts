@@ -25,4 +25,25 @@ describe("mergeServerSettings", () => {
     mergeServerSettings({ appearance: { accent: "#000000" } });
     expect(DEFAULTS.appearance.accent).toBe("#6496ff");
   });
+
+  it("replaces a top-level list (toolbar) wholesale, honoring arbitrary length", () => {
+    const toolbar = [
+      { command: "settings", icon: "Settings", tooltip: "Prefs" },
+      { command: "graph-both", icon: "Network" },
+      { command: "terminal", icon: "SquareTerminal" },
+      { command: "new-note", icon: "FilePlus" },
+    ];
+    const out = mergeServerSettings({ toolbar });
+    expect(out.toolbar).toEqual(toolbar); // not index-merged against the 3-item default
+  });
+
+  it("honors an explicit empty toolbar (does not fall back to defaults)", () => {
+    const out = mergeServerSettings({ toolbar: [] });
+    expect(out.toolbar).toEqual([]);
+  });
+
+  it("keeps the default toolbar when the server value is missing or not an array", () => {
+    expect(mergeServerSettings({}).toolbar).toEqual(DEFAULTS.toolbar);
+    expect(mergeServerSettings({ toolbar: "nope" }).toolbar).toEqual(DEFAULTS.toolbar);
+  });
 });

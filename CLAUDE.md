@@ -241,6 +241,16 @@ In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over Web
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
+### Commands & Sidebar Toolbar
+
+Commands are split into pure data and behavior so the palette and the sidebar header bar (`.sidebar-icons`, above the file tree) share one source:
+- `core/src/commands.ts` — `COMMAND_CATALOG` (`id`, `label`, `icon`) + `COMMAND_IDS`. Pure data; lives in core so the settings schema derives the `toolbar.command` enum from it.
+- `app/src/commands.ts` — `bindCommands(handlers)` maps each id to a live `{id, label, icon, action}`. Both `CommandPalette` and the toolbar `<For>` consume the map.
+
+The bar above the file tree is configured by the `toolbar:` list in `settings.yaml` (seeded with New note / New folder / Open terminal). Each item is `{ command: <id>, icon: <Lucide name|emoji>, tooltip?: <text> }`. A top-level list slips past the section-merge loop in `serializeSettingsForFrontend`, so it's special-cased via `readToolbarFrom` (mirrors `folderIcons`) — malformed items are dropped, an explicit empty list is honored. An unknown command id renders a disabled button (and the settings linter flags it). The `command:`/`icon:` fields autocomplete inside the list via `editor/settingsComplete.ts`.
+
+**Adding a command:** add an entry to `COMMAND_CATALOG` (core) and a matching `action` binding in `bindCommands` (app). The `toolbar.command` enum, its autocomplete, and the palette pick it up automatically. (Adding any new *top-level* schema key also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`.)
+
 ## Workspace Management
 
 The three workspaces are linked via Bun's `workspaces` feature in the root `package.json`:
