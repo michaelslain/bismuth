@@ -9,6 +9,7 @@ import UniverPresetSheetsFilterEnUS from "@univerjs/preset-sheets-filter/locales
 import "@univerjs/preset-sheets-sort/lib/index.css";
 import "@univerjs/preset-sheets-filter/lib/index.css";
 import "./univer-theme.css"; // app-cohesive restyle of Univer's chrome (scoped to .oa-sheet)
+import "./univer-icons.css"; // re-skins Univer's toolbar icons with lucide (generated)
 import type { WorkbookSnapshot } from "./snapshot";
 
 export interface SheetHandle {
