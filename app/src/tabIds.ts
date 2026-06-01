@@ -1,6 +1,7 @@
 // app/src/tabIds.ts
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
 export const CALENDAR_TAB = "::calendar";
+export const SEARCH_TAB = "::search";
 export const EMPTY_PANE = "::empty";
 // Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
 export const FLASHCARDS_PREFIX = "::flashcards:";
@@ -21,6 +22,7 @@ function noteName(path: string): string {
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === CALENDAR_TAB) return "Calendar";
+  if (content === SEARCH_TAB) return "Search";
   if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
@@ -32,6 +34,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
   if (content === CALENDAR_TAB) return "Calendar";
+  if (content === SEARCH_TAB) return "Search";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (content.endsWith(".sheet")) return "Table";

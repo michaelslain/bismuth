@@ -11,6 +11,7 @@ type GraphMode = "2nd" | "3rd" | "both" | "agents";
 export interface CommandHandlers {
   openSettings: () => void;
   openTerminal: () => void;
+  openSearch: () => void;
   newNote: () => void;
   newFolder: () => void;
   newSpreadsheet: () => void;
@@ -34,6 +35,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
     "terminal": h.openTerminal,
+    "search": h.openSearch,
     "settings": h.openSettings,
     "graph-2nd": () => h.setMode("2nd"),
     "graph-3rd": () => h.setMode("3rd"),
