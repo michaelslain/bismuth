@@ -25,8 +25,11 @@ const THEMES: Record<ExportTheme, ThemeVars> = {
 function styles(t: ThemeVars): string {
   return `
   :root { color-scheme: ${t.scheme}; }
+  /* Concrete named fonts only — the PDF exporter rasterizes via html2canvas, which measures
+     text with canvas measureText(). CSS keywords like -apple-system / system-ui don't resolve
+     there and fall back to mismatched metrics, dropping inter-word spaces. */
   html, body { margin: 0; background: ${t.bg}; }
-  body { font-family: -apple-system, system-ui, "Segoe UI", sans-serif;
+  body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
          max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem 3rem;
          line-height: 1.6; color: ${t.fg}; }
   h1,h2,h3 { line-height: 1.25; margin-top: 1.6em; }

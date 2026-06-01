@@ -29,6 +29,8 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
     // html2canvas captures everything (not just the initial viewport).
     await new Promise((r) => requestAnimationFrame(() => r(null)));
     iframe.style.height = `${doc.body.scrollHeight}px`;
+    // Ensure fonts are loaded so html2canvas measures text with the right metrics.
+    try { await doc.fonts?.ready; } catch { /* fonts API unavailable — proceed */ }
     await new Promise((r) => requestAnimationFrame(() => r(null)));
 
     const bg = getComputedStyle(doc.body).backgroundColor || "#ffffff";
