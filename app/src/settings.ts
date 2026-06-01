@@ -28,9 +28,10 @@ export interface Settings {
     neutral: string;     // hex (Steel) → --text-muted, --border, graph edges
     accent: string;      // hex (Blue), drives accent-tinted UI (active tab, selection, links, caret)
     accentPalette: string[]; // 6 Oxide hex colors → graph nodes/clusters/tags + --accent-purple
-    // Dark-only at runtime (schema enum is ["dark"], the seeded default); typed wide
-    // so dark-aware consumers (sheets/drawing) that branch on "light" still typecheck.
-    theme: "dark" | "light";
+    // Bismuth color theme name (base palette); see app/src/themes.ts. Widened from
+    // the old "dark"|"light" so dark-aware consumers still compile; app is dark-only.
+    theme: string;
+    icon: string; // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
     editorFont: string;  // key into FONT_STACKS
     editorFontSize: number; // px
     sidebarWidth: number;        // px
