@@ -4,6 +4,7 @@
 // the returned map: the catalog says what each command is, the binding says what
 // it does. App passes its handlers in once.
 import { COMMAND_CATALOG } from "../../core/src/commands";
+import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
@@ -15,6 +16,7 @@ export interface CommandHandlers {
   newSpreadsheet: () => void;
   newDrawing: () => void | Promise<void>;
   setMode: (mode: GraphMode) => void;
+  openDailyNote: (id: string) => void;
 }
 
 export interface BoundCommand {
@@ -25,7 +27,7 @@ export interface BoundCommand {
 }
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
-export function bindCommands(h: CommandHandlers): Map<string, BoundCommand> {
+export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
   const actions: Record<string, () => void | Promise<void>> = {
     "new-note": h.newNote,
     "new-folder": h.newFolder,
@@ -43,6 +45,13 @@ export function bindCommands(h: CommandHandlers): Map<string, BoundCommand> {
     const action = actions[spec.id];
     if (!action) continue; // catalog entry without a binding — skip defensively
     map.set(spec.id, { id: spec.id, label: spec.label, icon: spec.icon, action });
+  }
+  // Dynamic, user-defined daily-note commands. NOT in the static catalog; the toolbar
+  // references them by id (daily-note:<id>) and the palette lists them.
+  for (const dn of dailyNotes) {
+    if (!dn.id) continue;
+    const id = `daily-note:${dn.id}`;
+    map.set(id, { id, label: dn.label || dn.id, icon: dn.icon || "CalendarDays", action: () => h.openDailyNote(dn.id) });
   }
   return map;
 }

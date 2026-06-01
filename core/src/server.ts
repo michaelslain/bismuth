@@ -20,10 +20,9 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
+import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
-import { parseDoc, serializeDoc } from "./drawing/model";
-import { renderDocToPng, renderDocToPdf } from "./drawing/export";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -203,12 +202,6 @@ export function createServer(cfg: CoreConfig) {
     }
   }
 
-  async function writeDrawingSidecars(rel: string, doc: ReturnType<typeof parseDoc>) {
-    const theme = (appConfig.appearance?.theme === "light" ? "light" : "dark") as "dark" | "light";
-    await Bun.write(join(cfg.vault, `${rel}.png`), await renderDocToPng(doc, theme));
-    await Bun.write(join(cfg.vault, `${rel}.pdf`), await renderDocToPdf(doc, theme));
-  }
-
   const routes: Record<string, Handler> = {
     "GET /version": async (_, __) => {
       return Response.json({ version });
@@ -378,19 +371,6 @@ export function createServer(cfg: CoreConfig) {
     "GET /cards/due": async (_, url) => {
       const deck = url.searchParams.get("deck") ?? undefined;
       return Response.json(await dueCards(cfg.vault, todayISO(), deck));
-    },
-
-    "GET /drawing/render": async (_, url) => {
-      const path = requireQueryParam(url, "path");
-      const format = url.searchParams.get("format") === "pdf" ? "pdf" : "png";
-      let doc;
-      try { doc = parseDoc(await readNote(cfg.vault, path)); }
-      catch { return new Response("not found", { status: 404 }); }
-      const theme = (appConfig.appearance?.theme === "light" ? "light" : "dark") as "dark" | "light";
-      if (format === "pdf") {
-        return new Response(await renderDocToPdf(doc, theme), { headers: { "Content-Type": "application/pdf" } });
-      }
-      return new Response(await renderDocToPng(doc, theme), { headers: { "Content-Type": "image/png" } });
     },
   };
 
@@ -599,16 +579,22 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
 
-    "POST /drawing/save": mutatingHandler(
-      async (req) => {
-        const { path, doc } = (await req.json()) as { path: string; doc: unknown };
-        const parsed = parseDoc(JSON.stringify(doc));
-        await writeNote(cfg.vault, path, serializeDoc(parsed));
-        await writeDrawingSidecars(path, parsed);
-        return new Response("ok");
-      },
-      (b) => b.path,
-    ),
+    "POST /daily-note": mutatingHandler(async (req) => {
+      const { id } = (await req.json()) as { id: string };
+      const config = (await readDailyNotes(cfg.vault)).find((c) => c.id === id);
+      if (!config) return new Response(`unknown daily note: ${id}`, { status: 400 });
+      const now = new Date();
+      const path = dailyNotePath(config, now);
+      if (await Bun.file(join(cfg.vault, path)).exists()) {
+        return Response.json({ path, created: false });
+      }
+      let templateRaw: string | null = null;
+      if (config.template && (await Bun.file(join(cfg.vault, config.template)).exists())) {
+        templateRaw = await readNote(cfg.vault, config.template);
+      }
+      await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
+      return Response.json({ path, created: true });
+    }),
   };
 
   return Bun.serve({

@@ -962,34 +962,38 @@ test("GET /templates returns [] when the folder is absent", async () => {
   }
 });
 
-test("POST /drawing/save writes the .draw JSON and PNG+PDF sidecars", async () => {
-  const { vault, memory } = await makeSampleVault();
-  const server = createServer({ vault, memory, port: 0 });
+test("POST /daily-note creates today's note from the template, then reopens it without clobbering", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+  await writeNote(vault, "settings.yaml", [
+    "dailyNotes:",
+    "  - id: journal",
+    "    label: Journal",
+    "    icon: BookOpen",
+    "    folder: Journal",
+    '    fileName: "{{date}} journal"',
+    "    template: Templates/Journal.md",
+  ].join("\n"));
+  await writeNote(vault, "Templates/Journal.md", "# {{title}}\n\n");
+  const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
+  const call = (id: string) => fetch(`${base}/daily-note`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+  });
   try {
-    const doc = { v: 1, kind: "drawing", paper: { bg: "grid" },
-      pages: [{ strokes: [{ t: "pen", c: "fg", w: 4, pts: [10, 10, 255, 80, 80, 255] }] }] };
-    const res = await fetch(`${base}/drawing/save`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: "sketch.draw", doc }),
-    });
-    expect(res.status).toBe(200);
-    expect(await Bun.file(`${vault}/sketch.draw`).exists()).toBe(true);
-    expect(await Bun.file(`${vault}/sketch.draw.png`).exists()).toBe(true);
-    expect(await Bun.file(`${vault}/sketch.draw.pdf`).exists()).toBe(true);
-  } finally { server.stop(); }
-});
+    const r1 = await (await call("journal")).json();
+    expect(r1.created).toBe(true);
+    expect(r1.path).toMatch(/^Journal\/\d{4}-\d{2}-\d{2} journal\.md$/);
+    const titleBase = r1.path.replace(/^Journal\//, "").replace(/\.md$/, "");
+    expect(await readNote(vault, r1.path)).toBe(`# ${titleBase}\n\n`);
 
-test("GET /drawing/render?format=png returns a PNG for a saved drawing", async () => {
-  const { vault, memory } = await makeSampleVault();
-  const server = createServer({ vault, memory, port: 0 });
-  const base = `http://localhost:${server.port}`;
-  try {
-    const doc = { v: 1, kind: "drawing", paper: { bg: "blank" }, pages: [{ strokes: [] }] };
-    await Bun.write(`${vault}/empty.draw`, JSON.stringify(doc));
-    const res = await fetch(`${base}/drawing/render?path=empty.draw&format=png`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("image/png");
-    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(100);
-  } finally { server.stop(); }
+    await writeNote(vault, r1.path, "my entry");      // user edits today's note
+    const r2 = await (await call("journal")).json();  // pressing again must reopen, not clobber
+    expect(r2).toEqual({ path: r1.path, created: false });
+    expect(await readNote(vault, r1.path)).toBe("my entry");
+
+    const r3 = await call("does-not-exist");           // unknown id → 400
+    expect(r3.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
 });
