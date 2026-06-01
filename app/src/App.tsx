@@ -17,7 +17,8 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, EXPORT_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -217,6 +218,7 @@ export default function App() {
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
   const openSearch = () => openFile(SEARCH_TAB);
+  const openExport = (path: string) => openFile(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
   const openDailyNote = async (id: string) => {
@@ -652,6 +654,18 @@ export default function App() {
                   onPointerDown={(e) => {
                     if ((e.target as HTMLElement).classList.contains("tab-x")) return;
                     viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
+                  }}
+                  onContextMenu={(e) => {
+                    const content = t.root.kind === "leaf" ? t.root.content : null;
+                    if (!content || !isExportable(content)) return;
+                    e.preventDefault();
+                    setEditorMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      items: [
+                        { label: "Export…", icon: "Download", onSelect: () => openExport(content) },
+                      ],
+                    });
                   }}
                 >
                   <Show when={tabBarIcon(t)}>
