@@ -57,7 +57,7 @@ export async function renderExport(
       return htmlResult(name, await bodyHtml(), name);
     case "pdf": {
       if (kind === "draw") {
-        const { bytes, dataUrl } = await deps.drawingToPng(await deps.read(path));
+        const { dataUrl } = await deps.drawingToPng(await deps.read(path));
         const pdf = await deps.htmlToPdf(`<img src="${dataUrl}">`);
         return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewImg: dataUrl };
       }
