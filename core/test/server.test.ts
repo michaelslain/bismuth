@@ -933,3 +933,31 @@ test("POST /set-setting rejects a non-array path with 400", async () => {
     server.stop(true);
   }
 });
+
+test("GET /templates lists .md files in the templates folder", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "Templates/Daily.md", "# {{date}}\n");
+  await writeNote(vault, "Templates/Meeting.md", "# Meeting\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const list = await (await fetch(`${base}/templates`)).json();
+    const names = list.map((t: any) => t.name).sort();
+    expect(names).toEqual(["Daily", "Meeting"]);
+    expect(list.find((t: any) => t.name === "Daily").path).toBe("Templates/Daily.md");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /templates returns [] when the folder is absent", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const list = await (await fetch(`${base}/templates`)).json();
+    expect(list).toEqual([]);
+  } finally {
+    server.stop(true);
+  }
+});
