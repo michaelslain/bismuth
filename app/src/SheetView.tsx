@@ -1,5 +1,6 @@
-import { onMount, onCleanup, createSignal, Show } from "solid-js";
+import { onMount, onCleanup, createSignal, createEffect, Show } from "solid-js";
 import { api } from "./api";
+import { settings } from "./settings";
 import { parseSnapshot, serializeSnapshot, SheetParseError, type WorkbookSnapshot } from "./sheet/snapshot";
 import { debounce } from "./debounce";
 import { onServerChange } from "./serverVersion";
@@ -37,9 +38,20 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
   // mount compare equal and an unedited sheet is never written to disk.
   async function mount(data: WorkbookSnapshot) {
     const { mountSheet } = await import("./sheet/univerSheet"); // lazy: Univer chunk loads here
-    handle = mountSheet({ container, data, onChange: () => { dirty = true; save(); } });
+    handle = mountSheet({
+      container,
+      data,
+      onChange: () => { dirty = true; save(); },
+      dark: settings.appearance.theme === "dark",
+    });
     lastWrittenText = serializeSnapshot(handle.getSnapshot());
   }
+
+  // Keep Univer's dark mode in sync with the app theme without remounting.
+  createEffect(() => {
+    const dark = settings.appearance.theme === "dark";
+    handle?.setDark(dark);
+  });
 
   // Reload from disk when an EXTERNAL writer changes our file while we're clean.
   // Our own debounced saves echo back over SSE; isExternalChange filters those out

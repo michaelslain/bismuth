@@ -13,6 +13,8 @@ import type { WorkbookSnapshot } from "./snapshot";
 export interface SheetHandle {
   /** Current workbook state as a plain JSON-serializable snapshot. */
   getSnapshot(): WorkbookSnapshot;
+  /** Toggle Univer's dark mode at runtime (no remount needed). */
+  setDark(dark: boolean): void;
   /** Tear down the Univer instance and free the container. */
   dispose(): void;
 }
@@ -23,6 +25,8 @@ export interface MountOptions {
   data?: WorkbookSnapshot;
   /** Fired on every data-mutating command (caller debounces). */
   onChange: () => void;
+  /** Start in dark mode to match the app theme. */
+  dark?: boolean;
 }
 
 export function mountSheet(opts: MountOptions): SheetHandle {
@@ -39,6 +43,7 @@ export function mountSheet(opts: MountOptions): SheetHandle {
     // NOTE: the enum member is EN_US ("enUS"). Using `En_US` is undefined and
     // silently registers the locale under the wrong key → raw `ui.ribbon.*` keys.
     locale: LocaleType.EN_US,
+    darkMode: !!opts.dark,
     locales: {
       [LocaleType.EN_US]: mergeLocales(
         UniverPresetSheetsCoreEnUS,
@@ -59,6 +64,7 @@ export function mountSheet(opts: MountOptions): SheetHandle {
 
   return {
     getSnapshot: () => univerAPI.getActiveWorkbook()!.save() as unknown as WorkbookSnapshot,
+    setDark: (dark: boolean) => univerAPI.toggleDarkMode(dark),
     dispose: () => {
       try {
         sub?.dispose?.();
