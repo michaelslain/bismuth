@@ -52,3 +52,11 @@
   background: var(--border);
   margin: 4px 2px;
 }
+
+/* When an .oa-popover is hosted inside a CodeMirror hover tooltip (the YAML
+   quick-fix on hover), strip CM's default tooltip chrome so the border/background
+   isn't doubled — the .oa-popover supplies its own. */
+.cm-tooltip:has(> .oa-popover) {
+  border: none;
+  background: transparent;
+}
