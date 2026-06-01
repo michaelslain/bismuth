@@ -122,6 +122,24 @@ export const SETTINGS_SCHEMA: Schema = {
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
   },
+  // Daily-note types. Each registers a `daily-note:<id>` command (see core/commands)
+  // that you reference from `toolbar` to get a button. Pressing it opens today's note
+  // for that type, creating it from `template` the first time. Top-level list, read
+  // via readDailyNotesFrom (mirrors toolbar/folderIcons).
+  dailyNotes: {
+    type: { kind: "list", item: { kind: "object", fields: {
+      id:       { type: "string", doc: "Stable id; forms the command id daily-note:<id>." },
+      label:    { type: "string", doc: "Command-palette label and default button tooltip." },
+      icon:     { type: "icon",   doc: 'Lucide icon name (e.g. "BookOpen") or an emoji.' },
+      folder:   { type: "string", doc: 'Vault folder for entries ("" = vault root).' },
+      fileName: { type: "string", doc: "Filename via {{...}} tokens, no .md. e.g. {{date}} journal." },
+      template: { type: "string", doc: "Vault path to a template .md to pre-fill the note (optional)." },
+    } } },
+    default: [
+      { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "Templates/Journal.md" },
+    ],
+    doc: "Daily-note types. Each adds a daily-note:<id> command you can put on the toolbar.",
+  },
 };
 
 /** Recursively materialize the `default` of every leaf into a plain nested object. */
