@@ -13,6 +13,7 @@ import { debounce } from "./debounce";
 import { ToastHost } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
+import { emptyDoc } from "../../core/src/drawing/model";
 import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon } from "./tabIds";
@@ -204,6 +205,14 @@ export default function App() {
   };
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
+  const newDrawing = async () => {
+    const tree = await api.tree();
+    const existing = new Set(tree.map((e) => e.path));
+    let name = "Untitled.draw";
+    for (let n = 2; existing.has(name); n++) name = `Untitled ${n}.draw`;
+    await api.saveDrawing(name, emptyDoc());
+    openFile(name);
+  };
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -576,6 +585,7 @@ export default function App() {
         <div class="sidebar-icons">
           <Button variant="icon" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></Button>
           <Button variant="icon" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></Button>
+          <Button variant="icon" title="New drawing" onClick={newDrawing}><Icon value="PenTool" size={18} /></Button>
           <Button variant="icon" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></Button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
