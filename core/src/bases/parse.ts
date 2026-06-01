@@ -4,6 +4,9 @@ import { isValidType } from "./types";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
+const AGGREGATE_VALUES = ["sum", "avg", "count", "min", "max"] as const;
+const BIN_VALUES = ["day", "week", "month"] as const;
+
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   return [];
@@ -119,6 +122,11 @@ function normalizeView(raw: unknown): ViewConfig {
     dueField: strOrUndef(o.dueField),
     easeField: strOrUndef(o.easeField),
     intervalField: strOrUndef(o.intervalField),
+    // chart bindings
+    x: strOrUndef(o.x),
+    y: strOrUndef(o.y),
+    aggregate: (AGGREGATE_VALUES as readonly string[]).includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
+    bin: (BIN_VALUES as readonly string[]).includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
   };
 }
 
@@ -200,6 +208,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     const FIELD_KEYS = [
       "frontField", "backField", "dueField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
+      "x", "y",
     ] as const;
     for (const k of FIELD_KEYS) {
       if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
@@ -217,6 +226,9 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
     // nested `views:` block.
     if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
+    // chart axis/aggregation keys (flat persistence for chart views)
+    if ((AGGREGATE_VALUES as readonly string[]).includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
+    if ((BIN_VALUES as readonly string[]).includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
   }
 
   const rows = parseRows(body, meta);
