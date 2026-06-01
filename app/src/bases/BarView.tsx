@@ -22,10 +22,10 @@ export function BarView(props: { result: ViewResult; config: BaseConfig }) {
               <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
                 <For each={d.points}>
                   {(p, i) => {
-                    const h = (p.value / max) * (H - PAD * 2);
+                    const h = Math.max(0, (p.value / max) * (H - PAD * 2));
                     return (
                       <>
-                        <rect x={PAD + i() * bw + 2} y={H - PAD - h} width={bw - 4} height={h} rx={3} fill="var(--accent, #4a9eff)">
+                        <rect x={PAD + i() * bw + 2} y={H - PAD - h} width={Math.max(1, bw - 4)} height={h} rx={3} fill="var(--accent, #4a9eff)">
                           <title>{`${p.label}: ${p.value}`}</title>
                         </rect>
                         <Show when={n <= 16}>
