@@ -47,7 +47,7 @@
   line-height: 1;
 }
 .btn--icon:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
-.btn--icon.is-active { opacity: 1; }
+.btn--icon.is-active { opacity: 1; background: var(--hover-bg); }
 
 /* plain — no border/bg chrome, just a clickable text run (was .tab/.exit-btn-ish) */
 .btn--plain { border: none; background: transparent; color: var(--text-muted); padding: 4px 8px; }

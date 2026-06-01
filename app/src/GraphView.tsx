@@ -9,6 +9,7 @@ import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { TextButton } from "./ui/TextButton";
+import { IconButton } from "./ui/IconButton";
 
 /** Shared dark-pill recipe for the hover/fps HUD readouts (S26). */
 const hudPill: JSX.CSSProperties = {
@@ -41,17 +42,6 @@ export function GraphView(props: {
   const [fps, setFps] = createSignal<number | null>(null);
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
-  // Shared base for the small graph-overlay buttons (Reset / Close in the tools panel).
-  const baseButtonStyle = {
-    border: "none",
-    cursor: "pointer",
-    "font-size": "10px",
-    "font-family": "inherit",
-    padding: "2px 8px",
-    "border-radius": "3px",
-    "text-transform": "uppercase",
-    "letter-spacing": "0.04em",
-  } as const;
 
   // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
   // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
@@ -150,24 +140,24 @@ export function GraphView(props: {
         <div ref={host} style={{ width: "100%", height: "100%" }} />
         <Show when={props.fill && menuOpen()}>
           <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", background: "rgba(14,14,18,0.94)", border: "1px solid rgba(255,255,255,0.12)", "border-radius": "8px", padding: "10px", "backdrop-filter": "blur(10px)", "box-shadow": "0 8px 28px rgba(0,0,0,0.5)" }}>
-            {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
+            {/* Section 1 — view actions: a bordered Reset button + close. */}
             <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
               <TextButton
-                variant="plain"
+                variant="ghost"
+                size="sm"
+                style={{ flex: 1 }}
                 title="Reset view to whole graph"
                 onClick={() => renderer.resetView()}
-                style={{ ...baseButtonStyle, flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(232,232,235,0.9)", padding: "6px 8px" }}
               >
                 Reset view
               </TextButton>
-              <TextButton
-                variant="plain"
-                title="Close menu"
+              <IconButton
+                icon="X"
+                label="Close menu"
+                variant="ghost"
+                size="sm"
                 onClick={closeMenu}
-                style={{ ...baseButtonStyle, background: "rgba(20,20,24,0.6)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(220,220,225,0.8)", "font-size": "12px", padding: "6px 9px" }}
-              >
-                ✕
-              </TextButton>
+              />
             </div>
             {/* Section 2 — search. */}
             <GraphSearch
@@ -201,26 +191,12 @@ export function GraphView(props: {
               ]}
             />
             <Show when={props.fill}>
-              <TextButton
-                variant="plain"
-                style={{
-                  display: "flex",
-                  "align-items": "center",
-                  "justify-content": "center",
-                  background: menuOpen() ? "rgba(255,255,255,0.15)" : "transparent",
-                  color: menuOpen() ? "#e8e8e8" : "rgba(200,200,200,0.55)",
-                  border: "none",
-                  cursor: "pointer",
-                  "border-radius": "3px",
-                  "font-size": "16px",
-                  "line-height": 1,
-                  padding: "0 9px",
-                }}
-                title="Graph tools — search, clusters, reset"
+              <IconButton
+                icon="Menu"
+                label="Graph tools — search, clusters, reset"
+                active={menuOpen()}
                 onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
-              >
-                ☰
-              </TextButton>
+              />
             </Show>
           </div>
           <Show when={hovered()}>
