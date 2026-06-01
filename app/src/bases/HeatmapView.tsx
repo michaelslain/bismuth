@@ -10,8 +10,9 @@ const SHADES = ["#1e2a38", "#26527a", "#357fcc", "#4a9eff"];
 const EMPTY_CELL = "var(--surface-1, #1a1a22)";
 
 export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
-  const rows = (): Row[] => props.result.groups.flatMap((g) => g.rows);
-  const data = createMemo(() => buildChartData(rows(), props.result.view));
+  const rows = createMemo<Row[]>(() => props.result.groups.flatMap((g) => g.rows));
+  // The heatmap is always day-binned (a calendar grid), regardless of the view's bin setting.
+  const data = createMemo(() => buildChartData(rows(), { ...props.result.view, bin: "day" }));
   const grid = createMemo(() => buildHeatmapWeeks(data().points));
 
   const color = (v: number | null): string => {
@@ -40,11 +41,7 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
                     <div
                       class={styles.cell}
                       style={{ background: color(cell.value) }}
-                      title={
-                        cell.date
-                          ? `${cell.date}: ${cell.value ?? 0}`
-                          : ""
-                      }
+                      title={`${cell.date}: ${cell.value ?? 0}`}
                     />
                   )}
                 </For>
