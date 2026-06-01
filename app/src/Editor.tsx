@@ -6,6 +6,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { forceLinting } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
+import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
@@ -13,6 +14,7 @@ import { api } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
 import { tasksQuery } from "./editor/tasksQuery";
+import { mathBlock } from "./editor/mathBlock";
 import { basesBlock } from "./editor/basesBlock";
 import { viewBlock } from "./editor/viewBlock";
 import { vaultCompletion } from "./editor/autocomplete";
@@ -22,6 +24,7 @@ import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
+import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
@@ -218,7 +221,8 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           // Note buffers: markdown + live preview, autocomplete, frontmatter
           // validation, and spell/grammar checking.
           ...base,
-          markdown(),
+          markdown({ codeLanguages: languages }),
+          syntaxHighlighting(codeHighlightStyle),
           basesBlock(() => path),
           viewBlock(() => path),
           vaultCompletion({
@@ -235,7 +239,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
-          ...(ed.livePreview ? [livePreview, tasksQuery] : []),
+          ...(ed.livePreview ? [livePreview, tasksQuery, mathBlock()] : []),
           // Harper spell + grammar check, toggled by editor.spellcheck (default true).
           ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
         ];
