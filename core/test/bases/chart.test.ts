@@ -101,4 +101,19 @@ describe("buildHeatmapWeeks", () => {
   test("empty points -> no weeks", () => {
     expect(buildHeatmapWeeks([]).weeks).toEqual([]);
   });
+
+  test("spans multiple weeks with a non-Monday start and pads the tail", () => {
+    const points = [
+      { key: "2026-05-28", label: "", value: 3, date: "2026-05-28" }, // Thursday
+      { key: "2026-06-02", label: "", value: 5, date: "2026-06-02" }, // following Tuesday
+    ];
+    const { weeks } = buildHeatmapWeeks(points);
+    expect(weeks.length).toBe(2);
+    expect(weeks[0].length).toBe(7);
+    expect(weeks[1].length).toBe(7);
+    expect(weeks[0][0].date).toBe("2026-05-25"); // Monday back-fill from a Thursday start
+    expect(weeks[0][3]).toEqual({ date: "2026-05-28", value: 3 });
+    expect(weeks[1][1]).toEqual({ date: "2026-06-02", value: 5 });
+    expect(weeks[1][6].value).toBe(null); // padded tail (Sunday 2026-06-07)
+  });
 });

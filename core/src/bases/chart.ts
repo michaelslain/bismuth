@@ -131,10 +131,16 @@ export function buildChartData(rows: Row[], view: ViewConfig): ChartData {
 
 export interface HeatCell { date: string; value: number | null; }
 
-/** Lay date-binned points into a GitHub-style grid: array of week columns, each 7 cells (Mon..Sun). */
+/**
+ * Lay date-binned points into a GitHub-style grid: an array of week columns, each 7 cells (Mon..Sun).
+ * The first column starts on the Monday on/before the earliest point; the final column is always
+ * padded out to Sunday (7 cells) even when no data exists for days after the last point. Missing days
+ * are `value: null`. Callers must pass pre-aggregated points (one per date) — duplicate dates are
+ * last-write-wins (buildChartData already aggregates per day, so this holds in practice).
+ */
 export function buildHeatmapWeeks(points: ChartPoint[]): { weeks: HeatCell[][] } {
   const byDate = new Map<string, number>();
-  for (const p of points) if (p.date) byDate.set(p.date, p.value);
+  for (const p of points) if (p.date) byDate.set(p.date, p.value); // one entry per date; last wins (see doc)
   const dates = [...byDate.keys()].sort();
   if (dates.length === 0) return { weeks: [] };
 
