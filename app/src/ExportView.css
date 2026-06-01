@@ -1,10 +1,12 @@
 /* app/src/ExportView.css */
 .export-view { display: flex; flex-direction: column; height: 100%; }
 .export-bar {
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center;
   gap: 1rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border, #2a2a2a);
 }
 .export-formats { display: flex; gap: 0.25rem; }
+.export-themes { padding-left: 1rem; border-left: 1px solid var(--border, #2a2a2a); }
+.export-go { margin-left: auto; }
 .export-format {
   padding: 0.3rem 0.7rem; border: 1px solid var(--border, #2a2a2a);
   background: transparent; color: inherit; border-radius: 6px; cursor: pointer;

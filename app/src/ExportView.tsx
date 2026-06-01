@@ -4,14 +4,16 @@ import { api } from "./api";
 import { Icon } from "./icons/Icon";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
-import { renderExport } from "./export/exporters";
+import { renderExport, renderPreview } from "./export/exporters";
 import { htmlToPdf } from "./export/htmlToPdf";
 import { drawingToPng } from "./export/drawingRaster";
 import { downloadFile } from "./export/download";
-import type { ExportFormat, ExportDeps } from "./export/types";
+import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
 
 const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
+const THEMES: ExportTheme[] = ["dark", "light"];
+const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
@@ -23,11 +25,13 @@ const deps: ExportDeps = {
 export function ExportView(props: { path: string }) {
   const formats = () => formatsFor(props.path);
   const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
+  const [theme, setTheme] = createSignal<ExportTheme>("dark");
   const [busy, setBusy] = createSignal(false);
 
+  // Preview only — cheap, no byte/PDF generation, so switching format or theme is instant.
   const [result] = createResource(
-    () => [props.path, format()] as const,
-    async ([path, fmt]) => renderExport(path, fmt, deps),
+    () => [props.path, format(), theme()] as const,
+    async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm),
   );
 
   createEffect(() => {
@@ -38,7 +42,7 @@ export function ExportView(props: { path: string }) {
   const doExport = async () => {
     setBusy(true);
     try {
-      const r = await renderExport(props.path, format(), deps);
+      const r = await renderExport(props.path, format(), deps, theme());
       await downloadFile(r.filename, r.bytes, r.mime);
       pushToast(`Exported ${r.filename} to Downloads`);
     } catch (e) {
@@ -60,6 +64,19 @@ export function ExportView(props: { path: string }) {
                 onClick={() => setFormat(f)}
               >
                 {LABEL[f]}
+              </button>
+            )}
+          </For>
+        </div>
+        <div class="export-formats export-themes">
+          <For each={THEMES}>
+            {(t) => (
+              <button
+                class="export-format"
+                classList={{ active: theme() === t }}
+                onClick={() => setTheme(t)}
+              >
+                {THEME_LABEL[t]}
               </button>
             )}
           </For>

@@ -1,6 +1,6 @@
 // app/src/export/exporters.test.ts
 import { test, expect, describe } from "bun:test";
-import { renderExport } from "./exporters";
+import { renderExport, renderPreview } from "./exporters";
 import type { ExportDeps } from "./types";
 
 const enc = new TextDecoder();
@@ -63,5 +63,41 @@ describe("renderExport", () => {
 
   test("throws on a format not valid for the type", async () => {
     await expect(renderExport("s.draw", "md", deps())).rejects.toThrow();
+  });
+});
+
+describe("renderPreview (never generates bytes / never runs html->pdf)", () => {
+  test("note pdf preview is the HTML body, NOT a pdf — htmlToPdf is never called", async () => {
+    let pdfCalls = 0;
+    const r = await renderPreview("a/note.md", "pdf", deps({ htmlToPdf: async (h) => { pdfCalls++; return new TextEncoder().encode(h); } }));
+    expect(pdfCalls).toBe(0);                       // the whole point: no pdf work for preview
+    expect(r.previewHtml).toContain("<h1>Title</h1>");
+    expect(r.previewImg).toBeUndefined();
+  });
+
+  test("note md preview shows the raw source in a <pre>", async () => {
+    const r = await renderPreview("a/note.md", "md", deps());
+    expect(r.previewHtml).toContain("<pre>");
+    expect(r.previewHtml).toContain("# Title");      // escaped markdown source
+  });
+
+  test("base html preview is the rendered table", async () => {
+    const r = await renderPreview("Reading.base", "html", deps());
+    expect(r.previewHtml).toContain("<th>name</th>");
+  });
+
+  test("drawing preview is an image, never a pdf", async () => {
+    let pdfCalls = 0;
+    const r = await renderPreview("s.draw", "pdf", deps({ htmlToPdf: async () => { pdfCalls++; return new Uint8Array(); } }));
+    expect(pdfCalls).toBe(0);
+    expect(r.previewImg).toStartWith("data:image/png");
+    expect(r.previewHtml).toBeUndefined();
+  });
+
+  test("theme threads through to the preview document", async () => {
+    const dark = await renderPreview("a/note.md", "html", deps(), "dark");
+    const light = await renderPreview("a/note.md", "html", deps(), "light");
+    expect(dark.previewHtml).not.toBe(light.previewHtml);   // different theme styles
+    expect(light.previewHtml).toContain("#ffffff");
   });
 });
