@@ -961,3 +961,39 @@ test("GET /templates returns [] when the folder is absent", async () => {
     server.stop(true);
   }
 });
+
+test("POST /daily-note creates today's note from the template, then reopens it without clobbering", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+  await writeNote(vault, "settings.yaml", [
+    "dailyNotes:",
+    "  - id: journal",
+    "    label: Journal",
+    "    icon: BookOpen",
+    "    folder: Journal",
+    '    fileName: "{{date}} journal"',
+    "    template: Templates/Journal.md",
+  ].join("\n"));
+  await writeNote(vault, "Templates/Journal.md", "# {{title}}\n\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const call = (id: string) => fetch(`${base}/daily-note`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }),
+  });
+  try {
+    const r1 = await (await call("journal")).json();
+    expect(r1.created).toBe(true);
+    expect(r1.path).toMatch(/^Journal\/\d{4}-\d{2}-\d{2} journal\.md$/);
+    const titleBase = r1.path.replace(/^Journal\//, "").replace(/\.md$/, "");
+    expect(await readNote(vault, r1.path)).toBe(`# ${titleBase}\n\n`);
+
+    await writeNote(vault, r1.path, "my entry");      // user edits today's note
+    const r2 = await (await call("journal")).json();  // pressing again must reopen, not clobber
+    expect(r2).toEqual({ path: r1.path, created: false });
+    expect(await readNote(vault, r1.path)).toBe("my entry");
+
+    const r3 = await call("does-not-exist");           // unknown id → 400
+    expect(r3.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});

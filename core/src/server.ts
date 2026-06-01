@@ -20,7 +20,8 @@ import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
+import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
@@ -577,6 +578,23 @@ export function createServer(cfg: CoreConfig) {
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
+
+    "POST /daily-note": mutatingHandler(async (req) => {
+      const { id } = (await req.json()) as { id: string };
+      const config = (await readDailyNotes(cfg.vault)).find((c) => c.id === id);
+      if (!config) return new Response(`unknown daily note: ${id}`, { status: 400 });
+      const now = new Date();
+      const path = dailyNotePath(config, now);
+      if (await Bun.file(join(cfg.vault, path)).exists()) {
+        return Response.json({ path, created: false });
+      }
+      let templateRaw: string | null = null;
+      if (config.template && (await Bun.file(join(cfg.vault, config.template)).exists())) {
+        templateRaw = await readNote(cfg.vault, config.template);
+      }
+      await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
+      return Response.json({ path, created: true });
+    }),
   };
 
   return Bun.serve({
