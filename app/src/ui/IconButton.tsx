@@ -3,7 +3,7 @@ import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
 import type { ButtonSize } from "./buttonClass";
 
-export type IconButtonVariant = "ghost" | "plain" | "danger";
+export type IconButtonVariant = "icon" | "ghost" | "plain" | "danger";
 
 export type IconButtonProps = {
   /** Icon value passed to <Icon> (Lucide name, Li/Lu legacy, or emoji). */
@@ -22,7 +22,7 @@ export function IconButton(props: IconButtonProps) {
   const [local, rest] = splitProps(props, ["icon", "label", "variant", "iconSize", "title"]);
   return (
     <Button
-      variant={local.variant ?? "ghost"}
+      variant={local.variant ?? "icon"}
       aria-label={local.label}
       title={local.title ?? local.label}
       {...rest}
