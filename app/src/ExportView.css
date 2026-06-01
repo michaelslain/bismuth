@@ -7,12 +7,12 @@
 .export-formats { display: flex; gap: 0.25rem; }
 .export-themes { padding-left: 1rem; border-left: 1px solid var(--border, #2a2a2a); }
 .export-go { margin-left: auto; }
-.export-format {
+.export-format.btn {
   padding: 0.3rem 0.7rem; border: 1px solid var(--border, #2a2a2a);
   background: transparent; color: inherit; border-radius: 6px; cursor: pointer;
 }
 .export-format.active { background: var(--accent, #4a7); color: #fff; border-color: transparent; }
-.export-go {
+.export-go.btn {
   display: inline-flex; align-items: center; gap: 0.35rem;
   padding: 0.35rem 0.8rem; border: none; border-radius: 6px;
   background: var(--accent, #4a7); color: #fff; cursor: pointer;

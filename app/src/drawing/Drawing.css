@@ -14,11 +14,11 @@
 /* Icon segments (size dots / smoothness lines) — tighter, icon centered. */
 .draw-iconseg.btn { padding: 4px 7px; }
 .draw-iconseg.btn svg { display: block; }
-.draw-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--fg) 20%, transparent); cursor: pointer; padding: 0; }
+.draw-swatch.btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--fg) 20%, transparent); cursor: pointer; padding: 0; }
 .draw-swatch.active { outline: 2px solid var(--fg); outline-offset: 2px; }
 
 .draw-app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .draw-stage { flex: 1; overflow: auto; padding: 24px 0; display: flex; flex-direction: column; align-items: center; gap: 20px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); }
-.draw-add-page { background: var(--bg); color: var(--fg); border: 1px dashed var(--border); border-radius: 8px; padding: 10px 18px; cursor: pointer; font-size: 13px; opacity: 0.7; font-family: inherit; }
+.draw-add-page.btn { background: var(--bg); color: var(--fg); border: 1px dashed var(--border); border-radius: 8px; padding: 10px 18px; cursor: pointer; font-size: 13px; opacity: 0.7; font-family: inherit; }
 .draw-add-page:hover { opacity: 1; border-color: var(--accent); }
 .draw-loading { padding: 24px; opacity: 0.6; }

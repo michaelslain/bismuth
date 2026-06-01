@@ -16,7 +16,7 @@
 .bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); }
 .barRight { margin-left: auto; display: flex; gap: 6px; }
 .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.srcBtn {
+.srcBtn:global(.btn) {
   margin-left: auto; padding: 3px 10px; font-size: 12px; cursor: pointer;
   background: transparent; color: var(--oa-muted);
   border: 1px solid var(--border); border-radius: 6px;
@@ -106,10 +106,10 @@
 .todoText { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; outline: none; border-bottom: 1px solid transparent; transition: border-color 120ms ease; }
 .todoText:focus { border-bottom-color: var(--accent); }
 .todoDone .todoText { color: var(--oa-muted); text-decoration: line-through; }
-.todoRemove { flex: 0 0 auto; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; opacity: 0; transition: opacity 120ms ease, color 120ms ease; }
+.todoRemove:global(.btn) { flex: 0 0 auto; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; opacity: 0; transition: opacity 120ms ease, color 120ms ease; }
 .todoItem:hover .todoRemove { opacity: 1; }
 .todoRemove:hover { color: var(--fg); }
-.todoAdd { align-self: flex-start; margin-top: 6px; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font: inherit; padding: 2px 0; transition: color 120ms ease; }
+.todoAdd:global(.btn) { align-self: flex-start; margin-top: 6px; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font: inherit; padding: 2px 0; transition: color 120ms ease; }
 .todoAdd:hover { color: var(--accent); }
 
 .list ul { margin: 0; padding-left: 20px; }
@@ -140,7 +140,7 @@
   /* Hide alt text and the broken-image icon if a tile fails. */
   color: transparent;
 }
-.mapMarker {
+.mapMarker:global(.btn) {
   position: absolute;
   width: 14px;
   height: 14px;
