@@ -92,6 +92,19 @@ const yamlHighlight = HighlightStyle.define([
   { tag: [t.separator, t.punctuation, t.bracket, t.brace], color: "color-mix(in srgb, var(--fg) 45%, transparent)" },
 ]);
 
+// Vault template paths, fetched once and cached, for the settings.yaml `template:`
+// autocomplete. Sync getter (CM completion sources run synchronously); the first call
+// kicks off the fetch and returns [] until it lands, then subsequent popups see it.
+let cachedTemplatePaths: string[] = [];
+let templatesFetched = false;
+function templatePaths(): string[] {
+  if (!templatesFetched) {
+    templatesFetched = true;
+    void api.templates().then((ts) => { cachedTemplatePaths = ts.map((t) => t.path); }).catch(() => {});
+  }
+  return cachedTemplatePaths;
+}
+
 export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -175,7 +188,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
-                settingsCompletion(() => SETTINGS_SCHEMA, iconNames),
+                settingsCompletion(() => SETTINGS_SCHEMA, iconNames, templatePaths),
               ]
             : []),
         ]

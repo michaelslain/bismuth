@@ -8,6 +8,8 @@ import { matchEmojiPrefix, searchEmoji } from "./emoji";
 import { keySuggestions, valueSuggestions } from "../../../core/src/schema/suggest";
 import { normalizeTag } from "../../../core/src/schema/coerce";
 import type { Schema, PropertyType } from "../../../core/src/schema/types";
+import { matchTemplateTokenPrefix } from "./templateToken";
+import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 
 // Shared insert for every completion source: replace [from,to) with `insert`, put the
 // cursor `cursorOffset` chars past `from`, and tag the change as a picked completion so
@@ -181,6 +183,28 @@ function tagListSource(getTags: () => string[], inFrontmatter: (ctx: CompletionC
   };
 }
 
+// `{{template token}}` completion. Fires anywhere the caret sits inside an open `{{`
+// (body OR frontmatter — intentionally UNgated), offering the known tokens. Selecting
+// one replaces the `{{…` prefix with the full token. Because it only matches an open
+// `{{`, it never collides with the property/enum/tag/wikilink sources.
+function templateTokenSource(): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    const match = matchTemplateTokenPrefix(textBefore);
+    if (!match) return null;
+    const from = line.from + match.from;
+    const options: Completion[] = TEMPLATE_TOKENS.map((t) => ({
+      label: t.token,
+      info: t.doc,
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+        applyInsert(view, completion, applyFrom, applyTo, t.token, t.token.length);
+      },
+    }));
+    return { from, options, validFor: /^\{\{[\w+:-]*$/ };
+  };
+}
+
 // `:emoji:` and special-character completion, sharing the same popup as wikilinks and
 // tags. CM's built-in filter only matches the option label, which would drop keyword
 // hits (`:happy` → 😄), so we set `filter: false`, rank ourselves, and re-query each
@@ -230,6 +254,7 @@ export function vaultCompletion(opts: {
       enumValueSource(opts.getSchema, opts.inFrontmatter),
       tagListSource(opts.getTags, opts.inFrontmatter),
       // body-position sources
+      templateTokenSource(),
       wikilinkSource(opts.getNotes),
       tagSource(opts.getTags),
       emojiSource(),

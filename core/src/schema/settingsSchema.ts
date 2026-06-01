@@ -111,10 +111,9 @@ export const SETTINGS_SCHEMA: Schema = {
   // Seeded with the three built-ins so a fresh install is unchanged.
   toolbar: {
     type: { kind: "list", item: { kind: "object", fields: {
-      command: { type: enumType(COMMAND_IDS), doc: "Which command-palette command this button runs. For several commands on one button, use `commands` instead." },
-      commands: { type: { kind: "list", item: enumType(COMMAND_IDS) }, doc: "Run several commands in order on one click. Takes precedence over `command` when non-empty." },
+      command: { type: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] }, doc: "Which command this button runs (a catalog id or daily-note:<id>)." },
       icon: { type: "icon", doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
-      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label, or the chained labels)." },
+      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
     } } },
     default: [
       { command: "new-note", icon: "FilePlus" },
@@ -122,6 +121,24 @@ export const SETTINGS_SCHEMA: Schema = {
       { command: "terminal", icon: "SquareTerminal" },
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
+  },
+  // Daily-note types. Each registers a `daily-note:<id>` command (see core/commands)
+  // that you reference from `toolbar` to get a button. Pressing it opens today's note
+  // for that type, creating it from `template` the first time. Top-level list, read
+  // via readDailyNotesFrom (mirrors toolbar/folderIcons).
+  dailyNotes: {
+    type: { kind: "list", item: { kind: "object", fields: {
+      id:       { type: "string", doc: "Stable id; forms the command id daily-note:<id>." },
+      label:    { type: "string", doc: "Command-palette label and default button tooltip." },
+      icon:     { type: "icon",   doc: 'Lucide icon name (e.g. "BookOpen") or an emoji.' },
+      folder:   { type: "string", doc: 'Vault folder for entries ("" = vault root).' },
+      fileName: { type: "string", doc: "Filename via {{...}} tokens, no .md. e.g. {{date}} journal." },
+      template: { type: "string", doc: "Vault path to a template .md to pre-fill the note (optional)." },
+    } } },
+    default: [
+      { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "Templates/Journal.md" },
+    ],
+    doc: "Daily-note types. Each adds a daily-note:<id> command you can put on the toolbar.",
   },
 };
 

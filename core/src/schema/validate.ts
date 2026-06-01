@@ -130,6 +130,7 @@ export function validateValue(
       ? type.values.some((v) => v.toLowerCase() === str.toLowerCase())
       : type.values.includes(str);
     if (match) return null;
+    if (type.allowPrefixes?.some((p) => str.startsWith(p))) return null;
     return err(
       `expected one of: ${type.values.join(", ")}`,
       nearestEnum(type.values, str).slice(0, 3),

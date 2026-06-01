@@ -338,3 +338,38 @@ describe("toolbar serialization", () => {
     ]);
   });
 });
+
+// --- dailyNotes serialization ---
+
+describe("dailyNotes serialization", () => {
+  it("seeds the default journal config into a fresh settings.yaml", async () => {
+    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    await reconcileSettings(vault);
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.dailyNotes).toEqual([
+      { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "Templates/Journal.md" },
+    ]);
+  });
+
+  it("drops malformed items and fills field defaults", async () => {
+    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    await Bun.write(join(vault, SETTINGS_FILE), [
+      "dailyNotes:",
+      "  - id: work",
+      '    fileName: "{{date}} work"',
+      "  - label: NoId",
+      "  - id: noFile",
+    ].join("\n"));
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.dailyNotes).toEqual([
+      { id: "work", label: "work", icon: "CalendarDays", folder: "", fileName: "{{date}} work", template: "" },
+    ]);
+  });
+
+  it("honors an explicit empty list", async () => {
+    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    await Bun.write(join(vault, SETTINGS_FILE), "dailyNotes: []\n");
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.dailyNotes).toEqual([]);
+  });
+});

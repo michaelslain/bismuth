@@ -58,3 +58,10 @@ test("enum with caseInsensitive accepts a differently-cased value", () => {
   const t = { kind: "enum" as const, values: ["draft"], caseInsensitive: true };
   expect(validateValue(t, "DRAFT")).toBeNull();
 });
+
+test("enum with allowPrefixes accepts values carrying an allowed prefix", () => {
+  const t = { kind: "enum" as const, values: ["new-note", "terminal"], allowPrefixes: ["daily-note:"] };
+  expect(validateValue(t, "daily-note:journal")).toBeNull();
+  expect(validateValue(t, "new-note")).toBeNull();
+  expect(validateValue(t, "totally-unknown")).not.toBeNull();
+});

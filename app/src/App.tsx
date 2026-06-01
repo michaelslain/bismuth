@@ -7,15 +7,14 @@ import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands, resolveButtonCommands } from "./commands";
+import { bindCommands } from "./commands";
 import { settings } from "./settings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
-import { ToastHost } from "./Toast";
+import { ToastHost, pushToast } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
-import { emptyDoc } from "../../core/src/drawing/model";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
@@ -216,20 +215,18 @@ export default function App() {
   };
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
-<<<<<<< HEAD
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
-  const newSpreadsheet = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "sheet" } }));
-  const newDrawing = async () => {
-    const tree = await api.tree();
-    const existing = new Set(tree.map((e) => e.path));
-    let name = "Untitled.draw";
-    for (let n = 2; existing.has(name); n++) name = `Untitled ${n}.draw`;
-    await api.saveDrawing(name, emptyDoc());
-    openFile(name);
+  const openDailyNote = async (id: string) => {
+    try {
+      const { path } = await api.dailyNote(id);
+      openFile(path);
+    } catch (e) {
+      pushToast(`Daily note failed: ${(e as Error).message}`);
+    }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, newSpreadsheet, newDrawing, setMode });
+  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode, openDailyNote }, settings.dailyNotes);
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -614,24 +611,21 @@ export default function App() {
         <div class="sidebar-icons">
           <For each={settings.toolbar}>
             {(btn) => {
-              // A button may run one command (`command`) or several (`commands`, in order).
-              const cmds = () => resolveButtonCommands(btn, commands());
+              const cmd = () => commands().get(btn.command);
               return (
                 <Show
-                  when={cmds().length > 0}
+                  when={cmd()}
                   fallback={
-                    <Button variant="icon" disabled title={`Unknown command: ${btn.commands?.join(", ") ?? btn.command}`}>
+                    <Button variant="icon" disabled title={`Unknown command: ${btn.command}`}>
                       <Icon value={btn.icon || "CircleHelp"} size={18} />
                     </Button>
                   }
                 >
-                  <Button
-                    variant="icon"
-                    title={btn.tooltip ?? cmds().map((c) => c.label).join(" → ")}
-                    onClick={() => cmds().forEach((c) => c.action())}
-                  >
-                    <Icon value={btn.icon} size={18} />
-                  </Button>
+                  {(c) => (
+                    <Button variant="icon" title={btn.tooltip ?? c().label} onClick={() => c().action()}>
+                      <Icon value={btn.icon} size={18} />
+                    </Button>
+                  )}
                 </Show>
               );
             }}
