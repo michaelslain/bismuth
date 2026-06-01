@@ -1,0 +1,56 @@
+/* app/src/sheet/univer-theme.css
+   Make Univer's DOM chrome (ribbon, toolbar, menus, dialogs) feel native to the
+   app. Univer's chrome is Tailwind utilities that reference `var(--univer-*)`
+   color tokens with !important, so we recolor by overriding the VARIABLES (not the
+   properties) — no specificity fight. Everything is scoped to `.oa-sheet` (the
+   adapter's container) so it never leaks to the rest of the app. The mapped values
+   read the app's own `--accent` / `--fg` / `--border` / etc., which already flip
+   with the app's light/dark theme, so the sheet chrome follows the app theme. */
+
+/* Use the app's monospace everywhere in the chrome (the single biggest cohesion
+   win). Cell text is canvas-rendered by Univer and unaffected — that's intended. */
+.oa-sheet,
+.oa-sheet * {
+  font-family: "Monaspace Xenon", ui-monospace, monospace !important;
+}
+
+.oa-sheet {
+  /* Accent ramp → the app accent (active ribbon tab, primary buttons, focus ring,
+     selection chrome). Light stops become translucent accent tints; mid/strong
+     stops become the accent itself. */
+  --univer-primary-50: color-mix(in srgb, var(--accent) 14%, transparent);
+  --univer-primary-100: color-mix(in srgb, var(--accent) 22%, transparent);
+  --univer-primary-200: color-mix(in srgb, var(--accent) 34%, transparent);
+  --univer-primary-300: var(--accent);
+  --univer-primary-400: var(--accent);
+  --univer-primary-500: var(--accent);
+  --univer-primary-600: var(--accent);
+  --univer-primary-700: color-mix(in srgb, var(--accent) 82%, black);
+  --univer-primary-900: color-mix(in srgb, var(--accent) 28%, transparent);
+
+  /* Danger ramp → the app danger color. */
+  --univer-red-300: var(--danger, #e5534b);
+  --univer-red-400: var(--danger, #e5534b);
+  --univer-red-500: var(--danger, #e5534b);
+  --univer-red-600: var(--danger, #e5534b);
+}
+
+/* Ribbon tabs (Start / Formulas / Data) → the app's plain text-button look:
+   drop the gray "pill track" and the filled active state; inactive tabs are
+   muted, active is the accent. The ribbon header is the `select-none h-9` row. */
+.oa-sheet .univer-select-none.univer-h-9 > div {
+  background: transparent !important;
+}
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted) !important;
+  font-weight: 400 !important;
+}
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
+  color: var(--fg) !important;
+}
+/* the active tab carries a `text-primary*` utility — color it the accent */
+.oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
+  color: var(--accent) !important;
+}

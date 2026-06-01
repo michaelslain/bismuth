@@ -8,6 +8,7 @@ import { UniverSheetsFilterPreset } from "@univerjs/preset-sheets-filter";
 import UniverPresetSheetsFilterEnUS from "@univerjs/preset-sheets-filter/locales/en-US";
 import "@univerjs/preset-sheets-sort/lib/index.css";
 import "@univerjs/preset-sheets-filter/lib/index.css";
+import "./univer-theme.css"; // app-cohesive restyle of Univer's chrome (scoped to .oa-sheet)
 import type { WorkbookSnapshot } from "./snapshot";
 
 export interface SheetHandle {
@@ -35,6 +36,7 @@ export function mountSheet(opts: MountOptions): SheetHandle {
   // fresh child element and remove it on dispose. This makes remounting (external
   // reload) reliable while keeping the caller's container stable.
   const root = document.createElement("div");
+  root.className = "oa-sheet"; // scope hook for univer-theme.css
   root.style.width = "100%";
   root.style.height = "100%";
   opts.container.appendChild(root);
