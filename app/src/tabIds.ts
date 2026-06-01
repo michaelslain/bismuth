@@ -7,6 +7,8 @@ export const EMPTY_PANE = "::empty";
 export const FLASHCARDS_PREFIX = "::flashcards:";
 // Embedded terminal session: TERMINAL_PREFIX + "<uuid>".
 export const TERMINAL_PREFIX = "::term:";
+// Export options screen for a file: EXPORT_PREFIX + "<file path>".
+export const EXPORT_PREFIX = "::export:";
 
 export function isSentinel(content: string): boolean {
   return content.startsWith("::");
@@ -14,7 +16,7 @@ export function isSentinel(content: string): boolean {
 
 // Bare note name from a vault path ("a/b/c.md" -> "c").
 function noteName(path: string): string {
-  return path.split("/").pop()!.replace(/\.(md|draw)$/, "");
+  return path.split("/").pop()!.replace(/\.(md|draw|base|sheet)$/, "");
 }
 
 // Human label for a pane/tab content id — used by both the tab bar and pane headers.
@@ -24,6 +26,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
   if (content === EMPTY_PANE) return "(empty)";
+  if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
   if (content.endsWith(".sheet")) return content.split("/").pop()!.replace(/\.sheet$/, "");
@@ -35,6 +38,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 export function contentIcon(content: string): string | undefined {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
+  if (content.startsWith(EXPORT_PREFIX)) return "Download";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (content.endsWith(".sheet")) return "Table";
