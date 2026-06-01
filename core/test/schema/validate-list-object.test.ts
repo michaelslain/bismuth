@@ -57,11 +57,12 @@ describe("toolbar setting", () => {
     expect(Object.keys(t.item.fields).sort()).toEqual(["command", "commands", "icon", "tooltip"]);
   });
 
-  it("seeds the three default buttons", () => {
+  it("seeds the default buttons", () => {
     expect(toolbar().default).toEqual([
       { command: "new-note", icon: "FilePlus" },
       { command: "new-folder", icon: "FolderPlus" },
       { command: "terminal", icon: "SquareTerminal" },
+      { command: "search", icon: "Search" },
     ]);
   });
 

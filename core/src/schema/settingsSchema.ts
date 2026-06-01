@@ -119,6 +119,7 @@ export const SETTINGS_SCHEMA: Schema = {
       { command: "new-note", icon: "FilePlus" },
       { command: "new-folder", icon: "FolderPlus" },
       { command: "terminal", icon: "SquareTerminal" },
+      { command: "search", icon: "Search" },
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
   },
