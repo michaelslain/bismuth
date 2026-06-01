@@ -37,10 +37,13 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
       setError(e instanceof SheetParseError ? e.message : String(e));
       return;
     }
-    // Baseline for the no-op skip: an empty file has no prior snapshot to match.
-    lastWrittenText = raw.trim() === "" ? null : raw;
     const { mountSheet } = await import("./sheet/univerSheet");
     handle = mountSheet({ container, data, onChange: () => save() });
+    // Baseline = Univer's own serialization of the freshly-mounted workbook. The
+    // commands Univer fires during mount (selection/render) then compare equal, so
+    // an unedited sheet is never written to disk (and a deleted/empty file is not
+    // resurrected by merely opening it). Only a real edit diverges from this.
+    lastWrittenText = serializeSnapshot(handle.getSnapshot());
   });
 
   onCleanup(() => {
