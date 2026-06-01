@@ -36,8 +36,8 @@
 /* unselected — toggle member, off: muted, no outline */
 .btn--text.btn--unselected { color: var(--text-muted); }
 .btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
-/* selected — toggle member, on: neutral text on accent-filled background */
-.btn--text.btn--selected { color: var(--fg); background: var(--accent); }
+/* selected — toggle member, on: neutral text on a neutral (base-color) fill */
+.btn--text.btn--selected { color: var(--fg); background: var(--border); }
 /* danger tone — destructive actions */
 .btn--text.btn--danger { color: var(--danger); }
 .btn--text.btn--danger:hover:not(:disabled) { background: var(--hover-bg); }
@@ -57,8 +57,8 @@
 /* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
 .btn--icon.btn--unselected { opacity: 0.5; }
 .btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
-/* selected — toggle member, on: neutral icon on accent-filled background */
-.btn--icon.btn--selected { opacity: 1; background: var(--accent); color: var(--fg); }
+/* selected — toggle member, on: neutral icon on a neutral (base-color) fill */
+.btn--icon.btn--selected { opacity: 1; background: var(--border); color: var(--fg); }
 /* danger tone */
 .btn--icon.btn--danger { color: var(--danger); }
 
