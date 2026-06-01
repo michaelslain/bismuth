@@ -22,7 +22,7 @@ function sendStdin(ws: WebSocket, text: string) {
   ws.send(frame);
 }
 
-function collect(ws: WebSocket, predicate: (s: string) => boolean, timeoutMs = 2000): Promise<string> {
+function collect(ws: WebSocket, predicate: (s: string) => boolean, timeoutMs = 4000): Promise<string> {
   return new Promise((resolve, reject) => {
     let acc = "";
     const t = setTimeout(() => reject(new Error(`timeout, got: ${JSON.stringify(acc)}`)), timeoutMs);
@@ -36,12 +36,22 @@ function collect(ws: WebSocket, predicate: (s: string) => boolean, timeoutMs = 2
   });
 }
 
+// Wait until the PTY has emitted its initial prompt so the shell is ready to
+// accept input. Sending stdin before the shell is interactive races with shell
+// startup (especially under load) and gets eaten — the source of past flakes.
+async function waitForShellReady(ws: WebSocket, timeoutMs = 4000): Promise<void> {
+  await collect(ws, (s) => s.length > 0, timeoutMs);
+  // Brief settle so any in-flight startup writes (rc files, prompt theming) drain.
+  await new Promise((r) => setTimeout(r, 150));
+}
+
 test("GET /terminal upgrades to ws and echoes stdin via the PTY", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
   try {
     const ws = await openWs(base);
+    await waitForShellReady(ws);
     sendStdin(ws, "echo ws-hi-test\n");
     const got = await collect(ws, (s) => s.includes("ws-hi-test"));
     expect(got).toContain("ws-hi-test");
@@ -49,7 +59,7 @@ test("GET /terminal upgrades to ws and echoes stdin via the PTY", async () => {
   } finally {
     server.stop(true);
   }
-});
+}, 10000);
 
 test("GET /terminal rejects out-of-range cols/rows with 400", async () => {
   const { vault, memory } = await makeSampleVault();
@@ -73,6 +83,8 @@ test("0x01 resize frame propagates to the PTY", async () => {
   const base = `ws://localhost:${server.port}`;
   try {
     const ws = await openWs(base);
+    // Wait for the shell to be interactive before resizing / sending commands.
+    await waitForShellReady(ws);
     // Build resize frame: [0x01, cols_lo, cols_hi, rows_lo, rows_hi]
     const frame = new Uint8Array(5);
     frame[0] = 0x01;
@@ -80,6 +92,8 @@ test("0x01 resize frame propagates to the PTY", async () => {
     view.setUint16(0, 132, true); // cols
     view.setUint16(2, 50, true);  // rows
     ws.send(frame);
+    // Give the PTY a moment to apply the new winsize before querying it.
+    await new Promise((r) => setTimeout(r, 100));
     // Ask the shell to report COLUMNS/LINES.
     sendStdin(ws, "stty size\n");
     const got = await collect(ws, (s) => /\b50\s+132\b/.test(s));
@@ -88,7 +102,7 @@ test("0x01 resize frame propagates to the PTY", async () => {
   } finally {
     server.stop(true);
   }
-});
+}, 10000);
 
 test("closing the websocket kills the session after the grace period", async () => {
   const { vault, memory } = await makeSampleVault();
