@@ -10,6 +10,7 @@ import { ListView } from "./ListView";
 import { KanbanView } from "./KanbanView";
 import { MapView } from "./MapView";
 import { HeatmapView } from "./HeatmapView";
+import { BarView } from "./BarView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
@@ -206,6 +207,9 @@ export function BaseView(props: {
                         </Match>
                         <Match when={res().view.type === "heatmap"}>
                           <HeatmapView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "bar"}>
+                          <BarView result={res()} config={data()!.config} />
                         </Match>
                       </Switch>
                     )}
