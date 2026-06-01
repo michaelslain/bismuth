@@ -1169,7 +1169,7 @@ export class WebGLRenderer {
     return new THREE.Color(this.palette[hashInt(key) % this.palette.length]);
   }
 
-  /** Determine node color from kind (notes by folder, tags/memory/agents by label, self is lavender). */
+  /** Determine node color from kind (notes by folder, tags/memory/agents by label). */
   private colorFor(n: N3): THREE.Color {
     // Color by Louvain community when the backend stamped one (the chosen cluster driver). Falls back
     // to the per-kind scheme for sub-views/agents where community is absent.

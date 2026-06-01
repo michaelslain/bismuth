@@ -4,22 +4,22 @@ import { diffLeaves } from "./settingsDiff";
 
 describe("diffLeaves", () => {
   it("returns nothing when objects are identical", () => {
-    const o = { appearance: { theme: "dark", accent: "#fff" }, graph: { spin: true } };
+    const o = { appearance: { theme: "oxide-duotone", icon: "lattice" }, graph: { spin: true } };
     expect(diffLeaves(o, structuredClone(o))).toEqual([]);
   });
 
   it("emits one entry per changed leaf, with its full path", () => {
-    const prev = { appearance: { theme: "dark", accent: "#fff" }, graph: { spin: true } };
-    const next = { appearance: { theme: "light", accent: "#fff" }, graph: { spin: false } };
+    const prev = { appearance: { theme: "oxide-duotone", icon: "lattice" }, graph: { spin: true } };
+    const next = { appearance: { theme: "rose-gold", icon: "lattice" }, graph: { spin: false } };
     expect(diffLeaves(prev, next)).toEqual([
-      { path: ["appearance", "theme"], value: "light" },
+      { path: ["appearance", "theme"], value: "rose-gold" },
       { path: ["graph", "spin"], value: false },
     ]);
   });
 
   it("treats a missing prev branch as all-new leaves", () => {
-    const prev = { appearance: { theme: "dark" } };
-    const next = { appearance: { theme: "dark" }, graph: { spin: true, nodeSize: 6 } };
+    const prev = { appearance: { theme: "oxide-duotone" } };
+    const next = { appearance: { theme: "oxide-duotone" }, graph: { spin: true, nodeSize: 6 } };
     expect(diffLeaves(prev, next)).toEqual([
       { path: ["graph", "spin"], value: true },
       { path: ["graph", "nodeSize"], value: 6 },
@@ -33,15 +33,15 @@ describe("diffLeaves", () => {
   });
 
   it("ignores an empty nested object on both sides (e.g. properties registry)", () => {
-    const prev = { properties: {}, appearance: { theme: "dark" } };
-    const next = { properties: {}, appearance: { theme: "dark" } };
+    const prev = { properties: {}, appearance: { theme: "oxide-duotone" } };
+    const next = { properties: {}, appearance: { theme: "oxide-duotone" } };
     expect(diffLeaves(prev, next)).toEqual([]);
   });
 
   it("ignores object key reordering (does not treat as change)", () => {
     // Objects with same keys in different order should not trigger a change
-    const prev = { appearance: { accent: "#fff", theme: "dark" } };
-    const next = { appearance: { theme: "dark", accent: "#fff" } };
+    const prev = { appearance: { icon: "lattice", theme: "oxide-duotone" } };
+    const next = { appearance: { theme: "oxide-duotone", icon: "lattice" } };
     expect(diffLeaves(prev, next)).toEqual([]);
   });
 
@@ -53,9 +53,9 @@ describe("diffLeaves", () => {
   });
 
   it("detects changes when only one nested object has reordered keys", () => {
-    const prev = { appearance: { theme: "dark", accent: "#fff" } };
-    const next = { appearance: { theme: "light", accent: "#fff" } };
-    expect(diffLeaves(prev, next)).toEqual([{ path: ["appearance", "theme"], value: "light" }]);
+    const prev = { appearance: { theme: "oxide-duotone", icon: "lattice" } };
+    const next = { appearance: { theme: "rose-gold", icon: "lattice" } };
+    expect(diffLeaves(prev, next)).toEqual([{ path: ["appearance", "theme"], value: "rose-gold" }]);
   });
 
   it("handles arrays with different element order (treats as change)", () => {
