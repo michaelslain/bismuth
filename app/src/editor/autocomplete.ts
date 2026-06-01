@@ -1,5 +1,6 @@
 // app/src/editor/autocomplete.ts
 import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { completionDisplayConfig } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
@@ -223,6 +224,7 @@ export function vaultCompletion(opts: {
   inFrontmatter: (ctx: CompletionContext) => boolean;
 }): Extension {
   return autocompletion({
+    ...completionDisplayConfig,
     override: [
       // frontmatter-position sources (gated by inFrontmatter)
       propertyKeySource(opts.getSchema, opts.inFrontmatter),

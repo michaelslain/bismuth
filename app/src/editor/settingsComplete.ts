@@ -6,6 +6,7 @@
 // so this is the discovery mechanism.
 import { autocompletion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
+import { completionDisplayConfig } from "./completionDisplay";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
 import { commandLabel } from "../../../core/src/commands";
 
@@ -139,5 +140,5 @@ export function settingsCompletionSource(
 }
 
 export function settingsCompletion(getSchema: () => Schema, getIconNames: () => string[]): Extension {
-  return autocompletion({ override: [settingsCompletionSource(getSchema, getIconNames)] });
+  return autocompletion({ ...completionDisplayConfig, override: [settingsCompletionSource(getSchema, getIconNames)] });
 }
