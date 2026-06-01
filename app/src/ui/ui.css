@@ -61,6 +61,19 @@
 /* ── SegmentedToggle ─────────────────────────────────────────────────────── */
 .segmented { display: inline-flex; align-items: center; gap: 2px; }
 
+/* ── SearchBar ───────────────────────────────────────────────────────────── */
+.search-bar { display: flex; align-items: center; gap: 6px; }
+.search-bar-lead { opacity: 0.6; flex: none; }
+.search-bar-input {
+  flex: 1;
+  font: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+}
+.search-bar-input::placeholder { color: var(--text-muted); }
+
 /* ── Modal ───────────────────────────────────────────────────────────────── */
 .ui-overlay {
   position: fixed;
