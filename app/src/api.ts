@@ -86,6 +86,7 @@ export const api = {
   restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
   create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
   templates: () => getJson<Array<{ name: string; path: string }>>("/templates"),
+  dailyNote: (id: string) => postJson<{ path: string; created: boolean }>("/daily-note", { id }),
   tasks: () => getJson<Task[]>("/tasks"),
   toggleTask: (path: string, line: number) => postJson<unknown>("/tasks/toggle", { path, line }),
 
