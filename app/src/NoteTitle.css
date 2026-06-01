@@ -1,0 +1,39 @@
+/* app/src/NoteTitle.css — inline note title (a `# <title>` heading). */
+.note-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4ch;
+  /* Align with CodeMirror's content padding (".cm-content { padding: 12px 16px }")
+     so the title sits over the first body line, not flush to the pane edge. */
+  padding: 16px 16px 4px;
+  font-family: var(--editor-font);
+}
+
+/* Fixed heading glyph — dimmed like a markdown prefix, never editable. */
+.note-title-hash {
+  color: color-mix(in srgb, var(--accent) 70%, transparent);
+  font-size: 1.6em;
+  font-weight: 700;
+  line-height: 1.2;
+  user-select: none;
+  flex: 0 0 auto;
+}
+
+/* Editable title text. Borderless until focused so it reads as a heading. */
+.note-title-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 1.6em;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.note-title-input:focus {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
