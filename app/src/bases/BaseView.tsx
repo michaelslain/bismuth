@@ -9,6 +9,7 @@ import { CardsView } from "./CardsView";
 import { ListView } from "./ListView";
 import { KanbanView } from "./KanbanView";
 import { MapView } from "./MapView";
+import { HeatmapView } from "./HeatmapView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
@@ -202,6 +203,9 @@ export function BaseView(props: {
                         </Match>
                         <Match when={res().view.type === "map"}>
                           <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />
+                        </Match>
+                        <Match when={res().view.type === "heatmap"}>
+                          <HeatmapView result={res()} config={data()!.config} />
                         </Match>
                       </Switch>
                     )}
