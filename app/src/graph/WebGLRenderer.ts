@@ -164,6 +164,18 @@ function easeInOutCubic(t: number): number {
   return 1 - (s * s * s) / 2;
 }
 
+const TWO_PI = Math.PI * 2;
+/**
+ * Reduce an angle to its shortest signed equivalent in (-π, π]. The visual
+ * orientation is unchanged (angles differing by a multiple of 2π look identical),
+ * but tweening *from* this value lands on the nearest revolution — so the graph
+ * untilts the short way instead of unwinding every accumulated full turn.
+ */
+function shortestAngle(a: number): number {
+  const m = ((a % TWO_PI) + TWO_PI) % TWO_PI; // [0, 2π)
+  return m > Math.PI ? m - TWO_PI : m;
+}
+
 /**
  * Eigen-decomposition of a symmetric 3x3 matrix via cyclic Jacobi rotations. Returns the three
  * eigenvalues with their (unit) eigenvectors, ascending by eigenvalue. Used to find the best-fit
@@ -282,6 +294,10 @@ export class WebGLRenderer {
   private onClick: (id: string) => void = () => {};
   private onHover: (node: HoverNode | null) => void = () => {};
   private lastSig = "";
+  // A graph update (new vault data) that arrived while a 2D<->3D tween was mid-flight. Applying it
+  // then would rebuild nodes + reheat the sim and scatter the in-flight morph, so we stash it here
+  // and replay it from finishTween once the glide has landed.
+  private pendingGraph: GraphData | null = null;
 
   // user settings — spin/size read live each frame; palette/physics applied via setConfig
   private cfg: GraphConfig = { ...DEFAULT_CONFIG };
@@ -499,6 +515,8 @@ export class WebGLRenderer {
     if (this.frame++ % CROWD_RECOMPUTE_FRAMES === 0) this.refreshCrowdingIfMoved();
     this.stepHighlight(); // ease hover highlight toward its target
     this.updateNearCull(); // dissolve nodes that have come too close to the camera (3D)
+    // Always runs — including during a 2D<->3D tween, where it keeps the camera aimed at the
+    // (lerping) target. The tween disables controls + flushes inertia so this no longer jolts.
     this.controls.update();
     this.updateRotationVelocity(); // track camera rotation speed for click gating
     this.updateFog(); // depth fade tracks the (now-current) camera distance
@@ -1354,8 +1372,23 @@ export class WebGLRenderer {
     const fov = (this.camera.fov * Math.PI) / 180;
     const dist = (r / Math.sin(fov / 2)) * 1.25;
 
-    this.controls.enableRotate = false;  // lock orbit during the move
+    // stepTween hard-sets the camera position/target each frame, but controls.update() still
+    // runs (in animate) to keep the camera AIMED at the lerping target. We just have to stop
+    // that update() from re-applying orbit inertia, which is what jolted the graph sideways:
+    //  • enabled=false makes OrbitControls ignore LIVE input, so trackpad/scroll momentum
+    //    (which keeps firing for ~1s after a gesture) can't queue new inertia mid-glide.
+    //  • the flush below drops inertia ALREADY queued from a fling just before the switch.
+    // With no inertia left, update() only re-aims the camera — no sideways snap.
+    this.controls.enableRotate = false;
     this.controls.enableDamping = false; // we hard-set the camera each frame
+    this.controls.enabled = false;       // ignore live orbit/zoom/pan input during the glide
+    // Consume + zero any queued inertia (one update with damping off), without moving the
+    // camera (save/restore the pose around it).
+    const preFlushPos = this.camera.position.clone();
+    const preFlushTgt = this.controls.target.clone();
+    this.controls.update();
+    this.camera.position.copy(preFlushPos);
+    this.controls.target.copy(preFlushTgt);
     this.tween = {
       start: performance.now(),
       fromPos,
@@ -1363,7 +1396,12 @@ export class WebGLRenderer {
       morph,
       camFrom: { pos: this.camera.position.clone(), tgt: this.controls.target.clone() },
       camTo: { pos: new THREE.Vector3(cx, cy, cz + dist), tgt: new THREE.Vector3(cx, cy, cz) },
-      rotFrom: this.group.rotation.y,
+      // When flattening, the idle 3D spin has piled up rotation.y across many full
+      // turns. Tweening that raw value down to 0 would visibly spin the whole graph
+      // around several times before it lands flat. Normalize the start angle into
+      // (-π, π] (same visual orientation, no jump) so we untilt the short way — at
+      // most a half-turn — to reach the locked 2D birdseye (rotation.y = 0).
+      rotFrom: goingFlat ? shortestAngle(this.group.rotation.y) : this.group.rotation.y,
       rotTo: goingFlat ? 0 : this.group.rotation.y, // untilt spin when flattening
     };
   }
@@ -1407,6 +1445,10 @@ export class WebGLRenderer {
       node.vy = 0;
       node.vz = 0;
     }
+    // Hand the camera back to OrbitControls: re-enable live input and restore damping. No
+    // inertia accumulated during the glide (input was disabled and the start flush cleared
+    // what was queued), so the first live update() lands clean — no snap.
+    this.controls.enabled = true;
     this.controls.enableDamping = true;
     this.applyControlsForMode(this.viewMode);
     this.userControlled = false;
@@ -1418,6 +1460,13 @@ export class WebGLRenderer {
     } else {
       // Legacy path: re-spread in the new dimensionality (2D pins z each tick).
       this.sim?.alpha(0.5).restart();
+    }
+
+    // Apply any graph update that arrived mid-glide (deferred in render() to avoid scattering it).
+    if (this.pendingGraph) {
+      const g = this.pendingGraph;
+      this.pendingGraph = null;
+      this.render(g);
     }
   }
 
@@ -1526,6 +1575,10 @@ export class WebGLRenderer {
   render(g: GraphData) {
     const sig = graphSig(g.nodes, g.edges.length);
     if (sig === this.lastSig) return;
+    // A 2D<->3D glide owns node positions right now. Rebuilding the node array, refitting the
+    // camera, and reheating the force sim here would scatter the in-flight morph for a frame
+    // (the "instant scatter"). Defer this update; finishTween replays it once the glide lands.
+    if (this.tween) { this.pendingGraph = g; return; }
     this.lastSig = sig;
     this.userControlled = false; // new graph/mode → re-enable auto-fit
 
