@@ -164,20 +164,31 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
   return out;
 }
 
+/** A serialized toolbar button: a single `command` OR a `commands` list, plus icon. */
+type ToolbarItem = { command?: string; commands?: string[]; icon: string; tooltip?: string };
+
 /** Pull a clean toolbar list out of parsed settings data. Each item must be an
- *  object with non-empty string `command` and `icon`; malformed items are dropped.
- *  An explicit array (even empty) is honored; a missing/non-array value falls back
- *  to the seeded defaults. */
-function readToolbarFrom(data: Record<string, unknown>): Array<{ command: string; icon: string; tooltip?: string }> {
+ *  object with a non-empty string `icon` and either a non-empty string `command`
+ *  or a non-empty `commands` list of non-empty strings (the latter wins when both
+ *  are present, mirroring the runtime). Malformed items are dropped. An explicit
+ *  array (even empty) is honored; a missing/non-array value falls back to the
+ *  seeded defaults. */
+function readToolbarFrom(data: Record<string, unknown>): ToolbarItem[] {
   const raw = data.toolbar;
-  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).toolbar) as Array<{ command: string; icon: string; tooltip?: string }>;
-  const out: Array<{ command: string; icon: string; tooltip?: string }> = [];
+  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).toolbar) as ToolbarItem[];
+  const out: ToolbarItem[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const o = item as Record<string, unknown>;
-    if (typeof o.command !== "string" || o.command.length === 0) continue;
     if (typeof o.icon !== "string" || o.icon.length === 0) continue;
-    const entry: { command: string; icon: string; tooltip?: string } = { command: o.command, icon: o.icon };
+    const commands = Array.isArray(o.commands)
+      ? o.commands.filter((c): c is string => typeof c === "string" && c.length > 0)
+      : [];
+    const hasCommand = typeof o.command === "string" && o.command.length > 0;
+    if (commands.length === 0 && !hasCommand) continue;
+    const entry: ToolbarItem = commands.length > 0
+      ? { commands, icon: o.icon }
+      : { command: o.command as string, icon: o.icon };
     if (typeof o.tooltip === "string" && o.tooltip.length > 0) entry.tooltip = o.tooltip;
     out.push(entry);
   }

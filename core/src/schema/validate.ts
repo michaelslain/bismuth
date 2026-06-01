@@ -228,6 +228,26 @@ export function validateDocument(
         });
       }
     }
+
+    // Toolbar items may carry either `command` (single) or `commands` (list); a
+    // non-empty `commands` wins at runtime. Setting both is a no-op-prone mistake,
+    // so warn (the generic field validator can't see across sibling fields).
+    if (Array.isArray(obj.toolbar)) {
+      obj.toolbar.forEach((item, i) => {
+        if (
+          item && typeof item === "object" &&
+          "command" in item &&
+          Array.isArray((item as { commands?: unknown }).commands) &&
+          (item as { commands: unknown[] }).commands.length > 0
+        ) {
+          out.push({
+            path: ["toolbar", String(i)],
+            severity: "warning",
+            message: "toolbar item sets both `command` and `commands`; `command` is ignored when `commands` is non-empty.",
+          });
+        }
+      });
+    }
   }
 
   return out;

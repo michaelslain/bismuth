@@ -1,7 +1,7 @@
 // core/test/schema/validate-list-object.test.ts
 import { test, expect, describe, it } from "bun:test";
 import { SETTINGS_SCHEMA } from "../../src/schema/settingsSchema";
-import { validateValue } from "../../src/schema/validate";
+import { validateValue, validateDocument } from "../../src/schema/validate";
 import type { PropertyType } from "../../src/schema/types";
 
 test("list with no item type accepts any sequence", () => {
@@ -50,11 +50,11 @@ test("object passes when all nested fields are valid", () => {
 describe("toolbar setting", () => {
   const toolbar = () => SETTINGS_SCHEMA.toolbar;
 
-  it("is a list of objects with command/icon/tooltip fields", () => {
+  it("is a list of objects with command/commands/icon/tooltip fields", () => {
     const t = toolbar().type as any;
     expect(t.kind).toBe("list");
     expect(t.item.kind).toBe("object");
-    expect(Object.keys(t.item.fields).sort()).toEqual(["command", "icon", "tooltip"]);
+    expect(Object.keys(t.item.fields).sort()).toEqual(["command", "commands", "icon", "tooltip"]);
   });
 
   it("seeds the three default buttons", () => {
@@ -71,5 +71,24 @@ describe("toolbar setting", () => {
     const bad = validateValue(t, [{ command: "no-such-command", icon: "X" }]);
     expect(bad).not.toBeNull();
     expect(bad!.severity).toBe("error");
+  });
+
+  it("accepts a multi-command button and rejects an unknown id inside `commands`", () => {
+    const t = toolbar().type;
+    expect(validateValue(t, [{ commands: ["new-note", "terminal"], icon: "Rocket" }])).toBeNull();
+    const bad = validateValue(t, [{ commands: ["new-note", "no-such-command"], icon: "X" }]);
+    expect(bad).not.toBeNull();
+    expect(bad!.severity).toBe("error");
+  });
+
+  it("warns (does not error) when a toolbar item sets both `command` and `commands`", () => {
+    const diags = validateDocument(
+      { toolbar: [{ command: "new-note", commands: ["terminal"], icon: "X" }] },
+      SETTINGS_SCHEMA,
+      { mode: "settings" },
+    );
+    const conflict = diags.find((d) => d.severity === "warning" && /command/.test(d.message) && /commands/.test(d.message));
+    expect(conflict, "expected a both-present warning").toBeDefined();
+    expect(diags.some((d) => d.severity === "error")).toBe(false);
   });
 });

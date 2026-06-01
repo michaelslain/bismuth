@@ -111,9 +111,10 @@ export const SETTINGS_SCHEMA: Schema = {
   // Seeded with the three built-ins so a fresh install is unchanged.
   toolbar: {
     type: { kind: "list", item: { kind: "object", fields: {
-      command: { type: enumType(COMMAND_IDS), doc: "Which command-palette command this button runs." },
+      command: { type: enumType(COMMAND_IDS), doc: "Which command-palette command this button runs. For several commands on one button, use `commands` instead." },
+      commands: { type: { kind: "list", item: enumType(COMMAND_IDS) }, doc: "Run several commands in order on one click. Takes precedence over `command` when non-empty." },
       icon: { type: "icon", doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
-      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
+      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label, or the chained labels)." },
     } } },
     default: [
       { command: "new-note", icon: "FilePlus" },

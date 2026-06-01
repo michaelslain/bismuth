@@ -75,6 +75,34 @@ function scopeAt(root: Schema, ctx: CompletionContext, lineNumber: number, inden
   return { schema: root, sectionKey: null };
 }
 
+/**
+ * For a bare list-item line (`- value`) at `itemIndent`, find the enclosing
+ * `key:`-introduced list and return its ITEM type — so a scalar list of enums
+ * (e.g. toolbar `commands:`) can complete its members. null when the enclosing
+ * key isn't a list, or none is found. The header may itself be `- key:` (a list
+ * item that introduces a nested list), so the dash is optional in the match.
+ */
+function enclosingListItemType(
+  root: Schema,
+  ctx: CompletionContext,
+  lineNumber: number,
+  itemIndent: number,
+): PropertyType | null {
+  for (let n = lineNumber - 1; n >= 1; n--) {
+    const text = ctx.state.doc.line(n).text;
+    const lineIndent = (text.match(/^\s*/)?.[0] ?? "").length;
+    const header = text.match(/^\s*-?\s*([\w-]+):\s*$/);
+    if (header && lineIndent < itemIndent) {
+      const { schema } = scopeAt(root, ctx, n, lineIndent);
+      const t = schema[header[1]]?.type;
+      if (t && typeof t === "object" && t.kind === "list" && t.item) return t.item;
+      return null;
+    }
+    if (text.trim() && lineIndent === 0 && !header) break;
+  }
+  return null;
+}
+
 export function settingsCompletionSource(
   getSchema: () => Schema,
   getIconNames: () => string[],
@@ -115,6 +143,28 @@ export function settingsCompletionSource(
         });
       if (!options.length) return null;
       return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
+    }
+
+    // BARE LIST-ITEM position: "- <partial>" with no colon — a scalar inside a
+    // `key:`-introduced list. If that list's item type is an enum (e.g. toolbar
+    // `commands:`), offer its members; otherwise fall through to the KEY branch
+    // (object-list items like `- command:` complete their field keys there).
+    const listItem = before.match(/^(\s*)-\s+([\w-]*)$/);
+    if (listItem) {
+      const itemType = enclosingListItemType(root, ctx, line.number, listItem[1].length);
+      if (itemType && typeof itemType === "object" && itemType.kind === "enum") {
+        const typed = listItem[2];
+        if (!ctx.explicit && typed.length === 0) return null;
+        const p = typed.toLowerCase();
+        const options = itemType.values
+          .filter((v) => v.toLowerCase().startsWith(p))
+          .map((label) => {
+            const detail = commandLabel(label); // non-undefined only for command ids
+            return detail ? { label, type: "enum", detail } : { label, type: "enum" };
+          });
+        if (!options.length) return null;
+        return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
+      }
     }
 
     // KEY position: an (optionally `- `-prefixed) partial word, no colon yet.
