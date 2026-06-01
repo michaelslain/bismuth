@@ -8,9 +8,35 @@ import { autocompletion, type CompletionContext, type CompletionResult, type Com
 import type { Extension } from "@codemirror/state";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
 import { commandLabel } from "../../../core/src/commands";
+import { TEMPLATE_TOKENS } from "../../../core/src/templates";
+import { matchTemplateTokenPrefix } from "./templateToken";
 
 // Property types a user can assign in the `properties:` registry section.
 const PROPERTY_TYPES = ["string", "number", "boolean", "date", "datetime", "file", "list"];
+
+/** Extract the document's `dailyNotes:` ids + labels (for completing daily-note:<id>
+ *  references in the toolbar `command` value). A tolerant line-scan of the dailyNotes
+ *  block rather than a whole-doc YAML parse — so a half-typed line elsewhere (e.g. the
+ *  `command:` value being edited right now) can't blank out the suggestions. */
+export function dailyNoteIdsFromDoc(doc: string): { id: string; label: string }[] {
+  const lines = doc.split("\n");
+  let i = lines.findIndex((l) => /^dailyNotes:\s*$/.test(l));
+  if (i === -1) return [];
+  const out: { id: string; label: string }[] = [];
+  let cur: { id: string; label: string } | null = null;
+  const unquote = (s: string) => s.trim().replace(/^["']|["']$/g, "");
+  for (i = i + 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim() === "") continue;
+    if (/^\S/.test(line)) break;                       // dedent to a top-level key → block ends
+    if (/^\s*-/.test(line)) { if (cur) out.push(cur); cur = { id: "", label: "" }; } // new list item
+    if (!cur) continue;
+    const m = line.match(/(?:^|\s)(id|label):\s*(.*)$/);
+    if (m) { if (m[1] === "id") cur.id = unquote(m[2]); else cur.label = unquote(m[2]); }
+  }
+  if (cur) out.push(cur);
+  return out.filter((x) => x.id.length > 0);
+}
 
 function typeLabel(type: PropertyType): string {
   if (typeof type === "string") return type;
@@ -78,12 +104,31 @@ function scopeAt(root: Schema, ctx: CompletionContext, lineNumber: number, inden
 export function settingsCompletionSource(
   getSchema: () => Schema,
   getIconNames: () => string[],
+  getTemplatePaths: () => string[],
 ): CompletionSource {
   return (ctx: CompletionContext): CompletionResult | null => {
     const root = getSchema();
     const line = ctx.state.doc.lineAt(ctx.pos);
     const before = line.text.slice(0, ctx.pos - line.from);
     const indent = (before.match(/^\s*/)?.[0] ?? "").length;
+
+    // Template-token completion inside a dailyNotes `fileName:` value (e.g. fileName: "{{da").
+    // The generic value regex below only captures a trailing non-space token, so it can't
+    // see "{{" inside a quoted multi-word filename — handle it explicitly here.
+    const tokenMatch = matchTemplateTokenPrefix(before);
+    if (tokenMatch) {
+      const keyM = before.match(/^\s*-?\s*([\w-]+):/);
+      if (keyM) {
+        const { sectionKey } = scopeAt(root, ctx, line.number, indent);
+        if (sectionKey === "dailyNotes" && keyM[1] === "fileName") {
+          const q = tokenMatch.query.toLowerCase();
+          const options = TEMPLATE_TOKENS
+            .filter((t) => t.token.toLowerCase().includes(q))
+            .map((t) => ({ label: t.token, type: "enum", info: t.doc }));
+          if (options.length) return { from: line.from + tokenMatch.from, options, validFor: /^\{\{[\w+:-]*$/ };
+        }
+      }
+    }
 
     // VALUE position: "key: <partial>" or "- key: <partial>" (list item).
     const val = before.match(/^\s*-?\s*([\w-]+):\s*(\S*)$/);
@@ -104,17 +149,39 @@ export function settingsCompletionSource(
         return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
       }
 
-      const raw = sectionKey === "properties" ? PROPERTY_TYPES : valueOptions(fieldType);
+      // dailyNotes `template:` value → vault template file paths.
+      if (sectionKey === "dailyNotes" && key === "template") {
+        const tp = typed.toLowerCase();
+        const options = getTemplatePaths()
+          .filter((path) => path.toLowerCase().includes(tp))
+          .slice(0, 50)
+          .map((label) => ({ label, type: "enum" }));
+        if (!options.length) return null;
+        return { from: ctx.pos - typed.length, options, validFor: /^[^\n]*$/ };
+      }
+
+      // Toolbar `command:` enum carries allowPrefixes ["daily-note:"] — also offer the
+      // document's configured daily-note ids (so daily-note:<id> autocompletes).
+      const isCommand =
+        typeof fieldType === "object" && fieldType.kind === "enum" &&
+        (fieldType as { allowPrefixes?: string[] }).allowPrefixes?.includes("daily-note:");
+      const dailyIds = isCommand ? dailyNoteIdsFromDoc(ctx.state.doc.toString()) : [];
+      const dailyLabels = new Map(dailyIds.map((d) => [`daily-note:${d.id}`, d.label || d.id] as const));
+
+      const raw = sectionKey === "properties"
+        ? PROPERTY_TYPES
+        : [...valueOptions(fieldType), ...dailyIds.map((d) => `daily-note:${d.id}`)];
       if (!raw.length) return null;
       const p = typed.toLowerCase();
       const options = raw
         .filter((v) => v.toLowerCase().startsWith(p))
         .map((label) => {
-          const detail = commandLabel(label); // non-undefined only for command ids
+          const detail = dailyLabels.get(label) ?? commandLabel(label); // non-undefined for command ids / daily notes
           return detail ? { label, type: "enum", detail } : { label, type: "enum" };
         });
       if (!options.length) return null;
-      return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
+      // Widen validFor so the popup survives typing the ":" in daily-note:<id>.
+      return { from: ctx.pos - typed.length, options, validFor: /^[\w:-]*$/ };
     }
 
     // KEY position: an (optionally `- `-prefixed) partial word, no colon yet.
@@ -138,6 +205,6 @@ export function settingsCompletionSource(
   };
 }
 
-export function settingsCompletion(getSchema: () => Schema, getIconNames: () => string[]): Extension {
-  return autocompletion({ override: [settingsCompletionSource(getSchema, getIconNames)] });
+export function settingsCompletion(getSchema: () => Schema, getIconNames: () => string[], getTemplatePaths: () => string[]): Extension {
+  return autocompletion({ override: [settingsCompletionSource(getSchema, getIconNames, getTemplatePaths)] });
 }

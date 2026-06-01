@@ -1,6 +1,6 @@
 // app/src/editor/settingsComplete.test.ts
 import { describe, expect, it } from "bun:test";
-import { rangeLabel, docInfo } from "./settingsComplete";
+import { rangeLabel, docInfo, dailyNoteIdsFromDoc } from "./settingsComplete";
 import type { SchemaEntry } from "../../../core/src/schema/types";
 
 describe("rangeLabel", () => {
@@ -38,7 +38,11 @@ import { SETTINGS_SCHEMA } from "../../../core/src/schema/settingsSchema";
 function complete(doc: string, explicit = true) {
   const state = EditorState.create({ doc });
   const ctx = new CompletionContext(state, doc.length, explicit);
-  return settingsCompletionSource(() => SETTINGS_SCHEMA, () => ["FilePlus", "FolderPlus", "Bug", "Settings"])(ctx);
+  return settingsCompletionSource(
+    () => SETTINGS_SCHEMA,
+    () => ["FilePlus", "FolderPlus", "Bug", "Settings"],
+    () => ["Templates/Journal.md", "Templates/Meeting.md"],
+  )(ctx);
 }
 
 describe("settings completion inside a toolbar list item", () => {
@@ -65,5 +69,51 @@ describe("settings completion inside a toolbar list item", () => {
     const res = complete("toolbar:\n  - comm");
     const labels = res?.options.map((o) => o.label) ?? [];
     expect(labels).toContain("command");
+  });
+});
+
+describe("dailyNoteIdsFromDoc", () => {
+  it("extracts ids + labels from a dailyNotes block", () => {
+    const doc = ["dailyNotes:", "  - id: journal", "    label: Journal", "  - id: work", "toolbar: []"].join("\n");
+    expect(dailyNoteIdsFromDoc(doc)).toEqual([
+      { id: "journal", label: "Journal" },
+      { id: "work", label: "" },
+    ]);
+  });
+  it("returns [] for absent or malformed YAML", () => {
+    expect(dailyNoteIdsFromDoc("toolbar: []")).toEqual([]);
+    expect(dailyNoteIdsFromDoc("dailyNotes: : :")).toEqual([]);
+  });
+});
+
+describe("daily-note settings completion", () => {
+  // A document with one configured daily note, so the command value can reference it.
+  const withJournal = (tail: string) =>
+    ["dailyNotes:", "  - id: journal", "    label: Journal", "    fileName: \"{{date}} journal\"", tail].join("\n");
+
+  it("offers daily-note:<id> after a toolbar `- command:` value", () => {
+    const res = complete(withJournal("toolbar:\n  - command: daily-note:"));
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("daily-note:journal");
+    const opt = res?.options.find((o) => o.label === "daily-note:journal");
+    expect(opt?.detail).toBe("Journal"); // the config's label
+  });
+
+  it("still offers static catalog command ids alongside daily-note ids", () => {
+    const res = complete(withJournal("toolbar:\n  - command: term"));
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("terminal");
+  });
+
+  it("offers {{ template tokens inside a dailyNotes fileName value", () => {
+    const res = complete("dailyNotes:\n  - id: journal\n    fileName: \"{{da");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("{{date}}");
+  });
+
+  it("offers template paths for a dailyNotes template value", () => {
+    const res = complete("dailyNotes:\n  - id: journal\n    fileName: x\n    template: Templ");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("Templates/Journal.md");
   });
 });
