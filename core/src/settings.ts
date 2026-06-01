@@ -9,6 +9,7 @@ import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
 import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
 import type { Schema, SchemaEntry } from "./schema/types";
+import type { DailyNoteConfig } from "./dailyNote";
 
 export const SETTINGS_FILE = "settings.yaml";
 
@@ -146,6 +147,10 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
       (out as Record<string, unknown>).toolbar = readToolbarFrom(data);
       continue;
     }
+    if (section === "dailyNotes") {
+      (out as Record<string, unknown>).dailyNotes = readDailyNotesFrom(data);
+      continue;
+    }
     const stored = data[section];
     if (!stored || typeof stored !== "object") continue;
     const target = out[section];
@@ -184,6 +189,33 @@ function readToolbarFrom(data: Record<string, unknown>): Array<{ command: string
   return out;
 }
 
+/** Pull a clean dailyNotes list out of parsed settings data. Each item needs a
+ *  non-empty string `id` and `fileName`; other fields default (label→id,
+ *  icon→CalendarDays, folder/template→""). Malformed items are dropped; an explicit
+ *  empty array is honored; a missing/non-array value falls back to the seeded default.
+ *  Mirrors readToolbarFrom. */
+function readDailyNotesFrom(data: Record<string, unknown>): DailyNoteConfig[] {
+  const raw = data.dailyNotes;
+  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).dailyNotes) as DailyNoteConfig[];
+  const out: DailyNoteConfig[] = [];
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.id !== "string" || o.id.length === 0) continue;
+    if (typeof o.fileName !== "string" || o.fileName.length === 0) continue;
+    out.push({
+      id: o.id,
+      label: str(o.label) || o.id,
+      icon: str(o.icon) || "CalendarDays",
+      folder: str(o.folder),
+      fileName: o.fileName,
+      template: str(o.template),
+    });
+  }
+  return out;
+}
+
 /** Pull a clean `{folderPath: iconName}` string map out of parsed settings data. */
 function readFolderIconsFrom(data: Record<string, unknown>): Record<string, string> {
   const raw = data.folderIcons;
@@ -201,6 +233,12 @@ export async function readFolderIcons(vault: string): Promise<Record<string, str
   const res = await readSettings(vault);
   if (!res) return {};
   return readFolderIconsFrom(res.data);
+}
+
+/** Read the dailyNotes config from settings.yaml. Absent file → seeded default. */
+export async function readDailyNotes(vault: string): Promise<DailyNoteConfig[]> {
+  const res = await readSettings(vault);
+  return readDailyNotesFrom(res?.data ?? {});
 }
 
 /**
