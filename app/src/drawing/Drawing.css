@@ -7,12 +7,15 @@
 .draw-group { display: flex; gap: 6px; align-items: center; padding-right: 12px; border-right: 1px solid var(--border); }
 .draw-group:last-child { border-right: none; }
 .draw-label { font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; }
-.draw-btn { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; font-family: inherit; text-transform: capitalize; }
-.draw-btn:hover { border-color: var(--accent); }
-.draw-btn.active { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+/* Flat, borderless segments matching the app's graph-mode toggles, theme-aware. */
+.draw-seg.btn { border: none; background: transparent; color: var(--text-muted); text-transform: capitalize; }
+.draw-seg.btn:hover:not(:disabled) { color: var(--fg); background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.draw-seg.btn.is-active { color: var(--fg); background: color-mix(in srgb, var(--fg) 14%, transparent); }
+/* Icon segments (size dots / smoothness lines) — tighter, icon centered. */
+.draw-iconseg.btn { padding: 4px 7px; }
+.draw-iconseg.btn svg { display: block; }
 .draw-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--fg) 20%, transparent); cursor: pointer; padding: 0; }
 .draw-swatch.active { outline: 2px solid var(--fg); outline-offset: 2px; }
-.draw-toolbar input[type=range] { accent-color: var(--accent); width: 100px; }
 
 .draw-app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .draw-stage { flex: 1; overflow: auto; padding: 24px 0; display: flex; flex-direction: column; align-items: center; gap: 20px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); }

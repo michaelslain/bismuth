@@ -9,8 +9,9 @@ import { DrawingCanvas, type ToolState } from "./DrawingCanvas";
 import { Toolbar } from "./Toolbar";
 import "./Drawing.css";
 
+// size + smoothing default to one of the 5 discrete toolbar levels so a button reads as active.
 const DEFAULT_TOOLS: ToolState = {
-  tool: "pen", color: "fg", size: 4, smoothing: 0.62, holdToStraighten: true, holdDelayMs: 480,
+  tool: "pen", color: "fg", size: 5, smoothing: 0.55, holdToStraighten: true, holdDelayMs: 480,
 };
 
 export function DrawingPage(props: { path: string }) {
