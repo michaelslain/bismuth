@@ -6,10 +6,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 // Univer icon name (from `univerjs-icon-<name>-icon`) -> lucide-solid icon file (kebab).
-// Left intentionally un-mapped: font-color-double / paint-bucket-double (live color
-// swatch), and niche ones with no clean lucide twin (align-bottom, no-rotation,
-// add-digits, reduce-digits, shortcut, fx, increase, convert, hide-gridlines-double,
-// reduce). "most of those", as asked.
+// Left un-mapped only: increase / convert / reduce (no data-u-command — not real
+// toolbar buttons, likely sub-glyphs). Note: mapping font-color/paint-bucket drops
+// Univer's tiny color swatch under the glyph (current color still shows in the picker).
 const MAP: Record<string, string> = {
   undo: "undo",
   redo: "redo",
@@ -33,6 +32,15 @@ const MAP: Record<string, string> = {
   dropdown: "chevron-down",
   overflow: "text-wrap",
   "more-function": "ellipsis",
+  "font-color-double": "baseline",
+  "paint-bucket-double": "paint-bucket",
+  "align-bottom": "align-end-horizontal",
+  "no-rotation": "rotate-ccw",
+  "add-digits": "decimals-arrow-right",
+  "reduce-digits": "decimals-arrow-left",
+  shortcut: "keyboard",
+  "hide-gridlines-double": "grid-3x3",
+  fx: "square-function",
 };
 
 const ICON_DIR = "app/node_modules/lucide-solid/dist/esm/icons";
