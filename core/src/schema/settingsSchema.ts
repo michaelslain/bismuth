@@ -13,6 +13,17 @@ const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
 // graph nodes/clusters/tags AND --accent-purple. Kept in lockstep with
 // app/src/settings.ts DEFAULT_ACCENT_PALETTE.
 const OXIDE_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
+// Kept in lockstep with app/src/themes.ts THEME_NAMES and app/scripts/logoMarks.ts MARK_NAMES.
+const THEME_NAMES = [
+  "default", "gunmetal-teal", "oxide-duotone", "rose-gold",
+  "indigo-oxide", "forest-oxide", "full-sheen",
+];
+const ICON_NAMES = [
+  "hopper-crystal", "node-b", "square-funnel", "nested-diamonds",
+  "pinwheel", "node-crystal", "lattice", "diamond-bloom",
+  "node-diamond", "octagon-bloom", "spin-cross", "tri-bloom",
+  "radial-graph", "node-rings",
+];
 // CALENDAR_VIEWS must stay in sync with `ViewType` in app/src/calendar/types.ts
 // (currently 'month' | 'week' | '3day' | 'day'). If ViewType changes, update here.
 const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
@@ -34,9 +45,21 @@ export const SETTINGS_SCHEMA: Schema = {
       default: OXIDE_PALETTE,
       doc: "The 6 Oxide category colors (hex) for graph nodes/clusters/tags, by stable hash. Also drives --accent-purple.",
     },
-    // Dark-only: light mode was dropped. Kept (single-value enum) so dark-aware
-    // consumers (sheets, drawing) keep a stable signal without an App.tsx change.
-    theme: { type: enumType(["dark"]), default: "dark", doc: "Color theme (dark-only)." },
+    // Named Bismuth color theme — the base layer of colors. Any individually-set
+    // color key above (background/foreground/neutral/accent/accentPalette) overrides
+    // the theme on top. `default` reproduces the original Oxide tokens. Repurposes
+    // the former dark-only enum; the app remains dark-only regardless of value.
+    theme: {
+      type: enumType(THEME_NAMES),
+      default: "default",
+      doc: "Bismuth color theme (base palette): default (Oxide) · gunmetal-teal · oxide-duotone · rose-gold · indigo-oxide · forest-oxide · full-sheen. Individual color keys override it.",
+    },
+    // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
+    icon: {
+      type: enumType(ICON_NAMES),
+      default: "hopper-crystal",
+      doc: "App logo mark: hopper-crystal · node-b · square-funnel · nested-diamonds · pinwheel · node-crystal · lattice · diamond-bloom · node-diamond · octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings.",
+    },
     editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
     editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
     sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },

@@ -38,10 +38,24 @@ test("appearance.accentPalette is a 6-color Oxide list", () => {
   ]);
 });
 
-test("appearance.theme is a dark-only enum defaulting to dark", () => {
+test("appearance.theme is the Bismuth theme enum defaulting to default", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
-  expect(appearance.theme.type).toEqual({ kind: "enum", values: ["dark"] });
-  expect(appearance.theme.default).toBe("dark");
+  expect(appearance.theme.type).toEqual({
+    kind: "enum",
+    values: ["default", "gunmetal-teal", "oxide-duotone", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"],
+  });
+  expect(appearance.theme.default).toBe("default");
+  expect(appearance.theme.doc).toBeTruthy();
+});
+
+test("appearance.icon is the 14-mark enum defaulting to hopper-crystal", () => {
+  const appearance = objectFields(SETTINGS_SCHEMA.appearance);
+  expect(appearance.icon.type).toEqual({
+    kind: "enum",
+    values: ["hopper-crystal", "node-b", "square-funnel", "nested-diamonds", "pinwheel", "node-crystal", "lattice", "diamond-bloom", "node-diamond", "octagon-bloom", "spin-cross", "tri-bloom", "radial-graph", "node-rings"],
+  });
+  expect(appearance.icon.default).toBe("hopper-crystal");
+  expect(appearance.icon.doc).toBeTruthy();
 });
 
 test("editorFont enum carries the EDITOR_FONTS list", () => {
@@ -94,7 +108,8 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
   expect(d.appearance.accent).toBe("#3F6BF0");
   expect(d.appearance.background).toBe("#14151B");
   expect(d.appearance.accentPalette).toEqual(["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]);
-  expect(d.appearance.theme).toBe("dark");
+  expect(d.appearance.theme).toBe("default");
+  expect(d.appearance.icon).toBe("hopper-crystal");
   expect(d.graph.repulsion).toBe(-10);
   expect(d.graph.viewMode).toBe("3d");
   expect(d.editor.autoSaveDelay).toBe(800);
