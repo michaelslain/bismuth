@@ -1,5 +1,5 @@
 // app/src/Editor.tsx
-import { createEffect, createMemo, onCleanup } from "solid-js";
+import { createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -31,6 +31,7 @@ import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
 import { registerEditor, unregisterEditor } from "./editorRegistry";
+import { NoteTitle } from "./NoteTitle";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -329,5 +330,20 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     lastIgnoredVersion = change.version;
   });
 
-  return <div ref={host} style={{ height: "100%", overflow: "auto" }} />;
+  // The inline title shows only for real `.md` notes — not config buffers
+  // (settings.yaml etc.) and not a null/new path. It's a pure function of the
+  // path, so it re-derives automatically when the file is renamed elsewhere.
+  const showTitle = createMemo(() => {
+    const p = currentPath();
+    return !!p && p.endsWith(".md");
+  });
+
+  return (
+    <div style={{ display: "flex", "flex-direction": "column", height: "100%", overflow: "hidden" }}>
+      <Show when={showTitle()}>
+        <NoteTitle path={currentPath()!} />
+      </Show>
+      <div ref={host} style={{ flex: "1 1 auto", "min-height": "0", overflow: "auto" }} />
+    </div>
+  );
 }

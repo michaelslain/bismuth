@@ -15,8 +15,6 @@ import { api } from "./api";
 import { diffLeaves } from "./settingsDiff";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
 
-export type Theme = "dark" | "light";
-
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
 // as Record<string, unknown>; this precise interface keeps the ~5 consumers —
@@ -24,8 +22,15 @@ export type Theme = "dark" | "light";
 // is the spine object cast to this shape, so there is still ONE DEFAULTS.
 export interface Settings {
   appearance: {
-    accent: string;      // hex, drives accent-tinted UI (active tab, selection)
-    theme: Theme;
+    // Centralized theme tokens (the 5 groups everything derives from).
+    background: string;  // hex (Ink) → --bg + graph canvas
+    foreground: string;  // hex (Paper) → --fg
+    neutral: string;     // hex (Steel) → --text-muted, --border, graph edges
+    accent: string;      // hex (Blue), drives accent-tinted UI (active tab, selection, links, caret)
+    accentPalette: string[]; // 6 Oxide hex colors → graph nodes/clusters/tags + --accent-purple
+    // Dark-only at runtime (schema enum is ["dark"], the seeded default); typed wide
+    // so dark-aware consumers (sheets/drawing) that branch on "light" still typecheck.
+    theme: "dark" | "light";
     editorFont: string;  // key into FONT_STACKS
     editorFontSize: number; // px
     sidebarWidth: number;        // px
@@ -38,7 +43,6 @@ export interface Settings {
   graph: {
     spin: boolean;
     spinSpeed: number;   // radians/frame
-    palette: string;     // key into PALETTES
     repulsion: number;   // d3 forceManyBody strength (negative = push apart)
     linkDistance: number;
     centering: number;   // forceX/Y/Z strength toward origin
@@ -49,8 +53,6 @@ export interface Settings {
     nodeSizeMinMult: number;      // size multiplier for a 0/1-degree leaf
     nodeSizeDegreeGain: number;   // size growth per sqrt(degree)
     nodeSizeMaxMult: number;      // ceiling on node size multiplier
-    edgeColor: string;            // hex, link color
-    backgroundColor: string;      // hex, graph canvas background
     mapDefaultZoom: number;       // default zoom for the Bases map view
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
   };
@@ -130,13 +132,10 @@ export const FONT_STACKS: Record<string, string> = {
   "system-ui": "system-ui, -apple-system, sans-serif",
 };
 
-// Node palettes. "aurora" is the current hardcoded pink→blue set.
-export const PALETTES: Record<string, number[]> = {
-  aurora: [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2],
-  ember: [0xff6b6b, 0xffa94d, 0xffd43b, 0xf08c00, 0xe8590c],
-  forest: [0x51cf66, 0x2f9e44, 0x66d9e8, 0x099268, 0xa9e34b],
-  mono: [0xe8e8e8, 0xc2c2c2, 0x9a9a9a, 0x767676, 0xd6d6d6],
-};
+// The default Oxide accent palette (mirrors OXIDE_PALETTE in the spine schema).
+// Categories (graph nodes/clusters/tags, drawing ink swatches, terminal ANSI) all
+// derive from settings.appearance.accentPalette; this is just the fallback.
+export const DEFAULT_ACCENT_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
 
 /**
  * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked

@@ -1,34 +1,28 @@
 /* app/src/App.css */
 :root {
   color-scheme: dark;
-  /* Appearance settings drive these (set on :root by App.tsx). Values here are
-     the dark-theme / default-accent fallbacks so first paint matches old behavior. */
-  --accent: #6496ff;
-  --bg: #0e0e11;
-  --fg: #dcdcdc;
-  --border: #2a2a2a;
-  --panel: rgba(127, 127, 127, 0.06);
-  --editor-font: 'Lora', serif;
-  --editor-font-size: 16px;
-  /* Semantic tokens — single source of truth for colors/shadows/surfaces that were
-     previously hard-coded and duplicated across components (see app/src/ui/). */
-  --danger: #e5534b;
-  --success: #98c379;
-  --accent-purple: #b89cff;
+  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the 5 editable
+     `appearance` tokens (background/foreground/neutral/accent/accentPalette) and
+     set on :root at runtime. The literals below are only first-paint fallbacks and
+     MUST equal the schema defaults (Ink/Paper/Steel/Blue + Oxide). Dark-only. */
+  --bg: #14151B;        /* Ink */
+  --fg: #F4F2EE;        /* Paper */
+  --accent: #3F6BF0;    /* Blue */
+  --border: color-mix(in srgb, #AEB4C2 22%, transparent);      /* Steel */
   --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
+  --panel: color-mix(in srgb, #AEB4C2 6%, transparent);
   --hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
   --surface-1: color-mix(in srgb, var(--fg) 5%, transparent);
   --surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
   --surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
+  --accent-purple: #9B53E8; /* Oxide purple (accentPalette[1]) */
+  --editor-font: 'Lora', serif;
+  --editor-font-size: 16px;
+  /* Semantic tokens not part of the central palette (status colors / shadows). */
+  --danger: #e5534b;
+  --success: #98c379;
   --shadow-menu: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.25);
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #fbfbfa;
-  --fg: #1f1f1f;
-  --border: #e2e2e0;
-  --panel: rgba(0, 0, 0, 0.03);
 }
 * { box-sizing: border-box; }
 button { outline: none; }
@@ -43,12 +37,16 @@ body { background: var(--bg); color: var(--fg); }
 /* Single graph element, snapped over whichever slot is active (see App.tsx).
    Box geometry is set inline in JS. */
 .graph-floater { position: fixed; z-index: 2; overflow: hidden; }
-.sidebar-icons { display: flex; align-items: center; gap: 2px; padding: 5px 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+/* Height matches .tabbar (29px incl. its 1px bottom border) so the two top bars'
+   bottom divider lines align into one continuous row across the app. */
+.sidebar-icons { display: flex; align-items: center; gap: 2px; height: 29px; padding: 0 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .sidebar canvas { display: block; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: var(--sidebar-icon-font-size, 15px); line-height: 1; padding: 4px 6px; border-radius: 4px; }
 .icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
-/* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row. */
-.ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; }
+/* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row.
+   min-height matches the text's 1.5 line-height so the icon centers on the FIRST line
+   when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
+.ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; align-items: center; min-height: 1.5em; }
 .ft-chevron { opacity: 0.55; }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; }
@@ -242,8 +240,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 @keyframes pane-in { from { opacity: 0.35; } to { opacity: 1; } }
 /* During a divider drag, sizing must track the cursor exactly — no transition/anim lag. */
 .pane-split.resizing > .pane-child { transition: none; animation: none; }
-.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; box-shadow: inset 0 0 0 0 transparent; }
-.pane-leaf.focused { box-shadow: inset 0 0 0 1px var(--accent); }
+.pane-leaf { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
 .pane-body { flex: 1; min-height: 0; overflow: auto; }
 /* Per-pane name header, shown only when a tab is split into multiple panes. */
 .pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 3px 8px; font-size: 11px; opacity: 0.7; border-bottom: 1px solid var(--border); background: var(--panel); white-space: nowrap; cursor: grab; }

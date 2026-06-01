@@ -901,13 +901,13 @@ test("POST /set-setting merges one key and preserves the rest of settings.yaml",
     const res = await fetch(`${base}/set-setting`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: ["appearance", "theme"], value: "light" }),
+      body: JSON.stringify({ path: ["appearance", "accent"], value: "#abcdef" }),
     });
     expect(res.status).toBe(200);
 
     const settings = await (await fetch(`${base}/settings`)).json();
-    expect(settings.appearance.theme).toBe("light");      // changed key
-    expect(settings.appearance.accent).toBe("#6496ff");    // reconciled default present
+    expect(settings.appearance.accent).toBe("#abcdef");   // changed key
+    expect(settings.appearance.background).toBe("#14151B"); // reconciled default present
 
     const raw = await readNote(vault, "settings.yaml");
     expect(raw).toContain("# my settings");                // comment preserved

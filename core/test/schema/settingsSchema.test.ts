@@ -19,16 +19,28 @@ test("folderIcons section is an empty object schema (the per-folder icon map pla
   expect(SETTINGS_SCHEMA.folderIcons.type).toEqual({ kind: "object", fields: {} });
 });
 
-test("appearance.accent is a string default #6496ff", () => {
+test("appearance theme tokens carry the Oxide/base-metal defaults", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
+  expect(appearance.background.type).toBe("string");
+  expect(appearance.background.default).toBe("#14151B");
+  expect(appearance.foreground.default).toBe("#F4F2EE");
+  expect(appearance.neutral.default).toBe("#AEB4C2");
   expect(appearance.accent.type).toBe("string");
-  expect(appearance.accent.default).toBe("#6496ff");
+  expect(appearance.accent.default).toBe("#3F6BF0");
   expect(appearance.accent.doc).toBeTruthy();
 });
 
-test("appearance.theme is an enum of dark|light defaulting to dark", () => {
+test("appearance.accentPalette is a 6-color Oxide list", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
-  expect(appearance.theme.type).toEqual({ kind: "enum", values: ["dark", "light"] });
+  expect(appearance.accentPalette.type).toEqual({ kind: "list", item: "string" });
+  expect(appearance.accentPalette.default).toEqual([
+    "#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D",
+  ]);
+});
+
+test("appearance.theme is a dark-only enum defaulting to dark", () => {
+  const appearance = objectFields(SETTINGS_SCHEMA.appearance);
+  expect(appearance.theme.type).toEqual({ kind: "enum", values: ["dark"] });
   expect(appearance.theme.default).toBe("dark");
 });
 
@@ -49,12 +61,11 @@ test("graph.repulsion is a number with the old slider bounds and default", () =>
   expect(graph.repulsion.max).toBe(-1);
 });
 
-test("graph.palette enum carries PALETTE_KEYS and viewMode enum is 2d|3d", () => {
+test("graph color settings are gone (derived from appearance) and viewMode enum is 2d|3d", () => {
   const graph = objectFields(SETTINGS_SCHEMA.graph);
-  expect(graph.palette.type).toEqual({
-    kind: "enum",
-    values: ["aurora", "ember", "forest", "mono"],
-  });
+  expect(graph.palette).toBeUndefined();
+  expect(graph.edgeColor).toBeUndefined();
+  expect(graph.backgroundColor).toBeUndefined();
   expect(graph.viewMode.type).toEqual({ kind: "enum", values: ["2d", "3d"] });
   expect(graph.viewMode.default).toBe("3d");
 });
@@ -80,7 +91,9 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
     ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
-  expect(d.appearance.accent).toBe("#6496ff");
+  expect(d.appearance.accent).toBe("#3F6BF0");
+  expect(d.appearance.background).toBe("#14151B");
+  expect(d.appearance.accentPalette).toEqual(["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]);
   expect(d.appearance.theme).toBe("dark");
   expect(d.graph.repulsion).toBe(-10);
   expect(d.graph.viewMode).toBe("3d");

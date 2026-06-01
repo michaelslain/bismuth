@@ -7,9 +7,12 @@
 import type { Schema, SchemaEntry, PropertyType } from "./types";
 import { COMMAND_IDS } from "../commands";
 
-// Kept in lockstep with app/src/settings.ts EDITOR_FONTS / PALETTE_KEYS.
+// Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
-const PALETTE_KEYS = ["aurora", "ember", "forest", "mono"];
+// The default Oxide accent palette — the 6 editable category colors that drive
+// graph nodes/clusters/tags AND --accent-purple. Kept in lockstep with
+// app/src/settings.ts DEFAULT_ACCENT_PALETTE.
+const OXIDE_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
 // CALENDAR_VIEWS must stay in sync with `ViewType` in app/src/calendar/types.ts
 // (currently 'month' | 'week' | '3day' | 'day'). If ViewType changes, update here.
 const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
@@ -19,8 +22,21 @@ const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", field
 
 export const SETTINGS_SCHEMA: Schema = {
   appearance: object({
-    accent: { type: "string", default: "#6496ff", doc: "Accent color (hex) — tints active tab, selection." },
-    theme: { type: enumType(["dark", "light"]), default: "dark", doc: "Color theme." },
+    // --- Centralized theme tokens. These 5 groups define EVERY color in the app
+    // AND the graph (surfaces/borders/muted derive via color-mix in
+    // settingsCssVars.ts; graph nodes/edges/clusters/tags derive via themeColors.ts).
+    background: { type: "string", default: "#14151B", doc: "Base background (Ink, hex) — drives --bg and the graph canvas." },
+    foreground: { type: "string", default: "#F4F2EE", doc: "Base foreground/text (Paper, hex) — drives --fg." },
+    neutral: { type: "string", default: "#AEB4C2", doc: "Neutral metal (Steel, hex) — drives --text-muted, --border, and graph edges." },
+    accent: { type: "string", default: "#3F6BF0", doc: "Primary accent (Blue, hex) — active tab, selection, links, caret." },
+    accentPalette: {
+      type: { kind: "list", item: "string" },
+      default: OXIDE_PALETTE,
+      doc: "The 6 Oxide category colors (hex) for graph nodes/clusters/tags, by stable hash. Also drives --accent-purple.",
+    },
+    // Dark-only: light mode was dropped. Kept (single-value enum) so dark-aware
+    // consumers (sheets, drawing) keep a stable signal without an App.tsx change.
+    theme: { type: enumType(["dark"]), default: "dark", doc: "Color theme (dark-only)." },
     editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
     editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
     sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },
@@ -33,7 +49,6 @@ export const SETTINGS_SCHEMA: Schema = {
   graph: object({
     spin: { type: "boolean", default: true, doc: "Idle rotation of the graph." },
     spinSpeed: { type: "number", default: 0.0015, min: 0, max: 0.01, doc: "Idle spin speed (radians/frame)." },
-    palette: { type: enumType(PALETTE_KEYS), default: "aurora", doc: "Node color palette." },
     repulsion: { type: "number", default: -10, min: -40, max: -1, doc: "Node repulsion; more negative pushes apart harder." },
     linkDistance: { type: "number", default: 5, min: 1, max: 40, doc: "Target distance between linked nodes." },
     centering: { type: "number", default: 0.13, min: 0, max: 0.5, doc: "Pull toward center; higher = denser ball." },
@@ -44,8 +59,6 @@ export const SETTINGS_SCHEMA: Schema = {
     nodeSizeMinMult: { type: "number", default: 0.4, min: 0.1, max: 1, doc: "Size multiplier for a 0/1-degree leaf node (the smallest dots)." },
     nodeSizeDegreeGain: { type: "number", default: 0.45, min: 0.1, max: 1.5, doc: "How fast node size grows with sqrt(link count)." },
     nodeSizeMaxMult: { type: "number", default: 6, min: 2, max: 12, doc: "Ceiling on node size (biggest hub vs a leaf)." },
-    edgeColor: { type: "string", default: "#bdcaf2", doc: "Link (edge) color (hex)." },
-    backgroundColor: { type: "string", default: "#0e0e11", doc: "Graph canvas background color (hex)." },
     mapDefaultZoom: { type: "number", default: 2, min: 1, max: 18, doc: "Default zoom for the Bases map view when it can't fit markers." },
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
   }),

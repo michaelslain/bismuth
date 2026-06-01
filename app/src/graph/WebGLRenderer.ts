@@ -19,13 +19,14 @@ import { nodeCollideRadius } from "./collide";
 import { LabelLayer } from "./LabelLayer";
 import { computeAlwaysOnSet } from "./labelSelection";
 
-// Default node palette (pink → purples → lavender → blue) — overridable via setConfig.
-const DEFAULT_PALETTE = [0xf277de, 0x9177f2, 0x8b88f2, 0xbdcaf2, 0x77a0f2];
+// Default node palette = the 6 Oxide accent colors — overridden via setConfig from
+// settings.appearance.accentPalette (the centralized theme tokens).
+const DEFAULT_PALETTE = [0xf0509b, 0x9b53e8, 0x3f6bf0, 0x27c7d9, 0x43d49a, 0xf2c53d];
 const EDGE_BASE = 0.32; // normal edge brightness (0..1) — faint so dense hub fans don't read as clumps
 const NODE_DIM = 0.4;   // dimmed non-neighbor node brightness on hover (gentle — stays visible)
 const EDGE_DIM = 0.18;  // dimmed edge brightness on hover
 const HL_SPEED = 0.16;  // highlight ease per frame (smooth fade in/out)
-const EDGE_COLOR = 0xbdcaf2; // cohesive lavender for links
+const EDGE_COLOR = 0xaeb4c2; // Steel (neutral token) for links — overridden via setConfig
 
 // Edge crowding — measured in SCREEN space from the current camera, so it works for both 2D
 // and 3D and re-forms as you orbit/zoom. Each edge is sampled along its projected length and
@@ -144,7 +145,7 @@ const DEFAULT_CONFIG: GraphConfig = {
   nodeSizeDegreeGain: 0.45,
   nodeSizeMaxMult: 6,
   edgeColor: EDGE_COLOR,
-  backgroundColor: 0x0e0e11,
+  backgroundColor: 0x14151b, // Ink (background token)
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -1185,7 +1186,7 @@ export class WebGLRenderer {
         if (n.community != null) return this.paletteColor("community:" + n.community);
         return this.paletteColor("agent:" + n.label);
       default:
-        return new THREE.Color(0xbdcaf2); // self node (lavender)
+        return new THREE.Color(this.palette[2] ?? this.palette[0] ?? 0x3f6bf0); // self node (accent Blue)
     }
   }
 
@@ -1220,7 +1221,12 @@ export class WebGLRenderer {
 
     if (this.pointsMesh) (this.pointsMesh.material as THREE.PointsMaterial).size = cfg.nodeSize;
 
-    if (cfg.palette !== prev.palette && this.pointsMesh) this.recolorNodes();
+    // Compare palette by content (GraphView builds a fresh array each effect run from
+    // the accentPalette tokens, so reference identity would recolor on every config push).
+    const paletteChanged =
+      cfg.palette.length !== prev.palette.length ||
+      cfg.palette.some((c, i) => c !== prev.palette[i]);
+    if (paletteChanged && this.pointsMesh) this.recolorNodes();
 
     // Background color applies instantly; edge color + node-size multipliers apply on the
     // next graph render (re-settle below covers a size change).
