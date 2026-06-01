@@ -2,6 +2,12 @@ import { createUniver, LocaleType, mergeLocales } from "@univerjs/presets";
 import { UniverSheetsCorePreset } from "@univerjs/preset-sheets-core";
 import UniverPresetSheetsCoreEnUS from "@univerjs/preset-sheets-core/locales/en-US";
 import "@univerjs/preset-sheets-core/lib/index.css";
+import { UniverSheetsSortPreset } from "@univerjs/preset-sheets-sort";
+import UniverPresetSheetsSortEnUS from "@univerjs/preset-sheets-sort/locales/en-US";
+import { UniverSheetsFilterPreset } from "@univerjs/preset-sheets-filter";
+import UniverPresetSheetsFilterEnUS from "@univerjs/preset-sheets-filter/locales/en-US";
+import "@univerjs/preset-sheets-sort/lib/index.css";
+import "@univerjs/preset-sheets-filter/lib/index.css";
 import type { WorkbookSnapshot } from "./snapshot";
 
 export interface SheetHandle {
@@ -33,8 +39,18 @@ export function mountSheet(opts: MountOptions): SheetHandle {
     // NOTE: the enum member is EN_US ("enUS"). Using `En_US` is undefined and
     // silently registers the locale under the wrong key → raw `ui.ribbon.*` keys.
     locale: LocaleType.EN_US,
-    locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS) },
-    presets: [UniverSheetsCorePreset({ container: root })],
+    locales: {
+      [LocaleType.EN_US]: mergeLocales(
+        UniverPresetSheetsCoreEnUS,
+        UniverPresetSheetsSortEnUS,
+        UniverPresetSheetsFilterEnUS,
+      ),
+    },
+    presets: [
+      UniverSheetsCorePreset({ container: root }),
+      UniverSheetsSortPreset(),
+      UniverSheetsFilterPreset(),
+    ],
   });
 
   univerAPI.createWorkbook((opts.data ?? {}) as Record<string, unknown>);
