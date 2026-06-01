@@ -215,13 +215,13 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     const isDir = !!node.children;
     const items: MenuItem[] = [];
     if (isDir) {
-      items.push({ label: "New File", onSelect: () => doCreate(node.path, "file") });
-      items.push({ label: "New Folder", onSelect: () => doCreate(node.path, "dir") });
-      items.push({ label: "New Spreadsheet", onSelect: () => doCreate(node.path, "sheet") });
+      items.push({ label: "New File", icon: "FilePlus", onSelect: () => doCreate(node.path, "file") });
+      items.push({ label: "New Folder", icon: "FolderPlus", onSelect: () => doCreate(node.path, "dir") });
+      items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
     }
-    items.push({ label: "Set Icon…", onSelect: () => setIconPicker({ node, isDir }) });
-    items.push({ label: "Rename", onSelect: () => setEditing(node.path) });
-    items.push({ label: "Delete", danger: true, onSelect: () => doDelete(node) });
+    items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
+    items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
+    items.push({ label: "Delete", icon: "Trash2", danger: true, separatorBefore: true, onSelect: () => doDelete(node) });
     return items;
   }
 

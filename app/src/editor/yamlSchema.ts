@@ -3,6 +3,7 @@
 // (and settings.yaml, via mode). The pure mapping logic (diagnosticsForFrontmatter)
 // is exported separately so it runs under `bun test` without a browser.
 import { linter, type Diagnostic as CmDiagnostic, type Action } from "@codemirror/lint";
+import { yamlFixHover, YAML_DIAGNOSTIC_SOURCE } from "./yamlFixHover";
 import type { CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -73,11 +74,18 @@ export function diagnosticsForFrontmatter(
 
   const out: RangedDiagnostic[] = [];
   for (const d of diags) {
-    const key = d.path[0];
-    // Find the body line whose key matches the diagnostic's top-level path segment.
-    let idx = key
-      ? bodyLines.findIndex((l) => new RegExp(`^${escapeRe(key)}\\s*:`).test(l))
-      : -1;
+    // Walk the FULL key path to the deepest key's line, searching each segment
+    // after its parent's line. This lands the mark + fix on the actual offending
+    // key (e.g. `theme:`), not its section header (`appearance:`) — and resolves
+    // same-named keys in different sections, since the search is parent-scoped.
+    let searchFrom = 0;
+    let idx = -1;
+    for (const seg of d.path) {
+      const rel = bodyLines.slice(searchFrom).findIndex((l) => new RegExp(`^\\s*${escapeRe(String(seg))}\\s*:`).test(l));
+      if (rel === -1) continue; // e.g. a list index — no own `key:` line; keep the parent line
+      idx = searchFrom + rel;
+      searchFrom = idx + 1;
+    }
     if (idx === -1) idx = 0; // fall back to the first body line
     const from = lineOffsets[idx];
     const to = from + bodyLines[idx].length;
@@ -106,6 +114,8 @@ function schemaLinter(opts: YamlSchemaOpts) {
         to: d.to,
         severity: d.severity,
         message: d.message,
+        // Tag so the hover quick-fix (yamlFixHover) recognises these and ONLY these.
+        source: YAML_DIAGNOSTIC_SOURCE,
         // Category color: property/settings validation marks are purple (3rd-brain),
         // distinct from red spelling / blue grammar. Styled in livePreview's theme.
         markClass: "property-mark",
@@ -132,5 +142,6 @@ function schemaLinter(opts: YamlSchemaOpts) {
 /** The CM6 extension: just the linter. Autocomplete sources are merged into the single
  *  vaultCompletion override in autocomplete.ts (Editor.tsx wires them together). */
 export function yamlSchema(opts: YamlSchemaOpts): Extension {
-  return [schemaLinter(opts)];
+  // Hover a schema error → auto-open the quick-fix menu (scoped to these diagnostics).
+  return [schemaLinter(opts), yamlFixHover()];
 }

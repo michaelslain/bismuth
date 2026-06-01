@@ -3,7 +3,7 @@ import { createEffect, createMemo, onCleanup } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { startCompletion } from "@codemirror/autocomplete";
+import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { forceLinting } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
@@ -52,25 +52,40 @@ const editorTheme = EditorView.theme({
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
   ".cm-tooltip.cm-tooltip-autocomplete": {
     border: "1px solid var(--border)",
-    borderRadius: "8px",
+    borderRadius: "var(--popover-radius)",
     backgroundColor: "var(--bg)",
     boxShadow: "var(--shadow-popup)",
     fontFamily: "'Monaspace Xenon', monospace",
     overflow: "hidden",
+    padding: "var(--popover-pad)",
   },
-  ".cm-tooltip-autocomplete > ul > li": {
-    padding: "3px 10px",
-    fontSize: "13px",
+  // NOTE: two classes (.cm-tooltip.cm-tooltip-autocomplete) so these match CM's
+  // own default li rule specificity and win — a single-class selector loses to it.
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    display: "flex",
+    alignItems: "center",
+    gap: "var(--popover-row-gap)",
+    padding: "var(--popover-row-pad-y) var(--popover-row-pad-x)",
+    borderRadius: "var(--popover-row-radius)",
+    fontSize: "var(--popover-font-size)",
     lineHeight: "1.5",
   },
-  ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-    backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent)",
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    backgroundColor: "var(--popover-selected-bg)",
     color: "var(--fg)",
   },
-  ".cm-completionDetail": {
-    marginLeft: "8px",
-    opacity: "0.5",
-    fontStyle: "normal",
+  ".cm-completionLabel": { flex: "1 1 auto" },
+  ".cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", opacity: "var(--popover-detail-opacity)", fontStyle: "normal" },
+  ".cm-tooltip.cm-completionInfo": {
+    border: "1px solid var(--border)",
+    borderRadius: "var(--popover-radius)",
+    backgroundColor: "var(--bg)",
+    color: "var(--fg)",
+    boxShadow: "var(--shadow-popup)",
+    padding: "8px 10px",
+    maxWidth: "320px",
+    fontSize: "12px",
+    lineHeight: "1.5",
   },
 });
 
@@ -166,7 +181,14 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       history(),
       drawSelection(),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
-      keymap.of([{ key: "Ctrl-Space", run: startCompletion }, ...defaultKeymap, ...historyKeymap]),
+      // Tab accepts the active completion (like Enter); acceptCompletion returns false
+      // when no popup is open, so Tab falls through to its normal behavior otherwise.
+      keymap.of([
+        { key: "Ctrl-Space", run: startCompletion },
+        { key: "Tab", run: acceptCompletion },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),

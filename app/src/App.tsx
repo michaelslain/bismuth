@@ -31,6 +31,7 @@ import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/view
 import type { Zone as DropZone } from "./dnd/geometry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import "./App.css";
+import "./ui/popover/popover.css";
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network */
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
@@ -736,9 +737,9 @@ export default function App() {
             y={m().y}
             onClose={() => setPaneMenu(null)}
             items={[
-              { label: "Split right", onSelect: () => splitPane(m().leafId, "row") },
-              { label: "Split down", onSelect: () => splitPane(m().leafId, "col") },
-              { label: "Close pane", danger: true, onSelect: () => closePane(m().leafId) },
+              { label: "Split right", icon: "PanelRight", onSelect: () => splitPane(m().leafId, "row") },
+              { label: "Split down", icon: "PanelBottom", onSelect: () => splitPane(m().leafId, "col") },
+              { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(m().leafId) },
             ]}
           />
         )}

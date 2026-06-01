@@ -99,8 +99,8 @@ export function EventChip(props: Props) {
                 x={m().x}
                 y={m().y}
                 items={[
-                  { label: 'Edit', onSelect: openEdit },
-                  { label: 'Delete', onSelect: handleDelete, danger: true },
+                  { label: 'Edit', icon: 'Pencil', onSelect: openEdit },
+                  { label: 'Delete', icon: 'Trash2', danger: true, separatorBefore: true, onSelect: handleDelete },
                 ]}
                 onClose={() => setMenu(null)}
               />
