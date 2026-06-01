@@ -20,12 +20,21 @@ export interface MountOptions {
 }
 
 export function mountSheet(opts: MountOptions): SheetHandle {
+  // Univer mounts into — and disposes by detaching from — its container. Disposing
+  // then re-creating into the SAME node renders blank, so give each instance a
+  // fresh child element and remove it on dispose. This makes remounting (external
+  // reload) reliable while keeping the caller's container stable.
+  const root = document.createElement("div");
+  root.style.width = "100%";
+  root.style.height = "100%";
+  opts.container.appendChild(root);
+
   const { univer, univerAPI } = createUniver({
     // NOTE: the enum member is EN_US ("enUS"). Using `En_US` is undefined and
     // silently registers the locale under the wrong key → raw `ui.ribbon.*` keys.
     locale: LocaleType.EN_US,
     locales: { [LocaleType.EN_US]: mergeLocales(UniverPresetSheetsCoreEnUS) },
-    presets: [UniverSheetsCorePreset({ container: opts.container })],
+    presets: [UniverSheetsCorePreset({ container: root })],
   });
 
   univerAPI.createWorkbook((opts.data ?? {}) as Record<string, unknown>);
@@ -41,6 +50,7 @@ export function mountSheet(opts: MountOptions): SheetHandle {
         /* already disposed */
       }
       univer.dispose();
+      root.remove();
     },
   };
 }
