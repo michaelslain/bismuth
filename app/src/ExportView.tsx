@@ -69,15 +69,26 @@ export function ExportView(props: { path: string }) {
         </button>
       </div>
       <div class="export-preview">
-        <Show when={result()} fallback={<div class="export-empty">Rendering preview…</div>}>
-          {(r) => (
-            <Show
-              when={r().previewImg}
-              fallback={<iframe class="export-frame" srcdoc={r().previewHtml ?? ""} />}
-            >
-              <img class="export-img" src={r().previewImg} alt="preview" />
-            </Show>
-          )}
+        <Show
+          when={!result.error}
+          fallback={<div class="export-empty">Preview failed: {(result.error as Error)?.message}</div>}
+        >
+          <Show when={result()} fallback={<div class="export-empty">Rendering preview…</div>}>
+            {(r) => (
+              <Show
+                when={r().previewImg}
+                fallback={
+                  <iframe
+                    class="export-frame"
+                    sandbox="allow-same-origin"
+                    srcdoc={r().previewHtml ?? ""}
+                  />
+                }
+              >
+                <img class="export-img" src={r().previewImg} alt="preview" />
+              </Show>
+            )}
+          </Show>
         </Show>
       </div>
     </div>
