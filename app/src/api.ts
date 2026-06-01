@@ -11,50 +11,49 @@ import type { Schema } from "../../core/src/schema/types";
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
 
-/** Throw server error text on non-2xx response. */
-async function checkOk(r: Response): Promise<void> {
+/** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
+async function request<T>(
+  method: "GET" | "POST" | "PUT",
+  path: string,
+  body?: unknown,
+  responseType?: "json" | "text",
+): Promise<T | Response | string> {
+  const r = await fetch(`${BASE}${path}`, {
+    method,
+    ...(body !== undefined && {
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  });
   if (!r.ok) throw new Error(await r.text());
+  if (responseType === "json") return r.json() as Promise<T>;
+  if (responseType === "text") return r.text() as Promise<string>;
+  return r;
 }
 
-/** GET and parse JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
+/** GET and parse JSON. */
 async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(`${BASE}${path}`);
-  await checkOk(r);
-  return r.json() as Promise<T>;
+  return request<T>("GET", path, undefined, "json") as Promise<T>;
 }
 
-/** POST JSON; throw the server's error text on a non-2xx so callers can surface it in a toast. */
+/** POST JSON. */
 async function post(path: string, body: unknown): Promise<Response> {
-  const r = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  await checkOk(r);
-  return r;
+  return request("POST", path, body) as Promise<Response>;
 }
 
-/** PUT JSON; throw the server's error text on a non-2xx. Used for file writes (PUT /file). */
+/** PUT JSON. */
 async function put(path: string, body: unknown): Promise<Response> {
-  const r = await fetch(`${BASE}${path}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  await checkOk(r);
-  return r;
+  return request("PUT", path, body) as Promise<Response>;
 }
 
-/** POST JSON and parse response; throw the server's error text on a non-2xx. */
+/** POST JSON and parse JSON response. */
 async function postJson<T>(path: string, body: unknown): Promise<T> {
-  const r = await post(path, body);
-  return r.json() as Promise<T>;
+  return request<T>("POST", path, body, "json") as Promise<T>;
 }
 
+/** GET and parse text. */
 async function getText(path: string): Promise<string> {
-  const r = await fetch(`${BASE}${path}`);
-  await checkOk(r);
-  return r.text();
+  return request("GET", path, undefined, "text") as Promise<string>;
 }
 
 export const api = {

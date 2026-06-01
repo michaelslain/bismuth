@@ -172,6 +172,8 @@ class TasksQueryWidget extends WidgetType {
     // Mark destroyed (stops any in-flight async render from rebuilding) and tear
     // down the Solid roots backing the inline Lucide icons.
     (dom as HTMLElement & { __destroy?: () => void }).__destroy?.();
+    // Unsubscribe from server change events to prevent memory leak.
+    (dom as HTMLElement & { __tasksUnsub?: () => void }).__tasksUnsub?.();
   }
 
   ignoreEvent(): boolean {

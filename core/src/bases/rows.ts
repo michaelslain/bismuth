@@ -41,13 +41,37 @@ export function parseRows(body: string, meta: { name: string; path: string }): R
     }));
 }
 
-/** Serialize rows to the canonical YAML-list body. */
-export function serializeRows(rows: Row[]): string {
+/**
+ * Serialize rows to the canonical YAML-list body.
+ * If `columnOrder` is provided, properties are serialized in that order,
+ * with any additional properties appended alphabetically at the end.
+ * This preserves user-configured column order across edits.
+ */
+export function serializeRows(rows: Row[], columnOrder?: string[]): string {
   if (rows.length === 0) return "";
   // Drop undefined values so empty cells don't serialize as `key: null`.
   const clean = rows.map((r) => {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(r.note)) if (v !== undefined) out[k] = v;
+
+    if (columnOrder && columnOrder.length > 0) {
+      // First add keys in the specified order
+      for (const key of columnOrder) {
+        const v = r.note[key];
+        if (v !== undefined) out[key] = v;
+      }
+      // Then add any additional keys not in columnOrder, in alphabetical order
+      const additionalKeys = Object.keys(r.note)
+        .filter((k) => !columnOrder.includes(k))
+        .sort();
+      for (const key of additionalKeys) {
+        const v = r.note[key];
+        if (v !== undefined) out[key] = v;
+      }
+    } else {
+      // No column order specified: use the original order (YAML preserves insertion order)
+      for (const [k, v] of Object.entries(r.note)) if (v !== undefined) out[k] = v;
+    }
+
     return out;
   });
   return stringifyYaml(clean).trimEnd();

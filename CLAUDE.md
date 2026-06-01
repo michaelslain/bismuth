@@ -289,6 +289,8 @@ core/src/
 ├── tags.ts              # Tag extraction (frontmatter + body)
 ├── files.ts             # File I/O, path-traversal rejection
 ├── backup.ts            # Git snapshot of vault
+├── error.ts             # AppError class + ERROR_CODES registry for typed error semantics
+├── graphBuilder.ts      # Shared graph builder helper: eliminates vault/memory duplication
 ├── changeClassifier.ts  # Tracks note-level changes (wikilinks/tags/icon) to selectively invalidate graph vs tree
 ├── tasks.ts             # Tasks extraction
 ├── tasks-query.ts       # Tasks query DSL
@@ -437,6 +439,96 @@ The schema is the single source of truth; defaults must equal the current hardco
 1. Update `NodeKind` / `EdgeKind` types in `core/src/graph.ts`
 2. Update builders: `buildVaultGraph` (vault.ts), `buildMemoryGraph` (memory.ts), `buildAgentGraph` (agents.ts)
 3. Update frontend filtering in `App.tsx` if the mode ("2nd", "3rd", "both", "agents") should hide/show it
+
+## Error Handling Patterns
+
+All errors in the backend use the `AppError` class (`core/src/error.ts`) with typed error codes and HTTP status codes.
+
+**Creating errors:**
+```typescript
+import { AppError, createError } from "./error.ts";
+
+// Using createError() factory (recommended):
+throw createError("ENOENT", "File not found");  // 404 automatically
+throw createError("EACCES", "Permission denied");  // 403 automatically
+throw createError("CARD_NOT_FOUND", "Card not found");  // 404 automatically
+throw createError("EINVAL", "Invalid path", 400);  // Custom status if needed
+
+// Direct construction:
+throw new AppError("ENOENT", "File not found", 404);
+```
+
+**Error codes and HTTP status:**
+- **ENOENT** (404): File/resource not found
+- **EACCES** (403): Permission denied
+- **EEXIST** (409): Resource already exists
+- **EINVAL** (400): Invalid input or arguments
+- **PARSE_ERROR** (400): Failed to parse input
+- **CARD_NOT_FOUND** (404): SRS card not found
+- **CARD_FORMAT_ERROR** (400): Invalid card format
+- **CARD_CONTENT_CHANGED** (409): Card content modified externally
+- **BASE_CYCLE** (400): Circular base references detected
+- **INTERNAL_ERROR** (500): Unexpected server error
+
+**Server routing:**
+The `mutatingHandler` in `server.ts` catches `AppError` and automatically maps `statusCode` to the HTTP response. Generic `Error` objects are coerced to 500 (internal error). Frontend receives the correct HTTP status for each error scenario (allowing distinction between user errors vs server errors).
+
+## Resilience Patterns
+
+### Connection State Management
+
+The frontend (`app/src/serverVersion.ts`) implements a sophisticated connection state machine for robustness when the backend is unreachable or temporarily offline.
+
+**Connection states:**
+- `connected` — EventSource is open; normal 5-second poll interval
+- `disconnected` — EventSource closed or errored; aggressive 1-second polling
+- `reconnecting` — Attempting to re-establish EventSource after error
+
+**When connection is lost:**
+1. User sees a persistent warning toast: "Connection lost. Retrying..."
+2. Poll interval switches from 5s to 1s (5× more aggressive)
+3. Frontend attempts reconnection via aggressive polling
+4. When poll succeeds, EventSource automatically re-connects
+5. On successful reconnection, state returns to `connected`, toast auto-dismisses
+
+**Why this pattern:**
+- Pure SSE is fragile on mobile/unstable networks (can silently die)
+- Fallback `/version` poll catches disconnects automatically
+- Aggressive polling during disconnection reduces perceived lag
+- Toast feedback prevents users from thinking the app is frozen
+- No exponential backoff needed since main goal is recovery, not reducing server load
+
+**Debugging:**
+- Check `currentConnectionState` signal in `app/src/serverVersion.ts`
+- Monitor EventSource state in DevTools (Network → WS)
+- Check `/version` poll interval (should be 1s when disconnected, 5s when connected)
+
+### Helper Consolidation Patterns
+
+**Graph builder consolidation** (`core/src/graphBuilder.ts`):
+Both `buildVaultGraph()` and `buildMemoryGraph()` use the shared `buildGraphFromNotes()` helper to eliminate duplication. When adding a new graph source (e.g., agent interactions), use this pattern:
+
+```typescript
+// Instead of duplicating file walk + read + index logic:
+const { nodes, edges, byBase, byPath } = await buildGraphFromNotes(
+  root,
+  (relPath) => ({ id: `prefix:${relPath}`, label: relPath.replace(/\.md$/, "") }), // nodeBuilder
+  (nodeId, content, byBase, byPath) => extractEdges(content, byBase, byPath)  // edgeExtractor
+);
+```
+
+**File walk consolidation** (`core/src/files.ts`):
+Both `listTree()` and `listTemplates()` use the shared `walkDir()` helper. When traversing directories, use this pattern:
+
+```typescript
+const files = await walkDir(root, (entry, rel) => {
+  if (entry.isDirectory()) return true;  // Include all dirs, still recurse
+  return entry.name.endsWith(".md");     // Include only .md files
+});
+```
+
+**Frontmatter mutation consolidation** (`core/src/frontmatter.ts`):
+The `mutateFrontmatter()` helper preserves YAML formatting when edits occur. Uses the `yaml` Document API, with graceful fallback to stringify for malformed input. Preserves comments, key order, flow arrays, and other formatting details.
 
 ## Key Concepts
 
