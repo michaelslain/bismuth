@@ -32,6 +32,16 @@ export function DrawingCanvas(props: {
     const r = live.getBoundingClientRect();
     return { x: (e.clientX - r.left) * (PAGE_W / r.width), y: (e.clientY - r.top) * (PAGE_H / r.height) };
   };
+  // Encode the desired stroke thickness into the stored pressure byte (0..255).
+  // Real stylus pressure is used directly; otherwise widthFor's velocity model
+  // (faster = thinner) is normalized against the max possible width so the taper
+  // survives when reproduced by perfect-freehand at render time.
+  function pressureByte(pressure: number, speed: number): number {
+    const base = props.tools().size;
+    const w = widthFor({ base, pressure, speed, hasRealPressure: hasReal });
+    const p01 = Math.max(0, Math.min(1, w / (base * 1.75)));
+    return Math.round(p01 * 255);
+  }
   function paintLive() {
     clearLive();
     if (current) drawStroke(ctxOf(live), current, theme());
@@ -52,10 +62,10 @@ export function DrawingCanvas(props: {
 
   function onDown(e: PointerEvent) {
     const ts = props.tools(); drawing = true; live.setPointerCapture(e.pointerId);
-    if (isRealPressure(e.pressure)) hasReal = true;
+    hasReal = isRealPressure(e.pressure);
     const p = toLocal(e); filt = { ...p }; lastRaw = { x: p.x, y: p.y, t: e.timeStamp };
     if (ts.tool === "eraser") { eraseAt(p); current = null; return; }
-    current = { t: ts.tool, c: ts.color, w: ts.size, pts: [p.x, p.y, Math.round((e.pressure || 1) * 255)] };
+    current = { t: ts.tool, c: ts.color, w: ts.size, pts: [p.x, p.y, pressureByte(e.pressure, 0)] };
     armHold();
   }
   function onMove(e: PointerEvent) {
@@ -70,9 +80,7 @@ export function DrawingCanvas(props: {
       filt = streamlinePoint(filt, raw, ts.smoothing);
       if (isRealPressure(ev.pressure)) hasReal = true;
       if (current && !current.straight) {
-        const w = widthFor({ base: ts.size, pressure: ev.pressure, speed, hasRealPressure: hasReal });
-        void w;
-        current.pts.push(filt.x, filt.y, Math.round((ev.pressure || 1) * 255));
+        current.pts.push(filt.x, filt.y, pressureByte(ev.pressure, speed));
         if (dist > 3) armHold();
       }
       lastRaw = { x: raw.x, y: raw.y, t: ev.timeStamp };
