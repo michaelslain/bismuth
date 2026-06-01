@@ -34,6 +34,12 @@ export function PaneContent(props: {
         />
       }
     >
+      {/* Export must win before the extension arms below: an export id like
+          "::export:Reading.base" ends with ".base", so without this ordering it
+          would be caught by the .base arm and render the BaseView, not ExportView. */}
+      <Match when={props.path.startsWith(EXPORT_PREFIX)}>
+        <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
+      </Match>
       <Match when={props.path.startsWith(FLASHCARDS_PREFIX)}>
         <Flashcards note={props.path.slice(FLASHCARDS_PREFIX.length)} />
       </Match>
@@ -48,9 +54,6 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path.endsWith(".draw")}>
         <DrawingPage path={props.path} />
-      </Match>
-      <Match when={props.path.startsWith(EXPORT_PREFIX)}>
-        <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
       </Match>
       <Match when={props.path.startsWith(TERMINAL_PREFIX)}>
         {/* Terminal panes show a transparent placeholder. The real xterm view
