@@ -11,6 +11,12 @@ interface FieldDef {
   def: string;
 }
 
+// Chart views (heatmap/bar/line/stat) all bind the same axis columns.
+const CHART_FIELDS: FieldDef[] = [
+  { key: "x", label: "X axis column (date or category)", def: "date" },
+  { key: "y", label: "Value column (blank = count rows)", def: "" },
+];
+
 // Field-binding settings for non-tabular view types (which column means what).
 const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
   flashcards: [
@@ -25,10 +31,17 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
     { key: "recurrenceField", label: "Recurrence column", def: "recurrence" },
     { key: "categoryField", label: "Category column", def: "category" },
   ],
+  heatmap: CHART_FIELDS,
+  bar: CHART_FIELDS,
+  line: CHART_FIELDS,
+  stat: CHART_FIELDS,
 };
 
 // Record view types get column-visibility + sort + group-by config.
 const RECORD_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map"];
+
+// Chart view types get aggregate + date-bucket config.
+const CHART_TYPES: ViewType[] = ["heatmap", "bar", "line", "stat"];
 
 function columnsOf(rows: Row[]): string[] {
   const set = new Set<string>();
@@ -50,6 +63,7 @@ export function BaseSettings(props: {
 }) {
   const view = () => props.config.views[0];
   const isRecord = () => RECORD_TYPES.includes(props.type);
+  const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];
 
   // --- field-binding form (flashcards / calendar) ---
@@ -78,6 +92,8 @@ export function BaseSettings(props: {
   const [sortDir, setSortDir] = createSignal(view()?.sort?.[0]?.direction ?? "ASC");
   const [groupProp, setGroupProp] = createSignal(view()?.groupBy?.property ?? "");
   const [groupDir, setGroupDir] = createSignal(view()?.groupBy?.direction ?? "ASC");
+  const [aggregate, setAggregate] = createSignal<"sum" | "avg" | "count" | "min" | "max">(view()?.aggregate ?? (view()?.y ? "sum" : "count"));
+  const [bin, setBin] = createSignal<"day" | "week" | "month">(view()?.bin ?? "day");
 
   const visibleCount = () => cols().filter((c) => c.visible).length;
 
@@ -99,6 +115,10 @@ export function BaseSettings(props: {
         await api.setProperty(props.basePath, "groupBy", groupProp() ? { property: groupProp(), direction: groupDir() } : null);
       } else {
         for (const f of fields()) await api.setProperty(props.basePath, f.key, form()[f.key]);
+        if (isChart()) {
+          await api.setProperty(props.basePath, "aggregate", aggregate());
+          if (props.type !== "heatmap") await api.setProperty(props.basePath, "bin", bin());
+        }
       }
     }
     props.onSaved();
@@ -124,6 +144,30 @@ export function BaseSettings(props: {
             Scheduling uses the standard SM-2 algorithm (fixed, not configurable). Use <strong>Cram</strong> in the deck to review everything without affecting scheduling.
           </p>
         </Show>
+      </Show>
+
+      {/* Chart types: aggregate + (non-heatmap) date bucket */}
+      <Show when={isChart()}>
+        <div class="srs-grid">
+          <Field class="srs-field" label="Aggregate">
+            <select value={aggregate()} onChange={(e) => setAggregate(e.currentTarget.value as "sum" | "avg" | "count" | "min" | "max")}>
+              <option value="sum">Sum</option>
+              <option value="avg">Average</option>
+              <option value="count">Count</option>
+              <option value="min">Min</option>
+              <option value="max">Max</option>
+            </select>
+          </Field>
+          <Show when={props.type !== "heatmap"}>
+            <Field class="srs-field" label="Date bucket">
+              <select value={bin()} onChange={(e) => setBin(e.currentTarget.value as "day" | "week" | "month")}>
+                <option value="day">Day</option>
+                <option value="week">Week</option>
+                <option value="month">Month</option>
+              </select>
+            </Field>
+          </Show>
+        </div>
       </Show>
 
       {/* Record types: columns + sort + group */}
@@ -177,7 +221,7 @@ export function BaseSettings(props: {
         </div>
       </Show>
 
-      <Show when={!isRecord() && fields().length === 0}>
+      <Show when={!isRecord() && !isChart() && fields().length === 0}>
         <p class="ui-empty">No extra settings for this view type yet.</p>
       </Show>
 

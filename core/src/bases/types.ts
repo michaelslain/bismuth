@@ -4,10 +4,11 @@ export type { Recurrence, RecurrenceType } from "./recurrence";
 export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } | { not: FilterNode[] };
 
 // All view kinds a view can render. Calendar + flashcards are the unified additions.
-export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards";
+// Chart types: bar, line, stat (stat tile), heatmap.
+export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards" | "bar" | "line" | "stat" | "heatmap";
 
 /** Exhaustive list of valid view type strings. Single source of truth. */
-export const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards"];
+export const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards", "bar", "line", "stat", "heatmap"];
 export function isValidType(t: unknown): t is ViewType {
   return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
 }
@@ -58,6 +59,11 @@ export interface ViewConfig {
   dueField?: string;           // default "due"
   easeField?: string;          // default "ease"
   intervalField?: string;      // default "interval"
+  // Chart views (bar, line, stat): axis + aggregation config.
+  x?: string;                  // property id for the x-axis / category
+  y?: string;                  // property id for the y-axis value
+  aggregate?: "sum" | "avg" | "count" | "min" | "max";
+  bin?: "day" | "week" | "month";
 }
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
