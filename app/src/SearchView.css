@@ -9,29 +9,24 @@
   flex-direction: column;
   gap: 6px;
 }
-.search-row { display: flex; gap: 6px; align-items: center; }
-
-/* Leading affordance icon (search / replace), dimmed to match muted text. */
-.search-lead { color: var(--text-muted); flex: none; }
-
-.search-input {
-  flex: 1;
-  min-width: 0;
+/* SearchBar row: a single bordered box holding the lead icon, the input, and
+   trailing toggle/action buttons. (Was a flex row of a separately-bordered
+   .search-input + sibling buttons; now the whole bar reads as one box.) */
+.search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   padding: 6px 8px;
   background: var(--panel);
-  color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font: inherit;
 }
-.search-input::placeholder { color: var(--fg); opacity: 0.4; }
 
 /* Square-ish icon toggles (case / whole-word / regex). */
-.search-tg.btn { padding: 4px 6px; flex: none; }
+.search-tg.btn { flex: none; }
 
-/* Action button label follows the app's control-button convention (uppercase,
-   tracked) — matches the graph HUD toggles (2D/3D, 2ND/3RD/BOTH). */
-.search-replace-all.btn { flex: none; text-transform: uppercase; letter-spacing: 0.04em; }
+/* Action button label follows the app's control-button convention (uppercase, tracked). */
+.search-replace-all.btn { flex: none; }
 
 .search-error { color: var(--danger); font-size: 12px; }
 .search-status { color: var(--text-muted); font-size: 12px; }

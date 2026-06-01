@@ -2,6 +2,7 @@
 import { createSignal, createResource, For, Show, createEffect } from "solid-js";
 import { api } from "./api";
 import { Icon } from "./icons/Icon";
+import { TextButton } from "./ui/TextButton";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
@@ -11,9 +12,9 @@ import { downloadFile } from "./export/download";
 import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
 
-const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
+const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "MARKDOWN", png: "PNG" };
 const THEMES: ExportTheme[] = ["dark", "light"];
-const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
+const THEME_LABEL: Record<ExportTheme, string> = { dark: "DARK", light: "LIGHT" };
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
@@ -58,32 +59,30 @@ export function ExportView(props: { path: string }) {
         <div class="export-formats">
           <For each={formats()}>
             {(f) => (
-              <button
-                class="export-format"
-                classList={{ active: format() === f }}
+              <TextButton
+                variant={format() === f ? "selected" : "unselected"}
                 onClick={() => setFormat(f)}
               >
                 {LABEL[f]}
-              </button>
+              </TextButton>
             )}
           </For>
         </div>
         <div class="export-formats export-themes">
           <For each={THEMES}>
             {(t) => (
-              <button
-                class="export-format"
-                classList={{ active: theme() === t }}
+              <TextButton
+                variant={theme() === t ? "selected" : "unselected"}
                 onClick={() => setTheme(t)}
               >
                 {THEME_LABEL[t]}
-              </button>
+              </TextButton>
             )}
           </For>
         </div>
-        <button class="export-go" disabled={busy()} onClick={doExport}>
-          <Icon value="Download" size={14} /> Export
-        </button>
+        <TextButton class="export-go" disabled={busy()} onClick={doExport}>
+          <Icon value="Download" size={14} /> EXPORT
+        </TextButton>
       </div>
       <div class="export-preview">
         <Show

@@ -2,7 +2,8 @@
 import { For, type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
-import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
+import { TextButton } from "../ui/TextButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
 import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
@@ -69,30 +70,30 @@ export function Toolbar(props: {
   return (
     <div class="draw-toolbar">
       <div class="draw-group">
-        <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <For each={colors()}>{(c) => (
-          <button class="draw-swatch" classList={{ active: t().color === c }}
+          <TextButton variant={t().color === c ? "selected" : "unselected"} class="draw-swatch"
             style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
             onClick={() => props.setTools({ color: c })} />
         )}</For>
       </div>
       <div class="draw-group">
         <span class="draw-label">Size</span>
-        <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <span class="draw-label">Smooth</span>
-        <SegmentedToggle options={smoothOpts} value={t().smoothing} onChange={(v) => props.setTools({ smoothing: v })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={smoothOpts} value={t().smoothing} onChange={(v) => props.setTools({ smoothing: v })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <span class="draw-label">Paper</span>
-        <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
-        <Button variant="plain" class="draw-iconseg" title="Undo" onClick={() => props.onUndo()}><Icon value="Undo2" size={17} /></Button>
-        <Button variant="plain" class="draw-iconseg" title="Redo" onClick={() => props.onRedo()}><Icon value="Redo2" size={17} /></Button>
+        <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
+        <IconButton class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
       </div>
     </div>
   );

@@ -6,6 +6,7 @@
 // out — it knows nothing about the renderer; GraphView supplies `items` and wires the
 // callbacks. Styled as a small graph overlay (rgba(20,20,24,0.55) chrome, 10–11px).
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
+import { SearchBar } from "./ui/SearchBar";
 
 export interface SearchItem {
   id: string;
@@ -112,21 +113,21 @@ export function GraphSearch(props: {
         "pointer-events": "auto",
       }}
     >
-      <input
-        ref={inputRef}
+      <SearchBar
+        leadingIcon="Search"
         placeholder="Search graph..."
         value={query()}
-        onInput={(e) => setQuery(e.currentTarget.value)}
+        onInput={setQuery}
         onKeyDown={onKeyDown}
-        style={{
+        inputRef={(el) => (inputRef = el)}
+        class="graph-search-bar"
+        inputStyle={{
           border: "none",
           outline: "none",
           background: "transparent",
           color: "rgba(232,232,232,0.92)",
           font: "inherit",
           "font-size": "11px",
-          padding: "7px 9px",
-          "border-bottom": "1px solid rgba(255,255,255,0.08)",
         }}
       />
       <div

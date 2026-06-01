@@ -1,6 +1,6 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import { api } from "./api";
-import { Button } from "./ui/Button";
+import { TextButton } from "./ui/TextButton";
 import { EmptyState, Loading } from "./ui/EmptyState";
 import type { Card } from "../../core/src/srs/types";
 
@@ -53,7 +53,7 @@ export function Flashcards(props: { note: string }) {
             when={current() !== null}
             fallback={
               <EmptyState title={`Done reviewing “${noteName()}”`}>
-                <Button variant="primary" size="lg" class="card-btn" onClick={loadCards}>Review again</Button>
+                <TextButton size="lg" onClick={loadCards}>REVIEW AGAIN</TextButton>
               </EmptyState>
             }
           >
@@ -62,13 +62,13 @@ export function Flashcards(props: { note: string }) {
               <div class="card-face question">{current()!.question}</div>
               <Show
                 when={revealed()}
-                fallback={<Button variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</Button>}
+                fallback={<TextButton size="lg" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
               >
                 <div class="card-face answer">{current()!.answer}</div>
                 <div class="grade-row">
-                  <Button variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</Button>
-                  <Button variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</Button>
-                  <Button variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</Button>
+                  <TextButton size="lg" onClick={() => grade("hard")}>HARD</TextButton>
+                  <TextButton size="lg" onClick={() => grade("good")}>GOOD</TextButton>
+                  <TextButton size="lg" onClick={() => grade("easy")}>EASY</TextButton>
                 </div>
               </Show>
             </div>
