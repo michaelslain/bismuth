@@ -394,7 +394,7 @@ test("POST /create then /move then /delete then /restore round-trips a file", as
   }
 });
 
-test("POST /create returns 400 on collision", async () => {
+test("POST /create returns 409 on collision", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -404,7 +404,7 @@ test("POST /create returns 400 on collision", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: "essay.md", kind: "file" }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(409);
   } finally {
     server.stop(true);
   }
@@ -580,7 +580,7 @@ test("GET /cards/all returns every card regardless of due date", async () => {
   }
 });
 
-test("POST /cards/review with an unknown card id returns 400", async () => {
+test("POST /cards/review with an unknown card id returns 404", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-srs-bad-"));
   const memory = mkdtempSync(join(tmpdir(), "oa-srs-bad-mem-"));
   await writeNote(vault, "m.md", "#flashcards\n\na::b");
@@ -592,7 +592,7 @@ test("POST /cards/review with an unknown card id returns 400", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: "m.md::99::0", response: "good" }),
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   } finally {
     server.stop(true);
   }
@@ -993,6 +993,45 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 
     const r3 = await call("does-not-exist");           // unknown id → 400
     expect(r3.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
+  const { vault } = await makeSampleVault();
+  // Seed settings with multiple keys
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Fire 3 concurrent POST /set-setting requests that each modify a different key
+    const requests = [
+      fetch(`${base}/set-setting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: ["appearance", "theme"], value: "light" }),
+      }),
+      fetch(`${base}/set-setting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: ["appearance", "accent"], value: "#ffffff" }),
+      }),
+      fetch(`${base}/set-setting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: ["graph", "nodeSize"], value: 10 }),
+      }),
+    ];
+
+    const responses = await Promise.all(requests);
+    expect(responses.every((r) => r.status === 200)).toBe(true);
+
+    // Verify all three changes were persisted (none clobbered)
+    const settings = await (await fetch(`${base}/settings`)).json();
+    expect(settings.appearance.theme).toBe("light");
+    expect(settings.appearance.accent).toBe("#ffffff");
+    expect(settings.graph.nodeSize).toBe(10);
   } finally {
     server.stop(true);
   }

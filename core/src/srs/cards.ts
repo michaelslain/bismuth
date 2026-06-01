@@ -1,6 +1,7 @@
 import { listMarkdown, readNote, writeNote } from "../files";
 import { parseFrontmatter } from "../frontmatter";
 import { extractTags } from "../tags";
+import { createError } from "../error";
 import { parseCards, deckPathsFromTags, CLOZE_RE } from "./parser";
 import { schedule, formatScheduling, BASE_EASE, SR_COMMENT_RE, DEFAULT_SRS, type SrsConfig } from "./scheduler";
 import type { Card, Deck, ParsedCard, ReviewResponse, SchedulingInfo } from "./types";
@@ -128,12 +129,14 @@ export async function applyReview(
   cfg: SrsConfig = DEFAULT_SRS,
 ): Promise<void> {
   const parts = cardId.split("::");
-  if (parts.length !== 3) throw new Error(`invalid cardId format: ${cardId}`);
+  if (parts.length !== 3) {
+    throw createError("CARD_FORMAT_ERROR", `invalid cardId format: ${cardId}`);
+  }
   const [notePath, cardIdxStr, subIdxStr] = parts;
   const cardIndex = Number(cardIdxStr);
   const subIndex = Number(subIdxStr);
   if (!Number.isFinite(cardIndex) || !Number.isFinite(subIndex)) {
-    throw new Error(`invalid cardId indices: ${cardId}`);
+    throw createError("CARD_FORMAT_ERROR", `invalid cardId indices: ${cardId}`);
   }
 
   const text = await readNote(vault, notePath);
@@ -141,10 +144,14 @@ export async function applyReview(
   const head = text.slice(0, text.length - body.length);
 
   const pc = parseCards(body)[cardIndex];
-  if (!pc) throw new Error(`card not found: ${cardId}`);
+  if (!pc) throw createError("CARD_NOT_FOUND", `card not found: ${cardId}`, 404);
 
   if (expectedQuestion !== undefined && subQuestion(pc, subIndex) !== expectedQuestion) {
-    throw new Error(`card content changed since it was loaded: ${cardId}`);
+    throw createError(
+      "CARD_CONTENT_CHANGED",
+      `card content changed since it was loaded: ${cardId}`,
+      409,
+    );
   }
 
   // One schedule entry per sub-card. Update the reviewed sub; keep existing siblings;

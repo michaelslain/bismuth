@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import { realpath } from "node:fs/promises";
 import type { Row, SourceSpec } from "./types";
 import { buildVaultRows } from "../basesData";
 import { buildTaskRows, filterTaskRows } from "./tasksData";
@@ -11,19 +12,33 @@ import { refToPath } from "./sourceSpec";
 export interface SourceCtx {
   root: string;
   today?: string;
-  /** Base file paths already entered, for cycle protection across composition. */
+  /** Base file paths already entered, for cycle protection across composition.
+   *  Paths are resolved to their real paths (symlinks dereferenced) before adding to prevent
+   *  symlink-based cycles (e.g., A -> link-to-A -> A). */
   seen?: Set<string>;
 }
 
 /**
  * Resolve a base FILE to its rows, following its OWN declared source (composition).
  * An own-rows base (no `source:`) returns its inline table rows; a base whose source
- * is notes/tasks/another-base re-runs that source. Cycles terminate via `seen`.
+ * is notes/tasks/another-base re-runs that source. Cycles terminate via `seen` after
+ * resolving symlinks to prevent symlink-based loops.
  */
 export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row[]> {
   const seen = ctx.seen ?? new Set<string>();
-  if (seen.has(path)) return []; // cycle: A -> ... -> A
-  seen.add(path);
+
+  // Resolve symlinks to their real paths to detect cycles even through symlink chains.
+  // E.g., if A -> link-to-A or A -> B -> link-to-A, both are caught.
+  let realPath = path;
+  try {
+    realPath = await realpath(path);
+  } catch {
+    // If realpath fails (e.g., file doesn't exist), use the path as-is for cycle detection.
+    // The file read below will catch the actual error.
+  }
+
+  if (seen.has(realPath)) return []; // cycle: A -> ... -> A (possibly through symlinks)
+  seen.add(realPath);
 
   let text: string;
   try {

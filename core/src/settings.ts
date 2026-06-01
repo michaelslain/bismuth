@@ -15,6 +15,40 @@ export const SETTINGS_FILE = "settings.yaml";
 
 export interface ReadSettingsResult { raw: string; data: Record<string, unknown>; }
 
+/**
+ * Per-vault mutex for settings file mutations. Prevents concurrent POST /set-setting
+ * requests from clobbering each other via TOCTOU race. Keys are vault paths;
+ * values are promise chains that serialize all access to that vault's settings.yaml.
+ */
+const settingsMutexes = new Map<string, Promise<void>>();
+
+/** Run a function serially within a per-vault mutex. */
+async function withSettingsMutex<T>(
+  vault: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  // Chain this operation after any pending operations on this vault
+  const existing = settingsMutexes.get(vault) ?? Promise.resolve();
+  let result!: T;
+  let error: Error | undefined;
+
+  const next = existing
+    .then(async () => {
+      try {
+        result = await fn();
+      } catch (e) {
+        error = e as Error;
+      }
+    });
+
+  settingsMutexes.set(vault, next);
+
+  // Wait for this operation to complete
+  await next;
+  if (error) throw error;
+  return result;
+}
+
 /** Read settings.yaml. Returns null if absent; tolerant of malformed YAML (data → {}). */
 export async function readSettings(vault: string): Promise<ReadSettingsResult | null> {
   const full = join(vault, SETTINGS_FILE);
@@ -117,14 +151,19 @@ export async function reconcileSettings(vault: string): Promise<void> {
  * other key, all comments, and key order. Reconciles first so the file exists and
  * is fully shaped. This is the backend's single write path for settings, so a
  * frontend toggle can never clobber comments or the `properties:` registry.
+ *
+ * Guarded by a per-vault mutex to prevent concurrent requests from clobbering
+ * each other via TOCTOU race during read-modify-write.
  */
 export async function setSettingInFile(vault: string, path: string[], value: unknown): Promise<void> {
   if (!path.length) return;
-  await reconcileSettings(vault); // ensure the file exists + is shaped
-  const raw = await readNote(vault, SETTINGS_FILE);
-  const doc = parseDocument(raw);
-  doc.setIn(path, value);
-  await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  await withSettingsMutex(vault, async () => {
+    await reconcileSettings(vault); // ensure the file exists + is shaped
+    const raw = await readNote(vault, SETTINGS_FILE);
+    const doc = parseDocument(raw);
+    doc.setIn(path, value);
+    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  });
 }
 
 /**
@@ -257,30 +296,35 @@ export async function readDailyNotes(vault: string): Promise<DailyNoteConfig[]> 
  * A non-empty icon sets folderIcons[path]; an empty/missing icon deletes it.
  * Initializes a fresh settings.yaml first if none exists, then edits only the
  * folderIcons node via the YAML CST so the rest of the file is preserved.
+ *
+ * Guarded by a per-vault mutex to prevent concurrent requests from clobbering
+ * each other via TOCTOU race during read-modify-write.
  */
 export async function setFolderIcon(vault: string, path: string, icon: string | null | undefined): Promise<void> {
-  await initializeSettings(vault); // no-op if present; guarantees a file to edit
-  const raw = await readNote(vault, SETTINGS_FILE);
-  let doc;
-  try {
-    doc = parseDocument(raw);
-  } catch {
-    doc = new Document();
-  }
-  if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
-    doc.contents = new YAMLMap();
-  }
-  let map = doc.getIn(["folderIcons"]);
-  if (!(map instanceof YAMLMap)) {
-    map = new YAMLMap();
-    doc.setIn(["folderIcons"], map);
-  }
-  if (icon && icon.length > 0) {
-    (map as YAMLMap).set(path, icon);
-  } else {
-    (map as YAMLMap).delete(path);
-  }
-  await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  await withSettingsMutex(vault, async () => {
+    await initializeSettings(vault); // no-op if present; guarantees a file to edit
+    const raw = await readNote(vault, SETTINGS_FILE);
+    let doc;
+    try {
+      doc = parseDocument(raw);
+    } catch {
+      doc = new Document();
+    }
+    if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+      doc.contents = new YAMLMap();
+    }
+    let map = doc.getIn(["folderIcons"]);
+    if (!(map instanceof YAMLMap)) {
+      map = new YAMLMap();
+      doc.setIn(["folderIcons"], map);
+    }
+    if (icon && icon.length > 0) {
+      (map as YAMLMap).set(path, icon);
+    } else {
+      (map as YAMLMap).delete(path);
+    }
+    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  });
 }
 
 // The typed, file-merged-over-defaults config the backend reads at runtime (layout

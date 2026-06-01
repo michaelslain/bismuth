@@ -37,4 +37,51 @@ describe("diffLeaves", () => {
     const next = { properties: {}, appearance: { theme: "dark" } };
     expect(diffLeaves(prev, next)).toEqual([]);
   });
+
+  it("ignores object key reordering (does not treat as change)", () => {
+    // Objects with same keys in different order should not trigger a change
+    const prev = { appearance: { accent: "#fff", theme: "dark" } };
+    const next = { appearance: { theme: "dark", accent: "#fff" } };
+    expect(diffLeaves(prev, next)).toEqual([]);
+  });
+
+  it("handles nested object key reordering at multiple levels", () => {
+    // Same nested structure, different key order at each level
+    const prev = { ui: { toolbar: { position: "top", visible: true } } };
+    const next = { ui: { toolbar: { visible: true, position: "top" } } };
+    expect(diffLeaves(prev, next)).toEqual([]);
+  });
+
+  it("detects changes when only one nested object has reordered keys", () => {
+    const prev = { appearance: { theme: "dark", accent: "#fff" } };
+    const next = { appearance: { theme: "light", accent: "#fff" } };
+    expect(diffLeaves(prev, next)).toEqual([{ path: ["appearance", "theme"], value: "light" }]);
+  });
+
+  it("handles arrays with different element order (treats as change)", () => {
+    const prev = { graph: { palette: [1, 2, 3] } };
+    const next = { graph: { palette: [3, 2, 1] } };
+    expect(diffLeaves(prev, next)).toEqual([{ path: ["graph", "palette"], value: [3, 2, 1] }]);
+  });
+
+  it("handles null/undefined transitions", () => {
+    const prev = { field: null };
+    const next = { field: "value" };
+    expect(diffLeaves(prev, next)).toEqual([{ path: ["field"], value: "value" }]);
+  });
+
+  it("handles numeric and boolean leaf changes", () => {
+    const prev = { graph: { nodeSize: 5, spin: true } };
+    const next = { graph: { nodeSize: 6, spin: false } };
+    expect(diffLeaves(prev, next)).toEqual([
+      { path: ["graph", "nodeSize"], value: 6 },
+      { path: ["graph", "spin"], value: false },
+    ]);
+  });
+
+  it("detects nested array changes", () => {
+    const prev = { groups: [{ id: 1, items: [1, 2] }] };
+    const next = { groups: [{ id: 1, items: [1, 3] }] };
+    expect(diffLeaves(prev, next)).toEqual([{ path: ["groups"], value: [{ id: 1, items: [1, 3] }] }]);
+  });
 });

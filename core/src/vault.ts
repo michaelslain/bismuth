@@ -1,7 +1,7 @@
-import { listMarkdown, readNote } from "./files";
 import { parseFrontmatter } from "./frontmatter";
 import { extractTags } from "./tags";
 import { extractWikilinks } from "./wikilinks";
+import { buildGraphFromNotes } from "./graphBuilder";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
 /**
@@ -50,48 +50,41 @@ export function resolveLinkTarget(
 }
 
 export async function buildVaultGraph(root: string): Promise<VaultGraphResult> {
-  const rels = await listMarkdown(root);
-  const notes: GraphNode[] = [];
-  const byBase = new Map<string, string>();
-  const byPath = new Map<string, string>();
-
-  // Build note nodes and index by basename + full path
-  for (const rel of rels) {
-    const id = noteId(rel);
-    const parts = pathParts(rel);
-    const label = parts.name;
-    notes.push({ id, label, kind: "note", folder: parts.topFolder });
-    byBase.set(label, id);
-    byPath.set(id, id);
-  }
-
-  // Read all contents in parallel
-  const contents = new Map<string, string>(
-    await Promise.all(rels.map(async (rel) => [noteId(rel), await readNote(root, rel)] as const))
-  );
-
-  // Extract edges and tag nodes in a single pass
-  const edges: GraphEdge[] = [];
   const tagNodes = new Map<string, GraphNode>();
 
-  for (const note of notes) {
-    const raw = contents.get(note.id)!;
-    const { data, body } = parseFrontmatter(raw);
+  const nodeBuilder = (rel: string): GraphNode => {
+    const id = noteId(rel);
+    const parts = pathParts(rel);
+    return { id, label: parts.name, kind: "note", folder: parts.topFolder };
+  };
+
+  const edgeExtractor = (
+    nodeId: string,
+    content: string,
+    byBase: Map<string, string>,
+    byPath: Map<string, string>,
+  ): GraphEdge[] => {
+    const edges: GraphEdge[] = [];
+    const { data, body } = parseFrontmatter(content);
 
     // Wikilink edges: create edges to existing notes only. Resolve path-qualified
     // links ([[folder/Note]]) by full path, falling back to basename ([[Note]]).
-    for (const target of extractWikilinks(raw)) {
+    for (const target of extractWikilinks(content)) {
       const toId = resolveLinkTarget(target, byBase, byPath);
-      if (toId) edges.push({ from: note.id, to: toId, kind: "link" });
+      if (toId) edges.push({ from: nodeId, to: toId, kind: "link" });
     }
 
     // Tag edges and nodes: create nodes on first reference
     for (const tag of extractTags(data, body)) {
       const tagId = `tag:${tag}`;
       tagNodes.set(tagId, tagNodes.get(tagId) ?? { id: tagId, label: `#${tag}`, kind: "tag" });
-      edges.push({ from: note.id, to: tagId, kind: "tag" });
+      edges.push({ from: nodeId, to: tagId, kind: "tag" });
     }
-  }
 
-  return { graph: { nodes: [...notes, ...tagNodes.values()], edges }, byBase, byPath };
+    return edges;
+  };
+
+  const { nodes, edges, byBase, byPath } = await buildGraphFromNotes(root, nodeBuilder, edgeExtractor);
+
+  return { graph: { nodes: [...nodes, ...tagNodes.values()], edges }, byBase, byPath };
 }

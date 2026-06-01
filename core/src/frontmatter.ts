@@ -22,6 +22,41 @@ export function parseFrontmatter(md: string): Frontmatter {
 }
 
 /**
+ * Mutate frontmatter in markdown: set a key, delete a key, or apply a mutation function.
+ * Preserves YAML formatting (flow vs block arrays, key order, quoting, comments) by editing
+ * via the `yaml` Document API. Falls back to stringify on malformed YAML.
+ * Preserves body verbatim. If no frontmatter exists, prepends a new block.
+ * If the last key is removed, drops the whole `---` block.
+ */
+function mutateFrontmatter(
+  md: string,
+  mutate: (doc: any, data: Record<string, unknown>, fmText: string) => { keep: boolean; result: string },
+): string {
+  const m = md.match(FRONTMATTER_REGEX);
+  const fmText = m?.[1] ?? "";
+  const body = m ? md.slice(m[0].length) : md;
+
+  // Try Document API (preserves formatting).
+  try {
+    const doc = parseDocument(fmText);
+    const { keep, result } = mutate(doc, doc.toJSON() as Record<string, unknown>, fmText);
+    if (result) return result;
+    if (!keep) return body; // Last key removed → body only.
+    let out = doc.toString({ flowCollectionPadding: false });
+    if (!out.endsWith("\n")) out += "\n";
+    return `---\n${out}---\n${body}`;
+  } catch {
+    // Malformed YAML: fall back to stringify via parsed object.
+    let data: Record<string, unknown> = {};
+    try { data = (parse(fmText) ?? {}) as Record<string, unknown>; } catch { /* data stays {} */ }
+    const { keep, result } = mutate({}, data, fmText);
+    if (result) return result;
+    if (!keep || Object.keys(data).length === 0) return body;
+    return `---\n${stringify(data)}---\n${body}`;
+  }
+}
+
+/**
  * Set a single frontmatter key on a note, returning the rewritten markdown.
  * Preserves the original YAML formatting (flow vs block arrays, key order,
  * quoting, comments) by editing via the `yaml` Document API rather than
@@ -34,26 +69,10 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
     // No existing frontmatter: synthesise a fresh block.
     return `---\n${stringify({ [key]: value })}---\n${md}`;
   }
-  const fmText = m[1];
-  const body = md.slice(m[0].length);
-  try {
-    const doc = parseDocument(fmText);
-    doc.set(key, value);
-    // `flowCollectionPadding: false` keeps flow arrays tight: `[book, fiction]`
-    // rather than `[ book, fiction ]`. The previous default added padding on
-    // every untouched flow array. Comma-space inside is still emitted by the
-    // library, so the result matches Obsidian's idiom.
-    let out = doc.toString({ flowCollectionPadding: false });
-    if (!out.endsWith("\n")) out += "\n";
-    return `---\n${out}---\n${body}`;
-  } catch {
-    // Malformed YAML: fall back to a clean rewrite via the parsed object.
-    // Reuse the already-extracted fmText and body instead of re-running parseFrontmatter(md).
-    let data: Record<string, unknown> = {};
-    try { data = (parse(fmText) ?? {}) as Record<string, unknown>; } catch { data = {}; }
-    data[key] = value;
-    return `---\n${stringify(data)}---\n${body}`;
-  }
+  return mutateFrontmatter(md, (doc, data) => {
+    doc.set?.(key, value) ?? (data[key] = value);
+    return { keep: true, result: "" };
+  });
 }
 
 /**
@@ -66,26 +85,12 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
 export function deleteFrontmatterKey(md: string, key: string): string {
   const m = md.match(FRONTMATTER_REGEX);
   if (!m) return md; // no frontmatter — nothing to delete
-  const fmText = m[1];
-  const body = md.slice(m[0].length);
-  try {
-    const doc = parseDocument(fmText);
-    if (!doc.has(key)) return md; // key absent — leave the file untouched
-    doc.delete(key);
-    const remaining = doc.toJSON();
-    // Last key removed → emit just the body so no empty `---\n---` block lingers.
-    if (remaining == null || (typeof remaining === "object" && Object.keys(remaining).length === 0)) {
-      return body;
-    }
-    let out = doc.toString({ flowCollectionPadding: false });
-    if (!out.endsWith("\n")) out += "\n";
-    return `---\n${out}---\n${body}`;
-  } catch {
-    // Malformed YAML: fall back to a clean rewrite via the parsed object.
-    const { data } = parseFrontmatter(md);
-    if (!(key in data)) return md;
+  return mutateFrontmatter(md, (doc, data) => {
+    const hasKey = doc.has?.(key) ?? (key in data);
+    if (!hasKey) return { keep: true, result: m.input! }; // unchanged
+    doc.delete?.(key);
     delete data[key];
-    if (Object.keys(data).length === 0) return body;
-    return `---\n${stringify(data)}---\n${body}`;
-  }
+    const isEmpty = Object.keys(data).length === 0;
+    return { keep: !isEmpty, result: "" };
+  });
 }

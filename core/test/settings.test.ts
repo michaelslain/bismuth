@@ -373,3 +373,154 @@ describe("dailyNotes serialization", () => {
     expect(out.dailyNotes).toEqual([]);
   });
 });
+
+// --- concurrent mutation safety ---
+
+describe("concurrent setSettingInFile", () => {
+  it("serializes concurrent requests so none clobber each other", async () => {
+    const vault = await emptyVault();
+    // Set up initial settings with multiple keys
+    await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
+
+    // Fire 3 concurrent requests that each modify a different key
+    const results = await Promise.all([
+      setSettingInFile(vault, ["appearance", "theme"], "light"),
+      setSettingInFile(vault, ["appearance", "accent"], "#ffffff"),
+      setSettingInFile(vault, ["graph", "nodeSize"], 10),
+    ]);
+
+    // All requests should complete successfully
+    expect(results).toHaveLength(3);
+
+    // Verify all three changes were persisted (none clobbered)
+    const { data } = (await readSettings(vault))!;
+    expect((data.appearance as any).theme).toBe("light");
+    expect((data.appearance as any).accent).toBe("#ffffff");
+    expect((data.graph as any).nodeSize).toBe(10);
+  });
+
+  it("preserves file integrity across concurrent mutations", async () => {
+    const vault = await emptyVault();
+    const comment = "# important settings\n";
+    const custom = "myCustomKey: 42\n";
+    await writeNote(vault, "settings.yaml", `${comment}appearance:\n  theme: dark\n${custom}graph:\n  spin: true\n`);
+
+    // Fire multiple concurrent mutations
+    await Promise.all([
+      setSettingInFile(vault, ["appearance", "theme"], "light"),
+      setSettingInFile(vault, ["graph", "spin"], false),
+    ]);
+
+    const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+
+    // Comments and unknown keys must survive concurrent mutations
+    expect(raw).toContain(comment);
+    expect(raw).toContain(custom);
+
+    // And the updated values must be present
+    const { data } = (await readSettings(vault))!;
+    expect((data.appearance as any).theme).toBe("light");
+    expect((data.graph as any).spin).toBe(false);
+  });
+
+  it("handles high-concurrency scenarios (10+ requests)", async () => {
+    const vault = await emptyVault();
+    await reconcileSettings(vault); // set up a fresh settings.yaml
+
+    // Fire 20 concurrent mutations to different keys
+    const promises = Array.from({ length: 20 }, (_, i) =>
+      setSettingInFile(vault, ["graph", "nodeSize"], i),
+    );
+    await Promise.all(promises);
+
+    // The final value should be one of the submitted values (deterministic last write)
+    const { data } = (await readSettings(vault))!;
+    const final = (data.graph as any).nodeSize;
+    expect(final).toBeGreaterThanOrEqual(0);
+    expect(final).toBeLessThan(20);
+  });
+
+  it("should handle 100+ concurrent mutations atomically", async () => {
+    const vault = await emptyVault();
+    await reconcileSettings(vault); // set up a fresh settings.yaml
+
+    // Fire 100 concurrent mutations, each to a different key
+    // Using a nested structure to avoid key collisions
+    const promises = Array.from({ length: 100 }, (_, i) => {
+      const keyPath = ["graph", `testKey${i}`];
+      const value = `value_${i}`;
+      return setSettingInFile(vault, keyPath, value);
+    });
+
+    await Promise.all(promises);
+
+    // Verify all 100 changes persisted correctly
+    const { data } = (await readSettings(vault))!;
+    const graphData = data.graph as Record<string, unknown>;
+
+    let successCount = 0;
+    for (let i = 0; i < 100; i++) {
+      const key = `testKey${i}`;
+      const expected = `value_${i}`;
+      if (graphData[key] === expected) {
+        successCount++;
+      }
+    }
+
+    // All 100 mutations must have persisted successfully
+    expect(successCount).toBe(100);
+    expect(graphData.nodeSize).toBe(6); // Original field from reconcile must be preserved (schema default)
+  });
+
+  it("should not bottleneck under 100+ concurrent mutations with different key paths", async () => {
+    const vault = await emptyVault();
+    await reconcileSettings(vault); // set up a fresh settings.yaml
+
+    const startTime = Date.now();
+
+    // Fire 150 concurrent mutations across different sections
+    const promises = Array.from({ length: 150 }, (_, i) => {
+      let keyPath: string[];
+      const section = i % 3;
+      if (section === 0) {
+        keyPath = ["appearance", `concurrKey${i}`];
+      } else if (section === 1) {
+        keyPath = ["graph", `concurrKey${i}`];
+      } else {
+        keyPath = ["calendar", `concurrKey${i}`];
+      }
+      return setSettingInFile(vault, keyPath, i);
+    });
+
+    await Promise.all(promises);
+    const duration = Date.now() - startTime;
+
+    // Verify all changes persisted
+    const { data } = (await readSettings(vault))!;
+    let totalPersistedChanges = 0;
+
+    for (let i = 0; i < 150; i++) {
+      const section = i % 3;
+      const key = `concurrKey${i}`;
+      let sectionData: Record<string, unknown>;
+
+      if (section === 0) {
+        sectionData = data.appearance as Record<string, unknown>;
+      } else if (section === 1) {
+        sectionData = data.graph as Record<string, unknown>;
+      } else {
+        sectionData = data.calendar as Record<string, unknown>;
+      }
+
+      if (sectionData[key] === i) {
+        totalPersistedChanges++;
+      }
+    }
+
+    // All 150 mutations must persist
+    expect(totalPersistedChanges).toBe(150);
+    // Should complete in reasonable time (not severely bottlenecked)
+    // Allowing 5s for 150 mutations on typical hardware
+    expect(duration).toBeLessThan(5000);
+  });
+});

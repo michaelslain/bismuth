@@ -6,6 +6,7 @@ import { attachLayout } from "./layout-cache";
 import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
+import { AppError } from "./error";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import { parseBaseFile } from "./bases/parse";
@@ -31,6 +32,16 @@ const dec = new TextDecoder();
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
+/** Standardized success response: JSON data or plain "ok". */
+function ok(data?: unknown): Response {
+  return data !== undefined ? Response.json(data) : new Response("ok");
+}
+
+/** Standardized error response: message + HTTP status code. */
+function error(message: string, statusCode: number = 400): Response {
+  return new Response(message, { status: statusCode });
+}
+
 export function cliArg(name: string): string | undefined {
   const i = Bun.argv.indexOf(`--${name}`);
   return i >= 0 ? Bun.argv[i + 1] : undefined;
@@ -44,7 +55,7 @@ function withCors(res: Response): Response {
 
 function requireQueryParam(url: URL, param: string): string {
   const value = url.searchParams.get(param);
-  if (!value) throw new Error(`missing ?${param}=`);
+  if (!value) throw new AppError("EINVAL", `missing ?${param}=`, 400);
   return value;
 }
 
@@ -204,7 +215,7 @@ export function createServer(cfg: CoreConfig) {
 
   const routes: Record<string, Handler> = {
     "GET /version": async (_, __) => {
-      return Response.json({ version });
+      return ok({ version });
     },
 
     "GET /events": (_, __) => {
@@ -248,12 +259,12 @@ export function createServer(cfg: CoreConfig) {
       if (cachedGraph === null) {
         cachedGraph = attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault);
       }
-      return Response.json(cachedGraph);
+      return ok(cachedGraph);
     },
 
     "GET /templates": async () => {
       const folder = appConfig.templates?.folder ?? "Templates";
-      return Response.json(await listTemplates(cfg.vault, folder));
+      return ok(await listTemplates(cfg.vault, folder));
     },
 
     "GET /tree": async (_, __) => {
@@ -269,12 +280,12 @@ export function createServer(cfg: CoreConfig) {
         }
         return e;
       });
-      return Response.json(entries);
+      return ok(entries);
     },
 
     "GET /vault-data": async (_, __) => {
       if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
-      return Response.json(cachedRows);
+      return ok(cachedRows);
     },
 
     "GET /base": async (_, url) => {
@@ -286,10 +297,10 @@ export function createServer(cfg: CoreConfig) {
       try {
         text = await readNote(cfg.vault, path);
       } catch {
-        return new Response("not found", { status: 404 });
+        return error("not found", 404);
       }
       const name = path.split("/").pop()!.replace(/\.md$/, "");
-      return Response.json(parseBaseFile(text, { name, path }));
+      return ok(parseBaseFile(text, { name, path }));
     },
 
     "GET /file": async (_, url) => {
@@ -308,37 +319,37 @@ export function createServer(cfg: CoreConfig) {
       const { path, contents } = (await req.json()) as { path: string; contents: string };
       await writeNote(cfg.vault, path, contents);
       await invalidate(path);
-      return new Response("ok");
+      return ok();
     },
 
     "GET /meta": async (_, url) => {
       const path = requireQueryParam(url, "path");
       const noteText = await readNoteOrEmpty(cfg.vault, path);
       const { data } = parseFrontmatter(noteText);
-      return Response.json(data);
+      return ok(data);
     },
 
     "GET /config": async (_, __) => {
       // Read-only view of how core was launched — surfaced in the settings page.
-      return Response.json({ vault: cfg.vault, memory: cfg.memory ?? null });
+      return ok({ vault: cfg.vault, memory: cfg.memory ?? null });
     },
 
     "GET /settings": async (_, __) => {
       // Parsed app settings (file merged over defaults) for frontend hydration.
-      return Response.json(await serializeSettingsForFrontend(cfg.vault));
+      return ok(await serializeSettingsForFrontend(cfg.vault));
     },
 
     "GET /schema": async (_, __) => {
       // Property registry (from settings.yaml `properties:`) for note validation + autocomplete.
-      return Response.json(await getVaultSchema(cfg.vault));
+      return ok(await getVaultSchema(cfg.vault));
     },
 
     "GET /agent-graph": async (_, __) => {
-      return Response.json(buildAgentGraph());
+      return ok(buildAgentGraph());
     },
 
     "GET /tasks": async (_, __) => {
-      return Response.json(await collectVaultTasks(cfg.vault));
+      return ok(await collectVaultTasks(cfg.vault));
     },
 
     // Single source-resolution endpoint: resolve a SourceSpec (base | notes | tasks)
@@ -347,30 +358,30 @@ export function createServer(cfg: CoreConfig) {
     "POST /rows": async (req, __) => {
       const { spec } = (await req.json()) as { spec: SourceSpec };
       const rows = await resolveSource(spec, { root: cfg.vault, today: todayISO() });
-      return Response.json(rows);
+      return ok(rows);
     },
 
     "POST /backup": async (_, __) => {
       const committed = await commitVault(cfg.vault, snapshotMessage());
-      return Response.json({ committed });
+      return ok({ committed });
     },
 
     "GET /cards/decks": async (_, __) => {
-      return Response.json(await collectDecks(cfg.vault, todayISO()));
+      return ok(await collectDecks(cfg.vault, todayISO()));
     },
 
     "GET /cards/all": async (_, __) => {
-      return Response.json(await collectCards(cfg.vault));
+      return ok(await collectCards(cfg.vault));
     },
 
     "GET /cards/note": async (_, url) => {
       const path = requireQueryParam(url, "path");
-      return Response.json(await noteCards(cfg.vault, path));
+      return ok(await noteCards(cfg.vault, path));
     },
 
     "GET /cards/due": async (_, url) => {
       const deck = url.searchParams.get("deck") ?? undefined;
-      return Response.json(await dueCards(cfg.vault, todayISO(), deck));
+      return ok(await dueCards(cfg.vault, todayISO(), deck));
     },
   };
 
@@ -404,7 +415,7 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         const { from, to } = (await req.json()) as { from: string; to: string };
         await moveEntry(cfg.vault, from, to);
-        return new Response("ok");
+        return ok();
       },
       (b) => [b.from, b.to],
     ),
@@ -412,7 +423,7 @@ export function createServer(cfg: CoreConfig) {
     "POST /delete": mutatingHandler(
       async (req) => {
         const { path } = (await req.json()) as { path: string };
-        return Response.json(deleteEntry(cfg.vault, path));
+        return ok(deleteEntry(cfg.vault, path));
       },
       (b) => b.path,
     ),
@@ -421,7 +432,7 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         const { trashPath, to } = (await req.json()) as { trashPath: string; to: string };
         moveEntry(cfg.vault, trashPath, to);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.to,
     ),
@@ -430,7 +441,7 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         const { path, kind } = (await req.json()) as { path: string; kind: "file" | "dir" };
         createEntry(cfg.vault, path, kind);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.path,
     ),
@@ -442,10 +453,10 @@ export function createServer(cfg: CoreConfig) {
         // Frontend toggles call this instead of rewriting the whole file.
         const body = (await req.json()) as { path?: unknown; value?: unknown };
         if (!Array.isArray(body.path) || !body.path.every((s) => typeof s === "string")) {
-          return new Response("bad path", { status: 400 });
+          return error("bad path", 400);
         }
         await setSettingInFile(cfg.vault, body.path as string[], body.value);
-        return Response.json({ ok: true });
+        return ok({ ok: true });
       },
       () => SETTINGS_FILE, // invalidate settings.yaml so subscribers re-hydrate
     ),
@@ -458,11 +469,11 @@ export function createServer(cfg: CoreConfig) {
         // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
         const raw = await readNoteOrEmpty(cfg.vault, path);
         if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
-          return new Response("note not found", { status: 404 });
+          return error("note not found", 404);
         }
         const next = setFrontmatterKey(raw, key, value);
         await writeNote(cfg.vault, path, next);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.path,
     ),
@@ -473,11 +484,11 @@ export function createServer(cfg: CoreConfig) {
         const { path, key } = (await req.json()) as { path: string; key: string };
         const raw = await readNoteOrEmpty(cfg.vault, path);
         if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
-          return new Response("note not found", { status: 404 });
+          return error("note not found", 404);
         }
         const next = deleteFrontmatterKey(raw, key);
         await writeNote(cfg.vault, path, next);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.path,
     ),
@@ -494,7 +505,7 @@ export function createServer(cfg: CoreConfig) {
         const name = file.split("/").pop()!.replace(/\.md$/, "");
         const next = upsertRow(text, { name, path: file }, index ?? null, note);
         await writeNote(cfg.vault, file, next);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.file,
     ),
@@ -506,7 +517,7 @@ export function createServer(cfg: CoreConfig) {
         const name = file.split("/").pop()!.replace(/\.md$/, "");
         const next = deleteRow(text, { name, path: file }, index);
         await writeNote(cfg.vault, file, next);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.file,
     ),
@@ -517,15 +528,15 @@ export function createServer(cfg: CoreConfig) {
         // the mapping lives in settings.yaml and is overlaid onto /tree dir entries.
         const { path, icon } = (await req.json()) as { path: string; icon?: string | null };
         if (typeof path !== "string" || path.length === 0) {
-          return new Response("missing path", { status: 400 });
+          return error("missing path", 400);
         }
         // Reject traversal / absolute paths — folder paths are vault-relative.
         const segments = path.split("/");
         if (path.startsWith("/") || segments.some((s) => s === ".." || s === ".")) {
-          return new Response("invalid path", { status: 400 });
+          return error("invalid path", 400);
         }
         await setFolderIcon(cfg.vault, path, icon ?? "");
-        return new Response("ok");
+        return ok();
       },
       // settings.yaml change → invalidate broadly; pass its path so classifyVault
       // marks both graph & tree dirty (isSettingsPath), refreshing /tree.
@@ -538,14 +549,14 @@ export function createServer(cfg: CoreConfig) {
         const content = await readNote(cfg.vault, path);
         const lines = content.split("\n");
         if (line < 0 || line >= lines.length) {
-          throw new Error("line out of range");
+          throw new AppError("EINVAL", "line out of range", 400);
         }
         // toggleTaskLine may return TWO lines (recurrence: the next occurrence is
         // inserted above the completed one, separated by "\n"). Splicing the result
         // back as a single array slot keeps that ordering after join("\n").
         lines[line] = toggleTaskLine(lines[line], todayISO());
         await writeNote(cfg.vault, path, lines.join("\n"));
-        return new Response("ok");
+        return ok();
       },
       (b) => b.path,
     ),
@@ -565,16 +576,16 @@ export function createServer(cfg: CoreConfig) {
           const name = body.file.split("/").pop()!.replace(/\.md$/, "");
           const { rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
-          if (!row) throw new Error(`row not found: ${body.file}#${body.index}`);
+          if (!row) throw new AppError("EINVAL", `row not found: ${body.file}#${body.index}`, 400);
           const note = applyReviewToRow(row.note, body.response, todayISO(), appConfig.srs);
           const next = upsertRow(text, { name, path: body.file }, body.index, note);
           await writeNote(cfg.vault, body.file, next);
-          return new Response("ok");
+          return ok();
         }
         // Legacy: inline note card identified by `${notePath}::${cardIndex}::${subIndex}`.
-        if (!body.id) return new Response("missing cardId", { status: 400 });
+        if (!body.id) throw new AppError("EINVAL", "missing cardId", 400);
         await applyReview(cfg.vault, body.id, body.response, todayISO(), body.question, appConfig.srs);
-        return new Response("ok");
+        return ok();
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
@@ -582,18 +593,18 @@ export function createServer(cfg: CoreConfig) {
     "POST /daily-note": mutatingHandler(async (req) => {
       const { id } = (await req.json()) as { id: string };
       const config = (await readDailyNotes(cfg.vault)).find((c) => c.id === id);
-      if (!config) return new Response(`unknown daily note: ${id}`, { status: 400 });
+      if (!config) return error(`unknown daily note: ${id}`, 400);
       const now = new Date();
       const path = dailyNotePath(config, now);
       if (await Bun.file(join(cfg.vault, path)).exists()) {
-        return Response.json({ path, created: false });
+        return ok({ path, created: false });
       }
       let templateRaw: string | null = null;
       if (config.template && (await Bun.file(join(cfg.vault, config.template)).exists())) {
         templateRaw = await readNote(cfg.vault, config.template);
       }
       await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
-      return Response.json({ path, created: true });
+      return ok({ path, created: true });
     }),
   };
 
@@ -609,7 +620,7 @@ export function createServer(cfg: CoreConfig) {
         const rows = Number(url.searchParams.get("rows"));
         if (!Number.isInteger(cols) || !Number.isInteger(rows) ||
             cols < 1 || cols > 500 || rows < 1 || rows > 500) {
-          return withCors(new Response("bad cols/rows", { status: 400 }));
+          return withCors(error("bad cols/rows", 400));
         }
         const origin = req.headers.get("origin");
         // Allow:
@@ -621,13 +632,13 @@ export function createServer(cfg: CoreConfig) {
           /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
           /^tauri:\/\//.test(origin);
         if (!allowed) {
-          return withCors(new Response("forbidden origin", { status: 403 }));
+          return withCors(error("forbidden origin", 403));
         }
         const session = createTerminalSession({ cwd: cfg.vault, cols, rows });
-        const ok = server.upgrade(req, { data: { sessionId: session.id } });
-        if (!ok) {
+        const upgraded = server.upgrade(req, { data: { sessionId: session.id } });
+        if (!upgraded) {
           killSession(session.id);
-          return withCors(new Response("upgrade failed", { status: 400 }));
+          return withCors(error("upgrade failed", 400));
         }
         return new Response(null, { status: 101 }); // upgrade response is sent by Bun
       }
@@ -636,14 +647,15 @@ export function createServer(cfg: CoreConfig) {
       const handler = routes[route] ?? mutatingRoutes[route];
 
       if (!handler) {
-        return withCors(new Response("not found", { status: 404 }));
+        return withCors(error("not found", 404));
       }
 
       try {
         const res = await handler(req, url, cfg);
         return withCors(res);
       } catch (e) {
-        return withCors(new Response((e as Error).message, { status: 400 }));
+        const err = e instanceof AppError ? e : new AppError("INTERNAL_ERROR", (e as Error).message, 500);
+        return withCors(error(err.message, err.statusCode));
       }
     },
 
