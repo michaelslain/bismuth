@@ -274,3 +274,26 @@ export function expandTemplate(raw: string, ctx: TemplateContext): ExpandResult 
     cursorOffset: cursorOffset ?? result.length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// TEMPLATE_TOKENS — shared autocomplete catalog
+// ---------------------------------------------------------------------------
+
+/** One autocompleteable template token + its one-line documentation. */
+export interface TemplateToken {
+  token: string;
+  doc: string;
+}
+
+/**
+ * The template tokens offered by autocomplete (editor body/frontmatter and the
+ * daily-note `fileName` settings field). Co-located with expandTemplate so the
+ * tokens offered always match the tokens parsed. Offset/format variants
+ * ({{date+1d}}, {{date:YYYY-MM}}) are documented here, not enumerated.
+ */
+export const TEMPLATE_TOKENS: TemplateToken[] = [
+  { token: "{{date}}",   doc: "Current date (YYYY-MM-DD). Offset/format: {{date+1d}}, {{date:YYYY-MM}}." },
+  { token: "{{time}}",   doc: "Current time (HH:mm). Offset/format: {{time+1h}}, {{time:h:mm A}}." },
+  { token: "{{title}}",  doc: "The note's title (its filename without .md)." },
+  { token: "{{cursor}}", doc: "Where the caret lands after the template is inserted." },
+];

@@ -24,6 +24,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
+  if (content.endsWith(".sheet")) return content.split("/").pop()!.replace(/\.sheet$/, "");
   return noteName(content);
 }
 
@@ -33,5 +34,6 @@ export function contentIcon(content: string): string | undefined {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
+  if (content.endsWith(".sheet")) return "Table";
   return undefined;
 }

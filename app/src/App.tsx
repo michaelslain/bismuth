@@ -217,8 +217,9 @@ export default function App() {
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  const newSpreadsheet = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "sheet" } }));
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode });
+  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, newSpreadsheet, setMode });
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so

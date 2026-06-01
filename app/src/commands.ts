@@ -12,6 +12,7 @@ export interface CommandHandlers {
   openTerminal: () => void;
   newNote: () => void;
   newFolder: () => void;
+  newSpreadsheet: () => void;
   setMode: (mode: GraphMode) => void;
 }
 
@@ -27,6 +28,7 @@ export function bindCommands(h: CommandHandlers): Map<string, BoundCommand> {
   const actions: Record<string, () => void> = {
     "new-note": h.newNote,
     "new-folder": h.newFolder,
+    "new-spreadsheet": h.newSpreadsheet,
     "terminal": h.openTerminal,
     "settings": h.openSettings,
     "graph-2nd": () => h.setMode("2nd"),
