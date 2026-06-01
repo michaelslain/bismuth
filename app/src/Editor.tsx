@@ -72,7 +72,6 @@ const editorTheme = EditorView.theme({
     backgroundColor: "var(--popover-selected-bg)",
     color: "var(--fg)",
   },
-  ".oa-cm-icon": { opacity: "0.85" },
   ".cm-completionLabel": { flex: "1 1 auto" },
   ".cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", opacity: "var(--popover-detail-opacity)", fontStyle: "normal" },
   ".cm-tooltip.cm-completionInfo": {
