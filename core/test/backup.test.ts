@@ -47,7 +47,7 @@ test("ensureExclude does not throw when .git/info dir is absent (existing repo /
 test("commitVault never tracks settings.yaml", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-backup-"));
   await writeNote(vault, "note.md", "# Note\n");
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: default\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: oxide-duotone\n");
 
   const committed = await commitVault(vault, "snapshot");
   expect(committed).toBe(true);

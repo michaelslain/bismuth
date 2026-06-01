@@ -1,64 +1,44 @@
 import { describe, expect, it } from "bun:test";
-import { THEMES, THEME_NAMES, resolveAppearance, type AppearanceColors } from "./themes";
-
-const base = (over: Partial<AppearanceColors> = {}): AppearanceColors => ({
-  background: "#14151B",
-  foreground: "#F4F2EE",
-  neutral: "#AEB4C2",
-  accent: "#3F6BF0",
-  accentPalette: ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"],
-  theme: "default",
-  ...over,
-});
+import { THEMES, THEME_NAMES, DEFAULT_THEME, resolveTheme, resolveAppearance } from "./themes";
 
 describe("themes registry", () => {
-  it("exposes 7 themes including default first", () => {
-    expect(THEME_NAMES[0]).toBe("default");
+  it("exposes 6 themes with oxide-duotone first (the default)", () => {
+    expect(THEME_NAMES[0]).toBe("oxide-duotone");
+    expect(DEFAULT_THEME).toBe("oxide-duotone");
     expect(THEME_NAMES).toEqual([
-      "default", "gunmetal-teal", "oxide-duotone", "rose-gold",
+      "oxide-duotone", "gunmetal-teal", "rose-gold",
       "indigo-oxide", "forest-oxide", "full-sheen",
     ]);
   });
 
-  it("default theme equals today's hardcoded tokens", () => {
-    expect(THEMES["default"]).toEqual({
-      background: "#14151B",
-      foreground: "#F4F2EE",
-      neutral: "#AEB4C2",
-      accent: "#3F6BF0",
-      accentPalette: ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"],
-    });
+  it("every theme carries the full base color token set", () => {
+    for (const name of THEME_NAMES) {
+      const t = THEMES[name];
+      for (const key of ["background", "foreground", "neutral", "accent", "border", "surface", "surface2"] as const) {
+        expect(t[key], `${name}.${key}`).toMatch(/^#[0-9A-Fa-f]{6}$/);
+      }
+      expect(t.accentPalette.length).toBeGreaterThanOrEqual(5);
+    }
+  });
+
+  it("oxide-duotone holds the mockup's duotone values", () => {
+    expect(THEMES["oxide-duotone"].background).toBe("#0D0E16");
+    expect(THEMES["oxide-duotone"].accent).toBe("#5E8DE6");
+    expect(THEMES["oxide-duotone"].surface).toBe("#161827");
   });
 });
 
-describe("resolveAppearance", () => {
-  it("uses the selected theme's tokens when keys are at their default", () => {
-    const r = resolveAppearance(base({ theme: "indigo-oxide" }));
-    expect(r.background).toBe(THEMES["indigo-oxide"].background);
-    expect(r.accent).toBe(THEMES["indigo-oxide"].accent);
-    expect(r.accentPalette).toEqual(THEMES["indigo-oxide"].accentPalette);
+describe("resolveTheme / resolveAppearance", () => {
+  it("resolves a known theme to its tokens", () => {
+    expect(resolveTheme("indigo-oxide")).toEqual(THEMES["indigo-oxide"]);
   });
 
-  it("a color key that differs from the default theme overrides the selected theme", () => {
-    const r = resolveAppearance(base({ theme: "indigo-oxide", accent: "#ff0000" }));
-    expect(r.accent).toBe("#ff0000");
-    expect(r.background).toBe(THEMES["indigo-oxide"].background);
+  it("falls back to the default theme for an unknown name", () => {
+    expect(resolveTheme("nope")).toEqual(THEMES["oxide-duotone"]);
   });
 
-  it("with theme=default, custom keys behave exactly as today", () => {
-    const r = resolveAppearance(base({ theme: "default", background: "#000000" }));
-    expect(r.background).toBe("#000000");
-    expect(r.foreground).toBe("#F4F2EE");
-  });
-
-  it("an unknown theme falls back to default tokens", () => {
-    const r = resolveAppearance(base({ theme: "nope" as never }));
-    expect(r.background).toBe(THEMES["default"].background);
-  });
-
-  it("detects accentPalette override by value, not reference", () => {
-    const custom = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"];
-    const r = resolveAppearance(base({ theme: "rose-gold", accentPalette: custom }));
-    expect(r.accentPalette).toEqual(custom);
+  it("resolveAppearance reads the theme off the appearance subtree", () => {
+    expect(resolveAppearance({ theme: "forest-oxide" })).toEqual(THEMES["forest-oxide"]);
+    expect(resolveAppearance({ theme: "" })).toEqual(THEMES["oxide-duotone"]);
   });
 });

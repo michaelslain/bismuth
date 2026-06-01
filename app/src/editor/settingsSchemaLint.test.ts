@@ -20,13 +20,13 @@ describe("settings-mode whole-document validation", () => {
   });
 
   it("flags an unknown top-level section as a warning", () => {
-    const doc = "appearance:\n  theme: default\nbogusSection:\n  x: 1\n";
+    const doc = "appearance:\n  theme: oxide-duotone\nbogusSection:\n  x: 1\n";
     const diags = diagnosticsForFrontmatter(doc, SETTINGS_SCHEMA, allow, "settings");
     expect(diags.some((d) => d.message.includes("unknown property"))).toBe(true);
   });
 
   it("produces no diagnostics for a fully-valid settings.yaml", () => {
-    const doc = "appearance:\n  theme: default\n  editorFontSize: 16\n";
+    const doc = "appearance:\n  theme: oxide-duotone\n  editorFontSize: 16\n";
     const diags = diagnosticsForFrontmatter(doc, SETTINGS_SCHEMA, allow, "settings");
     expect(diags).toEqual([]);
   });

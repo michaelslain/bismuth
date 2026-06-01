@@ -9,13 +9,10 @@ import { COMMAND_IDS } from "../commands";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
-// The default Oxide accent palette — the 6 editable category colors that drive
-// graph nodes/clusters/tags AND --accent-purple. Kept in lockstep with
-// app/src/settings.ts DEFAULT_ACCENT_PALETTE.
-const OXIDE_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
-// Kept in lockstep with app/src/themes.ts THEME_NAMES and app/scripts/logoMarks.ts MARK_NAMES.
+// Kept in lockstep with app/src/themes.ts THEME_NAMES (oxide-duotone is the default,
+// first) and app/scripts/logoMarks.ts MARK_NAMES.
 const THEME_NAMES = [
-  "default", "gunmetal-teal", "oxide-duotone", "rose-gold",
+  "oxide-duotone", "gunmetal-teal", "rose-gold",
   "indigo-oxide", "forest-oxide", "full-sheen",
 ];
 const ICON_NAMES = [
@@ -33,26 +30,14 @@ const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", field
 
 export const SETTINGS_SCHEMA: Schema = {
   appearance: object({
-    // --- Centralized theme tokens. These 5 groups define EVERY color in the app
-    // AND the graph (surfaces/borders/muted derive via color-mix in
-    // settingsCssVars.ts; graph nodes/edges/clusters/tags derive via themeColors.ts).
-    background: { type: "string", default: "#14151B", doc: "Base background (Ink, hex) — drives --bg and the graph canvas." },
-    foreground: { type: "string", default: "#F4F2EE", doc: "Base foreground/text (Paper, hex) — drives --fg." },
-    neutral: { type: "string", default: "#AEB4C2", doc: "Neutral metal (Steel, hex) — drives --text-muted, --border, and graph edges." },
-    accent: { type: "string", default: "#3F6BF0", doc: "Primary accent (Blue, hex) — active tab, selection, links, caret." },
-    accentPalette: {
-      type: { kind: "list", item: "string" },
-      default: OXIDE_PALETTE,
-      doc: "The 6 Oxide category colors (hex) for graph nodes/clusters/tags, by stable hash. Also drives --accent-purple.",
-    },
-    // Named Bismuth color theme — the base layer of colors. Any individually-set
-    // color key above (background/foreground/neutral/accent/accentPalette) overrides
-    // the theme on top. `default` reproduces the original Oxide tokens. Repurposes
-    // the former dark-only enum; the app remains dark-only regardless of value.
+    // Bismuth color theme — selects EVERY color in the app + graph (background,
+    // surfaces, border, text, muted, accent, and the graph node palette). The theme
+    // is the single source of color; app/src/themes.ts holds the token values that
+    // settingsCssVars.ts projects to CSS vars. The app is dark-only.
     theme: {
       type: enumType(THEME_NAMES),
-      default: "default",
-      doc: "Bismuth color theme (base palette): default (Oxide) · gunmetal-teal · oxide-duotone · rose-gold · indigo-oxide · forest-oxide · full-sheen. Individual color keys override it.",
+      default: "oxide-duotone",
+      doc: "Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen.",
     },
     // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
     icon: {

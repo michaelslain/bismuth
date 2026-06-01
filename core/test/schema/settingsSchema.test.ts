@@ -19,32 +19,22 @@ test("folderIcons section is an empty object schema (the per-folder icon map pla
   expect(SETTINGS_SCHEMA.folderIcons.type).toEqual({ kind: "object", fields: {} });
 });
 
-test("appearance theme tokens carry the Oxide/base-metal defaults", () => {
+test("appearance has no flat per-color keys (themes are the single source of color)", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
-  expect(appearance.background.type).toBe("string");
-  expect(appearance.background.default).toBe("#14151B");
-  expect(appearance.foreground.default).toBe("#F4F2EE");
-  expect(appearance.neutral.default).toBe("#AEB4C2");
-  expect(appearance.accent.type).toBe("string");
-  expect(appearance.accent.default).toBe("#3F6BF0");
-  expect(appearance.accent.doc).toBeTruthy();
+  expect(appearance.background).toBeUndefined();
+  expect(appearance.foreground).toBeUndefined();
+  expect(appearance.neutral).toBeUndefined();
+  expect(appearance.accent).toBeUndefined();
+  expect(appearance.accentPalette).toBeUndefined();
 });
 
-test("appearance.accentPalette is a 6-color Oxide list", () => {
-  const appearance = objectFields(SETTINGS_SCHEMA.appearance);
-  expect(appearance.accentPalette.type).toEqual({ kind: "list", item: "string" });
-  expect(appearance.accentPalette.default).toEqual([
-    "#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D",
-  ]);
-});
-
-test("appearance.theme is the Bismuth theme enum defaulting to default", () => {
+test("appearance.theme is the Bismuth theme enum defaulting to oxide-duotone", () => {
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
   expect(appearance.theme.type).toEqual({
     kind: "enum",
-    values: ["default", "gunmetal-teal", "oxide-duotone", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"],
+    values: ["oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"],
   });
-  expect(appearance.theme.default).toBe("default");
+  expect(appearance.theme.default).toBe("oxide-duotone");
   expect(appearance.theme.doc).toBeTruthy();
 });
 
@@ -105,11 +95,9 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
     ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
-  expect(d.appearance.accent).toBe("#3F6BF0");
-  expect(d.appearance.background).toBe("#14151B");
-  expect(d.appearance.accentPalette).toEqual(["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"]);
-  expect(d.appearance.theme).toBe("default");
+  expect(d.appearance.theme).toBe("oxide-duotone");
   expect(d.appearance.icon).toBe("hopper-crystal");
+  expect(d.appearance.accent).toBeUndefined(); // flat color keys removed; theme owns color
   expect(d.graph.repulsion).toBe(-10);
   expect(d.graph.viewMode).toBe("3d");
   expect(d.editor.autoSaveDelay).toBe(800);

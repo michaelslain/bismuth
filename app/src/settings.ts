@@ -23,13 +23,8 @@ import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/sche
 export interface Settings {
   appearance: {
     // Centralized theme tokens (the 5 groups everything derives from).
-    background: string;  // hex (Ink) → --bg + graph canvas
-    foreground: string;  // hex (Paper) → --fg
-    neutral: string;     // hex (Steel) → --text-muted, --border, graph edges
-    accent: string;      // hex (Blue), drives accent-tinted UI (active tab, selection, links, caret)
-    accentPalette: string[]; // 6 Oxide hex colors → graph nodes/clusters/tags + --accent-purple
-    // Bismuth color theme name (base palette); see app/src/themes.ts. Widened from
-    // the old "dark"|"light" so dark-aware consumers still compile; app is dark-only.
+    // Bismuth color theme name — selects all colors; see app/src/themes.ts. The app
+    // is dark-only. There are no per-color override keys in the initial release.
     theme: string;
     icon: string; // app logo mark name (app/scripts/logoMarks.ts MARK_NAMES)
     editorFont: string;  // key into FONT_STACKS

@@ -4,29 +4,31 @@ import { settingsToCssVars } from "./settingsCssVars";
 import { DEFAULTS } from "./settings";
 import { THEMES } from "./themes";
 
-function withAppearance(over: Record<string, unknown>) {
-  return { ...DEFAULTS, appearance: { ...DEFAULTS.appearance, ...over } } as typeof DEFAULTS;
+function withTheme(theme: string) {
+  return { ...DEFAULTS, appearance: { ...DEFAULTS.appearance, theme } } as typeof DEFAULTS;
 }
 
 describe("settingsToCssVars", () => {
-  it("maps appearance settings to CSS custom properties with units", () => {
+  it("maps non-color appearance settings to CSS custom properties with units", () => {
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--accent"]).toBe("#3F6BF0");
     expect(vars["--editor-font-size"]).toBe("16px");
     expect(vars["--editor-font"]).toBe("'Lora', serif"); // resolved through FONT_STACKS
   });
 
-  it("derives the theme color tokens from the 5 appearance token groups", () => {
+  it("derives the color tokens from the default theme (oxide-duotone)", () => {
+    const t = THEMES["oxide-duotone"];
     const vars = settingsToCssVars(DEFAULTS);
-    expect(vars["--bg"]).toBe("#14151B");           // background (Ink)
-    expect(vars["--fg"]).toBe("#F4F2EE");           // foreground (Paper)
-    // neutral (Steel) drives borders/panel via color-mix; foreground drives muted/surfaces.
-    expect(vars["--border"]).toBe("color-mix(in srgb, #AEB4C2 22%, transparent)");
-    expect(vars["--text-muted"]).toBe("color-mix(in srgb, #F4F2EE 60%, transparent)");
-    expect(vars["--panel"]).toBe("color-mix(in srgb, #AEB4C2 6%, transparent)");
-    expect(vars["--surface-1"]).toBe("color-mix(in srgb, #F4F2EE 5%, transparent)");
-    // --accent-purple tracks accentPalette[1] (Oxide purple).
-    expect(vars["--accent-purple"]).toBe("#9B53E8");
+    expect(vars["--bg"]).toBe(t.background);
+    expect(vars["--fg"]).toBe(t.foreground);
+    expect(vars["--accent"]).toBe(t.accent);
+    // Base UI colors come straight from the theme (explicit, not color-mix).
+    expect(vars["--border"]).toBe(t.border);
+    expect(vars["--text-muted"]).toBe(t.neutral);
+    expect(vars["--panel"]).toBe(t.surface);
+    expect(vars["--surface-1"]).toBe(t.surface);
+    expect(vars["--surface-2"]).toBe(t.surface2);
+    // --accent-purple tracks accentPalette[1].
+    expect(vars["--accent-purple"]).toBe(t.accentPalette[1]);
   });
 
   it("falls back to the raw font value when not a known stack key", () => {
@@ -46,21 +48,17 @@ describe("settingsToCssVars", () => {
 });
 
 describe("settingsToCssVars + themes", () => {
-  it("default theme + no overrides reproduces today's tokens", () => {
-    const vars = settingsToCssVars(withAppearance({ theme: "default" }));
-    expect(vars["--bg"]).toBe("#14151B");
-    expect(vars["--accent"]).toBe("#3F6BF0");
+  it("selecting a theme recolors all base + accent vars from that theme", () => {
+    const t = THEMES["indigo-oxide"];
+    const vars = settingsToCssVars(withTheme("indigo-oxide"));
+    expect(vars["--bg"]).toBe(t.background);
+    expect(vars["--accent"]).toBe(t.accent);
+    expect(vars["--surface-1"]).toBe(t.surface);
+    expect(vars["--border"]).toBe(t.border);
   });
 
-  it("selecting a theme recolors --bg/--accent from that theme", () => {
-    const vars = settingsToCssVars(withAppearance({ theme: "indigo-oxide" }));
-    expect(vars["--bg"]).toBe(THEMES["indigo-oxide"].background);
-    expect(vars["--accent"]).toBe(THEMES["indigo-oxide"].accent);
-  });
-
-  it("a custom accent overrides the selected theme", () => {
-    const vars = settingsToCssVars(withAppearance({ theme: "indigo-oxide", accent: "#ff0000" }));
-    expect(vars["--accent"]).toBe("#ff0000");
-    expect(vars["--bg"]).toBe(THEMES["indigo-oxide"].background);
+  it("an unknown theme falls back to the default theme's colors", () => {
+    const vars = settingsToCssVars(withTheme("does-not-exist"));
+    expect(vars["--bg"]).toBe(THEMES["oxide-duotone"].background);
   });
 });
