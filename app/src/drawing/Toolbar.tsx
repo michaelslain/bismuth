@@ -69,7 +69,7 @@ export function Toolbar(props: {
   return (
     <div class="draw-toolbar">
       <div class="draw-group">
-        <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <For each={colors()}>{(c) => (
@@ -80,15 +80,15 @@ export function Toolbar(props: {
       </div>
       <div class="draw-group">
         <span class="draw-label">Size</span>
-        <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <span class="draw-label">Smooth</span>
-        <SegmentedToggle options={smoothOpts} value={t().smoothing} onChange={(v) => props.setTools({ smoothing: v })} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={smoothOpts} value={t().smoothing} onChange={(v) => props.setTools({ smoothing: v })} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <span class="draw-label">Paper</span>
-        <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-seg draw-iconseg" />
+        <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
       </div>
       <div class="draw-group">
         <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />

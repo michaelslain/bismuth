@@ -57,7 +57,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
             />
           )}
         </Index>
-        <TextButton class="draw-add-page" onClick={() => store.addPage()}><Icon value="Plus" size={14} />ADD PAGE</TextButton>
+        <TextButton onClick={() => store.addPage()}><Icon value="Plus" size={14} />ADD PAGE</TextButton>
       </div>
     </div>
   );

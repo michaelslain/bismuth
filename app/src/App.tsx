@@ -668,7 +668,7 @@ export default function App() {
                     {(icon) => <Icon value={icon()} size={13} />}
                   </Show>
                   <span>{tabBarLabel(t)}</span>
-                  <IconButton icon="X" label="Close tab" class="tab-x" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
+                  <IconButton icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
                 </div>
               </>
             )}

@@ -53,7 +53,7 @@ export function Flashcards(props: { note: string }) {
             when={current() !== null}
             fallback={
               <EmptyState title={`Done reviewing “${noteName()}”`}>
-                <TextButton size="lg" class="card-btn" onClick={loadCards}>REVIEW AGAIN</TextButton>
+                <TextButton size="lg" onClick={loadCards}>REVIEW AGAIN</TextButton>
               </EmptyState>
             }
           >
@@ -62,13 +62,13 @@ export function Flashcards(props: { note: string }) {
               <div class="card-face question">{current()!.question}</div>
               <Show
                 when={revealed()}
-                fallback={<TextButton size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
+                fallback={<TextButton size="lg" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
               >
                 <div class="card-face answer">{current()!.answer}</div>
                 <div class="grade-row">
-                  <TextButton size="lg" class="card-btn hard" onClick={() => grade("hard")}>HARD</TextButton>
-                  <TextButton size="lg" class="card-btn good" onClick={() => grade("good")}>GOOD</TextButton>
-                  <TextButton size="lg" class="card-btn easy" onClick={() => grade("easy")}>EASY</TextButton>
+                  <TextButton size="lg" onClick={() => grade("hard")}>HARD</TextButton>
+                  <TextButton size="lg" onClick={() => grade("good")}>GOOD</TextButton>
+                  <TextButton size="lg" onClick={() => grade("easy")}>EASY</TextButton>
                 </div>
               </Show>
             </div>

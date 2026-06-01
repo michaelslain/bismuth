@@ -126,7 +126,6 @@ export function GraphView(props: {
           value={props.mode}
           onChange={props.setMode}
           size="sm"
-          segmentClass="graph-seg"
           options={[
             { id: "2nd", label: "2nd" },
             { id: "3rd", label: "3rd" },
@@ -180,7 +179,6 @@ export function GraphView(props: {
               value={settings.graph.viewMode}
               onChange={setViewMode}
               size="sm"
-              segmentClass="graph-seg"
               options={[
                 { id: "2d", label: "2D" },
                 { id: "3d", label: "3D" },

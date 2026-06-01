@@ -54,8 +54,6 @@ body { background: var(--bg); color: var(--fg); }
 .tab { display: flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: var(--tab-font-size, 12px); cursor: pointer; border-right: 1px solid var(--border); white-space: nowrap; opacity: 0.65; user-select: none; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease; }
 .tab.active { opacity: 1; background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
-.tab-x { opacity: 0.5; padding: 0 2px; border-radius: 3px; }
-.tab-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
 
 /* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
    a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
@@ -99,11 +97,9 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .palette-empty { padding: 14px 16px; opacity: 0.5; font-size: 12px; }
 /* Icon picker: a searchable grid reusing the palette overlay/panel chrome. */
 .icon-picker-panel { max-width: 460px; }
-.icon-picker-clear.btn { margin: 6px 8px 0; padding: 6px 10px; background: transparent; border: 1px solid var(--border); color: var(--fg); opacity: 0.7; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
-.icon-picker-clear:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); }
+.icon-picker-clear.btn { margin: 6px 8px 0; text-align: left; }
 .icon-picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 2px; padding: 8px; overflow-y: auto; }
-.icon-picker-cell.btn { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; background: transparent; border: none; color: var(--fg); opacity: 0.7; border-radius: 6px; cursor: pointer; }
-.icon-picker-cell:hover { opacity: 1; background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.icon-picker-cell.btn { aspect-ratio: 1; }
 .icon-picker-cell.current { opacity: 1; background: color-mix(in srgb, var(--accent) 30%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
 .icon-picker-more { padding: 8px 12px; border-top: 1px solid var(--border); opacity: 0.45; font-size: 11px; }
 
@@ -140,16 +136,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
   font-size: 19px; white-space: pre-wrap;
 }
 .card-face.answer { border-color: var(--accent); }
-.reveal-btn, .card-btn, .exit-btn {
-  padding: 10px 22px; border-radius: 7px; border: 1px solid var(--border);
-  background: var(--panel); color: var(--fg); cursor: pointer; font-size: 15px;
-}
-.reveal-btn:hover, .card-btn:hover { border-color: var(--accent); }
 .grade-row { display: flex; gap: 12px; }
-.card-btn.hard:hover { border-color: var(--danger); }
-.card-btn.good:hover { border-color: var(--accent); }
-.card-btn.easy:hover { border-color: var(--success); }
-.exit-btn { opacity: 0.7; font-size: 13px; }
 .review-done { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
 
 /* Flip card (FlashcardsView base view): reveal flips to the back; front stays as a small caption. */
@@ -253,8 +240,6 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .pane-header-label { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .pane-header-x { padding: 0 3px; border-radius: 3px; opacity: 0.5; cursor: pointer; }
 .pane-header-x:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 12%, transparent); }
-.empty-pane-btn { background: transparent; border: 1px solid var(--border); color: var(--fg); opacity: 0.7; cursor: pointer; font-size: 12px; padding: 5px 10px; border-radius: 4px; font-family: inherit; }
-.empty-pane-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 8%, transparent); border-color: var(--accent); }
 /* Drop-to-split indicator: highlights the half where a file dragged from the tree will land. */
 .pane-dropzone { position: absolute; z-index: 3; pointer-events: none; background: color-mix(in srgb, var(--accent) 22%, transparent); border: 1px solid var(--accent); border-radius: 3px; }
 .pane-dropzone.left { left: 0; top: 0; width: 50%; height: 100%; }
@@ -266,19 +251,3 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .pane-divider.col { cursor: row-resize; }
 .pane-divider:hover { background: var(--accent); }
 
-/* --- Graph HUD segmented toggles (mode row + 2D/3D pill) --- */
-/* Dark-pill look over the WebGL canvas: borderless, uppercase, small. Keeps the
-   original getBtnStyle appearance now that GraphView uses the shared SegmentedToggle. */
-.graph-seg.btn {
-  border: none;
-  background: transparent;
-  padding: 2px 8px;
-  border-radius: 3px;
-  font-size: 10px;
-  line-height: 1.4;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: rgba(200, 200, 200, 0.55);
-}
-.graph-seg.btn:hover:not(:disabled) { color: rgba(232, 232, 232, 0.85); background: transparent; }
-.graph-seg.btn.is-active { color: #e8e8e8; background: rgba(255, 255, 255, 0.15); }

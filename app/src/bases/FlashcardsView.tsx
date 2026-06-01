@@ -168,10 +168,10 @@ export function FlashcardsView(props: {
             />
           </label>
           <div class="card-add-actions">
-            <TextButton size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
+            <TextButton size="lg" onClick={() => setAdding(false)} disabled={busy()}>
               CANCEL
             </TextButton>
-            <TextButton size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
+            <TextButton size="lg" onClick={saveAdd} disabled={busy()}>
               SAVE CARD
             </TextButton>
           </div>
@@ -192,7 +192,7 @@ export function FlashcardsView(props: {
           when={current() !== null}
           fallback={
             <EmptyState title={cram() ? "Cram complete" : "Done reviewing"}>
-              <TextButton size="lg" class="card-btn" onClick={restart}>REVIEW AGAIN</TextButton>
+              <TextButton size="lg" onClick={restart}>REVIEW AGAIN</TextButton>
             </EmptyState>
           }
         >
@@ -231,12 +231,12 @@ export function FlashcardsView(props: {
 
             <Show
               when={revealed()}
-              fallback={<TextButton size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
+              fallback={<TextButton size="lg" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
             >
               <div class="grade-row">
-                <TextButton size="lg" class="card-btn hard" onClick={() => grade("hard")}>HARD</TextButton>
-                <TextButton size="lg" class="card-btn good" onClick={() => grade("good")}>GOOD</TextButton>
-                <TextButton size="lg" class="card-btn easy" onClick={() => grade("easy")}>EASY</TextButton>
+                <TextButton size="lg" onClick={() => grade("hard")}>HARD</TextButton>
+                <TextButton size="lg" onClick={() => grade("good")}>GOOD</TextButton>
+                <TextButton size="lg" onClick={() => grade("easy")}>EASY</TextButton>
               </div>
             </Show>
           </div>

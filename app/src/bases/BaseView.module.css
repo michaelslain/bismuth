@@ -17,11 +17,8 @@
 .barRight { margin-left: auto; display: flex; gap: 6px; }
 .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .srcBtn:global(.btn) {
-  margin-left: auto; padding: 3px 10px; font-size: 12px; cursor: pointer;
-  background: transparent; color: var(--oa-muted);
-  border: 1px solid var(--border); border-radius: 6px;
+  margin-left: auto;
 }
-.srcBtn:hover { color: var(--fg); border-color: var(--accent); }
 
 /* Raw source editor (Source toggle). */
 .source { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -47,9 +44,6 @@
 }
 
 .tabs { display: flex; gap: 4px; }
-.tab { padding: 6px 12px; background: transparent; border: none; cursor: pointer; color: var(--oa-muted); border-bottom: 2px solid transparent; border-radius: 0; transition: color 120ms ease; }
-.tab:hover { color: var(--fg); }
-.tab.active, .tab.is-active { color: var(--fg); border-bottom-color: var(--accent); }
 .loading { padding: 24px; color: var(--oa-muted); }
 
 .table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -106,11 +100,9 @@
 .todoText { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; outline: none; border-bottom: 1px solid transparent; transition: border-color 120ms ease; }
 .todoText:focus { border-bottom-color: var(--accent); }
 .todoDone .todoText { color: var(--oa-muted); text-decoration: line-through; }
-.todoRemove:global(.btn) { flex: 0 0 auto; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; opacity: 0; transition: opacity 120ms ease, color 120ms ease; }
+.todoRemove:global(.btn) { flex: 0 0 auto; opacity: 0; transition: opacity 120ms ease; }
 .todoItem:hover .todoRemove { opacity: 1; }
-.todoRemove:hover { color: var(--fg); }
-.todoAdd:global(.btn) { align-self: flex-start; margin-top: 6px; border: none; background: transparent; color: var(--oa-muted); cursor: pointer; font: inherit; padding: 2px 0; transition: color 120ms ease; }
-.todoAdd:hover { color: var(--accent); }
+.todoAdd:global(.btn) { align-self: flex-start; margin-top: 6px; }
 
 .list ul { margin: 0; padding-left: 20px; }
 .list li { padding: 2px 0; }

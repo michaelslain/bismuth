@@ -61,7 +61,6 @@ export function ExportView(props: { path: string }) {
             {(f) => (
               <TextButton
                 variant={format() === f ? "selected" : "unselected"}
-                class="export-format"
                 onClick={() => setFormat(f)}
               >
                 {LABEL[f]}
@@ -74,7 +73,6 @@ export function ExportView(props: { path: string }) {
             {(t) => (
               <TextButton
                 variant={theme() === t ? "selected" : "unselected"}
-                class="export-format"
                 onClick={() => setTheme(t)}
               >
                 {THEME_LABEL[t]}

@@ -142,7 +142,6 @@ export function BaseView(props: {
           <Show when={(data()?.config.views.length ?? 0) > 1}>
             <SegmentedToggle
               class={styles.tabs}
-              segmentClass={styles.tab}
               value={activeView()}
               onChange={setActiveView}
               options={data()!.config.views.map((v, i) => ({ id: i, label: v.name }))}
