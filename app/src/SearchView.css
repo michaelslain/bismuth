@@ -9,22 +9,18 @@
   flex-direction: column;
   gap: 6px;
 }
-.search-row { display: flex; gap: 6px; align-items: center; }
-
-/* Leading affordance icon (search / replace), dimmed to match muted text. */
-.search-lead { color: var(--text-muted); flex: none; }
-
-.search-input {
-  flex: 1;
-  min-width: 0;
+/* SearchBar row: a single bordered box holding the lead icon, the input, and
+   trailing toggle/action buttons. (Was a flex row of a separately-bordered
+   .search-input + sibling buttons; now the whole bar reads as one box.) */
+.search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   padding: 6px 8px;
   background: var(--panel);
-  color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font: inherit;
 }
-.search-input::placeholder { color: var(--fg); opacity: 0.4; }
 
 /* Square-ish icon toggles (case / whole-word / regex). */
 .search-tg.btn { padding: 4px 6px; flex: none; }

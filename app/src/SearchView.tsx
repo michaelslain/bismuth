@@ -8,7 +8,7 @@ import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
-import { Icon } from "./icons/Icon";
+import { SearchBar } from "./ui/SearchBar";
 import "./SearchView.css";
 
 export function SearchView(props: { onOpen: (path: string) => void }) {
@@ -61,15 +61,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   return (
     <div class="search-view">
       <div class="search-header">
-        <div class="search-row">
-          <Icon value="Search" size={16} class="search-lead" />
-          <input
-            class="search-input"
-            placeholder="Search vault…"
-            value={query()}
-            onInput={(e) => onInput(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
-          />
+        <SearchBar class="search-row" value={query()} placeholder="Search vault…" onInput={onInput} onEnter={runSearch}>
           <IconButton variant="ghost" size="sm" class="search-tg" active={caseSensitive()} label="Case sensitive"
             icon="CaseSensitive" iconSize={16}
             onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
@@ -82,18 +74,11 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
           <IconButton active={showReplace()} label="Toggle replace"
             icon={showReplace() ? "ChevronDown" : "ChevronRight"} iconSize={16}
             onClick={() => setShowReplace(!showReplace())} />
-        </div>
+        </SearchBar>
         <Show when={showReplace()}>
-          <div class="search-row">
-            <Icon value="Replace" size={16} class="search-lead" />
-            <input
-              class="search-input"
-              placeholder="Replace with…"
-              value={replacement()}
-              onInput={(e) => setReplacement(e.currentTarget.value)}
-            />
+          <SearchBar class="search-row" leadingIcon="Replace" value={replacement()} placeholder="Replace with…" onInput={setReplacement}>
             <TextButton variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>Replace all</TextButton>
-          </div>
+          </SearchBar>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>
         <Show when={!error() && status()}><div class="search-status">{status()}</div></Show>
