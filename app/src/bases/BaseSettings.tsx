@@ -92,7 +92,7 @@ export function BaseSettings(props: {
   const [sortDir, setSortDir] = createSignal(view()?.sort?.[0]?.direction ?? "ASC");
   const [groupProp, setGroupProp] = createSignal(view()?.groupBy?.property ?? "");
   const [groupDir, setGroupDir] = createSignal(view()?.groupBy?.direction ?? "ASC");
-  const [aggregate, setAggregate] = createSignal<"sum" | "avg" | "count" | "min" | "max">(view()?.aggregate ?? "sum");
+  const [aggregate, setAggregate] = createSignal<"sum" | "avg" | "count" | "min" | "max">(view()?.aggregate ?? (view()?.y ? "sum" : "count"));
   const [bin, setBin] = createSignal<"day" | "week" | "month">(view()?.bin ?? "day");
 
   const visibleCount = () => cols().filter((c) => c.visible).length;

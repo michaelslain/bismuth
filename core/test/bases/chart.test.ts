@@ -80,6 +80,23 @@ describe("buildChartData", () => {
     const d = buildChartData(rows, view({ x: "cat", y: "g", aggregate: "sum" }));
     expect(d.points.map((p) => p.key)).toEqual(["a", "b"]);
   });
+
+  test("min and max aggregates", () => {
+    const rows = [row({ date: "2026-05-01", w: 3 }), row({ date: "2026-05-01", w: 9 }), row({ date: "2026-05-01", w: 5 })];
+    expect(buildChartData(rows, view({ x: "date", y: "w", aggregate: "min" })).points[0].value).toBe(3);
+    expect(buildChartData(rows, view({ x: "date", y: "w", aggregate: "max" })).points[0].value).toBe(9);
+  });
+
+  test("week binning groups days into ISO weeks", () => {
+    const rows = [
+      row({ date: "2026-05-25", g: 1 }), // Monday
+      row({ date: "2026-05-27", g: 2 }), // Wednesday, same ISO week
+      row({ date: "2026-06-01", g: 4 }), // next Monday
+    ];
+    const d = buildChartData(rows, view({ x: "date", y: "g", aggregate: "sum", bin: "week" }));
+    expect(d.points.map((p) => p.key)).toEqual(["2026-05-25", "2026-06-01"]);
+    expect(d.points.map((p) => p.value)).toEqual([3, 4]);
+  });
 });
 
 describe("buildHeatmapWeeks", () => {
