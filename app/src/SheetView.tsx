@@ -42,14 +42,14 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
       container,
       data,
       onChange: () => { dirty = true; save(); },
-      dark: settings.appearance.theme === "dark",
+      dark: true,
     });
     lastWrittenText = serializeSnapshot(handle.getSnapshot());
   }
 
   // Keep Univer's dark mode in sync with the app theme without remounting.
   createEffect(() => {
-    const dark = settings.appearance.theme === "dark";
+    const dark = true;
     handle?.setDark(dark);
   });
 

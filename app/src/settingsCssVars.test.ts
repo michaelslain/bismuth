@@ -2,6 +2,11 @@
 import { describe, expect, it } from "bun:test";
 import { settingsToCssVars } from "./settingsCssVars";
 import { DEFAULTS } from "./settings";
+import { THEMES } from "./themes";
+
+function withAppearance(over: Record<string, unknown>) {
+  return { ...DEFAULTS, appearance: { ...DEFAULTS.appearance, ...over } } as typeof DEFAULTS;
+}
 
 describe("settingsToCssVars", () => {
   it("maps appearance settings to CSS custom properties with units", () => {
@@ -37,5 +42,25 @@ describe("settingsToCssVars", () => {
     expect(vars["--tab-font-size"]).toBe("12px");
     expect(vars["--pane-divider-width"]).toBe("5px");
     expect(vars["--palette-top-offset"]).toBe("12vh"); // CSS length passed through verbatim
+  });
+});
+
+describe("settingsToCssVars + themes", () => {
+  it("default theme + no overrides reproduces today's tokens", () => {
+    const vars = settingsToCssVars(withAppearance({ theme: "default" }));
+    expect(vars["--bg"]).toBe("#14151B");
+    expect(vars["--accent"]).toBe("#3F6BF0");
+  });
+
+  it("selecting a theme recolors --bg/--accent from that theme", () => {
+    const vars = settingsToCssVars(withAppearance({ theme: "indigo-oxide" }));
+    expect(vars["--bg"]).toBe(THEMES["indigo-oxide"].background);
+    expect(vars["--accent"]).toBe(THEMES["indigo-oxide"].accent);
+  });
+
+  it("a custom accent overrides the selected theme", () => {
+    const vars = settingsToCssVars(withAppearance({ theme: "indigo-oxide", accent: "#ff0000" }));
+    expect(vars["--accent"]).toBe("#ff0000");
+    expect(vars["--bg"]).toBe(THEMES["indigo-oxide"].background);
   });
 });
