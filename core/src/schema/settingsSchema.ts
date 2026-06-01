@@ -111,7 +111,8 @@ export const SETTINGS_SCHEMA: Schema = {
   // Seeded with the three built-ins so a fresh install is unchanged.
   toolbar: {
     type: { kind: "list", item: { kind: "object", fields: {
-      command: { type: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] }, doc: "Which command this button runs (a catalog id or daily-note:<id>)." },
+      command: { type: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] }, doc: "Which command this button runs (a catalog id or daily-note:<id>). Use command: OR commands:, not both." },
+      commands: { type: { kind: "list", item: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] } }, doc: "Multiple commands to run in sequence (alternative to command: field). Use command: OR commands:, not both." },
       icon: { type: "icon", doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
       tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
     } } },
