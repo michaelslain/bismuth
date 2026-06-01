@@ -92,8 +92,8 @@ export function BaseSettings(props: {
   const [sortDir, setSortDir] = createSignal(view()?.sort?.[0]?.direction ?? "ASC");
   const [groupProp, setGroupProp] = createSignal(view()?.groupBy?.property ?? "");
   const [groupDir, setGroupDir] = createSignal(view()?.groupBy?.direction ?? "ASC");
-  const [aggregate, setAggregate] = createSignal<string>(view()?.aggregate ?? "sum");
-  const [bin, setBin] = createSignal<string>(view()?.bin ?? "day");
+  const [aggregate, setAggregate] = createSignal<"sum" | "avg" | "count" | "min" | "max">(view()?.aggregate ?? "sum");
+  const [bin, setBin] = createSignal<"day" | "week" | "month">(view()?.bin ?? "day");
 
   const visibleCount = () => cols().filter((c) => c.visible).length;
 
@@ -117,7 +117,7 @@ export function BaseSettings(props: {
         for (const f of fields()) await api.setProperty(props.basePath, f.key, form()[f.key]);
         if (isChart()) {
           await api.setProperty(props.basePath, "aggregate", aggregate());
-          await api.setProperty(props.basePath, "bin", bin());
+          if (props.type !== "heatmap") await api.setProperty(props.basePath, "bin", bin());
         }
       }
     }
@@ -150,7 +150,7 @@ export function BaseSettings(props: {
       <Show when={isChart()}>
         <div class="srs-grid">
           <Field class="srs-field" label="Aggregate">
-            <select value={aggregate()} onChange={(e) => setAggregate(e.currentTarget.value)}>
+            <select value={aggregate()} onChange={(e) => setAggregate(e.currentTarget.value as "sum" | "avg" | "count" | "min" | "max")}>
               <option value="sum">Sum</option>
               <option value="avg">Average</option>
               <option value="count">Count</option>
@@ -160,7 +160,7 @@ export function BaseSettings(props: {
           </Field>
           <Show when={props.type !== "heatmap"}>
             <Field class="srs-field" label="Date bucket">
-              <select value={bin()} onChange={(e) => setBin(e.currentTarget.value)}>
+              <select value={bin()} onChange={(e) => setBin(e.currentTarget.value as "day" | "week" | "month")}>
                 <option value="day">Day</option>
                 <option value="week">Week</option>
                 <option value="month">Month</option>
@@ -221,7 +221,7 @@ export function BaseSettings(props: {
         </div>
       </Show>
 
-      <Show when={!isRecord() && fields().length === 0}>
+      <Show when={!isRecord() && !isChart() && fields().length === 0}>
         <p class="ui-empty">No extra settings for this view type yet.</p>
       </Show>
 
