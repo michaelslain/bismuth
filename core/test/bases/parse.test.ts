@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseBase } from "../../src/bases/parse";
+import { parseBase, parseBaseFile } from "../../src/bases/parse";
 
 test("parses the canonical obsidian example", () => {
   const yaml = `
@@ -110,4 +110,24 @@ test("map view: type, lat/lng keys, zoom, center parse", () => {
   expect(base.views[0].lng).toBe("longitude");
   expect(base.views[0].zoom).toBe(6);
   expect(base.views[0].center).toEqual({ lat: 40.7, lng: -74 });
+});
+
+test("parses chart view fields", () => {
+  const cfg = parseBase(`views:\n  - type: heatmap\n    name: HM\n    x: date\n    y: glasses\n    aggregate: avg\n    bin: week\n`);
+  const v = cfg.views[0];
+  expect(v.type).toBe("heatmap");
+  expect(v.x).toBe("date");
+  expect(v.y).toBe("glasses");
+  expect(v.aggregate).toBe("avg");
+  expect(v.bin).toBe("week");
+});
+
+test("parses chart fields at top level of a type:base note (flat persistence)", () => {
+  const { config } = parseBaseFile(`---\ntype: base\nview: bar\nx: day\ny: count\naggregate: sum\nbin: month\n---\n`, { name: "T", path: "T.md" });
+  const v = config.views[0];
+  expect(v.type).toBe("bar");
+  expect(v.x).toBe("day");
+  expect(v.y).toBe("count");
+  expect(v.aggregate).toBe("sum");
+  expect(v.bin).toBe("month");
 });

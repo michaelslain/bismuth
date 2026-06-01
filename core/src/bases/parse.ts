@@ -119,6 +119,11 @@ function normalizeView(raw: unknown): ViewConfig {
     dueField: strOrUndef(o.dueField),
     easeField: strOrUndef(o.easeField),
     intervalField: strOrUndef(o.intervalField),
+    // chart bindings
+    x: strOrUndef(o.x),
+    y: strOrUndef(o.y),
+    aggregate: ["sum", "avg", "count", "min", "max"].includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
+    bin: ["day", "week", "month"].includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
   };
 }
 
@@ -200,6 +205,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     const FIELD_KEYS = [
       "frontField", "backField", "dueField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
+      "x", "y",
     ] as const;
     for (const k of FIELD_KEYS) {
       if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
@@ -217,6 +223,9 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
     // nested `views:` block.
     if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
+    // chart axis/aggregation keys (flat persistence for chart views)
+    if (["sum", "avg", "count", "min", "max"].includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
+    if (["day", "week", "month"].includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
   }
 
   const rows = parseRows(body, meta);
