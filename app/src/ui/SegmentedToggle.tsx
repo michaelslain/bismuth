@@ -1,5 +1,5 @@
 import { For, type JSX } from "solid-js";
-import { Button, type ButtonSize, type ButtonVariant } from "./Button";
+import { Button, type ButtonSize } from "./Button";
 import "./ui.css";
 
 export type SegmentedOption<T> = { id: T; label: JSX.Element; title?: string };
@@ -8,8 +8,6 @@ export type SegmentedToggleProps<T> = {
   options: SegmentedOption<T>[];
   value: T;
   onChange: (id: T) => void;
-  /** Button variant for each segment (default "ghost"). */
-  variant?: ButtonVariant;
   size?: ButtonSize;
   class?: string;
   /** Per-segment extra class (e.g. an underline-tab look). */
@@ -17,9 +15,9 @@ export type SegmentedToggleProps<T> = {
 };
 
 /**
- * A row of mutually-exclusive buttons where the selected one is highlighted.
- * Replaces the three separate reimplementations: GraphView's inline
- * getBtnStyle mode/2D-3D rows, the calendar view switcher, and BaseView's tabs.
+ * A row of mutually-exclusive buttons: the active one is `selected`, the rest
+ * `unselected`. This is THE canonical selected/unselected consumer — graph mode
+ * + 2D/3D rows, the calendar view switcher, and BaseView's tabs.
  */
 export function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
   return (
@@ -27,9 +25,9 @@ export function SegmentedToggle<T>(props: SegmentedToggleProps<T>) {
       <For each={props.options}>
         {(opt) => (
           <Button
-            variant={props.variant ?? "ghost"}
+            kind="text"
+            state={opt.id === props.value ? "selected" : "unselected"}
             size={props.size}
-            active={opt.id === props.value}
             class={props.segmentClass}
             title={opt.title}
             onClick={() => props.onChange(opt.id)}

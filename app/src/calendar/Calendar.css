@@ -37,8 +37,7 @@
 .event-chip-title { font-weight: 600; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
-.event-chip-link { cursor: pointer; opacity: 0.8; flex-shrink: 0; }
-.event-chip-link:hover { opacity: 1; }
+.event-chip-link { flex-shrink: 0; }
 .month-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .month-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--background-modifier-border); }
 .month-day-name { text-align: center; padding: 4px; font-size: 0.8em; font-weight: 600; color: var(--text-muted); }

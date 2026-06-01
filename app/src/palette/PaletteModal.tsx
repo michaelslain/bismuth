@@ -6,6 +6,7 @@ import { createSignal, createMemo, createEffect, For, Show, onMount } from "soli
 import Fuse from "fuse.js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
+import { SearchBar } from "../ui/SearchBar";
 
 export type PaletteItem = {
   id: string;
@@ -136,12 +137,13 @@ export function PaletteModal(props: Props) {
 
   return (
     <Modal onClose={props.onClose} class="palette-panel">
-      <input
-        ref={inputRef}
-        class="palette-input"
+      <SearchBar
+        class="palette-search"
+        inputClass="palette-input"
+        inputRef={(el) => (inputRef = el)}
         placeholder={props.placeholder}
         value={query()}
-        onInput={(e) => setQuery(e.currentTarget.value)}
+        onInput={setQuery}
         onKeyDown={onKeyDown}
       />
       <div class="palette-list" ref={listRef}>

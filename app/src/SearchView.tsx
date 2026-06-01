@@ -6,8 +6,9 @@
 import { createSignal, For, Show } from "solid-js";
 import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
-import { Button } from "./ui/Button";
-import { Icon } from "./icons/Icon";
+import { TextButton } from "./ui/TextButton";
+import { IconButton } from "./ui/IconButton";
+import { SearchBar } from "./ui/SearchBar";
 import "./SearchView.css";
 
 export function SearchView(props: { onOpen: (path: string) => void }) {
@@ -60,43 +61,24 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   return (
     <div class="search-view">
       <div class="search-header">
-        <div class="search-row">
-          <Icon value="Search" size={16} class="search-lead" />
-          <input
-            class="search-input"
-            placeholder="Search vault…"
-            value={query()}
-            onInput={(e) => onInput(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
-          />
-          <Button variant="ghost" size="sm" class="search-tg" active={caseSensitive()} title="Case sensitive"
-            onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }}>
-            <Icon value="CaseSensitive" size={16} />
-          </Button>
-          <Button variant="ghost" size="sm" class="search-tg" active={wholeWord()} title="Whole word"
-            onClick={() => { setWholeWord(!wholeWord()); runSearch(); }}>
-            <Icon value="WholeWord" size={16} />
-          </Button>
-          <Button variant="ghost" size="sm" class="search-tg" active={regex()} title="Use regular expression"
-            onClick={() => { setRegex(!regex()); runSearch(); }}>
-            <Icon value="Regex" size={16} />
-          </Button>
-          <Button variant="icon" active={showReplace()} title="Toggle replace"
-            onClick={() => setShowReplace(!showReplace())}>
-            <Icon value={showReplace() ? "ChevronDown" : "ChevronRight"} size={16} />
-          </Button>
-        </div>
+        <SearchBar class="search-row" value={query()} placeholder="Search vault…" onInput={onInput} onEnter={runSearch}>
+          <IconButton variant={caseSensitive() ? "selected" : "unselected"} size="sm" class="search-tg" label="Case sensitive"
+            icon="CaseSensitive" iconSize={16}
+            onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
+          <IconButton variant={wholeWord() ? "selected" : "unselected"} size="sm" class="search-tg" label="Whole word"
+            icon="WholeWord" iconSize={16}
+            onClick={() => { setWholeWord(!wholeWord()); runSearch(); }} />
+          <IconButton variant={regex() ? "selected" : "unselected"} size="sm" class="search-tg" label="Use regular expression"
+            icon="Regex" iconSize={16}
+            onClick={() => { setRegex(!regex()); runSearch(); }} />
+          <IconButton variant={showReplace() ? "selected" : "unselected"} label="Toggle replace"
+            icon={showReplace() ? "ChevronDown" : "ChevronRight"} iconSize={16}
+            onClick={() => setShowReplace(!showReplace())} />
+        </SearchBar>
         <Show when={showReplace()}>
-          <div class="search-row">
-            <Icon value="Replace" size={16} class="search-lead" />
-            <input
-              class="search-input"
-              placeholder="Replace with…"
-              value={replacement()}
-              onInput={(e) => setReplacement(e.currentTarget.value)}
-            />
-            <Button variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>Replace all</Button>
-          </div>
+          <SearchBar class="search-row" leadingIcon="Replace" value={replacement()} placeholder="Replace with…" onInput={setReplacement}>
+            <TextButton size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
+          </SearchBar>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>
         <Show when={!error() && status()}><div class="search-status">{status()}</div></Show>
@@ -110,9 +92,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
                 <span class="search-file-path">{r.path}</span>
                 <span class="search-count">{r.matchCount}</span>
                 <Show when={showReplace()}>
-                  <Button variant="icon" title="Replace all in this file" onClick={() => doReplace(r.path)}>
-                    <Icon value="Replace" size={15} />
-                  </Button>
+                  <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
                 </Show>
               </div>
               <For each={r.snippets}>

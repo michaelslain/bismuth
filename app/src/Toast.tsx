@@ -1,6 +1,6 @@
 // app/src/Toast.tsx
 import { createSignal, For } from "solid-js";
-import { Button } from "./ui/Button";
+import { TextButton } from "./ui/TextButton";
 
 export type Toast = {
   id: number;
@@ -59,16 +59,15 @@ export function ToastHost() {
           >
             <span>{t.message}</span>
             {t.action && (
-              <Button
-                variant="plain"
+              <TextButton
                 size="sm"
                 onClick={() => {
                   t.action!.onClick();
                   dismissToast(t.id);
                 }}
               >
-                {t.action.label}
-              </Button>
+                {t.action.label.toUpperCase()}
+              </TextButton>
             )}
           </div>
         )}

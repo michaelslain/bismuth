@@ -2,7 +2,7 @@ import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
 import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
 import { capitalize, columnLabel } from "./renderValue";
-import { Button } from "../ui/Button";
+import { TextButton } from "../ui/TextButton";
 import { Field } from "../ui/Field";
 
 interface FieldDef {
@@ -226,8 +226,8 @@ export function BaseSettings(props: {
       </Show>
 
       <div class="grade-row">
-        <Button variant="primary" class="card-btn good" onClick={save}>Save</Button>
-        <Button variant="primary" onClick={props.onSaved}>Close</Button>
+        <TextButton onClick={save}>SAVE</TextButton>
+        <TextButton onClick={props.onSaved}>CLOSE</TextButton>
       </div>
     </div>
   );

@@ -6,7 +6,9 @@
 import { createSignal, createMemo, For, Show, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { allIcons } from "./registry";
-import { Icon } from "./Icon";
+import { TextButton } from "../ui/TextButton";
+import { IconButton } from "../ui/IconButton";
+import { SearchBar } from "../ui/SearchBar";
 
 type Props = {
   /** Placeholder / heading for the search box. */
@@ -55,30 +57,30 @@ export function IconPicker(props: Props) {
     <Portal>
       <div class="palette-overlay" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
         <div class="palette-panel icon-picker-panel">
-          <input
-            ref={inputRef}
-            class="palette-input"
+          <SearchBar
+            inputRef={(el) => { inputRef = el; }}
+            inputClass="palette-input"
             placeholder={props.title ?? "Search icons…"}
             value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
+            onInput={setQuery}
             onKeyDown={onKeyDown}
           />
           <Show when={props.onClear}>
-            <button class="icon-picker-clear" onClick={() => { props.onClear!(); props.onClose(); }}>
-              Reset to default icon
-            </button>
+            <TextButton class="icon-picker-clear" onClick={() => { props.onClear!(); props.onClose(); }}>
+              RESET TO DEFAULT ICON
+            </TextButton>
           </Show>
           <div class="icon-picker-grid">
             <For each={results().items}>
               {(e) => (
-                <button
+                <IconButton
                   class="icon-picker-cell"
                   classList={{ current: props.current === e.name }}
-                  title={e.name}
+                  label={e.name}
+                  icon={e.name}
+                  iconSize={20}
                   onClick={() => { props.onPick(e.name); props.onClose(); }}
-                >
-                  <Icon value={e.name} size={20} />
-                </button>
+                />
               )}
             </For>
             <Show when={results().items.length === 0}>

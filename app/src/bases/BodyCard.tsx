@@ -2,7 +2,8 @@ import { createSignal, createMemo, For, Show, onMount } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { renderValue } from "./renderValue";
-import { Button } from "../ui/Button";
+import { TextButton } from "../ui/TextButton";
+import { IconButton } from "../ui/IconButton";
 import styles from "./BaseView.module.css";
 
 // Matches a markdown checklist line: indent, the check char, then the text.
@@ -151,20 +152,18 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
                     }
                   }}
                 />
-                <Button
-                  variant="plain"
+                <IconButton
+                  icon="X"
+                  label="Remove item"
                   class={styles.todoRemove}
-                  title="Remove item"
                   onClick={() => void removeItem(item)}
-                >
-                  ×
-                </Button>
+                />
               </div>
             )}
           </For>
-          <Button variant="plain" class={styles.todoAdd} onClick={() => void addItem()}>
-            + Add item
-          </Button>
+          <TextButton class={styles.todoAdd} onClick={() => void addItem()}>
+            ADD ITEM
+          </TextButton>
         </div>
       </Show>
     </div>

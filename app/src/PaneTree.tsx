@@ -5,6 +5,7 @@ import { Show, createSignal, onCleanup, type Accessor } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import { Icon } from "./icons/Icon";
+import { IconButton } from "./ui/IconButton";
 import { contentLabel, contentIcon } from "./tabIds";
 import type { DragState } from "./dnd/viewDrag";
 import { nearestEdge, type Zone } from "./dnd/geometry";
@@ -99,17 +100,17 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
             {(icon) => <Icon value={icon()} size={13} />}
           </Show>
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
-          <span
+          <IconButton
+            icon="X"
+            label="Close pane"
             class="pane-header-x"
-            title="Close pane"
+            iconSize={12}
             onMouseDown={(e) => {
               e.stopPropagation(); // don't also trigger focus
               e.preventDefault();
               props.onClose(props.node.id);
             }}
-          >
-            ×
-          </span>
+          />
         </div>
       </Show>
       <div class="pane-body">

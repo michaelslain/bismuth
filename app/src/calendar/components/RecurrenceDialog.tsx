@@ -3,6 +3,7 @@ import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
 import { Show } from 'solid-js'
 import { Modal } from '../../ui/Modal'
+import { TextButton } from '../../ui/TextButton'
 
 export function RecurrenceDialog(props: { store: EventStore }) {
   async function handle(scope: 'one' | 'all' | 'following'): Promise<void> {
@@ -41,10 +42,10 @@ export function RecurrenceDialog(props: { store: EventStore }) {
         <h3>{recurrenceAction.value!.type === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}</h3>
         <p>Which occurrences do you want to {recurrenceAction.value!.type}?</p>
         <div class="recurrence-dialog-actions">
-          <button onClick={() => handle('one')}>Just this one</button>
-          <button onClick={() => handle('following')}>This and following</button>
-          <button onClick={() => handle('all')}>All</button>
-          <button onClick={() => (recurrenceAction.value = null)}>Cancel</button>
+          <TextButton onClick={() => handle('one')}>JUST THIS ONE</TextButton>
+          <TextButton onClick={() => handle('following')}>THIS AND FOLLOWING</TextButton>
+          <TextButton onClick={() => handle('all')}>ALL</TextButton>
+          <TextButton onClick={() => (recurrenceAction.value = null)}>CANCEL</TextButton>
         </div>
       </Modal>
     </Show>

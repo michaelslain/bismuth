@@ -5,61 +5,82 @@
    .cram-toggle, .srcBtn, .modal-overlay, .srs-field, .deck-empty, .loading. */
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
+/* Every button is one of two KINDS (text | icon) in one of three STATES
+   (normal | selected | unselected). normal = standalone; unselected/selected =
+   a member of a toggle/series that is off/on. `danger` is an orthogonal tone. */
 .btn {
   font: inherit;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 12px;
   line-height: 1.4;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--fg);
 }
 .btn:disabled { opacity: 0.4; cursor: default; }
 
-/* primary — the default bordered + panel text button (was .card-btn/.reveal-btn) */
-.btn--primary:hover:not(:disabled) { border-color: var(--accent); }
-.btn--primary.is-active { border-color: var(--accent); }
+/* ── text buttons: borderless; state changes emphasis only ────────────────── */
+/* No outlines anywhere. normal = neutral text. unselected = same, dimmed/muted.
+   selected = neutral text on an accent-filled background. All labels UPPERCASE. */
+.btn--text {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  text-transform: uppercase;
+}
+/* normal — standalone, full-strength neutral */
+.btn--text.btn--normal { color: var(--fg); }
+.btn--text.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }
+/* unselected — toggle member, off: muted, no outline */
+.btn--text.btn--unselected { color: var(--text-muted); }
+.btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+/* selected — toggle member, on: neutral text on a neutral (base-color) fill */
+.btn--text.btn--selected { color: var(--fg); background: var(--border); }
+/* danger tone — destructive actions */
+.btn--text.btn--danger { color: var(--danger); }
+.btn--text.btn--danger:hover:not(:disabled) { background: var(--hover-bg); }
 
-/* ghost — bordered, transparent bg, dimmed until hover/active
-   (was .empty-pane-btn/.cram-toggle/.srs-icon-btn/.srcBtn) */
-.btn--ghost { background: transparent; color: var(--text-muted); }
-.btn--ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
-.btn--ghost.is-active { color: var(--accent); border-color: var(--accent); }
-
-/* danger — ghost that turns red on hover (was .srs-icon-btn.danger) */
-.btn--danger { background: transparent; color: var(--text-muted); }
-.btn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
-
-/* icon — borderless, transparent, opacity-driven (was .icon-btn) */
+/* ── icon buttons: borderless; state changes opacity / fill ───────────────── */
 .btn--icon {
   border: none;
   background: transparent;
   color: var(--fg);
-  opacity: 0.5;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 15px;
-  line-height: 1;
 }
-.btn--icon:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
-.btn--icon.is-active { opacity: 1; }
+/* normal — standalone, full opacity */
+.btn--icon.btn--normal { opacity: 1; }
+.btn--icon.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }
+/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
+.btn--icon.btn--unselected { opacity: 0.5; }
+.btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
+/* selected — toggle member, on: neutral icon on a neutral (base-color) fill */
+.btn--icon.btn--selected { opacity: 1; background: var(--border); color: var(--fg); }
+/* danger tone */
+.btn--icon.btn--danger { color: var(--danger); }
 
-/* plain — no border/bg chrome, just a clickable text run (was .tab/.exit-btn-ish) */
-.btn--plain { border: none; background: transparent; color: var(--text-muted); padding: 4px 8px; }
-.btn--plain:hover:not(:disabled) { color: var(--fg); }
-.btn--plain.is-active { color: var(--fg); }
-
-/* sizes */
-.btn--sm { padding: 3px 10px; font-size: 12px; }
-.btn--lg { padding: 10px 22px; font-size: 15px; border-radius: 7px; }
+/* sizes (text buttons) */
+.btn--text.btn--sm { padding: 3px 10px; font-size: 12px; }
+.btn--text.btn--lg { padding: 10px 22px; font-size: 15px; border-radius: 7px; }
 
 /* ── SegmentedToggle ─────────────────────────────────────────────────────── */
 .segmented { display: inline-flex; align-items: center; gap: 2px; }
+
+/* ── SearchBar ───────────────────────────────────────────────────────────── */
+.search-bar { display: flex; align-items: center; gap: 6px; }
+.search-bar-lead { opacity: 0.6; flex: none; }
+.search-bar-input {
+  flex: 1;
+  font: inherit;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+}
+.search-bar-input::placeholder { color: var(--text-muted); }
 
 /* ── Modal ───────────────────────────────────────────────────────────────── */
 .ui-overlay {
