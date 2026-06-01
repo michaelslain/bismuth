@@ -1,0 +1,25 @@
+/* app/src/ExportView.css */
+.export-view { display: flex; flex-direction: column; height: 100%; }
+.export-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border, #2a2a2a);
+}
+.export-formats { display: flex; gap: 0.25rem; }
+.export-format {
+  padding: 0.3rem 0.7rem; border: 1px solid var(--border, #2a2a2a);
+  background: transparent; color: inherit; border-radius: 6px; cursor: pointer;
+}
+.export-format.active { background: var(--accent, #4a7); color: #fff; border-color: transparent; }
+.export-go {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.8rem; border: none; border-radius: 6px;
+  background: var(--accent, #4a7); color: #fff; cursor: pointer;
+}
+.export-go:disabled { opacity: 0.6; cursor: default; }
+.export-preview { flex: 1; overflow: auto; background: #525659; padding: 1rem; }
+.export-frame {
+  width: 100%; height: 100%; min-height: 600px; border: none;
+  background: #fff; border-radius: 4px;
+}
+.export-img { display: block; margin: 0 auto; max-width: 100%; background: #fff; }
+.export-empty { color: #ccc; text-align: center; padding: 2rem; }

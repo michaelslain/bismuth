@@ -9,8 +9,9 @@ import { BaseView } from "./bases/BaseView";
 import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import { DrawingPage } from "./drawing/DrawingPage";
+import { ExportView } from "./ExportView";
 import type { NoteCandidate } from "./editor/wikilink";
-import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel } from "./tabIds";
+import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
 
 export function PaneContent(props: {
   path: string;
@@ -47,6 +48,9 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path.endsWith(".draw")}>
         <DrawingPage path={props.path} />
+      </Match>
+      <Match when={props.path.startsWith(EXPORT_PREFIX)}>
+        <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
       </Match>
       <Match when={props.path.startsWith(TERMINAL_PREFIX)}>
         {/* Terminal panes show a transparent placeholder. The real xterm view
