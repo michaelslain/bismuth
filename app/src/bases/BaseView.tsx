@@ -18,7 +18,7 @@ import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
 import { Icon } from "../icons/Icon";
 import { capitalize } from "./renderValue";
-import { Button } from "../ui/Button";
+import { TextButton } from "../ui/TextButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
@@ -49,8 +49,8 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         />
       </Show>
       <div class={styles.sourceBar}>
-        <Button variant="primary" onClick={save}>Save</Button>
-        <Button variant="primary" onClick={props.onClose}>Cancel</Button>
+        <TextButton variant="primary" onClick={save}>Save</TextButton>
+        <TextButton variant="primary" onClick={props.onClose}>Cancel</TextButton>
       </div>
     </div>
   );
@@ -151,12 +151,12 @@ export function BaseView(props: {
           </Show>
           <Show when={editPath()}>
             <div class={styles.barRight}>
-              <Button variant="ghost" class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
+              <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
                 {settingsMode() ? <><Icon value="X" size={14} /> Close</> : <><Icon value="Settings" size={14} /> Settings</>}
-              </Button>
-              <Button variant="ghost" class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
+              </TextButton>
+              <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
                 {sourceMode() ? <><Icon value="X" size={14} /> Close source</> : <><Icon value="Code" size={14} /> Source</>}
-              </Button>
+              </TextButton>
             </div>
           </Show>
         </div>

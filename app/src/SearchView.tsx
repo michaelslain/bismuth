@@ -6,7 +6,8 @@
 import { createSignal, For, Show } from "solid-js";
 import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
-import { Button } from "./ui/Button";
+import { TextButton } from "./ui/TextButton";
+import { IconButton } from "./ui/IconButton";
 import { Icon } from "./icons/Icon";
 import "./SearchView.css";
 
@@ -69,22 +70,18 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             onInput={(e) => onInput(e.currentTarget.value)}
             onKeyDown={(e) => { if (e.key === "Enter") runSearch(); }}
           />
-          <Button variant="ghost" size="sm" class="search-tg" active={caseSensitive()} title="Case sensitive"
-            onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }}>
-            <Icon value="CaseSensitive" size={16} />
-          </Button>
-          <Button variant="ghost" size="sm" class="search-tg" active={wholeWord()} title="Whole word"
-            onClick={() => { setWholeWord(!wholeWord()); runSearch(); }}>
-            <Icon value="WholeWord" size={16} />
-          </Button>
-          <Button variant="ghost" size="sm" class="search-tg" active={regex()} title="Use regular expression"
-            onClick={() => { setRegex(!regex()); runSearch(); }}>
-            <Icon value="Regex" size={16} />
-          </Button>
-          <Button variant="icon" active={showReplace()} title="Toggle replace"
-            onClick={() => setShowReplace(!showReplace())}>
-            <Icon value={showReplace() ? "ChevronDown" : "ChevronRight"} size={16} />
-          </Button>
+          <IconButton variant="ghost" size="sm" class="search-tg" active={caseSensitive()} label="Case sensitive"
+            icon="CaseSensitive" iconSize={16}
+            onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
+          <IconButton variant="ghost" size="sm" class="search-tg" active={wholeWord()} label="Whole word"
+            icon="WholeWord" iconSize={16}
+            onClick={() => { setWholeWord(!wholeWord()); runSearch(); }} />
+          <IconButton variant="ghost" size="sm" class="search-tg" active={regex()} label="Use regular expression"
+            icon="Regex" iconSize={16}
+            onClick={() => { setRegex(!regex()); runSearch(); }} />
+          <IconButton active={showReplace()} label="Toggle replace"
+            icon={showReplace() ? "ChevronDown" : "ChevronRight"} iconSize={16}
+            onClick={() => setShowReplace(!showReplace())} />
         </div>
         <Show when={showReplace()}>
           <div class="search-row">
@@ -95,7 +92,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
               value={replacement()}
               onInput={(e) => setReplacement(e.currentTarget.value)}
             />
-            <Button variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>Replace all</Button>
+            <TextButton variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>Replace all</TextButton>
           </div>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>
@@ -110,9 +107,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
                 <span class="search-file-path">{r.path}</span>
                 <span class="search-count">{r.matchCount}</span>
                 <Show when={showReplace()}>
-                  <Button variant="icon" title="Replace all in this file" onClick={() => doReplace(r.path)}>
-                    <Icon value="Replace" size={15} />
-                  </Button>
+                  <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
                 </Show>
               </div>
               <For each={r.snippets}>

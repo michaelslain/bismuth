@@ -26,7 +26,7 @@ import {
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
   serializeTabs, deserializeTabs, resolveFocus,
 } from "./panes";
-import { Button } from "./ui/Button";
+import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
@@ -620,15 +620,11 @@ export default function App() {
                 <Show
                   when={cmd()}
                   fallback={
-                    <Button variant="icon" disabled title={`Unknown command: ${btn.command}`}>
-                      <Icon value={btn.icon || "CircleHelp"} size={18} />
-                    </Button>
+                    <IconButton icon={btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${btn.command}`} />
                   }
                 >
                   {(c) => (
-                    <Button variant="icon" title={btn.tooltip ?? c().label} onClick={() => c().action()}>
-                      <Icon value={btn.icon} size={18} />
-                    </Button>
+                    <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={() => c().action()} />
                   )}
                 </Show>
               );

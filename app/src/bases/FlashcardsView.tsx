@@ -1,6 +1,6 @@
 import { createSignal, createMemo, Show, For } from "solid-js";
 import { api } from "../api";
-import { Button } from "../ui/Button";
+import { TextButton } from "../ui/TextButton";
 import { EmptyState } from "../ui/EmptyState";
 import { renderMarkdown } from "./markdown";
 import { Icon } from "../icons/Icon";
@@ -123,11 +123,11 @@ export function FlashcardsView(props: {
     <div class="flashcards-host">
       <div class="srs-bar">
         <Show when={props.basePath}>
-          <Button variant="ghost" size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
+          <TextButton variant="ghost" size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
             + Add card
-          </Button>
+          </TextButton>
           <Show when={current() !== null}>
-            <Button
+            <TextButton
               variant="danger"
               size="sm"
               title="Delete the current card"
@@ -135,10 +135,10 @@ export function FlashcardsView(props: {
               disabled={busy()}
             >
               <Icon value="X" size={14} />
-            </Button>
+            </TextButton>
           </Show>
         </Show>
-        <Button
+        <TextButton
           variant="ghost"
           size="sm"
           active={cram()}
@@ -146,7 +146,7 @@ export function FlashcardsView(props: {
           onClick={toggleCram}
         >
           {cram() ? <><Icon value="Zap" size={12} /> Cram mode</> : "Cram"}
-        </Button>
+        </TextButton>
       </div>
 
       <Show when={adding()}>
@@ -169,12 +169,12 @@ export function FlashcardsView(props: {
             />
           </label>
           <div class="card-add-actions">
-            <Button variant="primary" size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
+            <TextButton variant="primary" size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
               Cancel
-            </Button>
-            <Button variant="primary" size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
+            </TextButton>
+            <TextButton variant="primary" size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
               Save card
-            </Button>
+            </TextButton>
           </div>
         </div>
       </Show>
@@ -193,7 +193,7 @@ export function FlashcardsView(props: {
           when={current() !== null}
           fallback={
             <EmptyState title={cram() ? "Cram complete" : "Done reviewing"}>
-              <Button variant="primary" size="lg" class="card-btn" onClick={restart}>Review again</Button>
+              <TextButton variant="primary" size="lg" class="card-btn" onClick={restart}>Review again</TextButton>
             </EmptyState>
           }
         >
@@ -232,12 +232,12 @@ export function FlashcardsView(props: {
 
             <Show
               when={revealed()}
-              fallback={<Button variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</Button>}
+              fallback={<TextButton variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</TextButton>}
             >
               <div class="grade-row">
-                <Button variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</Button>
-                <Button variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</Button>
-                <Button variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</Button>
+                <TextButton variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</TextButton>
+                <TextButton variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</TextButton>
+                <TextButton variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</TextButton>
               </div>
             </Show>
           </div>

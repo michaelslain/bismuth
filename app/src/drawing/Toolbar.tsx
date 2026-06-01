@@ -2,7 +2,7 @@
 import { For, type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
-import { Button } from "../ui/Button";
+import { IconButton } from "../ui/IconButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
 import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
@@ -90,8 +90,8 @@ export function Toolbar(props: {
         <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-seg draw-iconseg" />
       </div>
       <div class="draw-group">
-        <Button variant="plain" class="draw-iconseg" title="Undo" onClick={() => props.onUndo()}><Icon value="Undo2" size={17} /></Button>
-        <Button variant="plain" class="draw-iconseg" title="Redo" onClick={() => props.onRedo()}><Icon value="Redo2" size={17} /></Button>
+        <IconButton variant="plain" class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
+        <IconButton variant="plain" class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
       </div>
     </div>
   );

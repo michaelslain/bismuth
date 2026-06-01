@@ -3,7 +3,7 @@ import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types"
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue } from "./renderValue";
 import { settings } from "../settings";
-import { Button } from "../ui/Button";
+import { TextButton } from "../ui/TextButton";
 import styles from "./BaseView.module.css";
 
 // Web Mercator: convert (lat, lng) at zoom level z to world-pixel coords.
@@ -239,7 +239,7 @@ export function MapView(props: {
                 const p = project(m.lat, m.lng, zoom());
                 const s = toScreen(p.x, p.y);
                 return (
-                  <Button
+                  <TextButton
                     variant="plain"
                     class={styles.mapMarker}
                     style={{ left: `${s.x}px`, top: `${s.y}px` }}
