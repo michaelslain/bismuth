@@ -236,6 +236,16 @@ export default function App() {
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
   // adding a CSS-driven setting is one line there + one var() in the stylesheet.
   createEffect(() => applyCssVars(settings));
+  // Per-vault app icon → favicon + window/document title. Live: re-runs whenever
+  // settings.appearance.icon changes (SSE re-hydrate → reactive store).
+  createEffect(() => {
+    const href = `/logos/${settings.appearance.icon}.svg`;
+    const link = document.getElementById("app-favicon") as HTMLLinkElement | null;
+    if (link) link.href = href;
+  });
+  createEffect(() => {
+    document.title = "Bismuth";
+  });
   // Persist tab/pane layout whenever it changes.
   createEffect(() => {
     localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
@@ -613,6 +623,14 @@ export default function App() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
+          <img
+            class="sidebar-logo"
+            src={`/logos/${settings.appearance.icon}.svg`}
+            alt="Bismuth"
+            title="Bismuth"
+            width={18}
+            height={18}
+          />
           <For each={settings.toolbar}>
             {(btn) => {
               const cmd = () => commands().get(btn.command);

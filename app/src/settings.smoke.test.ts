@@ -17,7 +17,7 @@ describe("settings.yaml boot states (must not brick)", () => {
   it("1. no settings.yaml -> full defaults", () => {
     const s = bootFromYaml(null);
     expect(s).toEqual(DEFAULTS);
-    expect(s.appearance.accent).toBe(DEFAULTS.appearance.accent);
+    expect(s.appearance.theme).toBe(DEFAULTS.appearance.theme);
   });
 
   it("2. empty file -> full defaults", () => {
@@ -26,15 +26,15 @@ describe("settings.yaml boot states (must not brick)", () => {
   });
 
   it("3. syntactically broken line -> full defaults, no throw", () => {
-    const broken = "appearance:\n  accent: '#fff\n  theme: : : dark\n";
+    const broken = "appearance:\n  editorFont: 'Lora\n  theme: : : dark\n";
     expect(() => bootFromYaml(broken)).not.toThrow();
     expect(bootFromYaml(broken)).toEqual(DEFAULTS);
   });
 
   it("4. wrong-typed values -> per-key fall back to defaults", () => {
-    const s = bootFromYaml("appearance:\n  accent: 42\ngraph:\n  viewMode: foo\n");
-    // accent default kept (number != string)
-    expect(s.appearance.accent).toBe(DEFAULTS.appearance.accent);
+    const s = bootFromYaml("appearance:\n  editorFontSize: big\ngraph:\n  viewMode: foo\n");
+    // editorFontSize default kept (string != number)
+    expect(s.appearance.editorFontSize).toBe(DEFAULTS.appearance.editorFontSize);
     // viewMode is a string default and "foo" is a string, so the typed merge
     // accepts it (enum validity is surfaced as an editor squiggle, not a brick).
     expect(typeof s.graph.viewMode).toBe("string");
@@ -44,8 +44,8 @@ describe("settings.yaml boot states (must not brick)", () => {
   });
 
   it("first-launch import is a no-op once the file has user values", () => {
-    const legacy = JSON.stringify({ appearance: { accent: "#abcdef" } });
-    const serverWithUserValues = { appearance: { accent: "#abcdef" } };
+    const legacy = JSON.stringify({ appearance: { editorFont: "Georgia" } });
+    const serverWithUserValues = { appearance: { editorFont: "Georgia" } };
     expect(firstLaunchImport(legacy, serverWithUserValues)).toBeNull();
   });
 });

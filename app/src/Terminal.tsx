@@ -7,10 +7,11 @@ import "@xterm/xterm/css/xterm.css";
 import "./Terminal.css";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts } from "./themeColors";
+import { resolveAppearance } from "./themes";
 
 // The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
 function activePaletteInts(): number[] {
-  const ap = settings.appearance.accentPalette;
+  const ap = resolveAppearance(settings.appearance).accentPalette;
   return paletteToInts(ap?.length ? ap : DEFAULT_ACCENT_PALETTE);
 }
 
