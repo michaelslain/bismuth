@@ -2,3 +2,14 @@
 .draw-canvas { background: transparent; border-radius: 2px; touch-action: none; }
 .draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: max-content; margin: 0 auto; }
 .draw-live { cursor: crosshair; }
+
+.draw-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
+.draw-group { display: flex; gap: 6px; align-items: center; padding-right: 12px; border-right: 1px solid var(--border); }
+.draw-group:last-child { border-right: none; }
+.draw-label { font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; }
+.draw-btn { background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; font-family: inherit; text-transform: capitalize; }
+.draw-btn:hover { border-color: var(--accent); }
+.draw-btn.active { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.draw-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--fg) 20%, transparent); cursor: pointer; padding: 0; }
+.draw-swatch.active { outline: 2px solid var(--fg); outline-offset: 2px; }
+.draw-toolbar input[type=range] { accent-color: var(--accent); width: 100px; }
