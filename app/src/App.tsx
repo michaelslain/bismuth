@@ -12,7 +12,7 @@ import { settings } from "./settings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
-import { ToastHost } from "./Toast";
+import { ToastHost, pushToast } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
@@ -217,8 +217,16 @@ export default function App() {
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  const openDailyNote = async (id: string) => {
+    try {
+      const { path } = await api.dailyNote(id);
+      openFile(path);
+    } catch (e) {
+      pushToast(`Daily note failed: ${(e as Error).message}`);
+    }
+  };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode });
+  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode, openDailyNote }, settings.dailyNotes);
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so

@@ -9,6 +9,7 @@ function noopHandlers(): { handlers: CommandHandlers; calls: string[] } {
     newNote: () => calls.push("new-note"),
     newFolder: () => calls.push("new-folder"),
     setMode: (m) => calls.push(`mode:${m}`),
+    openDailyNote: (id) => calls.push(`daily:${id}`),
   };
   return { handlers, calls };
 }
@@ -29,5 +30,17 @@ describe("bindCommands", () => {
     map.get("graph-2nd")!.action();
     map.get("settings")!.action();
     expect(calls).toEqual(["new-note", "mode:2nd", "settings"]);
+  });
+
+  it("registers a daily-note:<id> command per config", () => {
+    const { handlers, calls } = noopHandlers();
+    const map = bindCommands(handlers, [
+      { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "" },
+    ]);
+    const cmd = map.get("daily-note:journal");
+    expect(cmd?.label).toBe("Journal");
+    expect(cmd?.icon).toBe("BookOpen");
+    cmd!.action();
+    expect(calls).toEqual(["daily:journal"]);
   });
 });
