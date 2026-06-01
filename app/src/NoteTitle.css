@@ -38,6 +38,3 @@
   padding: 0 2px;
   border-radius: 3px;
 }
-.note-title-input:focus {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}

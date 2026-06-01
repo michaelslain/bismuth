@@ -200,6 +200,9 @@ export function GraphView(props: {
             <Show when={props.fill}>
               <button
                 style={{
+                  display: "flex",
+                  "align-items": "center",
+                  "justify-content": "center",
                   background: menuOpen() ? "rgba(255,255,255,0.15)" : "transparent",
                   color: menuOpen() ? "#e8e8e8" : "rgba(200,200,200,0.55)",
                   border: "none",
@@ -207,7 +210,7 @@ export function GraphView(props: {
                   "border-radius": "3px",
                   "font-size": "16px",
                   "line-height": 1,
-                  padding: "2px 9px",
+                  padding: "0 9px",
                 }}
                 title="Graph tools — search, clusters, reset"
                 onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
