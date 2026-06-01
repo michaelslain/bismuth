@@ -8,7 +8,7 @@ import { forEachDiagnostic, forceLinting, type Action } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 
-export type EditorMenuItem = { label: string; onSelect: () => void };
+export type EditorMenuItem = { label: string; onSelect: () => void; disabled?: boolean; icon?: string };
 export type EditorMenuEvent = { x: number; y: number; items: EditorMenuItem[] };
 
 export function editorContextMenu(): Extension {
@@ -29,6 +29,7 @@ export function editorContextMenu(): Extension {
 
       const items: EditorMenuItem[] = hit.actions.map((a) => ({
         label: a.name,
+        icon: "Wrench",
         onSelect: () => {
           a.apply(view, hit.from, hit.to);
           // dict/ignore don't change the doc, so nudge a re-lint to clear the mark.
@@ -36,8 +37,9 @@ export function editorContextMenu(): Extension {
           view.focus();
         },
       }));
-      // No actionable fix (e.g. "expected a number") → show the message itself.
-      if (!items.length) items.push({ label: hit.message, onSelect: () => {} });
+      // No actionable fix (e.g. "expected a number") → show the message as a
+      // non-clickable (disabled) row, not a fake action.
+      if (!items.length) items.push({ label: hit.message, onSelect: () => {}, disabled: true });
 
       window.dispatchEvent(new CustomEvent<EditorMenuEvent>("oa-context-menu", { detail: { x: event.clientX, y: event.clientY, items } }));
       return true;
