@@ -5,10 +5,15 @@ import type { ExportDeps } from "./types";
 
 const enc = new TextDecoder();
 
+// A .base read returns a table view ordering name + author; everything else is a
+// markdown note. The base path now parses the file and runs the view (mirroring the
+// live BaseView), so the fixture must be real base YAML.
+const BASE_YAML = "views:\n  - type: table\n    order:\n      - file.name\n      - author\n";
+
 function deps(over: Partial<ExportDeps> = {}): ExportDeps {
   return {
-    read: async () => "# Title\n\nbody",
-    resolveRows: async () => [{ file: { name: "Dune" } as any, note: { author: "H" }, formula: {} }],
+    read: async (p: string) => (p.endsWith(".base") ? BASE_YAML : "# Title\n\nbody"),
+    resolveRows: async () => [{ file: { name: "Dune", path: "Dune.md" } as any, note: { author: "H" }, formula: {} }],
     htmlToPdf: async (html) => new TextEncoder().encode("PDF:" + html.length),
     drawingToPng: async () => ({ bytes: new Uint8Array([1, 2]), dataUrl: "data:image/png;base64,AQI=" }),
     ...over,

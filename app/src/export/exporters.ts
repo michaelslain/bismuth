@@ -1,8 +1,9 @@
 // app/src/export/exporters.ts
 import { renderMarkdown } from "../bases/markdown";
 import { wrapHtmlDocument } from "./htmlTemplate";
-import { rowsToMarkdownTable } from "./mdTable";
-import { rowsToHtmlTable } from "./rowsHtml";
+import { tableToMarkdown } from "./mdTable";
+import { tableToHtml } from "./rowsHtml";
+import { baseToTable } from "./baseTable";
 import { snapshotToHtmlTable } from "./sheetHtml";
 import { formatsFor } from "./formats";
 import type { ExportFormat, ExportResult, ExportPreview, ExportDeps, ExportTheme } from "./types";
@@ -29,7 +30,7 @@ function escapeHtml(s: string): string {
 async function bodyHtml(path: string, deps: ExportDeps): Promise<string> {
   const kind = ext(path);
   if (kind === "md") return renderMarkdown(await deps.read(path));
-  if (kind === "base") return rowsToHtmlTable(await deps.resolveRows(path));
+  if (kind === "base") return tableToHtml(await baseToTable(path, deps));
   if (kind === "sheet") return snapshotToHtmlTable(JSON.parse((await deps.read(path)) || "{}"));
   throw new Error(`No HTML body for ${kind || "this file"}`);
 }
@@ -39,7 +40,7 @@ async function bodyHtml(path: string, deps: ExportDeps): Promise<string> {
 async function markdownText(path: string, deps: ExportDeps): Promise<string> {
   return ext(path) === "md"
     ? await deps.read(path)
-    : rowsToMarkdownTable(await deps.resolveRows(path));
+    : tableToMarkdown(await baseToTable(path, deps));
 }
 
 /**
