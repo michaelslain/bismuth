@@ -83,7 +83,11 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: rgba(0, 0, 0, 0.4); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); overflow: hidden; }
-.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.graph-search-bar { padding: 7px 9px; border-bottom: 1px solid rgba(255,255,255,0.08); gap: 7px; }
+.graph-search-bar .search-bar-lead { color: rgba(232,232,232,0.6); opacity: 1; }
+.palette-search { padding: 14px 16px; border-bottom: 1px solid var(--border); gap: 10px; }
+.palette-search .search-bar-lead { opacity: 0.4; }
+.palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
 .palette-input::placeholder { color: var(--fg); opacity: 0.4; }
 .palette-list { overflow-y: auto; padding: 6px; }
 .palette-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
