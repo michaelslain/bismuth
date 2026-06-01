@@ -576,6 +576,7 @@ export default function App() {
         <div class="sidebar-icons">
           <Button variant="icon" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></Button>
           <Button variant="icon" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></Button>
+          <Button variant="icon" title="New spreadsheet" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "sheet" } }))}><Icon value="Table" size={18} /></Button>
           <Button variant="icon" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></Button>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>

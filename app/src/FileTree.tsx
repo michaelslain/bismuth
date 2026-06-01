@@ -174,7 +174,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   // Header "New note" / "New folder" buttons (in App.tsx) create at the vault root.
   const onNew = (e: Event) => {
     const kind = (e as CustomEvent).detail?.kind as "file" | "dir";
-    if (kind === "file" || kind === "dir") doCreate("", kind);
+    if (kind === "file" || kind === "dir" || kind === "sheet") doCreate("", kind);
   };
   window.addEventListener("oa-new", onNew);
   onCleanup(() => window.removeEventListener("oa-new", onNew));
@@ -194,14 +194,16 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     }
   }
 
-  async function doCreate(parentDir: string, kind: "file" | "dir") {
-    const defaultName = kind === "dir" ? "New Folder" : "Untitled.md";
+  async function doCreate(parentDir: string, kind: "file" | "dir" | "sheet") {
+    const fsKind: "file" | "dir" = kind === "dir" ? "dir" : "file"; // backend only knows file|dir
+    const defaultName =
+      kind === "dir" ? "New Folder" : kind === "sheet" ? "Untitled.sheet" : "Untitled.md";
     const path = joinPath(parentDir, defaultName);
-    optimisticAdd(path, kind); // instant; reverted via refresh() on failure
+    optimisticAdd(path, fsKind); // instant; reverted via refresh() on failure
     if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
     setEditing(path);
     try {
-      await trackPending(() => api.create(path, kind));
+      await trackPending(() => api.create(path, fsKind));
     } catch (e) {
       setEditing(null);
       await refetch();
@@ -215,6 +217,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
     if (isDir) {
       items.push({ label: "New File", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", onSelect: () => doCreate(node.path, "dir") });
+      items.push({ label: "New Spreadsheet", onSelect: () => doCreate(node.path, "sheet") });
     }
     items.push({ label: "Set Icon…", onSelect: () => setIconPicker({ node, isDir }) });
     items.push({ label: "Rename", onSelect: () => setEditing(node.path) });
