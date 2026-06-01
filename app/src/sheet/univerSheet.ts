@@ -42,7 +42,7 @@ export function mountSheet(opts: MountOptions): SheetHandle {
   const sub = univerAPI.addEvent(univerAPI.Event.CommandExecuted, () => opts.onChange());
 
   return {
-    getSnapshot: () => univerAPI.getActiveWorkbook().save() as WorkbookSnapshot,
+    getSnapshot: () => univerAPI.getActiveWorkbook()!.save() as unknown as WorkbookSnapshot,
     dispose: () => {
       try {
         sub?.dispose?.();
