@@ -451,7 +451,7 @@ function Level(props: {
             onClick={() => { if (props.editing !== child.path) props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
-            <Icon value={child.icon} fallback="FileText" size={16} class="ft-icon" />
+            <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <Show when={props.editing === child.path} fallback={displayName(child.name)}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
             </Show>
