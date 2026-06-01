@@ -3,7 +3,6 @@
 // Both popover surfaces (context menu + autocomplete) resolve their icon through
 // this one table so a "tag" looks identical whether right-clicked or typed.
 const ICONS: Record<string, string> = {
-  enum: "List",        // a fixed set of values (e.g. 2d | 3d)
   property: "Tag",     // a settings/frontmatter key
   keyword: "Hash",     // icon names, reserved words
   note: "File",        // wikilink target
@@ -11,7 +10,13 @@ const ICONS: Record<string, string> = {
   emoji: "Smile",
 };
 
-/** Lucide name for a completion/menu kind; ChevronRight for anything unknown. */
-export function completionIcon(type: string | null | undefined): string {
+// Kinds that get NO icon. Enum values (2d | 3d, dark | light) are a plain choice
+// from a fixed set — an icon there is meaningless and the "list" glyph reads like
+// a stray hamburger-menu, so we render the row icon-less.
+const NO_ICON = new Set(["enum"]);
+
+/** Lucide name for a completion/menu kind, or null when the kind gets no icon. */
+export function completionIcon(type: string | null | undefined): string | null {
+  if (type && NO_ICON.has(type)) return null;
   return (type && ICONS[type]) || "ChevronRight";
 }

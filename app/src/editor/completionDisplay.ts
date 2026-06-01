@@ -18,13 +18,17 @@ export const completionDisplayConfig = {
     {
       position: 20, // before the label (CM label block is at 50)
       render(completion: Completion): Node | null {
+        // Resolve the icon NAME synchronously (pure, no DOM). A null name means the
+        // kind gets no icon (e.g. enum) — return null so there's no empty slot/gap.
+        const name = completionIcon(completion.type);
+        if (!name) return null;
         const span = document.createElement("span");
         span.className = "oa-popover-icon";
         // Dynamic import keeps the lucide-solid dependency out of the module's static
         // evaluation path, so test environments (no DOM / no Solid client) stay clean.
         import("../icons/iconMarkup")
           .then(({ lucideIconMarkup }) => {
-            const markup = lucideIconMarkup(completionIcon(completion.type), 14);
+            const markup = lucideIconMarkup(name, 14);
             if (markup) span.innerHTML = markup;
           })
           .catch(() => {}); // chunk-load failure → degrade to an icon-less row
