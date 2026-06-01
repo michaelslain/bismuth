@@ -3,7 +3,7 @@ import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
 import type { ButtonSize } from "./buttonClass";
 
-export type IconButtonVariant = "ghost" | "plain";
+export type IconButtonVariant = "ghost" | "plain" | "danger";
 
 export type IconButtonProps = {
   /** Icon value passed to <Icon> (Lucide name, Li/Lu legacy, or emoji). */
