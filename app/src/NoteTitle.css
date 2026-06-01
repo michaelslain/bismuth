@@ -7,19 +7,23 @@
      so the title sits over the first body line, not flush to the pane edge. */
   padding: 16px 16px 4px;
   font-family: var(--editor-font);
+  /* Match the editor's base font-size so the 1.8em below resolves to the SAME
+     pixel size as a live-preview H1 (.cm-h1 = 1.8em of --editor-font-size). */
+  font-size: var(--editor-font-size, 16px);
 }
 
-/* Fixed heading glyph — dimmed like a markdown prefix, never editable. */
+/* Fixed heading glyph — identical to a body H1's `#` except tinted the accent. */
 .note-title-hash {
-  color: color-mix(in srgb, var(--accent) 70%, transparent);
-  font-size: 1.6em;
+  color: var(--accent);
+  font-size: 1.8em;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.3;
   user-select: none;
   flex: 0 0 auto;
 }
 
-/* Editable title text. Borderless until focused so it reads as a heading. */
+/* Editable title text. Borderless until focused so it reads as a heading.
+   Metrics mirror .cm-h1 (1.8em / 700 / 1.3) so it looks exactly like a body H1. */
 .note-title-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -28,9 +32,9 @@
   outline: none;
   color: var(--fg);
   font-family: inherit;
-  font-size: 1.6em;
+  font-size: 1.8em;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.3;
   padding: 0 2px;
   border-radius: 3px;
 }
