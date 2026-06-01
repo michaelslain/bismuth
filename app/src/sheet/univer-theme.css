@@ -54,3 +54,15 @@
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
   color: var(--accent) !important;
 }
+
+/* Popover / menu / dropdown / toolbar surfaces → the app surfaces. In dark mode
+   Univer uses the gray-600..900 stops only for surfaces / borders / hover (never
+   text — dark-mode text uses the light gray stops), so remapping these tokens is
+   safe and recolors all chrome surfaces at once. Scoped to .univer-dark so light
+   mode (Univer's white surfaces, already close to the app's light bg) is untouched. */
+.oa-sheet .univer-dark {
+  --univer-gray-900: var(--bg);                                    /* toolbar / outer track */
+  --univer-gray-800: color-mix(in srgb, var(--bg), var(--fg) 5%);  /* popovers, menus, dropdowns */
+  --univer-gray-700: color-mix(in srgb, var(--bg), var(--fg) 9%);  /* inputs, subtle hover */
+  --univer-gray-600: var(--border);                                /* borders, strong hover */
+}

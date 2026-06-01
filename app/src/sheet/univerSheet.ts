@@ -62,6 +62,13 @@ export function mountSheet(opts: MountOptions): SheetHandle {
 
   univerAPI.createWorkbook((opts.data ?? {}) as Record<string, unknown>);
 
+  // Default unstyled cells to the app's monospace so the sheet DATA matches the
+  // chrome. Done before wiring onChange so it isn't counted as an edit — it becomes
+  // part of the post-mount baseline the caller captures, so opening writes nothing.
+  for (const ws of univerAPI.getActiveWorkbook()?.getSheets() ?? []) {
+    ws.setDefaultStyle({ ff: "Monaspace Xenon" });
+  }
+
   const sub = univerAPI.addEvent(univerAPI.Event.CommandExecuted, () => opts.onChange());
 
   return {
