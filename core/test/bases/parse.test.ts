@@ -131,3 +131,9 @@ test("parses chart fields at top level of a type:base note (flat persistence)", 
   expect(v.aggregate).toBe("sum");
   expect(v.bin).toBe("month");
 });
+
+test("rejects invalid chart enum values", () => {
+  const cfg = parseBase(`views:\n  - type: bar\n    name: B\n    aggregate: median\n    bin: quarter\n`);
+  expect(cfg.views[0].aggregate).toBeUndefined();
+  expect(cfg.views[0].bin).toBeUndefined();
+});

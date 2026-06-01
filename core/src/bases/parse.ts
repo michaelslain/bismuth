@@ -4,6 +4,9 @@ import { isValidType } from "./types";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
+const AGGREGATE_VALUES = ["sum", "avg", "count", "min", "max"] as const;
+const BIN_VALUES = ["day", "week", "month"] as const;
+
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
   return [];
@@ -122,8 +125,8 @@ function normalizeView(raw: unknown): ViewConfig {
     // chart bindings
     x: strOrUndef(o.x),
     y: strOrUndef(o.y),
-    aggregate: ["sum", "avg", "count", "min", "max"].includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
-    bin: ["day", "week", "month"].includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
+    aggregate: (AGGREGATE_VALUES as readonly string[]).includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
+    bin: (BIN_VALUES as readonly string[]).includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
   };
 }
 
@@ -224,8 +227,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // nested `views:` block.
     if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
     // chart axis/aggregation keys (flat persistence for chart views)
-    if (["sum", "avg", "count", "min", "max"].includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
-    if (["day", "week", "month"].includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
+    if ((AGGREGATE_VALUES as readonly string[]).includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
+    if ((BIN_VALUES as readonly string[]).includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
   }
 
   const rows = parseRows(body, meta);
