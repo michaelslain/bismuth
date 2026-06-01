@@ -6,6 +6,7 @@ import { Icon } from "./icons/Icon";
 import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
+import { TemplatePalette } from "./palette/TemplatePalette";
 import { settings } from "./settings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
@@ -13,9 +14,9 @@ import { debounce } from "./debounce";
 import { ToastHost } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
-import type { GraphData, NodeKind, ViewLayout } from "../../core/src/graph";
+import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon } from "./tabIds";
+import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -83,6 +84,15 @@ export default function App() {
     return leaves(t.root).find((l) => l.id === t.focusId)?.content ?? null;
   });
 
+  // Basename (no folder, no .md) of the focused note — used as {{title}} when
+  // expanding a template. Empty string when the focused pane isn't a real note
+  // (sentinel like ::settings/::graph/terminal, or nothing focused).
+  const activeNoteTitle = createMemo<string>(() => {
+    const c = focusedContent();
+    if (!c || isSentinel(c)) return "";
+    return c.split("/").pop()!.replace(/\.md$/, "");
+  });
+
   // Every unique terminal content id open across all tabs/panes — each gets one
   // always-mounted xterm in the overlay. Hidden ones use display:none so their
   // PTY/WebSocket stay alive when the user switches tab or focuses a sibling pane.
@@ -124,7 +134,7 @@ export default function App() {
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
-  const [palette, setPalette] = createSignal<"command" | "file" | null>(null);
+  const [palette, setPalette] = createSignal<"command" | "file" | "template" | null>(null);
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
   const [paneMenu, setPaneMenu] = createSignal<{ leafId: string; x: number; y: number } | null>(null);
   // Right-click menu for an editor mark (spelling / grammar / property suggestions),
@@ -450,6 +460,12 @@ export default function App() {
   const handleGlobalKeydown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     const hasMod = e.metaKey || e.ctrlKey;
+    // Insert Template: Option+T (no Cmd). Checked before the hasMod early-return.
+    if (e.code === "KeyT" && e.altKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault();
+      setPalette((p) => (p === "template" ? null : "template"));
+      return;
+    }
     if (!hasMod) return;
     const k = e.key.toLowerCase();
     const hasAlt = e.altKey;
@@ -668,10 +684,13 @@ export default function App() {
         <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
       </div>
       <Show when={palette() === "command"}>
-        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} openTerminal={openTerminal} setMode={(m) => setMode(m)} />
+        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} openTerminal={openTerminal} openTemplates={() => setPalette("template")} setMode={(m) => setMode(m)} />
       </Show>
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
+      </Show>
+      <Show when={palette() === "template"}>
+        <TemplatePalette onClose={() => setPalette(null)} title={activeNoteTitle()} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (

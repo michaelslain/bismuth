@@ -9,6 +9,7 @@ type Props = {
   onClose: () => void;
   openSettings: () => void;
   openTerminal: () => void;
+  openTemplates: () => void;
   setMode: (m: GraphMode) => void;
 };
 
@@ -16,6 +17,7 @@ export function CommandPalette(props: Props) {
   const commands: Array<{ item: PaletteItem; action: () => void }> = [
     { item: { id: "settings", label: "Open Settings", icon: "Settings" }, action: props.openSettings },
     { item: { id: "terminal", label: "Open Terminal", icon: "SquareTerminal" }, action: props.openTerminal },
+    { item: { id: "insert-template", label: "Insert Template", icon: "FileText" }, action: props.openTemplates },
     { item: { id: "graph-2nd", label: "Graph: 2nd Brain (vault)", icon: "Notebook" }, action: () => props.setMode("2nd") },
     { item: { id: "graph-3rd", label: "Graph: 3rd Brain (memory)", icon: "Brain" }, action: () => props.setMode("3rd") },
     { item: { id: "graph-both", label: "Graph: Both Brains", icon: "Network" }, action: () => props.setMode("both") },
