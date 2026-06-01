@@ -51,6 +51,8 @@
   box-shadow: none !important;
   border-radius: 4px !important;
   font-weight: 400 !important;
+  font-size: 12px !important;        /* compact, like the 2D/3D control */
+  padding: 3px 9px !important;
   color: var(--text-muted) !important;
 }
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
@@ -59,7 +61,7 @@
 /* the active tab carries a `text-primary*` utility → neutral pill (graph-seg active) */
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
   color: var(--fg) !important;
-  background: color-mix(in srgb, var(--fg) 14%, transparent) !important;
+  background: color-mix(in srgb, var(--fg) 16%, transparent) !important;
 }
 
 /* Popover / menu / dropdown / toolbar surfaces → the app surfaces. In dark mode
