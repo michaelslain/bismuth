@@ -240,7 +240,6 @@ export function MapView(props: {
                 const s = toScreen(p.x, p.y);
                 return (
                   <TextButton
-                    variant="plain"
                     class={styles.mapMarker}
                     style={{ left: `${s.x}px`, top: `${s.y}px` }}
                     title={String(renderValue(titleCol(), m.row))}

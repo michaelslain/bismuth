@@ -60,9 +60,8 @@ export function ExportView(props: { path: string }) {
           <For each={formats()}>
             {(f) => (
               <TextButton
-                variant="plain"
+                variant={format() === f ? "selected" : "unselected"}
                 class="export-format"
-                classList={{ active: format() === f }}
                 onClick={() => setFormat(f)}
               >
                 {LABEL[f]}
@@ -74,9 +73,8 @@ export function ExportView(props: { path: string }) {
           <For each={THEMES}>
             {(t) => (
               <TextButton
-                variant="plain"
+                variant={theme() === t ? "selected" : "unselected"}
                 class="export-format"
-                classList={{ active: theme() === t }}
                 onClick={() => setTheme(t)}
               >
                 {THEME_LABEL[t]}
@@ -84,7 +82,7 @@ export function ExportView(props: { path: string }) {
             )}
           </For>
         </div>
-        <TextButton variant="plain" class="export-go" disabled={busy()} onClick={doExport}>
+        <TextButton class="export-go" disabled={busy()} onClick={doExport}>
           <Icon value="Download" size={14} /> EXPORT
         </TextButton>
       </div>

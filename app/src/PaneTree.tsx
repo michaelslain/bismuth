@@ -103,7 +103,6 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           <IconButton
             icon="X"
             label="Close pane"
-            variant="plain"
             class="pane-header-x"
             iconSize={12}
             onMouseDown={(e) => {

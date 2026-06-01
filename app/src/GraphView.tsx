@@ -125,7 +125,6 @@ export function GraphView(props: {
         <SegmentedToggle
           value={props.mode}
           onChange={props.setMode}
-          variant="ghost"
           size="sm"
           segmentClass="graph-seg"
           options={[
@@ -143,7 +142,6 @@ export function GraphView(props: {
             {/* Section 1 — view actions: a bordered Reset button + close. */}
             <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
               <TextButton
-                variant="ghost"
                 size="sm"
                 style={{ flex: 1 }}
                 title="Reset view to whole graph"
@@ -154,7 +152,6 @@ export function GraphView(props: {
               <IconButton
                 icon="X"
                 label="Close menu"
-                variant="ghost"
                 size="sm"
                 onClick={closeMenu}
               />
@@ -182,7 +179,6 @@ export function GraphView(props: {
             <SegmentedToggle
               value={settings.graph.viewMode}
               onChange={setViewMode}
-              variant="ghost"
               size="sm"
               segmentClass="graph-seg"
               options={[
@@ -194,7 +190,7 @@ export function GraphView(props: {
               <IconButton
                 icon="Menu"
                 label="Graph tools — search, clusters, reset"
-                active={menuOpen()}
+                variant={menuOpen() ? "selected" : "unselected"}
                 onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
               />
             </Show>

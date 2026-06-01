@@ -32,7 +32,6 @@ export function EmptyPane(props: Props) {
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
         <TextButton
-          variant="ghost"
           class="empty-pane-btn"
           onClick={props.onOpenFile}
           onMouseDown={(e) => e.stopPropagation()}
@@ -40,7 +39,6 @@ export function EmptyPane(props: Props) {
           <Icon value="FolderOpen" size={14} /> OPEN FILE…
         </TextButton>
         <TextButton
-          variant="ghost"
           class="empty-pane-btn"
           onClick={props.onNewTerminal}
           onMouseDown={(e) => e.stopPropagation()}

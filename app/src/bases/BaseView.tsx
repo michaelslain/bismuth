@@ -49,8 +49,8 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         />
       </Show>
       <div class={styles.sourceBar}>
-        <TextButton variant="primary" onClick={save}>SAVE</TextButton>
-        <TextButton variant="primary" onClick={props.onClose}>CANCEL</TextButton>
+        <TextButton onClick={save}>SAVE</TextButton>
+        <TextButton onClick={props.onClose}>CANCEL</TextButton>
       </div>
     </div>
   );
@@ -142,7 +142,6 @@ export function BaseView(props: {
           <Show when={(data()?.config.views.length ?? 0) > 1}>
             <SegmentedToggle
               class={styles.tabs}
-              variant="plain"
               segmentClass={styles.tab}
               value={activeView()}
               onChange={setActiveView}
@@ -151,10 +150,10 @@ export function BaseView(props: {
           </Show>
           <Show when={editPath()}>
             <div class={styles.barRight}>
-              <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
+              <TextButton variant={settingsMode() ? "selected" : "unselected"} class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
                 {settingsMode() ? <><Icon value="X" size={14} /> CLOSE</> : <><Icon value="Settings" size={14} /> SETTINGS</>}
               </TextButton>
-              <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
+              <TextButton variant={sourceMode() ? "selected" : "unselected"} class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
                 {sourceMode() ? <><Icon value="X" size={14} /> CLOSE SOURCE</> : <><Icon value="Code" size={14} /> SOURCE</>}
               </TextButton>
             </div>

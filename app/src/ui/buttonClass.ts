@@ -1,20 +1,34 @@
 // pure class-string composition for the ui/ button family.
-export type ButtonVariant = "primary" | "ghost" | "danger" | "icon" | "plain";
+//
+// Buttons have two axes:
+//   • kind  — "text" (a labelled button) or "icon" (a borderless icon button)
+//   • state — the selection role of the button:
+//       "normal"     standalone button, not part of any group (default)
+//       "unselected" a member of a toggle/series that is currently OFF (de-emphasized)
+//       "selected"   a member that is currently ON (accent-highlighted)
+//     For icon buttons, "normal" looks like "unselected" but at full opacity.
+// `danger` is an orthogonal tone (destructive actions) layered on any state.
+export type ButtonKind = "text" | "icon";
+export type ButtonState = "normal" | "selected" | "unselected";
 export type ButtonSize = "sm" | "md" | "lg";
 
 export function buttonClass(opts: {
-  variant?: ButtonVariant;
+  kind?: ButtonKind;
+  state?: ButtonState;
   size?: ButtonSize;
-  active?: boolean;
+  danger?: boolean;
   class?: string;
 }): string {
   return [
     "btn",
-    `btn--${opts.variant ?? "primary"}`,
+    `btn--${opts.kind ?? "text"}`,
+    `btn--${opts.state ?? "normal"}`,
     opts.size && opts.size !== "md" ? `btn--${opts.size}` : "",
-    opts.active ? "is-active" : "",
+    opts.danger ? "btn--danger" : "",
     opts.class ?? "",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 export function searchBarClass(extra?: string): string {

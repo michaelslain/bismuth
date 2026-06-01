@@ -66,7 +66,7 @@ export function IconPicker(props: Props) {
             onKeyDown={onKeyDown}
           />
           <Show when={props.onClear}>
-            <TextButton variant="plain" class="icon-picker-clear" onClick={() => { props.onClear!(); props.onClose(); }}>
+            <TextButton class="icon-picker-clear" onClick={() => { props.onClear!(); props.onClose(); }}>
               RESET TO DEFAULT ICON
             </TextButton>
           </Show>
@@ -74,7 +74,6 @@ export function IconPicker(props: Props) {
             <For each={results().items}>
               {(e) => (
                 <IconButton
-                  variant="plain"
                   class="icon-picker-cell"
                   classList={{ current: props.current === e.name }}
                   label={e.name}

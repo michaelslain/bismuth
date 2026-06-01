@@ -42,10 +42,10 @@ export function RecurrenceDialog(props: { store: EventStore }) {
         <h3>{recurrenceAction.value!.type === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}</h3>
         <p>Which occurrences do you want to {recurrenceAction.value!.type}?</p>
         <div class="recurrence-dialog-actions">
-          <TextButton variant="plain" onClick={() => handle('one')}>JUST THIS ONE</TextButton>
-          <TextButton variant="plain" onClick={() => handle('following')}>THIS AND FOLLOWING</TextButton>
-          <TextButton variant="plain" onClick={() => handle('all')}>ALL</TextButton>
-          <TextButton variant="plain" onClick={() => (recurrenceAction.value = null)}>CANCEL</TextButton>
+          <TextButton onClick={() => handle('one')}>JUST THIS ONE</TextButton>
+          <TextButton onClick={() => handle('following')}>THIS AND FOLLOWING</TextButton>
+          <TextButton onClick={() => handle('all')}>ALL</TextButton>
+          <TextButton onClick={() => (recurrenceAction.value = null)}>CANCEL</TextButton>
         </div>
       </Modal>
     </Show>

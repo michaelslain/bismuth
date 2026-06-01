@@ -73,7 +73,7 @@ export function Toolbar(props: {
       </div>
       <div class="draw-group">
         <For each={colors()}>{(c) => (
-          <TextButton variant="plain" class="draw-swatch" classList={{ active: t().color === c }}
+          <TextButton variant={t().color === c ? "selected" : "unselected"} class="draw-swatch"
             style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
             onClick={() => props.setTools({ color: c })} />
         )}</For>
@@ -91,8 +91,8 @@ export function Toolbar(props: {
         <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-seg draw-iconseg" />
       </div>
       <div class="draw-group">
-        <IconButton variant="plain" class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
-        <IconButton variant="plain" class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
+        <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
+        <IconButton class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
       </div>
     </div>
   );

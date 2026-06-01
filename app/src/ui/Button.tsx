@@ -1,13 +1,14 @@
 import { splitProps, type JSX } from "solid-js";
-import { buttonClass, type ButtonVariant, type ButtonSize } from "./buttonClass";
+import { buttonClass, type ButtonKind, type ButtonState, type ButtonSize } from "./buttonClass";
 import "./ui.css";
 
-export type { ButtonVariant, ButtonSize };
+export type { ButtonKind, ButtonState, ButtonSize };
 
 export type ButtonProps = {
-  variant?: ButtonVariant;
+  kind?: ButtonKind;
+  state?: ButtonState;
   size?: ButtonSize;
-  active?: boolean;
+  danger?: boolean;
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>;
 
 /**
@@ -15,11 +16,11 @@ export type ButtonProps = {
  * TextButton / IconButton, not this directly.
  */
 export function Button(props: ButtonProps) {
-  const [local, rest] = splitProps(props, ["variant", "size", "active", "class", "type", "children"]);
+  const [local, rest] = splitProps(props, ["kind", "state", "size", "danger", "class", "type", "children"]);
   return (
     <button
       type={local.type ?? "button"}
-      class={buttonClass({ variant: local.variant, size: local.size, active: local.active, class: local.class })}
+      class={buttonClass({ kind: local.kind, state: local.state, size: local.size, danger: local.danger, class: local.class })}
       {...rest}
     >
       {local.children}

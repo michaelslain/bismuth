@@ -62,22 +62,22 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     <div class="search-view">
       <div class="search-header">
         <SearchBar class="search-row" value={query()} placeholder="Search vault…" onInput={onInput} onEnter={runSearch}>
-          <IconButton variant="ghost" size="sm" class="search-tg" active={caseSensitive()} label="Case sensitive"
+          <IconButton variant={caseSensitive() ? "selected" : "unselected"} size="sm" class="search-tg" label="Case sensitive"
             icon="CaseSensitive" iconSize={16}
             onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
-          <IconButton variant="ghost" size="sm" class="search-tg" active={wholeWord()} label="Whole word"
+          <IconButton variant={wholeWord() ? "selected" : "unselected"} size="sm" class="search-tg" label="Whole word"
             icon="WholeWord" iconSize={16}
             onClick={() => { setWholeWord(!wholeWord()); runSearch(); }} />
-          <IconButton variant="ghost" size="sm" class="search-tg" active={regex()} label="Use regular expression"
+          <IconButton variant={regex() ? "selected" : "unselected"} size="sm" class="search-tg" label="Use regular expression"
             icon="Regex" iconSize={16}
             onClick={() => { setRegex(!regex()); runSearch(); }} />
-          <IconButton active={showReplace()} label="Toggle replace"
+          <IconButton variant={showReplace() ? "selected" : "unselected"} label="Toggle replace"
             icon={showReplace() ? "ChevronDown" : "ChevronRight"} iconSize={16}
             onClick={() => setShowReplace(!showReplace())} />
         </SearchBar>
         <Show when={showReplace()}>
           <SearchBar class="search-row" leadingIcon="Replace" value={replacement()} placeholder="Replace with…" onInput={setReplacement}>
-            <TextButton variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
+            <TextButton size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
           </SearchBar>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>

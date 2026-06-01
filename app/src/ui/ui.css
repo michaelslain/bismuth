@@ -5,6 +5,9 @@
    .cram-toggle, .srcBtn, .modal-overlay, .srs-field, .deck-empty, .loading. */
 
 /* ── Button ──────────────────────────────────────────────────────────────── */
+/* Every button is one of two KINDS (text | icon) in one of three STATES
+   (normal | selected | unselected). normal = standalone; unselected/selected =
+   a member of a toggle/series that is off/on. `danger` is an orthogonal tone. */
 .btn {
   font: inherit;
   cursor: pointer;
@@ -12,51 +15,52 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 12px;
   line-height: 1.4;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  color: var(--fg);
 }
 .btn:disabled { opacity: 0.4; cursor: default; }
 
-/* primary — the default bordered + panel text button (was .card-btn/.reveal-btn) */
-.btn--primary:hover:not(:disabled) { border-color: var(--accent); }
-.btn--primary.is-active { border-color: var(--accent); }
+/* ── text buttons: bordered pill; state changes emphasis, not shape ───────── */
+.btn--text {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+}
+/* normal — standalone, full-strength */
+.btn--text.btn--normal { color: var(--fg); }
+.btn--text.btn--normal:hover:not(:disabled) { border-color: var(--accent); }
+/* unselected — toggle member, off: de-emphasized */
+.btn--text.btn--unselected { color: var(--text-muted); }
+.btn--text.btn--unselected:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
+/* selected — toggle member, on: accent highlight */
+.btn--text.btn--selected { color: var(--accent); border-color: var(--accent); }
+/* danger tone — destructive actions */
+.btn--text.btn--danger { color: var(--danger); border-color: transparent; }
+.btn--text.btn--danger:hover:not(:disabled) { border-color: var(--danger); }
 
-/* ghost — bordered, transparent bg, dimmed until hover/active
-   (was .empty-pane-btn/.cram-toggle/.srs-icon-btn/.srcBtn) */
-.btn--ghost { background: transparent; color: var(--text-muted); }
-.btn--ghost:hover:not(:disabled) { color: var(--fg); border-color: var(--accent); }
-.btn--ghost.is-active { color: var(--accent); border-color: var(--accent); }
-
-/* danger — ghost that turns red on hover (was .srs-icon-btn.danger) */
-.btn--danger { background: transparent; color: var(--text-muted); }
-.btn--danger:hover:not(:disabled) { color: var(--danger); border-color: var(--danger); }
-
-/* icon — borderless, transparent, opacity-driven (was .icon-btn) */
+/* ── icon buttons: borderless; state changes opacity / highlight ──────────── */
 .btn--icon {
   border: none;
   background: transparent;
   color: var(--fg);
-  opacity: 0.5;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 15px;
-  line-height: 1;
 }
-.btn--icon:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
-.btn--icon.is-active { opacity: 1; background: var(--hover-bg); }
+/* normal — standalone, full opacity */
+.btn--icon.btn--normal { opacity: 1; }
+.btn--icon.btn--normal:hover:not(:disabled) { background: var(--hover-bg); }
+/* unselected — toggle member, off: dimmed (same look as normal, lower opacity) */
+.btn--icon.btn--unselected { opacity: 0.5; }
+.btn--icon.btn--unselected:hover:not(:disabled) { opacity: 1; background: var(--hover-bg); }
+/* selected — toggle member, on: highlighted */
+.btn--icon.btn--selected { opacity: 1; background: var(--hover-bg); color: var(--accent); }
+/* danger tone */
+.btn--icon.btn--danger { color: var(--danger); }
 
-/* plain — no border/bg chrome, just a clickable text run (was .tab/.exit-btn-ish) */
-.btn--plain { border: none; background: transparent; color: var(--text-muted); padding: 4px 8px; }
-.btn--plain:hover:not(:disabled) { color: var(--fg); }
-.btn--plain.is-active { color: var(--fg); }
-
-/* sizes */
-.btn--sm { padding: 3px 10px; font-size: 12px; }
-.btn--lg { padding: 10px 22px; font-size: 15px; border-radius: 7px; }
+/* sizes (text buttons) */
+.btn--text.btn--sm { padding: 3px 10px; font-size: 12px; }
+.btn--text.btn--lg { padding: 10px 22px; font-size: 15px; border-radius: 7px; }
 
 /* ── SegmentedToggle ─────────────────────────────────────────────────────── */
 .segmented { display: inline-flex; align-items: center; gap: 2px; }

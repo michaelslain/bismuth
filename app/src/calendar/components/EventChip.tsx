@@ -85,7 +85,7 @@ export function EventChip(props: Props) {
         >
           <Show when={props.event.location}><span class="event-chip-location">{props.event.location}</span></Show>
           <Show when={props.event.link}>
-            <IconButton icon="Link" label="Open link" variant="plain" class="event-chip-link" iconSize={12} onClick={e => { e.stopPropagation(); window.open(props.event.link!, '_blank') }} />
+            <IconButton icon="Link" label="Open link" class="event-chip-link" iconSize={12} onClick={e => { e.stopPropagation(); window.open(props.event.link!, '_blank') }} />
           </Show>
         </div>
       </Show>

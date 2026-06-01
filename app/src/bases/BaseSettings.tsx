@@ -226,8 +226,8 @@ export function BaseSettings(props: {
       </Show>
 
       <div class="grade-row">
-        <TextButton variant="primary" class="card-btn good" onClick={save}>SAVE</TextButton>
-        <TextButton variant="primary" onClick={props.onSaved}>CLOSE</TextButton>
+        <TextButton class="card-btn good" onClick={save}>SAVE</TextButton>
+        <TextButton onClick={props.onSaved}>CLOSE</TextButton>
       </div>
     </div>
   );

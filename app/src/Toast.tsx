@@ -60,7 +60,6 @@ export function ToastHost() {
             <span>{t.message}</span>
             {t.action && (
               <TextButton
-                variant="plain"
                 size="sm"
                 onClick={() => {
                   t.action!.onClick();

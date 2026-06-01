@@ -56,16 +56,16 @@ export function CategoryPanel(props: { store: EventStore }) {
             <div class="category-row">
               <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
               <span>{c.name}</span>
-              <IconButton variant="plain" label="Delete category" icon="X" iconSize={12} onClick={() => handleDelete(c.name)} />
+              <IconButton label="Delete category" icon="X" iconSize={12} onClick={() => handleDelete(c.name)} />
             </div>
           )}</For>
         </div>
         <div class="category-add-row">
           <input type="color" value={newColor()} onInput={e => setNewColor(e.currentTarget.value)} />
           <input placeholder="Category name" value={newName()} onInput={e => setNewName(e.currentTarget.value)} />
-          <TextButton variant="plain" onClick={handleAdd}>ADD</TextButton>
+          <TextButton onClick={handleAdd}>ADD</TextButton>
         </div>
-        <div class="modal-actions"><TextButton variant="plain" onClick={() => (showCategoryPanel.value = false)}>DONE</TextButton></div>
+        <div class="modal-actions"><TextButton onClick={() => (showCategoryPanel.value = false)}>DONE</TextButton></div>
       </Modal>
     </Show>
   )

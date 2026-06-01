@@ -2,18 +2,19 @@ import { describe, it, expect } from "bun:test";
 import { buttonClass, searchBarClass } from "./buttonClass";
 
 describe("buttonClass", () => {
-  it("defaults to primary md with no extras", () => {
-    expect(buttonClass({})).toBe("btn btn--primary");
+  it("defaults to a normal text button", () => {
+    expect(buttonClass({})).toBe("btn btn--text btn--normal");
   });
-  it("applies variant, size, active, and extra class in order", () => {
-    expect(buttonClass({ variant: "ghost", size: "sm", active: true, class: "x" }))
-      .toBe("btn btn--ghost btn--sm is-active x");
+  it("composes kind, state, size, danger, and extra class in order", () => {
+    expect(buttonClass({ kind: "icon", state: "selected", size: "sm", danger: true, class: "x" }))
+      .toBe("btn btn--icon btn--selected btn--sm btn--danger x");
   });
   it("omits size class for md", () => {
-    expect(buttonClass({ variant: "danger", size: "md" })).toBe("btn btn--danger");
+    expect(buttonClass({ kind: "text", state: "unselected", size: "md" }))
+      .toBe("btn btn--text btn--unselected");
   });
-  it("icon variant renders the icon chrome class", () => {
-    expect(buttonClass({ variant: "icon" })).toBe("btn btn--icon");
+  it("renders an icon button's normal state", () => {
+    expect(buttonClass({ kind: "icon" })).toBe("btn btn--icon btn--normal");
   });
 });
 

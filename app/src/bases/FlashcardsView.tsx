@@ -123,12 +123,12 @@ export function FlashcardsView(props: {
     <div class="flashcards-host">
       <div class="srs-bar">
         <Show when={props.basePath}>
-          <TextButton variant="ghost" size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
+          <TextButton size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
             ADD CARD
           </TextButton>
           <Show when={current() !== null}>
             <TextButton
-              variant="danger"
+              danger
               size="sm"
               title="Delete the current card"
               onClick={deleteCurrent}
@@ -139,9 +139,8 @@ export function FlashcardsView(props: {
           </Show>
         </Show>
         <TextButton
-          variant="ghost"
+          variant={cram() ? "selected" : "unselected"}
           size="sm"
-          active={cram()}
           title="Cram: review every card, no scheduling changes"
           onClick={toggleCram}
         >
@@ -169,10 +168,10 @@ export function FlashcardsView(props: {
             />
           </label>
           <div class="card-add-actions">
-            <TextButton variant="primary" size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
+            <TextButton size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
               CANCEL
             </TextButton>
-            <TextButton variant="primary" size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
+            <TextButton size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
               SAVE CARD
             </TextButton>
           </div>
@@ -193,7 +192,7 @@ export function FlashcardsView(props: {
           when={current() !== null}
           fallback={
             <EmptyState title={cram() ? "Cram complete" : "Done reviewing"}>
-              <TextButton variant="primary" size="lg" class="card-btn" onClick={restart}>REVIEW AGAIN</TextButton>
+              <TextButton size="lg" class="card-btn" onClick={restart}>REVIEW AGAIN</TextButton>
             </EmptyState>
           }
         >
@@ -232,12 +231,12 @@ export function FlashcardsView(props: {
 
             <Show
               when={revealed()}
-              fallback={<TextButton variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
+              fallback={<TextButton size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
             >
               <div class="grade-row">
-                <TextButton variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>HARD</TextButton>
-                <TextButton variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>GOOD</TextButton>
-                <TextButton variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>EASY</TextButton>
+                <TextButton size="lg" class="card-btn hard" onClick={() => grade("hard")}>HARD</TextButton>
+                <TextButton size="lg" class="card-btn good" onClick={() => grade("good")}>GOOD</TextButton>
+                <TextButton size="lg" class="card-btn easy" onClick={() => grade("easy")}>EASY</TextButton>
               </div>
             </Show>
           </div>

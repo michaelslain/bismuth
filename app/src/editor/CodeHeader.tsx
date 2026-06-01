@@ -20,7 +20,7 @@ export function CodeHeader(props: { lang: string; body: string }) {
   return (
     <div class="cm-code-header">
       <span class="cm-code-lang">{props.lang || "text"}</span>
-      <IconButton variant="plain" class="cm-code-copy" type="button" label="Copy code" icon="Copy" iconSize={14} onMouseDown={(e) => e.preventDefault()} onClick={copy} />
+      <IconButton class="cm-code-copy" type="button" label="Copy code" icon="Copy" iconSize={14} onMouseDown={(e) => e.preventDefault()} onClick={copy} />
     </div>
   );
 }

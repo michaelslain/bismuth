@@ -155,14 +155,13 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
                 <IconButton
                   icon="X"
                   label="Remove item"
-                  variant="plain"
                   class={styles.todoRemove}
                   onClick={() => void removeItem(item)}
                 />
               </div>
             )}
           </For>
-          <TextButton variant="plain" class={styles.todoAdd} onClick={() => void addItem()}>
+          <TextButton class={styles.todoAdd} onClick={() => void addItem()}>
             ADD ITEM
           </TextButton>
         </div>

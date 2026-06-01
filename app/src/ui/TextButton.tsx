@@ -1,14 +1,17 @@
 import { splitProps, createMemo, type JSX } from "solid-js";
 import { Button } from "./Button";
-import type { ButtonSize } from "./buttonClass";
+import type { ButtonState, ButtonSize } from "./buttonClass";
 import { uppercaseWarning } from "./uiLint";
 
-export type TextButtonVariant = "primary" | "ghost" | "danger" | "plain";
+/** Selection state — see buttonClass.ts. "normal" = standalone button. */
+export type TextButtonVariant = ButtonState;
 
 export type TextButtonProps = {
+  /** "normal" (standalone, default) | "selected" | "unselected" (toggle/series member). */
   variant?: TextButtonVariant;
+  /** Destructive tone (e.g. Delete) — orthogonal to variant. */
+  danger?: boolean;
   size?: ButtonSize;
-  active?: boolean;
 } & JSX.ButtonHTMLAttributes<HTMLButtonElement>;
 
 /**
@@ -17,8 +20,8 @@ export type TextButtonProps = {
  * Standardization rules this component enforces:
  *  • Labels are UPPERCASE — pass already-uppercase text (no hidden CSS
  *    transform; what you pass is what shows). Lowercase input warns in dev.
- *  • Appearance comes from `variant`/`size` only — call sites pass layout
- *    (flex/margin/position) via `style`, never colors/borders/padding.
+ *  • Appearance comes from `variant` (selection state) only — call sites pass
+ *    layout (flex/margin/position) via `style`, never colors/borders/padding.
  */
 export function TextButton(props: TextButtonProps) {
   const [local, rest] = splitProps(props, ["variant"]);
@@ -28,5 +31,5 @@ export function TextButton(props: TextButtonProps) {
       if (w) console.warn(w);
     });
   }
-  return <Button variant={local.variant ?? "primary"} {...rest} />;
+  return <Button kind="text" state={local.variant ?? "normal"} {...rest} />;
 }
