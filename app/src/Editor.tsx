@@ -59,7 +59,9 @@ const editorTheme = EditorView.theme({
     overflow: "hidden",
     padding: "var(--popover-pad)",
   },
-  ".cm-tooltip-autocomplete > ul > li": {
+  // NOTE: two classes (.cm-tooltip.cm-tooltip-autocomplete) so these match CM's
+  // own default li rule specificity and win — a single-class selector loses to it.
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
     display: "flex",
     alignItems: "center",
     gap: "var(--popover-row-gap)",
@@ -68,7 +70,7 @@ const editorTheme = EditorView.theme({
     fontSize: "var(--popover-font-size)",
     lineHeight: "1.5",
   },
-  ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
     backgroundColor: "var(--popover-selected-bg)",
     color: "var(--fg)",
   },
