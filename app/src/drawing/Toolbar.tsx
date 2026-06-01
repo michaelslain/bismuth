@@ -5,9 +5,7 @@ import type { ToolState } from "./DrawingCanvas";
 import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
-import { settings, PALETTES } from "../settings";
-
-const intToHex = (n: number) => "#" + n.toString(16).padStart(6, "0");
+import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
 
 const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "pen", icon: "Pen", title: "Pen" },
@@ -54,9 +52,12 @@ export function Toolbar(props: {
   onRedo: () => void;
 }) {
   const t = props.tools;
-  // Ink colors centered on the app's graph palette (reactive to settings.graph.palette),
-  // with "fg" (theme default ink) first.
-  const colors = () => ["fg", ...(PALETTES[settings.graph.palette] ?? PALETTES.aurora).map(intToHex)];
+  // Ink colors from the centralized Oxide accent palette (reactive to
+  // settings.appearance.accentPalette), with "fg" (theme default ink) first.
+  const colors = () => {
+    const ap = settings.appearance.accentPalette;
+    return ["fg", ...(ap?.length ? ap : DEFAULT_ACCENT_PALETTE)];
+  };
   const swatchColor = (c: string) => (c === "fg" ? "var(--fg)" : c);
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));

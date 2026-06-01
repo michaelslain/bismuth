@@ -3,7 +3,8 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
-import { settings, setSettings, PALETTES } from "./settings";
+import { settings, setSettings, DEFAULT_ACCENT_PALETTE } from "./settings";
+import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
@@ -18,12 +19,6 @@ const hudPill: JSX.CSSProperties = {
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
 function hoverLabel(node: HoverNode): string {
   return node.kind === "note" ? `${node.id}.md` : node.label;
-}
-
-/** Parse a "#rrggbb" hex color to the 0xRRGGBB int the renderer wants; fall back on garbage. */
-function hexToInt(hex: string, fallback: number): number {
-  const m = /^#?([0-9a-fA-F]{6})$/.exec((hex ?? "").trim());
-  return m ? parseInt(m[1], 16) : fallback;
 }
 
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
@@ -96,13 +91,18 @@ export function GraphView(props: {
     if (mounted) { renderer.render(g); refreshUiData(); }
   });
 
-  // Push graph settings (spin/palette/physics/size) to the renderer whenever they change.
+  // Push graph settings to the renderer whenever they change. Colors derive from the
+  // centralized `appearance` theme tokens: nodes/clusters from the Oxide accentPalette
+  // (by stable hash, inside the renderer), edges = Steel (neutral) at low alpha, the
+  // canvas background = Ink (background). No separate graph palette/colors anymore.
   createEffect(() => {
     const gs = settings.graph;
+    const ap = settings.appearance;
+    const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
     renderer.setConfig({
       spin: gs.spin,
       spinSpeed: gs.spinSpeed,
-      palette: PALETTES[gs.palette] ?? PALETTES.aurora,
+      palette: paletteToInts(palette),
       repulsion: gs.repulsion,
       linkDistance: gs.linkDistance,
       centering: gs.centering,
@@ -113,8 +113,8 @@ export function GraphView(props: {
       nodeSizeMinMult: gs.nodeSizeMinMult,
       nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
-      edgeColor: hexToInt(gs.edgeColor, 0xbdcaf2),
-      backgroundColor: hexToInt(gs.backgroundColor, 0x0e0e11),
+      edgeColor: hexToIntT(ap.neutral, 0xaeb4c2),
+      backgroundColor: hexToIntT(ap.background, 0x14151b),
     });
   });
 
@@ -148,7 +148,7 @@ export function GraphView(props: {
       <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
         <Show when={props.fill && menuOpen()}>
-          <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto" }}>
+          <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", background: "rgba(14,14,18,0.94)", border: "1px solid rgba(255,255,255,0.12)", "border-radius": "8px", padding: "10px", "backdrop-filter": "blur(10px)", "box-shadow": "0 8px 28px rgba(0,0,0,0.5)" }}>
             {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
             <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
               <button

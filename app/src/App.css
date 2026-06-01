@@ -1,34 +1,28 @@
 /* app/src/App.css */
 :root {
   color-scheme: dark;
-  /* Appearance settings drive these (set on :root by App.tsx). Values here are
-     the dark-theme / default-accent fallbacks so first paint matches old behavior. */
-  --accent: #6496ff;
-  --bg: #0e0e11;
-  --fg: #dcdcdc;
-  --border: #2a2a2a;
-  --panel: rgba(127, 127, 127, 0.06);
-  --editor-font: 'Lora', serif;
-  --editor-font-size: 16px;
-  /* Semantic tokens — single source of truth for colors/shadows/surfaces that were
-     previously hard-coded and duplicated across components (see app/src/ui/). */
-  --danger: #e5534b;
-  --success: #98c379;
-  --accent-purple: #b89cff;
+  /* Theme tokens are DERIVED in app/src/settingsCssVars.ts from the 5 editable
+     `appearance` tokens (background/foreground/neutral/accent/accentPalette) and
+     set on :root at runtime. The literals below are only first-paint fallbacks and
+     MUST equal the schema defaults (Ink/Paper/Steel/Blue + Oxide). Dark-only. */
+  --bg: #14151B;        /* Ink */
+  --fg: #F4F2EE;        /* Paper */
+  --accent: #3F6BF0;    /* Blue */
+  --border: color-mix(in srgb, #AEB4C2 22%, transparent);      /* Steel */
   --text-muted: color-mix(in srgb, var(--fg) 60%, transparent);
+  --panel: color-mix(in srgb, #AEB4C2 6%, transparent);
   --hover-bg: color-mix(in srgb, var(--fg) 8%, transparent);
   --surface-1: color-mix(in srgb, var(--fg) 5%, transparent);
   --surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
   --surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
+  --accent-purple: #9B53E8; /* Oxide purple (accentPalette[1]) */
+  --editor-font: 'Lora', serif;
+  --editor-font-size: 16px;
+  /* Semantic tokens not part of the central palette (status colors / shadows). */
+  --danger: #e5534b;
+  --success: #98c379;
   --shadow-menu: 0 4px 16px rgba(0, 0, 0, 0.3);
   --shadow-popup: 0 8px 24px rgba(0, 0, 0, 0.25);
-}
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #fbfbfa;
-  --fg: #1f1f1f;
-  --border: #e2e2e0;
-  --panel: rgba(0, 0, 0, 0.03);
 }
 * { box-sizing: border-box; }
 button { outline: none; }

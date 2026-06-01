@@ -151,11 +151,11 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   await writeNote(
     vault,
     "settings.yaml",
-    "appearance:\n  theme: light\n  accent: 42\ngraph:\n  nodeSize: 9\n",
+    "appearance:\n  foreground: \"#FFFFFF\"\n  accent: 42\ngraph:\n  nodeSize: 9\n",
   );
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).theme).toBe("light");   // valid string, applied
-  expect((data.appearance as any).accent).toBe("#6496ff"); // 42 is wrong type → default
+  expect((data.appearance as any).foreground).toBe("#FFFFFF"); // valid string, applied
+  expect((data.appearance as any).accent).toBe("#3F6BF0"); // 42 is wrong type → default
   expect((data.graph as any).nodeSize).toBe(9);            // valid number, applied
 });
 
@@ -171,11 +171,11 @@ import { readFileSync } from "node:fs";
 
 test("reconcile fills a missing top-level section with its defaults", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: light\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  foreground: \"#FFFFFF\"\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("light");    // user value kept
-  expect((data.appearance as any).accent).toBe("#6496ff");  // missing default added
+  expect((data.appearance as any).foreground).toBe("#FFFFFF"); // user value kept
+  expect((data.appearance as any).accent).toBe("#3F6BF0");  // missing default added
   expect((data.graph as any).spin).toBe(true);              // missing section added
 });
 
