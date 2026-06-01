@@ -228,3 +228,14 @@ test("file ops still allow legitimate nested paths", async () => {
   createEntry(dir, "sub/folder/note.md", "file");
   expect((await listTree(dir)).map((e) => e.path).sort()).toContain("sub/folder/note.md");
 });
+
+test("listTree shows .draw files but hides .draw.png/.pdf sidecars", async () => {
+  const root = mkdtempSync(join(tmpdir(), "draw-tree-"));
+  await Bun.write(join(root, "a.draw"), "{}");
+  await Bun.write(join(root, "a.draw.png"), "x");
+  await Bun.write(join(root, "a.draw.pdf"), "x");
+  const paths = (await listTree(root)).map((e) => e.path);
+  expect(paths).toContain("a.draw");
+  expect(paths).not.toContain("a.draw.png");
+  expect(paths).not.toContain("a.draw.pdf");
+});
