@@ -31,6 +31,7 @@ import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/view
 import type { Zone as DropZone } from "./dnd/geometry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import "./App.css";
+import "./ui/popover/popover.css";
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network */
 type GraphMode = "2nd" | "3rd" | "both" | "agents";

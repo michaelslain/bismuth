@@ -1,0 +1,54 @@
+/* app/src/ui/popover/popover.css
+ * The ONE source of truth for how every floating list looks — the right-click
+ * context menu AND the CodeMirror autocomplete both read these tokens. Change a
+ * token here and both surfaces change. Colors reuse the app theme vars. */
+:root {
+  --popover-radius: 8px;
+  --popover-pad: 4px;
+  --popover-row-pad-y: 5px;
+  --popover-row-pad-x: 8px;
+  --popover-row-radius: 4px;
+  --popover-row-gap: 8px;
+  --popover-font-size: 13px;
+  --popover-min-width: 170px;
+  --popover-selected-bg: color-mix(in srgb, var(--accent) 25%, transparent);
+  --popover-detail-opacity: 0.5;
+}
+
+/* chrome */
+.oa-popover {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--popover-radius);
+  padding: var(--popover-pad);
+  min-width: var(--popover-min-width);
+  box-shadow: var(--shadow-menu);
+  font-size: var(--popover-font-size);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+/* row */
+.oa-popover-row {
+  display: flex;
+  align-items: center;
+  gap: var(--popover-row-gap);
+  padding: var(--popover-row-pad-y) var(--popover-row-pad-x);
+  border-radius: var(--popover-row-radius);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.oa-popover-row--selected { background: var(--popover-selected-bg); }
+.oa-popover-row--danger { color: var(--danger); }
+.oa-popover-row--disabled { opacity: 0.55; cursor: default; }
+
+.oa-popover-icon { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
+.oa-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.oa-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
+
+.oa-popover-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 2px;
+}
