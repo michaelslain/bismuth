@@ -669,7 +669,7 @@ test("GET /settings returns parsed app settings with defaults", async () => {
   const base = `http://localhost:${server.port}`;
   try {
     const s = await (await fetch(`${base}/settings`)).json();
-    expect(s.appearance.theme).toBe("dark");
+    expect(s.appearance.theme).toBe("default");
     expect(s.graph.viewMode).toBe("3d");
     expect(s.properties).toBeUndefined();
   } finally {
@@ -717,7 +717,7 @@ test("GET /file materializes settings.yaml from defaults when missing at read ti
     const text = await res.text();
     expect(res.status).toBe(200);
     expect(text).toContain("appearance:"); // default content, not a blank editor
-    expect(text).toContain("theme: dark");
+    expect(text).toContain("theme: default");
     expect(existsSync(join(vault, "settings.yaml"))).toBe(true); // recreated on disk
   } finally {
     server.stop(true);
@@ -894,7 +894,7 @@ test("POST /rows resolves a scoped-tasks spec via base composition", async () =>
 test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
   const { vault } = await makeSampleVault();
   // Seed a settings.yaml with a comment + a custom key + the properties registry.
-  await writeNote(vault, "settings.yaml", "# my settings\nappearance:\n  theme: dark\n  myCustom: 7\nproperties:\n  due: date\n");
+  await writeNote(vault, "settings.yaml", "# my settings\nappearance:\n  theme: default\n  myCustom: 7\nproperties:\n  due: date\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1001,7 +1001,7 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: default\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {

@@ -88,7 +88,7 @@ test("initializeSettings writes a clean (comment-free) defaults file when missin
   expect(res!.raw).not.toMatch(/^\s*#/m);
   // The materialized defaults parse back to the DEFAULTS object shape.
   const parsed = parseYaml(res!.raw) as Record<string, any>;
-  expect(parsed.appearance.theme).toBe("dark");
+  expect(parsed.appearance.theme).toBe("default");
   expect(parsed.graph.viewMode).toBe("3d");
   expect(parsed.calendar.defaultView).toBe("week");
 });
@@ -142,7 +142,7 @@ import { serializeSettingsForFrontend, SETTINGS_FILE } from "../src/settings";
 test("serializeSettingsForFrontend returns defaults when no file exists", async () => {
   const vault = await emptyVault();
   const data = await serializeSettingsForFrontend(vault);
-  expect((data.appearance as any).theme).toBe("dark");
+  expect((data.appearance as any).theme).toBe("default");
   expect((data.graph as any).viewMode).toBe("3d");
 });
 
@@ -181,7 +181,7 @@ test("reconcile fills a missing top-level section with its defaults", async () =
 
 test("reconcile preserves unknown keys", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  myCustomKey: 42\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: default\n  myCustomKey: 42\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).myCustomKey).toBe(42);
@@ -189,7 +189,7 @@ test("reconcile preserves unknown keys", async () => {
 
 test("reconcile preserves comments", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "# my notes\nappearance:\n  theme: dark # inline\n");
+  await writeNote(vault, "settings.yaml", "# my notes\nappearance:\n  theme: default # inline\n");
   await reconcileSettings(vault);
   const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
   expect(raw).toContain("# my notes");
@@ -217,7 +217,7 @@ import { setSettingInFile } from "../src/settings";
 
 test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "# hdr\nappearance:\n  theme: dark\n  myCustom: 1\ngraph:\n  spin: true\n");
+  await writeNote(vault, "settings.yaml", "# hdr\nappearance:\n  theme: default\n  myCustom: 1\ngraph:\n  spin: true\n");
   await setSettingInFile(vault, ["appearance", "theme"], "light");
   const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
   const { data } = (await readSettings(vault))!;
@@ -232,15 +232,15 @@ test("setSettingInFile creates the file (via reconcile) when absent, then sets t
   await setSettingInFile(vault, ["graph", "nodeSize"], 12);
   const { data } = (await readSettings(vault))!;
   expect((data.graph as any).nodeSize).toBe(12);
-  expect((data.appearance as any).theme).toBe("dark"); // reconcile seeded the rest
+  expect((data.appearance as any).theme).toBe("default"); // reconcile seeded the rest
 });
 
 test("setSettingInFile ignores an empty path", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: default\n");
   await setSettingInFile(vault, [], "x");
   const { data } = (await readSettings(vault))!;
-  expect((data.appearance as any).theme).toBe("dark");
+  expect((data.appearance as any).theme).toBe("default");
 });
 
 import { loadAppConfig } from "../src/settings";
@@ -251,7 +251,7 @@ test("loadAppConfig returns file values merged over defaults, typed", async () =
   const cfg = await loadAppConfig(vault);
   expect((cfg.graph as any).repulsion).toBe(-22);    // from file
   expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
-  expect((cfg.appearance as any).theme).toBe("dark"); // schema default
+  expect((cfg.appearance as any).theme).toBe("default"); // schema default
 });
 
 // --- toolbar serialization ---
@@ -381,7 +381,7 @@ describe("concurrent setSettingInFile", () => {
   it("serializes concurrent requests so none clobber each other", async () => {
     const vault = await emptyVault();
     // Set up initial settings with multiple keys
-    await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
+    await writeNote(vault, "settings.yaml", "appearance:\n  theme: default\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
 
     // Fire 3 concurrent requests that each modify a different key
     const results = await Promise.all([
@@ -404,7 +404,7 @@ describe("concurrent setSettingInFile", () => {
     const vault = await emptyVault();
     const comment = "# important settings\n";
     const custom = "myCustomKey: 42\n";
-    await writeNote(vault, "settings.yaml", `${comment}appearance:\n  theme: dark\n${custom}graph:\n  spin: true\n`);
+    await writeNote(vault, "settings.yaml", `${comment}appearance:\n  theme: default\n${custom}graph:\n  spin: true\n`);
 
     // Fire multiple concurrent mutations
     await Promise.all([
