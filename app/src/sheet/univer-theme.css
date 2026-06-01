@@ -35,24 +35,31 @@
   --univer-red-600: var(--danger, #e5534b);
 }
 
-/* Ribbon tabs (Start / Formulas / Data) → the app's plain text-button look:
-   drop the gray "pill track" and the filled active state; inactive tabs are
-   muted, active is the accent. The ribbon header is the `select-none h-9` row. */
+/* Ribbon tabs (Start / Formulas / Data) → the app's SegmentedToggle look — the
+   2D/3D control (`.graph-seg` in App.css): a faint track, inactive tabs muted, and
+   the ACTIVE tab as a neutral "pill" (fg text on a subtle fill), NOT accent text.
+   We can't embed the Solid <SegmentedToggle> inside Univer's DOM, so this mirrors
+   its CSS. The ribbon header is the `select-none h-9` row; tabs carry `px-2`. */
 .oa-sheet .univer-select-none.univer-h-9 > div {
-  background: transparent !important;
+  background: color-mix(in srgb, var(--fg) 4%, transparent) !important; /* faint track */
+  border-radius: 5px !important;
+  padding: 2px !important;
+  gap: 2px !important;
 }
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
   background: transparent !important;
   box-shadow: none !important;
-  color: var(--text-muted) !important;
+  border-radius: 4px !important;
   font-weight: 400 !important;
+  color: var(--text-muted) !important;
 }
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
   color: var(--fg) !important;
 }
-/* the active tab carries a `text-primary*` utility — color it the accent */
+/* the active tab carries a `text-primary*` utility → neutral pill (graph-seg active) */
 .oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
-  color: var(--accent) !important;
+  color: var(--fg) !important;
+  background: color-mix(in srgb, var(--fg) 14%, transparent) !important;
 }
 
 /* Popover / menu / dropdown / toolbar surfaces → the app surfaces. In dark mode
