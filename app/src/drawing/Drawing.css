@@ -1,0 +1,4 @@
+/* app/src/drawing/Drawing.css */
+.draw-canvas { background: transparent; border-radius: 2px; touch-action: none; }
+.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: max-content; margin: 0 auto; }
+.draw-live { cursor: crosshair; }
