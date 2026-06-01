@@ -13,6 +13,7 @@ export interface CommandHandlers {
   newNote: () => void;
   newFolder: () => void;
   newSpreadsheet: () => void;
+  newDrawing: () => void | Promise<void>;
   setMode: (mode: GraphMode) => void;
 }
 
@@ -25,10 +26,11 @@ export interface BoundCommand {
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers): Map<string, BoundCommand> {
-  const actions: Record<string, () => void> = {
+  const actions: Record<string, () => void | Promise<void>> = {
     "new-note": h.newNote,
     "new-folder": h.newFolder,
     "new-spreadsheet": h.newSpreadsheet,
+    "new-drawing": h.newDrawing,
     "terminal": h.openTerminal,
     "settings": h.openSettings,
     "graph-2nd": () => h.setMode("2nd"),

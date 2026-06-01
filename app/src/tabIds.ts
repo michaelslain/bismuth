@@ -13,7 +13,7 @@ export function isSentinel(content: string): boolean {
 
 // Bare note name from a vault path ("a/b/c.md" -> "c").
 function noteName(path: string): string {
-  return path.split("/").pop()!.replace(/\.md$/, "");
+  return path.split("/").pop()!.replace(/\.(md|draw)$/, "");
 }
 
 // Human label for a pane/tab content id — used by both the tab bar and pane headers.
@@ -35,5 +35,6 @@ export function contentIcon(content: string): string | undefined {
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (content.endsWith(".sheet")) return "Table";
+  if (content.endsWith(".draw")) return "PenTool";
   return undefined;
 }

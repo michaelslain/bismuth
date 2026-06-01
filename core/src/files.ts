@@ -42,6 +42,11 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
         const entry: TreeEntry = { path: rel, kind: "file" };
         if (typeof data.icon === "string") entry.icon = data.icon;
         out.push(entry);
+      } else if (d.name.endsWith(".draw.png") || d.name.endsWith(".draw.pdf")) {
+        // generated sidecars (eager render of a .draw) — not shown in the tree
+        continue;
+      } else if (d.name.endsWith(".draw")) {
+        out.push({ path: rel, kind: "file", icon: "PenTool" });
       } else if (d.name.endsWith(".base")) {
         out.push({ path: rel, kind: "file" });
       } else if (d.name.endsWith(".sheet")) {

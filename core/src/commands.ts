@@ -17,6 +17,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "new-note",        label: "New note",                  icon: "FilePlus" },
   { id: "new-folder",      label: "New folder",                icon: "FolderPlus" },
   { id: "new-spreadsheet", label: "New spreadsheet",           icon: "Table" },
+  { id: "new-drawing",     label: "New drawing",               icon: "PenTool" },
   { id: "terminal",        label: "Open Terminal",             icon: "SquareTerminal" },
   { id: "settings",        label: "Open Settings",             icon: "Settings" },
   { id: "graph-2nd",       label: "Graph: 2nd Brain (vault)",  icon: "Notebook" },
