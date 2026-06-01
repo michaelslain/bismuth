@@ -11,7 +11,7 @@ test("loadSettings returns defaults for null / malformed / non-object input", ()
 test("loadSettings returns a fresh clone, not the DEFAULTS reference", () => {
   const a = loadSettings(null);
   a.appearance.accent = "#000000";
-  expect(DEFAULTS.appearance.accent).toBe("#6496ff");
+  expect(DEFAULTS.appearance.accent).toBe("#3F6BF0");
 });
 
 test("loadSettings overlays stored values and keeps defaults for missing keys", () => {
@@ -20,7 +20,7 @@ test("loadSettings overlays stored values and keeps defaults for missing keys", 
   expect(s.appearance.accent).toBe("#ff0000");      // taken from storage
   expect(s.appearance.theme).toBe("dark");          // default kept
   expect(s.graph.spin).toBe(false);                 // taken from storage
-  expect(s.graph.palette).toBe("aurora");           // default kept
+  expect(s.appearance.background).toBe("#14151B");  // default kept
 });
 
 test("loadSettings ignores wrong-typed and unknown keys", () => {

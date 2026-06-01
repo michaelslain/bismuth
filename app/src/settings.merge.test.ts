@@ -23,7 +23,7 @@ describe("mergeServerSettings", () => {
 
   it("does not mutate DEFAULTS", () => {
     mergeServerSettings({ appearance: { accent: "#000000" } });
-    expect(DEFAULTS.appearance.accent).toBe("#6496ff");
+    expect(DEFAULTS.appearance.accent).toBe("#3F6BF0");
   });
 
   it("replaces a top-level list (toolbar) wholesale, honoring arbitrary length", () => {
