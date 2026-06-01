@@ -61,9 +61,30 @@ describe("settings completion inside a toolbar list item", () => {
     expect(labels).not.toContain("Bug");
   });
 
-  it("completes the item field keys (command/icon/tooltip)", () => {
+  it("completes the item field keys (command/commands/icon/tooltip)", () => {
     const res = complete("toolbar:\n  - comm");
     const labels = res?.options.map((o) => o.label) ?? [];
     expect(labels).toContain("command");
+    expect(labels).toContain("commands");
+  });
+
+  it("completes command ids for a scalar item under a `commands:` list", () => {
+    const res = complete("toolbar:\n  - commands:\n      - term");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("terminal");
+  });
+
+  it("shows the command label as detail inside a `commands:` list", () => {
+    const res = complete("toolbar:\n  - commands:\n      - term");
+    const opt = res?.options.find((o) => o.label === "terminal");
+    expect(opt?.detail).toBe("Open Terminal");
+  });
+
+  it("does not offer schema keys for a bare item under `commands:`", () => {
+    const res = complete("toolbar:\n  - commands:\n      - ");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    // should be command ids, not toolbar field keys
+    expect(labels).not.toContain("icon");
+    expect(labels).toContain("new-note");
   });
 });

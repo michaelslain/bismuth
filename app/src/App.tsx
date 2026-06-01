@@ -7,7 +7,7 @@ import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands } from "./commands";
+import { bindCommands, resolveButtonCommands } from "./commands";
 import { settings } from "./settings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
@@ -603,21 +603,24 @@ export default function App() {
         <div class="sidebar-icons">
           <For each={settings.toolbar}>
             {(btn) => {
-              const cmd = () => commands().get(btn.command);
+              // A button may run one command (`command`) or several (`commands`, in order).
+              const cmds = () => resolveButtonCommands(btn, commands());
               return (
                 <Show
-                  when={cmd()}
+                  when={cmds().length > 0}
                   fallback={
-                    <Button variant="icon" disabled title={`Unknown command: ${btn.command}`}>
+                    <Button variant="icon" disabled title={`Unknown command: ${btn.commands?.join(", ") ?? btn.command}`}>
                       <Icon value={btn.icon || "CircleHelp"} size={18} />
                     </Button>
                   }
                 >
-                  {(c) => (
-                    <Button variant="icon" title={btn.tooltip ?? c().label} onClick={() => c().action()}>
-                      <Icon value={btn.icon} size={18} />
-                    </Button>
-                  )}
+                  <Button
+                    variant="icon"
+                    title={btn.tooltip ?? cmds().map((c) => c.label).join(" → ")}
+                    onClick={() => cmds().forEach((c) => c.action())}
+                  >
+                    <Icon value={btn.icon} size={18} />
+                  </Button>
                 </Show>
               );
             }}

@@ -300,4 +300,41 @@ describe("toolbar serialization", () => {
     const out = await serializeSettingsForFrontend(vault);
     expect(out.toolbar).toEqual([]);
   });
+
+  it("passes a multi-command button (commands list) through", async () => {
+    const vault = freshVault();
+    await Bun.write(
+      join(vault, SETTINGS_FILE),
+      [
+        "toolbar:",
+        "  - commands:",
+        "      - new-note",
+        "      - terminal",
+        "    icon: Rocket",
+        "    tooltip: Note + terminal",
+      ].join("\n"),
+    );
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.toolbar).toEqual([
+      { commands: ["new-note", "terminal"], icon: "Rocket", tooltip: "Note + terminal" },
+    ]);
+  });
+
+  it("drops a button that has neither command nor a non-empty commands list", async () => {
+    const vault = freshVault();
+    await Bun.write(
+      join(vault, SETTINGS_FILE),
+      [
+        "toolbar:",
+        "  - commands: []",
+        "    icon: Empty",
+        "  - command: terminal",
+        "    icon: SquareTerminal",
+      ].join("\n"),
+    );
+    const out = await serializeSettingsForFrontend(vault);
+    expect(out.toolbar).toEqual([
+      { command: "terminal", icon: "SquareTerminal" },
+    ]);
+  });
 });

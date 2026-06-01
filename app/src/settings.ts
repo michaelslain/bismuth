@@ -105,7 +105,7 @@ export interface Settings {
   templates: {
     folder: string; // vault folder containing template .md files
   };
-  toolbar: Array<{ command: string; icon: string; tooltip?: string }>;
+  toolbar: Array<{ command?: string; commands?: string[]; icon: string; tooltip?: string }>;
 }
 
 // Alias so anything importing the canonical `AppSettings` name from the app gets

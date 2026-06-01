@@ -42,3 +42,22 @@ export function bindCommands(h: CommandHandlers): Map<string, BoundCommand> {
   }
   return map;
 }
+
+/**
+ * Resolve a toolbar button's command reference to its ordered list of BoundCommands.
+ * Precedence: a non-empty `commands` list wins; otherwise fall back to the single
+ * `command`. Ids that don't resolve (unknown/unbound) are silently dropped, so the
+ * returned list is the resolvable subset in declared order. Returns [] when nothing
+ * resolves — the caller renders that as a disabled button.
+ */
+export function resolveButtonCommands(
+  btn: { command?: string; commands?: string[] },
+  map: Map<string, BoundCommand>,
+): BoundCommand[] {
+  const ids = btn.commands && btn.commands.length > 0
+    ? btn.commands
+    : btn.command
+      ? [btn.command]
+      : [];
+  return ids.map((id) => map.get(id)).filter((c): c is BoundCommand => c !== undefined);
+}
