@@ -462,9 +462,15 @@ export default function App() {
     const hasMod = e.metaKey || e.ctrlKey;
     // Insert Template: Option+T (no Cmd). Checked before the hasMod early-return.
     if (e.code === "KeyT" && e.altKey && !e.metaKey && !e.ctrlKey) {
-      e.preventDefault();
-      setPalette((p) => (p === "template" ? null : "template"));
-      return;
+      // Don't hijack Option+T while typing in a form field (palette search,
+      // calendar title, etc.). The note editor is contentEditable, not an
+      // INPUT/TEXTAREA, so template insertion from a focused note still works.
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        setPalette((p) => (p === "template" ? null : "template"));
+        return;
+      }
     }
     if (!hasMod) return;
     const k = e.key.toLowerCase();
