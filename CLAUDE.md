@@ -140,7 +140,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 **Key components**:
 - `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
 - `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
-- `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, calendar, tasks, flashcards, or terminal
+- `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), calendar, tasks, flashcards, or terminal
 - `tabIds.ts` — Sentinel ids for non-file pane contents (`::settings`, `::graph`, `::terminal`, etc.)
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
 - `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock` (embed Bases view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`
@@ -237,6 +237,17 @@ Spaced-repetition reviews extracted from markdown notes:
 
 In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over WebSocket on `/terminal`. Frontend renders with xterm.js, with the ANSI palette wired from the graph color theme (`buildAnsiPalette`). DOM-rendered (not canvas), styled to match the editor.
 
+### Sheets (`app/src/SheetView.tsx` + `app/src/sheet/`)
+
+A real spreadsheet document type — a sibling to notes and bases, **not** a Bases view (the data lives in the file's cells, not in notes). A `.sheet` file is a Univer workbook JSON snapshot (`IWorkbookData`). Powered by the **Univer** SDK (`@univerjs/presets` + `preset-sheets-core`/`-sort`/`-filter`, v0.25). Free-form A1 cells, 400+ formulas with a recalc dependency graph, sort/filter, number formats, merged cells, freeze panes.
+
+- All Univer code is quarantined behind one adapter, `app/src/sheet/univerSheet.ts` (`mountSheet`/`getSnapshot`/`setDark`/`dispose`), reached only via dynamic `import()` from `SheetView.tsx` so Univer is code-split out of the main bundle. Each mount gets a fresh child container (disposing then re-creating into the same node renders blank).
+- `app/src/sheet/snapshot.ts` (pure, unit-tested): `parseSnapshot` (empty/whitespace ⇒ blank workbook), `serializeSnapshot`. `app/src/sheet/sync.ts` (pure, unit-tested): `isExternalChange` — the single-writer reload predicate.
+- Routing: `PaneContent.tsx` sends `*.sheet` paths to `SheetView` (like `*.base` → `BaseView`). `core/src/files.ts` `listTree` lists `.sheet` so they appear in the tree. `tabIds.ts` gives them a `Table` icon + extension-stripped label.
+- Persistence reuses `api.read`/`api.write` (no new endpoints). Edits debounce-save (snapshot-equality skip avoids no-op writes); the **baseline is Univer's own serialization of the freshly-mounted workbook**, so mount-time commands aren't mistaken for edits and an unedited sheet is never written. A version/echo guard (`isExternalChange` + a `dirty` flag) reloads on genuine external edits but never clobbers in-progress edits.
+- Created via "New Spreadsheet" (file-tree context menu, toolbar, command palette) — an empty file that `SheetView` turns into a blank workbook on first open. Dark mode tracks `settings.appearance.theme` live via `univerAPI.toggleDarkMode`.
+- **Not in v1** (deferred, each cheap to add): `.xlsx` import/export, charts, pivot tables, real-time collaboration, vault cross-references. Tauri/WKWebView canvas rendering is unverified (developed/tested in the browser).
+
 ### Panes / Tabs
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
@@ -298,6 +309,8 @@ app/src/
 ├── graph/               # Renderer + label layer + collide
 ├── Flashcards.tsx       # SRS review view
 ├── Terminal.tsx         # xterm.js terminal tab
+├── SheetView.tsx        # Spreadsheet pane: load/save/reload + lazy Univer mount
+├── sheet/               # Univer adapter (univerSheet.ts) + pure snapshot/sync (unit-tested)
 ├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map)
 ├── calendar/            # Calendar feature (CalendarPage, EventStore, views/, components/)
 ├── palette/             # Command palette + quick switcher
