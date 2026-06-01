@@ -6,6 +6,7 @@ import { toDateStr } from '../dates'
 import { refreshEvents } from '../refresh'
 import { Modal } from '../../ui/Modal'
 import { Field } from '../../ui/Field'
+import { TextButton } from '../../ui/TextButton'
 
 const uuid = () => crypto.randomUUID()
 const RECURRENCE_TYPES: RecurrenceType[] = ['daily', 'weekly', 'biweekly', 'monthly']
@@ -124,8 +125,8 @@ export function EventModal(props: { store: EventStore }) {
         <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
           <div class="day-picker">
             <For each={DOW}>{([label, i]) => (
-              <button type="button" class={recDays().includes(i) ? 'active' : ''}
-                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</button>
+              <TextButton variant="plain" type="button" class={recDays().includes(i) ? 'active' : ''}
+                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</TextButton>
             )}</For>
           </div>
         </Show>
@@ -134,10 +135,10 @@ export function EventModal(props: { store: EventStore }) {
       </Show>
       <div class="modal-actions">
         <Show when={editing}>
-          <button onClick={handleDelete} style={{ 'margin-right': 'auto', color: 'var(--text-error)' }}>Delete</button>
+          <TextButton variant="plain" onClick={handleDelete} style={{ 'margin-right': 'auto', color: 'var(--text-error)' }}>Delete</TextButton>
         </Show>
-        <button onClick={handleSave}>Save</button>
-        <button onClick={() => (showEventModal.value = null)}>Cancel</button>
+        <TextButton variant="plain" onClick={handleSave}>Save</TextButton>
+        <TextButton variant="plain" onClick={() => (showEventModal.value = null)}>Cancel</TextButton>
       </div>
     </Modal>
   )

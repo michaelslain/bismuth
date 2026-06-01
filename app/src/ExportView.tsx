@@ -2,6 +2,7 @@
 import { createSignal, createResource, For, Show, createEffect } from "solid-js";
 import { api } from "./api";
 import { Icon } from "./icons/Icon";
+import { TextButton } from "./ui/TextButton";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
@@ -58,32 +59,34 @@ export function ExportView(props: { path: string }) {
         <div class="export-formats">
           <For each={formats()}>
             {(f) => (
-              <button
+              <TextButton
+                variant="plain"
                 class="export-format"
                 classList={{ active: format() === f }}
                 onClick={() => setFormat(f)}
               >
                 {LABEL[f]}
-              </button>
+              </TextButton>
             )}
           </For>
         </div>
         <div class="export-formats export-themes">
           <For each={THEMES}>
             {(t) => (
-              <button
+              <TextButton
+                variant="plain"
                 class="export-format"
                 classList={{ active: theme() === t }}
                 onClick={() => setTheme(t)}
               >
                 {THEME_LABEL[t]}
-              </button>
+              </TextButton>
             )}
           </For>
         </div>
-        <button class="export-go" disabled={busy()} onClick={doExport}>
+        <TextButton variant="plain" class="export-go" disabled={busy()} onClick={doExport}>
           <Icon value="Download" size={14} /> Export
-        </button>
+        </TextButton>
       </div>
       <div class="export-preview">
         <Show

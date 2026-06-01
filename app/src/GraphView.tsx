@@ -8,6 +8,7 @@ import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
+import { TextButton } from "./ui/TextButton";
 
 /** Shared dark-pill recipe for the hover/fps HUD readouts (S26). */
 const hudPill: JSX.CSSProperties = {
@@ -151,20 +152,22 @@ export function GraphView(props: {
           <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", background: "rgba(14,14,18,0.94)", border: "1px solid rgba(255,255,255,0.12)", "border-radius": "8px", padding: "10px", "backdrop-filter": "blur(10px)", "box-shadow": "0 8px 28px rgba(0,0,0,0.5)" }}>
             {/* Section 1 — view actions: a clearly-bordered Reset button + close. */}
             <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
-              <button
+              <TextButton
+                variant="plain"
                 title="Reset view to whole graph"
                 onClick={() => renderer.resetView()}
                 style={{ ...baseButtonStyle, flex: 1, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(232,232,235,0.9)", padding: "6px 8px" }}
               >
                 Reset view
-              </button>
-              <button
+              </TextButton>
+              <TextButton
+                variant="plain"
                 title="Close menu"
                 onClick={closeMenu}
                 style={{ ...baseButtonStyle, background: "rgba(20,20,24,0.6)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(220,220,225,0.8)", "font-size": "12px", padding: "6px 9px" }}
               >
                 ✕
-              </button>
+              </TextButton>
             </div>
             {/* Section 2 — search. */}
             <GraphSearch
@@ -198,7 +201,8 @@ export function GraphView(props: {
               ]}
             />
             <Show when={props.fill}>
-              <button
+              <TextButton
+                variant="plain"
                 style={{
                   display: "flex",
                   "align-items": "center",
@@ -216,7 +220,7 @@ export function GraphView(props: {
                 onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
               >
                 ☰
-              </button>
+              </TextButton>
             </Show>
           </div>
           <Show when={hovered()}>

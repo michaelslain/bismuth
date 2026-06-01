@@ -3,6 +3,7 @@ import { For, type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
 import { IconButton } from "../ui/IconButton";
+import { TextButton } from "../ui/TextButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
 import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
@@ -72,7 +73,7 @@ export function Toolbar(props: {
       </div>
       <div class="draw-group">
         <For each={colors()}>{(c) => (
-          <button class="draw-swatch" classList={{ active: t().color === c }}
+          <TextButton variant="plain" class="draw-swatch" classList={{ active: t().color === c }}
             style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
             onClick={() => props.setTools({ color: c })} />
         )}</For>

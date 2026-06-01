@@ -1,9 +1,10 @@
 import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
-import { Icon } from '../../icons/Icon'
 import { settings } from '../../settings'
 import { Modal } from '../../ui/Modal'
+import { TextButton } from '../../ui/TextButton'
+import { IconButton } from '../../ui/IconButton'
 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
@@ -55,16 +56,16 @@ export function CategoryPanel(props: { store: EventStore }) {
             <div class="category-row">
               <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
               <span>{c.name}</span>
-              <button onClick={() => handleDelete(c.name)}><Icon value="X" size={12} /></button>
+              <IconButton variant="plain" label="Delete category" icon="X" iconSize={12} onClick={() => handleDelete(c.name)} />
             </div>
           )}</For>
         </div>
         <div class="category-add-row">
           <input type="color" value={newColor()} onInput={e => setNewColor(e.currentTarget.value)} />
           <input placeholder="Category name" value={newName()} onInput={e => setNewName(e.currentTarget.value)} />
-          <button onClick={handleAdd}>Add</button>
+          <TextButton variant="plain" onClick={handleAdd}>Add</TextButton>
         </div>
-        <div class="modal-actions"><button onClick={() => (showCategoryPanel.value = false)}>Done</button></div>
+        <div class="modal-actions"><TextButton variant="plain" onClick={() => (showCategoryPanel.value = false)}>Done</TextButton></div>
       </Modal>
     </Show>
   )
