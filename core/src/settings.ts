@@ -142,6 +142,10 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
       (out as Record<string, unknown>).folderIcons = readFolderIconsFrom(data);
       continue;
     }
+    if (section === "toolbar") {
+      (out as Record<string, unknown>).toolbar = readToolbarFrom(data);
+      continue;
+    }
     const stored = data[section];
     if (!stored || typeof stored !== "object") continue;
     const target = out[section];
@@ -157,6 +161,26 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
     }
   }
   delete (out as Record<string, unknown>).properties;
+  return out;
+}
+
+/** Pull a clean toolbar list out of parsed settings data. Each item must be an
+ *  object with non-empty string `command` and `icon`; malformed items are dropped.
+ *  An explicit array (even empty) is honored; a missing/non-array value falls back
+ *  to the seeded defaults. */
+function readToolbarFrom(data: Record<string, unknown>): Array<{ command: string; icon: string; tooltip?: string }> {
+  const raw = data.toolbar;
+  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).toolbar) as Array<{ command: string; icon: string; tooltip?: string }>;
+  const out: Array<{ command: string; icon: string; tooltip?: string }> = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.command !== "string" || o.command.length === 0) continue;
+    if (typeof o.icon !== "string" || o.icon.length === 0) continue;
+    const entry: { command: string; icon: string; tooltip?: string } = { command: o.command, icon: o.icon };
+    if (typeof o.tooltip === "string" && o.tooltip.length > 0) entry.tooltip = o.tooltip;
+    out.push(entry);
+  }
   return out;
 }
 

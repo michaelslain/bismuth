@@ -5,6 +5,7 @@
 // commented file and the same engine validates it. DEFAULTS is the plain nested
 // object the frontend store seeds from synchronously (no white-screen on boot).
 import type { Schema, SchemaEntry, PropertyType } from "./types";
+import { COMMAND_IDS } from "../commands";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS / PALETTE_KEYS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
@@ -106,6 +107,21 @@ export const SETTINGS_SCHEMA: Schema = {
   // Per-folder icons. Free-form `{folderPath: iconName}` (folders have no
   // frontmatter), seeded empty and written via POST /folder-icon.
   folderIcons: { type: { kind: "object", fields: {} }, doc: "Per-folder icons: map a folder path to a Lucide icon name or emoji." },
+  // Sidebar header bar buttons, in order. Each runs a command-palette command.
+  // Seeded with the three built-ins so a fresh install is unchanged.
+  toolbar: {
+    type: { kind: "list", item: { kind: "object", fields: {
+      command: { type: enumType(COMMAND_IDS), doc: "Which command-palette command this button runs." },
+      icon: { type: "icon", doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
+      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
+    } } },
+    default: [
+      { command: "new-note", icon: "FilePlus" },
+      { command: "new-folder", icon: "FolderPlus" },
+      { command: "terminal", icon: "SquareTerminal" },
+    ],
+    doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
+  },
 };
 
 /** Recursively materialize the `default` of every leaf into a plain nested object. */

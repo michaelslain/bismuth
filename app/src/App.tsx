@@ -7,6 +7,7 @@ import { GraphView } from "./GraphView";
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
+import { bindCommands } from "./commands";
 import { settings } from "./settings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
@@ -214,6 +215,10 @@ export default function App() {
   };
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
+  const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
+  const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  // The catalog->action binding both the toolbar and the command palette consume.
+  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode });
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -596,9 +601,27 @@ export default function App() {
     <div class="layout">
       <aside class="sidebar">
         <div class="sidebar-icons">
-          <Button variant="icon" title="New note" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }))}><Icon value="FilePlus" size={18} /></Button>
-          <Button variant="icon" title="New folder" onClick={() => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }))}><Icon value="FolderPlus" size={18} /></Button>
-          <Button variant="icon" title="Open terminal" onClick={openTerminal}><Icon value="SquareTerminal" size={18} /></Button>
+          <For each={settings.toolbar}>
+            {(btn) => {
+              const cmd = () => commands().get(btn.command);
+              return (
+                <Show
+                  when={cmd()}
+                  fallback={
+                    <Button variant="icon" disabled title={`Unknown command: ${btn.command}`}>
+                      <Icon value={btn.icon || "CircleHelp"} size={18} />
+                    </Button>
+                  }
+                >
+                  {(c) => (
+                    <Button variant="icon" title={btn.tooltip ?? c().label} onClick={() => c().action()}>
+                      <Icon value={btn.icon} size={18} />
+                    </Button>
+                  )}
+                </Show>
+              );
+            }}
+          </For>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
@@ -690,7 +713,7 @@ export default function App() {
         <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
       </div>
       <Show when={palette() === "command"}>
-        <CommandPalette onClose={() => setPalette(null)} openSettings={openSettings} openTerminal={openTerminal} openTemplates={() => setPalette("template")} setMode={(m) => setMode(m)} />
+        <CommandPalette onClose={() => setPalette(null)} commands={commands()} />
       </Show>
       <Show when={palette() === "file"}>
         <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />

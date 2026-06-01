@@ -1,5 +1,6 @@
 // core/test/schema/validate-list-object.test.ts
-import { test, expect } from "bun:test";
+import { test, expect, describe, it } from "bun:test";
+import { SETTINGS_SCHEMA } from "../../src/schema/settingsSchema";
 import { validateValue } from "../../src/schema/validate";
 import type { PropertyType } from "../../src/schema/types";
 
@@ -44,4 +45,31 @@ test("object passes when all nested fields are valid", () => {
     fields: { count: { type: "number" }, label: { type: "string" } },
   };
   expect(validateValue(t, { count: 5, label: "ok" })).toBeNull();
+});
+
+describe("toolbar setting", () => {
+  const toolbar = () => SETTINGS_SCHEMA.toolbar;
+
+  it("is a list of objects with command/icon/tooltip fields", () => {
+    const t = toolbar().type as any;
+    expect(t.kind).toBe("list");
+    expect(t.item.kind).toBe("object");
+    expect(Object.keys(t.item.fields).sort()).toEqual(["command", "icon", "tooltip"]);
+  });
+
+  it("seeds the three default buttons", () => {
+    expect(toolbar().default).toEqual([
+      { command: "new-note", icon: "FilePlus" },
+      { command: "new-folder", icon: "FolderPlus" },
+      { command: "terminal", icon: "SquareTerminal" },
+    ]);
+  });
+
+  it("accepts a valid toolbar item and rejects an unknown command id", () => {
+    const t = toolbar().type;
+    expect(validateValue(t, [{ command: "terminal", icon: "SquareTerminal" }])).toBeNull();
+    const bad = validateValue(t, [{ command: "no-such-command", icon: "X" }]);
+    expect(bad).not.toBeNull();
+    expect(bad!.severity).toBe("error");
+  });
 });
