@@ -105,4 +105,5 @@ export const api = {
   // Persist a single setting by path (the backend merges it into settings.yaml in
   // place, preserving comments + the property registry + unknown keys).
   setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
+  saveDrawing: (path: string, doc: unknown) => post("/drawing/save", { path, doc }).then(() => {}),
 };

@@ -961,3 +961,35 @@ test("GET /templates returns [] when the folder is absent", async () => {
     server.stop(true);
   }
 });
+
+test("POST /drawing/save writes the .draw JSON and PNG+PDF sidecars", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const doc = { v: 1, kind: "drawing", paper: { bg: "grid" },
+      pages: [{ strokes: [{ t: "pen", c: "fg", w: 4, pts: [10, 10, 255, 80, 80, 255] }] }] };
+    const res = await fetch(`${base}/drawing/save`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "sketch.draw", doc }),
+    });
+    expect(res.status).toBe(200);
+    expect(await Bun.file(`${vault}/sketch.draw`).exists()).toBe(true);
+    expect(await Bun.file(`${vault}/sketch.draw.png`).exists()).toBe(true);
+    expect(await Bun.file(`${vault}/sketch.draw.pdf`).exists()).toBe(true);
+  } finally { server.stop(); }
+});
+
+test("GET /drawing/render?format=png returns a PNG for a saved drawing", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const doc = { v: 1, kind: "drawing", paper: { bg: "blank" }, pages: [{ strokes: [] }] };
+    await Bun.write(`${vault}/empty.draw`, JSON.stringify(doc));
+    const res = await fetch(`${base}/drawing/render?path=empty.draw&format=png`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("image/png");
+    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(100);
+  } finally { server.stop(); }
+});

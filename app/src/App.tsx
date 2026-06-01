@@ -15,6 +15,7 @@ import { debounce } from "./debounce";
 import { ToastHost } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
+import { emptyDoc } from "../../core/src/drawing/model";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
@@ -215,11 +216,20 @@ export default function App() {
   };
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
+<<<<<<< HEAD
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
   const newSpreadsheet = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "sheet" } }));
+  const newDrawing = async () => {
+    const tree = await api.tree();
+    const existing = new Set(tree.map((e) => e.path));
+    let name = "Untitled.draw";
+    for (let n = 2; existing.has(name); n++) name = `Untitled ${n}.draw`;
+    await api.saveDrawing(name, emptyDoc());
+    openFile(name);
+  };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, newSpreadsheet, setMode });
+  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, newSpreadsheet, newDrawing, setMode });
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
