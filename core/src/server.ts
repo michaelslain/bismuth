@@ -3,7 +3,7 @@ import { watch } from "node:fs";
 import { createSseRegistry, formatEvent } from "./sse";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
-import { listTree, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
+import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { buildAgentGraph } from "./agents";
@@ -248,6 +248,11 @@ export function createServer(cfg: CoreConfig) {
         cachedGraph = attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault);
       }
       return Response.json(cachedGraph);
+    },
+
+    "GET /templates": async () => {
+      const folder = appConfig.templates?.folder ?? "Templates";
+      return Response.json(await listTemplates(cfg.vault, folder));
     },
 
     "GET /tree": async (_, __) => {

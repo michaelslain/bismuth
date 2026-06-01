@@ -11,7 +11,7 @@ function objectFields(entry: SchemaEntry): Schema {
 
 test("SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons and properties", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "calendar", "editor", "folderIcons", "graph", "properties", "server", "srs", "terminal", "ui", "vault"].sort(),
+    ["appearance", "calendar", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "ui", "vault"].sort(),
   );
 });
 
@@ -77,7 +77,7 @@ test("properties section is an empty object schema (the registry placeholder)", 
 test("DEFAULTS is the plain nested object derived from the schema", () => {
   // Structural (robust to added settings): section set + representative leaves.
   expect(Object.keys(DEFAULTS).sort()).toEqual(
-    ["appearance", "calendar", "editor", "folderIcons", "graph", "properties", "server", "srs", "terminal", "ui", "vault"].sort(),
+    ["appearance", "calendar", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "ui", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
   expect(d.appearance.accent).toBe("#6496ff");

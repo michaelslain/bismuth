@@ -102,6 +102,9 @@ export interface Settings {
     easyGraduatingInterval: number;
     goodGraduatingInterval: number;
   };
+  templates: {
+    folder: string; // vault folder containing template .md files
+  };
 }
 
 // Alias so anything importing the canonical `AppSettings` name from the app gets

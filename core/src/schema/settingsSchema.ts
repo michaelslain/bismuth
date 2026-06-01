@@ -97,6 +97,9 @@ export const SETTINGS_SCHEMA: Schema = {
     easyGraduatingInterval: { type: "number", default: 4, min: 1, max: 14, doc: "Days until next review when a new card is rated 'easy'." },
     goodGraduatingInterval: { type: "number", default: 1, min: 1, max: 3, doc: "Days until next review when a new card is rated 'good'/'hard'." },
   }),
+  templates: object({
+    folder: { type: "string", default: "Templates", doc: "Vault folder holding template .md files. Option+T inserts one at the cursor." },
+  }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.
   properties: { type: { kind: "object", fields: {} }, doc: "Vault property registry: map each frontmatter key to a type." },

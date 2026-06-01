@@ -87,6 +87,43 @@ export function createEntry(root: string, path: string, kind: "file" | "dir"): v
   }
 }
 
+/** List template .md files (basename + vault-relative path) under a vault subfolder.
+ *  Returns [] if the folder is missing. Recurses, skipping dotfiles. */
+export async function listTemplates(
+  root: string,
+  folder: string,
+): Promise<Array<{ name: string; path: string }>> {
+  let absFolder: string;
+  try {
+    absFolder = resolveInVault(root, folder);
+  } catch {
+    return [];
+  }
+  const out: Array<{ name: string; path: string }> = [];
+  const walk = async (absDir: string, relDir: string) => {
+    let entries: Awaited<ReturnType<typeof readdir>>;
+    try {
+      entries = await readdir(absDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const d of entries) {
+      if (d.name.startsWith(".")) continue;
+      const relPath = relDir ? `${relDir}/${d.name}` : d.name;
+      if (d.isDirectory()) {
+        await walk(join(absDir, d.name), relPath);
+      } else if (d.name.endsWith(".md")) {
+        const name = d.name.slice(0, -3);
+        const path = folder ? `${folder}/${relPath}` : relPath;
+        out.push({ name, path });
+      }
+    }
+  };
+  await walk(absFolder, "");
+  out.sort((a, b) => a.path.localeCompare(b.path));
+  return out;
+}
+
 export function moveEntry(root: string, from: string, to: string): void {
   if (to === from || to.startsWith(from + "/")) throw new Error("cannot move an entry into itself");
   const fromAbs = resolveInVault(root, from);
