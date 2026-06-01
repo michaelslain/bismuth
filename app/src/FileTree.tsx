@@ -413,7 +413,7 @@ function Level(props: {
           <div>
             <div
               style={{
-                display: "flex", "align-items": "center", gap: "4px",
+                display: "flex", "align-items": "flex-start", gap: "4px",
                 padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8,
                 "user-select": "none",
                 background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
@@ -444,7 +444,7 @@ function Level(props: {
           </div>
         ) : (
           <div
-            style={{ display: "flex", "align-items": "center", gap: "4px", padding: "2px 4px", "padding-left": fileIndent, cursor: "pointer" }}
+            style={{ display: "flex", "align-items": "flex-start", gap: "4px", padding: "2px 4px", "padding-left": fileIndent, cursor: "pointer" }}
             draggable={props.editing !== child.path}
             onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}

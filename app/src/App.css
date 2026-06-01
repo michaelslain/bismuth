@@ -41,8 +41,10 @@ body { background: var(--bg); color: var(--fg); }
 .sidebar canvas { display: block; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: var(--sidebar-icon-font-size, 15px); line-height: 1; padding: 4px 6px; border-radius: 4px; }
 .icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }
-/* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row. */
-.ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; }
+/* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row.
+   min-height matches the text's 1.5 line-height so the icon centers on the FIRST line
+   when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
+.ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; align-items: center; min-height: 1.5em; }
 .ft-chevron { opacity: 0.55; }
 .editor-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .editor-body { flex: 1; overflow: auto; min-height: 0; }
