@@ -8,6 +8,7 @@ import { Portal } from "solid-js/web";
 import { allIcons } from "./registry";
 import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
+import { SearchBar } from "../ui/SearchBar";
 
 type Props = {
   /** Placeholder / heading for the search box. */
@@ -56,12 +57,12 @@ export function IconPicker(props: Props) {
     <Portal>
       <div class="palette-overlay" onClick={(e) => e.target === e.currentTarget && props.onClose()}>
         <div class="palette-panel icon-picker-panel">
-          <input
-            ref={inputRef}
-            class="palette-input"
+          <SearchBar
+            inputRef={(el) => { inputRef = el; }}
+            inputClass="palette-input"
             placeholder={props.title ?? "Search icons…"}
             value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
+            onInput={setQuery}
             onKeyDown={onKeyDown}
           />
           <Show when={props.onClear}>
