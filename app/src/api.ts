@@ -3,6 +3,7 @@
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 
 import type { GraphData, TreeEntry } from "../../core/src/graph";
+import type { SearchOpts, SearchResult } from "./searchOpts";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
 import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
@@ -66,6 +67,10 @@ export const api = {
   write: (path: string, contents: string) =>
     put("/file", { path, contents }).then(() => {}),
   backup: () => post("/backup", {}).then(() => {}),
+  search: (query: string, opts: SearchOpts) =>
+    postJson<SearchResult[]>("/search", { query, opts }),
+  replace: (query: string, replacement: string, opts: SearchOpts, scope: string) =>
+    postJson<{ replaced: number; files: string[] }>("/replace", { query, replacement, opts, scope }),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
   version: () =>

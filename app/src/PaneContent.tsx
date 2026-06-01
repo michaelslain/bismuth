@@ -10,7 +10,8 @@ import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import { DrawingPage } from "./drawing/DrawingPage";
 import type { NoteCandidate } from "./editor/wikilink";
-import { CALENDAR_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel } from "./tabIds";
+import { CALENDAR_TAB, SEARCH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, isSentinel } from "./tabIds";
+import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
   path: string;
@@ -38,6 +39,9 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === CALENDAR_TAB}>
         <CalendarPage />
+      </Match>
+      <Match when={props.path === SEARCH_TAB}>
+        <SearchView onOpen={props.onOpen} />
       </Match>
       <Match when={props.path.endsWith(".sheet")}>
         <SheetView path={props.path} onSaved={props.onSaved} />
