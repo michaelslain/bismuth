@@ -40,6 +40,7 @@ body { background: var(--bg); color: var(--fg); }
 /* Height matches .tabbar (29px incl. its 1px bottom border) so the two top bars'
    bottom divider lines align into one continuous row across the app. */
 .sidebar-icons { display: flex; align-items: center; gap: 2px; height: 29px; padding: 0 8px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: var(--sidebar-icon-font-size, 15px); line-height: 1; padding: 4px 6px; border-radius: 4px; }
 .icon-btn:hover { opacity: 1; background: color-mix(in srgb, var(--fg) 10%, transparent); }

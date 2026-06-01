@@ -669,7 +669,7 @@ test("GET /settings returns parsed app settings with defaults", async () => {
   const base = `http://localhost:${server.port}`;
   try {
     const s = await (await fetch(`${base}/settings`)).json();
-    expect(s.appearance.theme).toBe("dark");
+    expect(s.appearance.theme).toBe("oxide-duotone");
     expect(s.graph.viewMode).toBe("3d");
     expect(s.properties).toBeUndefined();
   } finally {
@@ -717,7 +717,7 @@ test("GET /file materializes settings.yaml from defaults when missing at read ti
     const text = await res.text();
     expect(res.status).toBe(200);
     expect(text).toContain("appearance:"); // default content, not a blank editor
-    expect(text).toContain("theme: dark");
+    expect(text).toContain("theme: oxide-duotone");
     expect(existsSync(join(vault, "settings.yaml"))).toBe(true); // recreated on disk
   } finally {
     server.stop(true);
@@ -894,20 +894,20 @@ test("POST /rows resolves a scoped-tasks spec via base composition", async () =>
 test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
   const { vault } = await makeSampleVault();
   // Seed a settings.yaml with a comment + a custom key + the properties registry.
-  await writeNote(vault, "settings.yaml", "# my settings\nappearance:\n  theme: dark\n  myCustom: 7\nproperties:\n  due: date\n");
+  await writeNote(vault, "settings.yaml", "# my settings\nappearance:\n  theme: oxide-duotone\n  myCustom: 7\nproperties:\n  due: date\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/set-setting`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: ["appearance", "accent"], value: "#abcdef" }),
+      body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Georgia" }),
     });
     expect(res.status).toBe(200);
 
     const settings = await (await fetch(`${base}/settings`)).json();
-    expect(settings.appearance.accent).toBe("#abcdef");   // changed key
-    expect(settings.appearance.background).toBe("#14151B"); // reconciled default present
+    expect(settings.appearance.editorFont).toBe("Georgia"); // changed key
+    expect(settings.appearance.theme).toBe("oxide-duotone"); // reconciled default present
 
     const raw = await readNote(vault, "settings.yaml");
     expect(raw).toContain("# my settings");                // comment preserved
@@ -1001,7 +1001,7 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: dark\n  accent: '#000000'\ngraph:\n  nodeSize: 5\n");
+  await writeNote(vault, "settings.yaml", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1010,12 +1010,12 @@ test("POST /set-setting serializes concurrent requests without clobbering change
       fetch(`${base}/set-setting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ["appearance", "theme"], value: "light" }),
+        body: JSON.stringify({ path: ["appearance", "theme"], value: "indigo-oxide" }),
       }),
       fetch(`${base}/set-setting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: ["appearance", "accent"], value: "#ffffff" }),
+        body: JSON.stringify({ path: ["appearance", "editorFont"], value: "Georgia" }),
       }),
       fetch(`${base}/set-setting`, {
         method: "POST",
@@ -1029,8 +1029,8 @@ test("POST /set-setting serializes concurrent requests without clobbering change
 
     // Verify all three changes were persisted (none clobbered)
     const settings = await (await fetch(`${base}/settings`)).json();
-    expect(settings.appearance.theme).toBe("light");
-    expect(settings.appearance.accent).toBe("#ffffff");
+    expect(settings.appearance.theme).toBe("indigo-oxide");
+    expect(settings.appearance.editorFont).toBe("Georgia");
     expect(settings.graph.nodeSize).toBe(10);
   } finally {
     server.stop(true);

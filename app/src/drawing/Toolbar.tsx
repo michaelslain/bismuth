@@ -6,6 +6,7 @@ import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
 import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
+import { resolveAppearance } from "../themes";
 
 const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "pen", icon: "Pen", title: "Pen" },
@@ -55,7 +56,7 @@ export function Toolbar(props: {
   // Ink colors from the centralized Oxide accent palette (reactive to
   // settings.appearance.accentPalette), with "fg" (theme default ink) first.
   const colors = () => {
-    const ap = settings.appearance.accentPalette;
+    const ap = resolveAppearance(settings.appearance).accentPalette;
     return ["fg", ...(ap?.length ? ap : DEFAULT_ACCENT_PALETTE)];
   };
   const swatchColor = (c: string) => (c === "fg" ? "var(--fg)" : c);

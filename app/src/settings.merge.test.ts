@@ -10,9 +10,9 @@ describe("mergeServerSettings", () => {
     expect(out.graph.spin).toBe(DEFAULTS.graph.spin);
   });
 
-  it("ignores wrong-typed values (accent: 42 falls back to default)", () => {
-    const out = mergeServerSettings({ appearance: { accent: 42 } });
-    expect(out.appearance.accent).toBe(DEFAULTS.appearance.accent);
+  it("ignores wrong-typed values (editorFontSize: 'big' falls back to default)", () => {
+    const out = mergeServerSettings({ appearance: { editorFontSize: "big" } });
+    expect(out.appearance.editorFontSize).toBe(DEFAULTS.appearance.editorFontSize);
   });
 
   it("returns a full defaults clone for null / non-object input", () => {
@@ -22,8 +22,8 @@ describe("mergeServerSettings", () => {
   });
 
   it("does not mutate DEFAULTS", () => {
-    mergeServerSettings({ appearance: { accent: "#000000" } });
-    expect(DEFAULTS.appearance.accent).toBe("#3F6BF0");
+    mergeServerSettings({ appearance: { theme: "indigo-oxide" } });
+    expect(DEFAULTS.appearance.theme).toBe("oxide-duotone");
   });
 
   it("replaces a top-level list (toolbar) wholesale, honoring arbitrary length", () => {

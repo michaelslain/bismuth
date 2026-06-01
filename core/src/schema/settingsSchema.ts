@@ -9,10 +9,18 @@ import { COMMAND_IDS } from "../commands";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
-// The default Oxide accent palette — the 6 editable category colors that drive
-// graph nodes/clusters/tags AND --accent-purple. Kept in lockstep with
-// app/src/settings.ts DEFAULT_ACCENT_PALETTE.
-const OXIDE_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
+// Kept in lockstep with app/src/themes.ts THEME_NAMES (oxide-duotone is the default,
+// first) and app/scripts/logoMarks.ts MARK_NAMES.
+const THEME_NAMES = [
+  "oxide-duotone", "gunmetal-teal", "rose-gold",
+  "indigo-oxide", "forest-oxide", "full-sheen",
+];
+const ICON_NAMES = [
+  "hopper-crystal", "node-b", "square-funnel", "nested-diamonds",
+  "pinwheel", "node-crystal", "lattice", "diamond-bloom",
+  "node-diamond", "octagon-bloom", "spin-cross", "tri-bloom",
+  "radial-graph", "node-rings",
+];
 // CALENDAR_VIEWS must stay in sync with `ViewType` in app/src/calendar/types.ts
 // (currently 'month' | 'week' | '3day' | 'day'). If ViewType changes, update here.
 const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
@@ -22,21 +30,21 @@ const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", field
 
 export const SETTINGS_SCHEMA: Schema = {
   appearance: object({
-    // --- Centralized theme tokens. These 5 groups define EVERY color in the app
-    // AND the graph (surfaces/borders/muted derive via color-mix in
-    // settingsCssVars.ts; graph nodes/edges/clusters/tags derive via themeColors.ts).
-    background: { type: "string", default: "#14151B", doc: "Base background (Ink, hex) — drives --bg and the graph canvas." },
-    foreground: { type: "string", default: "#F4F2EE", doc: "Base foreground/text (Paper, hex) — drives --fg." },
-    neutral: { type: "string", default: "#AEB4C2", doc: "Neutral metal (Steel, hex) — drives --text-muted, --border, and graph edges." },
-    accent: { type: "string", default: "#3F6BF0", doc: "Primary accent (Blue, hex) — active tab, selection, links, caret." },
-    accentPalette: {
-      type: { kind: "list", item: "string" },
-      default: OXIDE_PALETTE,
-      doc: "The 6 Oxide category colors (hex) for graph nodes/clusters/tags, by stable hash. Also drives --accent-purple.",
+    // Bismuth color theme — selects EVERY color in the app + graph (background,
+    // surfaces, border, text, muted, accent, and the graph node palette). The theme
+    // is the single source of color; app/src/themes.ts holds the token values that
+    // settingsCssVars.ts projects to CSS vars. The app is dark-only.
+    theme: {
+      type: enumType(THEME_NAMES),
+      default: "oxide-duotone",
+      doc: "Bismuth color theme: oxide-duotone (default) · gunmetal-teal · rose-gold · indigo-oxide · forest-oxide · full-sheen.",
     },
-    // Dark-only: light mode was dropped. Kept (single-value enum) so dark-aware
-    // consumers (sheets, drawing) keep a stable signal without an App.tsx change.
-    theme: { type: enumType(["dark"]), default: "dark", doc: "Color theme (dark-only)." },
+    // Per-vault app logo mark (favicon + sidebar logo). One of the 14 Bismuth marks.
+    icon: {
+      type: enumType(ICON_NAMES),
+      default: "hopper-crystal",
+      doc: "App logo mark: hopper-crystal · node-b · square-funnel · nested-diamonds · pinwheel · node-crystal · lattice · diamond-bloom · node-diamond · octagon-bloom · spin-cross · tri-bloom · radial-graph · node-rings.",
+    },
     editorFont: { type: enumType(EDITOR_FONTS), default: "Lora", doc: "Editor font family." },
     editorFontSize: { type: "number", default: 16, min: 11, max: 28, doc: "Editor font size (px)." },
     sidebarWidth: { type: "number", default: 280, min: 200, max: 600, doc: "Left sidebar width (px)." },

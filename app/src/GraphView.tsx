@@ -5,6 +5,7 @@ import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
 import { settings, setSettings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
+import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
@@ -97,7 +98,7 @@ export function GraphView(props: {
   // canvas background = Ink (background). No separate graph palette/colors anymore.
   createEffect(() => {
     const gs = settings.graph;
-    const ap = settings.appearance;
+    const ap = resolveAppearance(settings.appearance);
     const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
     renderer.setConfig({
       spin: gs.spin,
