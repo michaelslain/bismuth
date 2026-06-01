@@ -3,7 +3,7 @@ import { createEffect, createMemo, onCleanup } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { startCompletion } from "@codemirror/autocomplete";
+import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { forceLinting } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
@@ -168,7 +168,14 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       history(),
       drawSelection(),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
-      keymap.of([{ key: "Ctrl-Space", run: startCompletion }, ...defaultKeymap, ...historyKeymap]),
+      // Tab accepts the active completion (like Enter); acceptCompletion returns false
+      // when no popup is open, so Tab falls through to its normal behavior otherwise.
+      keymap.of([
+        { key: "Ctrl-Space", run: startCompletion },
+        { key: "Tab", run: acceptCompletion },
+        ...defaultKeymap,
+        ...historyKeymap,
+      ]),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       ...(ed.lineNumbers ? [lineNumbers()] : []),
