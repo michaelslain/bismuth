@@ -95,7 +95,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
               value={replacement()}
               onInput={(e) => setReplacement(e.currentTarget.value)}
             />
-            <Button variant="primary" size="sm" onClick={() => doReplace("vault")}>Replace all</Button>
+            <Button variant="primary" size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>Replace all</Button>
           </div>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>
