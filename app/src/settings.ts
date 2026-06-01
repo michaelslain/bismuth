@@ -149,6 +149,15 @@ export function mergeServerSettings(parsed: unknown): Settings {
   for (const section of Object.keys(out)) {
     const stored = p[section];
     if (!stored || typeof stored !== "object") continue;
+    // Top-level list settings (e.g. `toolbar`) are whole-leaf values, not nested
+    // sections: replace wholesale when the server sends an array (honoring an
+    // explicit empty list), keep the default otherwise. Without this, the
+    // section-merge below would index-overlay the array against the default's
+    // elements and corrupt any list whose length differs from the default.
+    if (Array.isArray(out[section])) {
+      if (Array.isArray(stored)) out[section] = stored;
+      continue;
+    }
     const target = out[section];
     if (!target || typeof target !== "object") continue;
     const tgt = target as Record<string, unknown>;
