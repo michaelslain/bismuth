@@ -149,7 +149,7 @@ export function GraphView(props: {
                 title="Reset view to whole graph"
                 onClick={() => renderer.resetView()}
               >
-                Reset view
+                RESET VIEW
               </TextButton>
               <IconButton
                 icon="X"

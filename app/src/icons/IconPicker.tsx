@@ -66,7 +66,7 @@ export function IconPicker(props: Props) {
           />
           <Show when={props.onClear}>
             <TextButton variant="plain" class="icon-picker-clear" onClick={() => { props.onClear!(); props.onClose(); }}>
-              Reset to default icon
+              RESET TO DEFAULT ICON
             </TextButton>
           </Show>
           <div class="icon-picker-grid">

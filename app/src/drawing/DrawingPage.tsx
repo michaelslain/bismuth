@@ -8,6 +8,7 @@ import { createDrawingStore } from "./store";
 import { DrawingCanvas, type ToolState } from "./DrawingCanvas";
 import { Toolbar } from "./Toolbar";
 import { TextButton } from "../ui/TextButton";
+import { Icon } from "../icons/Icon";
 import "./Drawing.css";
 
 // size + smoothing default to one of the 5 discrete toolbar levels so a button reads as active.
@@ -56,7 +57,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
             />
           )}
         </Index>
-        <TextButton variant="plain" class="draw-add-page" onClick={() => store.addPage()}>+ Add page</TextButton>
+        <TextButton variant="plain" class="draw-add-page" onClick={() => store.addPage()}><Icon value="Plus" size={14} />ADD PAGE</TextButton>
       </div>
     </div>
   );

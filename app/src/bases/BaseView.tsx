@@ -49,8 +49,8 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
         />
       </Show>
       <div class={styles.sourceBar}>
-        <TextButton variant="primary" onClick={save}>Save</TextButton>
-        <TextButton variant="primary" onClick={props.onClose}>Cancel</TextButton>
+        <TextButton variant="primary" onClick={save}>SAVE</TextButton>
+        <TextButton variant="primary" onClick={props.onClose}>CANCEL</TextButton>
       </div>
     </div>
   );
@@ -152,10 +152,10 @@ export function BaseView(props: {
           <Show when={editPath()}>
             <div class={styles.barRight}>
               <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
-                {settingsMode() ? <><Icon value="X" size={14} /> Close</> : <><Icon value="Settings" size={14} /> Settings</>}
+                {settingsMode() ? <><Icon value="X" size={14} /> CLOSE</> : <><Icon value="Settings" size={14} /> SETTINGS</>}
               </TextButton>
               <TextButton variant="ghost" class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
-                {sourceMode() ? <><Icon value="X" size={14} /> Close source</> : <><Icon value="Code" size={14} /> Source</>}
+                {sourceMode() ? <><Icon value="X" size={14} /> CLOSE SOURCE</> : <><Icon value="Code" size={14} /> SOURCE</>}
               </TextButton>
             </div>
           </Show>

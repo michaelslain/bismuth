@@ -1,11 +1,12 @@
 import { For } from 'solid-js'
 import { currentView, currentDate, showCategoryPanel, settings } from '../state'
 import { TextButton } from '../../ui/TextButton'
+import { IconButton } from '../../ui/IconButton'
 import { ViewType } from '../types'
 import { toDateStr, addDays, weekRange } from '../dates'
 
 const VIEWS: { id: ViewType; label: string }[] = [
-  { id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }, { id: '3day', label: '3 Day' }, { id: 'day', label: 'Day' },
+  { id: 'month', label: 'MONTH' }, { id: 'week', label: 'WEEK' }, { id: '3day', label: '3 DAY' }, { id: 'day', label: 'DAY' },
 ]
 
 function navigate(dir: -1 | 1): void {
@@ -48,16 +49,16 @@ export function Toolbar() {
   return (
     <div class="calendar-toolbar">
       <div class="calendar-toolbar-left">
-        <TextButton variant="plain" onClick={() => navigate(-1)}>‹</TextButton>
-        <TextButton variant="plain" onClick={() => (currentDate.value = new Date())}>Today</TextButton>
-        <TextButton variant="plain" onClick={() => navigate(1)}>›</TextButton>
+        <IconButton icon="ChevronLeft" label="Previous" variant="plain" onClick={() => navigate(-1)} />
+        <TextButton variant="plain" onClick={() => (currentDate.value = new Date())}>TODAY</TextButton>
+        <IconButton icon="ChevronRight" label="Next" variant="plain" onClick={() => navigate(1)} />
         <span class="calendar-toolbar-label">{headerLabel()}</span>
       </div>
       <div class="calendar-toolbar-right">
         <For each={VIEWS}>{v => (
           <TextButton variant="plain" class={currentView.value === v.id ? 'active' : ''} onClick={() => (currentView.value = v.id)}>{v.label}</TextButton>
         )}</For>
-        <TextButton variant="plain" onClick={() => (showCategoryPanel.value = !showCategoryPanel.value)}>Categories</TextButton>
+        <TextButton variant="plain" onClick={() => (showCategoryPanel.value = !showCategoryPanel.value)}>CATEGORIES</TextButton>
       </div>
     </div>
   )

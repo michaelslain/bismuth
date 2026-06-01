@@ -36,18 +36,16 @@ export function EmptyPane(props: Props) {
           class="empty-pane-btn"
           onClick={props.onOpenFile}
           onMouseDown={(e) => e.stopPropagation()}
-          style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
-          <Icon value="FolderOpen" size={14} /> Open file…
+          <Icon value="FolderOpen" size={14} /> OPEN FILE…
         </TextButton>
         <TextButton
           variant="ghost"
           class="empty-pane-btn"
           onClick={props.onNewTerminal}
           onMouseDown={(e) => e.stopPropagation()}
-          style={{ display: "inline-flex", "align-items": "center", gap: "6px" }}
         >
-          <Icon value="SquareTerminal" size={14} /> New terminal
+          <Icon value="SquareTerminal" size={14} /> NEW TERMINAL
         </TextButton>
       </div>
     </div>

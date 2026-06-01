@@ -124,7 +124,7 @@ export function FlashcardsView(props: {
       <div class="srs-bar">
         <Show when={props.basePath}>
           <TextButton variant="ghost" size="sm" title="Add a card" onClick={openAdd} disabled={busy()}>
-            + Add card
+            ADD CARD
           </TextButton>
           <Show when={current() !== null}>
             <TextButton
@@ -145,7 +145,7 @@ export function FlashcardsView(props: {
           title="Cram: review every card, no scheduling changes"
           onClick={toggleCram}
         >
-          {cram() ? <><Icon value="Zap" size={12} /> Cram mode</> : "Cram"}
+          {cram() ? <><Icon value="Zap" size={12} /> CRAM MODE</> : "CRAM"}
         </TextButton>
       </div>
 
@@ -170,10 +170,10 @@ export function FlashcardsView(props: {
           </label>
           <div class="card-add-actions">
             <TextButton variant="primary" size="lg" class="card-btn" onClick={() => setAdding(false)} disabled={busy()}>
-              Cancel
+              CANCEL
             </TextButton>
             <TextButton variant="primary" size="lg" class="card-btn good" onClick={saveAdd} disabled={busy()}>
-              Save card
+              SAVE CARD
             </TextButton>
           </div>
         </div>
@@ -193,7 +193,7 @@ export function FlashcardsView(props: {
           when={current() !== null}
           fallback={
             <EmptyState title={cram() ? "Cram complete" : "Done reviewing"}>
-              <TextButton variant="primary" size="lg" class="card-btn" onClick={restart}>Review again</TextButton>
+              <TextButton variant="primary" size="lg" class="card-btn" onClick={restart}>REVIEW AGAIN</TextButton>
             </EmptyState>
           }
         >
@@ -232,12 +232,12 @@ export function FlashcardsView(props: {
 
             <Show
               when={revealed()}
-              fallback={<TextButton variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>Show answer</TextButton>}
+              fallback={<TextButton variant="primary" size="lg" class="reveal-btn" onClick={() => setRevealed(true)}>SHOW ANSWER</TextButton>}
             >
               <div class="grade-row">
-                <TextButton variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>Hard</TextButton>
-                <TextButton variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>Good</TextButton>
-                <TextButton variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>Easy</TextButton>
+                <TextButton variant="primary" size="lg" class="card-btn hard" onClick={() => grade("hard")}>HARD</TextButton>
+                <TextButton variant="primary" size="lg" class="card-btn good" onClick={() => grade("good")}>GOOD</TextButton>
+                <TextButton variant="primary" size="lg" class="card-btn easy" onClick={() => grade("easy")}>EASY</TextButton>
               </div>
             </Show>
           </div>

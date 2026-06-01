@@ -12,9 +12,9 @@ import { downloadFile } from "./export/download";
 import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
 
-const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
+const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "MARKDOWN", png: "PNG" };
 const THEMES: ExportTheme[] = ["dark", "light"];
-const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
+const THEME_LABEL: Record<ExportTheme, string> = { dark: "DARK", light: "LIGHT" };
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
@@ -85,7 +85,7 @@ export function ExportView(props: { path: string }) {
           </For>
         </div>
         <TextButton variant="plain" class="export-go" disabled={busy()} onClick={doExport}>
-          <Icon value="Download" size={14} /> Export
+          <Icon value="Download" size={14} /> EXPORT
         </TextButton>
       </div>
       <div class="export-preview">

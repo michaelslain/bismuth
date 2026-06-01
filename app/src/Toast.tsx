@@ -67,7 +67,7 @@ export function ToastHost() {
                   dismissToast(t.id);
                 }}
               >
-                {t.action.label}
+                {t.action.label.toUpperCase()}
               </TextButton>
             )}
           </div>

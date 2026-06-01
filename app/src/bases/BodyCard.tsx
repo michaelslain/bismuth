@@ -3,6 +3,7 @@ import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types"
 import { api } from "../api";
 import { renderValue } from "./renderValue";
 import { TextButton } from "../ui/TextButton";
+import { IconButton } from "../ui/IconButton";
 import styles from "./BaseView.module.css";
 
 // Matches a markdown checklist line: indent, the check char, then the text.
@@ -151,19 +152,18 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
                     }
                   }}
                 />
-                <TextButton
+                <IconButton
+                  icon="X"
+                  label="Remove item"
                   variant="plain"
                   class={styles.todoRemove}
-                  title="Remove item"
                   onClick={() => void removeItem(item)}
-                >
-                  ×
-                </TextButton>
+                />
               </div>
             )}
           </For>
           <TextButton variant="plain" class={styles.todoAdd} onClick={() => void addItem()}>
-            + Add item
+            ADD ITEM
           </TextButton>
         </div>
       </Show>

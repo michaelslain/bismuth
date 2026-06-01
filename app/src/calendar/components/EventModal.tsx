@@ -126,7 +126,7 @@ export function EventModal(props: { store: EventStore }) {
           <div class="day-picker">
             <For each={DOW}>{([label, i]) => (
               <TextButton variant="plain" type="button" class={recDays().includes(i) ? 'active' : ''}
-                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</TextButton>
+                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{(label as string).toUpperCase()}</TextButton>
             )}</For>
           </div>
         </Show>
@@ -135,10 +135,10 @@ export function EventModal(props: { store: EventStore }) {
       </Show>
       <div class="modal-actions">
         <Show when={editing}>
-          <TextButton variant="plain" onClick={handleDelete} style={{ 'margin-right': 'auto', color: 'var(--text-error)' }}>Delete</TextButton>
+          <TextButton variant="danger" onClick={handleDelete} style={{ 'margin-right': 'auto' }}>DELETE</TextButton>
         </Show>
-        <TextButton variant="plain" onClick={handleSave}>Save</TextButton>
-        <TextButton variant="plain" onClick={() => (showEventModal.value = null)}>Cancel</TextButton>
+        <TextButton variant="plain" onClick={handleSave}>SAVE</TextButton>
+        <TextButton variant="plain" onClick={() => (showEventModal.value = null)}>CANCEL</TextButton>
       </div>
     </Modal>
   )
