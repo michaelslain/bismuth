@@ -27,6 +27,7 @@ import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wikilink";
 import { settings } from "./settings";
+import { registerEditor, unregisterEditor } from "./editorRegistry";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -121,7 +122,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   createEffect(async () => {
     const path = currentPath();
     // Destroy the previous view when this effect re-runs (path changed or cleanup).
-    onCleanup(() => view?.destroy());
+    onCleanup(() => { if (view) unregisterEditor(view); view?.destroy(); });
     if (!path) return;
 
     // Treat a missing file as an empty note (new, not yet written).
@@ -211,6 +212,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
         extensions: [
           ...extensions,
           EditorView.domEventHandlers({
+            focus: (_e, v) => { registerEditor(v); return false; },
             mousedown: (e, view) => {
               // `false` = nearest-position mode: precise mode returns null when the click
               // lands between glyphs or on padding, which made links intermittently dead.
