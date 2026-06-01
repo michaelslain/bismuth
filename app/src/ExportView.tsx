@@ -17,7 +17,7 @@ const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" 
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
-  resolveRows: (basePath) => api.resolveRows({ kind: "base", ref: `[[${basePath}]]` }),
+  resolveRows: (spec) => api.resolveRows(spec),
   htmlToPdf,
   drawingToPng,
 };

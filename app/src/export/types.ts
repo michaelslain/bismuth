@@ -1,5 +1,5 @@
 // app/src/export/types.ts
-import type { Row } from "../../../core/src/bases/types";
+import type { Row, SourceSpec } from "../../../core/src/bases/types";
 
 export type ExportFormat = "html" | "pdf" | "md" | "png";
 
@@ -24,7 +24,7 @@ export interface ExportResult {
 // Impure dependencies injected so exporters.ts stays unit-testable.
 export interface ExportDeps {
   read: (path: string) => Promise<string>;
-  resolveRows: (basePath: string) => Promise<Row[]>;
+  resolveRows: (spec: SourceSpec) => Promise<Row[]>;
   htmlToPdf: (html: string) => Promise<Uint8Array>;
   drawingToPng: (docText: string, theme: ExportTheme) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
 }

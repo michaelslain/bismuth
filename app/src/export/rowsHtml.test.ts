@@ -1,20 +1,18 @@
 // app/src/export/rowsHtml.test.ts
 import { test, expect, describe } from "bun:test";
-import { rowsToHtmlTable } from "./rowsHtml";
-import type { Row } from "../../../core/src/bases/types";
+import { tableToHtml } from "./rowsHtml";
+import type { TableData } from "./baseTable";
 
-const row = (name: string, note: Record<string, unknown>): Row =>
-  ({ file: { name } as any, note, formula: {} });
-
-describe("rowsToHtmlTable", () => {
+describe("tableToHtml", () => {
   test("emits a table with header + rows", () => {
-    const out = rowsToHtmlTable([row("Dune", { author: "Herbert" })]);
+    const t: TableData = { columns: ["name", "author"], rows: [["Dune", "Herbert"]] };
+    const out = tableToHtml(t);
     expect(out).toContain("<table>");
     expect(out).toContain("<th>name</th><th>author</th>");
     expect(out).toContain("<td>Dune</td><td>Herbert</td>");
   });
   test("escapes html in cells", () => {
-    const out = rowsToHtmlTable([row("<b>x</b>", {})]);
-    expect(out).toContain("<td>&lt;b&gt;x&lt;/b&gt;</td>");
+    const t: TableData = { columns: ["name"], rows: [["<b>x</b>"]] };
+    expect(tableToHtml(t)).toContain("<td>&lt;b&gt;x&lt;/b&gt;</td>");
   });
 });
