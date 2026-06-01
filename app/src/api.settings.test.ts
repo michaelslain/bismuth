@@ -10,7 +10,7 @@ describe("api.settings", () => {
     let calledUrl = "";
     globalThis.fetch = (async (url: string) => {
       calledUrl = url;
-      return new Response(JSON.stringify({ appearance: { accent: "#abc" } }), {
+      return new Response(JSON.stringify({ appearance: { theme: "oxide-duotone" } }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       });
@@ -18,6 +18,6 @@ describe("api.settings", () => {
 
     const out = await api.settings();
     expect(calledUrl).toBe("http://localhost:4321/settings");
-    expect((out.appearance as Record<string, unknown>).accent).toBe("#abc");
+    expect((out.appearance as Record<string, unknown>).theme).toBe("oxide-duotone");
   });
 });

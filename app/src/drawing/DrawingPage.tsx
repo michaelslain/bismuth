@@ -30,7 +30,9 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
   const store = createDrawingStore(props.initial, save);
   const [tools, setToolsSig] = createSignal<ToolState>(DEFAULT_TOOLS);
   const setTools = (patch: Partial<ToolState>) => setToolsSig((t) => ({ ...t, ...patch }));
-  const theme = (): "dark" | "light" => (settings.appearance.theme === "light" ? "light" : "dark");
+  // The app is dark-only (appearance.theme selects a Bismuth color palette, not a
+  // light/dark mode), so the drawing canvas always renders dark.
+  const theme = (): "dark" | "light" => "dark";
 
   return (
     <div class="draw-app">
