@@ -12,6 +12,7 @@ import { MapView } from "./MapView";
 import { HeatmapView } from "./HeatmapView";
 import { BarView } from "./BarView";
 import { LineView } from "./LineView";
+import { StatView } from "./StatView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
@@ -214,6 +215,9 @@ export function BaseView(props: {
                         </Match>
                         <Match when={res().view.type === "line"}>
                           <LineView result={res()} config={data()!.config} />
+                        </Match>
+                        <Match when={res().view.type === "stat"}>
+                          <StatView result={res()} config={data()!.config} />
                         </Match>
                       </Switch>
                     )}
