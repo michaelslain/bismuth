@@ -24,6 +24,8 @@ import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
+import { searchVault } from "./search";
+import { replaceInVault } from "./replace";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -366,6 +368,22 @@ export function createServer(cfg: CoreConfig) {
       return ok({ committed });
     },
 
+    // Vault full-text search (Omnisearch-style ranking). Read-only despite POST
+    // (the body carries the query + toggles), so it lives in routes, not mutatingRoutes.
+    "POST /search": async (req, __) => {
+      const { query, opts } = (await req.json()) as {
+        query: string;
+        opts: { caseSensitive: boolean; wholeWord: boolean; regex: boolean };
+      };
+      try {
+        const results = await searchVault(cfg.vault, query, opts);
+        return Response.json(results);
+      } catch (e) {
+        // Invalid regex etc. — surface as a 400 so the UI shows it inline.
+        return new Response((e as Error).message, { status: 400 });
+      }
+    },
+
     "GET /cards/decks": async (_, __) => {
       return ok(await collectDecks(cfg.vault, todayISO()));
     },
@@ -411,6 +429,28 @@ export function createServer(cfg: CoreConfig) {
   }
 
   const mutatingRoutes: Record<string, Handler> = {
+    // Vault-wide find-and-replace. Takes a git snapshot FIRST (the undo path),
+    // then rewrites matched files. pathOf returns the scope path for a single-file
+    // replace; for a vault-wide replace it returns undefined → full invalidation.
+    "POST /replace": mutatingHandler(
+      async (req) => {
+        const { query, replacement, opts, scope } = (await req.json()) as {
+          query: string;
+          replacement: string;
+          opts: { caseSensitive: boolean; wholeWord: boolean; regex: boolean };
+          scope: string;
+        };
+        try {
+          await commitVault(cfg.vault, snapshotMessage());
+          const result = await replaceInVault(cfg.vault, query, replacement, opts, scope);
+          return Response.json(result);
+        } catch (e) {
+          return new Response((e as Error).message, { status: 400 });
+        }
+      },
+      (b) => (b.scope && b.scope !== "vault" ? b.scope : undefined),
+    ),
+
     "POST /move": mutatingHandler(
       async (req) => {
         const { from, to } = (await req.json()) as { from: string; to: string };

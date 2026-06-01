@@ -1,0 +1,71 @@
+/* app/src/SearchView.css — layout only; buttons use the shared .btn primitives
+   (app/src/ui/ui.css) and all colors use the app's canonical theme tokens. */
+.search-view { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+
+.search-header {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.search-row { display: flex; gap: 6px; align-items: center; }
+
+/* Leading affordance icon (search / replace), dimmed to match muted text. */
+.search-lead { color: var(--text-muted); flex: none; }
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+.search-input::placeholder { color: var(--fg); opacity: 0.4; }
+
+/* Square-ish icon toggles (case / whole-word / regex). */
+.search-tg.btn { padding: 4px 6px; flex: none; }
+
+/* Action button label follows the app's control-button convention (uppercase,
+   tracked) — matches the graph HUD toggles (2D/3D, 2ND/3RD/BOTH). */
+.search-replace-all.btn { flex: none; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.search-error { color: var(--danger); font-size: 12px; }
+.search-status { color: var(--text-muted); font-size: 12px; }
+
+.search-results { flex: 1; overflow-y: auto; padding: 4px 0; }
+.search-group { margin-bottom: 4px; }
+
+.search-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-weight: 600;
+  color: var(--fg);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+.search-file-path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-count { color: var(--text-muted); font-weight: 400; }
+
+.search-snippet {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px 2px 20px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.search-snippet:hover { background: var(--hover-bg); }
+.search-line { color: var(--text-muted); min-width: 28px; text-align: right; opacity: 0.7; }
+.search-text { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg); }
+.search-text mark {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--fg);
+  border-radius: 2px;
+}

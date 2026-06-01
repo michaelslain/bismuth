@@ -17,7 +17,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -216,6 +216,7 @@ export default function App() {
   };
   const openSettings = () => openFile("settings.yaml");
   const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
+  const openSearch = () => openFile(SEARCH_TAB);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
   const openDailyNote = async (id: string) => {
@@ -227,7 +228,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, newNote, newFolder, setMode, openDailyNote }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, setMode, openDailyNote }, settings.dailyNotes);
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
