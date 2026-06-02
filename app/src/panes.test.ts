@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test";
 import {
   makeTab, makeLeaf, splitLeaf, closeLeaf, leaves,
-  type Split, type Leaf,
+  type Split, type Leaf, type PaneNode,
 } from "./panes";
 
 test("makeTab produces a single-leaf tree focused on that leaf", () => {
@@ -86,6 +86,77 @@ test("equalize weights ratios by leaf count so all leaves get equal area", () =>
 test("equalize on a single leaf returns it unchanged", () => {
   const root = makeLeaf("a.md");
   expect(equalize(root)).toBe(root);
+});
+
+// Regression: equal AREAS must not depend on split ORDER. The user reported
+// "split horizontal->vertical equalizes but split vertical->horizontal doesn't".
+// computeRects(equalize(x)) should give every leaf the same w*h regardless of nesting.
+function areas(root: PaneNode): number[] {
+  const rects = computeRects(root);
+  return leaves(root).map((l) => {
+    const r = rects.get(l.id)!;
+    return r.w * r.h;
+  });
+}
+
+test("equalize gives equal areas: row first, then col on the right child", () => {
+  // a | (b / c) — outer row, inner col on the right.
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "col");
+  const eq = equalize(r2);
+  const out = areas(eq);
+  expect(out.length).toBe(3);
+  for (const a of out) expect(a).toBeCloseTo(1 / 3, 5);
+});
+
+test("equalize gives equal areas: col first, then row on the bottom child", () => {
+  // a / (b | c) — outer col, inner row on the bottom. Mirror of the case above.
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "col");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "row");
+  const eq = equalize(r2);
+  const out = areas(eq);
+  expect(out.length).toBe(3);
+  for (const a of out) expect(a).toBeCloseTo(1 / 3, 5);
+});
+
+test("equalize equal areas are independent of split order (row->col == col->row)", () => {
+  // Build both nesting orders and assert each leaf ends up with exactly 1/3 area,
+  // proving area-equality does not depend on whether the row or the col was first.
+  const rowFirstBase = makeLeaf("a.md");
+  const { root: rf1 } = splitLeaf(rowFirstBase, rowFirstBase.id, "row");
+  const { root: rf2 } = splitLeaf(rf1, (rf1 as Split).b.id, "col");
+
+  const colFirstBase = makeLeaf("a.md");
+  const { root: cf1 } = splitLeaf(colFirstBase, colFirstBase.id, "col");
+  const { root: cf2 } = splitLeaf(cf1, (cf1 as Split).b.id, "row");
+
+  const rowFirst = areas(equalize(rf2)).sort();
+  const colFirst = areas(equalize(cf2)).sort();
+  expect(rowFirst.length).toBe(3);
+  expect(colFirst.length).toBe(3);
+  for (let i = 0; i < 3; i++) {
+    expect(rowFirst[i]).toBeCloseTo(1 / 3, 5);
+    expect(colFirst[i]).toBeCloseTo(1 / 3, 5);
+    expect(rowFirst[i]).toBeCloseTo(colFirst[i], 5);
+  }
+});
+
+test("equalize is idempotent: equalize(equalize(x)) keeps equal areas", () => {
+  // Lopsided 4-leaf tree: a | (b / (c | d)).
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const { root: r2 } = splitLeaf(r1, (r1 as Split).b.id, "col");
+  const { root: r3 } = splitLeaf(r2, ((r2 as Split).b as Split).b.id, "row");
+  const once = equalize(r3);
+  const twice = equalize(once);
+  const a1 = areas(once);
+  const a2 = areas(twice);
+  expect(a1.length).toBe(4);
+  expect(a2.length).toBe(4);
+  for (const a of a1) expect(a).toBeCloseTo(1 / 4, 5);
+  for (const a of a2) expect(a).toBeCloseTo(1 / 4, 5);
 });
 
 test("setContent retargets exactly one leaf", () => {
