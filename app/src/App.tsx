@@ -55,6 +55,7 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 }
 
 const TABS_STORAGE_KEY = "oa-tabs-v1";
+const SIDEBAR_STORAGE_KEY = "oa-sidebar-visible-v1";
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
@@ -136,6 +137,13 @@ export default function App() {
 
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
+  // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
+  const [sidebarVisible, setSidebarVisible] = createSignal(
+    localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0",
+  );
+  createEffect(() => localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? "1" : "0"));
+  const toggleSidebar = () => setSidebarVisible((v) => !v);
+  const equalizePanes = () => updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
   const [palette, setPalette] = createSignal<"command" | "file" | "template" | null>(null);
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
@@ -230,7 +238,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, setMode, openDailyNote }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, setMode, openDailyNote, equalizePanes, toggleSidebar }, settings.dailyNotes);
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -243,6 +251,9 @@ export default function App() {
     const link = document.getElementById("app-favicon") as HTMLLinkElement | null;
     if (link) link.href = href;
   });
+  // The macOS dock icon is set natively at startup from settings.yaml's
+  // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
+  // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
   createEffect(() => {
     document.title = "Bismuth";
   });
@@ -499,6 +510,15 @@ export default function App() {
         return;
       }
     }
+    // Toggle sidebar: Option+S (no Cmd). Also checked before the hasMod early-return.
+    if (e.code === "KeyS" && e.altKey && !e.metaKey && !e.ctrlKey) {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+    }
     if (!hasMod) return;
     const k = e.key.toLowerCase();
     const hasAlt = e.altKey;
@@ -581,6 +601,7 @@ export default function App() {
   createEffect(() => {
     activeTabId(); // re-place whenever the active tab changes
     tabs().length; // …or when tabs open/close
+    sidebarVisible(); // …or when the sidebar is shown/hidden
     requestAnimationFrame(placeFloater);
   });
   onMount(() => {
@@ -620,17 +641,9 @@ export default function App() {
   }
 
   return (
-    <div class="layout">
-      <aside class="sidebar">
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() }}>
+      <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          <img
-            class="sidebar-logo"
-            src={`/logos/${settings.appearance.icon}.svg`}
-            alt="Bismuth"
-            title="Bismuth"
-            width={18}
-            height={18}
-          />
           <For each={settings.toolbar}>
             {(btn) => {
               const cmd = () => commands().get(btn.command);

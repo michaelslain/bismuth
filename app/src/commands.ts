@@ -18,6 +18,8 @@ export interface CommandHandlers {
   newDrawing: () => void | Promise<void>;
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
+  equalizePanes: () => void;
+  toggleSidebar: () => void;
 }
 
 export interface BoundCommand {
@@ -41,6 +43,8 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "graph-3rd": () => h.setMode("3rd"),
     "graph-both": () => h.setMode("both"),
     "graph-agents": () => h.setMode("agents"),
+    "equalize-panes": h.equalizePanes,
+    "toggle-sidebar": h.toggleSidebar,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {

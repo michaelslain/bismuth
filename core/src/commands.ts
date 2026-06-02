@@ -25,6 +25,8 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "graph-3rd",       label: "Graph: 3rd Brain (memory)", icon: "Brain" },
   { id: "graph-both",      label: "Graph: Both Brains",        icon: "Network" },
   { id: "graph-agents",    label: "Graph: Agents",             icon: "Users" },
+  { id: "equalize-panes",  label: "Equalize panes",            icon: "Columns3" },
+  { id: "toggle-sidebar",  label: "Toggle sidebar",            icon: "PanelLeft" },
 ];
 
 /** All command ids, in catalog order. */

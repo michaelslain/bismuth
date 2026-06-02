@@ -30,6 +30,8 @@ body, html, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--fg); }
 .layout { display: grid; grid-template-columns: var(--sidebar-width, 280px) 1fr; height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; }
 .sidebar { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+.layout.sidebar-hidden { grid-template-columns: 0 1fr; }
+.sidebar.hidden { display: none; }
 .sidebar-files { flex: 1; overflow: auto; padding: 8px; min-height: 0; }
 .sidebar-graph { border-top: 1px solid var(--border); flex-shrink: 0; height: var(--sidebar-graph-height, 305px); }
 .sidebar-graph.collapsed { display: none; }
