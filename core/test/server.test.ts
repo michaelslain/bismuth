@@ -998,6 +998,72 @@ test("POST /daily-note creates today's note from the template, then reopens it w
   }
 });
 
+test("GET /graph/views returns 2nd/3rd-brain view layouts", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const views = await fetch(`${base}/graph/views`).then((r) => r.json());
+    expect(views).toHaveProperty("second");
+    expect(views).toHaveProperty("third");
+    expect(typeof views.second.pos3d).toBe("object");
+    expect(typeof views.second.pos2d).toBe("object");
+    expect(typeof views.third.pos3d).toBe("object");
+    expect(typeof views.third.pos2d).toBe("object");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("after /graph/views, /graph includes the view layouts", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/graph/views`).then((r) => r.json());
+    const g = await fetch(`${base}/graph`).then((r) => r.json());
+    expect(g.views).toBeDefined();
+    expect(g.views.second).toBeDefined();
+    expect(g.views.third).toBeDefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /graph is consistent across concurrent requests", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const [a, b] = await Promise.all([
+      fetch(`${base}/graph`).then((r) => r.json()),
+      fetch(`${base}/graph`).then((r) => r.json()),
+    ]);
+    expect(a.nodes.length).toBe(b.nodes.length);
+    expect(a.edges.length).toBe(b.edges.length);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a structural mutation invalidates the cached /graph", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const before = await fetch(`${base}/graph`).then((r) => r.json());
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "brand-new-note-mutation-test.md", kind: "file" }),
+    });
+    const after = await fetch(`${base}/graph`).then((r) => r.json());
+    expect(after.nodes.length).toBe(before.nodes.length + 1);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys

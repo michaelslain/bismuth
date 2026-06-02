@@ -6,6 +6,19 @@
     <meta name="theme-color" content="#000000" />
     <link id="app-favicon" rel="icon" type="image/svg+xml" href="/logos/hopper-crystal.svg" />
     <title>Bismuth</title>
+    <script>
+      // Paint the last-known theme BEFORE the bundle loads, so the correct theme shows
+      // immediately instead of flashing App.css's default-theme fallbacks until settings
+      // hydrate. Reads the var map the app caches under "oa-theme-vars-v1" (see App.tsx);
+      // a cold cache is a no-op (the :root fallbacks apply, exactly as before).
+      try {
+        var t = localStorage.getItem("oa-theme-vars-v1");
+        if (t) {
+          var vars = JSON.parse(t), root = document.documentElement.style;
+          for (var k in vars) if (vars[k] != null) root.setProperty(k, vars[k]);
+        }
+      } catch (e) {}
+    </script>
   </head>
 
   <body>
