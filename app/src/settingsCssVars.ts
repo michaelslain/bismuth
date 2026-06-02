@@ -56,11 +56,17 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
   };
 }
 
+/** Apply a precomputed `{ "--var": "value" }` map to the document root. No-op outside the
+ *  DOM. Split out so callers that also cache the map (for the pre-bundle theme script) can
+ *  compute it once. The inline script in index.html applies the SAME map shape from cache. */
+export function setCssVars(vars: Record<string, string>): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+}
+
 /** Apply the derived CSS vars to the document root. No-op outside the DOM.
  *  (Dark-only: there is no longer a data-theme attribute / light mode.) */
 export function applyCssVars(s: Settings): void {
-  if (typeof document === "undefined") return;
-  const root = document.documentElement;
-  const vars = settingsToCssVars(s);
-  for (const [k, v] of Object.entries(vars)) root.style.setProperty(k, v);
+  setCssVars(settingsToCssVars(s));
 }

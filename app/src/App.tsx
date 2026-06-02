@@ -10,7 +10,7 @@ import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands } from "./commands";
 import { settings } from "./settings";
-import { applyCssVars } from "./settingsCssVars";
+import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
@@ -57,6 +57,9 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 
 const TABS_STORAGE_KEY = "oa-tabs-v1";
 const GRAPH_CACHE_KEY = "oa-graph-cache-v1";
+// Mirrors the key the inline <head> script in index.html reads to apply the theme before
+// the bundle loads. Bump both together if the var map shape changes.
+const THEME_VARS_KEY = "oa-theme-vars-v1";
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
@@ -265,7 +268,13 @@ export default function App() {
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
   // adding a CSS-driven setting is one line there + one var() in the stylesheet.
-  createEffect(() => applyCssVars(settings));
+  createEffect(() => {
+    const vars = settingsToCssVars(settings);
+    setCssVars(vars);
+    // Cache the computed vars so index.html's inline script can paint the theme before
+    // the bundle even loads next launch (no flash of the default fallback theme).
+    writeCache(THEME_VARS_KEY, vars);
+  });
   // Per-vault app icon → favicon + window/document title. Live: re-runs whenever
   // settings.appearance.icon changes (SSE re-hydrate → reactive store).
   createEffect(() => {
