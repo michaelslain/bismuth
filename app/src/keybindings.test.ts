@@ -1,11 +1,15 @@
 // app/src/keybindings.test.ts
 import { describe, it, expect } from "bun:test";
-import { parseCombo, matchesCombo, matchesKeybinding, eventToCombo, modifierFamily } from "./keybindings";
+import { parseCombo, matchesCombo, matchesKeybinding, eventToCombo, modifierFamily, codeToKey } from "./keybindings";
 
-// Minimal KeyboardEvent stand-in (the matcher only reads these five fields).
-function ev(key: string, mods: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean }> = {}): KeyboardEvent {
+// Minimal KeyboardEvent stand-in (the matcher reads key/code + the four mods).
+function ev(
+  key: string,
+  mods: Partial<{ meta: boolean; ctrl: boolean; alt: boolean; shift: boolean; code: string }> = {},
+): KeyboardEvent {
   return {
     key,
+    code: mods.code,
     metaKey: !!mods.meta,
     ctrlKey: !!mods.ctrl,
     altKey: !!mods.alt,
@@ -71,6 +75,36 @@ describe("matchesCombo — exact modifier matching", () => {
     expect(matchesCombo(ev("ArrowLeft", { meta: true, alt: true }), "Mod+Alt+ArrowLeft")).toBe(true);
     expect(matchesCombo(ev("`", { meta: true }), "Mod+`")).toBe(true);
   });
+
+  it("matches via physical code when Option composes a character (macOS)", () => {
+    // Alt+S on macOS: browser reports key "ß" but code "KeyS".
+    expect(matchesCombo(ev("ß", { alt: true, code: "KeyS" }), "Alt+S")).toBe(true);
+    // Alt+T → "†"; Mod+Alt+= → "≠".
+    expect(matchesCombo(ev("†", { alt: true, code: "KeyT" }), "Alt+T")).toBe(true);
+    expect(matchesCombo(ev("≠", { meta: true, alt: true, code: "Equal" }), "Mod+Alt+=")).toBe(true);
+  });
+
+  it("still rejects the wrong physical key under Option", () => {
+    expect(matchesCombo(ev("ß", { alt: true, code: "KeyS" }), "Alt+A")).toBe(false);
+  });
+});
+
+describe("codeToKey — physical key resolution", () => {
+  it("resolves letters, digits, numpad, and punctuation", () => {
+    expect(codeToKey("KeyS")).toBe("s");
+    expect(codeToKey("Digit1")).toBe("1");
+    expect(codeToKey("Numpad5")).toBe("5");
+    expect(codeToKey("Equal")).toBe("=");
+    expect(codeToKey("Backquote")).toBe("`");
+    expect(codeToKey("Space")).toBe(" ");
+  });
+
+  it("returns null for unmapped / named codes (event.key handles those)", () => {
+    expect(codeToKey("ArrowLeft")).toBeNull();
+    expect(codeToKey("Enter")).toBeNull();
+    expect(codeToKey(undefined)).toBeNull();
+    expect(codeToKey("")).toBeNull();
+  });
 });
 
 describe("matchesKeybinding — comma-separated alternatives", () => {
@@ -106,6 +140,11 @@ describe("eventToCombo — recording a shortcut", () => {
     expect(eventToCombo(ev("ArrowLeft", { meta: true, alt: true }))).toBe("Mod+Alt+ArrowLeft");
     expect(eventToCombo(ev(" ", { alt: true }))).toBe("Alt+Space");
     expect(eventToCombo(ev("t", { alt: true }))).toBe("Alt+T");
+  });
+
+  it("records the physical key when Option composes a character (macOS)", () => {
+    expect(eventToCombo(ev("ß", { alt: true, code: "KeyS" }))).toBe("Alt+S");
+    expect(eventToCombo(ev("≠", { meta: true, alt: true, code: "Equal" }))).toBe("Mod+Alt+=");
   });
 
   it("returns null for a bare modifier press (keep listening)", () => {
