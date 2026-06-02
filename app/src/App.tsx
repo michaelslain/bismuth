@@ -1,6 +1,7 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
+import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
 import { GraphView } from "./GraphView";
@@ -55,12 +56,18 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 }
 
 const TABS_STORAGE_KEY = "oa-tabs-v1";
+const GRAPH_CACHE_KEY = "oa-graph-cache-v1";
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
 
 export default function App() {
-  const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
+  // Seed from the last good graph so it paints instantly on boot (the renderer already
+  // caches node positions in localStorage; this supplies the structure). Reconciles when
+  // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
+  const [graph, setGraph] = createSignal<GraphData>(
+    readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
+  );
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
 
@@ -158,7 +165,11 @@ export default function App() {
   let mainSlot: HTMLDivElement | undefined;
   let floater: HTMLDivElement | undefined;
 
-  const refreshGraph = async () => setGraph(await api.graph());
+  const refreshGraph = async () => {
+    const g = await api.graph();
+    setGraph(g);
+    writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
+  };
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
