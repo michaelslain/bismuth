@@ -13,6 +13,13 @@
 // Matching is EXACT on modifiers: a combo with no Shift token does NOT fire when
 // Shift is held, so "Mod+D" (split-right) and "Mod+Shift+D" (split-down) stay
 // distinct. Key comparison is case-insensitive (against KeyboardEvent.key).
+//
+// Physical-key matching: on macOS, holding Option (Alt) composes a special
+// character — `Alt+S` reports `event.key === "ß"`, `Alt+=` reports `"≠"` — so
+// comparing against `event.key` alone makes EVERY Alt combo silently fail. We
+// therefore also match against the layout/modifier-independent `event.code`
+// (`KeyS`, `Digit1`, `Equal`), which is unaffected by Option. A combo fires if
+// EITHER the produced key or the physical key matches.
 
 export interface ParsedCombo {
   mod: boolean; // Cmd/Ctrl (either)
@@ -43,6 +50,30 @@ function normalizeKey(tok: string): string {
   return KEY_ALIASES[t] ?? t;
 }
 
+// Punctuation/space `event.code` values → the normalized combo key they map to.
+// (Letters/digits/numpad are handled by regex in `codeToKey`; named keys like
+// arrows/Enter aren't mangled by Option, so they keep matching via event.key.)
+const CODE_KEYS: Record<string, string> = {
+  Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Backslash: "\\",
+  Semicolon: ";", Quote: "'", Backquote: "`", Comma: ",", Period: ".", Slash: "/",
+  Space: " ", NumpadAdd: "+", NumpadSubtract: "-", NumpadMultiply: "*",
+  NumpadDivide: "/", NumpadDecimal: ".",
+};
+
+/**
+ * The normalized combo key a physical `event.code` corresponds to, independent
+ * of layout and modifiers (so `Alt+S` still resolves to "s" on macOS), or null
+ * if the code has no stable single-key mapping.
+ */
+export function codeToKey(code: string | undefined): string | null {
+  if (!code) return null;
+  const letter = /^Key([A-Z])$/.exec(code);
+  if (letter) return letter[1].toLowerCase();
+  const digit = /^(?:Digit|Numpad)([0-9])$/.exec(code);
+  if (digit) return digit[1];
+  return CODE_KEYS[code] ?? null;
+}
+
 /** Parse one combo (no commas) into its modifier flags + main key, or null. */
 export function parseCombo(combo: string): ParsedCombo | null {
   const parts = combo.split("+").map((p) => p.trim()).filter((p) => p.length > 0);
@@ -65,7 +96,9 @@ export function matchesCombo(e: KeyboardEvent, combo: string): boolean {
   if (p.mod !== (e.metaKey || e.ctrlKey)) return false;
   if (p.alt !== e.altKey) return false;
   if (p.shift !== e.shiftKey) return false;
-  return e.key.toLowerCase() === p.key;
+  // Match the produced key OR the physical key — the latter survives Option
+  // composing a special character on macOS (Alt+S → "ß", Alt+= → "≠").
+  return e.key.toLowerCase() === p.key || codeToKey(e.code) === p.key;
 }
 
 /**
@@ -126,6 +159,9 @@ export function eventToCombo(e: KeyboardEvent): string | null {
   if (e.metaKey || e.ctrlKey) parts.push("Mod");
   if (e.altKey) parts.push("Alt");
   if (e.shiftKey) parts.push("Shift");
-  parts.push(displayKey(e.key));
+  // Prefer the physical key so Option-composed characters (Alt+S → "ß") record
+  // as the key actually pressed; fall back to the produced key for named keys.
+  const physical = codeToKey(e.code);
+  parts.push(displayKey(physical ?? e.key));
   return parts.join("+");
 }
