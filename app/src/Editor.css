@@ -3,4 +3,16 @@
 /* Editor visuals live elsewhere now:
    - squiggles (spell=red, grammar=blue, property=purple) → livePreview's EditorView.theme
    - the right-click menu → the shared <ContextMenu> component (App.tsx), driven by
-     editor/contextMenu.ts. This file is intentionally (nearly) empty. */
+     editor/contextMenu.ts. This file is intentionally (nearly) empty.
+
+   Prose detail polish (README §1) is owned by the scoped CM theme in
+   editor/livePreview.ts, NOT here — those `.cm-*` rules are generated with a unique
+   wrapper class, so a plain selector in this file can't override them. The spec values
+   already match there:
+     - .cm-wikilink / .cm-link → color var(--accent); text-decoration none;
+       border-bottom 1px solid var(--accent-soft)  (soft underline)
+     - .cm-h1 → inherits var(--editor-font) (Lora) + var(--fg); weight 600; tight tracking
+     - .cm-h2 → inherits var(--editor-font); weight 600; letter-spacing -0.01em
+   The H1 *note title* (the editable `# <title>` row) is styled in NoteTitle.css.
+   Body `#tags` have NO decoration class in live-preview (only headings consume `#`),
+   so there is no hook to tint teal without adding new parsing — intentionally left alone. */

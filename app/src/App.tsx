@@ -11,6 +11,7 @@ import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands } from "./commands";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
+import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
@@ -19,7 +20,7 @@ import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, EXPORT_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, EXPORT_PREFIX, EMPTY_PANE, CALENDAR_TAB, FLASHCARDS_PREFIX, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
@@ -33,6 +34,7 @@ import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { openContextMenu } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
 
@@ -158,13 +160,21 @@ export default function App() {
   // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
   const [palette, setPalette] = createSignal<"command" | "file" | "template" | null>(null);
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
-  const [paneMenu, setPaneMenu] = createSignal<{ leafId: string; x: number; y: number } | null>(null);
+  const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const paneMenuItems = (leafId: string): MenuItem[] => [
+    { label: "Split right", icon: "PanelRight", onSelect: () => splitPane(leafId, "row") },
+    { label: "Split down", icon: "PanelBottom", onSelect: () => splitPane(leafId, "col") },
+    { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(leafId) },
+  ];
   // Right-click menu for an editor mark (spelling / grammar / property suggestions),
   // emitted by editor/contextMenu.ts as an 'oa-context-menu' event. Rendered with the
   // SAME <ContextMenu> component as the pane menu — one menu style across the app.
   const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   onMount(() => {
-    const onCtx = (e: Event) => setEditorMenu((e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail);
+    const onCtx = (e: Event) => {
+      const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail;
+      openContextMenu(d.x, d.y, d.items, setEditorMenu);
+    };
     window.addEventListener("oa-context-menu", onCtx);
     onCleanup(() => window.removeEventListener("oa-context-menu", onCtx));
   });
@@ -263,6 +273,17 @@ export default function App() {
   const openExport = (path: string) => openFile(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
+  const newDoc = async (base: string, ext: string) => {
+    let path = `${base}.${ext}`;
+    try { await api.create(path, "file"); }
+    catch { path = `${base}-${crypto.randomUUID().slice(0, 6)}.${ext}`; await api.create(path, "file"); }
+    openFile(path);
+  };
+  const newSpreadsheet = () => void newDoc("Spreadsheet", "sheet");
+  const newDrawing = () => void newDoc("Drawing", "draw");
+  const openCalendar = () => openFile(CALENDAR_TAB);
+  const openFlashcards = () => openFile(FLASHCARDS_PREFIX);
   const openDailyNote = async (id: string) => {
     try {
       const { path } = await api.dailyNote(id);
@@ -272,7 +293,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, setMode, openDailyNote, equalizePanes, toggleSidebar }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openCalendar, openFlashcards, setMode, openDailyNote, equalizePanes, toggleSidebar }, settings.dailyNotes);
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -280,6 +301,8 @@ export default function App() {
   createEffect(() => {
     const vars = settingsToCssVars(settings);
     setCssVars(vars);
+    // Light/dark themes: set color-scheme so native form controls + scrollbars match.
+    document.documentElement.style.colorScheme = resolveAppearance(settings.appearance).isLight ? "light" : "dark";
     // Cache the computed vars so index.html's inline script can paint the theme before
     // the bundle even loads next launch (no flash of the default fallback theme).
     writeCache(THEME_VARS_KEY, vars);
@@ -713,7 +736,7 @@ export default function App() {
             }}
           </For>
         </div>
-        <div class="sidebar-files"><FileTree onOpen={openFile} /></div>
+        <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
@@ -737,13 +760,9 @@ export default function App() {
                     const content = t.root.kind === "leaf" ? t.root.content : null;
                     if (!content || !isExportable(content)) return;
                     e.preventDefault();
-                    setEditorMenu({
-                      x: e.clientX,
-                      y: e.clientY,
-                      items: [
-                        { label: "Export…", icon: "Download", onSelect: () => openExport(content) },
-                      ],
-                    });
+                    openContextMenu(e.clientX, e.clientY, [
+                      { label: "Export…", icon: "Download", onSelect: () => openExport(content) },
+                    ], setEditorMenu);
                   }}
                 >
                   <Show when={tabBarIcon(t)}>
@@ -770,7 +789,7 @@ export default function App() {
                 onResize={(splitId, ratio) =>
                   updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
                 }
-                onMenu={(leafId, x, y) => setPaneMenu({ leafId, x, y })}
+                onMenu={(leafId, x, y) => openContextMenu(x, y, paneMenuItems(leafId), setPaneMenu)}
                 onClose={closePane}
                 onDropFile={dropFileOnPane}
                 dragState={drag}
@@ -829,11 +848,7 @@ export default function App() {
             x={m().x}
             y={m().y}
             onClose={() => setPaneMenu(null)}
-            items={[
-              { label: "Split right", icon: "PanelRight", onSelect: () => splitPane(m().leafId, "row") },
-              { label: "Split down", icon: "PanelBottom", onSelect: () => splitPane(m().leafId, "col") },
-              { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(m().leafId) },
-            ]}
+            items={m().items}
           />
         )}
       </Show>

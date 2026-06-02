@@ -1,0 +1,32 @@
+/* PaneTree.css — colocated refinements for the per-leaf mini view-bar.
+   Design §4 (Split panes): each split pane gets its own mini view-bar that
+   reads as a breadcrumb — a faint content icon + the content's title. The
+   focused pane's title brightens (wired via .pane-leaf.focused, see App.css).
+   Base layout/colors for .pane-header live in App.css; this file only adds
+   the breadcrumb typography + icon/title emphasis so we don't touch App.css. */
+
+.pane-header {
+  /* Read as a mini view-bar breadcrumb, not a plain label row. */
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  letter-spacing: 0.01em;
+}
+
+/* Leading content icon: faint by design, sits before the title. */
+.pane-header .pane-header-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  color: var(--faint);
+}
+
+/* The title is the emphasized crumb. In an unfocused pane it inherits the
+   header's muted color; when focused the whole header goes to --fg (App.css),
+   so the title rides along and reads brighter than its surroundings. */
+.pane-header .pane-header-label {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-weight: 500;
+}
+
+.pane-leaf.focused .pane-header .pane-header-label {
+  color: var(--fg);
+}

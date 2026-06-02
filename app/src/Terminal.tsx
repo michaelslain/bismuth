@@ -185,10 +185,19 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // whose teardown would never fire.
     if (disposed) return;
 
-    // Read CSS variables for terminal theme colors.
+    // Read CSS variables for terminal theme colors. The terminal renders on the
+    // deep Bismuth terminal surface (--term-bg), falling back to the app bg, with
+    // --term-fg (falling back to --fg) for default text — matching the host
+    // container's .term-host styling so xterm's grid sits flush on it.
     const style = getComputedStyle(document.documentElement);
-    const bg = style.getPropertyValue("--bg").trim() || "#1e1e2e";
-    const fg = style.getPropertyValue("--fg").trim() || "#cdd6f4";
+    const bg =
+      style.getPropertyValue("--term-bg").trim() ||
+      style.getPropertyValue("--bg").trim() ||
+      "#08090e";
+    const fg =
+      style.getPropertyValue("--term-fg").trim() ||
+      style.getPropertyValue("--fg").trim() ||
+      "#cdd6f4";
 
     const pal = activePaletteInts();
     const ansi = buildAnsiPalette(pal, fg, bg);
@@ -232,9 +241,17 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       if (!rowsEl) return;
       const cellW = rowsEl.clientWidth / term.cols;
       const cellH = rowsEl.clientHeight / term.rows;
+      // The host container is padded (16px 18px) so the rows element no longer
+      // shares the container's origin. Offset the overlay (anchored at the
+      // container's top-left) by the rows element's position within it so the
+      // cursor stays aligned with the text.
+      const cRect = container.getBoundingClientRect();
+      const rRect = rowsEl.getBoundingClientRect();
+      const offsetX = rRect.left - cRect.left;
+      const offsetY = rRect.top - cRect.top;
       // cursorX/Y are in cell units relative to the visible viewport.
-      const x = term.buffer.active.cursorX * cellW;
-      const y = term.buffer.active.cursorY * cellH;
+      const x = offsetX + term.buffer.active.cursorX * cellW;
+      const y = offsetY + term.buffer.active.cursorY * cellH;
       cursorEl.style.transform = `translate(${x}px, ${y}px)`;
       cursorEl.style.height = `${cellH}px`;
     };
@@ -323,5 +340,5 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
   // Render a single container div. The parent controls visibility via display:none;
   // this component is mounted once and stays mounted for the tab's lifetime.
-  return <div ref={container!} style={{ width: "100%", height: "100%", position: "relative" }} />;
+  return <div ref={container!} class="term-host" />;
 }

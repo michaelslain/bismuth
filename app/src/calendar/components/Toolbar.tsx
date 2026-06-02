@@ -1,12 +1,12 @@
-import { For } from 'solid-js'
-import { currentView, currentDate, showCategoryPanel, settings } from '../state'
-import { TextButton } from '../../ui/TextButton'
-import { IconButton } from '../../ui/IconButton'
+import { currentView, currentDate, showCategoryPanel, showEventModal, settings } from '../state'
+import { Icon } from '../../icons/Icon'
+import { ViewBar, Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
+import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { ViewType } from '../types'
 import { toDateStr, addDays, weekRange } from '../dates'
 
 const VIEWS: { id: ViewType; label: string }[] = [
-  { id: 'month', label: 'MONTH' }, { id: 'week', label: 'WEEK' }, { id: '3day', label: '3 DAY' }, { id: 'day', label: 'DAY' },
+  { id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }, { id: '3day', label: '3 Day' }, { id: 'day', label: 'Day' },
 ]
 
 function navigate(dir: -1 | 1): void {
@@ -47,19 +47,24 @@ function headerLabel(): string {
 
 export function Toolbar() {
   return (
-    <div class="calendar-toolbar">
-      <div class="calendar-toolbar-left">
-        <IconButton icon="ChevronLeft" label="Previous" onClick={() => navigate(-1)} />
-        <TextButton onClick={() => (currentDate.value = new Date())}>TODAY</TextButton>
-        <IconButton icon="ChevronRight" label="Next" onClick={() => navigate(1)} />
-        <span class="calendar-toolbar-label">{headerLabel()}</span>
+    <ViewBar class="cal-viewbar">
+      <VBtn active onClick={() => (currentDate.value = new Date())}>Today</VBtn>
+      <div class="cal-nav">
+        <VBtn icon="ChevronLeft" iconSize={16} title="Previous" onClick={() => navigate(-1)} />
+        <VBtn icon="ChevronRight" iconSize={16} title="Next" onClick={() => navigate(1)} />
       </div>
-      <div class="calendar-toolbar-right">
-        <For each={VIEWS}>{v => (
-          <TextButton variant={currentView.value === v.id ? 'selected' : 'unselected'} onClick={() => (currentView.value = v.id)}>{v.label}</TextButton>
-        )}</For>
-        <TextButton onClick={() => (showCategoryPanel.value = !showCategoryPanel.value)}>CATEGORIES</TextButton>
-      </div>
-    </div>
+      <Crumb serif>{headerLabel()}</Crumb>
+      <ViewBarSpacer />
+      <SegmentedToggle
+        value={currentView.value}
+        onChange={(id) => (currentView.value = id)}
+        size="sm"
+        options={VIEWS}
+      />
+      <VBtn icon="Tag" iconSize={13} active={showCategoryPanel.value} onClick={() => (showCategoryPanel.value = !showCategoryPanel.value)}>Categories</VBtn>
+      <button class="vbtn cal-cta" onClick={() => (showEventModal.value = { date: toDateStr(currentDate.value) })}>
+        <Icon value="Plus" size={14} />Event
+      </button>
+    </ViewBar>
   )
 }

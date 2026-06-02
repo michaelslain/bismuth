@@ -1,16 +1,200 @@
 /* app/src/ExportView.css */
-.export-view { display: flex; flex-direction: column; height: 100%; }
-.export-bar {
-  display: flex; align-items: center;
-  gap: 1rem; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border, #2a2a2a);
+.exp {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  height: 100%;
+  min-height: 0;
 }
-.export-formats { display: flex; gap: 0.25rem; }
-.export-themes { padding-left: 1rem; border-left: 1px solid var(--border, #2a2a2a); }
-.export-go { margin-left: auto; }
-.export-preview { flex: 1; overflow: auto; background: #525659; padding: 1rem; }
+
+/* ---- Left: light "paper" preview --------------------------------------- */
+.exppreview {
+  padding: 34px;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.paper {
+  width: 520px;
+  max-width: 100%;
+  background: #f7f6f2;
+  color: #1c1a16;
+  border-radius: 4px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+/* The rendered note lives in an isolated iframe; keep it on the cream paper. */
 .export-frame {
-  width: 100%; height: 100%; min-height: 600px; border: none;
-  background: #fff; border-radius: 4px;
+  display: block;
+  width: 100%;
+  min-height: 640px;
+  border: none;
+  background: #f7f6f2;
 }
-.export-img { display: block; margin: 0 auto; max-width: 100%; background: #fff; }
-.export-empty { color: #ccc; text-align: center; padding: 2rem; }
+.export-img {
+  display: block;
+  width: 100%;
+  background: #f7f6f2;
+}
+.export-empty {
+  font-family: var(--editor-font);
+  color: #8a8578;
+  text-align: center;
+  padding: 48px 52px;
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+/* ---- Right: options panel on the rail ---------------------------------- */
+.exppanel {
+  border-left: 1px solid var(--border-soft);
+  background: var(--rail);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow: auto;
+}
+.exp-title {
+  font-family: var(--editor-font);
+  font-size: 19px;
+  color: var(--fg);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.exp-title svg {
+  color: var(--accent);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.flab {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.fopts {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.fopt {
+  height: 30px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+.fopt:hover {
+  color: var(--fg);
+}
+.fopt.on {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.theme-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  display: inline-block;
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+/* ---- Include toggle switches ------------------------------------------- */
+.exp-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.exp-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.exp-toggle.on {
+  color: var(--fg);
+}
+.exp-switch {
+  width: 34px;
+  height: 19px;
+  border-radius: 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  position: relative;
+  flex: 0 0 auto;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.exp-switch.on {
+  background: var(--accent);
+  border-color: transparent;
+}
+.exp-knob {
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s ease;
+}
+.exp-switch.on .exp-knob {
+  left: 17px;
+}
+
+.exp-spacer {
+  flex: 1;
+}
+
+/* ---- Footer: both buttons share the ghost style ------------------------ */
+.exp-footer {
+  display: flex;
+  gap: 9px;
+  justify-content: flex-end;
+}
+.btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.btn.ghost {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  transition: background 0.15s ease;
+}
+.btn.ghost:hover:not(:disabled) {
+  background: var(--surface-3);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

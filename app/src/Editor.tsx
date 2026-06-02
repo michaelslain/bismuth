@@ -43,9 +43,11 @@ const ExternalReload = Annotation.define<boolean>();
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
 const editorTheme = EditorView.theme({
-  "&": { backgroundColor: "transparent", color: "var(--fg)", height: "100%" },
+  // Prose reads as serif Lora near --fg with a soft tone (design: color-mix(hi 86%, lo)),
+  // centered in a 760px reading column to match the redesigned editor column.
+  "&": { backgroundColor: "transparent", color: "color-mix(in srgb, var(--fg) 88%, var(--text-muted))", height: "100%" },
   ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto" },
-  ".cm-content": { caretColor: "var(--fg)", padding: "12px 16px" },
+  ".cm-content": { caretColor: "var(--fg)", padding: "8px 40px 80px", maxWidth: "760px", margin: "0 auto", width: "100%", boxSizing: "border-box" },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--fg)",
     borderLeftWidth: "2px",
@@ -100,15 +102,17 @@ const codeFontTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace !important", lineHeight: "1.55" },
 });
 
-// YAML syntax colors pulled from the app theme (keys = accent, bools/numbers =
-// 3rd-brain purple, strings = near-fg, comments = dim italic) so config files
-// read as part of the app, not a generic code editor.
+// YAML syntax colors pulled from the app theme so config files (settings.yaml)
+// read as part of the app, not a generic code editor. Tints follow the Bismuth
+// redesign: keys = accent, strings = green, numbers = gold, booleans = violet,
+// comments = faint italic, structural punctuation = faint.
 const yamlHighlight = HighlightStyle.define([
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "color-mix(in srgb, var(--fg) 48%, transparent)", fontStyle: "italic" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--faint)", fontStyle: "italic" },
   { tag: [t.propertyName, t.definition(t.propertyName)], color: "var(--accent)" },
-  { tag: [t.bool, t.atom, t.keyword, t.number], color: "var(--accent-purple)" },
-  { tag: [t.string, t.special(t.string)], color: "color-mix(in srgb, var(--fg) 88%, transparent)" },
-  { tag: [t.separator, t.punctuation, t.bracket, t.brace], color: "color-mix(in srgb, var(--fg) 45%, transparent)" },
+  { tag: [t.bool, t.atom, t.keyword], color: "var(--violet)" },
+  { tag: [t.number, t.integer, t.float], color: "var(--gold)" },
+  { tag: [t.string, t.special(t.string)], color: "var(--green)" },
+  { tag: [t.separator, t.punctuation, t.bracket, t.brace], color: "var(--faint)" },
 ]);
 
 // Vault template paths, fetched once and cached, for the settings.yaml `template:`

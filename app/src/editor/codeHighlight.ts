@@ -12,7 +12,9 @@ export const codeHighlightStyle = HighlightStyle.define([
   { tag: [t.number, t.integer, t.float, t.bool, t.atom], color: "#d19a66" },
   { tag: [t.function(t.variableName), t.function(t.propertyName), t.labelName], color: "#61afef" },
   { tag: [t.typeName, t.className, t.namespace], color: "#e5c07b" },
-  { tag: [t.propertyName, t.attributeName], color: "#e06c75" },
+  // Frontmatter / YAML keys (and attribute names) read in the app accent so the
+  // properties block matches the Bismuth redesign (keys --accent, values --fg).
+  { tag: [t.propertyName, t.attributeName], color: "var(--accent)" },
   { tag: [t.tagName], color: "#e06c75" },
   { tag: [t.self, t.null, t.constant(t.variableName)], color: "#d19a66" },
   { tag: [t.operator, t.punctuation, t.separator, t.bracket, t.brace, t.angleBracket, t.squareBracket, t.paren, t.derefOperator], color: "#abb2bf" },

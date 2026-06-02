@@ -15,6 +15,8 @@ const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
 const THEME_NAMES = [
   "oxide-duotone", "gunmetal-teal", "rose-gold",
   "indigo-oxide", "forest-oxide", "full-sheen",
+  "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
+  "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
 ];
 const ICON_NAMES = [
   "hopper-crystal", "node-b", "square-funnel", "nested-diamonds",

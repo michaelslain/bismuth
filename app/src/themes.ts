@@ -18,6 +18,16 @@ export interface ColorTokens {
   surface: string;      // --surface-1 / --panel
   surface2: string;     // --surface-2
   accentPalette: string[]; // graph nodes/clusters/tags
+  // Light theme flag: drives color-scheme + the light/dark branch of derived
+  // structural surfaces (rail, pop-bg, scrim, label-halo, …) in settingsCssVars.
+  isLight?: boolean;
+  // Category hues (Bases statuses, calendar event categories, map pins, chart series).
+  // CATEGORICAL, not semantic — distinct from --success/--danger so destructive/success
+  // affordances are untouched. Optional: each defaults to the Bismuth design value in
+  // settingsCssVars; a theme only sets them to re-tint categories for its own palette.
+  categoryGreen?: string;  // --green
+  categoryGold?: string;   // --gold
+  categoryRose?: string;   // --rose
 }
 
 /** Ordered theme names; the first (`oxide-duotone`) is the default. */
@@ -28,6 +38,13 @@ export const THEME_NAMES = [
   "indigo-oxide",
   "forest-oxide",
   "full-sheen",
+  // Light counterparts (same accent identity on a tinted-white ground).
+  "oxide-duotone-light",
+  "gunmetal-teal-light",
+  "rose-gold-light",
+  "indigo-oxide-light",
+  "forest-oxide-light",
+  "full-sheen-light",
 ] as const;
 
 export type ThemeName = (typeof THEME_NAMES)[number];
@@ -43,6 +60,12 @@ export const THEME_LABELS: Record<ThemeName, string> = {
   "indigo-oxide": "Indigo Oxide",
   "forest-oxide": "Forest Oxide",
   "full-sheen": "Gunmetal · Full Sheen",
+  "oxide-duotone-light": "Oxide Duotone · Light",
+  "gunmetal-teal-light": "Gunmetal · Teal · Light",
+  "rose-gold-light": "Rose-Gold · Light",
+  "indigo-oxide-light": "Indigo Oxide · Light",
+  "forest-oxide-light": "Forest Oxide · Light",
+  "full-sheen-light": "Gunmetal · Full Sheen · Light",
 };
 
 const SHEEN = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
@@ -60,6 +83,9 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
     surface: "#161827",
     surface2: "#1E2133",
     accentPalette: ["#22C6D6", "#3F9BE6", "#5C7BEE", "#8B6CF0", "#B16AD6"],
+    categoryGreen: "#43D49A",
+    categoryGold: "#F2C53D",
+    categoryRose: "#F0509B",
   },
   "gunmetal-teal": {
     background: "#0E1014",
@@ -110,6 +136,43 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
     surface: "#16181D",
     surface2: "#1E2128",
     accentPalette: [...SHEEN],
+  },
+  // ── Light counterparts ──────────────────────────────────────────────────────
+  "oxide-duotone-light": {
+    background: "#F1EFF7", foreground: "#322D49", neutral: "#7A7393",
+    accent: "#5E6FD0", border: "#DCD7EB", surface: "#FFFFFF", surface2: "#EEEBF7",
+    accentPalette: ["#3FB6C4", "#6FA6E6", "#7A86DE", "#A98FE0", "#C08FD8"],
+    isLight: true,
+  },
+  "gunmetal-teal-light": {
+    background: "#EEF4F4", foreground: "#1B2A2C", neutral: "#6E8385",
+    accent: "#1FA6B4", border: "#D4E2E2", surface: "#FFFFFF", surface2: "#E6EFEF",
+    accentPalette: ["#3FB8A8", "#2FA9B6", "#5AA6DE", "#7C9CE6", "#6CC79A"],
+    isLight: true,
+  },
+  "rose-gold-light": {
+    background: "#FAF1EE", foreground: "#3A2A28", neutral: "#9A8780",
+    accent: "#D06A86", border: "#ECDDD7", surface: "#FFFFFF", surface2: "#F4E9E4",
+    accentPalette: ["#E0B65A", "#E0A06A", "#DE8A78", "#D27E92", "#CE82B0"],
+    isLight: true,
+  },
+  "indigo-oxide-light": {
+    background: "#EEEFF9", foreground: "#272B45", neutral: "#767C9C",
+    accent: "#5360E0", border: "#DADCEF", surface: "#FFFFFF", surface2: "#E7E9F6",
+    accentPalette: ["#6F9AEC", "#6470E2", "#8270E0", "#9A72DC", "#62A8E2"],
+    isLight: true,
+  },
+  "forest-oxide-light": {
+    background: "#EDF4EF", foreground: "#213027", neutral: "#74897C",
+    accent: "#2FA86C", border: "#D6E4DA", surface: "#FFFFFF", surface2: "#E5EFE8",
+    accentPalette: ["#4FB585", "#3FAE96", "#84C28E", "#9AB45E", "#C0A055"],
+    isLight: true,
+  },
+  "full-sheen-light": {
+    background: "#F2F1F4", foreground: "#25272D", neutral: "#6F757F",
+    accent: "#1FA6B4", border: "#DEDCE4", surface: "#FFFFFF", surface2: "#EAE9EE",
+    accentPalette: ["#E863A0", "#9A6CE0", "#5A82E8", "#3FB8C4", "#5AC79A", "#E0BC55"],
+    isLight: true,
   },
 };
 

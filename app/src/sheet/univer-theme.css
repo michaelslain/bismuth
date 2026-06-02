@@ -70,10 +70,33 @@
    Univer uses the gray-600..900 stops only for surfaces / borders / hover (never
    text — dark-mode text uses the light gray stops), so remapping these tokens is
    safe and recolors all chrome surfaces at once. Scoped to .univer-dark so light
-   mode (Univer's white surfaces, already close to the app's light bg) is untouched. */
+   mode (Univer's white surfaces, already close to the app's light bg) is untouched.
+   These now read the Bismuth design tokens directly so the chrome tracks the theme:
+   the outer toolbar/formula-bar rail is `--rail` (slightly darker than the editor
+   body), raised surfaces step through `--surface-1/-2`, and hairlines are
+   `--border-soft` with strong borders at `--border`. */
 .oa-sheet .univer-dark {
-  --univer-gray-900: var(--bg);                                    /* toolbar / outer track */
-  --univer-gray-800: color-mix(in srgb, var(--bg), var(--fg) 5%);  /* popovers, menus, dropdowns */
-  --univer-gray-700: color-mix(in srgb, var(--bg), var(--fg) 9%);  /* inputs, subtle hover */
-  --univer-gray-600: var(--border);                                /* borders, strong hover */
+  --univer-gray-900: var(--rail);        /* toolbar + formula-bar outer rail (darker chrome) */
+  --univer-gray-800: var(--surface-1);   /* popovers, menus, dropdowns */
+  --univer-gray-700: var(--surface-2);   /* inputs, subtle hover */
+  --univer-gray-600: var(--border);      /* strong borders / strong hover */
+  --univer-gray-500: var(--border-soft); /* hairline dividers between chrome rows */
+}
+
+/* The DOM formula-bar row (cell-ref box + fx toggle + formula input) sits directly
+   under the toolbar. Univer builds it from utility classes (no stable semantic
+   class), so we can only reach it structurally as the bordered row that hosts the
+   formula editor. Pin it to the `.fxbar` rhythm from the design: a `--rail` rail
+   with a `--border-soft` hairline beneath, muted text, and the cell-ref reading at
+   full `--fg`. Selectors are defensive (`:where`, attribute hooks) so a Univer
+   re-render never breaks them; if a hook misses, the row simply falls back to the
+   `--univer-gray-*` remap above — no visual regression. */
+.oa-sheet .univer-dark :where([data-u-comp="formula-bar"], .univer-formula-bar) {
+  background: var(--rail) !important;
+  border-bottom: 1px solid var(--border-soft) !important;
+  color: var(--text-muted) !important;
+}
+/* The fx (function) toggle reads as the design's faint `function-square` glyph. */
+.oa-sheet .univer-dark .univerjs-icon-fx-icon {
+  color: var(--faint) !important;
 }

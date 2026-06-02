@@ -1,29 +1,33 @@
 /* app/src/NoteTitle.css — inline note title (a `# <title>` heading). */
+/* H1 row (Bismuth redesign): a mono `#` hash in --accent + a serif title.
+   Centered in the same 760px reading column as the editor body, baseline-aligned. */
 .note-title {
   display: flex;
   align-items: baseline;
-  gap: 0.4ch;
-  /* Align with CodeMirror's content padding (".cm-content { padding: 12px 16px }")
-     so the title sits over the first body line, not flush to the pane edge. */
-  padding: 16px 16px 4px;
-  font-family: var(--editor-font);
-  /* Match the editor's base font-size so the 1.8em below resolves to the SAME
-     pixel size as a live-preview H1 (.cm-h1 = 1.8em of --editor-font-size). */
+  gap: 11px;
+  /* Sit inside the editor's centered 760px column, aligned with the body's
+     left/right padding (.cm-content padding-inline: 40px). */
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 24px 40px 6px;
   font-size: var(--editor-font-size, 16px);
 }
 
-/* Fixed heading glyph — identical to a body H1's `#` except tinted the accent. */
+/* Fixed heading glyph — a mono `#` tinted the accent (design: mono 500). */
 .note-title-hash {
   color: var(--accent);
-  font-size: 1.8em;
-  font-weight: 700;
-  line-height: 1.3;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 1.94em;
+  font-weight: 500;
+  line-height: 1.1;
   user-select: none;
   flex: 0 0 auto;
 }
 
-/* Editable title text. Borderless until focused so it reads as a heading.
-   Metrics mirror .cm-h1 (1.8em / 700 / 1.3) so it looks exactly like a body H1. */
+/* Editable title text — serif Lora, 600, tight tracking (design: 31px / -.015em).
+   Borderless until focused so it reads as a heading. */
 .note-title-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -31,10 +35,11 @@
   border: none;
   outline: none;
   color: var(--fg);
-  font-family: inherit;
-  font-size: 1.8em;
-  font-weight: 700;
-  line-height: 1.3;
+  font-family: var(--editor-font);
+  font-size: 1.94em;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
   padding: 0 2px;
   border-radius: 3px;
 }

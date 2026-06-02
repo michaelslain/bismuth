@@ -1,16 +1,94 @@
-.chart { padding: 16px; height: 100%; overflow: auto; }
-.empty { opacity: 0.55; font-size: 13px; padding: 24px; text-align: center; }
+.chart { padding: 18px 24px; height: 100%; overflow: auto; }
+.empty { color: var(--text-muted); font-size: 13px; padding: 24px; text-align: center; }
 
-/* heatmap */
+/* ---------- heatmap ---------- */
 .heatmap { display: flex; gap: 3px; align-items: flex-start; }
 .week { display: grid; grid-template-rows: repeat(7, 13px); gap: 3px; }
-.cell { width: 13px; height: 13px; border-radius: 3px; }
+.cell { width: 13px; height: 13px; border-radius: 3px; background: var(--surface-2); }
+
+/* Month-label row above the 53x7 grid. */
+.months {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: var(--faint);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+}
+.monthCol { width: 13px; }
+.monthLabel { width: 13px; overflow: visible; white-space: nowrap; }
+
+/* Less → More legend under the heatmap. */
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 0 0;
+  font-size: 10.5px;
+  color: var(--faint);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+}
+.legend .cell { width: 11px; height: 11px; }
 
 /* bar + line share an svg container */
 .svgWrap { width: 100%; }
 .svgWrap svg { width: 100%; height: auto; display: block; }
 
-/* stat */
-.stat { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 8px; }
-.statBig { font-size: 52px; font-weight: 700; line-height: 1; }
-.statSub { font-size: 13px; opacity: 0.6; }
+/* ---------- stat grid (multi-stat cards) ---------- */
+.statgrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+}
+.statCard {
+  background: var(--surface-1);
+  border: 1px solid var(--border-soft);
+  border-radius: 11px;
+  padding: 16px 17px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.statLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.statValue {
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--fg);
+  font-family: var(--editor-font);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.statDelta {
+  font-size: 11px;
+  color: var(--green);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+}
+
+/* Spacing for the heatmap streak cards. */
+.streakStats { margin-top: 26px; }
+
+/* ---------- stat (single big value fallback) ---------- */
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 9px;
+}
+/* Serif value, like the design's stat cards. */
+.statBig {
+  font-family: var(--editor-font);
+  font-size: 52px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--fg);
+}
+.statSub { font-size: 12px; color: var(--text-muted); }

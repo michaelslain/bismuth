@@ -8,15 +8,18 @@ import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
+import { AgentsGraph } from "./graph/AgentsGraph";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
+import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "./ui/ViewBar";
 
-/** Shared dark-pill recipe for the hover/fps HUD readouts (S26). */
+/** Shared pill recipe for the hover/fps HUD readouts (theme-aware for light/dark). */
 const hudPill: JSX.CSSProperties = {
-  background: "rgba(20,20,24,0.65)",
+  background: "var(--pop-bg)",
+  border: "1px solid var(--border-soft)",
   "font-family": "inherit",
-  "border-radius": "4px",
+  "border-radius": "5px",
 };
 
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
@@ -119,10 +122,15 @@ export function GraphView(props: {
   onCleanup(() => renderer.destroy());
 
   const setViewMode = (m: "2d" | "3d") => setSettings("graph", "viewMode", m);
+  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents" };
+  const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
+  const nodeCount = () => props.graph?.nodes?.length ?? 0;
+  const edgeCount = () => props.graph?.edges?.length ?? 0;
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: props.fill ? "100%" : undefined }}>
-      <div style={{ display: "flex", "align-items": "center", "justify-content": "center", padding: "5px 6px" }}>
+    <div class="graph-root" style={{ display: "flex", "flex-direction": "column", height: props.fill ? "100%" : undefined }}>
+      <ViewBar class="graph-viewbar">
+        <span class="graph-vb-wide"><Crumb icon="Share2">Knowledge Graph</Crumb></span>
         <SegmentedToggle
           value={props.mode}
           onChange={props.setMode}
@@ -134,11 +142,44 @@ export function GraphView(props: {
             { id: "agents", label: "Agents" },
           ]}
         />
-      </div>
-      <div style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
+        <ViewBarSpacer />
+        <span class="graph-vb-wide graph-vb-right">
+          <SegmentedToggle value={settings.graph.viewMode} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
+          <Show when={props.fill}>
+            <VBtn icon="Search" active={menuOpen()} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>Find</VBtn>
+          </Show>
+        </span>
+      </ViewBar>
+      <div class="graph-area" style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
+        {/* Iridescent cluster-glow + depth vignette over the canvas (design's BigGraph
+            look). Screen-blended glow tints, gated per mode; pure CSS, no renderer cost. */}
+        <Show when={props.mode !== "agents"}>
+          <div class="graph-glow" data-mode={props.mode} />
+          <div class="graph-vignette" />
+        </Show>
+        {/* Agents mode: the SVG governance-structure picker overlays the WebGL canvas. */}
+        <Show when={props.mode === "agents"}>
+          <AgentsGraph />
+        </Show>
+        {/* Floating cluster-legend card (non-agents) — hidden in the cramped sidebar via container query. */}
+        <Show when={props.mode !== "agents"}>
+          <div class="graph-legend-card graph-wide">
+            <div class="graph-card-h">{modeLabel()} · clusters</div>
+            <div class="graph-legend-rows">
+              <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
+            </div>
+          </div>
+        </Show>
+        {/* Floating stats footer (non-agents). */}
+        <Show when={props.mode !== "agents"}>
+          <div class="graph-stats graph-wide">
+            <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
+            <Show when={fps() !== null}><span style={{ color: "var(--green)" }}>{fps()} fps</span></Show>
+          </div>
+        </Show>
         <Show when={props.fill && menuOpen()}>
-          <div style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", background: "rgba(14,14,18,0.94)", border: "1px solid rgba(255,255,255,0.12)", "border-radius": "8px", padding: "10px", "backdrop-filter": "blur(10px)", "box-shadow": "0 8px 28px rgba(0,0,0,0.5)" }}>
+          <div class="graph-find-panel" style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", padding: "10px" }}>
             {/* Section 1 — view actions: a bordered Reset button + close. */}
             <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
               <TextButton
@@ -165,9 +206,7 @@ export function GraphView(props: {
             />
             {/* Section 3 — clusters, captioned + scrollable. */}
             <div style={{ display: "flex", "flex-direction": "column", gap: "4px", flex: 1, "min-height": 0 }}>
-              <div style={{ "font-size": "9px", "letter-spacing": "0.09em", "text-transform": "uppercase", color: "rgba(200,200,200,0.4)", padding: "0 3px", "flex-shrink": 0 }}>
-                Clusters
-              </div>
+              <div class="graph-card-h" style={{ "flex-shrink": 0 }}>Clusters</div>
               <div style={{ flex: 1, "min-height": 0 }}>
                 <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
               </div>
@@ -175,7 +214,7 @@ export function GraphView(props: {
           </div>
         </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
-          <div style={{ display: "flex", gap: "2px", "align-items": "stretch", "background": "rgba(20,20,24,0.55)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+          <div class="graph-bottom-narrow" style={{ gap: "2px", "align-items": "stretch", "background": "var(--pop-bg)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <SegmentedToggle
               value={settings.graph.viewMode}
               onChange={setViewMode}
@@ -196,13 +235,13 @@ export function GraphView(props: {
           </div>
           <Show when={hovered()}>
             {(node) => (
-              <span style={{ ...hudPill, "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "rgba(232,232,232,0.92)", "font-size": "11px", padding: "2px 8px" }}>
+              <span style={{ ...hudPill, "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "var(--fg)", "font-size": "11px", padding: "2px 8px" }}>
                 {hoverLabel(node())}
               </span>
             )}
           </Show>
           <Show when={fps() !== null}>
-            <span style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "rgba(20,20,24,0.55)", color: "rgba(200,200,200,0.7)", "font-size": "10px", padding: "2px 7px" }}>
+            <span class="graph-bottom-fps" style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "var(--pop-bg)", color: "var(--text-muted)", "font-size": "10px", padding: "2px 7px" }}>
               {fps()} fps
             </span>
           </Show>

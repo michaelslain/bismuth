@@ -28,53 +28,94 @@
 .calendar-app button.active { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
 
 .calendar-app { display: flex; flex-direction: column; height: 100%; font-family: var(--font-interface); }
-.calendar-toolbar { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--background-modifier-border); gap: 8px; flex-wrap: wrap; }
-.calendar-toolbar-left, .calendar-toolbar-right { display: flex; align-items: center; gap: 6px; }
-.calendar-toolbar-label { font-weight: 600; font-size: 1em; }
-.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 5px; border-radius: 3px; font-size: 0.72em; color: #fff; cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); }
+
+/* ---- Toolbar (bismuth .viewbar shell) ------------------------------------ */
+/* The toolbar reuses the global .viewbar / .vbtn / .vseg / .crumb primitives.
+   These local rules add the calendar-specific bits: prev/next chevron icon
+   buttons, the serif month title, and the accent-filled Event CTA. */
+.cal-viewbar { gap: 8px; }
+.cal-nav { display: inline-flex; gap: 2px; }
+
+/* These selectors are scoped under .cal-viewbar so they outrank the generic
+   `.calendar-app button` rule above and inherit the shared .viewbar look. */
+.cal-viewbar .vbtn { padding: 0 10px; height: 28px; border-radius: 7px; font-size: 11.5px; background: transparent; color: var(--text-muted); border: 1px solid transparent; }
+.cal-viewbar .vbtn:hover { background: var(--hover-bg); color: var(--fg); }
+.cal-viewbar .vbtn.active { color: var(--fg); background: var(--surface-2); border-color: var(--border); }
+.cal-viewbar .vseg button { height: 26px; padding: 0 11px; border-radius: 6px; font-size: 11px; background: transparent; color: var(--text-muted); border: none; }
+.cal-viewbar .vseg button:hover { color: var(--fg); background: transparent; }
+.cal-viewbar .vseg button.active { color: var(--fg); background: var(--surface-2); }
+.cal-viewbar .cal-iconbtn { width: 28px; height: 28px; padding: 0; display: grid; place-items: center; border-radius: 7px; color: var(--text-muted); background: transparent; border: none; cursor: pointer; }
+.cal-viewbar .cal-iconbtn:hover { background: var(--hover-bg); color: var(--fg); }
+.cal-title { margin-left: 4px; }
+.cal-title b { font-family: var(--editor-font); font-size: 16px; font-weight: 600; }
+.cal-viewbar .cal-cta { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+.cal-viewbar .cal-cta:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--fg); }
+
+.event-chip { display: flex; flex-direction: column; gap: 0; padding: 2px 7px; border-radius: 5px; font-size: 10.5px; color: #fff; cursor: pointer; overflow: hidden; margin-bottom: 2px; font-family: var(--font-text); white-space: nowrap; text-overflow: ellipsis; }
 .event-chip:hover { filter: brightness(1.1); }
+/* ---- Event pill palette (bismuth .ev.{teal,blue,violet,green,gold,rose}) -----
+   Each event's category maps to one of these swatch classes (see EventChip);
+   uncategorised events render as .ghost (outline-only). All pill text is the
+   monospace UI font. */
+.ev.teal { background: color-mix(in srgb, var(--teal) 85%, transparent); color: #fff; }
+.ev.blue { background: color-mix(in srgb, var(--blue) 85%, transparent); color: #fff; }
+.ev.violet { background: color-mix(in srgb, var(--violet) 85%, transparent); color: #fff; }
+.ev.green { background: color-mix(in srgb, var(--green) 85%, transparent); color: #fff; }
+.ev.gold { background: color-mix(in srgb, var(--gold) 90%, transparent); color: #fff; }
+.ev.rose { background: color-mix(in srgb, var(--rose) 85%, transparent); color: #fff; }
+.ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+.ev.ghost .event-chip-time { color: var(--faint); }
 .event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
 .event-chip-title { font-weight: 600; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
+/* ---- Month grid (bismuth .cal / .caldow / .calcell) ---------------------- */
 .month-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.month-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--background-modifier-border); }
-.month-day-name { text-align: center; padding: 4px; font-size: 0.8em; font-weight: 600; color: var(--text-muted); }
+.month-grid-header { display: grid; grid-template-columns: repeat(7, 1fr); border-bottom: 1px solid var(--border-soft); }
+.month-day-name { padding: 8px 12px; font-size: 10.5px; letter-spacing: 0.06em; color: var(--faint); text-transform: uppercase; }
 .month-grid { flex: 1; display: grid; grid-template-columns: repeat(7, 1fr); grid-auto-rows: 1fr; overflow-y: auto; }
-.month-cell { border-right: 1px solid var(--background-modifier-border); border-bottom: 1px solid var(--background-modifier-border); padding: 4px; min-height: var(--month-cell-min-h, 80px); cursor: pointer; overflow: hidden; }
-.month-cell:hover { background: var(--background-modifier-hover); }
-.month-cell.empty { background: var(--background-secondary); cursor: default; }
-.month-cell.today .month-cell-number { background: var(--interactive-accent); color: var(--text-on-accent); border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
-.month-cell-number { font-size: 0.85em; font-weight: 500; margin-bottom: 2px; }
-.month-cell-events { display: flex; flex-direction: column; gap: 1px; }
+.month-cell { border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); padding: 7px 9px; min-height: var(--month-cell-min-h, 80px); cursor: pointer; overflow: hidden; display: flex; flex-direction: column; gap: 4px; }
+.month-cell:hover { background: var(--hover-bg); }
+.month-cell.empty { cursor: default; }
+.month-cell.empty:hover { background: transparent; }
+.month-cell.today .month-cell-number { background: var(--accent); color: #fff; border-radius: 50%; width: 20px; height: 20px; display: grid; place-items: center; font-weight: 600; }
+.month-cell-number { font-size: 11.5px; font-weight: 400; color: var(--text-muted); margin-bottom: 0; }
+/* leading/trailing days that spill in from the prev/next month: dimmed numbers */
+.month-cell-number.dim { opacity: 0.55; color: var(--faint); }
+.month-cell-events { display: flex; flex-direction: column; gap: 2px; min-height: 0; }
+/* ---- Time grid (bismuth .tg / .tgtimes / .tgev) -------------------------- */
 .time-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-.time-grid-day-header { flex: 1; text-align: center; padding: 4px; font-size: 0.8em; font-weight: 600; border-right: 1px solid var(--background-modifier-border); }
-.time-grid-day-header.today { color: var(--interactive-accent); }
-.time-gutter { width: var(--time-gutter-width, 50px); flex-shrink: 0; border-right: 1px solid var(--background-modifier-border); }
-.time-grid-allday-cell { flex: 1; padding: 2px; border-right: 1px solid var(--background-modifier-border); }
+.time-grid-day-header { flex: 1; padding: 9px 10px; font-size: 11.5px; font-weight: 500; color: var(--text-muted); border-left: 1px solid var(--border-soft); }
+.time-grid-day-header.today { color: var(--fg); }
+.time-grid-day-weekday { color: inherit; }
+.time-grid-day-date b { font-weight: inherit; }
+/* today's date number sits in an accent circle */
+.time-grid-day-header.today .time-grid-day-date b { display: inline-grid; place-items: center; width: 20px; height: 20px; background: var(--accent); color: #fff; border-radius: 50%; font-weight: 600; vertical-align: middle; }
+.time-gutter { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
+.time-grid-allday-cell { flex: 1; padding: 2px; border-left: 1px solid var(--border-soft); }
 .time-grid-body { flex: 1; overflow-y: auto; }
 .time-grid-columns { display: flex; flex-direction: column; }
-.time-grid-sticky-top { position: sticky; top: 0; z-index: 2; background: var(--background-primary); }
-.time-grid-sticky-header { display: flex; border-bottom: 1px solid var(--background-modifier-border); }
-.time-grid-allday-row { display: flex; border-bottom: 1px solid var(--background-modifier-border); min-height: 28px; }
+.time-grid-sticky-top { position: sticky; top: 0; z-index: 2; background: var(--bg); }
+.time-grid-sticky-header { display: flex; border-bottom: 1px solid var(--border-soft); }
+.time-grid-allday-row { display: flex; border-bottom: 1px solid var(--border-soft); min-height: 28px; }
 .time-grid-time-rows { display: flex; position: relative; min-height: 1200px; padding-bottom: 48px; }
-.time-gutter-col { width: var(--time-gutter-width, 50px); flex-shrink: 0; }
+.time-gutter-col { width: var(--time-gutter-width, 54px); flex-shrink: 0; border-right: 1px solid var(--border-soft); }
 .time-gutter-hour-block { display: flex; flex-direction: column; height: calc(1200px / 24); }
-.time-gutter-hour { flex: 1; font-size: 0.7em; color: var(--text-muted); padding-right: 4px; text-align: right; border-right: 1px solid var(--background-modifier-border); box-sizing: border-box; }
-.time-gutter-half { flex: 1; font-size: 0.65em; color: var(--text-faint); padding-right: 4px; text-align: right; border-right: 1px solid var(--background-modifier-border); box-sizing: border-box; }
-.time-grid-day-col { flex: 1; position: relative; border-right: 1px solid var(--background-modifier-border); height: 1200px; }
-.time-grid-day-col.today { background: color-mix(in srgb, var(--interactive-accent) 5%, transparent); }
+.time-gutter-hour { flex: 1; font-size: 10px; color: var(--faint); padding: 2px 8px 0 0; text-align: right; box-sizing: border-box; }
+.time-gutter-half { flex: 1; box-sizing: border-box; }
+.time-grid-day-col { flex: 1; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; }
+.time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .time-grid-hour-block { height: calc(1200px / 24); display: flex; flex-direction: column; }
-.time-grid-hour-cell { flex: 1; border-bottom: 1px dashed var(--background-modifier-border); box-sizing: border-box; cursor: pointer; }
-.time-grid-half-cell { flex: 1; border-bottom: 1px solid var(--background-modifier-border); box-sizing: border-box; cursor: pointer; }
-.time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--background-modifier-hover); }
-.time-grid-event { position: absolute; left: 2px; right: 2px; overflow: hidden; z-index: 1; cursor: grab; }
-.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; }
+.time-grid-hour-cell { flex: 1; border-bottom: 1px solid var(--border-soft); box-sizing: border-box; cursor: pointer; }
+.time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
+.time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
+.time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
+.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 6px 9px; font-size: 11px; }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
 .event-chip-title p, .event-chip-location p, .event-modal-description-preview > p:first-child { margin: 0; }
 .event-chip-title *, .event-chip-location * { color: inherit; }
-.drag-ghost { position: absolute; left: 2px; right: 2px; z-index: 10; opacity: 0.7; border-radius: 3px; padding: 2px 6px; font-size: 0.8em; color: #fff; font-weight: 500; pointer-events: none; }
+.drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: 7px; padding: 6px 9px; font-size: 11px; color: #fff; font-weight: 500; pointer-events: none; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
 .event-modal { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
 .event-modal h3 { margin: 0; }

@@ -39,20 +39,60 @@
   display: flex;
   flex-direction: column;
   overflow: auto;
-  padding: 12px 16px;
   color: var(--fg);
 }
+/* Tables fill the scroll area edge-to-edge (sticky header sits on --bg); cards/list/kanban
+   keep their own internal padding (re-applied per view since the host pad is removed). */
 
 .tabs { display: flex; gap: 4px; }
-.loading { padding: 24px; color: var(--oa-muted); }
+.loading { padding: 24px; color: var(--text-muted); }
 
-.table { border-collapse: collapse; width: 100%; font-size: 13px; }
-.table th, .table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-.table th { font-weight: 600; color: var(--oa-muted); }
+/* ---------- table view ---------- */
+.table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-muted);
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  vertical-align: bottom;
+}
+.table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  color: var(--fg);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.table tbody tr:hover td { background: color-mix(in srgb, var(--fg) 2%, transparent); }
 .thDrag { cursor: grab; user-select: none; position: relative; }
 .thDrag:active { cursor: grabbing; }
 .thOver { box-shadow: inset 2px 0 0 0 var(--accent); }
 .thLabel { display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; vertical-align: bottom; }
+
+/* First-column "title" cell: accent book icon + medium-weight label (renderValue
+   marks the cell with .cellTitle when it's the title/file.name column). */
+.cellTitle { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+.cellTitle :global(svg) { color: var(--accent); flex: 0 0 auto; }
+/* Muted value cells (author / dates / counts). */
+.cellMuted { color: var(--text-muted); }
+.cellNum { font-variant-numeric: tabular-nums; }
+/* Plain mono #tag list in teal — no chips. */
+.tagRow { display: inline-flex; gap: 10px; flex-wrap: wrap; color: var(--teal); }
+/* Colored-dot status text (no pill). */
+.statusText { display: inline-flex; align-items: center; gap: 7px; }
+.statusText .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
+/* Star rating: filled gold for the score, faint outline for the remainder. */
+.stars { display: inline-flex; gap: 2px; align-items: center; }
+.stars :global(svg) { color: var(--border); }
+.starOn :global(svg) { color: var(--gold); fill: var(--gold); }
 /* A resizable header is always relatively-positioned so the edge handle can anchor. */
 .thResizable { position: relative; }
 /* When the pointer is in the right-edge grab zone, the whole cell shows col-resize
@@ -83,17 +123,80 @@
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
 .table td { overflow: hidden; text-overflow: ellipsis; }
-.groupRow td { font-weight: 600; background: var(--oa-surface); }
-.summary { font-weight: 600; color: var(--oa-muted); border-top: 2px solid var(--border); }
+.groupRow td { font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; }
+.summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
-.cards { display: flex; flex-direction: column; gap: 12px; }
-.cardGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-grid-min, 220px), 1fr)); gap: 12px; }
-.card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--oa-surface-2); }
-.cardTitle { font-weight: 600; margin-bottom: 8px; }
-.cardField { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; padding: 2px 0; }
-.cardKey { color: var(--oa-muted); }
+/* ---------- cards view ---------- */
+.cards { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
+.cardGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.card {
+  background: var(--surface-1, var(--panel));
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 11px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+/* Plain (non-body) card: a generated book cover + a body row of fields. */
+.cardCover {
+  height: 96px;
+  position: relative;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 13px 14px 13px 18px;
+  overflow: hidden;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--teal) 18%, transparent) 0%, var(--bg) 72%);
+}
+/* Per-index cover tint + spine color cycles through the accent palette. */
+.cardGrid > .card:nth-child(7n+1) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--teal) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+2) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--violet) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+3) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--blue) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+4) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--graph-1, var(--blue)) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+5) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--graph-4, var(--violet)) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+6) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--green) 18%, transparent) 0%, var(--bg) 72%); }
+.cardGrid > .card:nth-child(7n+7) .cardCover { background: linear-gradient(150deg, color-mix(in srgb, var(--gold) 18%, transparent) 0%, var(--bg) 72%); }
+/* Colored spine bar on the left edge. */
+.cardCover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--teal);
+}
+.cardGrid > .card:nth-child(7n+2) .cardCover::before { background: var(--violet); }
+.cardGrid > .card:nth-child(7n+3) .cardCover::before { background: var(--blue); }
+.cardGrid > .card:nth-child(7n+4) .cardCover::before { background: var(--graph-1, var(--blue)); }
+.cardGrid > .card:nth-child(7n+5) .cardCover::before { background: var(--graph-4, var(--violet)); }
+.cardGrid > .card:nth-child(7n+6) .cardCover::before { background: var(--green); }
+.cardGrid > .card:nth-child(7n+7) .cardCover::before { background: var(--gold); }
+/* Subtle paper texture over the cover. */
+.cardCover::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 6px, color-mix(in srgb, var(--fg) 2%, transparent) 6px 7px);
+  pointer-events: none;
+}
+.coverTitle { position: relative; z-index: 1; font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.coverAuthor { position: relative; z-index: 1; font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-.bodyCard { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--oa-surface-2); }
+.cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
+.cardTitle { font-family: var(--editor-font); font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
+.cardAuthor { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The single meta row: status word on the left, stars / page count on the right. */
+.cardMeta { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 2px; font-size: 11.5px; }
+.cardMetaLeft { display: inline-flex; align-items: center; min-width: 0; }
+.cardMetaRight { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.cardPages { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Retained for BodyCard's "Loading…" placeholder. */
+.cardKey { color: var(--text-muted); }
+
+.bodyCard { border: 1px solid var(--border-soft, var(--border)); border-radius: 11px; padding: 13px 14px; background: var(--surface-1, var(--panel)); }
 .todoList { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .todoItem { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
 .todoCheckbox { flex: 0 0 auto; cursor: pointer; accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
@@ -104,9 +207,36 @@
 .todoItem:hover .todoRemove { opacity: 1; }
 .todoAdd:global(.btn) { align-self: flex-start; margin-top: 6px; }
 
-.list ul { margin: 0; padding-left: 20px; }
-.list li { padding: 2px 0; }
-.groupHeader { font-weight: 600; margin: 8px 0 4px; }
+/* ---------- list view ---------- */
+.list { padding: 8px 0; }
+.lgroup { padding: 8px 0; }
+.lghead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.lghead .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
+.lghead .count { color: var(--faint); }
+.lrow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  font-size: 13px;
+  color: var(--fg);
+}
+.lrow:hover { background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.lrow :global(svg) { color: var(--accent); flex: 0 0 auto; }
+.ltext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
+.groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
 
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
@@ -120,48 +250,151 @@
   border-radius: 12px;
   user-select: none;
 }
-.mapTiles, .mapMarkers {
+/* Offline vector basemap: an SVG drawn in screen space, panned/zoomed by JS. */
+.mapVector {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: block;
+}
+.mapSea { fill: var(--map-sea); }
+.mapGrid { stroke: var(--map-grid); stroke-width: 0.75; opacity: 0.7; }
+.mapGridBold { stroke: var(--map-coast); stroke-width: 1.25; opacity: 0.85; }
+.mapLand {
+  fill: var(--map-land);
+  stroke: var(--map-coast);
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.mapMarkers {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
-.mapTile {
+/* Teardrop pin + label chip, anchored by its tip at (left, top). */
+.mapPin {
   position: absolute;
-  width: 256px;
-  height: 256px;
-  /* Hide alt text and the broken-image icon if a tile fails. */
-  color: transparent;
-}
-.mapMarker:global(.btn) {
-  position: absolute;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  border-radius: 50%;
-  border: 2px solid #fff;
-  background: var(--accent);
-  cursor: pointer;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   pointer-events: auto;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  cursor: pointer;
+  transition: transform 120ms ease;
+}
+.mapPin:hover { transform: translate(-50%, -100%) scale(1.08); }
+.mapPinChip {
+  max-width: 180px;
+  margin-bottom: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-soft);
+  background: var(--pop-bg);
+  color: var(--fg);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 10.5px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+}
+.mapPinTeardrop {
+  width: 13px;
+  height: 13px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(45deg);
+  background: var(--accent);
+  border: 1.5px solid var(--on-accent);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+/* Floating controls, top-right. */
+.mapControls {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+}
+.mapZoomStack {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+  background: var(--pop-bg);
+  backdrop-filter: blur(6px);
+}
+.mapZoomStack .mapCtrlBtn:first-child { border-bottom: 1px solid var(--border-soft); }
+.mapCtrlBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  transition: transform 120ms ease, box-shadow 120ms ease;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  cursor: pointer;
+  transition: background 120ms ease;
 }
-.mapMarker:hover {
-  transform: scale(1.25);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+.mapCtrlBtn:hover { background: var(--hover-bg); }
+.mapCtrlSolo {
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--pop-bg);
+  backdrop-filter: blur(6px);
 }
+/* Scale bar, bottom-left above the badge. */
+.mapScale {
+  position: absolute;
+  left: 18px;
+  bottom: 44px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  pointer-events: none;
+}
+.mapScaleBar {
+  height: 5px;
+  border-left: 1px solid var(--text-muted);
+  border-right: 1px solid var(--text-muted);
+  border-bottom: 1px solid var(--text-muted);
+}
+.mapScaleLabel {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+}
+/* Offline-vector attribution badge, bottom-left. */
 .mapAttribution {
   position: absolute;
-  bottom: 4px;
-  right: 8px;
-  font-size: 10px;
-  color: var(--oa-muted);
-  background: color-mix(in srgb, var(--bg) 75%, transparent);
-  padding: 2px 6px;
-  border-radius: 4px;
-  pointer-events: auto;
+  left: 18px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 10.5px;
+  color: var(--faint);
+  pointer-events: none;
 }
-.mapAttribution a { color: var(--accent); text-decoration: none; }
+.mapOfflineBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border-soft);
+  background: var(--surface-2);
+  color: var(--green);
+}
+.mapAttrCount { color: var(--faint); }
 .mapEmpty {
   position: absolute;
   inset: 0;
@@ -175,17 +408,17 @@
 .mapEmpty code { background: var(--oa-surface-2); padding: 1px 4px; border-radius: 4px; }
 
 /* ---- Kanban ---- */
-.kanban { display: flex; gap: 12px; overflow-x: auto; align-items: flex-start; padding-bottom: 8px; }
+.kanban { display: flex; gap: 14px; overflow-x: auto; align-items: flex-start; padding: 18px; }
 .kanbanColumn {
   display: flex;
   flex-direction: column;
   min-width: var(--kanban-col-min, 248px);
   max-width: var(--kanban-col-max, 288px);
-  flex: 0 0 auto;
-  padding: 10px;
-  background: var(--oa-surface);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  flex: 1;
+  padding: 0;
+  background: color-mix(in srgb, var(--bg) 60%, var(--panel));
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 11px;
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 .kanbanColumnOver {
@@ -193,19 +426,22 @@
   background: var(--oa-surface-2);
   box-shadow: 0 0 0 1px var(--oa-accent-border) inset;
 }
-.kanbanColHeader { display: flex; justify-content: space-between; align-items: center; font-weight: 600; padding: 2px 4px 10px; }
+.kanbanColHeader { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 11.5px; color: var(--fg); padding: 11px 13px; }
+.kanbanColHeader .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
 .kanbanColTitle { text-transform: capitalize; }
-.kanbanCount { font-size: 12px; font-weight: 600; color: var(--oa-muted); background: var(--oa-surface-3); border-radius: 10px; padding: 1px 8px; }
+.kanbanCount { margin-left: auto; font-size: 11px; color: var(--faint); }
 
-.kanbanCards { display: flex; flex-direction: column; }
+.kanbanCards { display: flex; flex-direction: column; padding: 0 10px 12px; gap: 9px; }
 .kanbanCards .card {
   cursor: grab;
-  margin-bottom: 8px;
-  background: var(--oa-surface-2);
+  border-radius: 9px;
+  border: 1px solid var(--border-soft, var(--border));
+  background: var(--surface-1, var(--panel));
   transition: transform 130ms ease, background 130ms ease, border-color 130ms ease, box-shadow 130ms ease, opacity 130ms ease;
   will-change: transform;
 }
-.kanbanCards .card:hover { background: var(--oa-surface-3); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
+.kanbanCards .card .cardBodyInner { padding: 11px 12px; gap: 8px; }
+.kanbanCards .card:hover { background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
 .kanbanCards .card:active { cursor: grabbing; }
 .cardDragging { opacity: 0.35; box-shadow: none !important; transform: scale(0.98) !important; }
 

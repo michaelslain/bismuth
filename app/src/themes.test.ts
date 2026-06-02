@@ -2,12 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { THEMES, THEME_NAMES, DEFAULT_THEME, resolveTheme, resolveAppearance } from "./themes";
 
 describe("themes registry", () => {
-  it("exposes 6 themes with oxide-duotone first (the default)", () => {
+  it("exposes 6 dark themes + 6 light counterparts, oxide-duotone first (the default)", () => {
     expect(THEME_NAMES[0]).toBe("oxide-duotone");
     expect(DEFAULT_THEME).toBe("oxide-duotone");
     expect(THEME_NAMES).toEqual([
       "oxide-duotone", "gunmetal-teal", "rose-gold",
       "indigo-oxide", "forest-oxide", "full-sheen",
+      "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
+      "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
     ]);
   });
 

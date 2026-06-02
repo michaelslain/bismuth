@@ -3,15 +3,38 @@
 .draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: max-content; margin: 0 auto; }
 .draw-live { cursor: crosshair; }
 
-.draw-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--border); }
-.draw-group { display: flex; gap: 6px; align-items: center; padding-right: 12px; border-right: 1px solid var(--border); }
-.draw-group:last-child { border-right: none; }
-.draw-label { font-size: 11px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.04em; }
-/* Icon segments (size dots / smoothness lines) — icon centered. */
+/* Floating bottom-center tool dock (the design's .drawtools) — TWO rows ("2 stories"):
+   tools + colors on the top row, size + smooth + paper + undo/redo on the bottom row.
+   A full-width flex break (.draw-break) forces the second story; groups are divided by
+   hairline rules. */
+.draw-toolbar {
+  position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 4px; align-items: center; padding: 7px 9px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+/* Group dividers are hairline rules matching the design's .ddiv. */
+.draw-group { display: flex; gap: 2px; align-items: center; padding-right: 7px; margin-right: 3px; border-right: 1px solid var(--border-soft); }
+/* Drop the trailing divider on the last group of EACH row (last child + the one before the break). */
+.draw-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
+/* Forced row break: a zero-height full-width flex item that pushes following groups to story 2. */
+.draw-break { flex-basis: 100%; height: 0; }
+/* Icon-only dock: hide the group text labels (icons are self-descriptive). */
+.draw-label { display: none; }
+/* Icon segments (tools / size dots / smoothness lines) — icon centered. */
 .draw-iconseg.btn svg { display: block; }
-.draw-swatch.btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--fg) 20%, transparent); cursor: pointer; padding: 0; }
-.draw-swatch.active { outline: 2px solid var(--fg); outline-offset: 2px; }
+/* Active tool / size / smoothing segment: accent-soft fill + accent icon. */
+.draw-iconseg.btn--selected { background: var(--accent-soft); color: var(--accent); }
+.draw-swatch.btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--bg); box-shadow: 0 0 0 1px var(--border); cursor: pointer; padding: 0; }
+/* Active swatch ring uses the live accent (TextButton sets btn--selected). */
+.draw-swatch.btn--selected { box-shadow: 0 0 0 2px var(--accent); }
 
-.draw-app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.draw-stage { flex: 1; overflow: auto; padding: 24px 0; display: flex; flex-direction: column; align-items: center; gap: 20px; background: color-mix(in srgb, var(--fg) 5%, var(--bg)); }
+.draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
+.draw-stage {
+  flex: 1; overflow: auto; padding: 24px 0 90px; display: flex; flex-direction: column; align-items: center; gap: 20px;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fg) 7%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
+    var(--bg);
+}
 .draw-loading { padding: 24px; opacity: 0.6; }
