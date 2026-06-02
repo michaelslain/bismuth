@@ -10,6 +10,7 @@ import { contentLabel, contentIcon } from "./tabIds";
 import type { DragState } from "./dnd/viewDrag";
 import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
+import "./PaneTree.css";
 
 type PaneTreeProps = {
   node: PaneNode;
@@ -97,7 +98,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           }}
         >
           <Show when={contentIcon(props.node.content)}>
-            {(icon) => <Icon value={icon()} size={13} />}
+            {(icon) => <Icon value={icon()} size={13} class="pane-header-icon" />}
           </Show>
           <span class="pane-header-label">{contentLabel(props.node.content)}</span>
           <IconButton

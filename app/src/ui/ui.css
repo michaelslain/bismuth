@@ -101,3 +101,23 @@
 .ui-empty { color: var(--text-muted); }
 .ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
 .ui-loading { padding: 24px; color: var(--text-muted); }
+
+/* ── Stars (rating) ─────────────────────────────────────────────────────────── */
+.stars { display: inline-flex; gap: 2px; color: var(--faint); }
+.stars .star-on { color: var(--gold); fill: var(--gold); }
+
+/* ── Status (colored dot + word) ────────────────────────────────────────────── */
+.status-text { display: inline-flex; align-items: center; gap: 7px; }
+/* .status-dot sizing lives in App.css (shared with .chip .dot); fill = currentColor. */
+.status-text .status-dot { background: currentColor; }
+
+/* ── Chip toggle (selectable pill: export options, search toggles) ──────────────
+   Default tone = accent; tone-<x> tints the SELECTED state to a category color. */
+.chip-toggle { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12px; color: var(--text-muted); background: var(--surface-2); border: 1px solid var(--border-soft); cursor: pointer; white-space: nowrap; }
+.chip-toggle svg { color: var(--faint); }
+.chip-toggle:hover { color: var(--fg); }
+.chip-toggle.selected { color: var(--fg); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.chip-toggle.selected svg { color: var(--accent); }
+/* Teal-tinted toggle (search match-case / whole-word / regex). */
+.chip-toggle.tone-teal.selected { color: var(--teal); background: color-mix(in srgb, var(--teal) 14%, transparent); border-color: color-mix(in srgb, var(--teal) 35%, transparent); }
+.chip-toggle.tone-teal.selected svg { color: var(--teal); }

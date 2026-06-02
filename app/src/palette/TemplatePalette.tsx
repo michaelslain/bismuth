@@ -29,7 +29,14 @@ export function TemplatePalette(props: Props) {
     <Show when={templates()}>
       <PaletteModal
         placeholder="Insert a template..."
-        items={(templates() ?? []).map((t) => ({ id: t.path, label: t.name, sublabel: t.path }))}
+        items={(templates() ?? []).map((t) => ({
+          id: t.path,
+          label: t.name,
+          sublabel: t.path,
+          // Faint second-line description, only when the template carries one
+          // (the /templates feed currently omits it → omitted gracefully).
+          description: (t as { description?: string }).description || undefined,
+        }))}
         emptyText="No templates found (set templates.folder in settings.yaml)"
         onClose={props.onClose}
         onSelect={onSelect}

@@ -18,6 +18,15 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
   // --accent-purple drives editor syntax + task accents; use the palette's purple (index 1)
   // so it tracks the theme's graph ramp instead of a stray hardcoded lavender.
   const accentPurple = palette[1] ?? palette[0] ?? a.accent;
+  // Light themes are the app's first; a handful of dark-assuming structural surfaces
+  // (rail, pop-bg, scrim, label-halo, editor pane) branch on this. See LIGHT_THEMES.md Part B.
+  const light = !!a.isLight;
+  const mix = (a1: string, p: number, a2: string) => `color-mix(in srgb, ${a1} ${p}%, ${a2})`;
+  // Graph ramp anchors reused as the design's named chrome accents (teal→blue→violet)
+  // and the iridescent gradient — sourced from the palette so they re-tint per theme.
+  const teal = palette[0] ?? a.accent;
+  const blue = palette[2] ?? palette[1] ?? a.accent;
+  const violet = palette[3] ?? palette[2] ?? a.accent;
   return {
     "--bg": a.background,
     "--fg": a.foreground,
@@ -26,13 +35,60 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     // surfaces, and muted text. The two extra tints (--surface-3, --hover-bg) the theme
     // doesn't define are derived from the theme's foreground.
     "--border": a.border,
+    // Hairline border (design's --border2): one notch softer than --border.
+    "--border-soft": `color-mix(in srgb, ${a.foreground} 10%, transparent)`,
     "--text-muted": a.neutral,
+    // Tertiary / disabled text (design's --faint): the .4–.5 opacity-on-fg used app-wide.
+    "--faint": `color-mix(in srgb, ${a.foreground} 42%, transparent)`,
     "--panel": a.surface,
     "--hover-bg": `color-mix(in srgb, ${a.foreground} 8%, transparent)`,
     "--surface-1": a.surface,
     "--surface-2": a.surface2,
     "--surface-3": `color-mix(in srgb, ${a.foreground} 14%, transparent)`,
+    // Sidebar + topbar rail (design's --rail): darker than canvas on dark themes,
+    // a tint toward surface2 on light themes (so it doesn't go near-black).
+    "--rail": light ? mix(a.background, 80, a.surface2) : mix(a.background, 88, "#000"),
+    // Editor / main pane (design's --editor): canvas on dark, lifted on light.
+    "--editor": light ? mix(a.surface, 60, a.background) : a.background,
+    // Popover / floating-card surfaces (legends, graph cards, structure picker).
+    "--pop-bg": light ? mix(a.surface, 84, "transparent") : mix(a.background, 82, "transparent"),
+    "--pop-bg-strong": light ? mix(a.surface, 90, "transparent") : mix(a.background, 88, "transparent"),
+    // Modal scrim (command/quick/template overlays): fg-tinted veil, works both ways.
+    "--scrim-bg": mix(a.foreground, light ? 30 : 62, "transparent"),
+    // Graph hub-label halo: near-black on dark, near-white on light.
+    "--label-halo": light ? mix(a.background, 70, "#fff") : "#05060a",
+    // Graph edges + node tints.
+    "--graph-edge": mix(a.foreground, 18, "transparent"),
+    "--node-cold": mix(a.foreground, 24, a.background),
+    "--node-self": a.foreground,
+    // Terminal stays a dark ink panel in BOTH modes (intentional per LIGHT_THEMES.md).
+    "--term-bg": light ? "#2B2740" : "#08090E",
+    "--term-fg": light ? "#E3DEF2" : "#C7CCE0",
+    // Bases offline map surfaces.
+    "--map-sea": a.surface2,
+    "--map-land": a.surface,
+    "--map-coast": mix(a.accent, 45, a.surface),
+    "--map-grid": mix(a.foreground, 12, "transparent"),
     "--accent-purple": accentPurple,
+    // Accent tint background (selected tab / row) + text color on a solid accent fill.
+    "--accent-soft": `color-mix(in srgb, ${a.accent} 14%, transparent)`,
+    "--on-accent": "#08101F",
+    // Named chrome accents + iridescent gradient (built from the graph ramp).
+    "--teal": teal,
+    "--blue": blue,
+    "--violet": violet,
+    "--grad": `linear-gradient(120deg, ${teal}, ${blue}, ${violet})`,
+    // Graph ramp exposed positionally for canvas/legend/tag consumers.
+    "--graph-0": palette[0] ?? a.accent,
+    "--graph-1": palette[1] ?? a.accent,
+    "--graph-2": palette[2] ?? a.accent,
+    "--graph-3": palette[3] ?? a.accent,
+    "--graph-4": palette[4] ?? a.accent,
+    // Category hues (statuses / event categories / map pins / chart series). Default to
+    // the Bismuth design values; a theme may override via ColorTokens to re-tint.
+    "--green": a.categoryGreen ?? "#43D49A",
+    "--gold": a.categoryGold ?? "#F2C53D",
+    "--rose": a.categoryRose ?? "#F0509B",
     "--editor-font": FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
     "--editor-font-size": s.appearance.editorFontSize + "px",
     "--sidebar-width": s.appearance.sidebarWidth + "px",
@@ -66,7 +122,11 @@ export function setCssVars(vars: Record<string, string>): void {
 }
 
 /** Apply the derived CSS vars to the document root. No-op outside the DOM.
- *  (Dark-only: there is no longer a data-theme attribute / light mode.) */
+ *  Also sets `color-scheme` from the theme so native form controls + scrollbars
+ *  match light/dark themes. */
 export function applyCssVars(s: Settings): void {
   setCssVars(settingsToCssVars(s));
+  if (typeof document !== "undefined") {
+    document.documentElement.style.colorScheme = resolveAppearance(s.appearance).isLight ? "light" : "dark";
+  }
 }

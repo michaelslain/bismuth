@@ -9,9 +9,16 @@ import { IconButton } from '../../ui/IconButton'
 
 interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[]; store: EventStore }
 
+// Map each category to a stable palette swatch class (.teal/.blue/.violet/.green/
+// .gold/.rose); events with no resolvable category render as an outline-only ghost.
+const PALETTE = ['teal', 'blue', 'violet', 'green', 'gold', 'rose'] as const
+
 export function EventChip(props: Props) {
-  const category = () => props.categories.find(c => c.name === props.event.category)
-  const color = () => category()?.color ?? 'var(--interactive-accent)'
+  const categoryIndex = () => props.categories.findIndex(c => c.name === props.event.category)
+  const paletteClass = () => {
+    const i = categoryIndex()
+    return i < 0 ? 'ghost' : PALETTE[i % PALETTE.length]
+  }
   const military = () => settings.value.militaryTime
 
   let chipRef: HTMLDivElement | undefined
@@ -58,8 +65,7 @@ export function EventChip(props: Props) {
   return (
     <div
       ref={chipRef}
-      class="event-chip"
-      style={{ background: color() }}
+      class={`event-chip ev ${paletteClass()}`}
       onClick={e => {
         e.stopPropagation()
         openEdit()

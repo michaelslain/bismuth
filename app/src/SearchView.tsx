@@ -8,8 +8,21 @@ import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
+import { Chip } from "./ui/Chip";
 import { SearchBar } from "./ui/SearchBar";
+import { Icon } from "./icons/Icon";
 import "./SearchView.css";
+
+// Split a vault path into its filename (sans extension) and parent folder
+// so each result card can show a bold title + a faint folder crumb.
+function splitPath(path: string): { name: string; folder: string } {
+  const slash = path.lastIndexOf("/");
+  const folder = slash >= 0 ? path.slice(0, slash) : "";
+  const file = slash >= 0 ? path.slice(slash + 1) : path;
+  const dot = file.lastIndexOf(".");
+  const name = dot > 0 ? file.slice(0, dot) : file;
+  return { name, folder };
+}
 
 export function SearchView(props: { onOpen: (path: string) => void }) {
   const [query, setQuery] = createSignal("");
@@ -62,13 +75,13 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     <div class="search-view">
       <div class="search-header">
         <SearchBar class="search-row" value={query()} placeholder="Search vault…" onInput={onInput} onEnter={runSearch}>
-          <IconButton variant={caseSensitive() ? "selected" : "unselected"} size="sm" class="search-tg" label="Case sensitive"
+          <Chip tone="teal" selected={caseSensitive()} title="Case sensitive"
             icon="CaseSensitive" iconSize={16}
             onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
-          <IconButton variant={wholeWord() ? "selected" : "unselected"} size="sm" class="search-tg" label="Whole word"
+          <Chip tone="teal" selected={wholeWord()} title="Whole word"
             icon="WholeWord" iconSize={16}
             onClick={() => { setWholeWord(!wholeWord()); runSearch(); }} />
-          <IconButton variant={regex() ? "selected" : "unselected"} size="sm" class="search-tg" label="Use regular expression"
+          <Chip tone="teal" selected={regex()} title="Use regular expression"
             icon="Regex" iconSize={16}
             onClick={() => { setRegex(!regex()); runSearch(); }} />
           <IconButton variant={showReplace() ? "selected" : "unselected"} label="Toggle replace"
@@ -86,27 +99,34 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
 
       <div class="search-results">
         <For each={results()}>
-          {(r) => (
-            <div class="search-group">
-              <div class="search-file">
-                <span class="search-file-path">{r.path}</span>
-                <span class="search-count">{r.matchCount}</span>
-                <Show when={showReplace()}>
-                  <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
-                </Show>
+          {(r) => {
+            const parts = splitPath(r.path);
+            return (
+              <div class="sresult">
+                <div class="sresult-head">
+                  <Icon value="FileText" size={15} class="sresult-icon" />
+                  <b class="sresult-title">{parts.name}</b>
+                  <Show when={parts.folder}>
+                    <span class="sresult-path">· {parts.folder}/</span>
+                  </Show>
+                  <span class="sresult-count">{r.matchCount}</span>
+                  <Show when={showReplace()}>
+                    <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
+                  </Show>
+                </div>
+                <For each={r.snippets}>
+                  {(s) => (
+                    <div class="sresult-snip" onClick={() => props.onOpen(r.path)}>
+                      <span class="sresult-line">{s.line}</span>
+                      <span class="sresult-text">
+                        {s.before}<mark>{s.match}</mark>{s.after}
+                      </span>
+                    </div>
+                  )}
+                </For>
               </div>
-              <For each={r.snippets}>
-                {(s) => (
-                  <div class="search-snippet" onClick={() => props.onOpen(r.path)}>
-                    <span class="search-line">{s.line}</span>
-                    <span class="search-text">
-                      {s.before}<mark>{s.match}</mark>{s.after}
-                    </span>
-                  </div>
-                )}
-              </For>
-            </div>
-          )}
+            );
+          }}
         </For>
       </div>
     </div>

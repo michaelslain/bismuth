@@ -97,6 +97,7 @@ export const api = {
 
   noteCards: (path: string) =>
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
+  dueCards: () => getJson<Card[]>(`/cards/due`),
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
   // Row-based review for a flashcard base: advances the row's due/ease/interval columns.

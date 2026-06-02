@@ -2,7 +2,7 @@
 import { createSignal, createResource, For, Show, createEffect } from "solid-js";
 import { api } from "./api";
 import { Icon } from "./icons/Icon";
-import { TextButton } from "./ui/TextButton";
+import { Chip } from "./ui/Chip";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
@@ -12,9 +12,16 @@ import { downloadFile } from "./export/download";
 import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
 
-const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "MARKDOWN", png: "PNG" };
-const THEMES: ExportTheme[] = ["dark", "light"];
-const THEME_LABEL: Record<ExportTheme, string> = { dark: "DARK", light: "LIGHT" };
+const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
+const FORMAT_ICON: Record<ExportFormat, string> = {
+  pdf: "FileText",
+  html: "Code2",
+  md: "Hash",
+  png: "Image",
+};
+const THEMES: ExportTheme[] = ["light", "dark"];
+const THEME_LABEL: Record<ExportTheme, string> = { dark: "Midnight", light: "Paper" };
+const THEME_SWATCH: Record<ExportTheme, string> = { light: "#f7f6f2", dark: "#0D0E16" };
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
@@ -27,6 +34,7 @@ export function ExportView(props: { path: string }) {
   const formats = () => formatsFor(props.path);
   const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
+  const [pageSize, setPageSize] = createSignal("A4");
   const [busy, setBusy] = createSignal(false);
 
   // Preview only — cheap, no byte/PDF generation, so switching format or theme is instant.
@@ -54,58 +62,105 @@ export function ExportView(props: { path: string }) {
   };
 
   return (
-    <div class="export-view">
-      <div class="export-bar">
-        <div class="export-formats">
-          <For each={formats()}>
-            {(f) => (
-              <TextButton
-                variant={format() === f ? "selected" : "unselected"}
-                onClick={() => setFormat(f)}
-              >
-                {LABEL[f]}
-              </TextButton>
-            )}
-          </For>
-        </div>
-        <div class="export-formats export-themes">
-          <For each={THEMES}>
-            {(t) => (
-              <TextButton
-                variant={theme() === t ? "selected" : "unselected"}
-                onClick={() => setTheme(t)}
-              >
-                {THEME_LABEL[t]}
-              </TextButton>
-            )}
-          </For>
-        </div>
-        <TextButton class="export-go" disabled={busy()} onClick={doExport}>
-          <Icon value="Download" size={14} /> EXPORT
-        </TextButton>
-      </div>
-      <div class="export-preview">
-        <Show
-          when={!result.error}
-          fallback={<div class="export-empty">Preview failed: {(result.error as Error)?.message}</div>}
-        >
-          <Show when={result()} fallback={<div class="export-empty">Rendering preview…</div>}>
-            {(r) => (
-              <Show
-                when={r().previewImg}
-                fallback={
-                  <iframe
-                    class="export-frame"
-                    sandbox="allow-same-origin"
-                    srcdoc={r().previewHtml ?? ""}
-                  />
-                }
-              >
-                <img class="export-img" src={r().previewImg} alt="preview" />
-              </Show>
-            )}
+    <div class="exp">
+      <div class="exppreview">
+        <div class="paper">
+          <Show
+            when={!result.error}
+            fallback={<div class="export-empty">Preview failed: {(result.error as Error)?.message}</div>}
+          >
+            <Show when={result()} fallback={<div class="export-empty">Rendering preview…</div>}>
+              {(r) => (
+                <Show
+                  when={r().previewImg}
+                  fallback={
+                    <iframe
+                      class="export-frame"
+                      sandbox="allow-same-origin"
+                      srcdoc={r().previewHtml ?? ""}
+                    />
+                  }
+                >
+                  <img class="export-img" src={r().previewImg} alt="preview" />
+                </Show>
+              )}
+            </Show>
           </Show>
-        </Show>
+        </div>
+      </div>
+
+      <div class="exppanel">
+        <div class="exp-title">
+          <Icon value="Share" size={17} /> Export note
+        </div>
+
+        <div class="field">
+          <span class="flab">Format</span>
+          <div class="fopts">
+            <For each={formats()}>
+              {(f) => (
+                <Chip selected={format() === f} icon={FORMAT_ICON[f]} iconSize={13} onClick={() => setFormat(f)}>
+                  {LABEL[f]}
+                </Chip>
+              )}
+            </For>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="flab">Page size</span>
+          <div class="fopts">
+            <Chip selected={pageSize() === "A4"} onClick={() => setPageSize("A4")}>A4</Chip>
+            <Chip selected={pageSize() === "Letter"} onClick={() => setPageSize("Letter")}>Letter</Chip>
+            <Chip selected={pageSize() === "Fit content"} onClick={() => setPageSize("Fit content")}>Fit content</Chip>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="flab">Theme</span>
+          <div class="fopts">
+            <For each={THEMES}>
+              {(t) => (
+                <Chip selected={theme() === t} onClick={() => setTheme(t)}>
+                  <span class="theme-swatch" style={{ background: THEME_SWATCH[t] }} />
+                  {THEME_LABEL[t]}
+                </Chip>
+              )}
+            </For>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="flab">Include</span>
+          <div class="exp-toggles">
+            <For
+              each={[
+                ["Properties", false],
+                ["Wikilinks as footnotes", true],
+                ["Backlinks section", true],
+                ["Tags", false],
+              ] as const}
+            >
+              {([label, on]) => (
+                <div class="exp-toggle" classList={{ on }}>
+                  <span class="exp-switch" classList={{ on }}>
+                    <span class="exp-knob" />
+                  </span>
+                  {label}
+                </div>
+              )}
+            </For>
+          </div>
+        </div>
+
+        <div class="exp-spacer" />
+
+        <div class="exp-footer">
+          <button class="btn ghost" type="button">Preview</button>
+          <button class="btn ghost" disabled={busy()} onClick={doExport}>
+            <Icon value="Download" size={14} /> Export {LABEL[format()]}
+          </button>
+        </div>
       </div>
     </div>
   );

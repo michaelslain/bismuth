@@ -1,7 +1,7 @@
 import { For, Show, createSignal, createEffect, on } from "solid-js";
 import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
 import { canonicalId } from "../../../core/src/bases/query";
-import { renderValue, columnLabel } from "./renderValue";
+import { renderCell, renderTitle, columnLabel, isTagColumn, isRatingColumn } from "./renderValue";
 import { settings } from "../settings";
 import styles from "./BaseView.module.css";
 
@@ -206,7 +206,16 @@ export function TableView(props: {
               <For each={group.rows}>
                 {(row) => (
                   <tr>
-                    <For each={cols()}>{(c) => <td>{renderValue(c, row)}</td>}</For>
+                    <For each={cols()}>
+                      {(c, ci) => {
+                        const muted = !isTagColumn(c) && !isRatingColumn(c) && ci() !== 0;
+                        return (
+                          <td classList={{ [styles.cellMuted]: muted }}>
+                            {ci() === 0 ? renderTitle(c, row) : renderCell(c, row)}
+                          </td>
+                        );
+                      }}
+                    </For>
                   </tr>
                 )}
               </For>

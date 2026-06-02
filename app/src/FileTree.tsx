@@ -4,6 +4,7 @@ import { api } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { openContextMenu } from "./nativeMenu";
 import { pushToast } from "./Toast";
 import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
@@ -65,7 +66,7 @@ function joinPath(dir: string, name: string): string {
 import { decideTreeRefresh } from "./fileTreeRefresh";
 export { decideTreeRefresh };
 
-export function FileTree(props: { onOpen: (path: string) => void }) {
+export function FileTree(props: { onOpen: (path: string) => void; activeFile?: string | null }) {
   // Seed from the last good tree so the sidebar paints instantly on boot; the fetch
   // still runs and reconciles. Persist every fresh, non-error response for next launch.
   const [files, { refetch, mutate }] = createResource(() => api.tree(), {
@@ -243,7 +244,8 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
   function openMenuFor(node: TreeNode, e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, items: buildMenuItems(node) });
+    // Native OS menu in the Tauri build; HTML ContextMenu fallback in the browser.
+    openContextMenu(e.clientX, e.clientY, buildMenuItems(node), setMenu);
   }
 
   /** Move the dragged node into `targetDir` ("" = vault root). Guards no-op and into-self. */
@@ -301,6 +303,7 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
         open={open()}
         toggle={toggle}
         onOpen={props.onOpen}
+        activeFile={props.activeFile}
         onMenu={openMenuFor}
         editing={editing()}
         setEditing={setEditing}
@@ -407,6 +410,7 @@ function EditableLabel(props: {
 function Level(props: {
   node: TreeNode; depth: number;
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
+  activeFile?: string | null;
   onMenu: (node: TreeNode, e: MouseEvent) => void;
   editing: string | null; setEditing: (p: string | null) => void; refresh: () => void;
   optimisticRename: (from: string, to: string) => void;
@@ -427,12 +431,9 @@ function Level(props: {
         return child.children ? (
           <div>
             <div
-              style={{
-                display: "flex", "align-items": "flex-start", gap: "4px",
-                padding: "2px 4px", "padding-left": indent, cursor: "pointer", opacity: 0.8,
-                "user-select": "none",
-                background: props.dropTarget === child.path ? "var(--accent)" : "transparent",
-              }}
+              class="ft-row"
+              classList={{ "drop-target": props.dropTarget === child.path }}
+              style={{ "padding-left": indent }}
               draggable={props.editing !== child.path}
               onDragStart={props.makeDragStart(child.path, false)}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
@@ -449,7 +450,7 @@ function Level(props: {
             </div>
             <Show when={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
-                onOpen={props.onOpen} onMenu={props.onMenu}
+                onOpen={props.onOpen} activeFile={props.activeFile} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
                 optimisticRename={props.optimisticRename} trackPending={props.trackPending}
                 dragPath={props.dragPath} setDragPath={props.setDragPath}
@@ -459,7 +460,9 @@ function Level(props: {
           </div>
         ) : (
           <div
-            style={{ display: "flex", "align-items": "flex-start", gap: "4px", padding: "2px 4px", "padding-left": fileIndent, cursor: "pointer" }}
+            class="ft-row file"
+            classList={{ active: child.path === props.activeFile }}
+            style={{ "padding-left": fileIndent }}
             draggable={props.editing !== child.path}
             onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}

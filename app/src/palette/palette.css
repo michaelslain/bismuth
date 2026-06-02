@@ -1,0 +1,58 @@
+/* app/src/palette/palette.css
+   Colocated palette detail polish (README §13): right-aligned shortcut-key chips
+   on command rows, and a faint second-line description under template names.
+   App.css owns the base .palette-* layout; this file only adds the new elements
+   and the label/description column wrapper. UI chrome uses Monaspace Xenon. */
+
+/* Column wrapper around label + optional description so the description sits on a
+   second line. Takes over the flex-fill role the bare label used to have. */
+.palette-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Inside the wrapper the label no longer needs to fill; it just truncates. */
+.palette-text .palette-label {
+  flex: 0 1 auto;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+}
+
+/* Faint description second line (template descriptions, etc.). */
+.palette-desc {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Right-aligned faint mono key chip for a command's shortcut hint. */
+.palette-shortcut {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 2px 7px;
+  line-height: 1.2;
+}
+
+/* When a sublabel is also present, the shortcut keeps its own right-edge spot and
+   the sublabel should not push to the far right via its own auto-margin. */
+.palette-shortcut + .palette-shortcut,
+.palette-sub + .palette-shortcut {
+  margin-left: 11px;
+}
+
+.palette-row.selected .palette-shortcut {
+  color: var(--fg);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-soft));
+}
