@@ -16,10 +16,10 @@ import { StatView } from "./StatView";
 import { CalendarView } from "./CalendarView";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
-import { Icon } from "../icons/Icon";
 import { capitalize } from "./renderValue";
 import { TextButton } from "../ui/TextButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
+import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "../ui/ViewBar";
 import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
 
@@ -134,11 +134,16 @@ export function BaseView(props: {
   });
 
   const editPath = () => data()?.basePath;
+  const baseName = createMemo(() => {
+    const p = editPath();
+    return p ? p.split("/").pop()!.replace(/\.(base|md)$/, "") : undefined;
+  });
 
   return (
     <div class={styles.host}>
       <Show when={(data()?.config.views.length ?? 0) > 1 || editPath()}>
-        <div class={styles.bar}>
+        <ViewBar>
+          <Show when={baseName()}>{(n) => <Crumb icon="Table">{n()}</Crumb>}</Show>
           <Show when={(data()?.config.views.length ?? 0) > 1}>
             <SegmentedToggle
               class={styles.tabs}
@@ -147,17 +152,24 @@ export function BaseView(props: {
               options={data()!.config.views.map((v, i) => ({ id: i, label: v.name }))}
             />
           </Show>
+          <ViewBarSpacer />
           <Show when={editPath()}>
-            <div class={styles.barRight}>
-              <TextButton variant={settingsMode() ? "selected" : "unselected"} class={styles.srcBtn} onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}>
-                {settingsMode() ? <><Icon value="X" size={14} /> CLOSE</> : <><Icon value="Settings" size={14} /> SETTINGS</>}
-              </TextButton>
-              <TextButton variant={sourceMode() ? "selected" : "unselected"} class={styles.srcBtn} onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}>
-                {sourceMode() ? <><Icon value="X" size={14} /> CLOSE SOURCE</> : <><Icon value="Code" size={14} /> SOURCE</>}
-              </TextButton>
-            </div>
+            <VBtn
+              icon={settingsMode() ? "X" : "Settings"}
+              active={settingsMode()}
+              onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
+            >
+              {settingsMode() ? "CLOSE" : "SETTINGS"}
+            </VBtn>
+            <VBtn
+              icon={sourceMode() ? "X" : "Code"}
+              active={sourceMode()}
+              onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}
+            >
+              {sourceMode() ? "CLOSE SOURCE" : "SOURCE"}
+            </VBtn>
           </Show>
-        </div>
+        </ViewBar>
       </Show>
 
       <div class={styles.body}>

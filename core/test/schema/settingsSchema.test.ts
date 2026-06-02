@@ -33,7 +33,11 @@ test("appearance.theme is the Bismuth theme enum defaulting to oxide-duotone", (
   const appearance = objectFields(SETTINGS_SCHEMA.appearance);
   expect(appearance.theme.type).toEqual({
     kind: "enum",
-    values: ["oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen"],
+    values: [
+      "oxide-duotone", "gunmetal-teal", "rose-gold", "indigo-oxide", "forest-oxide", "full-sheen",
+      "oxide-duotone-light", "gunmetal-teal-light", "rose-gold-light",
+      "indigo-oxide-light", "forest-oxide-light", "full-sheen-light",
+    ],
   });
   expect(appearance.theme.default).toBe("oxide-duotone");
   expect(appearance.theme.doc).toBeTruthy();

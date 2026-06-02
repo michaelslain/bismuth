@@ -7,6 +7,22 @@ import styles from "./BaseView.module.css";
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = "order";
 
+// Status palette from the design: Reading=teal, To Read=blue, Finished=green,
+// Abandoned=rose; unknown columns get the accent.
+const STATUS_COLOR: Record<string, string> = {
+  reading: "var(--teal)",
+  "to read": "var(--blue)",
+  toread: "var(--blue)",
+  finished: "var(--green)",
+  done: "var(--green)",
+  complete: "var(--green)",
+  abandoned: "var(--rose)",
+  dropped: "var(--rose)",
+};
+function columnColor(key: string): string {
+  return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
+}
+
 // Module-level stash for the dragged row's vault-relative path.
 let draggedPath: string | null = null;
 
@@ -192,8 +208,11 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                 void handleDrop(group);
               }}
             >
-              <div class={styles.kanbanColHeader}>
-                <span class={styles.kanbanColTitle}>{group.key === "" ? "(empty)" : group.key}</span>
+              <div class={styles.kanbanColHeader} style={{ color: columnColor(group.key) }}>
+                <span class={styles.dot} />
+                <span class={styles.kanbanColTitle} style={{ color: "var(--fg)" }}>
+                  {group.key === "" ? "(empty)" : group.key}
+                </span>
                 <span class={styles.kanbanCount}>{group.rows.length}</span>
               </div>
               <div class={styles.kanbanCards}>
@@ -220,7 +239,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                           }
                         }}
                       >
-                        <CardBody cols={cols()} row={row} config={props.config} />
+                        <div class={styles.cardBodyInner}>
+                          <CardBody cols={cols()} row={row} config={props.config} />
+                        </div>
                       </div>
                     </>
                   )}

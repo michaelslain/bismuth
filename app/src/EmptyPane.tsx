@@ -11,24 +11,10 @@ type Props = {
 
 export function EmptyPane(props: Props) {
   return (
-    <div
-      style={{
-        width: "100%",
-        height: "100%",
-        display: "flex",
-        "flex-direction": "column",
-        "align-items": "center",
-        "justify-content": "center",
-        gap: "12px",
-        color: "var(--text-muted)",
-        "user-select": "none",
-      }}
-    >
-      <div style={{ "font-size": "15px", "font-weight": 600, opacity: 0.85 }}>
-        Empty pane
-      </div>
-      <div style={{ "font-size": "13px", opacity: 0.6 }}>
-        Drag a file here, or:
+    <div class="empty">
+      <div class="ehint">
+        <div class="empty-title">Empty pane</div>
+        <div class="kbd"><b>⌘O</b> quick switch <b>⌘P</b> commands <b>⌘N</b> new note</div>
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
         <TextButton

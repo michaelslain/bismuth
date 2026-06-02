@@ -16,6 +16,7 @@ const strike = Decoration.mark({ class: "cm-strike" });
 const code = Decoration.mark({ class: "cm-inline-code" });
 const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
+const tag = Decoration.mark({ class: "cm-tag" });
 const headingLines = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
@@ -25,6 +26,7 @@ const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
 const codeHeaderLine = Decoration.line({ class: "cm-code-headerline" });
 const codeHiddenLine = Decoration.line({ class: "cm-code-hidden" });
 const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
+const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
 
 // Notion-style hanging indent for lists. Off the cursor line we replace the whole
@@ -222,6 +224,17 @@ function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number
   }
 }
 
+/** Tint body `#tag` spans (incl. the leading `#`) in --teal. A tag is `#` at
+ *  start-of-line or after whitespace + tag chars (letters/digits/`/`/`_`/`-`). The
+ *  mark only colors text and hides nothing, so the cursor-line reveal stays consistent
+ *  with raw source either way. Heading `#`s never match (callers skip heading lines). */
+function pushTags(deco: Range<Decoration>[], text: string, lineFrom: number) {
+  for (const m of text.matchAll(/(^|\s)(#[\p{L}\d/_-]+)/gu)) {
+    const tagStart = lineFrom + (m.index ?? 0) + m[1].length;
+    deco.push(tag.range(tagStart, tagStart + m[2].length));
+  }
+}
+
 interface CodeBlock {
   open: number; // line number of the opening ``` fence
   close: number; // line number of the closing ``` fence
@@ -334,6 +347,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks (e.g. a `source: "[[Note]]"` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
         deco.push(frontmatterLine.range(line.from));
+        // Tint the `key:` portion in --accent (design .fm keys), leaving values --fg.
+        const km = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/.exec(text);
+        if (km) {
+          const start = line.from + km[1].length;
+          deco.push(fmKeyMark.range(start, start + km[2].length));
+        }
         pushWikilinks(deco, text, line.from, onCursor);
         pos = line.to + 1;
         continue;
@@ -480,6 +499,10 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
       pushWikilinks(deco, text, line.from, onCursor);
 
+      // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
+      // are never tinted (frontmatter/code/table lines already `continue` above).
+      if (!hm) pushTags(deco, text, line.from);
+
       pos = line.to + 1;
     }
   }
@@ -588,11 +611,16 @@ export const livePreview = [
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
     ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
-    ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "underline" },
-    ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "underline" },
-    ".cm-h1": { "font-size": "1.8em", "font-weight": "700", "line-height": "1.3" },
-    ".cm-h2": { "font-size": "1.5em", "font-weight": "700", "line-height": "1.3" },
-    ".cm-h3": { "font-size": "1.3em", "font-weight": "700" },
+    // Links + wikilinks: accent with a SOFT underline (a faint accent rule that
+    // sits below the text) rather than a hard text-decoration line.
+    ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
+    ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
+    // Body #hashtags read teal (design §1: prose tags use --teal).
+    ".cm-tag": { color: "var(--teal)" },
+    // Serif headings (design: title 600 with tight tracking; h2 ≈ 20px/1.5em serif).
+    ".cm-h1": { "font-size": "1.94em", "font-weight": "600", "line-height": "1.1", "letter-spacing": "-0.015em" },
+    ".cm-h2": { "font-size": "1.5em", "font-weight": "600", "line-height": "1.25", "letter-spacing": "-0.01em" },
+    ".cm-h3": { "font-size": "1.3em", "font-weight": "600" },
     ".cm-h4": { "font-size": "1.15em", "font-weight": "600" },
     ".cm-h5": { "font-size": "1.05em", "font-weight": "600" },
     ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
@@ -638,15 +666,16 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Properties block: distinguished as a REGION (faint purple band + a purple
-    // left bar via inset shadow, so no text shift) rather than by dimming — keeps
-    // the text and the purple validation squiggles at full strength. Ties to the
-    // "properties = purple / 3rd-brain" category color.
+    // Frontmatter (.fm in the redesign): a raised --surface-2 band with a 2px
+    // accent left bar (via inset shadow, so no text shift), keeping the text and
+    // validation squiggles at full strength. Keys render in --accent, values in
+    // --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
-      background: "color-mix(in srgb, var(--accent-purple) 7%, transparent)",
-      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--accent-purple) 55%, transparent)",
+      background: "var(--surface-2)",
+      "box-shadow": "inset 2px 0 0 var(--accent)",
     },
+    ".cm-fm-key": { color: "var(--accent)" },
     ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.

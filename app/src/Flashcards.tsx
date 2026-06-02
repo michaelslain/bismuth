@@ -13,7 +13,8 @@ export function Flashcards(props: { note: string }) {
 
   const loadCards = async () => {
     setLoading(true);
-    setCards(await api.noteCards(props.note));
+    // No specific note (opened via the "Open Flashcards" command) → review all due cards.
+    setCards(await (props.note ? api.noteCards(props.note) : api.dueCards()));
     setIdx(0);
     setRevealed(false);
     setLoading(false);
@@ -27,7 +28,7 @@ export function Flashcards(props: { note: string }) {
   });
 
   const current = () => (idx() < cards().length ? cards()[idx()] : null);
-  const noteName = () => props.note.split("/").pop()!.replace(/\.md$/, "");
+  const noteName = () => props.note ? props.note.split("/").pop()!.replace(/\.md$/, "") : "Due cards";
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();

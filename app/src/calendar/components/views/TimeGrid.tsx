@@ -169,8 +169,15 @@ export function TimeGrid(props: Props) {
               <div class="time-gutter" />
               <For each={props.dates}>{d => {
                 const ds = toDateStr(d)
-                const label = d.toLocaleString('default', { weekday: 'short', month: 'numeric', day: 'numeric' })
-                return <div class={`time-grid-day-header${ds === today ? ' today' : ''}`}>{label}</div>
+                const weekday = d.toLocaleString('default', { weekday: 'short' })
+                const month = d.toLocaleString('default', { month: 'numeric' })
+                const dayNum = d.getDate()
+                return (
+                  <div class={`time-grid-day-header${ds === today ? ' today' : ''}`}>
+                    <span class="time-grid-day-weekday">{weekday}</span>{' '}
+                    <span class="time-grid-day-date">{month}/<b>{dayNum}</b></span>
+                  </div>
+                )
               }}</For>
             </div>
             <div class="time-grid-allday-row">

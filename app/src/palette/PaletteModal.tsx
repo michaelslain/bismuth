@@ -7,11 +7,14 @@ import Fuse from "fuse.js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
 import { SearchBar } from "../ui/SearchBar";
+import "./palette.css";
 
 export type PaletteItem = {
   id: string;
   label: string;
   sublabel?: string; // muted secondary text (e.g. a folder path)
+  description?: string; // optional faint second-line description under the label
+  shortcut?: string; // optional right-aligned shortcut-key hint (already display-formatted)
   icon?: string; // optional leading icon (Lucide name or emoji)
 };
 
@@ -158,11 +161,19 @@ export function PaletteModal(props: Props) {
               <Show when={r.item.icon}>
                 <span class="palette-icon"><Icon value={r.item.icon!} size={15} /></span>
               </Show>
-              <span class="palette-label">
-                <Highlight text={r.item.label} indices={r.indices} />
+              <span class="palette-text">
+                <span class="palette-label">
+                  <Highlight text={r.item.label} indices={r.indices} />
+                </span>
+                <Show when={r.item.description}>
+                  <span class="palette-desc">{r.item.description}</span>
+                </Show>
               </span>
               <Show when={r.item.sublabel}>
                 <span class="palette-sub">{r.item.sublabel}</span>
+              </Show>
+              <Show when={r.item.shortcut}>
+                <span class="palette-shortcut">{r.item.shortcut}</span>
               </Show>
             </div>
           )}

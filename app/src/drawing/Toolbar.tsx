@@ -6,8 +6,6 @@ import { IconButton } from "../ui/IconButton";
 import { TextButton } from "../ui/TextButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
-import { settings, DEFAULT_ACCENT_PALETTE } from "../settings";
-import { resolveAppearance } from "../themes";
 
 const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "pen", icon: "Pen", title: "Pen" },
@@ -54,13 +52,10 @@ export function Toolbar(props: {
   onRedo: () => void;
 }) {
   const t = props.tools;
-  // Ink colors from the centralized Oxide accent palette (reactive to
-  // settings.appearance.accentPalette), with "fg" (theme default ink) first.
-  const colors = () => {
-    const ap = resolveAppearance(settings.appearance).accentPalette;
-    return ["fg", ...(ap?.length ? ap : DEFAULT_ACCENT_PALETTE)];
-  };
-  const swatchColor = (c: string) => (c === "fg" ? "var(--fg)" : c);
+  // Fixed 7-swatch Bismuth ink palette. The first swatch ("fg") is the theme
+  // default ink, mapped to the Bismuth default ink color (#E7E8F2).
+  const colors = () => ["fg", "#22C6D6", "#5C7BEE", "#8B6CF0", "#43D49A", "#F2C53D", "#F0509B"];
+  const swatchColor = (c: string) => (c === "fg" ? "#E7E8F2" : c);
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));
   const sizeOpts = SIZE_LEVELS.map((s) => ({ id: s, label: dotIcon(s), title: `Size ${s}` }));
@@ -79,6 +74,8 @@ export function Toolbar(props: {
             onClick={() => props.setTools({ color: c })} />
         )}</For>
       </div>
+      {/* Force the dock onto a second story: tools + colors above, the rest below. */}
+      <div class="draw-break" />
       <div class="draw-group">
         <span class="draw-label">Size</span>
         <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
