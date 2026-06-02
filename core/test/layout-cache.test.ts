@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { test, expect } from "bun:test";
-import { graphSig } from "../src/layout-cache";
+import { graphSig, attachLayout, peekLayout, computeViewLayouts } from "../src/layout-cache";
 import type { GraphData } from "../src/graph";
 
 // Three notes A, B, C; the only edge is a wikilink A -> B.
@@ -48,4 +49,54 @@ test("graphSig changes when an edge kind changes", () => {
 
 test("graphSig is keyed by vault", () => {
   expect(graphSig(baseGraph(), "vaultA")).not.toBe(graphSig(baseGraph(), "vaultB"));
+});
+
+// A graph with a 2nd-brain note + a 3rd-brain memory node so both subgraphs are non-empty.
+function brainGraph(): GraphData {
+  return {
+    nodes: [
+      { id: "n1", label: "n1", kind: "note" },
+      { id: "n2", label: "n2", kind: "note" },
+      { id: "mem:m1", label: "m1", kind: "memory" },
+    ],
+    edges: [
+      { from: "n1", to: "n2", kind: "link" },
+      { from: "mem:m1", to: "n1", kind: "about" },
+    ],
+  };
+}
+
+test("peekLayout returns null for an uncached non-empty subgraph", () => {
+  const key = `test-${randomUUID()}`; // unique key => guaranteed cold disk cache
+  const g: GraphData = {
+    nodes: [{ id: "n1", label: "n1", kind: "note" }],
+    edges: [],
+  };
+  expect(peekLayout(g, key)).toBeNull();
+});
+
+test("attachLayout omits views when they are not cached yet", () => {
+  const key = `test-${randomUUID()}`;
+  const out = attachLayout(brainGraph(), key);
+  expect(out.views).toBeUndefined();
+  // The full-graph positions are still attached.
+  expect(out.nodes.find((n) => n.id === "n1")?.position).toBeDefined();
+});
+
+test("computeViewLayouts caches the views; a later attachLayout includes them", () => {
+  const key = `test-${randomUUID()}`;
+  const g = brainGraph();
+
+  // Cold: no views.
+  expect(attachLayout(g, key).views).toBeUndefined();
+
+  // Compute them on demand (Task 4's endpoint calls this).
+  const views = computeViewLayouts(g, key);
+  expect(views.second.pos3d["n1"]).toBeDefined();
+  expect(views.second.pos2d["n1"]).toHaveLength(2);
+
+  // Now they're cached: attachLayout attaches them.
+  const out = attachLayout(g, key);
+  expect(out.views?.second?.pos3d["n1"]).toBeDefined();
+  expect(out.views?.third?.pos3d["mem:m1"]).toBeDefined();
 });
