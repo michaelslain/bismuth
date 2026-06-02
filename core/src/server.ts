@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { watch } from "node:fs";
 import { createSseRegistry, formatEvent } from "./sse";
+import { createAsyncCache } from "./asyncCache";
 import { buildGraph } from "./engine";
 import { attachLayout } from "./layout-cache";
 import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
@@ -79,8 +80,13 @@ export function createServer(cfg: CoreConfig) {
   let appConfig: AppConfig = SETTINGS_DEFAULTS as AppConfig;
   void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
 
-  let cachedGraph: GraphData | null = null;
-  let cachedTree: TreeEntry[] | null = null;
+  // /graph and /tree go through a deduped, invalidation-safe cache (see asyncCache.ts):
+  // concurrent first requests share one build, and a file change mid-build won't
+  // repopulate a stale value. cachedRows stays a plain lazy cache (rebuilt on next read).
+  const graphCache = createAsyncCache<GraphData>(async () =>
+    attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault),
+  );
+  const treeCache = createAsyncCache<TreeEntry[]>(() => listTree(cfg.vault));
   let cachedRows: Row[] | null = null;
   let version = 0;
   const sse = createSseRegistry();
@@ -102,8 +108,8 @@ export function createServer(cfg: CoreConfig) {
   // externally-edited open file), but graph/tree consumers skip refetching when
   // their `dirty` flag is false.
   function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
-    if (dirty.graph) cachedGraph = null;
-    if (dirty.tree) cachedTree = null;
+    if (dirty.graph) graphCache.invalidate();
+    if (dirty.tree) treeCache.invalidate();
     // Bases rows derive from arbitrary frontmatter/body — rebuild lazily on next read.
     cachedRows = null;
     version++;
@@ -258,10 +264,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "GET /graph": async (_, __) => {
-      if (cachedGraph === null) {
-        cachedGraph = attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault);
-      }
-      return ok(cachedGraph);
+      return ok(await graphCache.get());
     },
 
     "GET /templates": async () => {
@@ -270,7 +273,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "GET /tree": async (_, __) => {
-      if (cachedTree === null) cachedTree = await listTree(cfg.vault);
+      const cachedTree = await treeCache.get();
       // Overlay per-folder icons (stored in settings.yaml) onto directory entries.
       // Done per-request on a shallow copy so a folder-icon change is reflected
       // even when the underlying file tree (cachedTree) hasn't structurally changed
@@ -647,6 +650,12 @@ export function createServer(cfg: CoreConfig) {
       return ok({ path, created: true });
     }),
   };
+
+  // Warm the graph + tree caches off the critical path so the first webview request
+  // finds them ready (or already building, and deduped) instead of paying the build
+  // serially after launch. Errors are swallowed (e.g. vault dir absent in tests).
+  graphCache.warm();
+  treeCache.warm();
 
   return Bun.serve({
     port: cfg.port ?? 4321,

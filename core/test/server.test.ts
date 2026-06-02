@@ -998,6 +998,40 @@ test("POST /daily-note creates today's note from the template, then reopens it w
   }
 });
 
+test("GET /graph is consistent across concurrent requests", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const [a, b] = await Promise.all([
+      fetch(`${base}/graph`).then((r) => r.json()),
+      fetch(`${base}/graph`).then((r) => r.json()),
+    ]);
+    expect(a.nodes.length).toBe(b.nodes.length);
+    expect(a.edges.length).toBe(b.edges.length);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("a structural mutation invalidates the cached /graph", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const before = await fetch(`${base}/graph`).then((r) => r.json());
+    await fetch(`${base}/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "brand-new-note-mutation-test.md", kind: "file" }),
+    });
+    const after = await fetch(`${base}/graph`).then((r) => r.json());
+    expect(after.nodes.length).toBe(before.nodes.length + 1);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
