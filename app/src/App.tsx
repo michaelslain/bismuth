@@ -170,6 +170,25 @@ export default function App() {
     setGraph(g);
     writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
   };
+
+  // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
+  // since "both" mode doesn't need them. When the user switches to a brain mode whose
+  // layout isn't loaded yet, fetch it once and merge it in. Throttled so a not-yet-ready
+  // layout can't cause a fetch storm; applyView falls back to full-graph positions until
+  // the layout lands.
+  let lastViewFetch = -Infinity; // -Infinity (not 0): the first call always clears the throttle
+  const ensureViewLayouts = async () => {
+    const now = performance.now();
+    if (now - lastViewFetch < 2000) return;
+    lastViewFetch = now;
+    try {
+      const views = await api.graphViews();
+      setGraph((g) => ({ ...g, views }));
+    } catch {
+      // leave views absent — the graph renders with full-graph positions
+    }
+  };
+
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
@@ -469,6 +488,18 @@ export default function App() {
     if (c.dirty?.graph === false) return;
     scheduleGraphRefresh();
   });
+
+  // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
+  // Tracks graph().views too, so it also re-fires when refreshGraph replaces the graph
+  // (which drops views) — that self-heals the layout after edits/reconnects.
+  createEffect(() => {
+    const m = mode();
+    const v = graph().views;
+    if ((m === "2nd" && !v?.second) || (m === "3rd" && !v?.third)) {
+      void ensureViewLayouts();
+    }
+  });
+
   onMount(() => {
     refreshAgents();
     const t = setInterval(refreshAgents, 2000); // live agent-network polling
