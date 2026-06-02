@@ -2,7 +2,7 @@
 // to run the frontend against a backend on a different port (e.g. alongside another worktree).
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
 
-import type { GraphData, TreeEntry } from "../../core/src/graph";
+import type { GraphData, TreeEntry, ViewLayout } from "../../core/src/graph";
 import type { SearchOpts, SearchResult } from "./searchOpts";
 import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
@@ -60,6 +60,7 @@ async function getText(path: string): Promise<string> {
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
+  graphViews: () => getJson<{ second: ViewLayout; third: ViewLayout }>("/graph/views"),
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
   // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so

@@ -998,6 +998,38 @@ test("POST /daily-note creates today's note from the template, then reopens it w
   }
 });
 
+test("GET /graph/views returns 2nd/3rd-brain view layouts", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const views = await fetch(`${base}/graph/views`).then((r) => r.json());
+    expect(views).toHaveProperty("second");
+    expect(views).toHaveProperty("third");
+    expect(typeof views.second.pos3d).toBe("object");
+    expect(typeof views.second.pos2d).toBe("object");
+    expect(typeof views.third.pos3d).toBe("object");
+    expect(typeof views.third.pos2d).toBe("object");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("after /graph/views, /graph includes the view layouts", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/graph/views`).then((r) => r.json());
+    const g = await fetch(`${base}/graph`).then((r) => r.json());
+    expect(g.views).toBeDefined();
+    expect(g.views.second).toBeDefined();
+    expect(g.views.third).toBeDefined();
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /graph is consistent across concurrent requests", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

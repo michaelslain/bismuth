@@ -3,7 +3,7 @@ import { watch } from "node:fs";
 import { createSseRegistry, formatEvent } from "./sse";
 import { createAsyncCache } from "./asyncCache";
 import { buildGraph } from "./engine";
-import { attachLayout } from "./layout-cache";
+import { attachLayout, computeViewLayouts } from "./layout-cache";
 import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
@@ -265,6 +265,21 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /graph": async (_, __) => {
       return ok(await graphCache.get());
+    },
+
+    "GET /graph/views": async (_, __) => {
+      // Compute (and cache) the 2nd/3rd-brain view layouts on demand. attachLayout omits
+      // them from /graph until they exist (they're only needed when the user switches to a
+      // brain mode), so the client fetches them here on that switch. Cheap on repeat once
+      // cached; a later /graph then includes them too.
+      const graph = await graphCache.get();
+      const views = computeViewLayouts(graph, cfg.vault);
+      // invalidate() here is safe from a GET: it's a pure in-memory generation bump (see
+      // asyncCache.ts) — no version increment, no SSE publish. It evicts the now-stale
+      // graphCache value so the next /graph rebuild calls attachLayout with the view
+      // layouts already warm in layoutFor's memCache, and attaches them via peekLayout.
+      graphCache.invalidate();
+      return ok(views);
     },
 
     "GET /templates": async () => {
