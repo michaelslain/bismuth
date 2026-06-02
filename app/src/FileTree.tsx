@@ -1,6 +1,7 @@
 // app/src/FileTree.tsx
 import { createEffect, createResource, createSignal, For, Show, onCleanup } from "solid-js";
 import { api } from "./api";
+import { readCache, writeCache } from "./viewCache";
 import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { pushToast } from "./Toast";
@@ -15,6 +16,8 @@ type TreeNode = { name: string; path: string; icon?: string; children?: Map<stri
 // just like Obsidian hides `.md`. Markdown notes and YAML configs alike.
 const STRIP_EXT = /\.(md|yaml|yml)$/i;
 const displayName = (name: string) => name.replace(STRIP_EXT, "");
+
+const TREE_CACHE_KEY = "oa-tree-cache-v1";
 
 function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
@@ -63,7 +66,11 @@ import { decideTreeRefresh } from "./fileTreeRefresh";
 export { decideTreeRefresh };
 
 export function FileTree(props: { onOpen: (path: string) => void }) {
-  const [files, { refetch, mutate }] = createResource(() => api.tree());
+  // Seed from the last good tree so the sidebar paints instantly on boot; the fetch
+  // still runs and reconciles. Persist every fresh, non-error response for next launch.
+  const [files, { refetch, mutate }] = createResource(() => api.tree(), {
+    initialValue: readCache<TreeEntry[]>(TREE_CACHE_KEY),
+  });
   const [editing, setEditing] = createSignal<string | null>(null);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [dropTarget, setDropTarget] = createSignal<string | null>(null);
@@ -83,6 +90,14 @@ export function FileTree(props: { onOpen: (path: string) => void }) {
       setPendingOps((n) => n - 1);
     }
   };
+  // Persist the last good tree so the sidebar paints instantly next launch. Skip while an
+  // optimistic op is in flight (pendingOps > 0) so we never cache un-confirmed state; the
+  // effect re-runs and writes the settled tree once pendingOps drops back to 0.
+  createEffect(() => {
+    if (files.loading || files.error || pendingOps() > 0) return;
+    const f = files();
+    if (f) writeCache(TREE_CACHE_KEY, f);
+  });
   // React to server changes instead of blind polling. The effect tracks
   // editing()/dragPath()/pendingOps() so it re-runs (and applies any deferred
   // change) once an in-flight edit/drag/optimistic op clears — see

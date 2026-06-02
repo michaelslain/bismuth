@@ -1,6 +1,7 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
 import { api } from "./api";
+import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
 import { GraphView } from "./GraphView";
@@ -9,7 +10,7 @@ import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands } from "./commands";
 import { settings } from "./settings";
-import { applyCssVars } from "./settingsCssVars";
+import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
@@ -56,12 +57,21 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 
 const TABS_STORAGE_KEY = "oa-tabs-v1";
 const SIDEBAR_STORAGE_KEY = "oa-sidebar-visible-v1";
+const GRAPH_CACHE_KEY = "oa-graph-cache-v1";
+// Mirrors the key the inline <head> script in index.html reads to apply the theme before
+// the bundle loads. Bump both together if the var map shape changes.
+const THEME_VARS_KEY = "oa-theme-vars-v1";
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
 
 export default function App() {
-  const [graph, setGraph] = createSignal<GraphData>({ nodes: [], edges: [] });
+  // Seed from the last good graph so it paints instantly on boot (the renderer already
+  // caches node positions in localStorage; this supplies the structure). Reconciles when
+  // /graph returns. Persisted WITHOUT the lazy `views` layouts to keep the blob small.
+  const [graph, setGraph] = createSignal<GraphData>(
+    readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
+  );
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
 
@@ -166,7 +176,30 @@ export default function App() {
   let mainSlot: HTMLDivElement | undefined;
   let floater: HTMLDivElement | undefined;
 
-  const refreshGraph = async () => setGraph(await api.graph());
+  const refreshGraph = async () => {
+    const g = await api.graph();
+    setGraph(g);
+    writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
+  };
+
+  // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
+  // since "both" mode doesn't need them. When the user switches to a brain mode whose
+  // layout isn't loaded yet, fetch it once and merge it in. Throttled so a not-yet-ready
+  // layout can't cause a fetch storm; applyView falls back to full-graph positions until
+  // the layout lands.
+  let lastViewFetch = -Infinity; // -Infinity (not 0): the first call always clears the throttle
+  const ensureViewLayouts = async () => {
+    const now = performance.now();
+    if (now - lastViewFetch < 2000) return;
+    lastViewFetch = now;
+    try {
+      const views = await api.graphViews();
+      setGraph((g) => ({ ...g, views }));
+    } catch {
+      // leave views absent — the graph renders with full-graph positions
+    }
+  };
+
   const refreshAgents = async () => setAgents(await api.agentGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
@@ -243,7 +276,13 @@ export default function App() {
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
   // adding a CSS-driven setting is one line there + one var() in the stylesheet.
-  createEffect(() => applyCssVars(settings));
+  createEffect(() => {
+    const vars = settingsToCssVars(settings);
+    setCssVars(vars);
+    // Cache the computed vars so index.html's inline script can paint the theme before
+    // the bundle even loads next launch (no flash of the default fallback theme).
+    writeCache(THEME_VARS_KEY, vars);
+  });
   // Per-vault app icon → favicon + window/document title. Live: re-runs whenever
   // settings.appearance.icon changes (SSE re-hydrate → reactive store).
   createEffect(() => {
@@ -469,6 +508,18 @@ export default function App() {
     if (c.dirty?.graph === false) return;
     scheduleGraphRefresh();
   });
+
+  // When entering a brain mode that lacks its dedicated view layout, fetch it on demand.
+  // Tracks graph().views too, so it also re-fires when refreshGraph replaces the graph
+  // (which drops views) — that self-heals the layout after edits/reconnects.
+  createEffect(() => {
+    const m = mode();
+    const v = graph().views;
+    if ((m === "2nd" && !v?.second) || (m === "3rd" && !v?.third)) {
+      void ensureViewLayouts();
+    }
+  });
+
   onMount(() => {
     refreshAgents();
     const t = setInterval(refreshAgents, 2000); // live agent-network polling

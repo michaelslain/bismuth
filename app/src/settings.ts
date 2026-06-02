@@ -12,6 +12,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { createEffect, createRoot } from "solid-js";
 import { stringify } from "yaml";
 import { api } from "./api";
+import { readCache, writeCache } from "./viewCache";
 import { diffLeaves } from "./settingsDiff";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
 
@@ -181,9 +182,18 @@ export function loadSettings(raw: string | null): Settings {
   }
 }
 
-// --- Synchronous seed: never empty at first paint (consumers deref two levels
-// deep with no optional chaining, so the store must always be fully shaped). ---
-const [settings, setSettings] = createStore<Settings>(structuredClone(_DEFAULTS));
+// localStorage key for the last hydrated settings, used to seed the store on the next
+// launch so the real theme/fonts/sizes paint on the FIRST frame instead of flashing
+// DEFAULTS until GET /settings resolves. Reconciled to server truth on hydrate.
+const SETTINGS_CACHE_KEY = "oa-settings-cache-v1";
+
+// --- Synchronous seed: never empty at first paint (consumers deref two levels deep with
+// no optional chaining, so the store must always be fully shaped). Seeded from the last
+// hydrated settings (localStorage) when present — mergeServerSettings(undefined) falls back
+// to DEFAULTS, so a cold cache behaves exactly as before. ---
+const [settings, setSettings] = createStore<Settings>(
+  mergeServerSettings(readCache(SETTINGS_CACHE_KEY)),
+);
 
 const LEGACY_KEY = "three-brains.settings";
 
@@ -285,6 +295,13 @@ if (typeof window !== "undefined") {
             api.setSetting(path, value).catch(() => { /* surfaced elsewhere */ });
           }
         }, 600);
+      });
+
+      // 4. Mirror the live settings into localStorage so the next launch can seed the
+      //    store (and the inline theme script in index.html) before GET /settings lands.
+      //    Tracks every field; runs on the seed, on hydrate, and on each user edit.
+      createEffect(() => {
+        writeCache(SETTINGS_CACHE_KEY, settings);
       });
     });
   });
