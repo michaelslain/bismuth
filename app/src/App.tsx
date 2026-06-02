@@ -9,6 +9,7 @@ import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands } from "./commands";
 import { settings } from "./settings";
+import { matchesKeybinding } from "./keybindings";
 import { applyCssVars } from "./settingsCssVars";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
@@ -481,43 +482,39 @@ export default function App() {
   };
 
   onMount(registerFileEvents);
-  // Obsidian-style shortcuts: Cmd/Ctrl+P → command palette, Cmd/Ctrl+O → quick
-  // switcher. preventDefault suppresses the browser print/open dialogs. These fire
-  // even while the editor is focused (CodeMirror doesn't bind these keys).
+  // Global keyboard shortcuts. Every combo is read from settings.keybindings
+  // (defaults in core/src/keybindings.ts), matched via matchesKeybinding — none
+  // are hardcoded here. These fire even while the editor is focused (CodeMirror
+  // doesn't bind these keys); preventDefault suppresses browser print/open/etc.
   const handleGlobalKeydown = (e: KeyboardEvent) => {
     if (e.repeat) return;
-    const hasMod = e.metaKey || e.ctrlKey;
-    // Insert Template: Option+T (no Cmd). Checked before the hasMod early-return.
-    if (e.code === "KeyT" && e.altKey && !e.metaKey && !e.ctrlKey) {
-      // Don't hijack Option+T while typing in a form field (palette search,
-      // calendar title, etc.). The note editor is contentEditable, not an
-      // INPUT/TEXTAREA, so template insertion from a focused note still works.
+    const kb = settings.keybindings;
+
+    // Insert template (default Alt+T): don't hijack while typing in a form field
+    // (palette search, calendar title, etc.). The note editor is contentEditable,
+    // not an INPUT/TEXTAREA, so insertion from a focused note still works.
+    if (matchesKeybinding(e, kb["insert-template"])) {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag !== "INPUT" && tag !== "TEXTAREA") {
         e.preventDefault();
         setPalette((p) => (p === "template" ? null : "template"));
-        return;
       }
+      return;
     }
-    if (!hasMod) return;
-    const k = e.key.toLowerCase();
-    const hasAlt = e.altKey;
-    const hasShift = e.shiftKey;
-
-    // Palette toggle: Cmd+P for command palette
-    if (!hasAlt && !hasShift && k === "p") {
+    // Command palette (default Mod+P).
+    if (matchesKeybinding(e, kb["command-palette"])) {
       e.preventDefault();
       setPalette((p) => (p === "command" ? null : "command"));
       return;
     }
-    // File switcher: Cmd+O for quick switcher
-    if (!hasAlt && !hasShift && k === "o") {
+    // Quick switcher (default Mod+O).
+    if (matchesKeybinding(e, kb["quick-switcher"])) {
       e.preventDefault();
       setPalette((p) => (p === "file" ? null : "file"));
       return;
     }
-    // Terminal: Cmd+` or Cmd+J
-    if (!hasAlt && !hasShift && (k === "`" || k === "j")) {
+    // Terminal (default Mod+` or Mod+J).
+    if (matchesKeybinding(e, kb["terminal"])) {
       e.preventDefault();
       openTerminal();
       return;
@@ -526,39 +523,42 @@ export default function App() {
     const at = activeTab();
     if (!at) return;
 
-    // Split: Cmd+D (right) or Cmd+Shift+D (down). New pane starts empty.
-    if (!hasAlt && k === "d") {
+    // Split right (default Mod+D) / split down (default Mod+Shift+D). New pane empty.
+    const splitDown = matchesKeybinding(e, kb["split-down"]);
+    if (splitDown || matchesKeybinding(e, kb["split-right"])) {
       e.preventDefault();
-      const dir = hasShift ? "col" : "row";
+      const dir = splitDown ? "col" : "row";
       updateActiveTab((t) => {
         const { root, newLeafId } = splitLeaf(t.root, t.focusId, dir, EMPTY_PANE);
         return { ...t, root, focusId: newLeafId };
       });
       return;
     }
-    // Equalize: Cmd+Alt+=
-    if (hasAlt && (k === "=" || k === "+")) {
+    // Equalize panes (default Mod+Alt+=).
+    if (matchesKeybinding(e, kb["equalize-panes"])) {
       e.preventDefault();
       updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
       return;
     }
-    // Close pane: Cmd+W
-    if (!hasAlt && !hasShift && k === "w") {
+    // Close pane (default Mod+W).
+    if (matchesKeybinding(e, kb["close-pane"])) {
       e.preventDefault();
       closeFocusedPane();
       return;
     }
-    // Focus neighbor: Cmd+Alt+Arrow keys
-    if (hasAlt) {
-      const dirMap: Record<string, Dir> = {
-        arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down",
-      };
-      const dir = dirMap[k];
-      if (dir) {
-        e.preventDefault();
-        const next = focusNeighbor(at.root, at.focusId, dir);
-        if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
-      }
+    // Focus neighboring pane (default Mod+Alt+Arrow).
+    const focusDirs: Array<[keyof typeof kb, Dir]> = [
+      ["focus-pane-left", "left"],
+      ["focus-pane-right", "right"],
+      ["focus-pane-up", "up"],
+      ["focus-pane-down", "down"],
+    ];
+    for (const [id, dir] of focusDirs) {
+      if (!matchesKeybinding(e, kb[id])) continue;
+      e.preventDefault();
+      const next = focusNeighbor(at.root, at.focusId, dir);
+      if (next) updateActiveTab((t) => ({ ...t, focusId: next }));
+      return;
     }
   };
 

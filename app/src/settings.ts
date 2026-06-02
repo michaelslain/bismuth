@@ -103,6 +103,24 @@ export interface Settings {
   templates: {
     folder: string; // vault folder containing template .md files
   };
+  // Global keyboard shortcuts, keyed by action id (core/src/keybindings.ts).
+  // Each value is a combo like "Mod+P" (Mod = Cmd on macOS / Ctrl elsewhere);
+  // comma-separate alternatives ("Mod+`, Mod+J"). App.tsx matches events
+  // against these (app/src/keybindings.ts), never a hardcoded combo.
+  keybindings: {
+    "command-palette": string;
+    "quick-switcher": string;
+    "terminal": string;
+    "split-right": string;
+    "split-down": string;
+    "equalize-panes": string;
+    "close-pane": string;
+    "focus-pane-left": string;
+    "focus-pane-right": string;
+    "focus-pane-up": string;
+    "focus-pane-down": string;
+    "insert-template": string;
+  };
   toolbar: Array<{ command: string; icon: string; tooltip?: string }>;
   dailyNotes: Array<{ id: string; label: string; icon: string; folder: string; fileName: string; template: string }>;
 }
