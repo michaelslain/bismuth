@@ -6,6 +6,7 @@
 // object the frontend store seeds from synchronously (no white-screen on boot).
 import type { Schema, SchemaEntry, PropertyType } from "./types";
 import { COMMAND_IDS } from "../commands";
+import { KEYBINDING_CATALOG } from "../keybindings";
 
 // Kept in lockstep with app/src/settings.ts EDITOR_FONTS.
 const EDITOR_FONTS = ["Lora", "Monaspace Xenon", "Georgia", "system-ui"];
@@ -27,6 +28,15 @@ const CALENDAR_VIEWS = ["month", "week", "3day", "day"];
 
 const enumType = (values: string[]): PropertyType => ({ kind: "enum", values });
 const object = (fields: Schema): SchemaEntry => ({ type: { kind: "object", fields } });
+
+// The `keybindings` section: one string-typed key per global action, derived from
+// the KEYBINDING_CATALOG (single source of truth for ids + default combos). A
+// nested object (not a list), so the per-key merge — autocomplete, lint, the
+// parity test, and POST /set-setting — all work without any special-casing.
+const keybindingFields: Schema = {};
+for (const k of KEYBINDING_CATALOG) {
+  keybindingFields[k.id] = { type: "keybind", default: k.default, doc: k.doc };
+}
 
 export const SETTINGS_SCHEMA: Schema = {
   appearance: object({
@@ -163,6 +173,13 @@ export const SETTINGS_SCHEMA: Schema = {
     ],
     doc: "Daily-note types. Each adds a daily-note:<id> command you can put on the toolbar.",
   },
+  // Global keyboard shortcuts — placed LAST so it sits at the end of a fresh
+  // settings.yaml. One key per app-level action; the value is a `keybind` combo
+  // string (e.g. "Mod+P" — Mod = Cmd on macOS / Ctrl elsewhere). Comma-separate
+  // alternatives ("Mod+`, Mod+J"). The `keybind` type drives the smart, order-free
+  // shortcut autocomplete + "record shortcut" option (app/src/editor/settingsComplete).
+  // Defaults equal the previously hardcoded combos; fields derive from KEYBINDING_CATALOG.
+  keybindings: object(keybindingFields),
 };
 
 /** Recursively materialize the `default` of every leaf into a plain nested object. */

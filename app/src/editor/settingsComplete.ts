@@ -4,13 +4,15 @@
 // section — the property type names). Nested-schema aware. Triggered while typing
 // or on demand via Ctrl-Space (bound in Editor.tsx). The file ships comment-free,
 // so this is the discovery mechanism.
-import { autocompletion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
 import { completionDisplayConfig } from "./completionDisplay";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
 import { commandLabel } from "../../../core/src/commands";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 import { matchTemplateTokenPrefix } from "./templateToken";
+import { KEYBIND_MODIFIERS, KEYBIND_KEYS, modifierFamily, eventToCombo } from "../keybindings";
 
 // Property types a user can assign in the `properties:` registry section.
 const PROPERTY_TYPES = ["string", "number", "boolean", "date", "datetime", "file", "list"];
@@ -130,6 +132,107 @@ function enclosingListItemType(
   return null;
 }
 
+/**
+ * Smart completion for a `keybind` value (e.g. "Mod+Shift+D"). The combo grammar
+ * is order-free: modifiers and the key can be typed in any order, joined by "+",
+ * with comma-separated alternatives. We complete the CURRENT token (the text after
+ * the last "+" within the current ","-separated combo): offer the remaining
+ * modifier families and the key list, plus a "Record shortcut…" action that listens
+ * to the keyboard for 3 seconds and writes whatever it hears.
+ */
+export function keybindCompletions(ctx: CompletionContext, valueSoFar: string): CompletionResult | null {
+  const comboStart = valueSoFar.lastIndexOf(",") + 1;     // current combo = text after the last comma
+  const currentCombo = valueSoFar.slice(comboStart);
+  const plusIdx = currentCombo.lastIndexOf("+");
+  const token = (plusIdx >= 0 ? currentCombo.slice(plusIdx + 1) : currentCombo).replace(/^\s+/, "");
+  const tokenFrom = ctx.pos - token.length;
+  const valueFrom = ctx.pos - valueSoFar.length;          // doc pos where the whole value begins
+
+  // Auto-pop only once there's something to complete; always available on Ctrl-Space.
+  const justAfterSep = /[+,]\s*$/.test(valueSoFar);
+  if (!ctx.explicit && token.length === 0 && !justAfterSep) return null;
+
+  const p = token.toLowerCase();
+  // Modifier families already present in this combo → hide that whole family.
+  const prior = (plusIdx >= 0 ? currentCombo.slice(0, plusIdx) : "")
+    .split("+").map((t) => t.trim()).filter(Boolean);
+  const usedFamilies = new Set(prior.map(modifierFamily).filter((f): f is string => !!f));
+
+  const options: Completion[] = [];
+
+  // "Record shortcut" action — highest priority, replaces the whole value on apply.
+  if (token.length === 0 || "record".startsWith(p)) {
+    options.push({
+      label: "Record shortcut…",
+      detail: "listens 3s",
+      type: "record",
+      boost: 99,
+      apply: (view: EditorView) => recordShortcut(view, valueFrom),
+    });
+  }
+  // Remaining modifiers (apply appends "+" so the combo keeps building).
+  for (const mod of KEYBIND_MODIFIERS) {
+    const fam = modifierFamily(mod);
+    if ((fam && usedFamilies.has(fam)) || !mod.toLowerCase().startsWith(p)) continue;
+    options.push({ label: mod, apply: mod + "+", type: "modifier", detail: "modifier", boost: 10 });
+  }
+  // Keys (any order; completes the combo).
+  for (const k of KEYBIND_KEYS) {
+    if (k.toLowerCase().startsWith(p)) options.push({ label: k, type: "key" });
+  }
+
+  if (!options.length) return null;
+  return { from: tokenFrom, options, validFor: /^[^\s,+]*$/ };
+}
+
+/**
+ * Listen for a single keyboard shortcut for up to 3 seconds, then replace the
+ * keybind value (from `valueFrom` to end of line) with the captured combo. Bare
+ * modifier presses are ignored until a real key lands. Keystrokes are swallowed
+ * (capture phase + preventDefault) so they don't type into the editor or fire app
+ * shortcuts while recording.
+ */
+function recordShortcut(view: EditorView, valueFrom: number): void {
+  let done = false;
+  let toastId: number | null = null;
+  let dismiss: ((id: number) => void) | null = null;
+
+  const finish = (combo: string | null) => {
+    if (done) return;
+    done = true;
+    window.removeEventListener("keydown", onKey, true);
+    clearTimeout(timer);
+    if (toastId !== null && dismiss) dismiss(toastId);
+    if (combo) {
+      const line = view.state.doc.lineAt(valueFrom);
+      view.dispatch({
+        changes: { from: valueFrom, to: line.to, insert: combo },
+        selection: { anchor: valueFrom + combo.length },
+      });
+    }
+    view.focus();
+  };
+
+  const onKey = (e: KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const combo = eventToCombo(e); // null for a bare modifier → keep waiting
+    if (combo) finish(combo);
+  };
+
+  window.addEventListener("keydown", onKey, true);
+  const timer = setTimeout(() => finish(null), 3000);
+
+  // Lazy toast import keeps the Solid store out of this module's static path.
+  import("../Toast")
+    .then(({ pushToast, dismissToast }) => {
+      if (done) return;
+      dismiss = dismissToast;
+      toastId = pushToast("Recording shortcut… press keys", undefined, 3200);
+    })
+    .catch(() => {});
+}
+
 export function settingsCompletionSource(
   getSchema: () => Schema,
   getIconNames: () => string[],
@@ -157,6 +260,16 @@ export function settingsCompletionSource(
           if (options.length) return { from: line.from + tokenMatch.from, options, validFor: /^\{\{[\w+:-]*$/ };
         }
       }
+    }
+
+    // KEYBIND value position: "key: <combo so far>" where the field type is `keybind`.
+    // Handled before the generic value match because a keybind value can contain
+    // spaces/commas ("Mod+`, Mod+J") that the generic \S* capture would mis-split.
+    const kbVal = before.match(/^\s*-?\s*([\w-]+):\s*(.*)$/);
+    if (kbVal) {
+      const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
+      const ft = sectionKey === "properties" ? "string" : (schema[kbVal[1]]?.type ?? "string");
+      if (ft === "keybind") return keybindCompletions(ctx, kbVal[2]);
     }
 
     // VALUE position: "key: <partial>" or "- key: <partial>" (list item).

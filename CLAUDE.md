@@ -95,14 +95,14 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 
 **Key modules**:
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
-  - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
-  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/tasks/toggle`, `/cards/review`
-  - POST reads (not mutations): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks)
+  - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
+  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`; plus `PUT /file`
+  - POST reads (not mutations): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/replace`
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
-- `graph.ts` — Graph type definitions. Node kinds: "self", "note", "memory", "agent", "tag". Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag"
+- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag" (the single "you" hub is a special self node added by `engine.ts`, not a `NodeKind`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag"
 - `layout.ts` — Pure layout computation (pivot-MDS + force simulation). Produces 2D and 3D `Positions` maps used by the renderer
 - `layout-cache.ts` — `attachLayout()` writes precomputed `position2d` / `position3d` onto graph nodes, keyed by vault. Frontend morphs between them instead of running its own force sim
 - `files.ts` — File I/O: list markdown, read/write notes, path-traversal rejection
@@ -140,10 +140,10 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 **Key components**:
 - `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
 - `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
-- `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), calendar, tasks, flashcards, or terminal
-- `tabIds.ts` — Sentinel ids for non-file pane contents (`::settings`, `::graph`, `::terminal`, etc.)
+- `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
+- `tabIds.ts` — Sentinel ids for non-file pane contents (`::calendar`, `::search`, `::empty`, plus prefixed `::flashcards:`, `::term:`, `::export:`); settings/graph/notes are routed by file path or their own ids
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock` (embed Bases view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock`/`viewBlock` (embed Bases/view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -187,7 +187,7 @@ Obsidian-Bases-compatible query/view system. A `.base` YAML file declares filter
 - `functions.ts` — Built-in functions on file/number/string/array/date values (method-dispatch tables per type)
 - `query.ts` — Apply a Base to the vault data feed (`basesData.ts`) and return rows + grouping
 
-**Frontend views** (`app/src/bases/`): one renderer per view kind — `TableView`, `CardsView`, `KanbanView`, `ListView`, `MapView`. `renderValue.tsx` formats cell values consistently across views. `BaseView.tsx` is the host that picks the right renderer.
+**Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) now spans 11 kinds — `TableView`, `CardsView`, `KanbanView`, `ListView`, `MapView`, plus `CalendarView`, `FlashcardsView`, and the chart views `BarView`/`LineView`/`StatView`/`HeatmapView` (backed by `core/src/bases/chart.ts`). `renderValue.tsx` formats cell values consistently across views. `BaseView.tsx` is the host that picks the right renderer.
 
 Bases can also be embedded inside a note via a code block; the editor extension `editor/basesBlock.ts` renders them inline.
 
@@ -213,7 +213,7 @@ Standalone calendar feature with its own state store and views.
 - `types.ts` — Event / category types
 - `refresh.ts` — Refresh wiring
 - `components/` — `EventChip`, `EventModal`, `RecurrenceDialog`, `CategoryPanel`, `Toolbar`
-- `components/views/` — `MonthView`, `ThreeDayView`, `TimeGrid`
+- `components/views/` — `MonthView`, `WeekView`, `ThreeDayView`, `DayView`, `TimeGrid`
 
 ### Tasks (`core/src/tasks*.ts`)
 
@@ -228,8 +228,9 @@ Obsidian-Tasks-compatible task system. Tasks are not a standalone subsystem — 
 
 Spaced-repetition reviews extracted from markdown notes:
 - `srs/parser.ts` — Parses `?` / `??` flashcard syntax out of notes
-- `srs/cards.ts` — Card model + persistence
+- `srs/cards.ts` — Card model + persistence; also exports `applyReview` (the review-recording entry point)
 - `srs/scheduler.ts` — SM-2-style scheduling (next-due, ease factor)
+- `srs/types.ts`, `srs/reviewRow.ts` — Card/review types and `applyReviewToRow` (row-based reviews for Bases)
 - Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`, `POST /cards/review`
 - `Flashcards.tsx` — Review UI
 
@@ -262,6 +263,15 @@ The bar above the file tree is configured by the `toolbar:` list in `settings.ya
 
 **Adding a command:** add an entry to `COMMAND_CATALOG` (core) and a matching `action` binding in `bindCommands` (app). The `toolbar.command` enum, its autocomplete, and the palette pick it up automatically. (Adding any new *top-level* schema key also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`.)
 
+### Keybindings
+
+Global keyboard shortcuts are configured via the `keybindings:` section of `settings.yaml` (the **last** section in a fresh file) — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands:
+- `core/src/keybindings.ts` — `KEYBINDING_CATALOG` (`id`, `label`, `default`, `doc`) + `KEYBINDING_IDS`. Pure data in core; the settings schema derives the `keybindings` object section from it (one `keybind`-typed key per action, defaulting to the previously hardcoded combo). Authoring helpers (`KEYBIND_MODIFIERS`, `KEYBIND_KEYS`, `modifierFamily`, `eventToCombo`) live here too.
+- `app/src/keybindings.ts` — the pure matcher: `parseCombo`/`matchesCombo`/`matchesKeybinding`. `"Mod"` = Cmd on macOS / Ctrl elsewhere (CodeMirror convention); modifier matching is **exact** (so `Mod+D` and `Mod+Shift+D` stay distinct); combos are comma-separated alternatives (`"Mod+\`, Mod+J"`). `App.tsx` `handleGlobalKeydown` matches events against `settings.keybindings.<id>`.
+- **`keybind` PropertyType** (`core/src/schema/types.ts`, validated leniently in `validate.ts`) drives a smart, order-free shortcut autocomplete in `editor/settingsComplete.ts` (`keybindCompletions`): completes the current `+`-separated token with the remaining modifier families + the key list, plus a **"Record shortcut…"** option that listens to the keyboard for 3s and writes the captured combo.
+
+**Adding a keybinding:** add an entry to `KEYBINDING_CATALOG` (core) and read `settings.keybindings.<id>` via `matchesKeybinding` at the handler. The schema field, autocomplete, and `keybindings.<id>` default are derived automatically.
+
 ## Workspace Management
 
 The three workspaces are linked via Bun's `workspaces` feature in the root `package.json`:
@@ -292,6 +302,8 @@ core/src/
 ├── error.ts             # AppError class + ERROR_CODES registry for typed error semantics
 ├── graphBuilder.ts      # Shared graph builder helper: eliminates vault/memory duplication
 ├── changeClassifier.ts  # Tracks note-level changes (wikilinks/tags/icon) to selectively invalidate graph vs tree
+├── commands.ts          # COMMAND_CATALOG (pure command metadata)
+├── keybindings.ts       # KEYBINDING_CATALOG (pure shortcut metadata + defaults)
 ├── tasks.ts             # Tasks extraction
 ├── tasks-query.ts       # Tasks query DSL
 ├── terminal.ts          # PTY session manager (bun-pty)
@@ -328,6 +340,7 @@ app/src/
 ├── palette/             # Command palette + quick switcher
 ├── serverVersion.ts     # SSE subscription + version poll
 ├── api.ts               # HTTP client
+├── keybindings.ts       # Pure shortcut matcher (parseCombo/matchesKeybinding) + eventToCombo
 ├── settings.ts          # Store: sync seed + hydrate + per-key PATCH persist
 ├── settingsCssVars.ts   # settings → :root CSS custom properties
 ├── settingsDiff.ts      # pure leaf-diff for per-key persistence
@@ -425,11 +438,11 @@ The schema is the single source of truth; defaults must equal the current hardco
 
 ### Adding an SRS scheduler variant
 1. Extend `core/src/srs/scheduler.ts` with new algorithm (SM-2 variant, custom decay, etc.)
-2. Expose config in `core/src/schema/settingsSchema.ts` (e.g., `srs.algorithm`); thread into `applyReview` (`core/src/srs/reviewer.ts`)
+2. Expose config in `core/src/schema/settingsSchema.ts` (e.g., `srs.algorithm`); thread into `applyReview` (`core/src/srs/cards.ts`)
 
 ## Error Handling
 
-Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENOENT", "File not found")` (factory, picks status from code) or `new AppError(code, msg, status)`. `mutatingHandler` in `server.ts` maps `AppError.statusCode` to the HTTP response; generic `Error` → 500. Codes → status: `ENOENT`/`CARD_NOT_FOUND` 404, `EACCES` 403, `EEXIST`/`CARD_CONTENT_CHANGED` 409, `EINVAL`/`PARSE_ERROR`/`CARD_FORMAT_ERROR`/`BASE_CYCLE` 400, `INTERNAL_ERROR` 500.
+Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENOENT", "File not found")` (factory, picks status from code) or `new AppError(code, msg, status)`. `mutatingHandler` in `server.ts` maps `AppError.statusCode` to the HTTP response; generic `Error` → 500. Codes → status: `ENOENT`/`CARD_NOT_FOUND`/`BASE_NOT_FOUND` 404, `EACCES` 403, `EEXIST`/`CARD_CONTENT_CHANGED` 409, `EINVAL`/`PARSE_ERROR`/`SCHEMA_ERROR`/`CARD_FORMAT_ERROR`/`BASE_CYCLE` 400, `INTERNAL_ERROR` 500.
 
 ## Shared Helpers (avoid re-duplicating)
 
