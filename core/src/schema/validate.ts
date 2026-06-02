@@ -84,6 +84,7 @@ export function validateValue(
     switch (type) {
       case "string":
       case "icon": // a Lucide icon name OR an emoji — any string is valid, never flagged
+      case "keybind": // a shortcut combo like "Mod+Shift+D" — validated leniently (any string)
         return null;
       case "number":
         return typeof value === "number" && !Number.isNaN(value)

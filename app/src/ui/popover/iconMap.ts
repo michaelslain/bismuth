@@ -8,6 +8,9 @@ const ICONS: Record<string, string> = {
   note: "File",        // wikilink target
   tag: "Hash",         // #tag
   emoji: "Smile",
+  modifier: "Command", // a keybind modifier (Mod/Alt/Shift) in the shortcut autocomplete
+  key: "Keyboard",     // a keybind key (A, Enter, ArrowLeft…)
+  record: "Circle",    // the "record shortcut" action in the keybind autocomplete
 };
 
 // Kinds that get NO icon. Enum values (2d | 3d, dark | light) are a plain choice

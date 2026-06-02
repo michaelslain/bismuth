@@ -2,6 +2,7 @@
 import { test, expect } from "bun:test";
 import { SETTINGS_SCHEMA, DEFAULTS } from "../../src/schema/settingsSchema";
 import { validateDocument } from "../../src/schema/validate";
+import { KEYBINDING_CATALOG } from "../../src/keybindings";
 import type { SchemaEntry, Schema } from "../../src/schema/types";
 
 function objectFields(entry: SchemaEntry): Schema {
@@ -11,7 +12,7 @@ function objectFields(entry: SchemaEntry): Schema {
 
 test("SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons and properties", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
+    ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "keybindings", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
   );
 });
 
@@ -85,6 +86,33 @@ test("calendar section mirrors the calendar defaults", () => {
   expect(cal.militaryTime.default).toBe(false);
 });
 
+test("keybindings section has one string key per catalog action, defaulting to its combo", () => {
+  const kb = objectFields(SETTINGS_SCHEMA.keybindings);
+  // Exactly the catalog ids, no more, no less.
+  expect(Object.keys(kb).sort()).toEqual(KEYBINDING_CATALOG.map((k) => k.id).sort());
+  for (const spec of KEYBINDING_CATALOG) {
+    expect(kb[spec.id].type).toBe("keybind");
+    expect(kb[spec.id].default).toBe(spec.default);
+    expect(kb[spec.id].doc).toBeTruthy();
+  }
+  // Representative defaults equal the previously hardcoded combos.
+  expect(kb["command-palette"].default).toBe("Mod+P");
+  expect(kb["split-down"].default).toBe("Mod+Shift+D");
+  expect(kb["terminal"].default).toBe("Mod+`, Mod+J");
+});
+
+test("keybindings is the LAST schema section (so it sits at the end of a fresh settings.yaml)", () => {
+  const keys = Object.keys(SETTINGS_SCHEMA);
+  expect(keys[keys.length - 1]).toBe("keybindings");
+});
+
+test("DEFAULTS.keybindings materializes every catalog combo", () => {
+  const d = DEFAULTS as Record<string, Record<string, unknown>>;
+  for (const spec of KEYBINDING_CATALOG) {
+    expect(d.keybindings[spec.id]).toBe(spec.default);
+  }
+});
+
 test("properties section is an empty object schema (the registry placeholder)", () => {
   expect(SETTINGS_SCHEMA.properties.type).toEqual({ kind: "object", fields: {} });
 });
@@ -92,7 +120,7 @@ test("properties section is an empty object schema (the registry placeholder)", 
 test("DEFAULTS is the plain nested object derived from the schema", () => {
   // Structural (robust to added settings): section set + representative leaves.
   expect(Object.keys(DEFAULTS).sort()).toEqual(
-    ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
+    ["appearance", "calendar", "dailyNotes", "editor", "folderIcons", "graph", "keybindings", "properties", "server", "srs", "templates", "terminal", "toolbar", "ui", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
   expect(d.appearance.theme).toBe("oxide-duotone");
