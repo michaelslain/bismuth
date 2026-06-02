@@ -24,7 +24,7 @@ import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
-  setContent, setRatio, findLeafByContent, leaves, pruneMissing, movePane,
+  setContent, setRatio, findLeafByContent, leaves, leafCount, pruneMissing, movePane,
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
   serializeTabs, deserializeTabs, resolveFocus,
 } from "./panes";
@@ -832,6 +832,13 @@ export default function App() {
             items={[
               { label: "Split right", icon: "PanelRight", onSelect: () => splitPane(m().leafId, "row") },
               { label: "Split down", icon: "PanelBottom", onSelect: () => splitPane(m().leafId, "col") },
+              // Equalize is only meaningful with ≥2 panes; on a single leaf it's a
+              // no-op, so hide it. This menu (a click) is the reliable trigger —
+              // the Mod+Alt+= keybind is eaten by the browser's zoom shortcut while
+              // a note editor is focused, which is exactly when you want to equalize.
+              ...((activeTab() && leafCount(activeTab()!.root) > 1)
+                ? [{ label: "Equalize panes", icon: "Columns3", separatorBefore: true, onSelect: () => equalizePanes() }]
+                : []),
               { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(m().leafId) },
             ]}
           />
