@@ -28,7 +28,7 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
 
     // macOS: the FIRST submenu is the app menu (named after the app).
     const appMenu = await Submenu.new({
-      text: "Three Brains",
+      text: "Bismuth",
       items: [
         await PredefinedMenuItem.new({ item: { About: null } }),
         await sep(),

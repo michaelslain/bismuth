@@ -27,7 +27,7 @@ export async function ensureRepo(dir: string): Promise<void> {
   if (!existsSync(join(dir, ".git"))) {
     await $`git -C ${dir} init -q`.quiet();
     await $`git -C ${dir} config user.email "vault@local"`.quiet();
-    await $`git -C ${dir} config user.name "Obsidian Alternative"`.quiet();
+    await $`git -C ${dir} config user.name "Bismuth"`.quiet();
   }
   // .git/info/exclude exists after init; ensureExclude runs every time
   // (idempotent) so existing vaults pick up the rule on their next backup.
