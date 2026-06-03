@@ -12,6 +12,10 @@ const COMMAND_KEYBINDINGS: Record<string, keyof typeof settings.keybindings> = {
   terminal: "terminal",
   "equalize-panes": "equalize-panes",
   "toggle-sidebar": "toggle-sidebar",
+  "new-tab": "new-tab",
+  "reopen-tab": "reopen-tab",
+  "history-back": "history-back",
+  "history-forward": "history-forward",
 };
 
 // Turn a stored combo ("Mod+Shift+D", or "Mod+`, Mod+J") into a compact display

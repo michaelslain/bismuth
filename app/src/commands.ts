@@ -23,6 +23,12 @@ export interface CommandHandlers {
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
   toggleSidebar: () => void;
+  // Tab lifecycle + per-pane navigation history.
+  newTab: () => void;
+  closeActiveTab: () => void;
+  reopenClosedTab: () => void;
+  historyBack: () => void;
+  historyForward: () => void;
   // File-menu commands. "Open folder" opens a chosen folder as its own brain in a
   // new window (a sibling backend); "New window" reopens the current folder in a new
   // window; export/print act on the active file.
@@ -41,9 +47,13 @@ export interface BoundCommand {
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
   const actions: Record<string, () => void | Promise<void>> = {
-    // "New tab" and "Open graph view" both open the Knowledge Graph as a tab — they are, as the
-    // user put it, the same thing: a fresh tab whose content is the graph.
-    "new-tab": h.openGraph,
+    // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
+    // existing graph tab if one is open (else opens one).
+    "new-tab": h.newTab,
+    "close-tab": h.closeActiveTab,
+    "reopen-tab": h.reopenClosedTab,
+    "history-back": h.historyBack,
+    "history-forward": h.historyForward,
     "open-graph": h.openGraph,
     "open-folder": h.openFolder,
     "new-window": h.newWindow,

@@ -177,6 +177,42 @@ export default function App() {
 
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
+
+  // Per-pane (per-leaf) navigation history. Each leaf id maps to a stack of the
+  // contents it has shown + the current index. Session-only (not persisted): leaf
+  // ids are reassigned on reload, so a restored pane seeds its history lazily from
+  // whatever it's currently showing the first time you navigate it. Cmd+[ / Cmd+]
+  // walk the FOCUSED pane's stack. Back/forward call setContent directly (never
+  // openFile), so they move through history without re-recording.
+  const HISTORY_CAP = 100;
+  const histories = new Map<string, { stack: string[]; idx: number }>();
+  const recordNav = (leafId: string, content: string) => {
+    const h = histories.get(leafId);
+    if (!h) {
+      histories.set(leafId, { stack: [content], idx: 0 });
+      return;
+    }
+    if (h.stack[h.idx] === content) return; // already current — a focus, not a navigation
+    const trimmed = h.stack.slice(0, h.idx + 1);
+    trimmed.push(content);
+    const overflow = Math.max(0, trimmed.length - HISTORY_CAP);
+    h.stack = overflow ? trimmed.slice(overflow) : trimmed;
+    h.idx = h.stack.length - 1;
+  };
+  // Move the active tab's focused pane through its history by `delta` (−1 back, +1 forward).
+  const navigateHistory = (delta: 1 | -1) => {
+    const at = activeTab();
+    if (!at) return;
+    const leafId = at.focusId;
+    const h = histories.get(leafId);
+    if (!h) return;
+    const next = h.idx + delta;
+    if (next < 0 || next >= h.stack.length) return;
+    h.idx = next;
+    updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, h.stack[next]) }));
+  };
+  const historyBack = () => navigateHistory(-1);
+  const historyForward = () => navigateHistory(1);
   // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
   const [sidebarVisible, setSidebarVisible] = createSignal(
     localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0",
@@ -297,35 +333,72 @@ export default function App() {
     graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
   );
 
-  // Open a content id. Single-pane active tab → new tab (today's behavior). Multi-pane
-  // active tab → load into the focused pane. If already visible in the active tab, focus it.
+  // Navigate to a content id IN PLACE: replace the active tab's focused pane and push
+  // onto that pane's history (Obsidian-style). If the content is already showing in the
+  // focused pane it's a no-op; if it's open in another pane of the same tab we focus that
+  // pane instead of duplicating it. With no active tab we open one. This is the path for
+  // wikilinks, the file tree, the quick switcher, graph-node clicks and daily notes — the
+  // substrate the Cmd+[ / Cmd+] history walks.
   const openFile = (path: string) => {
     const at = activeTab();
-    const isMultiPane = at && leaves(at.root).length > 1;
-    if (isMultiPane) {
-      const existing = findLeafByContent(at.root, path);
+    if (!at) {
+      const tab = makeTab(path);
+      setTabs((ts) => [...ts, tab]);
+      setActiveTabId(tab.id);
+      recordNav(tab.root.id, path);
+      return;
+    }
+    const focused = leaves(at.root).find((l) => l.id === at.focusId);
+    if (focused?.content === path) return; // already showing here
+    const existing = findLeafByContent(at.root, path);
+    if (existing) {
+      updateActiveTab((t) => ({ ...t, focusId: existing.id }));
+      return;
+    }
+    // Seed the pane's baseline (its current content) so Back returns to it, for panes
+    // that have no history yet (restored from storage, or freshly split).
+    if (focused && !histories.has(at.focusId)) recordNav(at.focusId, focused.content);
+    updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, path) }));
+    recordNav(at.focusId, path);
+  };
+  // Open a content id in its OWN tab (tools — settings/search/terminal/calendar/etc — and
+  // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
+  // spawn a tab mid-split); a single-pane tab already showing it is just focused.
+  const openInNewTab = (content: string) => {
+    const at = activeTab();
+    if (at && leaves(at.root).length > 1) {
+      const existing = findLeafByContent(at.root, content);
       if (existing) {
         updateActiveTab((t) => ({ ...t, focusId: existing.id }));
         return;
       }
-      updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, path) }));
+      const focused = leaves(at.root).find((l) => l.id === at.focusId);
+      if (focused && !histories.has(at.focusId)) recordNav(at.focusId, focused.content);
+      updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, content) }));
+      recordNav(at.focusId, content);
       return;
     }
-    const sameTab = tabs().find(
-      (t) => t.root.kind === "leaf" && t.root.content === path,
-    );
+    const sameTab = tabs().find((t) => t.root.kind === "leaf" && t.root.content === content);
     if (sameTab) {
       setActiveTabId(sameTab.id);
       return;
     }
-    const tab = makeTab(path);
+    const tab = makeTab(content);
     setTabs((ts) => [...ts, tab]);
     setActiveTabId(tab.id);
+    recordNav(tab.root.id, content);
   };
-  const openSettings = () => openFile("settings.yaml");
-  const openTerminal = () => openFile(TERMINAL_PREFIX + crypto.randomUUID());
-  const openSearch = () => openFile(SEARCH_TAB);
-  const openExport = (path: string) => openFile(EXPORT_PREFIX + path);
+  // New Tab (Cmd+T): ALWAYS a fresh graph home tab — never focuses an existing graph tab.
+  const newTab = () => {
+    const tab = makeTab(GRAPH_TAB);
+    setTabs((ts) => [...ts, tab]);
+    setActiveTabId(tab.id);
+    recordNav(tab.root.id, GRAPH_TAB);
+  };
+  const openSettings = () => openInNewTab("settings.yaml");
+  const openTerminal = () => openInNewTab(TERMINAL_PREFIX + crypto.randomUUID());
+  const openSearch = () => openInNewTab(SEARCH_TAB);
+  const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
   // Export the current tab: open the export tab for the focused file. Falls back to the
@@ -387,14 +460,14 @@ export default function App() {
     let path = `${base}.${ext}`;
     try { await api.create(path, "file"); }
     catch { path = `${base}-${crypto.randomUUID().slice(0, 6)}.${ext}`; await api.create(path, "file"); }
-    openFile(path);
+    openInNewTab(path);
   };
   const newSpreadsheet = () => void newDoc("Spreadsheet", "sheet");
   const newDrawing = () => void newDoc("Drawing", "draw");
-  const openCalendar = () => openFile(CALENDAR_TAB);
-  const openFlashcards = () => openFile(FLASHCARDS_PREFIX);
+  const openCalendar = () => openInNewTab(CALENDAR_TAB);
+  const openFlashcards = () => openInNewTab(FLASHCARDS_PREFIX);
   // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
-  const openGraph = () => openFile(GRAPH_TAB);
+  const openGraph = () => openInNewTab(GRAPH_TAB);
   // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
   // the graph home tab. The close handler already swaps atomically; this is the catch-all.
   createEffect(() => {
@@ -409,7 +482,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openCalendar, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openCalendar, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -446,8 +519,18 @@ export default function App() {
   createEffect(() => {
     localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
   });
-  // Close one tab by id (its whole pane tree goes with it).
+  // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
+  // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
+  // closing one pane of a split does NOT (that's a pane close, not a tab close). Session-only.
+  const CLOSED_TABS_CAP = 25;
+  const closedTabs: Tab[] = [];
+  // Close one tab by id (its whole pane tree goes with it), recording it for reopen.
   const closeTabById = (id: string) => {
+    const closing = tabs().find((t) => t.id === id);
+    if (closing) {
+      closedTabs.push(closing);
+      if (closedTabs.length > CLOSED_TABS_CAP) closedTabs.shift();
+    }
     setTabs((ts) => {
       const i = ts.findIndex((t) => t.id === id);
       if (i === -1) return ts;
@@ -456,12 +539,32 @@ export default function App() {
       // place (atomic, so there's no flash of the old main-pane default view).
       if (next.length === 0) {
         const home = makeTab(GRAPH_TAB);
+        recordNav(home.root.id, GRAPH_TAB);
         setActiveTabId(home.id);
         return [home];
       }
       if (activeTabId() === id) setActiveTabId(next[Math.min(i, next.length - 1)]?.id ?? null);
       return next;
     });
+  };
+  // Reopen the most recently closed tab, revived with fresh ids (via the persistence
+  // round-trip so no id collides with a live pane), and focus it.
+  const reopenClosedTab = () => {
+    const last = closedTabs.pop();
+    if (!last) return;
+    const { tabs: revived } = deserializeTabs(serializeTabs([last], last.id), () => true);
+    const tab = revived[0];
+    if (!tab) return;
+    setTabs((ts) => [...ts, tab]);
+    setActiveTabId(tab.id);
+    for (const l of leaves(tab.root)) recordNav(l.id, l.content);
+  };
+  // Close the whole active tab (regardless of splits). Cmd+W closes the focused pane via
+  // close-pane (which closes the tab when it's the last pane); this command always closes
+  // the entire tab.
+  const closeActiveTab = () => {
+    const id = activeTabId();
+    if (id) closeTabById(id);
   };
   const closeTab = (id: string, e: Event) => {
     e.stopPropagation();
@@ -740,6 +843,29 @@ export default function App() {
     if (matchesKeybinding(e, kb["terminal"])) {
       e.preventDefault();
       openTerminal();
+      return;
+    }
+    // New tab (default Mod+T): always a fresh graph home tab.
+    if (matchesKeybinding(e, kb["new-tab"])) {
+      e.preventDefault();
+      newTab();
+      return;
+    }
+    // Reopen the most recently closed tab (default Mod+Shift+T).
+    if (matchesKeybinding(e, kb["reopen-tab"])) {
+      e.preventDefault();
+      reopenClosedTab();
+      return;
+    }
+    // Walk the focused pane's navigation history (default Mod+[ back / Mod+] forward).
+    if (matchesKeybinding(e, kb["history-back"])) {
+      e.preventDefault();
+      historyBack();
+      return;
+    }
+    if (matchesKeybinding(e, kb["history-forward"])) {
+      e.preventDefault();
+      historyForward();
       return;
     }
 
