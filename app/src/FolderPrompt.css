@@ -1,0 +1,45 @@
+/* FolderPrompt — small typed-path modal for the "Open folder" command. */
+.folder-prompt {
+  background: var(--pop-bg-strong, var(--rail));
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 18px;
+  width: min(460px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(12px);
+}
+
+.folder-prompt-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.folder-prompt-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.folder-prompt-input {
+  font-family: var(--mono-font, ui-monospace, monospace);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 11px;
+  outline: none;
+}
+.folder-prompt-input:focus {
+  border-color: var(--accent);
+}
+
+.folder-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
