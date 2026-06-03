@@ -30,6 +30,8 @@ import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wikilink";
+import { findBareUrls } from "./editor/urls";
+import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
 import { registerEditor, unregisterEditor } from "./editorRegistry";
 import { NoteTitle } from "./NoteTitle";
@@ -302,6 +304,21 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
                   // target opens as a new note at the typed name (read falls back to "").
                   const resolved = resolveNotePath(target, props.noteNames());
                   window.dispatchEvent(new CustomEvent("oa-open", { detail: (resolved ?? target) + ".md" }));
+                  return true;
+                }
+              }
+              // markdown links [text](url) — open the destination in the browser.
+              for (const m of line.text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+                const s = line.from + (m.index ?? 0), en = s + m[0].length;
+                if (pos >= s && pos <= en) {
+                  void openExternalUrl(m[2]);
+                  return true;
+                }
+              }
+              // bare (inexplicit) URLs — a plain https://… typed without link syntax.
+              for (const { start, end, url } of findBareUrls(line.text)) {
+                if (pos >= line.from + start && pos <= line.from + end) {
+                  void openExternalUrl(url);
                   return true;
                 }
               }

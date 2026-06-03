@@ -23,6 +23,26 @@ export async function pickFolder(): Promise<string | null> {
   }
 }
 
+/**
+ * Open an external URL in the user's default browser, in a new tab. In the browser this
+ * is `window.open(_, "_blank")`; under Tauri `window.open` is swallowed by WKWebView, so
+ * we hand off to the OS via the opener plugin (which launches the default browser).
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(url);
+      return;
+    } catch (e) {
+      console.error("openUrl failed", e);
+      pushToast("Couldn't open link — see console");
+      return;
+    }
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 /** Returns true if a window was opened (or creation was kicked off in Tauri). */
 export async function openAppWindow(url: string, title = "Bismuth"): Promise<boolean> {
   if (isTauri()) {
