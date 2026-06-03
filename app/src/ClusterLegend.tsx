@@ -2,7 +2,8 @@
 // Presentational graph overlay: a compact, vertical list of communities (color swatch +
 // name + node count). Clicking a row flies to that cluster's nodes. Pure props in / callbacks
 // out — it knows nothing about the renderer; GraphView positions it and wires the callbacks.
-// Styled to match the GraphView overlay chrome (rgba(20,20,24,0.55), 10–11px, inherit font).
+// Styled to match the GraphView overlay chrome via theme tokens (--surface-2 / --fg /
+// --text-muted), so it tracks light and dark themes instead of baking in dark greys.
 import { For, createMemo } from "solid-js";
 
 export interface ClusterRow {
@@ -29,7 +30,7 @@ export function ClusterLegend(props: {
         display: "flex",
         "flex-direction": "column",
         gap: "1px",
-        background: "rgba(20,20,24,0.6)",
+        background: "var(--surface-2)",
         "border-radius": "4px",
         padding: "4px",
         "font-family": "inherit",
@@ -72,7 +73,7 @@ export function ClusterLegend(props: {
                 "min-width": 0,
                 overflow: "hidden",
                 "text-overflow": "ellipsis",
-                color: "rgba(232,232,232,0.92)",
+                color: "var(--fg)",
               }}
             >
               {row.label}
@@ -81,7 +82,7 @@ export function ClusterLegend(props: {
               style={{
                 "margin-left": "auto",
                 "padding-left": "8px",
-                color: "rgba(200,200,200,0.55)",
+                color: "var(--text-muted)",
                 "font-variant-numeric": "tabular-nums",
               }}
             >

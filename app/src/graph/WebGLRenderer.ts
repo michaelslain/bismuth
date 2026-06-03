@@ -128,6 +128,8 @@ export interface GraphConfig {
   nodeSizeMaxMult: number;    // ceiling multiplier (biggest hub)
   edgeColor: number;          // link color (0xRRGGBB)
   backgroundColor: number;    // canvas background (0xRRGGBB)
+  labelTextColor: string;     // hub-label text (CSS color; baked into canvas textures)
+  labelBgColor: string;       // hub-label pill background (CSS color)
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -146,6 +148,8 @@ const DEFAULT_CONFIG: GraphConfig = {
   nodeSizeMaxMult: 6,
   edgeColor: EDGE_COLOR,
   backgroundColor: 0x14151b, // Ink (background token)
+  labelTextColor: "rgba(232,232,238,0.95)", // dark-theme default; light flips via setConfig
+  labelBgColor: "rgba(14,14,17,0.6)",
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -1265,6 +1269,8 @@ export class WebGLRenderer {
     if (cfg.showGraphLabels !== prev.showGraphLabels) {
       this.labels.setEnabled(cfg.showGraphLabels);
     }
+    // Re-theme hub labels (text + pill) — no-op inside LabelLayer when unchanged.
+    this.labels.setColors(cfg.labelTextColor, cfg.labelBgColor);
     if (cfg.graphLabelHubCount !== prev.graphLabelHubCount) {
       this.refreshAlwaysOnLabels();
     }

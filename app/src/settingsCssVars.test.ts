@@ -62,3 +62,43 @@ describe("settingsToCssVars + themes", () => {
     expect(vars["--bg"]).toBe(THEMES["oxide-duotone"].background);
   });
 });
+
+describe("light themes follow the design's .bis.light block, not a derived dark", () => {
+  const lightVars = settingsToCssVars(withTheme("oxide-duotone-light"));
+  const darkVars = settingsToCssVars(DEFAULTS); // oxide-duotone (dark)
+  const t = THEMES["oxide-duotone-light"];
+
+  it("pins the showcase accent to the design value (#7A86DE), not a guess", () => {
+    expect(t.accent).toBe("#7A86DE");
+    expect(lightVars["--accent"]).toBe("#7A86DE");
+    // --accent-purple still tracks ramp[1].
+    expect(lightVars["--accent-purple"]).toBe(t.accentPalette[1]);
+  });
+
+  it("text on a solid accent fill is white on light, near-black on dark", () => {
+    expect(lightVars["--on-accent"]).toBe("#fff");
+    expect(darkVars["--on-accent"]).toBe("#08101F");
+  });
+
+  it("the rail is a distinct surface (bg pulled toward border), not the flat canvas wash", () => {
+    // Design target #EAE7F3; mix(bg 70%, border) lands on it. Must reference the border,
+    // and must differ from the canvas.
+    expect(lightVars["--rail"]).toBe(`color-mix(in srgb, ${t.background} 70%, ${t.border})`);
+    expect(lightVars["--rail"]).not.toBe(lightVars["--bg"]);
+  });
+
+  it("the modal scrim is a soft neutral lavender veil, not a heavy fg-tinted one", () => {
+    expect(lightVars["--scrim-bg"]).toBe(`color-mix(in srgb, ${t.neutral} 32%, transparent)`);
+    // Dark keeps the foreground-tinted veil.
+    expect(darkVars["--scrim-bg"]).toContain(THEMES["oxide-duotone"].foreground);
+  });
+
+  it("categories track the theme's own ramp on light (in-palette), saturated trio on dark", () => {
+    expect(lightVars["--green"]).toBe(t.accentPalette[1]); // design --green #6FA6E6
+    expect(lightVars["--gold"]).toBe(t.accentPalette[4]); // design --gold  #C08FD8
+    expect(lightVars["--rose"]).toBe(t.accentPalette[3]); // design --rose  #A98FE0
+    expect(darkVars["--green"]).toBe("#43D49A");
+    expect(darkVars["--gold"]).toBe("#F2C53D");
+    expect(darkVars["--rose"]).toBe("#F0509B");
+  });
+});

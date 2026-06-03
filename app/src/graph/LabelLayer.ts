@@ -9,8 +9,11 @@ const FONT_PX = 6;         // CSS px before DPR scaling — tiny, ambient annota
 const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
 const PAD_X = 2;
 const PAD_Y = 0;
-const TEXT_COLOR = "rgba(232,232,238,0.95)";
-const BG_COLOR = "rgba(14,14,17,0.6)";
+// Defaults match the dark themes (near-white text on a near-black pill). Light themes
+// flip these via setColors() — dark text on a translucent-white halo — so hub labels
+// read on a pale canvas instead of staying dark boxes. Driven from the theme in GraphView.
+const DEFAULT_TEXT_COLOR = "rgba(232,232,238,0.95)";
+const DEFAULT_BG_COLOR = "rgba(14,14,17,0.6)";
 const BORDER_RADIUS = 5;
 // Labels always use a monospace family regardless of the editor font. Monospace reads as a
 // technical annotation and stays crisp at small sizes.
@@ -88,7 +91,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 /** Draw a pill-shaped label onto a canvas at supersampled DPR, return { texture, cssWidth, cssHeight }. */
-function makeLabelTexture(text: string, fontFamily: string, dpr: number): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
+function makeLabelTexture(text: string, fontFamily: string, dpr: number, textColor: string, bgColor: string): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
   const measure = document.createElement("canvas").getContext("2d")!;
   measure.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
   const textW = Math.ceil(measure.measureText(text).width);
@@ -101,10 +104,10 @@ function makeLabelTexture(text: string, fontFamily: string, dpr: number): { text
   ctx.scale(dpr, dpr);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.fillStyle = BG_COLOR;
+  ctx.fillStyle = bgColor;
   roundRect(ctx, 0, 0, cssW, cssH, BORDER_RADIUS);
   ctx.fill();
-  ctx.fillStyle = TEXT_COLOR;
+  ctx.fillStyle = textColor;
   ctx.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.fillText(text, PAD_X, cssH / 2);
@@ -131,6 +134,8 @@ export class LabelLayer {
   private hoveredId: string | null = null;
   private enabled = true;
   private shown2d = new Set<string>(); // last frame's accepted 2D label set (for reveal hysteresis)
+  private textColor = DEFAULT_TEXT_COLOR;
+  private bgColor = DEFAULT_BG_COLOR;
 
   /** Attach to the node group (so sprites rotate with it). Called once at WebGLRenderer.mount(). */
   mount(parent: THREE.Object3D): void {
@@ -165,9 +170,27 @@ export class LabelLayer {
     const cached = this.textureCache.get(label);
     if (cached) return cached;
     const dpr = Math.min((window.devicePixelRatio || 1) * TEXTURE_DPR_MULT, 4);
-    const made = makeLabelTexture(label, LABEL_FONT_FAMILY, dpr);
+    const made = makeLabelTexture(label, LABEL_FONT_FAMILY, dpr, this.textColor, this.bgColor);
     this.textureCache.set(label, made);
     return made;
+  }
+
+  /** Re-theme the label pills (text + background). No-op if unchanged. Otherwise drops the
+   *  texture cache and re-points every live sprite at a freshly-rendered texture so a theme
+   *  switch recolors labels in place (they're baked into canvas textures, not CSS). */
+  setColors(textColor: string, bgColor: string): void {
+    if (textColor === this.textColor && bgColor === this.bgColor) return;
+    this.textColor = textColor;
+    this.bgColor = bgColor;
+    for (const entry of this.textureCache.values()) entry.texture.dispose();
+    this.textureCache.clear();
+    for (const [id, sprite] of this.sprites) {
+      const node = this.nodes.find((n) => n.id === id);
+      if (!node) continue;
+      const { texture } = this.textureFor(node.label);
+      sprite.material.map = texture;
+      sprite.material.needsUpdate = true;
+    }
   }
 
   /** Build a sprite for one node and add it to the scene (hidden by default). */

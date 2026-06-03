@@ -4,7 +4,8 @@
 // PREVIEW the highlighted node — onPreview lights up its label without moving the camera;
 // Enter / click COMMIT — onFly flies the camera there. Esc closes. Pure props in / callbacks
 // out — it knows nothing about the renderer; GraphView supplies `items` and wires the
-// callbacks. Styled as a small graph overlay (rgba(20,20,24,0.55) chrome, 10–11px).
+// callbacks. Styled as a small graph overlay via theme tokens (--surface-2/--fg/--faint,
+// selected row = --accent-soft) so it tracks light and dark themes, 10–11px.
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 import { SearchBar } from "./ui/SearchBar";
 
@@ -102,7 +103,7 @@ export function GraphSearch(props: {
       style={{
         display: "flex",
         "flex-direction": "column",
-        background: "rgba(20,20,24,0.6)",
+        background: "var(--surface-2)",
         "border-radius": "4px",
         "font-family": "inherit",
         "font-size": "11px",
@@ -125,7 +126,7 @@ export function GraphSearch(props: {
           border: "none",
           outline: "none",
           background: "transparent",
-          color: "rgba(232,232,232,0.92)",
+          color: "var(--fg)",
           font: "inherit",
           "font-size": "11px",
         }}
@@ -150,7 +151,7 @@ export function GraphSearch(props: {
                 cursor: "pointer",
                 "white-space": "nowrap",
                 background:
-                  selected() === i() ? "rgba(255,255,255,0.12)" : "transparent",
+                  selected() === i() ? "var(--accent-soft)" : "transparent",
               }}
             >
               <span
@@ -159,7 +160,7 @@ export function GraphSearch(props: {
                   "min-width": 0,
                   overflow: "hidden",
                   "text-overflow": "ellipsis",
-                  color: "rgba(232,232,232,0.92)",
+                  color: "var(--fg)",
                 }}
               >
                 {item.label}
@@ -175,7 +176,7 @@ export function GraphSearch(props: {
                     overflow: "hidden",
                     "text-overflow": "ellipsis",
                     "text-align": "right",
-                    color: "rgba(200,200,200,0.45)",
+                    color: "var(--faint)",
                     "font-size": "10px",
                   }}
                 >
@@ -186,7 +187,7 @@ export function GraphSearch(props: {
           )}
         </For>
         <Show when={query().trim() && results().length === 0}>
-          <div style={{ padding: "8px 9px", color: "rgba(200,200,200,0.5)", "font-size": "10px" }}>
+          <div style={{ padding: "8px 9px", color: "var(--faint)", "font-size": "10px" }}>
             No matches
           </div>
         </Show>
