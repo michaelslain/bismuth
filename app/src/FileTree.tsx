@@ -234,7 +234,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       items.push({ label: "New File", icon: "FilePlus", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", icon: "FolderPlus", onSelect: () => doCreate(node.path, "dir") });
       items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
-      items.push({ label: "New Drawing", icon: "Pencil", onSelect: () => doCreate(node.path, "draw") });
+      items.push({ label: "New Drawing", icon: "PenTool", onSelect: () => doCreate(node.path, "draw") });
     }
     items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
     items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
