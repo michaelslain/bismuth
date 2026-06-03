@@ -115,6 +115,7 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--sidebar-width": s.appearance.sidebarWidth + "px",
     "--sidebar-graph-height": s.appearance.sidebarGraphHeight + "px",
     "--ui-font-size": s.appearance.uiFontSize + "px",
+    "--mono-scale": String(s.appearance.monoScale),
     "--tab-font-size": s.appearance.tabFontSize + "px",
     "--sidebar-icon-font-size": s.appearance.sidebarIconFontSize + "px",
     "--palette-input-font-size": s.appearance.paletteInputFontSize + "px",
