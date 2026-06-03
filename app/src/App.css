@@ -310,8 +310,8 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .card-md em { font-style: italic; }
 .card-md a { color: var(--accent); }
 .card-md img { max-width: 100%; border-radius: 6px; }
-.card-md code { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 0.88em; background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
-.card-md pre { text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 0.85em; background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.card-md code { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
+.card-md pre { text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.12); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
 .card-md pre code { background: none; padding: 0; }
 
 /* Cram toggle + per-view settings panel (flashcard/base views) */

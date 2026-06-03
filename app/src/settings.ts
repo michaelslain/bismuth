@@ -33,6 +33,7 @@ export interface Settings {
     sidebarWidth: number;        // px
     sidebarGraphHeight: number;  // px
     uiFontSize: number;          // px
+    monoScale: number;           // optical-size multiplier for Monaspace (mono UI/code)
     tabFontSize: number;         // px
     sidebarIconFontSize: number; // px
     paletteInputFontSize: number; // px
