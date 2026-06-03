@@ -1,6 +1,23 @@
-// Backend base URL. Defaults to the standard core port; override with VITE_API_BASE
-// to run the frontend against a backend on a different port (e.g. alongside another worktree).
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
+// Backend base URL. Resolved at runtime so one frontend build can talk to different
+// backends across windows: the `?api=<url>` query param wins (set when "Open folder"
+// opens a sibling backend in a new window), then the VITE_API_BASE build env (used to
+// run alongside another worktree), then the standard core port.
+// Pure so it's unit-testable: given a location.search and the build env, pick the
+// backend base. `?api=` wins (trailing slashes trimmed), then VITE_API_BASE, then default.
+export function resolveBase(search: string | undefined, envBase: string | undefined): string {
+  try {
+    const fromQuery = new URLSearchParams(search ?? "").get("api");
+    if (fromQuery) return fromQuery.replace(/\/+$/, "");
+  } catch {
+    // malformed search — fall through to the build-time default
+  }
+  return envBase ?? "http://localhost:4321";
+}
+const BASE = resolveBase(globalThis.location?.search, import.meta.env.VITE_API_BASE);
+
+/** The backend this window is bound to (already query/env resolved). Exposed so the UI
+ *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
+export const apiBase = (): string => BASE;
 
 import type { GraphData, TreeEntry, ViewLayout } from "../../core/src/graph";
 import type { SearchOpts, SearchResult } from "./searchOpts";
@@ -90,6 +107,9 @@ export const api = {
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
   restore: (trashPath: string, to: string) => post("/restore", { trashPath, to }),
   create: (path: string, kind: "file" | "dir") => post("/create", { path, kind }),
+  // Spawn a sibling backend pointed at `folder` (its own brain). Returns the new
+  // backend's base URL; the caller opens a window with `?api=<url>` to show it.
+  openFolder: (folder: string) => postJson<{ url: string; vault: string }>("/open-folder", { folder }),
   templates: () => getJson<Array<{ name: string; path: string }>>("/templates"),
   dailyNote: (id: string) => postJson<{ path: string; created: boolean }>("/daily-note", { id }),
   tasks: () => getJson<Task[]>("/tasks"),

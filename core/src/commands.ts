@@ -16,10 +16,13 @@ export interface CommandSpec {
 export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "new-tab",         label: "New tab",                   icon: "Plus" },
   { id: "open-graph",      label: "Open graph view",           icon: "Share2" },
+  { id: "open-folder",     label: "Open folder…",              icon: "FolderOpen" },
+  { id: "new-window",      label: "New window",                icon: "AppWindow" },
   { id: "new-note",        label: "New note",                  icon: "FilePlus" },
   { id: "new-folder",      label: "New folder",                icon: "FolderPlus" },
   { id: "new-spreadsheet", label: "New spreadsheet",           icon: "Table" },
   { id: "new-drawing",     label: "New drawing",               icon: "PenTool" },
+  { id: "export",          label: "Export current file…",      icon: "Download" },
   { id: "terminal",        label: "Open Terminal",             icon: "SquareTerminal" },
   { id: "search",          label: "Search",                    icon: "Search" },
   { id: "settings",        label: "Open Settings",             icon: "Settings" },

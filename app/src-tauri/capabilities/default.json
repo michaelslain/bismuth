@@ -1,10 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and app-spawned (oa-*) windows",
+  "windows": ["main", "oa-*"],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "dialog:default",
     "opener:default",
     "fs:allow-write-file",
     {

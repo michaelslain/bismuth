@@ -1,6 +1,6 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
-import { api } from "./api";
+import { api, apiBase } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
@@ -17,6 +17,9 @@ import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
 import { GalleryHost } from "./ui/gallery/galleryStore";
+import { FolderPrompt } from "./FolderPrompt";
+import { openAppWindow, pickFolder } from "./appWindow";
+import { installAppMenu } from "./nativeAppMenu";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import { withYouNode } from "./graph/youNode";
@@ -36,7 +39,7 @@ import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
-import { openContextMenu } from "./nativeMenu";
+import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
 
@@ -302,6 +305,60 @@ export default function App() {
   const openExport = (path: string) => openFile(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  // Export the current tab: open the export tab for the focused file. Falls back to the
+  // active tab's content for single-pane tabs, so "export" acts on whatever you're on.
+  // Only real, exportable documents (note/base/sheet/drawing) qualify — sentinels like the
+  // graph/calendar/terminal can't be exported, so we nudge instead.
+  const exportActive = () => {
+    const at = activeTab();
+    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
+    const c = focusedContent() ?? fallback;
+    if (c && !isSentinel(c) && isExportable(c)) {
+      openExport(c);
+      return;
+    }
+    pushToast("Open a note, base, or sheet to export it");
+  };
+  // New window: reopen the CURRENT folder/backend in a new window, pinned to this
+  // window's backend via ?api= (so it survives even if this window later opens a
+  // different folder). A clean URL (only ?api=) — no other query state carries over.
+  const newWindow = async () => {
+    const url = new URL(globalThis.location.href);
+    url.search = "";
+    url.searchParams.set("api", apiBase());
+    if (!(await openAppWindow(url.toString()))) pushToast("Couldn't open a new window");
+  };
+  // Open folder: a chosen folder becomes its own brain in a new window. The backend
+  // spawns a sibling server pointed at the folder (process-per-vault); we open a window
+  // whose frontend talks to it via ?api=. Browser uses a typed-path modal; a native OS
+  // picker is a desktop-build enhancement. The modal stays open on failure so the path
+  // can be retried.
+  const [folderPromptOpen, setFolderPromptOpen] = createSignal(false);
+  const openFolder = async () => {
+    // Desktop: native OS folder picker. Browser: typed-path modal (no picker can yield
+    // a server-accessible path there).
+    if (isTauri()) {
+      const picked = await pickFolder();
+      if (picked) await doOpenFolder(picked);
+      return;
+    }
+    setFolderPromptOpen(true);
+  };
+  const doOpenFolder = async (folder: string) => {
+    try {
+      const { url } = await api.openFolder(folder);
+      const win = new URL(globalThis.location.href);
+      win.search = ""; // drop any inherited ?api= before pinning the new backend
+      win.searchParams.set("api", url);
+      if (!(await openAppWindow(win.toString()))) {
+        pushToast("Folder server started, but the window couldn't open");
+        return; // keep the modal open for a retry
+      }
+      setFolderPromptOpen(false);
+    } catch (e) {
+      pushToast(`Open folder failed: ${(e as Error).message}`);
+    }
+  };
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -329,7 +386,13 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openCalendar, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openCalendar, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive }, settings.dailyNotes);
+
+  // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
+  // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
+  onMount(() => {
+    void installAppMenu({ openFolder, newWindow, newNote, newFolder, exportActive, openSettings, openSearch });
+  });
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
   // and all appearance/ui sizing/spacing). The mapping lives in settingsCssVars so
@@ -889,6 +952,9 @@ export default function App() {
       </Show>
       <Show when={palette() === "template"}>
         <TemplatePalette onClose={() => setPalette(null)} title={activeNoteTitle()} />
+      </Show>
+      <Show when={folderPromptOpen()}>
+        <FolderPrompt onClose={() => setFolderPromptOpen(false)} onOpen={doOpenFolder} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (
