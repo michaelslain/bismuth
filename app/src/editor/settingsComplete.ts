@@ -7,7 +7,7 @@
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { completionDisplayConfig } from "./completionDisplay";
+import { completionDisplayConfig, type IconedCompletion } from "./completionDisplay";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
 import { commandLabel } from "../../../core/src/commands";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
@@ -233,10 +233,93 @@ function recordShortcut(view: EditorView, valueFrom: number): void {
     .catch(() => {});
 }
 
+/** A vault entry usable for path completion (mirrors /tree). */
+export type VaultPath = { path: string; kind: "file" | "dir" };
+
+/**
+ * Open the shared symbol gallery and, on pick, replace [from, end-of-line) with the
+ * chosen value. `source` selects which gallery ("icons"). The gallery + sources are
+ * dynamically imported so lucide-solid never enters this module's static graph
+ * (it can't be imported outside a DOM — see icons/registry.ts).
+ */
+function launchGallery(view: EditorView, from: number, source: "icons"): void {
+  const lineEnd = view.state.doc.lineAt(from).to;
+  void Promise.all([import("../ui/gallery/galleryStore"), import("../ui/gallery/sources")])
+    .then(([{ openGallery }, sources]) => openGallery({ source: sources.iconSource }))
+    .then((picked) => {
+      if (picked) {
+        view.dispatch({
+          changes: { from, to: lineEnd, insert: picked },
+          selection: { anchor: from + picked.length },
+        });
+      }
+      view.focus();
+    })
+    .catch((err) => console.error("Failed to open icon gallery", err));
+  void source; // single source today; param keeps call sites self-documenting
+}
+
+/**
+ * Rank vault paths for a query, case-INSENSITIVELY. Prefix-on-full-path first, then
+ * prefix-on-basename (so "jour" finds "Templates/Journal.md"), then substring. The
+ * caller returns these with `filter: false` so CodeMirror does NOT re-filter — that
+ * second filter is exactly what used to drop case-mismatched paths (you type
+ * "templates/" but the folder is "Templates/"), so owning the match here fixes it.
+ */
+export function rankPaths(candidates: VaultPath[], query: string): VaultPath[] {
+  const q = query.toLowerCase();
+  if (!q) return candidates;
+  const starts: VaultPath[] = [], baseStarts: VaultPath[] = [], includes: VaultPath[] = [];
+  for (const e of candidates) {
+    const p = e.path.toLowerCase();
+    const base = p.slice(p.lastIndexOf("/") + 1);
+    if (p.startsWith(q)) starts.push(e);
+    else if (base.startsWith(q)) baseStarts.push(e);
+    else if (p.includes(q)) includes.push(e);
+  }
+  return [...starts, ...baseStarts, ...includes];
+}
+
+/**
+ * Completion for a `path`-typed value. The value is matched with `(.*)` (NOT the
+ * generic `\S*`) so folder names containing spaces ("Daily Notes") complete. Sources:
+ * `scope:"templates"` → the template files (already folder-scoped server-side);
+ * otherwise the whole vault tree, narrowed by `only` to dirs or files. Each row shows
+ * a Folder/File glyph. Returns `filter: false` (own ranking; case-insensitive) and no
+ * `validFor`, so every keystroke re-queries — no stale CM re-filter to break casing.
+ */
+function pathCompletions(
+  ctx: CompletionContext,
+  rawValue: string,
+  type: { kind: "path"; only?: "dir" | "file"; scope?: "templates" },
+  getTemplatePaths: () => string[],
+  getVaultPaths: () => VaultPath[],
+): CompletionResult | null {
+  const from = ctx.pos - rawValue.length; // doc pos where the value text begins
+  // Tolerate quotes in a YAML-quoted value for MATCHING, but anchor `from` at the
+  // value start (quote included) so accepting replaces the whole token with a bare
+  // path — never leaving a dangling opening quote. Vault paths need no quoting.
+  const q = rawValue.replace(/^["']/, "").replace(/["']$/, "");
+
+  const candidates: VaultPath[] = type.scope === "templates"
+    ? getTemplatePaths().map((path) => ({ path, kind: "file" as const }))
+    : getVaultPaths().filter((e) => !type.only || e.kind === type.only);
+
+  const ranked = rankPaths(candidates, q);
+  if (!ranked.length) return null;
+  const options: IconedCompletion[] = ranked.slice(0, 50).map((e) => ({
+    label: e.path,
+    type: "path",
+    lucideIcon: e.kind === "dir" ? "Folder" : "File",
+  }));
+  return { from, to: ctx.pos, options, filter: false };
+}
+
 export function settingsCompletionSource(
   getSchema: () => Schema,
   getIconNames: () => string[],
   getTemplatePaths: () => string[],
+  getVaultPaths: () => VaultPath[],
 ): CompletionSource {
   return (ctx: CompletionContext): CompletionResult | null => {
     const root = getSchema();
@@ -262,14 +345,20 @@ export function settingsCompletionSource(
       }
     }
 
-    // KEYBIND value position: "key: <combo so far>" where the field type is `keybind`.
-    // Handled before the generic value match because a keybind value can contain
-    // spaces/commas ("Mod+`, Mod+J") that the generic \S* capture would mis-split.
-    const kbVal = before.match(/^\s*-?\s*([\w-]+):\s*(.*)$/);
-    if (kbVal) {
+    // FULL-VALUE position: "key: <value so far>" capturing the WHOLE value (incl.
+    // spaces/commas). Handled before the generic \S* match because keybind combos
+    // ("Mod+`, Mod+J") and paths with spaces ("Daily Notes") would otherwise be
+    // mis-split. Dispatches by field type; other types fall through to the generic
+    // value match below.
+    const fullVal = before.match(/^\s*-?\s*([\w-]+):\s*(.*)$/);
+    if (fullVal) {
       const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
-      const ft = sectionKey === "properties" ? "string" : (schema[kbVal[1]]?.type ?? "string");
-      if (ft === "keybind") return keybindCompletions(ctx, kbVal[2]);
+      const ft = sectionKey === "properties" ? "string" : (schema[fullVal[1]]?.type ?? "string");
+      if (ft === "keybind") return keybindCompletions(ctx, fullVal[2]);
+      if (typeof ft === "object" && ft.kind === "path") {
+        if (!ctx.explicit && fullVal[2].length === 0) return null;
+        return pathCompletions(ctx, fullVal[2], ft, getTemplatePaths, getVaultPaths);
+      }
     }
 
     // VALUE position: "key: <partial>" or "- key: <partial>" (list item).
@@ -280,26 +369,25 @@ export function settingsCompletionSource(
       const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
       const fieldType = sectionKey === "properties" ? "string" : (schema[key]?.type ?? "string");
 
-      // icon-typed field -> Lucide icon names.
+      // icon-typed field -> a "open icon gallery" action (always first) + Lucide icon
+      // names, EACH row showing its own icon (lucideIcon override). filter:false so the
+      // gallery row is never filtered out and our case-insensitive name match owns the
+      // list (no stale CM re-filter). The template `template:` and folder paths are
+      // `path`-typed now and handled by the full-value branch above.
       if (fieldType === "icon") {
+        const from = ctx.pos - typed.length;
         const p = typed.toLowerCase();
-        const options = getIconNames()
+        const gallery: IconedCompletion = {
+          label: "Open icon gallery",
+          type: "gallery",
+          lucideIcon: "Grip",
+          apply: (view: EditorView, _c: Completion, applyFrom: number) => launchGallery(view, applyFrom, "icons"),
+        };
+        const names: IconedCompletion[] = getIconNames()
           .filter((n) => n.toLowerCase().startsWith(p))
           .slice(0, 50)
-          .map((label) => ({ label, type: "enum" }));
-        if (!options.length) return null;
-        return { from: ctx.pos - typed.length, options, validFor: /^[\w-]*$/ };
-      }
-
-      // dailyNotes `template:` value → vault template file paths.
-      if (sectionKey === "dailyNotes" && key === "template") {
-        const tp = typed.toLowerCase();
-        const options = getTemplatePaths()
-          .filter((path) => path.toLowerCase().includes(tp))
-          .slice(0, 50)
-          .map((label) => ({ label, type: "enum" }));
-        if (!options.length) return null;
-        return { from: ctx.pos - typed.length, options, validFor: /^[^\n]*$/ };
+          .map((label) => ({ label, type: "icon", lucideIcon: label }));
+        return { from, options: [gallery, ...names], filter: false };
       }
 
       // Toolbar `command:` enum carries allowPrefixes ["daily-note:"] — also offer the
@@ -369,6 +457,14 @@ export function settingsCompletionSource(
   };
 }
 
-export function settingsCompletion(getSchema: () => Schema, getIconNames: () => string[], getTemplatePaths: () => string[]): Extension {
-  return autocompletion({ ...completionDisplayConfig, override: [settingsCompletionSource(getSchema, getIconNames, getTemplatePaths)] });
+export function settingsCompletion(
+  getSchema: () => Schema,
+  getIconNames: () => string[],
+  getTemplatePaths: () => string[],
+  getVaultPaths: () => VaultPath[],
+): Extension {
+  return autocompletion({
+    ...completionDisplayConfig,
+    override: [settingsCompletionSource(getSchema, getIconNames, getTemplatePaths, getVaultPaths)],
+  });
 }

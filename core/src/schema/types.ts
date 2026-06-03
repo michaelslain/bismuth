@@ -10,6 +10,10 @@ export type PropertyType =
   | "file"
   | "icon"
   | "keybind"
+  // A vault path. `only` narrows completion to directories or files; omit for both.
+  // `scope: "templates"` restricts to the configured templates folder (files only).
+  // Validated leniently (any string) — the value may name a path that doesn't exist yet.
+  | { kind: "path"; only?: "dir" | "file"; scope?: "templates" }
   | { kind: "enum"; values: string[]; caseInsensitive?: boolean; allowPrefixes?: string[] }
   | { kind: "list"; item?: PropertyType }
   | { kind: "object"; fields: Schema };

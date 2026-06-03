@@ -16,6 +16,7 @@ import { matchesKeybinding } from "./keybindings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
+import { GalleryHost } from "./ui/gallery/galleryStore";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import { withYouNode } from "./graph/youNode";
@@ -920,6 +921,7 @@ export default function App() {
         </div>
       </Show>
       <ToastHost />
+      <GalleryHost />
     </div>
   );
 }
