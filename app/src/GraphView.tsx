@@ -141,6 +141,13 @@ export function GraphView(props: {
       labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
       selfColor: hexToIntT(ap.foreground, 0xffffff),
     });
+    // The cluster legend's swatch colors are derived from the renderer's palette (via
+    // getCommunityCentroids → colorFor). This effect can run AFTER the initial render+refresh
+    // (Solid runs effects in creation order, and this one trails the graph-render effect), so
+    // the first legend would otherwise be built from the renderer's DEFAULT_PALETTE and stay
+    // stuck there — visibly snapping to the theme colors only on the next graph re-render (a
+    // view/mode switch). Refresh here too so the legend always tracks the live palette.
+    if (mounted) refreshUiData();
   });
 
   createEffect(() => {
