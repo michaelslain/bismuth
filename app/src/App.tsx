@@ -715,12 +715,20 @@ export default function App() {
     floater.style.width = `${r.width}px`;
     floater.style.height = `${r.height}px`;
   };
+  // Place the floater on the active slot. The docked (sidebar) graph collapses via a
+  // CSS clip-path tied to --sidebar-w (no canvas resize → no flicker), so its box is
+  // constant and one placement holds. The full-view graph actually changes size with
+  // the editor pane, so re-place once after the transition settles for its final size.
+  const placeFloaterSettled = () => {
+    placeFloater();
+    setTimeout(placeFloater, 220);
+  };
   createEffect(() => {
     activeTabId(); // re-place whenever the active tab changes
     tabs().length; // …or when tabs open/close
     sidebarVisible(); // …or when the sidebar is shown/hidden
     activeTabShowsGraph(); // …or when the mini-graph slot un-collapses (graph tab → note tab)
-    requestAnimationFrame(placeFloater);
+    requestAnimationFrame(placeFloaterSettled);
   });
   onMount(() => {
     window.addEventListener("resize", placeFloater);
@@ -878,7 +886,7 @@ export default function App() {
           </For>
         </div>
       </main>
-      <div class="graph-floater" classList={{ hidden: activeTabShowsGraph() }} ref={floater}>
+      <div class="graph-floater" classList={{ hidden: activeTabShowsGraph(), docked: anyTabOpen() }} ref={floater}>
         <GraphView fill mini={anyTabOpen()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
       </div>
       <Show when={palette() === "command"}>
