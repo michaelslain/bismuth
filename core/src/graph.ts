@@ -1,5 +1,12 @@
-export type NodeKind = "note" | "memory" | "agent" | "tag";
-export type EdgeKind = "link" | "message" | "about" | "tag";
+export type NodeKind = "note" | "memory" | "agent" | "tag" | "self";
+export type EdgeKind = "link" | "message" | "about" | "tag" | "open";
+
+/**
+ * Id of the synthetic "you" hub. There is one self node per brain VIEW, injected on the FRONTEND
+ * (it's keyed off open tabs/panes — pure client state), not by the backend graph builders. The
+ * sentinel-style `::` prefix can never collide with a note id (a vault path minus ".md").
+ */
+export const SELF_NODE_ID = "::you";
 
 // Node kinds belonging to each brain VIEW, mirrored by the frontend's mode filter.
 // "both" is the full graph (no subset). Each sub-view is laid out on its OWN node set
