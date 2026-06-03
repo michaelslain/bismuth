@@ -44,6 +44,11 @@ export function ClusterLegend(props: {
       <For each={sorted()}>
         {(row) => (
           <div
+            // Stop mousedown from bubbling to the enclosing pane-leaf, whose focus handler
+            // (PaneTree's onMouseDown) re-renders the pane and recreates these rows mid-click —
+            // detaching the mousedown target before mouseup, so the browser never fires the click
+            // and onFocus never runs. Matches EmptyPane's interactive-control pattern.
+            onMouseDown={(e) => e.stopPropagation()}
             onClick={() => props.onFocus(row.ids)}
             onMouseEnter={() => props.onHover?.(row.community)}
             onMouseLeave={() => props.onHover?.(null)}
