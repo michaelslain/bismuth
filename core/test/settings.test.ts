@@ -268,7 +268,6 @@ describe("toolbar serialization", () => {
     expect(out.toolbar).toEqual([
       { command: "new-note", icon: "FilePlus" },
       { command: "new-folder", icon: "FolderPlus" },
-      { command: "terminal", icon: "SquareTerminal" },
       { command: "search", icon: "Search" },
     ]);
   });

@@ -1028,7 +1028,7 @@ export default function App() {
                   data-tab-chip="true"
                   style={{ transform: `translateX(${tabShift(i())}px)` }}
                   onPointerDown={(e) => {
-                    if ((e.target as HTMLElement).classList.contains("tab-x")) return;
+                    if ((e.target as HTMLElement).closest(".tab-x")) return;
                     viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
                   }}
                   onContextMenu={(e) => {
@@ -1044,7 +1044,7 @@ export default function App() {
                     {(icon) => <Icon value={icon()} size={13} />}
                   </Show>
                   <span>{tabBarLabel(t)}</span>
-                  <IconButton icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
+                  <IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
                 </div>
               </>
             )}
@@ -1052,6 +1052,10 @@ export default function App() {
           <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
             <div class="tab-caret" />
           </Show>
+          <div class="tabbar-actions">
+            <IconButton icon="SquarePlus" label="New tab" iconSize={18} onClick={() => newTab()} />
+            <IconButton icon="SquareTerminal" label="Open Terminal" iconSize={18} onClick={() => openTerminal()} />
+          </div>
         </div>
         <div class="editor-body" ref={editorBodyEl} style={{ position: "relative" }}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
