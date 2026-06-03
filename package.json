@@ -1,5 +1,5 @@
 {
-  "name": "obsidian-alternative",
+  "name": "bismuth",
   "private": true,
   "workspaces": ["core", "cli", "app"],
   "scripts": {

@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 git clone <repo>
-cd obsidian-alternative
+cd bismuth
 bun install
 export OA_VAULT="/path/to/your/vault"           # Directory with .md files
 export OA_MEMORY="/path/to/your/memory"         # Claude-bot memory directory
