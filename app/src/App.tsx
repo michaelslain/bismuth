@@ -87,12 +87,22 @@ export default function App() {
     typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null,
     () => true,
   );
-  const [tabs, setTabs] = createSignal<Tab[]>(restored.tabs);
-  const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId);
+  // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
+  // when nothing is restored we open with the graph AS a tab. The no-empty-state effect + the
+  // close handlers keep this invariant (a graph tab always exists) at runtime.
+  const initialTabs = restored.tabs.length > 0 ? restored.tabs : [makeTab(GRAPH_TAB)];
+  const [tabs, setTabs] = createSignal<Tab[]>(initialTabs);
+  const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId ?? initialTabs[0]?.id ?? null);
 
   const activeTab = createMemo(() => tabs().find((t) => t.id === activeTabId()) ?? null);
   // True when any tab is open — drives the graph floater's sidebar-vs-main docking.
   const anyTabOpen = createMemo(() => tabs().length > 0);
+  // True when the active tab is showing the Knowledge Graph in one of its panes. The sidebar
+  // mini-graph hides in this case so the graph never renders twice on screen at once.
+  const activeTabShowsGraph = createMemo(() => {
+    const t = activeTab();
+    return !!t && leaves(t.root).some((l) => l.content === GRAPH_TAB);
+  });
 
   // Content id of the currently-focused leaf in the active tab, or null.
   // Drives the terminal overlay's visibility.
@@ -304,6 +314,11 @@ export default function App() {
   const openFlashcards = () => openFile(FLASHCARDS_PREFIX);
   // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
   const openGraph = () => openFile(GRAPH_TAB);
+  // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
+  // the graph home tab. The close handler already swaps atomically; this is the catch-all.
+  createEffect(() => {
+    if (tabs().length === 0) openGraph();
+  });
   const openDailyNote = async (id: string) => {
     try {
       const { path } = await api.dailyNote(id);
@@ -350,6 +365,13 @@ export default function App() {
       const i = ts.findIndex((t) => t.id === id);
       if (i === -1) return ts;
       const next = ts.filter((t) => t.id !== id);
+      // Never fall back to an empty state: closing the last tab reopens the graph home tab in its
+      // place (atomic, so there's no flash of the old main-pane default view).
+      if (next.length === 0) {
+        const home = makeTab(GRAPH_TAB);
+        setActiveTabId(home.id);
+        return [home];
+      }
       if (activeTabId() === id) setActiveTabId(next[Math.min(i, next.length - 1)]?.id ?? null);
       return next;
     });
@@ -696,6 +718,7 @@ export default function App() {
     activeTabId(); // re-place whenever the active tab changes
     tabs().length; // …or when tabs open/close
     sidebarVisible(); // …or when the sidebar is shown/hidden
+    activeTabShowsGraph(); // …or when the mini-graph slot un-collapses (graph tab → note tab)
     requestAnimationFrame(placeFloater);
   });
   onMount(() => {
@@ -757,7 +780,7 @@ export default function App() {
           </For>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} /></div>
-        <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() }} ref={sidebarSlot} />
+        <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
         <div class="tabbar" data-tabstrip="true">
@@ -854,7 +877,7 @@ export default function App() {
           </For>
         </div>
       </main>
-      <div class="graph-floater" ref={floater}>
+      <div class="graph-floater" classList={{ hidden: activeTabShowsGraph() }} ref={floater}>
         <GraphView fill mini={anyTabOpen()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
       </div>
       <Show when={palette() === "command"}>

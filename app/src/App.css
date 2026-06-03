@@ -87,6 +87,8 @@ body { background: var(--bg); color: var(--fg); }
 /* Single graph element, snapped over whichever slot is active (see App.tsx).
    Box geometry is set inline in JS. */
 .graph-floater { position: fixed; z-index: 2; overflow: hidden; }
+/* Hidden when the active tab already shows the graph in a pane — never two graphs at once. */
+.graph-floater.hidden { display: none; }
 /* The left "toolzone" of the design's 40px top strip. Height matches .tabbar so the two
    top bars' bottom divider lines align into one continuous row across the app.
    .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
