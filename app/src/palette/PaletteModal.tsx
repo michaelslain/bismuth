@@ -7,6 +7,7 @@ import Fuse from "fuse.js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
 import { SearchBar } from "../ui/SearchBar";
+import { createMenuNav } from "../ui/popover/createMenuNav";
 import "./palette.css";
 
 export type PaletteItem = {
@@ -62,7 +63,6 @@ function Highlight(p: { text: string; indices: number[] }) {
 
 export function PaletteModal(props: Props) {
   const [query, setQuery] = createSignal("");
-  const [selected, setSelected] = createSignal(0);
   let inputRef: HTMLInputElement | undefined;
   let listRef: HTMLDivElement | undefined;
 
@@ -99,10 +99,20 @@ export function PaletteModal(props: Props) {
       });
   });
 
+  // Up/Down/Enter/Escape come from the shared menu-nav hook (same logic as the
+  // context menu); the palette clamps instead of wrapping, hence wrap:false.
+  const nav = createMenuNav({
+    count: () => results().length,
+    wrap: false,
+    onSelect: (i) => { const r = results()[i]; if (r) props.onSelect(r.item); },
+    onEscape: () => props.onClose(),
+  });
+  const selected = nav.active;
+
   // Reset the highlighted row to the top whenever the query changes.
   createEffect(() => {
     query();
-    setSelected(0);
+    nav.setActive(0);
   });
 
   // Keep the highlighted row scrolled into view.
@@ -114,30 +124,6 @@ export function PaletteModal(props: Props) {
 
   onMount(() => inputRef?.focus());
 
-  function onKeyDown(e: KeyboardEvent): void {
-    const n = results().length;
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        setSelected((s) => Math.min(s + 1, n - 1));
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        setSelected((s) => Math.max(s - 1, 0));
-        break;
-      case "Enter": {
-        e.preventDefault();
-        const r = results()[selected()];
-        if (r) props.onSelect(r.item);
-        break;
-      }
-      case "Escape":
-        e.preventDefault();
-        props.onClose();
-        break;
-    }
-  }
-
   return (
     <Modal onClose={props.onClose} class="palette-panel">
       <SearchBar
@@ -147,7 +133,7 @@ export function PaletteModal(props: Props) {
         placeholder={props.placeholder}
         value={query()}
         onInput={setQuery}
-        onKeyDown={onKeyDown}
+        onKeyDown={nav.onKeyDown}
       />
       <div class="palette-list" ref={listRef}>
         <For each={results()}>
@@ -155,7 +141,7 @@ export function PaletteModal(props: Props) {
             <div
               class="palette-row"
               classList={{ selected: selected() === i() }}
-              onMouseEnter={() => setSelected(i())}
+              onMouseEnter={() => nav.setActive(i())}
               onClick={() => props.onSelect(r.item)}
             >
               <Show when={r.item.icon}>

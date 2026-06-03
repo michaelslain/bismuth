@@ -1,7 +1,12 @@
 /* app/src/ui/popover/popover.css
- * The ONE source of truth for how every floating list looks — the right-click
- * context menu AND the CodeMirror autocomplete both read these tokens. Change a
- * token here and both surfaces change. Colors reuse the app theme vars. */
+ * The ONE source of truth for how every floating list looks. Surfaces that read
+ * these tokens stay pixel-identical:
+ *   1. context menu   — Solid <PopoverList>/<MenuRow>           (shares components)
+ *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (Editor.tsx theme;
+ *                       CM owns that DOM, so it shares TOKENS, not components)
+ *   3. yaml hover-fix — vanilla .oa-popover DOM (rowDom.ts)      (shares the CSS)
+ *   4. command/file palette — shares font/selected/shadow tokens (its own modal chrome)
+ * Change a token here and every surface changes together. Colors reuse theme vars. */
 :root {
   --popover-radius: 8px;
   --popover-pad: 4px;
@@ -13,6 +18,10 @@
   --popover-min-width: 170px;
   --popover-selected-bg: color-mix(in srgb, var(--accent) 25%, transparent);
   --popover-detail-opacity: 0.5;
+  /* UI-chrome font + one shadow for every popover surface. Centralised here so the
+     context menu, autocomplete, and palette can never drift on either. */
+  --popover-font: "Monaspace Xenon", ui-monospace, monospace;
+  --popover-shadow: var(--shadow-menu);
 }
 
 /* chrome */
@@ -22,7 +31,8 @@
   border-radius: var(--popover-radius);
   padding: var(--popover-pad);
   min-width: var(--popover-min-width);
-  box-shadow: var(--shadow-menu);
+  box-shadow: var(--popover-shadow);
+  font-family: var(--popover-font);
   font-size: var(--popover-font-size);
   color: var(--fg);
   overflow: hidden;
