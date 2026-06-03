@@ -31,6 +31,10 @@ export function NoteTitle(props: { path: string }) {
   let done = false;
   createEffect(() => { title(); done = false; });
 
+  // The `#` glyph shows only while the title field is focused (clicked into) —
+  // mirroring how body-heading `#`s reveal only on the cursor line.
+  const [focused, setFocused] = createSignal(false);
+
   const revert = () => { setDraft(title()); if (inputRef) inputRef.value = title(); };
 
   const commit = async () => {
@@ -51,8 +55,9 @@ export function NoteTitle(props: { path: string }) {
   };
 
   return (
-    <div class="note-title">
-      {/* Fixed, non-editable heading glyph — separate DOM from the field. */}
+    <div class="note-title" classList={{ focused: focused() }}>
+      {/* Non-editable heading glyph — separate DOM from the field. Hidden until
+          the field is focused (see CSS), then revealed in mono accent. */}
       <span class="note-title-hash" aria-hidden="true">#</span>
       <input
         ref={(el) => (inputRef = el)}
@@ -60,11 +65,12 @@ export function NoteTitle(props: { path: string }) {
         value={draft()}
         spellcheck={false}
         onInput={(e) => setDraft(e.currentTarget.value)}
+        onFocus={() => setFocused(true)}
         onKeyDown={(e) => {
           if (e.key === "Enter") { e.preventDefault(); inputRef?.blur(); } // commit via blur
           else if (e.key === "Escape") { revert(); inputRef?.blur(); }
         }}
-        onBlur={commit}
+        onBlur={() => { setFocused(false); commit(); }}
       />
     </div>
   );
