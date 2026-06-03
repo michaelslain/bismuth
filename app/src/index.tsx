@@ -1,6 +1,7 @@
 /* @refresh reload */
 import { render } from "solid-js/web";
-import "katex/dist/katex.min.css";
+// KaTeX CSS is now loaded lazily alongside the katex JS chunk (see editor/katexLoader.ts),
+// so it no longer ships in the entry bundle.
 // default fonts: Lora (prose) + Monaspace Xenon (monospace)
 import "@fontsource/lora/400.css";
 import "@fontsource/lora/700.css";

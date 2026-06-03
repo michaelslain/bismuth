@@ -6,7 +6,7 @@
 
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import katex from "katex";
+import { renderMath, onMathReady } from "./katexLoader";
 
 /** Matches a line whose entire trimmed content is exactly `$$`. */
 const MATH_FENCE = /^\s*\$\$\s*$/;
@@ -29,10 +29,10 @@ class MathBlockWidget extends WidgetType {
   toDOM(): HTMLElement {
     const div = document.createElement("div");
     div.className = "cm-math-block";
-    div.innerHTML = katex.renderToString(this.expr, {
-      throwOnError: false,
-      displayMode: true,
-    });
+    div.innerHTML = renderMath(this.expr, true);
+    // If KaTeX wasn't loaded yet, renderMath returned "" and kicked off the lazy
+    // load — fill the node in once the library is ready (same final output).
+    if (!div.innerHTML) onMathReady(() => { div.innerHTML = renderMath(this.expr, true); });
     return div;
   }
 

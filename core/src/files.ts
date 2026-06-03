@@ -1,5 +1,5 @@
 import { join, dirname, resolve, sep } from "node:path";
-import { mkdirSync, renameSync, existsSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync, writeFileSync, statSync } from "node:fs";
 import { readdir, Dirent } from "node:fs/promises";
 import { parseFrontmatter } from "./frontmatter";
 import { createError } from "./error";
@@ -78,6 +78,14 @@ export async function listMarkdown(root: string): Promise<string[]> {
   return out;
 }
 
+// Per-note icon cache, keyed by absolute path → { mtime, icon }. listTree otherwise
+// reads + frontmatter-parses every .md just to pull the optional `icon` field; this skips
+// that work for notes whose mtime is unchanged since the last listTree. Self-healing: a
+// changed file restamps its entry, so no explicit invalidation is needed. Stale entries
+// for deleted paths may linger but are never emitted (only paths present in the current
+// walk are looked up). `icon` is null when the note has no icon frontmatter.
+const iconCache = new Map<string, { mtime: number; icon: string | null }>();
+
 export async function listTree(root: string): Promise<TreeEntry[]> {
   const entries = await walkDir(root, (d, rel) => {
     if (d.isDirectory()) {
@@ -106,9 +114,26 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
     if (entry.isDir) {
       out.push({ path: entry.rel, kind: "dir" });
     } else if (entry.name.endsWith(".md")) {
-      const { data } = parseFrontmatter(await readNote(root, entry.rel));
+      const abs = join(root, entry.rel);
+      // Reuse the cached icon when the file's mtime is unchanged; only re-read + parse
+      // frontmatter for notes that actually changed since the last listTree.
+      let icon: string | null;
+      let mtime = NaN;
+      try {
+        mtime = statSync(abs).mtimeMs;
+      } catch {
+        // stat failed (e.g. deleted mid-walk); fall through to a fresh read attempt.
+      }
+      const cached = iconCache.get(abs);
+      if (cached && cached.mtime === mtime && !Number.isNaN(mtime)) {
+        icon = cached.icon;
+      } else {
+        const { data } = parseFrontmatter(await readNote(root, entry.rel));
+        icon = typeof data.icon === "string" ? data.icon : null;
+        if (!Number.isNaN(mtime)) iconCache.set(abs, { mtime, icon });
+      }
       const treeEntry: TreeEntry = { path: entry.rel, kind: "file" };
-      if (typeof data.icon === "string") treeEntry.icon = data.icon;
+      if (icon !== null) treeEntry.icon = icon;
       out.push(treeEntry);
     } else if (entry.data === "PenTool") {
       // .draw file with icon marker
