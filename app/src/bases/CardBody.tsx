@@ -1,16 +1,10 @@
 import { Show } from "solid-js";
 import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
-import { renderTitle, isStatusColumn, isRatingColumn } from "./renderValue";
+import { renderTitle, isStatusColumn, isRatingColumn, bareName } from "./renderValue";
 import { Stars } from "../ui/Stars";
 import { StatusText } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
-
-/** Bare property name (drop file./note./this./formula. namespace), lowercased. */
-function bareName(id: string): string {
-  const dot = id.indexOf(".");
-  return (dot >= 0 ? id.slice(dot + 1) : id).toLowerCase();
-}
 
 /** Heuristic: which column is a page count (rendered as "N pages" on the right). */
 function isPagesColumn(id: string): boolean {
