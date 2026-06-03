@@ -1,7 +1,7 @@
 // app/src/PaneTree.tsx
 // Recursively renders one tab's pane tree. A leaf renders PaneContent and reports
 // focus/clicks; a split renders two children with a draggable divider between them.
-import { Show, createSignal, onCleanup, type Accessor } from "solid-js";
+import { Show, createSignal, onCleanup, type Accessor, type JSX } from "solid-js";
 import type { PaneNode, Leaf, Dir } from "./panes";
 import { PaneContent } from "./PaneContent";
 import { Icon } from "./icons/Icon";
@@ -29,6 +29,7 @@ type PaneTreeProps = {
   onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
+  renderGraph?: () => JSX.Element;
 };
 
 const DRAG_MIME = "application/x-oa-path"; // a file dragged from the tree
@@ -123,6 +124,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           onNewTerminal={props.onNewTerminal}
           noteNames={props.noteNames}
           tagNames={props.tagNames}
+          renderGraph={props.renderGraph}
         />
       </div>
       <Show when={activeZone()}>

@@ -18,6 +18,7 @@ export interface CommandHandlers {
   newDrawing: () => void | Promise<void>;
   openCalendar: () => void;
   openFlashcards: () => void;
+  openGraph: () => void;
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
@@ -34,6 +35,10 @@ export interface BoundCommand {
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
   const actions: Record<string, () => void | Promise<void>> = {
+    // "New tab" and "Open graph view" both open the Knowledge Graph as a tab — they are, as the
+    // user put it, the same thing: a fresh tab whose content is the graph.
+    "new-tab": h.openGraph,
+    "open-graph": h.openGraph,
     "new-note": h.newNote,
     "new-folder": h.newFolder,
     "new-spreadsheet": h.newSpreadsheet,
