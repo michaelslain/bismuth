@@ -125,6 +125,10 @@ export function validateValue(
     }
   }
 
+  // A path is any string — we never flag it (it may name a path you're about to
+  // create). Completion (settingsComplete.ts) is where the type does its real work.
+  if (type.kind === "path") return null;
+
   if (type.kind === "enum") {
     const str = String(value);
     const match = type.caseInsensitive

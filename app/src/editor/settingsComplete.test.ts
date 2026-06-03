@@ -31,8 +31,18 @@ describe("docInfo", () => {
 
 import { EditorState } from "@codemirror/state";
 import { CompletionContext } from "@codemirror/autocomplete";
-import { settingsCompletionSource } from "./settingsComplete";
+import { settingsCompletionSource, rankPaths, type VaultPath } from "./settingsComplete";
 import { SETTINGS_SCHEMA } from "../../../core/src/schema/settingsSchema";
+
+const TEST_TREE: VaultPath[] = [
+  { path: "Notes", kind: "dir" },
+  { path: "Daily Notes", kind: "dir" },
+  { path: "Projects", kind: "dir" },
+  { path: "Projects/Alpha", kind: "dir" },
+  { path: "Templates", kind: "dir" },
+  { path: "Templates/Journal.md", kind: "file" },
+  { path: "welcome.md", kind: "file" },
+];
 
 /** Drive the completion source at the end of `doc` (cursor at the last char). */
 function complete(doc: string, explicit = true) {
@@ -42,6 +52,7 @@ function complete(doc: string, explicit = true) {
     () => SETTINGS_SCHEMA,
     () => ["FilePlus", "FolderPlus", "Bug", "Settings"],
     () => ["Templates/Journal.md", "Templates/Meeting.md"],
+    () => TEST_TREE,
   )(ctx);
 }
 
@@ -136,5 +147,61 @@ describe("daily-note settings completion", () => {
     const res = complete("dailyNotes:\n  - id: journal\n    fileName: x\n    template: Templ");
     const labels = res?.options.map((o) => o.label) ?? [];
     expect(labels).toContain("Templates/Journal.md");
+  });
+});
+
+describe("rankPaths", () => {
+  it("returns all candidates for an empty query", () => {
+    expect(rankPaths(TEST_TREE, "")).toEqual(TEST_TREE);
+  });
+
+  it("matches case-insensitively (lowercase query finds a Capitalized path)", () => {
+    // The exact regression: typing 'notes' must surface 'Notes' (and 'Daily Notes').
+    const out = rankPaths(TEST_TREE, "notes").map((e) => e.path);
+    expect(out).toContain("Notes");
+    expect(out).toContain("Daily Notes");
+  });
+
+  it("ranks full-path prefix before basename prefix before substring", () => {
+    const out = rankPaths(TEST_TREE, "templates").map((e) => e.path);
+    expect(out.slice(0, 2)).toEqual(["Templates", "Templates/Journal.md"]);
+  });
+
+  it("matches a nested path by its last segment (basename)", () => {
+    expect(rankPaths(TEST_TREE, "jour").map((e) => e.path)).toEqual(["Templates/Journal.md"]);
+  });
+
+  it("matches a path containing a space across the space", () => {
+    expect(rankPaths(TEST_TREE, "daily no").map((e) => e.path)).toEqual(["Daily Notes"]);
+  });
+
+  it("yields an empty list when nothing matches", () => {
+    expect(rankPaths(TEST_TREE, "zzz")).toEqual([]);
+  });
+});
+
+describe("path-typed value completion", () => {
+  it("completes folders only for a dailyNotes `folder:` (dir-scoped path)", () => {
+    const res = complete("dailyNotes:\n  - id: journal\n    folder: no");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("Notes");        // lowercase query → Capitalized dir
+    expect(labels).toContain("Daily Notes");  // folder name with a space
+    expect(labels).not.toContain("welcome.md"); // files excluded by only:"dir"
+  });
+
+  it("tags folder rows with a Folder icon and is unfiltered (filter:false)", () => {
+    const res = complete("dailyNotes:\n  - id: journal\n    folder: no");
+    expect(res?.filter).toBe(false);
+    const opt = res?.options.find((o) => o.label === "Notes") as { lucideIcon?: string } | undefined;
+    expect(opt?.lucideIcon).toBe("Folder");
+  });
+
+  it("offers an 'Open icon gallery' action plus per-row icons for an icon field", () => {
+    const res = complete("toolbar:\n  - command: terminal\n    icon: File");
+    const opts = res?.options ?? [];
+    expect(opts[0]?.label).toBe("Open icon gallery");
+    expect((opts[0] as { lucideIcon?: string }).lucideIcon).toBe("Grip");
+    const fileOpt = opts.find((o) => o.label === "FilePlus") as { lucideIcon?: string } | undefined;
+    expect(fileOpt?.lucideIcon).toBe("FilePlus"); // each row shows its own icon
   });
 });

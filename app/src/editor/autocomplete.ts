@@ -1,6 +1,6 @@
 // app/src/editor/autocomplete.ts
 import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
-import { completionDisplayConfig } from "./completionDisplay";
+import { completionDisplayConfig, type IconedCompletion } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
@@ -238,15 +238,32 @@ function emojiSource(): CompletionSource {
 
     const from = line.from + match.from;
     const to = line.from + match.to;
-    const options: Completion[] = searchEmoji(match.query).map((e) => ({
+    // "Open emoji gallery" — always first, even when no emoji matches the query, so the
+    // grid is one click away. Picking from it replaces the same `:query[:]` range. The
+    // gallery + sources are dynamically imported (keeps lucide-solid out of this module's
+    // static graph). The body `:` gallery shows emoji ONLY (icons stay for icon fields).
+    const gallery: IconedCompletion = {
+      label: "Open emoji gallery",
+      type: "gallery",
+      lucideIcon: "Grip",
+      apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+        void Promise.all([import("../ui/gallery/galleryStore"), import("../ui/gallery/sources")])
+          .then(([{ openGallery }, sources]) => openGallery({ source: sources.emojiSource }))
+          .then((char) => {
+            if (char) applyInsert(view, completion, applyFrom, applyTo, char, char.length);
+            view.focus();
+          })
+          .catch((err) => console.error("Failed to open emoji gallery", err));
+      },
+    };
+    const emoji: Completion[] = searchEmoji(match.query).map((e) => ({
       label: `${e.char}  :${e.name}:`,
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         applyInsert(view, completion, applyFrom, applyTo, e.char, e.char.length);
       },
     }));
-    if (options.length === 0) return null;
     // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
-    return { from, to, options, filter: false };
+    return { from, to, options: [gallery, ...emoji], filter: false };
   };
 }
 
