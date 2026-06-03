@@ -92,6 +92,74 @@ function basenameOf(path: string): string {
   return path.split("/").pop()!.replace(/\.md$/, "");
 }
 
+// Per-vault cached search index: the built MiniSearch index plus the per-path body map.
+// listMarkdown + readNote over the whole vault on every keystroke-driven search is the
+// hot cost; this builds once and reuses until a file-watch change invalidates it (see
+// invalidateSearchIndex, wired into the server's applyDirty path). Results are identical
+// to the uncached path for a given vault state because the index/bodies are rebuilt from
+// the same listMarkdown + readNote inputs.
+interface SearchIndex {
+  mini: MiniSearch<IndexDoc>;
+  bodies: Map<string, string>;
+  paths: string[];
+}
+const indexCache = new Map<string, SearchIndex>();
+// Dedupe concurrent cold builds for the same vault (mirrors AsyncCache's in-flight guard).
+const indexInFlight = new Map<string, Promise<SearchIndex>>();
+
+/** Drop the cached search index for a vault (or all vaults). Called on file-watch invalidation. */
+export function invalidateSearchIndex(root?: string): void {
+  if (root === undefined) {
+    indexCache.clear();
+    indexInFlight.clear();
+  } else {
+    indexCache.delete(root);
+    indexInFlight.delete(root);
+  }
+}
+
+async function buildSearchIndex(root: string): Promise<SearchIndex> {
+  const paths = await listMarkdown(root);
+  const bodies = new Map<string, string>();
+  const docs: IndexDoc[] = [];
+  for (const p of paths) {
+    const body = await readNote(root, p);
+    bodies.set(p, body);
+    docs.push({ id: p, basename: basenameOf(p), headings: extractHeadings(body), tags: extractTags(body), body });
+  }
+  const mini = new MiniSearch<IndexDoc>({
+    fields: ["basename", "headings", "tags", "body"],
+    storeFields: ["id"],
+    searchOptions: {
+      boost: { basename: 6, headings: 3, tags: 2, body: 1 },
+      prefix: true,
+      fuzzy: (term) => (term.length > 3 ? 0.2 : false),
+    },
+  });
+  mini.addAll(docs);
+  return { mini, bodies, paths };
+}
+
+async function getSearchIndex(root: string): Promise<SearchIndex> {
+  const cached = indexCache.get(root);
+  if (cached) return cached;
+  const pending = indexInFlight.get(root);
+  if (pending) return pending;
+  const build = buildSearchIndex(root).then(
+    (idx) => {
+      indexInFlight.delete(root);
+      indexCache.set(root, idx);
+      return idx;
+    },
+    (err) => {
+      indexInFlight.delete(root);
+      throw err;
+    },
+  );
+  indexInFlight.set(root, build);
+  return build;
+}
+
 /**
  * Rank vault notes for `query` and attach per-note match snippets.
  *
@@ -103,29 +171,12 @@ function basenameOf(path: string): string {
  */
 export async function searchVault(root: string, query: string, opts: SearchOpts): Promise<SearchResult[]> {
   if (!query) return [];
-  const paths = await listMarkdown(root);
-  const bodies = new Map<string, string>();
-  const docs: IndexDoc[] = [];
-  for (const p of paths) {
-    const body = await readNote(root, p);
-    bodies.set(p, body);
-    docs.push({ id: p, basename: basenameOf(p), headings: extractHeadings(body), tags: extractTags(body), body });
-  }
+  const { mini, bodies, paths } = await getSearchIndex(root);
 
   let ordered: string[];
   if (opts.regex) {
     ordered = paths;
   } else {
-    const mini = new MiniSearch<IndexDoc>({
-      fields: ["basename", "headings", "tags", "body"],
-      storeFields: ["id"],
-      searchOptions: {
-        boost: { basename: 6, headings: 3, tags: 2, body: 1 },
-        prefix: true,
-        fuzzy: (term) => (term.length > 3 ? 0.2 : false),
-      },
-    });
-    mini.addAll(docs);
     const hits = mini.search(query);
     ordered = hits.map((h) => h.id as string);
   }

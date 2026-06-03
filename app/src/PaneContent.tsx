@@ -1,7 +1,7 @@
 // app/src/PaneContent.tsx
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
-import { Switch, Match, type JSX } from "solid-js";
+import { Switch, Match, Suspense, lazy, type JSX } from "solid-js";
 import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
@@ -9,7 +9,8 @@ import { BaseView } from "./bases/BaseView";
 import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import { DrawingPage } from "./drawing/DrawingPage";
-import { ExportView } from "./ExportView";
+// Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
+const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
 import type { NoteCandidate } from "./editor/wikilink";
 import { CALENDAR_TAB, SEARCH_TAB, GRAPH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
@@ -42,7 +43,9 @@ export function PaneContent(props: {
           "::export:Reading.base" ends with ".base", so without this ordering it
           would be caught by the .base arm and render the BaseView, not ExportView. */}
       <Match when={props.path.startsWith(EXPORT_PREFIX)}>
-        <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
+        <Suspense fallback={<div class="exp" />}>
+          <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
+        </Suspense>
       </Match>
       <Match when={props.path.startsWith(FLASHCARDS_PREFIX)}>
         <Flashcards note={props.path.slice(FLASHCARDS_PREFIX.length)} />

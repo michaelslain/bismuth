@@ -1,10 +1,12 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show } from "solid-js";
+import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
 import { api, apiBase } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
-import { GraphView } from "./GraphView";
+// Lazy: GraphView pulls in three.js + d3-force-3d (their own chunk), so defer it off the
+// entry bundle even though the graph is the home tab. <Suspense> keeps boot smooth.
+const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
@@ -20,7 +22,8 @@ import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { openAppWindow, pickFolder } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
-import { TerminalTab } from "./Terminal";
+// Lazy: xterm.js + its CSS only load when a terminal tab first opens.
+const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import { withYouNode } from "./graph/youNode";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
@@ -218,9 +221,29 @@ export default function App() {
   let mainSlot: HTMLDivElement | undefined;
   let floater: HTMLDivElement | undefined;
 
+  // Cheap structure signature: node ids + edge endpoints. Two graphs with the same
+  // signature have identical topology, so a precomputed brain-view layout (keyed on
+  // node ids) computed for one is still valid for the other.
+  const graphStructureSig = (g: GraphData): string => {
+    const nodes = g.nodes.map((n) => n.id).join(",");
+    const edges = g.edges.map((e) => `${e.from}>${e.to}`).join(",");
+    return `${g.nodes.length}|${g.edges.length}|${nodes}|${edges}`;
+  };
+
   const refreshGraph = async () => {
     const g = await api.graph();
-    setGraph(g);
+    // A graph-dirty SSE event hands us a fresh graph whose lazy `views` layouts are
+    // undefined, which would force a redundant /graph/views refetch + relayout in
+    // 2nd/3rd brain modes. When the structure is unchanged (only content/positions
+    // moved), carry the previous views over so the view-layout effect stays satisfied.
+    // If structure changed at all, do NOT carry over — correctness first (the stale
+    // layout would strand new/removed nodes).
+    const prev = graph();
+    const next =
+      g.views === undefined && prev.views && graphStructureSig(prev) === graphStructureSig(g)
+        ? { ...g, views: prev.views }
+        : g;
+    setGraph(next);
     writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
   };
 
@@ -797,6 +820,21 @@ export default function App() {
     onCleanup(() => ro.disconnect());
   });
 
+  // Precompute each single-pane terminal tab's 1-based index once per tabs() change, so
+  // tabBarLabel is O(1) per chip instead of re-filtering all tabs (which made the tab
+  // strip O(tabs²)). Keyed by tab id.
+  const terminalTabIndex = createMemo<Map<string, number>>(() => {
+    const m = new Map<string, number>();
+    let n = 0;
+    for (const tt of tabs()) {
+      const tl = leaves(tt.root);
+      if (tl.length === 1 && tl[0].content.startsWith(TERMINAL_PREFIX)) {
+        m.set(tt.id, ++n);
+      }
+    }
+    return m;
+  });
+
   // A single-pane tab shows its note name; a split ("omnitab") shows a pane count, since
   // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
   // numbered by their position among the open terminal tabs.
@@ -805,11 +843,7 @@ export default function App() {
     if (ls.length > 1) return `${ls.length} panes`;
     const content = ls[0].content;
     if (content.startsWith(TERMINAL_PREFIX)) {
-      const termTabs = tabs().filter((tt) => {
-        const tl = leaves(tt.root);
-        return tl.length === 1 && tl[0].content.startsWith(TERMINAL_PREFIX);
-      });
-      return contentLabel(content, termTabs.indexOf(t) + 1);
+      return contentLabel(content, terminalTabIndex().get(t.id) ?? 1);
     }
     return contentLabel(content);
   }
@@ -912,7 +946,9 @@ export default function App() {
                 tagNames={tagCandidates}
                 // A ::graph pane renders the full Knowledge Graph (not the cramped sidebar one).
                 renderGraph={() => (
-                  <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+                  <Suspense fallback={<div class="graph-root" style={{ flex: 1, "min-height": 0 }} />}>
+                    <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+                  </Suspense>
                 )}
               />
             )}
@@ -934,7 +970,9 @@ export default function App() {
                   height: rect() ? `${rect()!.h}px` : "100%",
                   display: rect() ? "block" : "none",
                 }}>
-                  <TerminalTab id={id} active={() => focusedContent() === id} />
+                  <Suspense fallback={<div class="term-host" />}>
+                    <TerminalTab id={id} active={() => focusedContent() === id} />
+                  </Suspense>
                 </div>
               );
             }}
@@ -942,7 +980,9 @@ export default function App() {
         </div>
       </main>
       <div class="graph-floater" classList={{ hidden: activeTabShowsGraph() }} ref={floater}>
-        <GraphView fill mini={anyTabOpen()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+        <Suspense fallback={<div class="graph-root" style={{ width: "100%", height: "100%" }} />}>
+          <GraphView fill mini={anyTabOpen()} visible={!activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+        </Suspense>
       </div>
       <Show when={palette() === "command"}>
         <CommandPalette onClose={() => setPalette(null)} commands={commands()} />

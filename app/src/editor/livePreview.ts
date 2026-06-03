@@ -3,7 +3,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { type Range, type Text, StateField, StateEffect, type EditorState } from "@codemirror/state";
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
-import katex from "katex";
+import { renderMath, onMathReady } from "./katexLoader";
 import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
@@ -195,10 +195,9 @@ class MathWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = "cm-math";
-    span.innerHTML = katex.renderToString(this.expr, {
-      throwOnError: false,
-      displayMode: this.displayMode,
-    });
+    span.innerHTML = renderMath(this.expr, this.displayMode);
+    // KaTeX not loaded yet → fill in once the lazy chunk lands (same output).
+    if (!span.innerHTML) onMathReady(() => { span.innerHTML = renderMath(this.expr, this.displayMode); });
     return span;
   }
 

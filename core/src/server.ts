@@ -25,7 +25,7 @@ import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
-import { searchVault } from "./search";
+import { searchVault, invalidateSearchIndex } from "./search";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 
@@ -114,6 +114,10 @@ export function createServer(cfg: CoreConfig) {
   function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
     if (dirty.graph) graphCache.invalidate();
     if (dirty.tree) treeCache.invalidate();
+    // The search index covers note bodies (and basenames/headings/tags), so even a
+    // content-only edit that's dirty to neither graph nor tree changes search results.
+    // Drop it on any vault change so the next /search rebuilds from current files.
+    invalidateSearchIndex(cfg.vault);
     // Bases rows derive from arbitrary frontmatter/body — rebuild lazily on next read.
     cachedRows = null;
     version++;
@@ -278,11 +282,13 @@ export function createServer(cfg: CoreConfig) {
       // cached; a later /graph then includes them too.
       const graph = await graphCache.get();
       const views = computeViewLayouts(graph, cfg.vault);
-      // invalidate() here is safe from a GET: it's a pure in-memory generation bump (see
-      // asyncCache.ts) — no version increment, no SSE publish. It evicts the now-stale
-      // graphCache value so the next /graph rebuild calls attachLayout with the view
-      // layouts already warm in layoutFor's memCache, and attaches them via peekLayout.
-      graphCache.invalidate();
+      // Attach the computed views onto the cached graph object IN PLACE rather than
+      // invalidating the cache. `graphCache.get()` returns the live cached reference, so
+      // mutating `.views` makes a subsequent /graph include them too — without forcing the
+      // next /graph to re-walk + re-read the whole vault. A genuine file change still calls
+      // graphCache.invalidate() via applyDirty, rebuilding a fresh graph (whose views are
+      // recomputed lazily on the next /graph/views), so this never serves stale layouts.
+      graph.views = views;
       return ok(views);
     },
 
