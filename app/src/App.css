@@ -55,7 +55,10 @@
   --shadow-modal: 0 40px 110px rgba(0, 0, 0, 0.6);
 }
 * { box-sizing: border-box; }
-button { outline: none; }
+/* Buttons don't inherit font-family from ancestors — force it so every button
+   (including non-.btn ones like .vbtn) renders in the app's Monaspace, not the
+   browser UA system font. */
+button { outline: none; font: inherit; }
 body, html, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--fg); }
 
@@ -85,8 +88,14 @@ body { background: var(--bg); color: var(--fg); }
    Box geometry is set inline in JS. */
 .graph-floater { position: fixed; z-index: 2; overflow: hidden; }
 /* The left "toolzone" of the design's 40px top strip. Height matches .tabbar so the two
-   top bars' bottom divider lines align into one continuous row across the app. */
-.sidebar-icons { display: flex; align-items: center; gap: 3px; height: 40px; padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+   top bars' bottom divider lines align into one continuous row across the app.
+   .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
+   toolzone must be 41px (border-box) for the two bottom borders to land on the same line. */
+.sidebar-icons { display: flex; align-items: center; gap: 3px; height: 41px; padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+/* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
+   resting color rising to --fg on hover — not full-strength white at rest. */
+.sidebar-icons .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+.sidebar-icons .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center; background: transparent; border: none; color: var(--fg); opacity: 0.5; cursor: pointer; font-size: var(--sidebar-icon-font-size, 15px); line-height: 1; padding: 4px 6px; border-radius: 4px; }

@@ -46,8 +46,11 @@ const editorTheme = EditorView.theme({
   // Prose reads as serif Lora near --fg with a soft tone (design: color-mix(hi 86%, lo)),
   // centered in a 760px reading column to match the redesigned editor column.
   "&": { backgroundColor: "transparent", color: "color-mix(in srgb, var(--fg) 88%, var(--text-muted))", height: "100%" },
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto" },
-  ".cm-content": { caretColor: "var(--fg)", padding: "8px 40px 80px", maxWidth: "760px", margin: "0 auto", width: "100%", boxSizing: "border-box" },
+  // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
+  // than centering .cm-content alone — otherwise the line-number gutter stays pinned to
+  // the far left while the text floats to the middle, leaving a huge empty indent.
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", justifyContent: "center" },
+  ".cm-content": { caretColor: "var(--fg)", padding: "8px 40px 80px", maxWidth: "760px", width: "100%", boxSizing: "border-box" },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--fg)",
     borderLeftWidth: "2px",

@@ -12,7 +12,8 @@ import { AgentsGraph } from "./graph/AgentsGraph";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
-import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "./ui/ViewBar";
+import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
+import { IconTextButton } from "./ui/IconTextButton";
 
 /** Shared pill recipe for the hover/fps HUD readouts (theme-aware for light/dark). */
 const hudPill: JSX.CSSProperties = {
@@ -146,7 +147,7 @@ export function GraphView(props: {
         <span class="graph-vb-wide graph-vb-right">
           <SegmentedToggle value={settings.graph.viewMode} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
           <Show when={props.fill}>
-            <VBtn icon="Search" active={menuOpen()} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>Find</VBtn>
+            <IconTextButton icon="Search" variant={menuOpen() ? "selected" : "normal"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>
         </span>
       </ViewBar>
