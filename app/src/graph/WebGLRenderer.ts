@@ -289,6 +289,7 @@ export class WebGLRenderer {
   private pointsMesh: THREE.Points | null = null;
   private linesMesh: THREE.LineSegments | null = null;
   private labels = new LabelLayer();
+  private labelOverlay: HTMLElement | null = null; // DOM container the labels render into
   private activeFileId: string | null = null;
   private wppDefaultForLabels = 0;
 
@@ -318,6 +319,14 @@ export class WebGLRenderer {
   private onFps: (fps: number) => void = () => {};
   private fpsWindowStart = 0; // performance.now() at the start of the current sample window
   private fpsFrames = 0;      // frames rendered since the window started
+  // Glow tracking — each frame, report the screen-% centers of the 3 biggest CLUSTERS so the host
+  // can sit the CSS atmosphere glow's 3 lobes on them. Clusters swing around under orbit/idle-spin
+  // (a single centroid would stay pinned to screen center), so this is what makes the glow "follow
+  // the nodes." The cluster centroids in LOCAL space are cached (rebuilt on the label throttle) and
+  // only re-projected per frame, avoiding the per-frame Map allocation in getCommunityCentroids.
+  private onGlow: (g: { lobes: { x: number; y: number }[] }) => void = () => {};
+  private glowVec = new THREE.Vector3(); // scratch — avoid per-frame allocation
+  private glowLobesLocal: [number, number, number][] = []; // top-3 cluster centroids, local coords
   private el!: HTMLElement;
   private ro?: ResizeObserver;
   private raycaster = new THREE.Raycaster();
@@ -392,10 +401,11 @@ export class WebGLRenderer {
     rotTo: number;
   } = null;
 
-  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (node: HoverNode | null) => void) {
+  mount(el: HTMLElement, onNodeClick: (id: string) => void, onHover?: (node: HoverNode | null) => void, labelOverlay?: HTMLElement) {
     this.el = el;
     this.onClick = onNodeClick;
     if (onHover) this.onHover = onHover;
+    this.labelOverlay = labelOverlay ?? null;
 
     // Scene
     this.scene = new THREE.Scene();
@@ -488,8 +498,10 @@ export class WebGLRenderer {
     };
     window.addEventListener("keydown", this.keyHandler);
 
-    this.labels.mount(this.group); // parent to the node group so labels track the idle spin
-    this.labels.setEnabled(this.cfg.showGraphLabels);
+    // DOM-overlay labels: mount onto the host-provided overlay div (layered over the canvas). If
+    // no overlay was supplied (e.g. a headless/test mount), labels stay disabled.
+    if (this.labelOverlay) this.labels.mount(this.labelOverlay);
+    this.labels.setEnabled(this.cfg.showGraphLabels && !!this.labelOverlay);
 
     // Start render loop
     this.animate();
@@ -526,6 +538,8 @@ export class WebGLRenderer {
     this.updateRotationVelocity(); // track camera rotation speed for click gating
     this.updateFog(); // depth fade tracks the (now-current) camera distance
     this.updateLabelsIfMoved();
+    this.repositionLabels(); // keep DOM labels glued to nodes every frame (selection is throttled)
+    this.emitGlow(); // slide the CSS atmosphere glow to follow the node cloud's projected centroid
     this.renderer.render(this.scene, this.camera);
     this.sampleFps();
   }
@@ -546,6 +560,42 @@ export class WebGLRenderer {
   /** Register a callback that receives the measured frames-per-second (~2x/sec). */
   setFpsCallback(cb: (fps: number) => void) {
     this.onFps = cb;
+  }
+
+  /** Register a callback that receives the live glow lobe centers (screen %, one per big cluster). */
+  setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void) {
+    this.onGlow = cb;
+  }
+
+  /** Recompute the cached local-space centroids of the 3 largest clusters (cheap, throttled). */
+  private rebuildGlowLobes() {
+    const top = [...this.getCommunityCentroids().values()]
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3)
+      .map((c) => c.centroid);
+    if (top.length === 0) top.push([this.cloudCenter.x, this.cloudCenter.y, this.cloudCenter.z]);
+    while (top.length < 3) top.push(top[top.length - 1]); // pad so all 3 glow lobes have a target
+    this.glowLobesLocal = top;
+  }
+
+  /**
+   * Project the 3 cached cluster centroids to screen percentages and hand them to the host, which
+   * places the 3 CSS glow lobes there. As the clusters orbit / idle-spin / zoom, the lobes ride
+   * them, so the atmosphere "follows the nodes" instead of sitting static. Re-projection is per
+   * frame; the (static) local centroids are rebuilt only on the label throttle.
+   */
+  private emitGlow() {
+    if (this.glowLobesLocal.length === 0 || this.frame % CROWD_RECOMPUTE_FRAMES === 0) this.rebuildGlowLobes();
+    this.group.updateMatrixWorld();
+    const m = this.group.matrixWorld;
+    const lobes = this.glowLobesLocal.map(([x, y, z]) => {
+      this.glowVec.set(x, y, z).applyMatrix4(m).project(this.camera);
+      return {
+        x: Math.max(-10, Math.min(110, (this.glowVec.x * 0.5 + 0.5) * 100)),
+        y: Math.max(-10, Math.min(110, (-this.glowVec.y * 0.5 + 0.5) * 100)),
+      };
+    });
+    this.onGlow({ lobes });
   }
 
   /** Compute rotation velocity by measuring the quaternion change each frame. */
@@ -1059,6 +1109,17 @@ export class WebGLRenderer {
       const keepFrac = effPeak <= EDGE_CROWD_FULL ? 1 : EDGE_CULL_KEEP / effPeak;
       this.keepE[i] = (hashInt("" + i) % 1024) / 1024 < keepFrac ? 1 : 0;
     }
+  }
+
+  /** Per-frame reprojection so DOM labels track the idle spin / orbit between throttled selections. */
+  private repositionLabels() {
+    if (!this.cfg.showGraphLabels || !this.labelOverlay) return;
+    this.labels.reposition({
+      camera: this.camera,
+      group: this.group,
+      screenW: this.renderer.domElement.clientWidth || 1,
+      screenH: this.renderer.domElement.clientHeight || 1,
+    });
   }
 
   private updateLabelsIfMoved() {

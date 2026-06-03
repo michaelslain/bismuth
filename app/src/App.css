@@ -352,24 +352,41 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 /* Iridescent cluster glows (screen-blended over the canvas) + a depth vignette —
    the design's BigGraph atmosphere. Colors come from the theme graph ramp and shift
    per mode. Pointer-events off so they never intercept graph interaction. */
+/* The 3 glow lobes ride the 3 biggest clusters: the renderer sets --glow-x1..3/--glow-y1..3 (screen
+   %) every frame to each cluster's projected center, so the atmosphere follows the nodes under
+   orbit / idle-spin / zoom instead of sitting static. The --glow defaults reproduce the original
+   composition before the first frame. Sizes/colors are unchanged. */
 .graph-glow { position: absolute; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: screen; opacity: 0.9;
   background:
-    radial-gradient(42% 44% at 34% 40%, color-mix(in srgb, var(--graph-0) 26%, transparent), transparent 70%),
-    radial-gradient(52% 56% at 66% 56%, color-mix(in srgb, var(--graph-3) 26%, transparent), transparent 70%),
-    radial-gradient(34% 30% at 52% 30%, color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
+    radial-gradient(42% 44% at var(--glow-x1, 34%) var(--glow-y1, 40%), color-mix(in srgb, var(--graph-0) 26%, transparent), transparent 70%),
+    radial-gradient(52% 56% at var(--glow-x2, 66%) var(--glow-y2, 56%), color-mix(in srgb, var(--graph-3) 26%, transparent), transparent 70%),
+    radial-gradient(34% 30% at var(--glow-x3, 52%) var(--glow-y3, 30%), color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
 .graph-glow[data-mode="2nd"] { background:
-    radial-gradient(42% 44% at 34% 40%, color-mix(in srgb, var(--graph-0) 28%, transparent), transparent 70%),
-    radial-gradient(52% 56% at 66% 55%, color-mix(in srgb, var(--graph-2) 24%, transparent), transparent 70%),
-    radial-gradient(34% 30% at 50% 30%, color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
+    radial-gradient(42% 44% at var(--glow-x1, 34%) var(--glow-y1, 40%), color-mix(in srgb, var(--graph-0) 28%, transparent), transparent 70%),
+    radial-gradient(52% 56% at var(--glow-x2, 66%) var(--glow-y2, 55%), color-mix(in srgb, var(--graph-2) 24%, transparent), transparent 70%),
+    radial-gradient(34% 30% at var(--glow-x3, 50%) var(--glow-y3, 30%), color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
 .graph-glow[data-mode="3rd"] { background:
-    radial-gradient(44% 46% at 42% 46%, color-mix(in srgb, var(--graph-3) 30%, transparent), transparent 70%),
-    radial-gradient(40% 34% at 64% 36%, color-mix(in srgb, var(--graph-4) 22%, transparent), transparent 70%),
-    radial-gradient(36% 44% at 34% 62%, color-mix(in srgb, var(--graph-2) 18%, transparent), transparent 70%); }
+    radial-gradient(44% 46% at var(--glow-x1, 42%) var(--glow-y1, 46%), color-mix(in srgb, var(--graph-3) 30%, transparent), transparent 70%),
+    radial-gradient(40% 34% at var(--glow-x2, 64%) var(--glow-y2, 36%), color-mix(in srgb, var(--graph-4) 22%, transparent), transparent 70%),
+    radial-gradient(36% 44% at var(--glow-x3, 34%) var(--glow-y3, 62%), color-mix(in srgb, var(--graph-2) 18%, transparent), transparent 70%); }
 .graph-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background: radial-gradient(120% 90% at 50% 30%, transparent 42%, var(--vignette-edge, color-mix(in srgb, var(--bg) 70%, #000)) 100%); }
 .graph-viewbar { gap: 8px; padding: 0 12px; }
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; }
+/* Native-text label overlay. Pills match the graph chrome (hover HUD / legend) exactly: inherits
+   the app UI font (Monaspace Xenon), theme-token colors, real browser font hinting → crisp, native.
+   The renderer sets each label's transform (position) + opacity every frame. */
+.graph-labels { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
+.graph-label {
+  position: absolute; top: 0; left: 0;
+  font-family: inherit; font-size: 11px; font-weight: 500; line-height: 1.1; white-space: nowrap;
+  /* LabelLayer.setColors() pushes per-theme --label-text/--label-bg onto the .graph-labels overlay
+     (light = dark text on a translucent-white halo); fall back to the theme tokens when unset. */
+  color: var(--label-text, var(--fg)); background: var(--label-bg, var(--pop-bg)); border: 1px solid var(--border-soft);
+  border-radius: 5px; padding: 2px 6px;
+  pointer-events: none; will-change: transform, opacity; -webkit-font-smoothing: antialiased;
+}
 .graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; padding: 12px 14px; backdrop-filter: blur(8px); }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
 .graph-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }

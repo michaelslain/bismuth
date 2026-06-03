@@ -1,7 +1,7 @@
 // app/src/PaneContent.tsx
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
-import { Switch, Match } from "solid-js";
+import { Switch, Match, type JSX } from "solid-js";
 import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
@@ -11,7 +11,7 @@ import { EmptyPane } from "./EmptyPane";
 import { DrawingPage } from "./drawing/DrawingPage";
 import { ExportView } from "./ExportView";
 import type { NoteCandidate } from "./editor/wikilink";
-import { CALENDAR_TAB, SEARCH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
+import { CALENDAR_TAB, SEARCH_TAB, GRAPH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -22,6 +22,9 @@ export function PaneContent(props: {
   onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
+  // Renders the Knowledge Graph for a ::graph pane. Supplied by App (which owns the graph data +
+  // mode), so PaneContent need not thread the whole graph signal through the pane tree.
+  renderGraph?: () => JSX.Element;
 }) {
   return (
     <Switch
@@ -49,6 +52,9 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === SEARCH_TAB}>
         <SearchView onOpen={props.onOpen} />
+      </Match>
+      <Match when={props.path === GRAPH_TAB}>
+        {props.renderGraph?.()}
       </Match>
       <Match when={props.path.endsWith(".sheet")}>
         <SheetView path={props.path} onSaved={props.onSaved} />

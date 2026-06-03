@@ -1,46 +1,31 @@
 // app/src/graph/LabelLayer.ts
-// In-scene label sprites for the graph view. Owns one THREE.Sprite per node, lazily creates
-// canvas textures (cached by label string), and exposes a per-frame updateVisibility() hook.
-// All sprites use sizeAttenuation:false so they hold a constant on-screen size at any distance.
+// DOM-overlay labels for the graph view. Each visible label is a native <div> in the app's UI
+// font (crisp, theme-matched via CSS vars) positioned absolutely over the WebGL canvas — NOT a
+// Three.js sprite. This keeps full 3D (nodes/edges stay in WebGL) while the labels render with the
+// browser's own font hinting/AA, so they look identical to the rest of the UI. The previous sprite
+// approach drew 6px canvas textures that read as low-res and could bake a fallback font (load race).
+//
+// Pipeline (unchanged selection math):
+//   - updateVisibility() runs on the renderer's throttle (~6/sec): it SELECTS which labels show
+//     (top-N hubs + nearest-camera discovery + hover/active/search, greedy occlusion, depth + zoom
+//     fade in 3D; a rendered-dot-size gate + grid declutter in 2D) and applies text/opacity to a
+//     POOL of reused divs (only the accepted set is in the DOM-updated path — never one div/node).
+//   - reposition() runs EVERY frame (cheap): it re-projects each visible label's node from 3D to
+//     screen pixels and sets a translate transform, so labels track the idle spin / orbit smoothly.
+//     (Sprites tracked the spin for free as children of the rotating group; DOM must re-project.)
 import * as THREE from "three";
 import { renderedPixelRadius, selectVisibleLabels, type LabelCandidate } from "./labelSelection";
 
-const FONT_PX = 6;         // CSS px before DPR scaling — tiny, ambient annotation
-const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
-const PAD_X = 2;
-const PAD_Y = 0;
-// Defaults match the dark themes (near-white text on a near-black pill). Light themes
-// flip these via setColors() — dark text on a translucent-white halo — so hub labels
-// read on a pale canvas instead of staying dark boxes. Driven from the theme in GraphView.
-const DEFAULT_TEXT_COLOR = "rgba(232,232,238,0.95)";
-const DEFAULT_BG_COLOR = "rgba(14,14,17,0.6)";
-const BORDER_RADIUS = 5;
-// Labels always use a monospace family regardless of the editor font. Monospace reads as a
-// technical annotation and stays crisp at small sizes.
-const LABEL_FONT_FAMILY = '"Monaspace Xenon", ui-monospace, "SF Mono", "Menlo", "Consolas", monospace';
-const RENDER_ORDER = 999;  // labels render after points/edges
-// Supersample the canvas texture: draw at 2x the device-pixel-ratio then sample down. Even at
-// DPR 2 (Retina), this means ~4x linear oversampling, eliminating the shimmer/aliasing on text
-// strokes when the sprite ends up around 16-24px tall on screen.
-const TEXTURE_DPR_MULT = 2;
+// px gap below the node dot so the label hangs cleanly under it (matches the old sprite anchor).
+const LABEL_OFFSET_BELOW = 14;
 // Hide all labels once the user has zoomed FURTHER OUT than this fraction of the resting framing.
-// At rest worldPerPixel ≈ wppDefault; zooming in shrinks wpp (the screen covers less world);
-// zooming out grows it. Past 1.5x the resting wpp the graph is small enough that constant-size
-// labels begin to dominate the dots — fade them out across a small band so it doesn't pop.
 const ZOOMOUT_FADE_START = 1.4;
 const ZOOMOUT_FADE_END = 2.0;
-// Discovery threshold: zoomed in below this fraction of the resting wpp, even MORE leaf labels
-// appear, ramping in proportionally. 0.7 = once you've zoomed in ~30% past the resting view.
+// Discovery: zoomed in below this fraction of the resting wpp, even MORE leaf labels appear.
 const DISCOVERY_ZOOM_IN = 0.7;
-// At rest (zoomRatio ≈ 1), always include this many nearest-to-camera nodes as candidates so
-// orbiting the camera actually changes which labels show. Without this the alwaysOn set (top
-// hubs) would look static under orbit.
+// At rest, always include this many nearest-to-camera nodes so orbiting changes which labels show.
 const NEAREST_AT_REST = 6;
-// --- 2D label gate (replaces the camera-distance "discovery" metric, which in the top-down 2D
-// camera degenerated to radius-from-screen-center). A node's filename shows when its on-screen dot
-// radius (degree-scaled point size ÷ worldPerPixel) clears LABEL_2D_THRESHOLD_PX — so importance
-// (degree) and zoom decide visibility, never how far the node sits from center. Big hubs clear the
-// bar while zoomed out; leaves reveal as you zoom in.
+// --- 2D label gate: a node's filename shows when its on-screen dot radius clears this many px.
 const LABEL_2D_THRESHOLD_PX = 6;
 // Screen-space declutter grid: at most one label per cell, highest-degree (largest rendered) wins.
 const LABEL_2D_GRID_CELL = 64;
@@ -74,72 +59,70 @@ type LabelVisibilityArgs = {
   searchMatches?: Set<string>;                 // search hits → always labeled (escape hatch)
 };
 
-/** Round-rect path on a canvas 2D context. */
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const rr = Math.min(r, h / 2, w / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.lineTo(x + w - rr, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
-  ctx.lineTo(x + w, y + h - rr);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
-  ctx.lineTo(x + rr, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
-  ctx.lineTo(x, y + rr);
-  ctx.quadraticCurveTo(x, y, x + rr, y);
-  ctx.closePath();
-}
-
-/** Draw a pill-shaped label onto a canvas at supersampled DPR, return { texture, cssWidth, cssHeight }. */
-function makeLabelTexture(text: string, fontFamily: string, dpr: number, textColor: string, bgColor: string): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
-  const measure = document.createElement("canvas").getContext("2d")!;
-  measure.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
-  const textW = Math.ceil(measure.measureText(text).width);
-  const cssW = textW + PAD_X * 2;
-  const cssH = FONT_PX + PAD_Y * 2;
-  const cv = document.createElement("canvas");
-  cv.width = Math.max(1, Math.round(cssW * dpr));
-  cv.height = Math.max(1, Math.round(cssH * dpr));
-  const ctx = cv.getContext("2d")!;
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.fillStyle = bgColor;
-  roundRect(ctx, 0, 0, cssW, cssH, BORDER_RADIUS);
-  ctx.fill();
-  ctx.fillStyle = textColor;
-  ctx.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, PAD_X, cssH / 2);
-  const tex = new THREE.CanvasTexture(cv);
-  // Skip mipmaps — labels are sampled at near-native size, mipmaps just add blur. Linear
-  // mag+min on the supersampled canvas gives crisp text without shimmer.
-  tex.generateMipmaps = false;
-  tex.minFilter = THREE.LinearFilter;
-  tex.magFilter = THREE.LinearFilter;
-  tex.anisotropy = 1;
-  tex.needsUpdate = true;
-  return { texture: tex, cssW, cssH };
-}
+// Per-frame reprojection only needs the camera/group + screen size; selection state is reused.
+type RepositionArgs = {
+  camera: THREE.PerspectiveCamera;
+  group: THREE.Group;
+  screenW: number;
+  screenH: number;
+};
 
 export class LabelLayer {
-  // The parent is the renderer's node GROUP, not the scene — so sprites inherit the group's
-  // rotation/tween every frame and track the spinning nodes smoothly (no per-frame reposition,
-  // no jitter). Sprite positions are therefore LOCAL node coords, not world coords.
-  private parent: THREE.Object3D | null = null;
-  private sprites = new Map<string, THREE.Sprite>();
-  private textureCache = new Map<string, { texture: THREE.CanvasTexture; cssW: number; cssH: number }>();
+  private overlay: HTMLElement | null = null;
+  private ruler: HTMLDivElement | null = null;   // hidden element used to measure label box sizes
   private nodes: LabelNode[] = [];
+  private nodeById = new Map<string, LabelNode>();
   private alwaysOn = new Set<string>();
   private hoveredId: string | null = null;
   private enabled = true;
-  private shown2d = new Set<string>(); // last frame's accepted 2D label set (for reveal hysteresis)
-  private textColor = DEFAULT_TEXT_COLOR;
-  private bgColor = DEFAULT_BG_COLOR;
+  private shown2d = new Set<string>();           // last frame's accepted 2D set (reveal hysteresis)
+  // Theme colors for the label pills. DOM labels read these from CSS custom props on the overlay
+  // (`.graph-label` falls back to --fg/--pop-bg when unset). Stored so a setColors() before mount()
+  // still applies once the overlay attaches. Light themes pass dark text on a translucent-white
+  // halo; dark themes the reverse — computed from the theme in GraphView and pushed via setConfig.
+  private textColor: string | null = null;
+  private bgColor: string | null = null;
 
-  /** Attach to the node group (so sprites rotate with it). Called once at WebGLRenderer.mount(). */
-  mount(parent: THREE.Object3D): void {
-    this.parent = parent;
+  // Div pool. `elById` holds the div currently rendering each visible label; `free` is the reserve
+  // of hidden divs available for reuse. `accepted` mirrors elById's ids (for reposition iteration).
+  private elById = new Map<string, HTMLDivElement>();
+  private free: HTMLDivElement[] = [];
+  private accepted = new Set<string>();
+  private sizeCache = new Map<string, { w: number; h: number }>();
+  private scratch = new THREE.Vector3();
+
+  /** Attach to the DOM overlay container (a div layered over the canvas). Called at mount(). */
+  mount(overlay: HTMLElement): void {
+    this.overlay = overlay;
+    this.applyColors();
+    // A measuring ruler: same styling as a label, kept out of view, used to size label boxes for
+    // the occlusion/declutter passes without disturbing layout.
+    const ruler = document.createElement("div");
+    ruler.className = "graph-label";
+    ruler.style.position = "absolute";
+    ruler.style.left = "-9999px";
+    ruler.style.top = "0";
+    ruler.style.visibility = "hidden";
+    ruler.style.display = "block";
+    overlay.appendChild(ruler);
+    this.ruler = ruler;
+  }
+
+  /** Push the stored pill colors onto the overlay as CSS custom props (`.graph-label` reads them
+   *  with --fg/--pop-bg fallbacks). No-op until the overlay is mounted. */
+  private applyColors(): void {
+    if (!this.overlay) return;
+    if (this.textColor) this.overlay.style.setProperty("--label-text", this.textColor);
+    if (this.bgColor) this.overlay.style.setProperty("--label-bg", this.bgColor);
+  }
+
+  /** Re-theme the label pills (text + background) on a theme switch. Unlike the old canvas-sprite
+   *  path (which re-baked textures), DOM labels just inherit these CSS custom props live. */
+  setColors(textColor: string, bgColor: string): void {
+    if (textColor === this.textColor && bgColor === this.bgColor) return;
+    this.textColor = textColor;
+    this.bgColor = bgColor;
+    this.applyColors();
   }
 
   setAlwaysOnSet(set: Set<string>): void {
@@ -152,100 +135,78 @@ export class LabelLayer {
 
   setEnabled(on: boolean): void {
     this.enabled = on;
-    if (!on) for (const s of this.sprites.values()) s.visible = false;
+    if (!on) this.hideAll();
   }
 
-  /**
-   * Transiently hide every label without touching `enabled`. Used during the 2D↔3D mode tween:
-   * positions are mid-morph, so labels are hidden for the duration and the next updateVisibility
-   * (after the tween lands) brings the correct set back.
-   */
+  /** Transiently hide every label (used during the 2D↔3D tween while positions are mid-morph). */
   hideAll(): void {
-    for (const s of this.sprites.values()) s.visible = false;
+    for (const el of this.elById.values()) {
+      el.style.display = "none";
+      this.free.push(el);
+    }
+    this.elById.clear();
+    this.accepted.clear();
     this.shown2d.clear();
   }
 
-  /** Lookup or build the texture for a label string. */
-  private textureFor(label: string): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
-    const cached = this.textureCache.get(label);
-    if (cached) return cached;
-    const dpr = Math.min((window.devicePixelRatio || 1) * TEXTURE_DPR_MULT, 4);
-    const made = makeLabelTexture(label, LABEL_FONT_FAMILY, dpr, this.textColor, this.bgColor);
-    this.textureCache.set(label, made);
-    return made;
-  }
-
-  /** Re-theme the label pills (text + background). No-op if unchanged. Otherwise drops the
-   *  texture cache and re-points every live sprite at a freshly-rendered texture so a theme
-   *  switch recolors labels in place (they're baked into canvas textures, not CSS). */
-  setColors(textColor: string, bgColor: string): void {
-    if (textColor === this.textColor && bgColor === this.bgColor) return;
-    this.textColor = textColor;
-    this.bgColor = bgColor;
-    for (const entry of this.textureCache.values()) entry.texture.dispose();
-    this.textureCache.clear();
-    for (const [id, sprite] of this.sprites) {
-      const node = this.nodes.find((n) => n.id === id);
-      if (!node) continue;
-      const { texture } = this.textureFor(node.label);
-      sprite.material.map = texture;
-      sprite.material.needsUpdate = true;
-    }
-  }
-
-  /** Build a sprite for one node and add it to the scene (hidden by default). */
-  private createSprite(node: LabelNode): THREE.Sprite {
-    const { texture } = this.textureFor(node.label);
-    const mat = new THREE.SpriteMaterial({
-      map: texture,
-      sizeAttenuation: false,
-      depthTest: false,
-      transparent: true,
-    });
-    const sprite = new THREE.Sprite(mat);
-    sprite.renderOrder = RENDER_ORDER;
-    sprite.visible = false;
-    // Anchor the sprite by its TOP-CENTER edge so labels hang BELOW the node instead of overlapping
-    // it. (0.5,0.5) is the default center anchor; (0.5,1.0+margin) shifts the sprite down so the dot
-    // sits cleanly above its label. The margin past 1.0 is the visual gap.
-    sprite.center.set(0.5, 1.45);
-    sprite.position.set(node.x ?? 0, node.y ?? 0, node.z ?? 0);
-    return sprite;
-  }
-
-  /** Swap to a new graph: dispose sprites for removed nodes, create sprites for new ones. */
+  /** Swap to a new graph: re-index nodes and release all current labels (size cache persists). */
   setGraph(nodes: LabelNode[]): void {
-    if (!this.parent) return;
-    const newIds = new Set(nodes.map((n) => n.id));
-
-    // Remove sprites for nodes no longer in the graph.
-    for (const [id, sprite] of this.sprites) {
-      if (!newIds.has(id)) {
-        this.parent.remove(sprite);
-        sprite.material.dispose();
-        this.sprites.delete(id);
-      }
-    }
-
-    // Add sprites for new nodes, or update label texture if label changed.
-    for (const n of nodes) {
-      const existing = this.sprites.get(n.id);
-      if (!existing) {
-        const sprite = this.createSprite(n);
-        this.parent.add(sprite);
-        this.sprites.set(n.id, sprite);
-      } else {
-        // If label text changed (rare), retarget the material to the new texture.
-        const expected = this.textureFor(n.label).texture;
-        if (existing.material.map !== expected) {
-          existing.material.map = expected;
-          existing.material.needsUpdate = true;
-        }
-      }
-    }
-
     this.nodes = nodes;
-    this.shown2d.clear();
+    this.nodeById = new Map();
+    for (const n of nodes) this.nodeById.set(n.id, n);
+    this.hideAll();
+  }
+
+  /** A free div (reused or freshly created) appended to the overlay. */
+  private acquireEl(): HTMLDivElement {
+    const reused = this.free.pop();
+    if (reused) return reused;
+    const el = document.createElement("div");
+    el.className = "graph-label";
+    el.style.display = "none";
+    this.overlay!.appendChild(el);
+    return el;
+  }
+
+  /** Measured {w,h} of a label's box (cached by text), for occlusion/declutter math. */
+  private measure(label: string): { w: number; h: number } {
+    const cached = this.sizeCache.get(label);
+    if (cached) return cached;
+    if (!this.ruler) return { w: label.length * 7 + 12, h: 18 }; // pre-mount estimate
+    this.ruler.textContent = label;
+    const size = { w: this.ruler.offsetWidth, h: this.ruler.offsetHeight };
+    this.sizeCache.set(label, size);
+    return size;
+  }
+
+  /** Assign pooled divs to the accepted ids, set text/opacity, release the rest. */
+  private applyAccepted(sel: { id: string; opacity: number }[]): void {
+    const acceptedIds = new Set(sel.map((s) => s.id));
+    // Release divs whose id is no longer shown.
+    for (const [id, el] of this.elById) {
+      if (!acceptedIds.has(id)) {
+        el.style.display = "none";
+        this.free.push(el);
+        this.elById.delete(id);
+      }
+    }
+    this.accepted = acceptedIds;
+    for (const { id, opacity } of sel) {
+      const node = this.nodeById.get(id);
+      if (!node) continue;
+      let el = this.elById.get(id);
+      if (!el) {
+        el = this.acquireEl();
+        el.textContent = node.label;
+        el.dataset.label = node.label;
+        this.elById.set(id, el);
+      } else if (el.dataset.label !== node.label) {
+        el.textContent = node.label;
+        el.dataset.label = node.label;
+      }
+      el.style.display = "block";
+      el.style.opacity = String(opacity);
+    }
   }
 
   /** Assign label priority: lower number renders first and can occlude higher numbers. */
@@ -256,15 +217,27 @@ export class LabelLayer {
   }
 
   /**
-   * 2D label selection: gate on each node's rendered on-screen size (degree-scaled dot radius ÷
-   * worldPerPixel), then a screen-space grid keeps the worthiest per cell. NO dependence on a
-   * node's distance from screen center — the bug this replaces. Hover / active-file / search hits
-   * are forced through the gate; an already-shown label clears at a lower threshold (hysteresis) so
-   * it doesn't flicker at the boundary.
+   * Decide which labels are visible this frame and their opacity. Called on the renderer's throttle
+   * (NOT every frame). Position is applied by reposition() so labels track the spin between
+   * selection passes. 2D uses the rendered-size gate; 3D shows always-on candidates + a near-band
+   * discovery set with depth + zoom-out fade.
    */
-  private update2D(args: LabelVisibilityArgs): void {
-    const nodeById = new Map<string, LabelNode>();
-    for (const n of this.nodes) nodeById.set(n.id, n);
+  updateVisibility(args: LabelVisibilityArgs): void {
+    if (!this.enabled || !this.overlay || this.nodes.length === 0) {
+      this.hideAll();
+      return;
+    }
+    const sel = args.viewMode === "2d" ? this.select2D(args) : this.select3D(args);
+    this.applyAccepted(sel);
+    this.reposition(args);
+  }
+
+  /**
+   * 2D selection: gate on each node's rendered on-screen size (degree-scaled dot radius ÷
+   * worldPerPixel), then a screen-space grid keeps the worthiest per cell. Hover / active-file /
+   * search hits are forced through; an already-shown label clears at a lower threshold (hysteresis).
+   */
+  private select2D(args: LabelVisibilityArgs): { id: string; opacity: number }[] {
     args.group.updateMatrixWorld();
     const m = args.group.matrixWorld;
     const v = new THREE.Vector3();
@@ -274,8 +247,6 @@ export class LabelLayer {
 
     const cands: LabelCandidate[] = [];
     for (const n of this.nodes) {
-      const entry = this.textureCache.get(n.label);
-      if (!entry) continue;
       v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
       proj.copy(v).project(args.camera);
       if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1 || proj.z > 1) continue;
@@ -284,51 +255,27 @@ export class LabelLayer {
       const scale = args.scaleById.get(n.id) ?? 1;
       const renderedPx = renderedPixelRadius(args.nodeSize, scale, args.fovDeg, args.worldPerPixel);
       const forced = forcedOf(n.id);
-      // Hysteresis: a label shown last frame survives down to a lower threshold (no edge flicker).
       const eff = this.shown2d.has(n.id) ? LABEL_2D_THRESHOLD_PX * LABEL_2D_HYSTERESIS : LABEL_2D_THRESHOLD_PX;
       if (!forced && renderedPx < eff) continue;
-      cands.push({ id: n.id, px, py, w: entry.cssW, h: entry.cssH, renderedPx, forced });
+      const size = this.measure(n.label);
+      cands.push({ id: n.id, px, py, w: size.w, h: size.h, renderedPx, forced });
     }
 
-    // Size gate already applied above → pass thresholdPx 0 so selectVisibleLabels only runs the
-    // grid declutter + cap (forced labels bypass the cap; biggest rendered wins a contested cell).
+    // Size gate already applied → thresholdPx 0 so selectVisibleLabels only runs grid declutter + cap.
     const accepted = selectVisibleLabels(cands, { thresholdPx: 0, gridCell: LABEL_2D_GRID_CELL, perCell: 1 });
     this.shown2d = accepted;
-
-    for (const [id, sprite] of this.sprites) {
-      if (!accepted.has(id)) { sprite.visible = false; continue; }
-      const n = nodeById.get(id)!;
-      sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
-      const entry = this.textureCache.get(n.label)!;
-      sprite.scale.set((entry.cssW / args.screenH) * 2, (entry.cssH / args.screenH) * 2, 1);
-      sprite.material.opacity = 1;
-      sprite.visible = true;
-    }
+    return [...accepted].map((id) => ({ id, opacity: 1 }));
   }
 
-  /**
-   * Decide which sprites are visible this frame and position them. Called by WebGLRenderer.animate()
-   * via the same throttle as crowding. 2D uses the rendered-size gate (update2D); 3D shows always-on
-   * candidates (hover, active, self, top-N hubs) plus near-band discovery nodes with depth fade.
-   */
-  updateVisibility(args: LabelVisibilityArgs): void {
-    if (!this.enabled || this.sprites.size === 0) return;
-    if (args.viewMode === "2d") { this.update2D(args); return; }
-    const nodeById = new Map<string, LabelNode>();
-    for (const n of this.nodes) nodeById.set(n.id, n);
-
+  /** 3D selection: always-on hubs + nearest-camera discovery, greedy occlusion, depth/zoom fade. */
+  private select3D(args: LabelVisibilityArgs): { id: string; opacity: number }[] {
     args.group.updateMatrixWorld();
     const m = args.group.matrixWorld;
     const v = new THREE.Vector3();
     const cam = args.camera.position;
-
-    // Compute zoom ratio: how much closer (< 1) or further (> 1) we are vs the default framing.
     const zoomRatio = args.wppDefault > 0 ? args.worldPerPixel / args.wppDefault : 1;
 
-    // Discovery candidates: always score nodes by camera distance and take the N nearest. At rest
-    // (zoom ≈ wppDefault) we take a small fixed N so orbiting the camera swaps which labels show.
-    // Zoom in past DISCOVERY_ZOOM_IN — N grows proportionally so more leaves come into view. This
-    // is the right mental model: orbit to see what's in front of you; zoom in to read more.
+    // Discovery candidates: score nodes by camera distance and take the N nearest.
     const discovery = new Set<string>();
     if (zoomRatio < ZOOMOUT_FADE_END) {
       const scored: { id: string; d: number }[] = [];
@@ -340,57 +287,43 @@ export class LabelLayer {
         scored.push({ id: n.id, d });
       }
       scored.sort((a, b) => a.d - b.d);
-      // Bonus for zoom-in: smoothly add more leaf labels as you zoom past DISCOVERY_ZOOM_IN.
       const zoomBonus = zoomRatio < DISCOVERY_ZOOM_IN
         ? Math.round(((DISCOVERY_ZOOM_IN - zoomRatio) / DISCOVERY_ZOOM_IN) * this.nodes.length * 0.6)
         : 0;
       const take = Math.min(this.nodes.length, NEAREST_AT_REST + zoomBonus);
-      for (let i = 0; i < take && i < scored.length; i++) {
-        discovery.add(scored[i].id);
-      }
+      for (let i = 0; i < take && i < scored.length; i++) discovery.add(scored[i].id);
     }
 
     const candidates = new Set<string>(this.alwaysOn);
     for (const id of discovery) candidates.add(id);
     if (this.hoveredId) candidates.add(this.hoveredId);
-    if (args.searchMatches) for (const id of args.searchMatches) candidates.add(id); // search hits → labeled in 3D too
+    if (args.searchMatches) for (const id of args.searchMatches) candidates.add(id);
 
-    // Project each candidate to pixel coords; drop those outside the viewport.
     const camToCenter = cam.distanceTo(args.cloudCenter);
 
-    // Zoom-out fade: as the user zooms further out (wpp grows past resting), labels fade
-    // out so the abstract overview isn't dominated by constant-size text.
+    // Zoom-out fade: as the user zooms past the resting framing, labels fade so the overview isn't
+    // dominated by constant-size text.
     let zoomFade: number;
-    if (zoomRatio <= ZOOMOUT_FADE_START) {
-      zoomFade = 1;
-    } else if (zoomRatio >= ZOOMOUT_FADE_END) {
-      zoomFade = 0;
-    } else {
-      zoomFade = 1 - (zoomRatio - ZOOMOUT_FADE_START) / (ZOOMOUT_FADE_END - ZOOMOUT_FADE_START);
-    }
+    if (zoomRatio <= ZOOMOUT_FADE_START) zoomFade = 1;
+    else if (zoomRatio >= ZOOMOUT_FADE_END) zoomFade = 0;
+    else zoomFade = 1 - (zoomRatio - ZOOMOUT_FADE_START) / (ZOOMOUT_FADE_END - ZOOMOUT_FADE_START);
+    if (zoomFade <= 0.01) return []; // fully zoomed out → hide everything
+
     type Cand = { id: string; px: number; py: number; w: number; h: number; priority: number; opacity: number };
     const cands: Cand[] = [];
-    // Fully zoomed out → hide everything cheaply.
-    if (zoomFade <= 0.01) {
-      for (const sprite of this.sprites.values()) sprite.visible = false;
-      return;
-    }
     const proj = new THREE.Vector3();
     for (const id of candidates) {
-      const n = nodeById.get(id);
+      const n = this.nodeById.get(id);
       if (!n) continue;
-      const entry = this.textureCache.get(n.label);
-      if (!entry) continue;
       v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
       proj.copy(v).project(args.camera);
       if (proj.x < -1 || proj.x > 1 || proj.y < -1 || proj.y > 1 || proj.z > 1) continue;
       const px = (proj.x * 0.5 + 0.5) * args.screenW;
       const py = (-proj.y * 0.5 + 0.5) * args.screenH;
-      const w = entry.cssW;
-      const h = entry.cssH;
-      // Compute opacity for 3D depth fade, multiplied by the zoom-out fade.
+      const size = this.measure(n.label);
+      // Depth fade for 3D, multiplied by the zoom-out fade.
       let opacity = 1;
-      if (args.viewMode === "3d" && args.cloudRadius > 0) {
+      if (args.cloudRadius > 0) {
         const dFromCenter = v.distanceTo(args.cloudCenter);
         const depthFromCam = camToCenter + dFromCenter;
         const fadeStart = args.cloudRadius * 0.3;
@@ -400,61 +333,64 @@ export class LabelLayer {
       }
       opacity *= zoomFade;
       const inAlwaysOn = this.alwaysOn.has(id);
-      const isDiscovery = !inAlwaysOn && discovery.has(id);
-      // Search hits rank just under hover (1) so a flown-to / previewed match isn't occluded away.
-      const priority = args.searchMatches?.has(id) ? 1 : this.priorityOf(id, inAlwaysOn, isDiscovery);
-      cands.push({ id, px, py, w, h, priority, opacity });
+      const priority = args.searchMatches?.has(id) ? 1 : this.priorityOf(id, inAlwaysOn);
+      cands.push({ id, px, py, w: size.w, h: size.h, priority, opacity });
     }
 
-    // Greedy occlusion: sort by priority asc, accept if rect (centered on px,py + label offset down)
-    // does not overlap an already-accepted rect.
+    // Greedy occlusion: sort by priority asc, accept if the label rect (centered on px, offset
+    // below py) does not overlap an already-accepted rect.
     cands.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
-    const accepted: { px: number; py: number; w: number; h: number }[] = [];
-    const LABEL_OFFSET_BELOW = 14;
-    const accept = (c: Cand) => {
+    const acceptedRects: { px: number; py: number; w: number; h: number }[] = [];
+    const out: { id: string; opacity: number }[] = [];
+    for (const c of cands) {
       const x = c.px - c.w / 2;
       const y = c.py + LABEL_OFFSET_BELOW;
-      for (const r of accepted) {
-        if (x < r.px + r.w && x + c.w > r.px && y < r.py + r.h && y + c.h > r.py) return false;
+      let blocked = false;
+      for (const r of acceptedRects) {
+        if (x < r.px + r.w && x + c.w > r.px && y < r.py + r.h && y + c.h > r.py) { blocked = true; break; }
       }
-      accepted.push({ px: x, py: y, w: c.w, h: c.h });
-      return true;
-    };
+      if (blocked) continue;
+      acceptedRects.push({ px: x, py: y, w: c.w, h: c.h });
+      out.push({ id: c.id, opacity: c.opacity });
+    }
+    return out;
+  }
 
-    const acceptedById = new Map<string, Cand>();
-    for (const c of cands) if (accept(c)) acceptedById.set(c.id, c);
-
-    // Apply visibility + per-sprite state.
-    for (const [id, sprite] of this.sprites) {
-      const accepted = acceptedById.get(id);
-      if (!accepted) { sprite.visible = false; continue; }
-      const n = nodeById.get(id)!;
-      // LOCAL node position — the sprite is a child of the rotating group, so the group's transform
-      // places it in the world. This makes it track the idle spin every frame (no jitter) even
-      // though this selection pass only runs every ~10 frames.
-      sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
-      const entry = this.textureCache.get(n.label)!;
-      const sx = entry.cssW / args.screenH * 2;
-      const sy = entry.cssH / args.screenH * 2;
-      sprite.scale.set(sx, sy, 1);
-      sprite.material.opacity = accepted.opacity;
-      sprite.visible = true;
+  /**
+   * Re-project every visible label from its node's 3D position to screen pixels and place it.
+   * Runs EVERY frame (cheap — only the accepted set) so labels stay glued to nodes during the idle
+   * spin / orbit, even though the heavier selection in updateVisibility is throttled.
+   */
+  reposition(args: RepositionArgs): void {
+    if (this.elById.size === 0) return;
+    args.group.updateMatrixWorld();
+    const m = args.group.matrixWorld;
+    for (const [id, el] of this.elById) {
+      const n = this.nodeById.get(id);
+      if (!n) { el.style.visibility = "hidden"; continue; }
+      this.scratch.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m).project(args.camera);
+      if (this.scratch.x < -1 || this.scratch.x > 1 || this.scratch.y < -1 || this.scratch.y > 1 || this.scratch.z > 1) {
+        el.style.visibility = "hidden";
+        continue;
+      }
+      const px = (this.scratch.x * 0.5 + 0.5) * args.screenW;
+      const py = (-this.scratch.y * 0.5 + 0.5) * args.screenH + LABEL_OFFSET_BELOW;
+      el.style.visibility = "visible";
+      // translate to the node, then center horizontally and hang below it.
+      el.style.transform = `translate(${px}px, ${py}px) translate(-50%, 0)`;
     }
   }
 
-  /** Free GPU resources. Called at WebGLRenderer.destroy(). */
+  /** Free DOM resources. Called at WebGLRenderer.destroy(). */
   dispose(): void {
-    if (this.parent) {
-      for (const sprite of this.sprites.values()) {
-        this.parent.remove(sprite);
-        sprite.material.dispose();
-      }
-    }
-    this.sprites.clear();
-    for (const entry of this.textureCache.values()) entry.texture.dispose();
-    this.textureCache.clear();
+    if (this.overlay) this.overlay.replaceChildren();
+    this.elById.clear();
+    this.free = [];
+    this.accepted.clear();
+    this.sizeCache.clear();
     this.nodes = [];
-    this.parent = null;
+    this.nodeById.clear();
+    this.ruler = null;
+    this.overlay = null;
   }
-
 }
