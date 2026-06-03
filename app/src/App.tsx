@@ -933,7 +933,7 @@ export default function App() {
   // the editor pane, so re-place once after the transition settles for its final size.
   const placeFloaterSettled = () => {
     placeFloater();
-    setTimeout(placeFloater, 220);
+    setTimeout(placeFloater, 280); // just past the --sidebar-w transition (0.26s)
   };
   createEffect(() => {
     activeTabId(); // re-place whenever the active tab changes
