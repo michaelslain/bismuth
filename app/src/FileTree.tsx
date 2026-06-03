@@ -189,8 +189,8 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
 
   // Header "New note" / "New folder" buttons (in App.tsx) create at the vault root.
   const onNew = (e: Event) => {
-    const kind = (e as CustomEvent).detail?.kind as "file" | "dir";
-    if (kind === "file" || kind === "dir" || kind === "sheet") doCreate("", kind);
+    const kind = (e as CustomEvent).detail?.kind as "file" | "dir" | "sheet" | "draw";
+    if (kind === "file" || kind === "dir" || kind === "sheet" || kind === "draw") doCreate("", kind);
   };
   window.addEventListener("oa-new", onNew);
   onCleanup(() => window.removeEventListener("oa-new", onNew));
@@ -210,10 +210,10 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     }
   }
 
-  async function doCreate(parentDir: string, kind: "file" | "dir" | "sheet") {
+  async function doCreate(parentDir: string, kind: "file" | "dir" | "sheet" | "draw") {
     const fsKind: "file" | "dir" = kind === "dir" ? "dir" : "file"; // backend only knows file|dir
     const defaultName =
-      kind === "dir" ? "New Folder" : kind === "sheet" ? "Untitled.sheet" : "Untitled.md";
+      kind === "dir" ? "New Folder" : kind === "sheet" ? "Untitled.sheet" : kind === "draw" ? "Untitled.draw" : "Untitled.md";
     const path = joinPath(parentDir, defaultName);
     optimisticAdd(path, fsKind); // instant; reverted via refresh() on failure
     if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
@@ -234,6 +234,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       items.push({ label: "New File", icon: "FilePlus", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", icon: "FolderPlus", onSelect: () => doCreate(node.path, "dir") });
       items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
+      items.push({ label: "New Drawing", icon: "Pen", onSelect: () => doCreate(node.path, "draw") });
     }
     items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
     items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
