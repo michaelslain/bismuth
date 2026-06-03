@@ -443,6 +443,11 @@ export class WebGLRenderer {
   private prevCameraQuat = new THREE.Quaternion();
   private rotationVelocity = 0; // radians per frame
   private paused = false; // when true (or canvas hidden), animate() idles its rAF without rendering
+  // Set by the ResizeObserver; consumed at the top of animate() so the drawing-buffer resize and
+  // the render happen in the SAME frame. Resizing the buffer in the observer callback (which fires
+  // after rAF, before paint) cleared the just-rendered buffer → an empty frame flashed every tick
+  // of the sidebar's 200ms collapse animation (visible flicker). Deferring into the loop fixes it.
+  private pendingResize = false;
   private readonly ROTATION_VELOCITY_THRESHOLD = 0.02; // clicks only allowed when below this
 
   // 2D/3D view mode + the glide between them
@@ -502,7 +507,7 @@ export class WebGLRenderer {
     this.modeInitialized = true;
 
     // Resize observer
-    this.ro = new ResizeObserver(() => this.handleResize());
+    this.ro = new ResizeObserver(() => { this.pendingResize = true; });
     this.ro.observe(el);
 
     // Circle sprite for round nodes
@@ -576,7 +581,10 @@ export class WebGLRenderer {
     this.animate();
   }
 
-  private handleResize() {
+  // Resize the drawing buffer + camera to the current container. Called from animate() (NOT the
+  // ResizeObserver) so the buffer reallocation is immediately followed by a render in the same
+  // frame — otherwise the cleared buffer paints empty for a frame and the graph flickers.
+  private applyResize() {
     const w = this.el.clientWidth || 320;
     const h = this.el.clientHeight || 400;
     this.camera.aspect = w / h;
@@ -600,6 +608,9 @@ export class WebGLRenderer {
     // (display:none / collapsed) canvas, or a backgrounded document. Keep the loop scheduled.
     const el = this.renderer.domElement;
     if (this.paused || el.clientWidth === 0 || el.clientHeight === 0 || document.visibilityState === "hidden") return;
+    // Apply any pending container resize here (in-frame, right before render) so the reallocated
+    // drawing buffer is never painted empty. Coalesces multiple ResizeObserver fires into one.
+    if (this.pendingResize) { this.pendingResize = false; this.applyResize(); }
     if (this.tween) {
       this.stepTween();
     } else if (this.camTween) {
