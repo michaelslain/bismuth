@@ -278,88 +278,33 @@ To add a dependency to a workspace: `cd <workspace> && bun add <package>`. Use `
 
 ## Module Organization
 
+Module purposes are described in the **Architecture** section above; this is just the layout. (Compact — one line per dir/group.)
+
 ```
 core/src/
-├── server.ts            # HTTP + SSE + WS, mutating-route abstraction
-├── sse.ts               # SSE registry / event formatting
-├── engine.ts            # Graph composition (vault + memory + agents)
-├── vault.ts             # Vault → graph builder
-├── graph.ts             # Graph type definitions
-├── memory.ts            # Memory → graph builder
-├── agents.ts            # Agent graph builder (Claude Communicate)
-├── layout.ts            # Pure layout (pivot-MDS + forces) → Positions
-├── layout-cache.ts      # Attach precomputed positions to nodes
-├── frontmatter.ts       # YAML parsing (tolerant)
-├── wikilinks.ts         # WikiLink extraction
-├── tags.ts              # Tag extraction (frontmatter + body)
-├── files.ts             # File I/O, path-traversal rejection
-├── backup.ts            # Git snapshot of vault
-├── error.ts             # AppError class + ERROR_CODES registry for typed error semantics
-├── graphBuilder.ts      # Shared graph builder helper: eliminates vault/memory duplication
-├── changeClassifier.ts  # Tracks note-level changes (wikilinks/tags/icon) to selectively invalidate graph vs tree
-├── commands.ts          # COMMAND_CATALOG (pure command metadata)
-├── keybindings.ts       # KEYBINDING_CATALOG (pure shortcut metadata + defaults)
-├── tasks.ts             # Tasks extraction
-├── tasks-query.ts       # Tasks query DSL
-├── terminal.ts          # PTY session manager (bun-pty)
-├── dates.ts             # Date math (shared by tasks/SRS/calendar)
-├── basesData.ts         # Vault-wide data feed for Bases
-├── asyncCache.ts        # Deduped, invalidation-safe async cache (backs /graph, /tree)
-├── community.ts         # Louvain-style community detection → node community/color stamping
-├── search.ts            # Full-text vault search (MiniSearch) + snippet rendering (POST /search)
-├── replace.ts           # Vault-wide find-and-replace with git snapshot (POST /replace)
-├── templates.ts         # {{token}} template expansion ({{date}}/{{time}}/{{title}}/{{cursor}})
-├── dailyNote.ts         # Daily-note creation via template expansion (POST /daily-note)
-├── settings.ts          # settings.yaml lifecycle: reconcile on boot, per-vault write mutex, property registry
-├── pathUtils.ts         # Vault path validation/manipulation helpers
-├── openFolder.ts        # "Open folder": validate + spawn a sibling core server for a folder (POST /open-folder)
-├── bases/               # Bases DSL — lexer, parser, evaluate, filters, functions, query
-└── srs/                 # SRS — cards, parser, scheduler
-
-core/test/
-├── helpers.ts           # makeSampleVault(): throwaway vault+memory in tmpdirs
-└── *.test.ts            # One per module (vault, engine, memory, server, sse, terminal, tasks, srs, bases, ...)
+  server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
+  engine.ts vault.ts memory.ts agents.ts graphBuilder.ts   # graph composition + builders
+  graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
+  files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts
+  asyncCache.ts changeClassifier.ts   # dedup cache + selective-invalidation classifier
+  search.ts replace.ts templates.ts dailyNote.ts openFolder.ts   # back POST /search,/replace,/daily-note,/open-folder
+  settings.ts                          # settings.yaml lifecycle (reconcile, per-vault write mutex, property registry)
+  commands.ts keybindings.ts error.ts dates.ts basesData.ts tasks.ts tasks-query.ts terminal.ts
+  bases/   # Bases DSL (lexer/parser/evaluate/filters/functions/query)
+  srs/     # SRS (cards/parser/scheduler)
+core/test/  # one *.test.ts per module; helpers.ts → makeSampleVault()
 
 app/src/
-├── EmptyPane.tsx        # Placeholder view for empty panes; quick switcher + new terminal
-├── fileTreeOps.ts       # File tree manipulation (drag/drop, rename, undo, retarget)
-├── debounce.ts          # Debounce utility (reusable across components)
-├── App.tsx              # Root: pane tree, routing, keyboard
-├── panes.ts             # Pure pane-tree model
-├── PaneTree.tsx         # Pane-tree renderer
-├── PaneContent.tsx      # Routes a leaf id to its view
-├── tabIds.ts            # Sentinel ids for non-file panes
-├── Editor.tsx           # CodeMirror wrapper
-├── editor/              # CM extensions (livePreview, autocomplete, basesBlock, tasksQuery, wikilink, tag)
-├── FileTree.tsx         # Sidebar with drag-drop / undo
-├── ContextMenu.tsx      # Right-click menu
-├── GraphView.tsx        # Graph view shell
-├── graph/               # Renderer + label layer + collide
-├── Flashcards.tsx       # SRS review view
-├── Terminal.tsx         # xterm.js terminal tab
-├── SheetView.tsx        # Spreadsheet pane: load/save/reload + lazy Univer mount
-├── sheet/               # Univer adapter (univerSheet.ts) + pure snapshot/sync (unit-tested)
-├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map/Bar/Line/Heatmap/Stat)
-├── calendar/            # Calendar feature (CalendarPage, EventStore, views/, components/)
-├── palette/             # Command palette + quick switcher
-├── ui/                  # Shared primitives: Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, buttonClass, popover/
-├── icons/               # Lucide Icon renderer + name registry + IconPicker
-├── dnd/                 # Drag-drop geometry + DOM drag tracking (viewDrag) for panes/tabs
-├── drawing/             # `.draw` document type: DrawingPage/DrawingCanvas/Toolbar/store/input
-├── export/              # Export note/base/sheet → HTML/PDF/Markdown/PNG (ExportView + exporters/formats)
-├── graph/               # WebGL renderer, DOM LabelLayer, youNode (self-hub injection), AgentsGraph, collide, labelSelection
-├── nativeMenu.ts        # Opens the shared ContextMenu from a right-click (pane/editor menus)
-├── serverVersion.ts     # SSE subscription + version poll
-├── api.ts               # HTTP client (runtime BASE via ?api= → VITE_API_BASE → default; apiBase())
-├── FolderPrompt.tsx     # Typed-path modal for the "Open folder" command (browser fallback for the native picker)
-├── keybindings.ts       # Pure shortcut matcher (parseCombo/matchesKeybinding) + eventToCombo
-├── settings.ts          # Store: sync seed + hydrate + per-key PATCH persist
-├── settingsCssVars.ts   # settings → :root CSS custom properties
-├── settingsDiff.ts      # pure leaf-diff for per-key persistence
-├── Toast.tsx
-├── telemetry.ts
-├── App.css              # Global styles + CSS variables
-└── *.test.ts            # Unit tests for pure modules (panes, settings)
+  App.tsx panes.ts PaneTree.tsx PaneContent.tsx tabIds.ts   # root, pure pane-tree model, routing
+  Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, basesBlock, tasksQuery, wikilink, tag, settingsComplete…)
+  FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
+  GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + WebGL renderer, DOM LabelLayer, youNode, AgentsGraph, collide, labelSelection
+  FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
+  bases/ calendar/ palette/ drawing/   # feature view-sets
+  ui/      # shared primitives (Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, gallery/, popover/) + buttonClass
+  icons/ dnd/   # Lucide Icon+registry+picker; drag-drop geometry + viewDrag
+  api.ts serverVersion.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts
+  Toast.tsx telemetry.ts App.css   # toasts, client telemetry, global styles + CSS vars
 ```
 
 ## Development Workflow
@@ -389,15 +334,10 @@ Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts`
 ## Common Tasks
 
 ### Adding a new endpoint to core API
-1. Add a route entry to the `routes` (read) or `mutatingRoutes` (write) table in `core/src/server.ts`
-2. Implement the business logic (e.g., call `buildGraph()`, `listMarkdown()`)
-3. Mutating routes go through `mutatingHandler`, which automatically invalidates the cache and broadcasts an SSE event after the handler runs — don't bump version manually
-4. Test with `bun test core/test/server.test.ts` (add a case)
+Add a route to the `routes` (read) or `mutatingRoutes` (write) table in `core/src/server.ts`; mutating routes go through `mutatingHandler` (auto cache-invalidate + SSE — don't bump version manually). Add a `core/test/server.test.ts` case.
 
 ### Adding a graph node kind or edge kind
-1. Update `NodeKind` or `EdgeKind` types in `core/src/graph.ts`
-2. Update extractors (e.g., `buildVaultGraph()` in `vault.ts`) to emit new nodes/edges
-3. Update frontend graph filtering in `App.tsx` if needed (e.g., "2nd brain" excludes memory nodes)
+Update `NodeKind`/`EdgeKind` in `core/src/graph.ts`, emit them from the extractors (`buildVaultGraph()` in `vault.ts`), and adjust frontend mode filtering in `App.tsx` if needed.
 
 ### Adding a setting
 The schema is the single source of truth; defaults must equal the current hardcoded value so upgrades are behaviorally a no-op.
@@ -409,18 +349,13 @@ The schema is the single source of truth; defaults must equal the current hardco
    - **Backend** (layout/debounce/SRS/etc.): read from `appConfig.<section>.<key>` in `core/src/server.ts` (cached via `loadAppConfig`, reloaded on settings change); thread into the module. User edits persist through `POST /set-setting`, which merges one key in place.
 
 ### Debugging graph construction
-1. Run `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` manually
-2. Call `curl http://localhost:4321/graph | jq` to inspect graph structure
-3. Check `core/test/vault.test.ts` or `core/test/engine.test.ts` for examples
+Run the server standalone (`bun run core/src/server.ts --vault <v> --memory <m>`), `curl :4321/graph | jq`; see `core/test/vault.test.ts` / `engine.test.ts` for examples.
 
 ### Adding a Bases function
-1. Add the function signature to `core/src/bases/functions.ts` (maps function name → implementation)
-2. Update `core/src/bases/query.ts` to handle the return type in aggregation
-3. Add tests in `core/test/bases/query.test.ts`
+Add a case to the `callFunction`/`callMethod` dispatch in `core/src/bases/functions.ts`, handle its return type in `query.ts` aggregation, and test in `core/test/bases/query.test.ts`.
 
 ### Adding an SRS scheduler variant
-1. Extend `core/src/srs/scheduler.ts` with new algorithm (SM-2 variant, custom decay, etc.)
-2. Expose config in `core/src/schema/settingsSchema.ts` (e.g., `srs.algorithm`); thread into `applyReview` (`core/src/srs/cards.ts`)
+Extend `core/src/srs/scheduler.ts`; expose config in `settingsSchema.ts` (e.g. `srs.algorithm`) and thread into `applyReview`.
 
 ## Error Handling
 
