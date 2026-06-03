@@ -139,8 +139,11 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
   },
   // ── Light counterparts ──────────────────────────────────────────────────────
   "oxide-duotone-light": {
+    // Exact values from the design's `.bis.light` block (bismuth.css) — the live
+    // reference for the light themes. accent is the design's #7A86DE (= ramp[2]),
+    // not a more-saturated guess.
     background: "#F1EFF7", foreground: "#322D49", neutral: "#7A7393",
-    accent: "#5E6FD0", border: "#DCD7EB", surface: "#FFFFFF", surface2: "#EEEBF7",
+    accent: "#7A86DE", border: "#DCD7EB", surface: "#FFFFFF", surface2: "#EEEBF7",
     accentPalette: ["#3FB6C4", "#6FA6E6", "#7A86DE", "#A98FE0", "#C08FD8"],
     isLight: true,
   },

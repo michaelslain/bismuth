@@ -185,8 +185,8 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: var(--scrim-bg); backdrop-filter: blur(3px); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-modal); overflow: hidden; }
-.graph-search-bar { padding: 7px 9px; border-bottom: 1px solid rgba(255,255,255,0.08); gap: 7px; }
-.graph-search-bar .search-bar-lead { color: rgba(232,232,232,0.6); opacity: 1; }
+.graph-search-bar { padding: 7px 9px; border-bottom: 1px solid var(--border-soft); gap: 7px; }
+.graph-search-bar .search-bar-lead { color: var(--faint); opacity: 1; }
 .palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: 11px; }
 .palette-search .search-bar-lead { color: var(--faint); opacity: 1; }
 .palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
@@ -366,7 +366,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
     radial-gradient(40% 34% at 64% 36%, color-mix(in srgb, var(--graph-4) 22%, transparent), transparent 70%),
     radial-gradient(36% 44% at 34% 62%, color-mix(in srgb, var(--graph-2) 18%, transparent), transparent 70%); }
 .graph-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
-  background: radial-gradient(120% 90% at 50% 30%, transparent 42%, color-mix(in srgb, var(--bg) 70%, #000) 100%); }
+  background: radial-gradient(120% 90% at 50% 30%, transparent 42%, var(--vignette-edge, color-mix(in srgb, var(--bg) 70%, #000)) 100%); }
 .graph-viewbar { gap: 8px; padding: 0 12px; }
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; }
@@ -383,7 +383,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
    SVG diagram + two floating cards. container-type lets the cards hide in the
    cramped sidebar mini-panel and show only at full-pane width. */
 .agents-graph { position: absolute; inset: 0; overflow: hidden; container-type: inline-size;
-  background: radial-gradient(120% 90% at 50% 30%, color-mix(in srgb, var(--bg) 94%, #fff) 0%, #07080d 72%); }
+  background: var(--graph-bg, radial-gradient(120% 90% at 50% 30%, color-mix(in srgb, var(--bg) 94%, #fff) 0%, #07080d 72%)); }
 .agents-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .agents-label { position: absolute; font-size: 11.5px; color: var(--fg); white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px var(--label-halo), 0 0 8px var(--label-halo); }
 .agents-label.self { font-weight: 600; }

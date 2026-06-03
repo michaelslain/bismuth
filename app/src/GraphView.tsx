@@ -111,6 +111,10 @@ export function GraphView(props: {
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
       edgeColor: hexToIntT(ap.neutral, 0xaeb4c2),
       backgroundColor: hexToIntT(ap.background, 0x14151b),
+      // Hub-label pill: dark text on a translucent-white halo for light themes (so labels
+      // don't render as dark boxes on the pale canvas); the dark-theme default otherwise.
+      labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
+      labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
     });
   });
 
