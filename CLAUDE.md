@@ -32,30 +32,15 @@ The system treats knowledge as a "three-brain" model:
 
 ## Environment Setup
 
-**Required environment variables** for running `bun run dev`:
+`bun run dev` requires two env vars (it errors if unset; both dirs must exist):
+- `OA_VAULT` — 2nd-brain vault dir (markdown files), e.g. `~/my-vault`
+- `OA_MEMORY` — 3rd-brain memory dir (Claude-bot notes), e.g. `~/.claude/memories`
 
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `OA_VAULT` | 2nd-brain vault directory (markdown files) | `~/my-vault` or `/tmp/test-vault` |
-| `OA_MEMORY` | 3rd-brain memory directory (Claude-bot notes) | `~/.claude/memories` or `/tmp/test-memory` |
-
-The dev command will error if these are not set. Both directories must exist before running.
-
-**Creating Test Vaults** (for development):
-```bash
-mkdir -p /tmp/test-vault /tmp/test-memory
-echo "# Hello\nSome content" > /tmp/test-vault/example.md
-export OA_VAULT="/tmp/test-vault"
-export OA_MEMORY="/tmp/test-memory"
-cd app && bun run dev
-```
+First-time dev with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo "# Hello" > /tmp/test-vault/example.md`, then export both and `cd app && bun run dev`.
 
 ## Development Artifacts
 
-Plans, brainstorming notes, design docs, and other temporary development artifacts are stored in the global `~/.claude/` directory (outside the source tree):
-- `~/.claude/obsidian-alternative-docs/` — Brainstorming, planning docs, design notes, and reference materials
-
-These are not committed to the repo and are git-ignored.
+Plans, design docs, and other temporary dev artifacts live outside the source tree in `~/.claude/obsidian-alternative-docs/` (git-ignored, not committed).
 
 ## Key Commands
 
@@ -381,45 +366,15 @@ bun test core
 ```
 Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts` file with unit tests.
 
-### Editing notes
-1. Edit `.md` files in the vault dir you launched with (`OA_VAULT` / `--vault`)
-2. Server detects file change, debounces 250ms, invalidates cache, bumps version, pushes SSE event with changed paths
-3. Frontend receives the SSE event and re-fetches `/graph` (or just the touched `/file`)
-4. A low-frequency `/version` poll catches up if the SSE connection silently dies
+### Editing notes & hot-reload
+- Editing a `.md` in the vault: server debounces 250ms → invalidates cache → bumps version → pushes SSE with changed paths + `dirty:{graph,tree}` flags; frontend re-fetches `/graph` (or just `/file`). A low-frequency `/version` poll recovers a silently-dropped SSE (proxy/sleep). Two edits within 250ms = only the second triggers an update.
+- `bun run dev`: Vite hot-reloads `.tsx`/`.css` (preserves editor/graph state); the **backend restarts** on `core/src` changes (client auto-reconnects via the fallback poll); `settings.yaml` is re-read per request (no restart).
 
-### Hot-Reload Behavior
+### Debugging
+- **Graph not updating:** wait for the 250ms debounce + ≤5s poll; `curl :4321/version`; check the `/events` SSE stream in DevTools. Content-only edits set `dirty.graph=false` (rebuild skipped) — expected.
+- **Terminal dead:** check the `/terminal` WebSocket (DevTools → WS); a crashed PTY needs an app restart.
 
-During `bun run dev`:
-- **Frontend (Vite)**: Hot-reload on .tsx/.css changes; preserves editor state and graph navigation
-- **Backend server**: Restarts on core/src changes; reconnects client automatically via SSE fallback poll
-- **Settings**: Changes to `settings.yaml` are picked up on next request (no server restart needed)
-- **Asset imports**: Changed icon/image files hot-reload via Vite; no manual restart required
-
-Note: File-system watch debounces 250ms. If you edit a note twice within 250ms, only the second edit triggers an update.
-
-### Cache & Debugging Patterns
-
-**Graph not updating after editing .md:**
-1. Wait for file-watch debounce (250ms) + frontend poll catchup (≤5s)
-2. Check `/version` endpoint: `curl http://localhost:4321/version | jq .version`
-3. Check SSE connection: open browser DevTools, Network tab, look for `/events` stream
-4. If SSE is closed: the connection silently died (proxy/sleep); fallback poll (`serverVersion.ts`) will catch it within 5s
-
-**Debug cache invalidation:**
-- SSE payload includes `dirty: {graph, tree}` flags
-- Graph rebuild only if `dirty.graph=true`; same for tree
-- Content-only edits (no wikilink/tag/icon changes) set `dirty.graph=false` to skip expensive rebuild
-
-**Terminal not responding:**
-- Check WebSocket connection on `/terminal` (DevTools → Network → WS)
-- PTY process may have crashed; check backend console for `terminal.ts` errors
-- Restart the app to spawn a fresh PTY
-
-### Performance considerations
-- **Graph caching**: Only rebuilds when vault/memory files change (fs-watch + debounce)
-- **Backend-precomputed layouts**: `layout.ts` produces both 2D and 3D positions on the server; the renderer morphs between them instead of running a force sim in the browser
-- **Live-preview scanning**: Scans document for code blocks only when content changes, not on every keystroke
-- **Label layer**: DOM-overlay native-text labels (not sprites), viewport-culled, with a stable "always-on" set of top-N hubs so labels don't pop in and out as you orbit
+(Performance characteristics are covered under **Performance Optimizations** below.)
 
 ## Common Tasks
 
@@ -490,11 +445,7 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENO
 The "agents" graph mode visualizes Claude Code instances running this project across machines. Each agent is a node; directed edges represent messages between agents. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
 
 ### Performance Optimizations
-1. **Debounced file-watch**: 250ms delay prevents thrashing on rapid edits
-2. **Version-based polling**: Frontend only refetches graph when `/version` increments
-3. **Node position persistence**: 2D/3D layouts cached in localStorage
-4. **Lazy renderer init**: WebGL only loads when needed
-5. **Frontmatter tolerance**: Malformed YAML doesn't crash graph builder
+Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder.
 
 ### Relay Integration
 
