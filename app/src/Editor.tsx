@@ -13,6 +13,7 @@ import { tags as t } from "@lezer/highlight";
 import { api } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
+import { foldBlocks } from "./editor/foldBlocks";
 import { tasksQuery } from "./editor/tasksQuery";
 import { mathBlock } from "./editor/mathBlock";
 import { basesBlock } from "./editor/basesBlock";
@@ -220,6 +221,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           yaml(),
           syntaxHighlighting(yamlHighlight),
           codeFontTheme,
+          foldBlocks(() => path, "yaml"),
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
@@ -251,7 +253,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
-          ...(ed.livePreview ? [livePreview, tasksQuery, mathBlock()] : []),
+          ...(ed.livePreview ? [livePreview, foldBlocks(() => path), tasksQuery, mathBlock()] : []),
           // Harper spell + grammar check, toggled by editor.spellcheck (default true).
           ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
         ];
