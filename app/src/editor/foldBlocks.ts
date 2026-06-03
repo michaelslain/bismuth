@@ -280,6 +280,115 @@ function preserveScroll(view: EditorView, mutate: () => void): void {
   view.requestMeasure({ read: () => top, write: (t) => { view.scrollDOM.scrollTop = t; } });
 }
 
+// --- animated height collapse/expand -----------------------------------------
+//
+// CM6's fold (Decoration.replace) removes the region from layout *instantly*. To
+// make collapsing feel smooth we first animate the region's on-screen `.cm-line`
+// elements' height/opacity to 0 (or up from 0, when expanding) over ANIM_MS, then
+// commit the real fold transaction. Only viewport-visible lines exist in the DOM,
+// which is exactly what the user can see; off-screen lines collapse instantly but
+// unseen. The eased curve matches the app's other transitions.
+
+const ANIM_MS = 90;
+const ANIM_EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+
+const reducedMotion = (): boolean =>
+  typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+// Re-entrancy guard: ignore further toggles on a block while its animation runs.
+const animatingIds: WeakMap<EditorView, Set<string>> = new WeakMap();
+function busy(view: EditorView): Set<string> {
+  let s = animatingIds.get(view);
+  if (!s) animatingIds.set(view, (s = new Set()));
+  return s;
+}
+
+/** Climb from a DOM node at `pos` to its enclosing `.cm-line` element. */
+function lineEl(view: EditorView, pos: number): HTMLElement | null {
+  const at = view.domAtPos(pos);
+  let el: Node | null = at.node;
+  while (el && !(el instanceof HTMLElement && el.classList.contains("cm-line"))) el = el.parentNode;
+  return el as HTMLElement | null;
+}
+
+/** The on-screen `.cm-line` elements for the hidden region (lines after the anchor
+ *  line through the region's last line) that currently fall inside the viewport. */
+function regionLineEls(view: EditorView, anchorTo: number, regionTo: number): HTMLElement[] {
+  const doc = view.state.doc;
+  const startLine = doc.lineAt(anchorTo).number + 1; // first hidden line
+  const endLine = doc.lineAt(regionTo).number;
+  const els: HTMLElement[] = [];
+  for (let n = startLine; n <= endLine && n <= doc.lines; n++) {
+    const line = doc.line(n);
+    const visible = view.visibleRanges.some((r) => line.from <= r.to && line.to >= r.from);
+    if (!visible) continue;
+    const el = lineEl(view, line.from);
+    if (el) els.push(el);
+  }
+  return els;
+}
+
+function clearFoldStyles(el: HTMLElement): void {
+  el.style.overflow = "";
+  el.style.willChange = "";
+}
+
+/**
+ * Animate a region's on-screen lines collapsing to / expanding from 0 height, then run
+ * `done`. Uses the Web Animations API rather than CSS transitions: WAAPI takes explicit
+ * from/to keyframes, so it can't suffer the transition gotcha where the 0-height start
+ * value is never painted in its own frame (which made expand silently snap while only
+ * opacity faded). For expand the un-fold has already been committed by the caller, so we
+ * grab the lines one frame later — after CodeMirror has rendered and measured them — and
+ * animate those stable elements up from 0. Falls back to an immediate `done()` when
+ * nothing is on-screen or motion is reduced.
+ */
+function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", done: () => void): void {
+  if (reducedMotion()) {
+    done();
+    return;
+  }
+  const run = () => {
+    const els = getEls();
+    if (els.length === 0) {
+      done();
+      return;
+    }
+    const heights = els.map((el) => el.getBoundingClientRect().height); // current = full height
+    let pending = els.length;
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      if (--pending > 0) return;
+      settled = true;
+      els.forEach(clearFoldStyles);
+      done();
+    };
+    els.forEach((el, i) => {
+      el.style.overflow = "hidden";
+      el.style.willChange = "height, opacity";
+      const from = dir === "collapse" ? { height: `${heights[i]}px`, opacity: 1 } : { height: "0px", opacity: 0 };
+      const to = dir === "collapse" ? { height: "0px", opacity: 0 } : { height: `${heights[i]}px`, opacity: 1 };
+      // collapse holds the closed end (fill:forwards) until the caller commits the fold;
+      // expand lets the line revert to its natural height when the keyframes finish.
+      const anim = el.animate([from, to], { duration: ANIM_MS, easing: ANIM_EASE, fill: dir === "collapse" ? "forwards" : "none" });
+      anim.onfinish = finish;
+      anim.oncancel = finish;
+    });
+    // Safety net: if a tab is backgrounded mid-animation, onfinish can be delayed
+    // indefinitely (WAAPI is throttled like rAF) — settle anyway so state stays consistent.
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      els.forEach(clearFoldStyles);
+      done();
+    }, ANIM_MS + 200);
+  };
+  // Expand: wait one frame so CM has finished re-rendering the just-revealed lines.
+  if (dir === "expand") requestAnimationFrame(run);
+  else run();
+}
+
 /**
  * Collapsible headings & bullets (markdown) or indented keys (yaml). `getPath`
  * supplies the current note path (stable for the lifetime of this editor view),
@@ -334,6 +443,50 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
     provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
   });
 
+  // Toggle a block's fold (left-click) or lock (right-click) with a height animation:
+  // collapse animates the visible region lines to 0 *then* commits the fold; expand
+  // commits first (lines re-render) then animates them up from 0. `toggleLock` always
+  // lands folded, so it only animates when collapsing from an expanded block.
+  const animatedToggle = (view: EditorView, id: string, which: "fold" | "lock"): void => {
+    const guard = busy(view);
+    if (guard.has(id)) return; // an animation for this block is already in flight
+    const st = view.state.field(field);
+    const folded = st.locked.has(id) || st.ephemeral.has(id);
+    const effect = which === "fold" ? toggleFold.of(id) : toggleLock.of(id);
+    const dir = which === "fold" ? (folded ? "expand" : "collapse") : folded ? "none" : "collapse";
+    const b = scanFoldables(view.state.doc, mode).find((x) => x.id === id);
+
+    // When collapsing a region that contains the caret/selection, pull the caret back to
+    // the still-visible anchor line so it isn't stranded inside the now-hidden text.
+    const sel = view.state.selection.main;
+    const cursorInRegion = dir === "collapse" && !!b && sel.from <= b.regionTo && sel.to >= b.anchorTo;
+    const commit = () =>
+      preserveScroll(view, () =>
+        view.dispatch({ effects: effect, ...(cursorInRegion ? { selection: { anchor: b!.anchorTo } } : {}) }),
+      );
+
+    if (dir === "none" || reducedMotion() || !b) {
+      commit();
+      return;
+    }
+    guard.add(id);
+    const release = () => guard.delete(id);
+    const getEls = () => regionLineEls(view, b.anchorTo, b.regionTo);
+    if (dir === "collapse") {
+      // Rotate the chevron now (it's normally driven by the fold state, which we don't
+      // commit until the slide finishes — otherwise the triangle visibly lags the content).
+      const escId = id.replace(/(["\\])/g, "\\$1");
+      view.dom.querySelector<HTMLElement>(`.cm-fold-arrow[data-fold-id="${escId}"]`)?.classList.add("is-collapsed");
+      animateFold(getEls, "collapse", () => {
+        commit();
+        release();
+      });
+    } else {
+      commit(); // un-fold so the region's lines render again…
+      animateFold(getEls, "expand", release); // …then slide them open
+    }
+  };
+
   return [
     field,
     // Highest precedence so a click/right-click on the chevron is handled here FIRST —
@@ -353,7 +506,7 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
         e.preventDefault();
         e.stopPropagation();
         const id = el.dataset.foldId;
-        preserveScroll(view, () => view.dispatch({ effects: toggleFold.of(id) }));
+        animatedToggle(view, id, "fold");
         return true;
       },
       contextmenu: (e, view) => {
@@ -362,7 +515,7 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
         e.preventDefault();
         e.stopPropagation();
         const id = el.dataset.foldId;
-        preserveScroll(view, () => view.dispatch({ effects: toggleLock.of(id) }));
+        animatedToggle(view, id, "lock");
         return true;
       },
       }),
@@ -378,7 +531,10 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
       // otherwise pin some element *below* the fold and let everything above slide up.
       // We control scroll ourselves (preserveScroll), so the clicked line stays put and
       // the content *below* it moves instead.
-      ".cm-scroller": { "overflow-anchor": "none" },
+      // overflow-anchor:none — see above. scrollbar-gutter:stable always reserves the
+      // vertical scrollbar's width, so folding/expanding (or any height change) that adds
+      // or removes the scrollbar can't shift the centered content sideways.
+      ".cm-scroller": { "overflow-anchor": "none", "scrollbar-gutter": "stable" },
       // The anchor line becomes the positioning context for its triangle.
       ".cm-foldable-line": { position: "relative" },
       // The arrow is a WIDE, transparent hit-box (generous click target) that centers a
@@ -406,10 +562,12 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
         width: "11px",
         height: "11px",
         background: "currentColor",
-        "clip-path": "polygon(18% 8%, 18% 92%, 88% 50%)",
+        // Centroid sits at (50%,50%) so rotating about the box center pivots in place —
+        // an off-center triangle visibly drifts sideways as it turns.
+        "clip-path": "polygon(27% 12%, 27% 88%, 96% 50%)",
         transform: "rotate(90deg)", // expanded → points down
         "transform-origin": "center",
-        transition: "transform 120ms ease",
+        transition: "transform 90ms ease",
       },
       // Collapsed → triangle points right; box stays visible.
       ".cm-fold-arrow.is-collapsed": { opacity: "1" },

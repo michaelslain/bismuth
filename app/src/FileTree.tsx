@@ -1,5 +1,5 @@
 // app/src/FileTree.tsx
-import { createEffect, createResource, createSignal, For, Show, onCleanup } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show, onCleanup, type JSX } from "solid-js";
 import { api } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { lastChange } from "./serverVersion";
@@ -408,6 +408,37 @@ function EditableLabel(props: {
   );
 }
 
+// Smoothly slides a folder's children open/closed via the CSS grid-rows 0fr↔1fr trick
+// (animates to content height with no measuring). `mounted` keeps the subtree in the DOM
+// through the close animation; `expanded` drives the transition and is flipped a frame
+// after mount so the very first open animates from 0 rather than snapping. Solid keeps
+// `props.children` lazy, so a never-opened folder's subtree is never built.
+function Collapsible(props: { open: boolean; children: JSX.Element }) {
+  const [mounted, setMounted] = createSignal(props.open);
+  const [expanded, setExpanded] = createSignal(props.open);
+  createEffect(() => {
+    if (props.open) {
+      setMounted(true);
+      requestAnimationFrame(() => setExpanded(true));
+    } else {
+      setExpanded(false);
+    }
+  });
+  return (
+    <div
+      class="ft-collapse"
+      classList={{ open: expanded() }}
+      onTransitionEnd={(e) => {
+        if (e.propertyName === "grid-template-rows" && !props.open) setMounted(false);
+      }}
+    >
+      <div class="ft-collapse-inner">
+        <Show when={mounted()}>{props.children}</Show>
+      </div>
+    </div>
+  );
+}
+
 function Level(props: {
   node: TreeNode; depth: number;
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
@@ -449,7 +480,7 @@ function Level(props: {
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
               </Show>
             </div>
-            <Show when={props.open.has(child.path)}>
+            <Collapsible open={props.open.has(child.path)}>
               <Level node={child} depth={props.depth + 1} open={props.open} toggle={props.toggle}
                 onOpen={props.onOpen} activeFile={props.activeFile} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
@@ -457,7 +488,7 @@ function Level(props: {
                 dragPath={props.dragPath} setDragPath={props.setDragPath}
                 dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
                 moveInto={props.moveInto} endDrag={props.endDrag} makeDragStart={props.makeDragStart} />
-            </Show>
+            </Collapsible>
           </div>
         ) : (
           <div
