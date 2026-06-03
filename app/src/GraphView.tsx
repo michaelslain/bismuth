@@ -190,7 +190,7 @@ export function GraphView(props: {
         <span class="graph-vb-wide graph-vb-right">
           <SegmentedToggle value={settings.graph.viewMode} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
           <Show when={props.fill}>
-            <IconTextButton icon="Search" variant={menuOpen() ? "selected" : "normal"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
+            <IconTextButton icon="Search" size="sm" variant={menuOpen() ? "selected" : "unselected"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>
         </span>
       </ViewBar>

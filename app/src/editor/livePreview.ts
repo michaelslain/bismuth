@@ -679,10 +679,13 @@ export const livePreview = [
     ".cm-strong": { "font-weight": "bold" },
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
-    // Monaspace renders visually larger than Lora at the same px; 0.85em makes
-    // mono code optically match the surrounding serif body. Keep all mono regions
-    // (inline code, code blocks, frontmatter, tables) on this same scale.
-    ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
+    // Monaspace renders visually larger than Lora at the same px; the --mono-scale
+    // factor (settings: appearance.monoScale, default 0.85) makes mono code optically
+    // match the surrounding serif body. This is an OPTICAL correction for mono-next-to-
+    // serif, so it lives only where mono sits inside prose (code regions here + the
+    // flashcard .card-md code in App.css) — NOT on the all-mono UI chrome, which has no
+    // serif to match. Keep all mono regions (inline code, blocks, frontmatter, tables) on it.
+    ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
     // Links + wikilinks: accent with a SOFT underline (a faint accent rule that
     // sits below the text) rather than a hard text-decoration line.
     ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
@@ -719,7 +722,7 @@ export const livePreview = [
     },
     // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
     // are hidden off-cursor (replaced by a header + collapsed close line).
-    ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em", "line-height": "1.5" },
+    ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
     // In-block line numbers: a faint right-aligned count hung in the editor's left
     // padding (no layout shift to the code text). `attr(data-codeline)` is set by
     // the codeLineDeco decoration on each body line.
@@ -771,12 +774,12 @@ export const livePreview = [
     // --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
-      "font-size": "0.85em",
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
       background: "var(--surface-2)",
       "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     ".cm-fm-key": { color: "var(--accent)" },
-    ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em" },
+    ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {
