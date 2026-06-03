@@ -19,7 +19,7 @@ For first-time setup without existing vaults, see **Creating Test Vaults** below
 
 ## Project Overview
 
-**Three Brains** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
+**Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
 
 - **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with Claude-bot memory
 - **cli**: Command-line interface for managing vaults (`oa` binary)
@@ -40,7 +40,7 @@ First-time dev with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo
 
 ## Development Artifacts
 
-Plans, design docs, and other temporary dev artifacts live outside the source tree in `~/.claude/obsidian-alternative-docs/` (git-ignored, not committed).
+Plans, design docs, and other temporary dev artifacts live outside the source tree in `~/.claude/bismuth-docs/` (git-ignored, not committed).
 
 ## Key Commands
 
@@ -70,7 +70,7 @@ When multiple Claude Code sessions run this project, port conflicts occur on def
 OA_VAULT="/path" OA_MEMORY="/path" PORT=4322 bun run dev
 ```
 
-Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for port assignments across active sessions.
+Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignments across active sessions.
 
 ## Architecture
 
@@ -394,7 +394,7 @@ Debounced 250ms file-watch; version-based polling (refetch only when `/version` 
 
 ### Relay Integration
 
-**Three Brains** integrates with **Claude Communicate** (inter-agent relay system) to:
+**Bismuth** integrates with **Claude Communicate** (inter-agent relay system) to:
 - Track which Claude Code instances are running the project (via `/agent-graph` endpoint)
 - Visualize agent communication network in "agents" graph mode
 - Enable agents to coordinate vault changes across machines

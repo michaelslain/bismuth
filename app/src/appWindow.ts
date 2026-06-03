@@ -24,7 +24,7 @@ export async function pickFolder(): Promise<string | null> {
 }
 
 /** Returns true if a window was opened (or creation was kicked off in Tauri). */
-export async function openAppWindow(url: string, title = "Three Brains"): Promise<boolean> {
+export async function openAppWindow(url: string, title = "Bismuth"): Promise<boolean> {
   if (isTauri()) {
     try {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
