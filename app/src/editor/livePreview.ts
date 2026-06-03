@@ -6,6 +6,7 @@ import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
 import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
+import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
 import { CodeHeader } from "./CodeHeader";
 
@@ -563,6 +564,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           deco.push(syntaxMark.range(s, textStart));
           deco.push(syntaxMark.range(textEnd, end));
         }
+      }
+
+      // bare (inexplicit) URLs — a plain https://… typed without [text](url) syntax.
+      // Style them as clickable links; nothing is hidden (the URL *is* the visible text).
+      for (const { start, end } of findBareUrls(text)) {
+        deco.push(link.range(line.from + start, line.from + end));
       }
 
       // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
