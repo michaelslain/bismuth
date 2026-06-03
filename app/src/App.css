@@ -79,7 +79,7 @@ body { background: var(--bg); color: var(--fg); }
    animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
    transitioning that property instead gives a smooth, frame-by-frame collapse. */
 @property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 280px; }
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); grid-template-columns: var(--sidebar-w) 1fr; height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.2s ease; }
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); grid-template-columns: var(--sidebar-w) 1fr; height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
 .sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
@@ -135,6 +135,12 @@ body { background: var(--bg); color: var(--fg); }
 .ft-row.active { background: var(--accent-soft); color: var(--fg); }
 .ft-row.active .ft-icon { color: var(--accent); }
 .ft-row.drop-target { background: var(--accent-soft); }
+/* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
+   height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
+.ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
+.ft-collapse.open { grid-template-rows: 1fr; }
+.ft-collapse-inner { overflow: hidden; min-height: 0; }
+@media (prefers-reduced-motion: reduce) { .ft-collapse { transition: none; } }
 
 /* ── Shared view bar (breadcrumb + right-aligned controls) ─────────────────────
    The 46px header most content views start with: a breadcrumb on the left, a flexible
