@@ -189,8 +189,13 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 /* Shares the popover UI-chrome font so palette label/sublabel/search all read as one
    family (the popover surfaces use the same --popover-font). */
 .palette-panel { width: 90%; max-width: 600px; max-height: 60vh; display: flex; flex-direction: column; background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-modal); overflow: hidden; font-family: var(--popover-font); }
-.graph-search-bar { padding: 7px 9px; border-bottom: 1px solid var(--border-soft); gap: 7px; }
+/* Graph Find panel search — a compact sibling of .palette-search (same anatomy:
+   leading icon + transparent input + border-bottom divider above the result list). */
+.graph-search-bar { padding: 10px 12px; gap: 9px; }
 .graph-search-bar .search-bar-lead { color: var(--faint); opacity: 1; }
+.graph-search-bar .search-bar-input { font-size: 13px; }
+/* Divider rides the list's top so it only shows alongside results (no empty sliver). */
+.graph-search-list { font-size: 12px; border-top: 1px solid var(--border-soft); }
 .palette-search { padding: 15px 18px; border-bottom: 1px solid var(--border-soft); gap: 11px; }
 .palette-search .search-bar-lead { color: var(--faint); opacity: 1; }
 .palette-input { border: none; outline: none; background: transparent; color: var(--fg); font: inherit; font-size: var(--palette-input-font-size, 15px); }
@@ -397,7 +402,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
 .graph-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
 .graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--faint); background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 9px; padding: 7px 12px; }
-.graph-find-panel { background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; }
+.graph-find-panel { background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
 .graph-bottom-narrow { display: flex; }
 @container (max-width: 520px) { .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; } .graph-viewbar { height: auto; padding: 5px 6px; justify-content: center; border-bottom: none; } }
 @container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }
