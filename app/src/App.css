@@ -145,10 +145,9 @@ body { background: var(--bg); color: var(--fg); }
 .tab { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; font-size: var(--tab-font-size, 12px); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
 .tab > svg { color: var(--faint); }
 .tab:hover { color: var(--fg); }
-/* Active tab connects to the editor body below (canvas bg) with an iridescent top bar. */
-.tab.active { color: var(--fg); background: var(--bg); }
-.tab.active > svg { color: var(--accent); }
-.tab.active::after { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--grad); }
+/* Active tab is signified by a lightened background (like the segmented switchers), no accent line. */
+.tab.active { color: var(--fg); background: var(--surface-2); }
+.tab.active > svg { color: var(--fg); }
 .tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
 
 /* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
