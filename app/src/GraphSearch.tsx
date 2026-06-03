@@ -8,6 +8,7 @@
 // selected row = --accent-soft) so it tracks light and dark themes, 10–11px.
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
 import { SearchBar } from "./ui/SearchBar";
+import { IconButton } from "./ui/IconButton";
 
 export interface SearchItem {
   id: string;
@@ -103,13 +104,9 @@ export function GraphSearch(props: {
       style={{
         display: "flex",
         "flex-direction": "column",
-        background: "var(--surface-2)",
-        "border-radius": "4px",
         "font-family": "inherit",
-        "font-size": "11px",
         width: "100%",
-        "flex-shrink": 0,
-        "max-height": "260px",
+        "min-height": 0,
         overflow: "hidden",
         "pointer-events": "auto",
       }}
@@ -122,17 +119,15 @@ export function GraphSearch(props: {
         onKeyDown={onKeyDown}
         inputRef={(el) => (inputRef = el)}
         class="graph-search-bar"
-        inputStyle={{
-          border: "none",
-          outline: "none",
-          background: "transparent",
-          color: "var(--fg)",
-          font: "inherit",
-          "font-size": "11px",
-        }}
-      />
+      >
+        <IconButton icon="X" label="Close search" size="sm" onClick={props.onClose} />
+      </SearchBar>
+      {/* Only render the divider + list once there's a query — keeps the panel a tidy
+          single search bar (no empty sliver) until the user actually searches. */}
+      <Show when={query().trim()}>
       <div
         ref={listRef}
+        class="graph-search-list"
         style={{ "overflow-y": "auto", padding: "4px" }}
       >
         <For each={results()}>
@@ -141,7 +136,11 @@ export function GraphSearch(props: {
               data-row
               classList={{ selected: selected() === i() }}
               onMouseEnter={() => { setSelected(i()); props.onPreview?.(item.id); }}
-              onClick={() => props.onFly(item.id)}
+              // Commit on mousedown, not click: hovering a row runs a scrollIntoView effect, and if
+              // the list shifts between mousedown and mouseup the browser cancels the click (the open
+              // was intermittent). mousedown fires at press time regardless. preventDefault keeps the
+              // search input focused and avoids text-selection.
+              onMouseDown={(e) => { e.preventDefault(); props.onFly(item.id); }}
               style={{
                 display: "flex",
                 "align-items": "center",
@@ -192,6 +191,7 @@ export function GraphSearch(props: {
           </div>
         </Show>
       </div>
+      </Show>
     </div>
   );
 }

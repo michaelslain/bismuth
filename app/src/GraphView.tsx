@@ -10,7 +10,6 @@ import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
-import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
@@ -53,8 +52,9 @@ export function GraphView(props: {
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
 
-  // Single tools panel (search + clusters + reset), opened by the ☰ button. Only shown when the
-  // graph is a full pane (props.fill) — the sidebar mini-graph is too small to be worth it.
+  // Graph search panel, opened by the FIND / ☰ buttons. Only shown when the graph is a full
+  // pane (props.fill) — the sidebar mini-graph is too small to be worth it. (Clusters have
+  // their own floating legend card; there's no reset-view button.)
   const [menuOpen, setMenuOpen] = createSignal(false);
   const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
 
@@ -71,14 +71,19 @@ export function GraphView(props: {
     );
   };
 
+  // Open a node as a tab — shared by canvas clicks and search-result commits. Only vault
+  // notes map to a real file; tags, the "you" hub, agents, and memory nodes (their `mem:`
+  // ids aren't vault paths) can't be opened, so they just get framed by the caller.
+  const openNode = (id: string) => {
+    const node = lastGraph?.nodes.find((n) => n.id === id);
+    if (node?.kind !== "note") return;
+    props.onOpen(id);
+  };
+
   onMount(() => {
     renderer.mount(
       host,
-      (id) => {
-        const node = lastGraph?.nodes.find((n) => n.id === id);
-        if (node?.kind === "tag" || node?.kind === "self") return; // tags + the "you" hub aren't openable
-        props.onOpen(id);
-      },
+      openNode,
       (node) => setHovered(node),
       labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
     );
@@ -202,39 +207,16 @@ export function GraphView(props: {
             <Show when={fps() !== null}><span style={{ color: "var(--green)" }}>{fps()} fps</span></Show>
           </div>
         </Show>
+        {/* Find panel: search only. Clusters live in the floating legend card; there's no
+            reset-view button here (Escape / toggling Find closes it). */}
         <Show when={props.fill && menuOpen()}>
-          <div class="graph-find-panel" style={{ position: "absolute", top: "8px", right: "8px", bottom: "8px", width: "244px", display: "flex", "flex-direction": "column", gap: "10px", "pointer-events": "auto", padding: "10px" }}>
-            {/* Section 1 — view actions: a bordered Reset button + close. */}
-            <div style={{ display: "flex", "align-items": "stretch", gap: "6px", "flex-shrink": 0 }}>
-              <TextButton
-                size="sm"
-                style={{ flex: 1 }}
-                title="Reset view to whole graph"
-                onClick={() => renderer.resetView()}
-              >
-                RESET VIEW
-              </TextButton>
-              <IconButton
-                icon="X"
-                label="Close menu"
-                size="sm"
-                onClick={closeMenu}
-              />
-            </div>
-            {/* Section 2 — search. */}
+          <div class="graph-find-panel" style={{ position: "absolute", top: "8px", right: "8px", width: "260px", "max-height": "calc(100% - 16px)", display: "flex", "flex-direction": "column", "pointer-events": "auto" }}>
             <GraphSearch
               items={searchItems()}
               onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
-              onFly={(id) => { renderer.setSearchMatches(new Set([id])); renderer.focusNode(id); }}
+              onFly={(id) => { renderer.setSearchMatches(new Set([id])); renderer.focusNode(id); openNode(id); }}
               onClose={closeMenu}
             />
-            {/* Section 3 — clusters, captioned + scrollable. */}
-            <div style={{ display: "flex", "flex-direction": "column", gap: "4px", flex: 1, "min-height": 0 }}>
-              <div class="graph-card-h" style={{ "flex-shrink": 0 }}>Clusters</div>
-              <div style={{ flex: 1, "min-height": 0 }}>
-                <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
-              </div>
-            </div>
           </div>
         </Show>
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", "z-index": 4, display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
@@ -250,8 +232,8 @@ export function GraphView(props: {
             />
             <Show when={props.fill && !props.mini}>
               <IconButton
-                icon="Menu"
-                label="Graph tools — search, clusters, reset"
+                icon="Search"
+                label="Search graph"
                 variant={menuOpen() ? "selected" : "unselected"}
                 onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}
               />
