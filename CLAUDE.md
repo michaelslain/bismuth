@@ -82,7 +82,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
   - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`, `/replace`
-  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `PUT /file`
+  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
@@ -250,6 +250,14 @@ The bar above the file tree is configured by the `toolbar:` list in `settings.ya
 
 **Adding a command:** add an entry to `COMMAND_CATALOG` (core) and a matching `action` binding in `bindCommands` (app). The `toolbar.command` enum, its autocomplete, and the palette pick it up automatically. (Adding any new *top-level* schema key also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`.)
 
+**File-menu commands** (there is no separate "File menu" UI — each file option is just a command, surfaced in the palette / bindable to the toolbar / keybindable, and trivially mappable to a native macOS menu later):
+- `new-folder` / `new-note` — create in the vault (pre-existing).
+- `export` — opens the export tab for the focused file (falls back to the active tab's content for single-pane tabs; `isSentinel`/`isExportable`-guarded, toasts otherwise).
+- `new-window` — reopen the **current** folder in a new window, pinned to this window's backend via `?api=` (browser: `window.open`).
+- `open-folder` — open a **chosen** folder as its own brain in a new window, Obsidian-style process-per-vault: `POST /open-folder` spawns a sibling core server pointed at the folder (`core/src/openFolder.ts`, free-port + readiness-poll, injectable spawn/probe for tests) and returns its `{url}`; the frontend opens a window with `?api=<url>`. The browser uses a typed-path modal (`FolderPrompt.tsx`); a native OS folder picker + native Tauri window are desktop-build enhancements that don't change this mechanism.
+
+**Runtime backend base** (`app/src/api.ts`): `BASE` is resolved at runtime — `?api=<url>` query param wins, then the `VITE_API_BASE` build env, then the default port — so one frontend build serves multiple windows each talking to a different backend. `apiBase()` exposes the resolved value for building `?api=` window URLs.
+
 ### Keybindings
 
 Global keyboard shortcuts are configured via the `keybindings:` section of `settings.yaml` (the **last** section in a fresh file) — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands:
@@ -304,6 +312,7 @@ core/src/
 ├── dailyNote.ts         # Daily-note creation via template expansion (POST /daily-note)
 ├── settings.ts          # settings.yaml lifecycle: reconcile on boot, per-vault write mutex, property registry
 ├── pathUtils.ts         # Vault path validation/manipulation helpers
+├── openFolder.ts        # "Open folder": validate + spawn a sibling core server for a folder (POST /open-folder)
 ├── bases/               # Bases DSL — lexer, parser, evaluate, filters, functions, query
 └── srs/                 # SRS — cards, parser, scheduler
 
@@ -341,7 +350,8 @@ app/src/
 ├── graph/               # WebGL renderer, DOM LabelLayer, youNode (self-hub injection), AgentsGraph, collide, labelSelection
 ├── nativeMenu.ts        # Opens the shared ContextMenu from a right-click (pane/editor menus)
 ├── serverVersion.ts     # SSE subscription + version poll
-├── api.ts               # HTTP client
+├── api.ts               # HTTP client (runtime BASE via ?api= → VITE_API_BASE → default; apiBase())
+├── FolderPrompt.tsx     # Typed-path modal for the "Open folder" command (browser fallback for the native picker)
 ├── keybindings.ts       # Pure shortcut matcher (parseCombo/matchesKeybinding) + eventToCombo
 ├── settings.ts          # Store: sync seed + hydrate + per-key PATCH persist
 ├── settingsCssVars.ts   # settings → :root CSS custom properties

@@ -27,6 +27,7 @@ import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault } from "./search";
 import { replaceInVault } from "./replace";
+import { spawnVaultBackend } from "./openFolder";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -387,6 +388,24 @@ export function createServer(cfg: CoreConfig) {
     "POST /backup": async (_, __) => {
       const committed = await commitVault(cfg.vault, snapshotMessage());
       return ok({ committed });
+    },
+
+    // Open a folder as its own brain in a new window: spawn a sibling core server
+    // pointed at `folder` (process-per-vault, like Obsidian) and return its URL. The
+    // frontend opens a window with `?api=<url>`. Read-only w.r.t. THIS vault (it only
+    // launches a new process), so it lives in routes, not mutatingRoutes. The new
+    // backend reuses this server's memory dir unless one is supplied.
+    "POST /open-folder": async (req, _url) => {
+      const { folder, memory } = (await req.json()) as { folder: string; memory?: string };
+      const mem = memory ?? cfg.memory;
+      if (!mem) throw new AppError("EINVAL", "no memory dir configured", 400);
+      const spawned = await spawnVaultBackend({
+        folder,
+        memory: mem,
+        serverEntry: import.meta.path,
+        cwd: import.meta.dir,
+      });
+      return ok({ url: spawned.url, vault: spawned.vault });
     },
 
     // Vault full-text search (Omnisearch-style ranking). Read-only despite POST

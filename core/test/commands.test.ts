@@ -24,6 +24,12 @@ describe("command catalog", () => {
     expect(COMMAND_IDS).toContain("graph-both");
   });
 
+  it("includes the file-menu commands", () => {
+    for (const id of ["open-folder", "new-window", "export"]) {
+      expect(COMMAND_IDS).toContain(id);
+    }
+  });
+
   it("looks up a label by id", () => {
     expect(commandLabel("terminal")).toBe("Open Terminal");
     expect(commandLabel("does-not-exist")).toBeUndefined();

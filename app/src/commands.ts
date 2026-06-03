@@ -23,6 +23,12 @@ export interface CommandHandlers {
   openDailyNote: (id: string) => void;
   equalizePanes: () => void;
   toggleSidebar: () => void;
+  // File-menu commands. "Open folder" opens a chosen folder as its own brain in a
+  // new window (a sibling backend); "New window" reopens the current folder in a new
+  // window; export/print act on the active file.
+  openFolder: () => void | Promise<void>;
+  newWindow: () => void | Promise<void>;
+  exportActive: () => void;
 }
 
 export interface BoundCommand {
@@ -39,10 +45,13 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     // user put it, the same thing: a fresh tab whose content is the graph.
     "new-tab": h.openGraph,
     "open-graph": h.openGraph,
+    "open-folder": h.openFolder,
+    "new-window": h.newWindow,
     "new-note": h.newNote,
     "new-folder": h.newFolder,
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
+    "export": h.exportActive,
     "terminal": h.openTerminal,
     "search": h.openSearch,
     "settings": h.openSettings,

@@ -10,6 +10,9 @@ function noopHandlers(): { handlers: CommandHandlers; calls: string[] } {
     newFolder: () => calls.push("new-folder"),
     setMode: (m) => calls.push(`mode:${m}`),
     openDailyNote: (id) => calls.push(`daily:${id}`),
+    openFolder: () => calls.push("open-folder"),
+    newWindow: () => calls.push("new-window"),
+    exportActive: () => calls.push("export"),
   };
   return { handlers, calls };
 }
@@ -30,6 +33,17 @@ describe("bindCommands", () => {
     map.get("graph-2nd")!.action();
     map.get("settings")!.action();
     expect(calls).toEqual(["new-note", "mode:2nd", "settings"]);
+  });
+
+  it("binds the file-menu commands (open-folder / new-window / export)", () => {
+    const { handlers, calls } = noopHandlers();
+    const map = bindCommands(handlers);
+    expect(map.get("open-folder")?.label).toBe("Open folder…");
+    expect(map.get("new-window")?.icon).toBe("AppWindow");
+    map.get("open-folder")!.action();
+    map.get("new-window")!.action();
+    map.get("export")!.action();
+    expect(calls).toEqual(["open-folder", "new-window", "export"]);
   });
 
   it("registers a daily-note:<id> command per config", () => {
