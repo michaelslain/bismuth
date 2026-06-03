@@ -202,7 +202,6 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       ]),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
-      ...(ed.lineNumbers ? [lineNumbers()] : []),
       autosave,
       // Right-click a spelling / grammar / property mark → the shared app menu.
       editorContextMenu(),
@@ -215,6 +214,9 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const extensions = isYaml
       ? [
           ...base,
+          // Code files (settings.yaml etc.) always show a line-number gutter — they
+          // are code, so numbering is useful regardless of the prose-note toggle.
+          lineNumbers(),
           yaml(),
           syntaxHighlighting(yamlHighlight),
           codeFontTheme,
@@ -227,8 +229,10 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
         ]
       : [
           // Note buffers: markdown + live preview, autocomplete, frontmatter
-          // validation, and spell/grammar checking.
+          // validation, and spell/grammar checking. The whole-note gutter stays
+          // opt-in (prose), while fenced code blocks number themselves inline.
           ...base,
+          ...(ed.lineNumbers ? [lineNumbers()] : []),
           markdown({ codeLanguages: languages }),
           syntaxHighlighting(codeHighlightStyle),
           basesBlock(() => path),
