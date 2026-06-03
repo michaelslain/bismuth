@@ -116,6 +116,10 @@ export interface Settings {
     "split-down": string;
     "equalize-panes": string;
     "close-pane": string;
+    "new-tab": string;
+    "reopen-tab": string;
+    "history-back": string;
+    "history-forward": string;
     "focus-pane-left": string;
     "focus-pane-right": string;
     "focus-pane-up": string;
