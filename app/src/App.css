@@ -375,7 +375,10 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
    so the full chrome (crumb, Find, floating cluster/stats cards, in-bar 2D/3D) is
    gated to wide width via a container query; the compact bottom controls show in
    the narrow sidebar. */
-.graph-root { container-type: inline-size; }
+/* The graph never scrolls — clip it here so a sub-pixel-too-big canvas during the sidebar
+   resize can't flash a scrollbar on the pane-body (which would reflow the box every frame
+   and make the resize jitter). */
+.graph-root { container-type: inline-size; overflow: hidden; }
 /* Iridescent cluster glows (screen-blended over the canvas) + a depth vignette —
    the design's BigGraph atmosphere. Colors come from the theme graph ramp and shift
    per mode. Pointer-events off so they never intercept graph interaction. */
