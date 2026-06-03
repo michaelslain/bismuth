@@ -3,6 +3,8 @@
 export const CALENDAR_TAB = "::calendar";
 export const SEARCH_TAB = "::search";
 export const EMPTY_PANE = "::empty";
+// The Knowledge Graph as a first-class tab (the "Open graph view" / "New tab" commands open this).
+export const GRAPH_TAB = "::graph";
 // Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
 export const FLASHCARDS_PREFIX = "::flashcards:";
 // Embedded terminal session: TERMINAL_PREFIX + "<uuid>".
@@ -25,6 +27,7 @@ function noteName(path: string): string {
 export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
+  if (content === GRAPH_TAB) return "Graph";
   if (content === EMPTY_PANE) return "(empty)";
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
@@ -38,6 +41,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 export function contentIcon(content: string): string | undefined {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
+  if (content === GRAPH_TAB) return "Share2";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
   if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";

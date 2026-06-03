@@ -38,8 +38,13 @@ export function GraphView(props: {
   active: string | null;
   // When true, fill the available height (main pane) instead of a 1:1 square (sidebar).
   fill?: boolean;
+  // True when this is the cramped sidebar mini-graph. Suppresses the ☰ tools menu
+  // (there's no room for the panel it opens); the full-pane graph keeps its Find tools.
+  mini?: boolean;
 }) {
   let host!: HTMLDivElement;
+  let glowEl: HTMLDivElement | undefined; // the CSS atmosphere glow — slid/scaled to follow nodes
+  let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
   const renderer = new WebGLRenderer();
   let mounted = false;
   let lastGraph: GraphData | null = null;
@@ -75,8 +80,18 @@ export function GraphView(props: {
         props.onOpen(id);
       },
       (node) => setHovered(node),
+      labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
     );
     renderer.setFpsCallback(setFps);
+    // Sit the 3 CSS atmosphere-glow lobes on the 3 biggest clusters each frame so the gradient
+    // follows the nodes (it was a static background before). Each lobe center is a screen %.
+    renderer.setGlowCallback((g) => {
+      if (!glowEl) return;
+      g.lobes.forEach((p, i) => {
+        glowEl!.style.setProperty(`--glow-x${i + 1}`, `${p.x}%`);
+        glowEl!.style.setProperty(`--glow-y${i + 1}`, `${p.y}%`);
+      });
+    });
     mounted = true;
     if (lastGraph) { renderer.render(lastGraph); refreshUiData(); }
   });
@@ -157,10 +172,13 @@ export function GraphView(props: {
       </ViewBar>
       <div class="graph-area" style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
         <div ref={host} style={{ width: "100%", height: "100%" }} />
+        {/* Native-text label overlay: the renderer projects each visible node to screen px and
+            places a crisp <div> here (replaces low-res in-canvas sprites). Layered above the glow. */}
+        <div class="graph-labels" ref={labelsEl} />
         {/* Iridescent cluster-glow + depth vignette over the canvas (design's BigGraph
             look). Screen-blended glow tints, gated per mode; pure CSS, no renderer cost. */}
         <Show when={props.mode !== "agents"}>
-          <div class="graph-glow" data-mode={props.mode} />
+          <div class="graph-glow" data-mode={props.mode} ref={glowEl} />
           <div class="graph-vignette" />
         </Show>
         {/* Agents mode: the SVG governance-structure picker overlays the WebGL canvas. */}
@@ -218,7 +236,7 @@ export function GraphView(props: {
             </div>
           </div>
         </Show>
-        <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
+        <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", "z-index": 4, display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div class="graph-bottom-narrow" style={{ gap: "2px", "align-items": "stretch", "background": "var(--pop-bg)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <SegmentedToggle
               value={settings.graph.viewMode}
@@ -229,7 +247,7 @@ export function GraphView(props: {
                 { id: "3d", label: "3D" },
               ]}
             />
-            <Show when={props.fill}>
+            <Show when={props.fill && !props.mini}>
               <IconButton
                 icon="Menu"
                 label="Graph tools — search, clusters, reset"

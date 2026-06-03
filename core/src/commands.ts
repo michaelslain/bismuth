@@ -14,6 +14,8 @@ export interface CommandSpec {
 }
 
 export const COMMAND_CATALOG: CommandSpec[] = [
+  { id: "new-tab",         label: "New tab",                   icon: "Plus" },
+  { id: "open-graph",      label: "Open graph view",           icon: "Share2" },
   { id: "new-note",        label: "New note",                  icon: "FilePlus" },
   { id: "new-folder",      label: "New folder",                icon: "FolderPlus" },
   { id: "new-spreadsheet", label: "New spreadsheet",           icon: "Table" },
