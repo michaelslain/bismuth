@@ -15,7 +15,8 @@
   font-size: var(--editor-font-size, 16px);
 }
 
-/* Fixed heading glyph — a mono `#` tinted the accent (design: mono 500). */
+/* Heading glyph — a mono `#` tinted the accent (design: mono 500). Hidden until
+   the title field is focused (clicked into), mirroring body-heading `#`s. */
 .note-title-hash {
   color: var(--accent);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
@@ -24,6 +25,12 @@
   line-height: 1.1;
   user-select: none;
   flex: 0 0 auto;
+}
+
+/* Off-focus: collapse the `#` entirely so the title aligns to the left margin
+   (the gap disappears with it since it's no longer a flex item). */
+.note-title:not(.focused) .note-title-hash {
+  display: none;
 }
 
 /* Editable title text — serif Lora, 600, tight tracking (design: 31px / -.015em).

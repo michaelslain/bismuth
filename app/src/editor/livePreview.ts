@@ -18,6 +18,13 @@ const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
 const tag = Decoration.mark({ class: "cm-tag" });
 const headingLines = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
+// The leading `#`s, revealed on the cursor line, render in the mono accent font
+// (matching the inline note title) rather than the serif heading face.
+const headingMark = Decoration.mark({ class: "cm-heading-mark" });
+// Every other markdown delimiter revealed on the cursor line (`**`, `*`, `~~`,
+// `` ` ``, `>`, link/wikilink brackets) renders in dim Monaspace Xenon so the
+// raw syntax never shows in the serif prose face.
+const syntaxMark = Decoration.mark({ class: "cm-syntax-mark" });
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 // On the cursor line a list/task marker shows raw; render it in the mono font.
@@ -25,6 +32,9 @@ const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
 const codeHeaderLine = Decoration.line({ class: "cm-code-headerline" });
 const codeHiddenLine = Decoration.line({ class: "cm-code-hidden" });
+// A fully collapsed line (zero height): used to hide the frontmatter `---`
+// delimiters off the cursor block, the way a code fence's close line collapses.
+const collapsedLine = Decoration.line({ class: "cm-collapsed-line" });
 const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
@@ -199,6 +209,10 @@ function pushInline(
     if (!onCursor) {
       deco.push(hide.range(s, innerStart));
       deco.push(hide.range(innerEnd, end));
+    } else {
+      // Revealed: the delimiters render in dim Monaspace, not the prose serif.
+      deco.push(syntaxMark.range(s, innerStart));
+      deco.push(syntaxMark.range(innerEnd, end));
     }
   }
 }
@@ -220,6 +234,10 @@ function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number
     if (!onCursor) {
       if (visFrom > s) deco.push(hide.range(s, visFrom));
       if (end > visTo) deco.push(hide.range(visTo, end));
+    } else {
+      // Revealed: the `[[`, folder path, and `]]` render in dim Monaspace.
+      if (visFrom > s) deco.push(syntaxMark.range(s, visFrom));
+      if (end > visTo) deco.push(syntaxMark.range(visTo, end));
     }
   }
 }
@@ -244,6 +262,10 @@ interface CodeBlock {
 
 interface BlockRegions {
   frontmatterLines: Set<number>;
+  // The `---` delimiter line numbers of the frontmatter block (null if no
+  // frontmatter). Hidden like a code fence until the cursor enters the block.
+  frontmatterOpen: number | null;
+  frontmatterClose: number | null;
   fenceLines: Set<number>;
   codeLines: Set<number>;
   tableLineSet: Set<number>;
@@ -289,6 +311,8 @@ function computeBlockRegions(doc: Text): BlockRegions {
   // precompute YAML frontmatter lines from the shared boundary helper (single source
   // of truth for the fence range, also used by validation + autocomplete + Harper).
   const frontmatterLines = new Set<number>();
+  let frontmatterOpen: number | null = null;
+  let frontmatterClose: number | null = null;
   const fmRange = extractFrontmatterBoundary(doc.toString());
   if (fmRange) {
     const firstLine = doc.lineAt(fmRange.from).number;     // line after the opening fence
@@ -297,6 +321,8 @@ function computeBlockRegions(doc: Text): BlockRegions {
     for (let i = firstLine - 1; i <= lastBodyLine + 1; i++) {
       if (i >= 1 && i <= doc.lines) frontmatterLines.add(i);
     }
+    frontmatterOpen = firstLine - 1;     // the opening `---`
+    frontmatterClose = lastBodyLine + 1; // the closing `---`
   }
 
   // precompute GFM table line sets (scan whole doc)
@@ -322,17 +348,21 @@ function computeBlockRegions(doc: Text): BlockRegions {
     }
   }
 
-  return { frontmatterLines, fenceLines, codeLines, tableLineSet, codeBlockByLine };
+  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableLineSet, codeBlockByLine };
 }
 
 /** Run the per-visible-line decoration pass using pre-computed block regions.
  *  This is cheap: it only iterates view.visibleRanges and must run on every
  *  update (including cursor moves) so that the cursor-line reveal stays correct. */
 function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSet {
-  const { frontmatterLines, tableLineSet, codeBlockByLine } = regions;
+  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableLineSet, codeBlockByLine } = regions;
   const deco: Range<Decoration>[] = [];
   const doc = view.state.doc;
   const cursorLine = doc.lineAt(view.state.selection.main.head).number;
+  // The frontmatter `---` fences stay collapsed until the cursor is inside the
+  // block (i.e. you start editing it) — mirroring how code fences hide off-block.
+  const editingFrontmatter =
+    frontmatterOpen != null && frontmatterClose != null && cursorLine >= frontmatterOpen && cursorLine <= frontmatterClose;
   // The code block (by opening-fence line) currently in edit mode, if any.
   const activeCodeOpen = view.state.field(activeCodeField, false) ?? null;
 
@@ -346,6 +376,24 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // frontmatter: dim lines and skip inline markdown — but still highlight any
       // wikilinks (e.g. a `source: "[[Note]]"` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
+        // The `---` delimiters collapse to nothing until the cursor enters the
+        // block; only the property rows show (a clean "properties" panel).
+        const isDelim = line.number === frontmatterOpen || line.number === frontmatterClose;
+        if (isDelim) {
+          if (!editingFrontmatter) {
+            deco.push(collapsedLine.range(line.from));
+            if (line.to > line.from) deco.push(hide.range(line.from, line.to));
+            pos = line.to + 1;
+            continue;
+          }
+          // Revealed: force both `---` to the same dim Monaspace. (The markdown
+          // highlighter tokenizes the closing `---` but not the opening one, so
+          // without this the two delimiters render at different lightness.)
+          deco.push(frontmatterLine.range(line.from));
+          if (line.to > line.from) deco.push(syntaxMark.range(line.from, line.to));
+          pos = line.to + 1;
+          continue;
+        }
         deco.push(frontmatterLine.range(line.from));
         // Tint the `key:` portion in --accent (design .fm keys), leaving values --fg.
         const km = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/.exec(text);
@@ -393,6 +441,8 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       if (hm) {
         deco.push(headingLines[hm[1].length - 1].range(line.from));
         if (!onCursor) deco.push(hide.range(line.from, line.from + hm[0].length));
+        // Revealed: keep the `#`s in the mono accent face (not the serif heading).
+        else deco.push(headingMark.range(line.from, line.from + hm[1].length));
       }
 
       // blockquote
@@ -400,6 +450,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       if (qm) {
         deco.push(quoteLine.range(line.from));
         if (!onCursor) deco.push(hide.range(line.from, line.from + qm[0].length));
+        else deco.push(syntaxMark.range(line.from, line.from + qm[0].length));
       }
 
       // ---- task list lines (- [ ] / - [x]) ----
@@ -493,6 +544,10 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         if (!onCursor) {
           deco.push(hide.range(s, textStart));
           deco.push(hide.range(textEnd, end));
+        } else {
+          // Revealed: the `[`, `](url)` syntax renders in dim Monaspace.
+          deco.push(syntaxMark.range(s, textStart));
+          deco.push(syntaxMark.range(textEnd, end));
         }
       }
 
@@ -617,6 +672,16 @@ export const livePreview = [
     ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     // Body #hashtags read teal (design §1: prose tags use --teal).
     ".cm-tag": { color: "var(--teal)" },
+    // Revealed heading `#`s: mono accent (matches the inline note-title hash),
+    // weight 500, so the syntax never renders in the serif heading face.
+    // Revealed markdown delimiters (heading `#`, `**`, `*`, `` ` ``, `>`, link/
+    // wikilink brackets, frontmatter `---`) render in normal-text-color Monaspace.
+    // Only the inline note-title `#` is accented; in-editor syntax is not.
+    // The `> span` rules also style the inner markdown-highlighter token span
+    // (e.g. `<span class="cm-heading-mark"><span class="ͼ…">#</span></span>`),
+    // which would otherwise override the color/font with its own token color.
+    ".cm-heading-mark, .cm-heading-mark > span": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", color: "var(--fg)", "font-weight": "500" },
+    ".cm-syntax-mark, .cm-syntax-mark > span": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", color: "var(--fg)" },
     // Serif headings (design: title 600 with tight tracking; h2 ≈ 20px/1.5em serif).
     ".cm-h1": { "font-size": "1.94em", "font-weight": "600", "line-height": "1.1", "letter-spacing": "-0.015em" },
     ".cm-h2": { "font-size": "1.5em", "font-weight": "600", "line-height": "1.25", "letter-spacing": "-0.01em" },
@@ -640,6 +705,7 @@ export const livePreview = [
     ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.9em", "line-height": "1.5" },
     ".cm-code-headerline": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
+    ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
     ".cm-code-header": {
       display: "flex",
