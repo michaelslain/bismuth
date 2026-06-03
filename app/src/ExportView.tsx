@@ -6,11 +6,16 @@ import { Chip } from "./ui/Chip";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
-import { htmlToPdf } from "./export/htmlToPdf";
 import { drawingToPng } from "./export/drawingRaster";
 import { downloadFile } from "./export/download";
 import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
+
+// Defer jspdf + html2canvas (a few hundred KB) out of the entry/preview path: they
+// only load when the user actually exports a PDF. The dynamic import resolves to the
+// same `htmlToPdf` implementation, code-split into its own chunk (see vite manualChunks).
+const htmlToPdf = (html: string): Promise<Uint8Array> =>
+  import("./export/htmlToPdf").then((m) => m.htmlToPdf(html));
 
 const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
 const FORMAT_ICON: Record<ExportFormat, string> = {

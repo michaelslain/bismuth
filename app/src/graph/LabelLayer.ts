@@ -91,6 +91,20 @@ export class LabelLayer {
   private accepted = new Set<string>();
   private sizeCache = new Map<string, { w: number; h: number }>();
   private scratch = new THREE.Vector3();
+  // Reused across select3D passes: a bounded top-K buffer (ids + distances, kept ascending by
+  // distance) so discovery selection avoids allocating + full-sorting a per-call scored[] array.
+  private topKIds: string[] = [];
+  private topKDist: number[] = [];
+  // Camera pose the accepted-label SELECTION was last computed for (mirrors WebGLRenderer's camKey:
+  // same rounding epsilon). When the camera/zoom hasn't moved enough we keep the prior accepted set
+  // and only reposition() — selection is the expensive full-node scan, repositioning is cheap.
+  private selectCamKey = "";
+  private lastSelMode: "2d" | "3d" | "" = "";
+  // Reference identity of the set-valued selection inputs the last select* saw. The caller hands a
+  // fresh Set on any change (setAlwaysOnSet replaces it; searchMatches is rebuilt per search), so a
+  // reference mismatch busts the early-out even when the size is unchanged.
+  private lastAlwaysOn: Set<string> | null = null;
+  private lastSearch: Set<string> | null | undefined = null;
 
   /** Attach to the DOM overlay container (a div layered over the canvas). Called at mount(). */
   mount(overlay: HTMLElement): void {
@@ -148,6 +162,9 @@ export class LabelLayer {
     this.elById.clear();
     this.accepted.clear();
     this.shown2d.clear();
+    // Force the next updateVisibility to re-run select* (the accepted set was just emptied).
+    this.selectCamKey = "";
+    this.lastSelMode = "";
   }
 
   /** Swap to a new graph: re-index nodes and release all current labels (size cache persists). */
@@ -231,6 +248,30 @@ export class LabelLayer {
       this.hideAll();
       return;
     }
+    // Camera-delta early-out (mirrors WebGLRenderer.refreshCrowdingIfMoved's camKey rounding). The
+    // SELECT* pass is a full-node scan; reposition() is cheap. When neither the camera/zoom NOR any
+    // other selection input (hover/active/search/screen size/mode) changed since the last select*,
+    // we keep the prior accepted set and only reposition so labels still track motion. Anything that
+    // could change the visible SET busts the key, so the chosen labels match the unthrottled path.
+    const c = args.camera.position;
+    const key =
+      `${c.x.toFixed(1)},${c.y.toFixed(1)},${c.z.toFixed(1)},${args.group.rotation.y.toFixed(3)},` +
+      `${args.worldPerPixel.toFixed(4)},${args.screenW}x${args.screenH},` +
+      `${this.hoveredId ?? ""},${args.activeFileId ?? ""}`;
+    if (
+      key === this.selectCamKey &&
+      args.viewMode === this.lastSelMode &&
+      this.alwaysOn === this.lastAlwaysOn &&
+      args.searchMatches === this.lastSearch
+    ) {
+      // Camera + all selection inputs unchanged: reuse the accepted set, just re-place it.
+      this.reposition(args);
+      return;
+    }
+    this.selectCamKey = key;
+    this.lastSelMode = args.viewMode;
+    this.lastAlwaysOn = this.alwaysOn;
+    this.lastSearch = args.searchMatches;
     const sel = args.viewMode === "2d" ? this.select2D(args) : this.select3D(args);
     this.applyAccepted(sel);
     this.reposition(args);
@@ -282,20 +323,39 @@ export class LabelLayer {
     // Discovery candidates: score nodes by camera distance and take the N nearest.
     const discovery = new Set<string>();
     if (zoomRatio < ZOOMOUT_FADE_END) {
-      const scored: { id: string; d: number }[] = [];
-      for (const n of this.nodes) {
-        const wx = m.elements[0] * (n.x ?? 0) + m.elements[4] * (n.y ?? 0) + m.elements[8] * (n.z ?? 0) + m.elements[12];
-        const wy = m.elements[1] * (n.x ?? 0) + m.elements[5] * (n.y ?? 0) + m.elements[9] * (n.z ?? 0) + m.elements[13];
-        const wz = m.elements[2] * (n.x ?? 0) + m.elements[6] * (n.y ?? 0) + m.elements[10] * (n.z ?? 0) + m.elements[14];
-        const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
-        scored.push({ id: n.id, d });
-      }
-      scored.sort((a, b) => a.d - b.d);
       const zoomBonus = zoomRatio < DISCOVERY_ZOOM_IN
         ? Math.round(((DISCOVERY_ZOOM_IN - zoomRatio) / DISCOVERY_ZOOM_IN) * this.nodes.length * 0.6)
         : 0;
       const take = Math.min(this.nodes.length, NEAREST_AT_REST + zoomBonus);
-      for (let i = 0; i < take && i < scored.length; i++) discovery.add(scored[i].id);
+      if (take > 0) {
+        // Bounded top-K: maintain a `take`-length buffer kept ascending by distance, reused across
+        // passes (no per-call alloc). Insertion is stable for equal distances (a later node lands
+        // AFTER existing equals), so the chosen set matches the old stable full-sort's top-`take`.
+        const ids = this.topKIds;
+        const dist = this.topKDist;
+        let count = 0; // current filled length of the buffer (≤ take)
+        for (const n of this.nodes) {
+          const nx = n.x ?? 0, ny = n.y ?? 0, nz = n.z ?? 0;
+          const wx = m.elements[0] * nx + m.elements[4] * ny + m.elements[8] * nz + m.elements[12];
+          const wy = m.elements[1] * nx + m.elements[5] * ny + m.elements[9] * nz + m.elements[13];
+          const wz = m.elements[2] * nx + m.elements[6] * ny + m.elements[10] * nz + m.elements[14];
+          const d = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
+          // Early reject: buffer full and this is no nearer than the current worst (kept item wins
+          // ties, matching the stable sort where an earlier node precedes a later equal one).
+          if (count === take && d >= dist[count - 1]) continue;
+          // Find insertion index (first slot whose distance is strictly greater → equals stay before).
+          let i = count < take ? count : count - 1;
+          while (i > 0 && dist[i - 1] > d) {
+            dist[i] = dist[i - 1];
+            ids[i] = ids[i - 1];
+            i--;
+          }
+          dist[i] = d;
+          ids[i] = n.id;
+          if (count < take) count++;
+        }
+        for (let i = 0; i < count; i++) discovery.add(ids[i]);
+      }
     }
 
     const candidates = new Set<string>(this.alwaysOn);
@@ -381,8 +441,9 @@ export class LabelLayer {
       const px = (this.scratch.x * 0.5 + 0.5) * args.screenW;
       const py = (-this.scratch.y * 0.5 + 0.5) * args.screenH + LABEL_OFFSET_BELOW;
       el.style.visibility = "visible";
-      // translate to the node, then center horizontally and hang below it.
-      el.style.transform = `translate(${px}px, ${py}px) translate(-50%, 0)`;
+      // Move to the node via the independent CSS `translate` property; the constant
+      // -50% horizontal centering lives in the `.graph-label` rule's `transform`.
+      el.style.translate = px + "px " + py + "px";
     }
   }
 

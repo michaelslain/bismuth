@@ -403,6 +403,8 @@ export class WebGLRenderer {
   private tgtE: Float32Array = new Float32Array(0); // target edge intensities
   private crowdE: Float32Array = new Float32Array(0); // per-edge dim factor (1 = uncrowded, → EDGE_CROWD_MIN)
   private keepE: Uint8Array = new Uint8Array(0);      // per-edge render flag used while hovering (0 = cull)
+  private crowdEx: Float32Array = new Float32Array(0); // reused [sx,sy,tx,ty]-per-edge scratch for crowding
+  private crowdCount = new Map<number, number>();      // reused cell→count map for crowding (cleared per run)
   private camKey = "";                                 // camera pose the crowding was last computed for
   private frame = 0;                                   // frame counter (throttles crowding recompute)
   private wppDefault = 0;                              // world-per-pixel at the auto-fit framing (zoom reference)
@@ -440,6 +442,7 @@ export class WebGLRenderer {
   // Rotation velocity tracking — prevents clicks during fast graph rotation
   private prevCameraQuat = new THREE.Quaternion();
   private rotationVelocity = 0; // radians per frame
+  private paused = false; // when true (or canvas hidden), animate() idles its rAF without rendering
   private readonly ROTATION_VELOCITY_THRESHOLD = 0.02; // clicks only allowed when below this
 
   // 2D/3D view mode + the glide between them
@@ -581,8 +584,22 @@ export class WebGLRenderer {
     this.renderer.setSize(w, h);
   }
 
+  /**
+   * Pause/resume the per-frame pipeline. The hidden sidebar mini-graph stays mounted (so its
+   * state survives), but rendering it is pure waste — a second full Three.js pipeline against an
+   * invisible canvas. Callers flip this when the floater is collapsed / the tab is backgrounded.
+   * The rAF loop keeps re-scheduling while paused so it resumes instantly when shown again.
+   */
+  setVisible(visible: boolean): void {
+    this.paused = !visible;
+  }
+
   private animate() {
     this.rafId = requestAnimationFrame(() => this.animate());
+    // Skip all per-frame work when the renderer can't be seen: explicitly paused, a zero-size
+    // (display:none / collapsed) canvas, or a backgrounded document. Keep the loop scheduled.
+    const el = this.renderer.domElement;
+    if (this.paused || el.clientWidth === 0 || el.clientHeight === 0 || document.visibilityState === "hidden") return;
     if (this.tween) {
       this.stepTween();
     } else if (this.camTween) {
@@ -666,13 +683,13 @@ export class WebGLRenderer {
 
   /** Compute rotation velocity by measuring the quaternion change each frame. */
   private updateRotationVelocity() {
-    const curQuat = this.camera.quaternion.clone();
-    const deltaQuat = curQuat.clone().multiply(this.prevCameraQuat.clone().invert());
-    // Extract angle from quaternion: angle = 2 * acos(w), where w is the scalar part.
-    // Clamp w to [-1, 1] to avoid NaN from floating point errors.
-    const w = Math.max(-1, Math.min(1, deltaQuat.w));
-    this.rotationVelocity = Math.abs(2 * Math.acos(w));
-    this.prevCameraQuat.copy(curQuat);
+    // Angle between current and previous camera orientation = 2*acos(|dot|) (no allocation).
+    // For unit quaternions the dot product equals the scalar part of cur * prev⁻¹, so this is
+    // identical to the old clone().multiply(prev.invert()).w path, minus three Quaternion allocs.
+    const cur = this.camera.quaternion;
+    const dot = Math.max(-1, Math.min(1, Math.abs(cur.dot(this.prevCameraQuat))));
+    this.rotationVelocity = Math.abs(2 * Math.acos(dot));
+    this.prevCameraQuat.copy(cur);
   }
 
   /** Raycast the pointer against the node points, returning the nearest node id (or null). */
@@ -1027,6 +1044,17 @@ export class WebGLRenderer {
     const show = D * NEAR_CULL_SHOW;
     const span = Math.max(1e-3, show - hide);
     const m = this.group.matrixWorld.elements;
+    // Early-out: the nearest a node can possibly be to the camera is (dist to cloud center − radius).
+    // If even that is past the fully-shown threshold, no node is culled — skip the per-node scan
+    // and restore base scales once. cloudCenter is group-local, so fold it through matrixWorld.
+    const ccx = m[0] * this.cloudCenter.x + m[4] * this.cloudCenter.y + m[8] * this.cloudCenter.z + m[12];
+    const ccy = m[1] * this.cloudCenter.x + m[5] * this.cloudCenter.y + m[9] * this.cloudCenter.z + m[13];
+    const ccz = m[2] * this.cloudCenter.x + m[6] * this.cloudCenter.y + m[10] * this.cloudCenter.z + m[14];
+    const camToCloud = Math.hypot(ccx - cam.x, ccy - cam.y, ccz - cam.z);
+    if (camToCloud - this.cloudRadius >= show) {
+      if (this.nearCullActive) { arr.set(this.baseScales); attr.needsUpdate = true; this.nearCullActive = false; }
+      return;
+    }
     let anyCulled = false, changed = false;
     for (let i = 0; i < this.nodes.length; i++) {
       const n = this.nodes[i];
@@ -1140,8 +1168,9 @@ export class WebGLRenderer {
       v.set(node.x ?? 0, node.y ?? 0, node.z ?? 0).applyMatrix4(this.group.matrixWorld).project(this.camera);
       return [(v.x * 0.5 + 0.5) * w, (-v.y * 0.5 + 0.5) * h];
     };
-    // project each edge's endpoints once
-    const ex = new Float32Array(n * 4); // [sx, sy, tx, ty] per edge
+    // project each edge's endpoints once (reuse a persistent scratch buffer, resized only on growth)
+    if (this.crowdEx.length < n * 4) this.crowdEx = new Float32Array(n * 4);
+    const ex = this.crowdEx;
     for (let i = 0; i < n; i++) {
       const { s, t } = this.resolvedLinks[i];
       const [sx, sy] = project(s);
@@ -1164,7 +1193,8 @@ export class WebGLRenderer {
       const steps = Math.max(1, Math.min(64, Math.ceil(Math.hypot(tx - sx, ty - sy) / C)));
       for (let j = 0; j <= steps; j++) { const f = j / steps; fn(key(sx + (tx - sx) * f, sy + (ty - sy) * f)); }
     };
-    const count = new Map<number, number>();
+    const count = this.crowdCount;
+    count.clear();
     for (let i = 0; i < n; i++) walk(i, (k) => count.set(k, (count.get(k) ?? 0) + 1));
     for (let i = 0; i < n; i++) {
       let peak = 1;

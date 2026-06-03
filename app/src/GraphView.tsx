@@ -40,6 +40,10 @@ export function GraphView(props: {
   // True when this is the cramped sidebar mini-graph. Suppresses the ☰ tools menu
   // (there's no room for the panel it opens); the full-pane graph keeps its Find tools.
   mini?: boolean;
+  // When false, pause the renderer's rAF loop (it idles instead of rendering). Used to
+  // stop the hidden sidebar mini-graph from burning frames when the main pane shows the
+  // graph. Defaults to visible. Tab/window backgrounding also pauses it (visibilitychange).
+  visible?: boolean;
 }) {
   let host!: HTMLDivElement;
   let glowEl: HTMLDivElement | undefined; // the CSS atmosphere glow — slid/scaled to follow nodes
@@ -144,6 +148,20 @@ export function GraphView(props: {
     // Node ids in vault.ts:32 are the file path WITHOUT the .md extension.
     renderer.setActiveFile(a ? a.replace(/\.md$/, "") : null);
   });
+
+  // Pause/resume the renderer's rAF loop. The mini-graph is paused whenever the prop
+  // says it's hidden (main pane already shows the graph) OR the tab/window is backgrounded
+  // (document.visibilityState === "hidden"). When the document is visible again we restore
+  // based on the prop. `docHidden` is a signal so the prop effect and the listener compose.
+  const [docHidden, setDocHidden] = createSignal(
+    typeof document !== "undefined" && document.visibilityState === "hidden",
+  );
+  createEffect(() => {
+    renderer.setVisible(props.visible !== false && !docHidden());
+  });
+  const onVisibilityChange = () => setDocHidden(document.visibilityState === "hidden");
+  onMount(() => document.addEventListener("visibilitychange", onVisibilityChange));
+  onCleanup(() => document.removeEventListener("visibilitychange", onVisibilityChange));
 
   onCleanup(() => renderer.destroy());
 

@@ -389,12 +389,15 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .graph-labels { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 .graph-label {
   position: absolute; top: 0; left: 0;
+  /* Constant horizontal centering lives here so reposition() only writes the dynamic CSS
+     `translate` property (the per-frame node position), never `transform`. */
+  transform: translate(-50%, 0);
   font-family: inherit; font-size: 11px; font-weight: 500; line-height: 1.1; white-space: nowrap;
   /* LabelLayer.setColors() pushes per-theme --label-text/--label-bg onto the .graph-labels overlay
      (light = dark text on a translucent-white halo); fall back to the theme tokens when unset. */
   color: var(--label-text, var(--fg)); background: var(--label-bg, var(--pop-bg)); border: 1px solid var(--border-soft);
   border-radius: 5px; padding: 2px 6px;
-  pointer-events: none; will-change: transform, opacity; -webkit-font-smoothing: antialiased;
+  pointer-events: none; will-change: translate, opacity; -webkit-font-smoothing: antialiased;
 }
 /* The "you" hub label: bigger + bold — the central anchor, not an ambient annotation. */
 .graph-label--self { font-size: 14px; font-weight: 700; padding: 3px 8px; }
