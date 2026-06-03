@@ -178,6 +178,14 @@ body { background: var(--bg); color: var(--fg); }
 .tab.active { color: var(--fg); background: var(--surface-2); }
 .tab.active > svg { color: var(--fg); }
 .tab.dragging { opacity: 0.25; transition: opacity 0.12s ease; } /* lifted source chip — the ghost stands in for it */
+/* Tab close button: trim the default icon-button padding so the X doesn't dominate the chip. */
+.tab .tab-x { padding: 2px; margin-right: -4px; }
+
+/* Trailing new-tab / terminal actions, sitting just after the last tab in the strip.
+   Styled to match the sidebar toolbar icon buttons (same size, muted color, hover). */
+.tabbar-actions { display: flex; align-items: center; gap: 3px; padding: 0 8px; flex: 0 0 auto; }
+.tabbar-actions .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+.tabbar-actions .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 
 /* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
    a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
