@@ -59,12 +59,15 @@ const editorTheme = EditorView.theme({
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
+  // Match .oa-popover exactly: same radius, padding, shadow, and UI font tokens —
+  // CodeMirror owns this <ul><li> DOM, so we can't share the component, only the tokens.
   ".cm-tooltip.cm-tooltip-autocomplete": {
     border: "1px solid var(--border)",
     borderRadius: "var(--popover-radius)",
     backgroundColor: "var(--bg)",
-    boxShadow: "var(--shadow-popup)",
-    fontFamily: "'Monaspace Xenon', monospace",
+    boxShadow: "var(--popover-shadow)",
+    fontFamily: "var(--popover-font)",
+    minWidth: "var(--popover-min-width)",
     overflow: "hidden",
     padding: "var(--popover-pad)",
   },
@@ -90,7 +93,7 @@ const editorTheme = EditorView.theme({
     borderRadius: "var(--popover-radius)",
     backgroundColor: "var(--bg)",
     color: "var(--fg)",
-    boxShadow: "var(--shadow-popup)",
+    boxShadow: "var(--popover-shadow)",
     padding: "8px 10px",
     maxWidth: "320px",
     fontSize: "12px",

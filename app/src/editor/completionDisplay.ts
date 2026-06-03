@@ -6,11 +6,11 @@
 // Spread this object into each autocompletion({...}) call. It carries NO sources,
 // so merging it alongside the real source configs does not conflict.
 //
-// NOTE: lucideIconMarkup is imported lazily inside the render function (not at the
-// top level) so that importing this module in test environments — which have no DOM
-// and no Solid client context — does not trigger lucide-solid's client-only APIs.
+// The icon span comes from the shared rowDom helper (createPopoverIcon), the same
+// builder the yaml-fix hover uses, so the autocomplete's icon DOM matches the menu's.
 import type { Completion } from "@codemirror/autocomplete";
 import { completionIcon } from "../ui/popover/iconMap";
+import { createPopoverIcon } from "../ui/popover/rowDom";
 
 export const completionDisplayConfig = {
   icons: false as const,
@@ -22,19 +22,8 @@ export const completionDisplayConfig = {
         // kind gets no icon (e.g. enum) — return null so there's no empty slot/gap.
         const name = completionIcon(completion.type);
         if (!name) return null;
-        const span = document.createElement("span");
-        span.className = "oa-popover-icon";
-        // Dynamic import keeps the lucide-solid dependency out of the module's static
-        // evaluation path, so test environments (no DOM / no Solid client) stay clean.
-        import("../icons/iconMarkup")
-          .then(({ lucideIconMarkup }) => {
-            const markup = lucideIconMarkup(name, 14);
-            if (markup) span.innerHTML = markup;
-          })
-          .catch(() => {}); // chunk-load failure → degrade to an icon-less row
-        // Return the span immediately; the icon fills in asynchronously once the
-        // dynamic import resolves (first call) or from cache (subsequent calls).
-        return span;
+        // Returns immediately; the Lucide SVG fills in once the lazy chunk resolves.
+        return createPopoverIcon(name);
       },
     },
   ],

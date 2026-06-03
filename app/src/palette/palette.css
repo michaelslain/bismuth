@@ -17,12 +17,12 @@
 /* Inside the wrapper the label no longer needs to fill; it just truncates. */
 .palette-text .palette-label {
   flex: 0 1 auto;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--popover-font);
 }
 
 /* Faint description second line (template descriptions, etc.). */
 .palette-desc {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--popover-font);
   font-size: 11px;
   color: var(--faint);
   overflow: hidden;
@@ -34,7 +34,7 @@
 .palette-shortcut {
   margin-left: auto;
   flex-shrink: 0;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--popover-font);
   font-size: 11px;
   letter-spacing: 0.04em;
   color: var(--text-muted);

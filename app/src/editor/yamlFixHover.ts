@@ -5,6 +5,7 @@
 // diagnostics ONLY (matched by `source`), so spelling/grammar marks never fire it.
 import { hoverTooltip, type Tooltip, type EditorView } from "@codemirror/view";
 import { forEachDiagnostic, type Action } from "@codemirror/lint";
+import { createPopoverRow } from "../ui/popover/rowDom";
 
 /** Tag put on yaml-schema diagnostics so this hover (and nothing else) recognises them. */
 export const YAML_DIAGNOSTIC_SOURCE = "yaml-schema";
@@ -26,46 +27,22 @@ export function yamlFixHover() {
       end: hit.to,
       above: false,
       create() {
+        // Same `.oa-popover` DOM the right-click menu renders (built via the shared
+        // rowDom helper), so the hover quick-fix is pixel-identical to the menu.
         const dom = document.createElement("div");
         dom.className = "oa-popover";
 
-        const addRow = (label: string, withIcon: boolean, onClick?: () => void) => {
-          const row = document.createElement("div");
-          row.className = "oa-popover-row" + (onClick ? "" : " oa-popover-row--disabled");
-          if (withIcon) {
-            const span = document.createElement("span");
-            span.className = "oa-popover-icon";
-            row.appendChild(span);
-            // Lazy import keeps lucide-solid (a client-only dependency) out of this
-            // module's static eval path, so test environments importing the editor
-            // extensions stay clean. Icon fills in once the chunk resolves.
-            import("../icons/iconMarkup")
-              .then(({ lucideIconMarkup }) => {
-                const markup = lucideIconMarkup("Wrench", 14);
-                if (markup) span.innerHTML = markup;
-              })
-              .catch(() => {});
-          }
-          const lbl = document.createElement("span");
-          lbl.className = "oa-popover-label";
-          lbl.textContent = label;
-          row.appendChild(lbl);
-          if (onClick) {
-            // mousedown + preventDefault so applying the fix doesn't lose editor focus.
-            row.addEventListener("mousedown", (e) => { e.preventDefault(); onClick(); });
-            row.addEventListener("mouseenter", () => row.classList.add("oa-popover-row--selected"));
-            row.addEventListener("mouseleave", () => row.classList.remove("oa-popover-row--selected"));
-          }
-          dom.appendChild(row);
-        };
-
         if (hit.actions.length) {
           for (const a of hit.actions) {
-            addRow(a.name, true, () => { a.apply(view, hit.from, hit.to); view.focus(); });
+            dom.appendChild(createPopoverRow({
+              label: a.name,
+              icon: "Wrench",
+              onSelect: () => { a.apply(view, hit.from, hit.to); view.focus(); },
+            }));
           }
         } else {
-          // No actionable fix (e.g. "expected a number") → show the message itself.
-          addRow(hit.message, false);
+          // No actionable fix (e.g. "expected a number") → show the message itself (disabled).
+          dom.appendChild(createPopoverRow({ label: hit.message }));
         }
 
         return { dom };
