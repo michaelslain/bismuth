@@ -35,6 +35,9 @@ const dec = new TextDecoder();
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
+/** Extract a note basename (last path segment without the .md extension). */
+const noteBasename = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
+
 /** Standardized success response: JSON data or plain "ok". */
 function ok(data?: unknown): Response {
   return data !== undefined ? Response.json(data) : new Response("ok");
@@ -319,7 +322,7 @@ export function createServer(cfg: CoreConfig) {
       } catch {
         return error("not found", 404);
       }
-      const name = path.split("/").pop()!.replace(/\.md$/, "");
+      const name = noteBasename(path);
       return ok(parseBaseFile(text, { name, path }));
     },
 
@@ -560,7 +563,7 @@ export function createServer(cfg: CoreConfig) {
           note: Record<string, unknown>;
         };
         const text = await readNoteOrEmpty(cfg.vault, file);
-        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const name = noteBasename(file);
         const next = upsertRow(text, { name, path: file }, index ?? null, note);
         await writeNote(cfg.vault, file, next);
         return ok();
@@ -572,7 +575,7 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         const { file, index } = (await req.json()) as { file: string; index: number };
         const text = await readNote(cfg.vault, file);
-        const name = file.split("/").pop()!.replace(/\.md$/, "");
+        const name = noteBasename(file);
         const next = deleteRow(text, { name, path: file }, index);
         await writeNote(cfg.vault, file, next);
         return ok();
@@ -631,7 +634,7 @@ export function createServer(cfg: CoreConfig) {
         // Row-based review (flashcard base): advance scheduling columns on the row.
         if (body.file != null && body.index != null) {
           const text = await readNote(cfg.vault, body.file);
-          const name = body.file.split("/").pop()!.replace(/\.md$/, "");
+          const name = noteBasename(body.file);
           const { rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
           if (!row) throw new AppError("EINVAL", `row not found: ${body.file}#${body.index}`, 400);

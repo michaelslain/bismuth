@@ -14,7 +14,7 @@ export function capitalize(s: string): string {
 }
 
 /** Bare property name (drop file./note./this./formula. namespace), lowercased. */
-function bareName(id: string): string {
+export function bareName(id: string): string {
   const dot = id.indexOf(".");
   const base = dot >= 0 ? id.slice(dot + 1) : id;
   return base.toLowerCase();

@@ -1,8 +1,5 @@
 // app/src/export/sheetHtml.ts
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+import { escapeHtml } from "./htmlTemplate";
 
 interface CellLike { v?: unknown }
 interface SheetLike { cellData?: Record<string, Record<string, CellLike>> }
@@ -28,7 +25,7 @@ export function snapshotToHtmlTable(snap: any): string {
     const cells: string[] = [];
     for (let c = 0; c <= maxCol; c++) {
       const v = cellData[r]?.[c]?.v;
-      cells.push(`<td>${v == null ? "" : esc(String(v))}</td>`);
+      cells.push(`<td>${v == null ? "" : escapeHtml(String(v))}</td>`);
     }
     rowsHtml.push(`<tr>${cells.join("")}</tr>`);
   }

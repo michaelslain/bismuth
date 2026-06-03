@@ -95,9 +95,9 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 
 **Key modules**:
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
-  - GET reads: `/version`, `/events` (SSE), `/graph`, `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
-  - POST mutations (go through `mutatingHandler`): `/backup`, `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`; plus `PUT /file`
-  - POST reads (not mutations): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/replace`
+  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
+  - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`, `/replace`
+  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `PUT /file`
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
@@ -161,7 +161,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 
 **Graph rendering**:
 - `graph/WebGLRenderer.ts` — Three.js renderer for both 2D (flat birdseye) and 3D (volumetric orbit) modes, morphing between the backend's precomputed layouts
-- `graph/LabelLayer.ts` — Sprite-based file-name labels with viewport culling, occlusion, zoom-band discovery, and an "always-on" hub set
+- `graph/LabelLayer.ts` — DOM-overlay file-name labels: each visible label is a native `<div>` (UI font, theme-matched via CSS vars) absolutely positioned over the canvas — NOT Three.js sprites. Pooled/reused divs, viewport culling, occlusion, zoom-band discovery, an "always-on" hub set, and a bold/larger always-on "you" hub label. `setColors()` pushes per-theme `--label-text`/`--label-bg` custom props onto the overlay
 - `graph/labelSelection.ts` — Pure `computeAlwaysOnSet` (top-N nodes by undirected edge count). Unit-tested
 - `graph/collide.ts` — Per-node collision-radius helpers (big hubs repel as their drawn circle, not a point)
 - `graph/d3-force-3d.d.ts` — Type stubs for d3-force-3d library
@@ -253,6 +253,8 @@ A real spreadsheet document type — a sibling to notes and bases, **not** a Bas
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
+**The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is a first-class tab content — `PaneContent` routes it to a full `GraphView` via a `renderGraph()` prop supplied by `App` (which owns the graph data + mode). There is **no floating "default view"**: `App` seeds a `::graph` tab when nothing is restored, and the close handlers reopen one if every tab closes (tabs are never empty). The `new-tab` and `open-graph` commands both open it. When the active tab already shows the graph in a pane, the sidebar mini-graph (`.graph-floater`) hides + its slot collapses so the graph never renders twice at once.
+
 ### Commands & Sidebar Toolbar
 
 Commands are split into pure data and behavior so the palette and the sidebar header bar (`.sidebar-icons`, above the file tree) share one source:
@@ -266,8 +268,8 @@ The bar above the file tree is configured by the `toolbar:` list in `settings.ya
 ### Keybindings
 
 Global keyboard shortcuts are configured via the `keybindings:` section of `settings.yaml` (the **last** section in a fresh file) — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands:
-- `core/src/keybindings.ts` — `KEYBINDING_CATALOG` (`id`, `label`, `default`, `doc`) + `KEYBINDING_IDS`. Pure data in core; the settings schema derives the `keybindings` object section from it (one `keybind`-typed key per action, defaulting to the previously hardcoded combo). Authoring helpers (`KEYBIND_MODIFIERS`, `KEYBIND_KEYS`, `modifierFamily`, `eventToCombo`) live here too.
-- `app/src/keybindings.ts` — the pure matcher: `parseCombo`/`matchesCombo`/`matchesKeybinding`. `"Mod"` = Cmd on macOS / Ctrl elsewhere (CodeMirror convention); modifier matching is **exact** (so `Mod+D` and `Mod+Shift+D` stay distinct); combos are comma-separated alternatives (`"Mod+\`, Mod+J"`). `App.tsx` `handleGlobalKeydown` matches events against `settings.keybindings.<id>`.
+- `core/src/keybindings.ts` — `KEYBINDING_CATALOG` (`id`, `label`, `default`, `doc`) + `KEYBINDING_IDS`. Pure data in core; the settings schema derives the `keybindings` object section from it (one `keybind`-typed key per action, defaulting to the previously hardcoded combo).
+- `app/src/keybindings.ts` — the pure matcher: `parseCombo`/`matchesCombo`/`matchesKeybinding`, plus the authoring helpers (`KEYBIND_MODIFIERS`, `KEYBIND_KEYS`, `modifierFamily`, `eventToCombo`). `"Mod"` = Cmd on macOS / Ctrl elsewhere (CodeMirror convention); modifier matching is **exact** (so `Mod+D` and `Mod+Shift+D` stay distinct); combos are comma-separated alternatives (`"Mod+\`, Mod+J"`). Matches the produced key OR the physical `event.code` (so macOS Option-composed chars like `Alt+S`→"ß" still match). `App.tsx` `handleGlobalKeydown` matches events against `settings.keybindings.<id>`.
 - **`keybind` PropertyType** (`core/src/schema/types.ts`, validated leniently in `validate.ts`) drives a smart, order-free shortcut autocomplete in `editor/settingsComplete.ts` (`keybindCompletions`): completes the current `+`-separated token with the remaining modifier families + the key list, plus a **"Record shortcut…"** option that listens to the keyboard for 3s and writes the captured combo.
 
 **Adding a keybinding:** add an entry to `KEYBINDING_CATALOG` (core) and read `settings.keybindings.<id>` via `matchesKeybinding` at the handler. The schema field, autocomplete, and `keybindings.<id>` default are derived automatically.
@@ -309,6 +311,14 @@ core/src/
 ├── terminal.ts          # PTY session manager (bun-pty)
 ├── dates.ts             # Date math (shared by tasks/SRS/calendar)
 ├── basesData.ts         # Vault-wide data feed for Bases
+├── asyncCache.ts        # Deduped, invalidation-safe async cache (backs /graph, /tree)
+├── community.ts         # Louvain-style community detection → node community/color stamping
+├── search.ts            # Full-text vault search (MiniSearch) + snippet rendering (POST /search)
+├── replace.ts           # Vault-wide find-and-replace with git snapshot (POST /replace)
+├── templates.ts         # {{token}} template expansion ({{date}}/{{time}}/{{title}}/{{cursor}})
+├── dailyNote.ts         # Daily-note creation via template expansion (POST /daily-note)
+├── settings.ts          # settings.yaml lifecycle: reconcile on boot, per-vault write mutex, property registry
+├── pathUtils.ts         # Vault path validation/manipulation helpers
 ├── bases/               # Bases DSL — lexer, parser, evaluate, filters, functions, query
 └── srs/                 # SRS — cards, parser, scheduler
 
@@ -335,9 +345,16 @@ app/src/
 ├── Terminal.tsx         # xterm.js terminal tab
 ├── SheetView.tsx        # Spreadsheet pane: load/save/reload + lazy Univer mount
 ├── sheet/               # Univer adapter (univerSheet.ts) + pure snapshot/sync (unit-tested)
-├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map)
+├── bases/               # Base view renderers (Table/Cards/Kanban/List/Map/Bar/Line/Heatmap/Stat)
 ├── calendar/            # Calendar feature (CalendarPage, EventStore, views/, components/)
 ├── palette/             # Command palette + quick switcher
+├── ui/                  # Shared primitives: Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, buttonClass, popover/
+├── icons/               # Lucide Icon renderer + name registry + IconPicker
+├── dnd/                 # Drag-drop geometry + DOM drag tracking (viewDrag) for panes/tabs
+├── drawing/             # `.draw` document type: DrawingPage/DrawingCanvas/Toolbar/store/input
+├── export/              # Export note/base/sheet → HTML/PDF/Markdown/PNG (ExportView + exporters/formats)
+├── graph/               # WebGL renderer, DOM LabelLayer, youNode (self-hub injection), AgentsGraph, collide, labelSelection
+├── nativeMenu.ts        # Opens the shared ContextMenu from a right-click (pane/editor menus)
 ├── serverVersion.ts     # SSE subscription + version poll
 ├── api.ts               # HTTP client
 ├── keybindings.ts       # Pure shortcut matcher (parseCombo/matchesKeybinding) + eventToCombo
@@ -402,7 +419,7 @@ Note: File-system watch debounces 250ms. If you edit a note twice within 250ms, 
 - **Graph caching**: Only rebuilds when vault/memory files change (fs-watch + debounce)
 - **Backend-precomputed layouts**: `layout.ts` produces both 2D and 3D positions on the server; the renderer morphs between them instead of running a force sim in the browser
 - **Live-preview scanning**: Scans document for code blocks only when content changes, not on every keystroke
-- **Label layer**: Sprite-based, viewport-culled, with a stable "always-on" set of top-N hubs so labels don't pop in and out as you orbit
+- **Label layer**: DOM-overlay native-text labels (not sprites), viewport-culled, with a stable "always-on" set of top-N hubs so labels don't pop in and out as you orbit
 
 ## Common Tasks
 

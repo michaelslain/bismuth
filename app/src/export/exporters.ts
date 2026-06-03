@@ -1,6 +1,6 @@
 // app/src/export/exporters.ts
 import { renderMarkdown } from "../bases/markdown";
-import { wrapHtmlDocument } from "./htmlTemplate";
+import { wrapHtmlDocument, escapeHtml } from "./htmlTemplate";
 import { tableToMarkdown } from "./mdTable";
 import { tableToHtml } from "./rowsHtml";
 import { baseToTable } from "./baseTable";
@@ -16,13 +16,9 @@ function baseName(path: string): string {
   return dot === -1 ? file : file.slice(0, dot);
 }
 
-function ext(path: string): string {
+export function ext(path: string): string {
   const dot = path.lastIndexOf(".");
   return dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // The canonical rendered-HTML body for a text-ish file (drives html + pdf). Drawings

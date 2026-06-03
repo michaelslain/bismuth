@@ -12,6 +12,11 @@ export type ButtonKind = "text" | "icon";
 export type ButtonState = "normal" | "selected" | "unselected";
 export type ButtonSize = "sm" | "md" | "lg";
 
+/** Join class-name parts, dropping falsy entries. Shared by every assembler below. */
+function joinClasses(...parts: (string | false | null | undefined)[]): string {
+  return parts.filter(Boolean).join(" ");
+}
+
 export function buttonClass(opts: {
   kind?: ButtonKind;
   state?: ButtonState;
@@ -19,18 +24,21 @@ export function buttonClass(opts: {
   danger?: boolean;
   class?: string;
 }): string {
-  return [
+  return joinClasses(
     "btn",
     `btn--${opts.kind ?? "text"}`,
     `btn--${opts.state ?? "normal"}`,
     opts.size && opts.size !== "md" ? `btn--${opts.size}` : "",
     opts.danger ? "btn--danger" : "",
-    opts.class ?? "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+    opts.class,
+  );
 }
 
 export function searchBarClass(extra?: string): string {
-  return ["search-bar", extra ?? ""].filter(Boolean).join(" ");
+  return joinClasses("search-bar", extra);
+}
+
+/** Inner `<input>` class for SearchBar — base class plus an optional call-site extra. */
+export function searchBarInputClass(extra?: string): string {
+  return joinClasses("search-bar-input", extra);
 }

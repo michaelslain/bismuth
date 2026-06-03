@@ -30,17 +30,35 @@ function applyInsert(
   });
 }
 
-// `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (avoids
-// double `]]` when one is already ahead). `getNotes` is read lazily per popup open.
-function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
+// Shared shape for the prefix-triggered body sources (wikilink, tag): extract the
+// text before the caret, match a trigger prefix, map items to options, and return a
+// result anchored at `from` with a `validFor` re-query pattern. Only the trigger
+// match, the per-popup item list, and how each item maps to an option differ.
+function prefixSource<T>(opts: {
+  match: (textBefore: string) => { from: number } | null;
+  items: () => T[];
+  toOption: (item: T) => Completion;
+  validFor: RegExp;
+}): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
-    const match = matchWikilinkPrefix(textBefore);
+    const match = opts.match(textBefore);
     if (!match) return null;
 
     const from = line.from + match.from;
-    const options = getNotes().map((n) => ({
+    const options = opts.items().map(opts.toOption);
+    return { from, options, validFor: opts.validFor };
+  };
+}
+
+// `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (avoids
+// double `]]` when one is already ahead). `getNotes` is read lazily per popup open.
+function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
+  return prefixSource<NoteCandidate>({
+    match: matchWikilinkPrefix,
+    items: getNotes,
+    toOption: (n) => ({
       label: n.label,
       detail: n.folder,
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
@@ -48,29 +66,25 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
         const { insert, cursorOffset } = buildInsert(n.label, after === "]]");
         applyInsert(view, completion, applyFrom, applyTo, insert, cursorOffset);
       },
-    }));
-    return { from, options, validFor: /^[^\]\n]*$/ };
-  };
+    }),
+    validFor: /^[^\]\n]*$/,
+  });
 }
 
 // `#tag` completion. Inserts the bare tag name after the `#`. `getTags` returns
 // bare names (no leading `#`), read lazily per popup open.
 function tagSource(getTags: () => string[]): CompletionSource {
-  return (context: CompletionContext): CompletionResult | null => {
-    const line = context.state.doc.lineAt(context.pos);
-    const textBefore = line.text.slice(0, context.pos - line.from);
-    const match = matchTagPrefix(textBefore);
-    if (!match) return null;
-
-    const from = line.from + match.from;
-    const options = getTags().map((name) => ({
+  return prefixSource<string>({
+    match: matchTagPrefix,
+    items: getTags,
+    toOption: (name) => ({
       label: name,
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
         applyInsert(view, completion, applyFrom, applyTo, name, name.length);
       },
-    }));
-    return { from, options, validFor: /^[\w/-]*$/ };
-  };
+    }),
+    validFor: /^[\w/-]*$/,
+  });
 }
 
 // A property KEY is typed at column 0 of a frontmatter line, before any ":". We only

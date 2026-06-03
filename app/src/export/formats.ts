@@ -1,5 +1,6 @@
 // app/src/export/formats.ts
 import type { ExportFormat } from "./types";
+import { ext } from "./exporters";
 
 const MATRIX: Record<string, ExportFormat[]> = {
   md: ["html", "pdf", "md"],
@@ -7,11 +8,6 @@ const MATRIX: Record<string, ExportFormat[]> = {
   sheet: ["html", "pdf"],
   draw: ["pdf", "png"],
 };
-
-function ext(path: string): string {
-  const dot = path.lastIndexOf(".");
-  return dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
-}
 
 /** Formats valid for a path's file type, in display order. Empty if not exportable. */
 export function formatsFor(path: string): ExportFormat[] {
