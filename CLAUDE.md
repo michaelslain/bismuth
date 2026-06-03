@@ -102,7 +102,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/obsidian-alternative-docs/` for
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
-- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag" (the single "you" hub is a special self node added by `engine.ts`, not a `NodeKind`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag"
+- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag", "self" (the "you" hub — one per brain view, NOT from the backend builders; injected on the frontend from the open tabs/panes, see `app/src/graph/youNode.ts`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag", "open" (you→an open note)
 - `layout.ts` — Pure layout computation (pivot-MDS + force simulation). Produces 2D and 3D `Positions` maps used by the renderer
 - `layout-cache.ts` — `attachLayout()` writes precomputed `position2d` / `position3d` onto graph nodes, keyed by vault. Frontend morphs between them instead of running its own force sim
 - `files.ts` — File I/O: list markdown, read/write notes, path-traversal rejection

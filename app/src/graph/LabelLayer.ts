@@ -7,6 +7,10 @@ import { renderedPixelRadius, selectVisibleLabels, type LabelCandidate } from ".
 
 const FONT_PX = 6;         // CSS px before DPR scaling — tiny, ambient annotation
 const FONT_WEIGHT = 500;   // medium weight reads as label, not heading
+// The "you" hub label is bigger + bold + full-opacity — the central anchor, never ambient.
+const SELF_FONT_PX = 9;
+const SELF_FONT_WEIGHT = 700;
+const SELF_TEXT_COLOR = "rgba(255,255,255,0.98)";
 const PAD_X = 2;
 const PAD_Y = 0;
 const TEXT_COLOR = "rgba(232,232,238,0.95)";
@@ -50,6 +54,7 @@ export type LabelNode = {
   x?: number;
   y?: number;
   z?: number;
+  kind?: string; // "self" → the bold, larger "you" label (its own texture-cache entry)
 };
 
 type LabelVisibilityArgs = {
@@ -88,12 +93,20 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 /** Draw a pill-shaped label onto a canvas at supersampled DPR, return { texture, cssWidth, cssHeight }. */
-function makeLabelTexture(text: string, fontFamily: string, dpr: number): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
+function makeLabelTexture(
+  text: string,
+  fontFamily: string,
+  dpr: number,
+  opts?: { fontPx?: number; weight?: number; textColor?: string },
+): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
+  const fontPx = opts?.fontPx ?? FONT_PX;
+  const weight = opts?.weight ?? FONT_WEIGHT;
+  const textColor = opts?.textColor ?? TEXT_COLOR;
   const measure = document.createElement("canvas").getContext("2d")!;
-  measure.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
+  measure.font = `${weight} ${fontPx}px ${fontFamily}`;
   const textW = Math.ceil(measure.measureText(text).width);
   const cssW = textW + PAD_X * 2;
-  const cssH = FONT_PX + PAD_Y * 2;
+  const cssH = fontPx + PAD_Y * 2;
   const cv = document.createElement("canvas");
   cv.width = Math.max(1, Math.round(cssW * dpr));
   cv.height = Math.max(1, Math.round(cssH * dpr));
@@ -104,8 +117,8 @@ function makeLabelTexture(text: string, fontFamily: string, dpr: number): { text
   ctx.fillStyle = BG_COLOR;
   roundRect(ctx, 0, 0, cssW, cssH, BORDER_RADIUS);
   ctx.fill();
-  ctx.fillStyle = TEXT_COLOR;
-  ctx.font = `${FONT_WEIGHT} ${FONT_PX}px ${fontFamily}`;
+  ctx.fillStyle = textColor;
+  ctx.font = `${weight} ${fontPx}px ${fontFamily}`;
   ctx.textBaseline = "middle";
   ctx.fillText(text, PAD_X, cssH / 2);
   const tex = new THREE.CanvasTexture(cv);
@@ -160,19 +173,28 @@ export class LabelLayer {
     this.shown2d.clear();
   }
 
-  /** Lookup or build the texture for a label string. */
-  private textureFor(label: string): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
-    const cached = this.textureCache.get(label);
+  /** Texture-cache key — the "you" hub gets its own (bold/larger) entry, distinct from a note that
+   *  happens to share the label text. */
+  private keyFor(node: LabelNode): string {
+    return node.kind === "self" ? "you:" + node.label : node.label;
+  }
+
+  /** Lookup or build the texture for a node's label (bold + larger styling for the self hub). */
+  private textureFor(node: LabelNode): { texture: THREE.CanvasTexture; cssW: number; cssH: number } {
+    const key = this.keyFor(node);
+    const cached = this.textureCache.get(key);
     if (cached) return cached;
     const dpr = Math.min((window.devicePixelRatio || 1) * TEXTURE_DPR_MULT, 4);
-    const made = makeLabelTexture(label, LABEL_FONT_FAMILY, dpr);
-    this.textureCache.set(label, made);
+    const made = node.kind === "self"
+      ? makeLabelTexture(node.label, LABEL_FONT_FAMILY, dpr, { fontPx: SELF_FONT_PX, weight: SELF_FONT_WEIGHT, textColor: SELF_TEXT_COLOR })
+      : makeLabelTexture(node.label, LABEL_FONT_FAMILY, dpr);
+    this.textureCache.set(key, made);
     return made;
   }
 
   /** Build a sprite for one node and add it to the scene (hidden by default). */
   private createSprite(node: LabelNode): THREE.Sprite {
-    const { texture } = this.textureFor(node.label);
+    const { texture } = this.textureFor(node);
     const mat = new THREE.SpriteMaterial({
       map: texture,
       sizeAttenuation: false,
@@ -213,7 +235,7 @@ export class LabelLayer {
         this.sprites.set(n.id, sprite);
       } else {
         // If label text changed (rare), retarget the material to the new texture.
-        const expected = this.textureFor(n.label).texture;
+        const expected = this.textureFor(n).texture;
         if (existing.material.map !== expected) {
           existing.material.map = expected;
           existing.material.needsUpdate = true;
@@ -251,7 +273,7 @@ export class LabelLayer {
 
     const cands: LabelCandidate[] = [];
     for (const n of this.nodes) {
-      const entry = this.textureCache.get(n.label);
+      const entry = this.textureCache.get(this.keyFor(n));
       if (!entry) continue;
       v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
       proj.copy(v).project(args.camera);
@@ -260,7 +282,7 @@ export class LabelLayer {
       const py = (-proj.y * 0.5 + 0.5) * args.screenH;
       const scale = args.scaleById.get(n.id) ?? 1;
       const renderedPx = renderedPixelRadius(args.nodeSize, scale, args.fovDeg, args.worldPerPixel);
-      const forced = forcedOf(n.id);
+      const forced = forcedOf(n.id) || n.kind === "self"; // the "you" hub is always labeled
       // Hysteresis: a label shown last frame survives down to a lower threshold (no edge flicker).
       const eff = this.shown2d.has(n.id) ? LABEL_2D_THRESHOLD_PX * LABEL_2D_HYSTERESIS : LABEL_2D_THRESHOLD_PX;
       if (!forced && renderedPx < eff) continue;
@@ -276,7 +298,7 @@ export class LabelLayer {
       if (!accepted.has(id)) { sprite.visible = false; continue; }
       const n = nodeById.get(id)!;
       sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
-      const entry = this.textureCache.get(n.label)!;
+      const entry = this.textureCache.get(this.keyFor(n))!;
       sprite.scale.set((entry.cssW / args.screenH) * 2, (entry.cssH / args.screenH) * 2, 1);
       sprite.material.opacity = 1;
       sprite.visible = true;
@@ -356,7 +378,7 @@ export class LabelLayer {
     for (const id of candidates) {
       const n = nodeById.get(id);
       if (!n) continue;
-      const entry = this.textureCache.get(n.label);
+      const entry = this.textureCache.get(this.keyFor(n));
       if (!entry) continue;
       v.set(n.x ?? 0, n.y ?? 0, n.z ?? 0).applyMatrix4(m);
       proj.copy(v).project(args.camera);
@@ -410,7 +432,7 @@ export class LabelLayer {
       // places it in the world. This makes it track the idle spin every frame (no jitter) even
       // though this selection pass only runs every ~10 frames.
       sprite.position.set(n.x ?? 0, n.y ?? 0, n.z ?? 0);
-      const entry = this.textureCache.get(n.label)!;
+      const entry = this.textureCache.get(this.keyFor(n))!;
       const sx = entry.cssW / args.screenH * 2;
       const sy = entry.cssH / args.screenH * 2;
       sprite.scale.set(sx, sy, 1);

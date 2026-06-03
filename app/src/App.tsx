@@ -18,6 +18,7 @@ import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
 import { TerminalTab } from "./Terminal";
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
+import { withYouNode } from "./graph/youNode";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, SEARCH_TAB, EXPORT_PREFIX, EMPTY_PANE, CALENDAR_TAB, FLASHCARDS_PREFIX, contentLabel, contentIcon, isSentinel } from "./tabIds";
@@ -120,6 +121,15 @@ export default function App() {
         if (l.content.startsWith(TERMINAL_PREFIX)) ids.add(l.content);
       }
     }
+    return [...ids];
+  });
+
+  // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
+  // graph links to each of these (whichever resolve to a note in the active brain view). Live:
+  // re-derives on any tab/pane open/close/replace, so the hub's edges track the working set.
+  const openContents = createMemo<string[]>(() => {
+    const ids = new Set<string>();
+    for (const t of tabs()) for (const l of leaves(t.root)) ids.add(l.content);
     return [...ids];
   });
 
@@ -229,15 +239,16 @@ export default function App() {
 
   const displayGraph = createMemo<GraphData>(() => {
     const currentMode = mode();
+    const open = openContents();
     switch (currentMode) {
       case "2nd":
-        return applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second);
+        return withYouNode(applyView(subgraphByKinds(graph(), SECOND_BRAIN_KINDS), graph().views?.second), open);
       case "3rd":
-        return applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third);
+        return withYouNode(applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third), open);
       case "agents":
-        return agents();
+        return agents(); // agents mode has its own SVG "you" hub (AgentsGraph) — no injection
       case "both":
-        return graph(); // full brain (self + notes + memory + cross-brain edges)
+        return withYouNode(graph(), open); // full brain + the you hub linking the open working set
     }
   });
 

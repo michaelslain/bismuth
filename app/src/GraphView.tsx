@@ -70,7 +70,7 @@ export function GraphView(props: {
       host,
       (id) => {
         const node = lastGraph?.nodes.find((n) => n.id === id);
-        if (node?.kind === "tag") return;
+        if (node?.kind === "tag" || node?.kind === "self") return; // tags + the "you" hub aren't openable
         props.onOpen(id);
       },
       (node) => setHovered(node),
@@ -110,6 +110,7 @@ export function GraphView(props: {
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
       edgeColor: hexToIntT(ap.neutral, 0xaeb4c2),
       backgroundColor: hexToIntT(ap.background, 0x14151b),
+      selfColor: hexToIntT(ap.foreground, 0xffffff),
     });
   });
 
