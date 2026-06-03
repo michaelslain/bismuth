@@ -66,7 +66,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
   for (const dn of dailyNotes) {
     if (!dn.id) continue;
     const id = `daily-note:${dn.id}`;
-    map.set(id, { id, label: dn.label || dn.id, icon: dn.icon || "CalendarDays", action: () => h.openDailyNote(dn.id) });
+    map.set(id, { id, label: `Create Daily Note: ${dn.label || dn.id}`, icon: dn.icon || "CalendarDays", action: () => h.openDailyNote(dn.id) });
   }
   return map;
 }

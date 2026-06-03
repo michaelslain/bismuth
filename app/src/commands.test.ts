@@ -38,7 +38,7 @@ describe("bindCommands", () => {
       { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "" },
     ]);
     const cmd = map.get("daily-note:journal");
-    expect(cmd?.label).toBe("Journal");
+    expect(cmd?.label).toBe("Create Daily Note: Journal");
     expect(cmd?.icon).toBe("BookOpen");
     cmd!.action();
     expect(calls).toEqual(["daily:journal"]);
