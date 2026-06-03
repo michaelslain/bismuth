@@ -19,7 +19,7 @@ import { basesBlock } from "./editor/basesBlock";
 import { viewBlock } from "./editor/viewBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { iconNames } from "./icons/registry";
-import { settingsCompletion } from "./editor/settingsComplete";
+import { settingsCompletion, type VaultPath } from "./editor/settingsComplete";
 import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
@@ -131,6 +131,21 @@ function templatePaths(): string[] {
   return cachedTemplatePaths;
 }
 
+// Vault paths (folders + files) for the settings.yaml `path`-typed value autocomplete
+// (e.g. dailyNotes `folder:`). Same sync-getter-with-background-fetch pattern as
+// templatePaths above. Maps /tree entries to the {path, kind} shape rankPaths wants.
+let cachedVaultPaths: VaultPath[] = [];
+let vaultPathsFetched = false;
+function vaultPaths(): VaultPath[] {
+  if (!vaultPathsFetched) {
+    vaultPathsFetched = true;
+    void api.tree()
+      .then((entries) => { cachedVaultPaths = entries.map((e) => ({ path: e.path, kind: e.kind })); })
+      .catch(() => {});
+  }
+  return cachedVaultPaths;
+}
+
 export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -211,6 +226,9 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     // markdown rendering and NO spell/grammar check. settings.yaml additionally
     // validates the whole document against the fixed app-settings schema.
     const isYaml = path.endsWith(".yaml") || path.endsWith(".yml");
+    // Warm the path/template completion caches on settings open (async fetch) so the
+    // FIRST `path`-typed popup has data instead of an empty list while it loads.
+    if (isYaml && isSettingsBuffer(path)) { void vaultPaths(); void templatePaths(); }
     const extensions = isYaml
       ? [
           ...base,
@@ -223,7 +241,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
-                settingsCompletion(() => SETTINGS_SCHEMA, iconNames, templatePaths),
+                settingsCompletion(() => SETTINGS_SCHEMA, iconNames, templatePaths, vaultPaths),
               ]
             : []),
         ]

@@ -132,7 +132,7 @@ export const SETTINGS_SCHEMA: Schema = {
     goodGraduatingInterval: { type: "number", default: 1, min: 1, max: 3, doc: "Days until next review when a new card is rated 'good'/'hard'." },
   }),
   templates: object({
-    folder: { type: "string", default: "Templates", doc: "Vault folder holding template .md files. Option+T inserts one at the cursor." },
+    folder: { type: { kind: "path", only: "dir" }, default: "Templates", doc: "Vault folder holding template .md files. Option+T inserts one at the cursor." },
   }),
   // The vault-wide property registry. Free-form `{name: typeString}`, validated
   // leniently by registry.loadRegistry — seeded empty on first launch.
@@ -166,9 +166,9 @@ export const SETTINGS_SCHEMA: Schema = {
       id:       { type: "string", doc: "Stable id; forms the command id daily-note:<id>." },
       label:    { type: "string", doc: "Command-palette label and default button tooltip." },
       icon:     { type: "icon",   doc: 'Lucide icon name (e.g. "BookOpen") or an emoji.' },
-      folder:   { type: "string", doc: 'Vault folder for entries ("" = vault root).' },
+      folder:   { type: { kind: "path", only: "dir" }, doc: 'Vault folder for entries ("" = vault root).' },
       fileName: { type: "string", doc: "Filename via {{...}} tokens, no .md. e.g. {{date}} journal." },
-      template: { type: "string", doc: "Vault path to a template .md to pre-fill the note (optional)." },
+      template: { type: { kind: "path", scope: "templates" }, doc: "Vault path to a template .md to pre-fill the note (optional)." },
     } } },
     default: [
       { id: "journal", label: "Journal", icon: "BookOpen", folder: "Journal", fileName: "{{date}} journal", template: "Templates/Journal.md" },
