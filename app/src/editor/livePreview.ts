@@ -23,6 +23,18 @@ const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 // On the cursor line a list/task marker shows raw; render it in the mono font.
 const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
+// A code-block body line that carries its in-block line number (1-based). CSS
+// renders the number in the left gutter via `::before { content: attr(data-codeline) }`.
+// Cached per number so repeated renders reuse instances.
+const codeLineDecoCache = new Map<number, Decoration>();
+function codeLineDeco(n: number): Decoration {
+  let d = codeLineDecoCache.get(n);
+  if (!d) {
+    d = Decoration.line({ class: "cm-codeblock cm-code-numbered", attributes: { "data-codeline": String(n) } });
+    codeLineDecoCache.set(n, d);
+  }
+  return d;
+}
 const codeHeaderLine = Decoration.line({ class: "cm-code-headerline" });
 const codeHiddenLine = Decoration.line({ class: "cm-code-hidden" });
 const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
@@ -364,8 +376,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const codeBlock = codeBlockByLine.get(line.number);
       if (codeBlock) {
         const revealed = activeCodeOpen === codeBlock.open;
+        // Body lines (strictly between the fences) carry their 1-based in-block
+        // line number; the fence lines never do, whether rendered or revealed.
+        const isBody = line.number > codeBlock.open && line.number < codeBlock.close;
         if (revealed) {
-          deco.push(codeBlockLine.range(line.from));
+          deco.push(isBody ? codeLineDeco(line.number - codeBlock.open).range(line.from) : codeBlockLine.range(line.from));
         } else if (line.number === codeBlock.open) {
           deco.push(codeHeaderLine.range(line.from));
           if (line.to > line.from) {
@@ -375,7 +390,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           deco.push(codeHiddenLine.range(line.from));
           if (line.to > line.from) deco.push(hide.range(line.from, line.to));
         } else {
-          deco.push(codeBlockLine.range(line.from));
+          deco.push(codeLineDeco(line.number - codeBlock.open).range(line.from));
         }
         pos = line.to + 1;
         continue;
@@ -610,7 +625,10 @@ export const livePreview = [
     ".cm-strong": { "font-weight": "bold" },
     ".cm-em": { "font-style": "italic" },
     ".cm-strike": { "text-decoration": "line-through", opacity: "0.7" },
-    ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
+    // Monaspace renders visually larger than Lora at the same px; 0.85em makes
+    // mono code optically match the surrounding serif body. Keep all mono regions
+    // (inline code, code blocks, frontmatter, tables) on this same scale.
+    ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
     // Links + wikilinks: accent with a SOFT underline (a faint accent rule that
     // sits below the text) rather than a hard text-decoration line.
     ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
@@ -637,7 +655,23 @@ export const livePreview = [
     },
     // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
     // are hidden off-cursor (replaced by a header + collapsed close line).
-    ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.9em", "line-height": "1.5" },
+    ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em", "line-height": "1.5" },
+    // In-block line numbers: a faint right-aligned count hung in the editor's left
+    // padding (no layout shift to the code text). `attr(data-codeline)` is set by
+    // the codeLineDeco decoration on each body line.
+    ".cm-code-numbered": { position: "relative" },
+    ".cm-code-numbered::before": {
+      content: "attr(data-codeline)",
+      position: "absolute",
+      left: "-2.7em",
+      width: "2em",
+      "text-align": "right",
+      color: "color-mix(in srgb, var(--fg) 28%, transparent)",
+      "font-variant-numeric": "tabular-nums",
+      "-webkit-user-select": "none",
+      "user-select": "none",
+      "pointer-events": "none",
+    },
     ".cm-code-headerline": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
@@ -672,11 +706,12 @@ export const livePreview = [
     // --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-size": "0.85em",
       background: "var(--surface-2)",
       "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     ".cm-fm-key": { color: "var(--accent)" },
-    ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
+    ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {
