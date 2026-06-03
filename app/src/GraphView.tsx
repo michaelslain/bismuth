@@ -76,7 +76,7 @@ export function GraphView(props: {
       host,
       (id) => {
         const node = lastGraph?.nodes.find((n) => n.id === id);
-        if (node?.kind === "tag") return;
+        if (node?.kind === "tag" || node?.kind === "self") return; // tags + the "you" hub aren't openable
         props.onOpen(id);
       },
       (node) => setHovered(node),
@@ -130,6 +130,7 @@ export function GraphView(props: {
       // don't render as dark boxes on the pale canvas); the dark-theme default otherwise.
       labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
       labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
+      selfColor: hexToIntT(ap.foreground, 0xffffff),
     });
   });
 

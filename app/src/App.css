@@ -387,6 +387,8 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
   border-radius: 5px; padding: 2px 6px;
   pointer-events: none; will-change: transform, opacity; -webkit-font-smoothing: antialiased;
 }
+/* The "you" hub label: bigger + bold — the central anchor, not an ambient annotation. */
+.graph-label--self { font-size: 14px; font-weight: 700; padding: 3px 8px; }
 .graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; padding: 12px 14px; backdrop-filter: blur(8px); }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
 .graph-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }

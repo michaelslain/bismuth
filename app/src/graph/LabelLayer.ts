@@ -38,6 +38,7 @@ export type LabelNode = {
   x?: number;
   y?: number;
   z?: number;
+  kind?: string; // "self" → the "you" hub: bigger/bold label, always shown, never depth-faded
 };
 
 type LabelVisibilityArgs = {
@@ -206,11 +207,14 @@ export class LabelLayer {
       }
       el.style.display = "block";
       el.style.opacity = String(opacity);
+      // The "you" hub label is the bold, larger central anchor (CSS modifier).
+      el.classList.toggle("graph-label--self", node.kind === "self");
     }
   }
 
   /** Assign label priority: lower number renders first and can occlude higher numbers. */
   private priorityOf(id: string, inAlwaysOn: boolean): number {
+    if (this.nodeById.get(id)?.kind === "self") return 0; // the "you" hub always wins occlusion
     if (id === this.hoveredId) return 0; // hovered node always shows
     if (inAlwaysOn) return 2;            // top hubs / active file
     return 4;                             // near-camera discovery nodes
@@ -254,7 +258,7 @@ export class LabelLayer {
       const py = (-proj.y * 0.5 + 0.5) * args.screenH;
       const scale = args.scaleById.get(n.id) ?? 1;
       const renderedPx = renderedPixelRadius(args.nodeSize, scale, args.fovDeg, args.worldPerPixel);
-      const forced = forcedOf(n.id);
+      const forced = forcedOf(n.id) || n.kind === "self"; // the "you" hub is always labeled
       const eff = this.shown2d.has(n.id) ? LABEL_2D_THRESHOLD_PX * LABEL_2D_HYSTERESIS : LABEL_2D_THRESHOLD_PX;
       if (!forced && renderedPx < eff) continue;
       const size = this.measure(n.label);
@@ -332,6 +336,7 @@ export class LabelLayer {
         opacity = Math.max(0.15, Math.min(1, 1 - t));
       }
       opacity *= zoomFade;
+      if (n.kind === "self") opacity = 1; // the "you" hub never depth-fades — it's the anchor
       const inAlwaysOn = this.alwaysOn.has(id);
       const priority = args.searchMatches?.has(id) ? 1 : this.priorityOf(id, inAlwaysOn);
       cands.push({ id, px, py, w: size.w, h: size.h, priority, opacity });

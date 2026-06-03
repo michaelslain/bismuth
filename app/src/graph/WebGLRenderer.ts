@@ -15,7 +15,8 @@ import {
   type SimLink,
 } from "d3-force-3d";
 import type { GraphData, NodeKind } from "../../../core/src/graph";
-import { nodeCollideRadius } from "./collide";
+import { SELF_NODE_ID } from "../../../core/src/graph";
+import { nodeCollideRadius, drawnNodeRadius } from "./collide";
 import { LabelLayer } from "./LabelLayer";
 import { computeAlwaysOnSet } from "./labelSelection";
 
@@ -50,6 +51,17 @@ const COLLIDE_ITERATIONS = 3;
 // keep a small visible gap instead of merely touching. Only affects nodes whose padded radius beats
 // the spacing floor (the largest hubs) — leaves are untouched.
 const COLLIDE_SIZE_PADDING = 1.25;
+// The "you" hub is fixed at the cloud center and given this much of the spacing floor as its own
+// collision radius, so a small ring of empty "physics space" opens around it separating it from
+// the surrounding cluster (the central-anchor look from the design). × the floor (collideRadius()).
+const SELF_CLEAR_MULT = 2.6;
+// The "you" hub is drawn at this FIXED size multiplier (not degree-scaled) so it's always the
+// prominent central anchor — bigger than typical nodes, like the agents-view "You".
+const SELF_NODE_SCALE = 1.8;
+// Halo ring around the hub: its radius as a multiple of the hub's drawn radius, and where the ring
+// sits inside its texture (fraction of the half-texture) so the sprite can be scaled to world units.
+const HALO_RING_MULT = 1.55;
+const RING_TEX_RADIUS = 0.86;
 
 // Link strength is fixed low instead of d3's default (1/min(degree), which yanks a hub's
 // degree-1 leaves tight against it into dense fans). A weak, uniform pull lets collision and
@@ -128,8 +140,9 @@ export interface GraphConfig {
   nodeSizeMaxMult: number;    // ceiling multiplier (biggest hub)
   edgeColor: number;          // link color (0xRRGGBB)
   backgroundColor: number;    // canvas background (0xRRGGBB)
-  labelTextColor: string;     // hub-label text (CSS color; baked into canvas textures)
-  labelBgColor: string;       // hub-label pill background (CSS color)
+  labelTextColor: string;     // hub-label text (CSS color → --label-text on the DOM label overlay)
+  labelBgColor: string;       // hub-label pill background (CSS color → --label-bg)
+  selfColor: number;          // the "you" hub color (0xRRGGBB) — the appearance foreground token
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -150,6 +163,7 @@ const DEFAULT_CONFIG: GraphConfig = {
   backgroundColor: 0x14151b, // Ink (background token)
   labelTextColor: "rgba(232,232,238,0.95)", // dark-theme default; light flips via setConfig
   labelBgColor: "rgba(14,14,17,0.6)",
+  selfColor: 0xffffff,       // foreground token (overridden per-theme by GraphView)
 };
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
@@ -246,6 +260,26 @@ function makeCircleTexture(): THREE.Texture {
   return tex;
 }
 
+/** A hollow ring texture (white stroke, transparent center) tinted per-theme for the "you" halo. */
+function makeRingTexture(): THREE.Texture {
+  const s = 256;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = s;
+  const ctx = cv.getContext("2d")!;
+  const c = s / 2;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = s * 0.02;
+  ctx.beginPath();
+  ctx.arc(c, c, (s / 2) * RING_TEX_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 type N3 = SimNode & {
   id: string;
   label: string;
@@ -268,8 +302,28 @@ export interface HoverNode {
   folder?: string;
 }
 
-function graphSig(nodes: { id: string }[], edgeCount: number): string {
-  return nodes.map((n) => n.id).sort().join(",") + "|" + edgeCount;
+function graphSig(nodes: { id: string }[], edges: { from: string; to: string }[]): string {
+  // Order-independent edge hash (summed per-edge FNV-1a). The node-id set + edge COUNT alone can't
+  // tell that the "you" hub re-pointed from one open tab to another (same count, same node set) —
+  // that swap must still re-render, so fold the edge endpoints into the signature.
+  let h = 0;
+  for (const e of edges) {
+    let x = 2166136261;
+    const s = e.from + " " + e.to;
+    for (let i = 0; i < s.length; i++) { x = Math.imul(x ^ s.charCodeAt(i), 16777619); }
+    h = (h + (x >>> 0)) >>> 0;
+  }
+  return nodes.map((n) => n.id).sort().join(",") + "|" + edges.length + "|" + h;
+}
+
+/** Push a point radially out to radius `r` if it sits inside it (else leave it); a point exactly at
+ *  the origin is shoved out along +x. Used to carve the clearing around the centered "you" hub. */
+function pushOutOfCenter(x: number, y: number, z: number, r: number): [number, number, number] {
+  const d = Math.hypot(x, y, z);
+  if (d >= r) return [x, y, z];
+  if (d < 1e-4) return [r, 0, 0];
+  const k = r / d;
+  return [x * k, y * k, z * k];
 }
 
 /** d3-force replaces link endpoints with node objects after the first tick; this reads the id either way. */
@@ -336,6 +390,8 @@ export class WebGLRenderer {
   private moveHandler?: (e: MouseEvent) => void;
   private leaveHandler?: () => void;
   private circleTex: THREE.Texture | null = null;
+  private ringTex: THREE.Texture | null = null;
+  private haloSprite: THREE.Sprite | null = null;
   private baseColors: Float32Array = new Float32Array(0); // node colors, for hover restore
   private baseScales: Float32Array = new Float32Array(0); // per-node degree size multiplier, before near-cull
   private nearCullActive = false; // true while any node is currently near-camera culled (3D only)
@@ -448,6 +504,16 @@ export class WebGLRenderer {
 
     // Circle sprite for round nodes
     this.circleTex = makeCircleTexture();
+
+    // Billboard halo ring for the "you" hub — always faces the camera, tinted to the hub color,
+    // sized in buildGeometry/updateHalo. Hidden until a self node is present.
+    this.ringTex = makeRingTexture();
+    this.haloSprite = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.ringTex, sizeAttenuation: true, transparent: true, depthTest: false, depthWrite: false, opacity: 0.5 }),
+    );
+    this.haloSprite.renderOrder = 0.5; // above edges (0), below node points (1)
+    this.haloSprite.visible = false;
+    this.group.add(this.haloSprite);
 
     // Click handler for node picking
     this.clickHandler = (e: MouseEvent) => this.handleClick(e);
@@ -819,9 +885,11 @@ export class WebGLRenderer {
 
   /** Node list for the graph search box: id/label/folder/community. */
   getNodesForUI(): { id: string; label: string; folder?: string; community?: number; communityLabel?: string }[] {
-    return this.nodes.map((n) => ({
-      id: n.id, label: n.label, folder: n.folder, community: n.community, communityLabel: n.communityLabel,
-    }));
+    return this.nodes
+      .filter((n) => n.kind !== "self") // the "you" hub isn't a searchable destination
+      .map((n) => ({
+        id: n.id, label: n.label, folder: n.folder, community: n.community, communityLabel: n.communityLabel,
+      }));
   }
 
   /** Per-community centroid + members + color, for the cluster legend's fly-to. */
@@ -1250,8 +1318,10 @@ export class WebGLRenderer {
       case "agent":
         if (n.community != null) return this.paletteColor("community:" + n.community);
         return this.paletteColor("agent:" + n.label);
+      case "self":
+        return new THREE.Color(this.cfg.selfColor); // the "you" hub — foreground token, stands apart from clusters
       default:
-        return new THREE.Color(this.palette[2] ?? this.palette[0] ?? 0x3f6bf0); // self node (accent Blue)
+        return new THREE.Color(this.palette[2] ?? this.palette[0] ?? 0x3f6bf0);
     }
   }
 
@@ -1271,8 +1341,10 @@ export class WebGLRenderer {
    * the circles they're drawn as instead of as points — which is what made hubs overlap. `i` indexes
    * `this.nodes`, the same order as `baseScales` (its degree multipliers) and the sim's node array.
    */
-  private collideRadiusFor = (_n: N3, i: number): number =>
-    nodeCollideRadius(this.collideRadius(), this.cfg.nodeSize, this.baseScales[i] ?? 1, this.camera?.fov ?? 60, COLLIDE_SIZE_PADDING);
+  private collideRadiusFor = (n: N3, i: number): number =>
+    n.kind === "self"
+      ? this.collideRadius() * SELF_CLEAR_MULT // oversized so the cluster keeps its distance — the clearing around You
+      : nodeCollideRadius(this.collideRadius(), this.cfg.nodeSize, this.baseScales[i] ?? 1, this.camera?.fov ?? 60, COLLIDE_SIZE_PADDING);
 
   /**
    * Apply user settings. Spin and node size are read live (cheap); a palette change
@@ -1298,6 +1370,11 @@ export class WebGLRenderer {
     if (cfg.backgroundColor !== prev.backgroundColor) {
       this.scene.background = new THREE.Color(cfg.backgroundColor);
       if (this.scene.fog) (this.scene.fog as THREE.Fog).color = new THREE.Color(cfg.backgroundColor);
+    }
+
+    // Theme switch → retint the "you" halo to the new foreground (the node point recolors via recolorNodes).
+    if (cfg.selfColor !== prev.selfColor && this.haloSprite) {
+      (this.haloSprite.material as THREE.SpriteMaterial).color.setHex(cfg.selfColor);
     }
 
     // nodeSize feeds the per-node collide radius, so a size change must recompute collide (and re-settle).
@@ -1345,6 +1422,8 @@ export class WebGLRenderer {
       this.activeFileId,
       this.cfg.graphLabelHubCount,
     );
+    // The "you" hub is always labeled — it's the anchor of the view, never decluttered away.
+    if (this.nodes.some((n) => n.id === SELF_NODE_ID)) set.add(SELF_NODE_ID);
     this.labels.setAlwaysOnSet(set);
   }
 
@@ -1425,6 +1504,7 @@ export class WebGLRenderer {
         toPos.set(n.id, [n.x ?? 0, n.y ?? 0, zTarget]);
       }
     }
+    this.carveClearingInMap(toPos); // keep You's clearing intact across the 2D<->3D morph
 
     // Frame the camera to the target layout's bounding sphere.
     let cx = 0, cy = 0, cz = 0;
@@ -1646,7 +1726,7 @@ export class WebGLRenderer {
   }
 
   render(g: GraphData) {
-    const sig = graphSig(g.nodes, g.edges.length);
+    const sig = graphSig(g.nodes, g.edges);
     if (sig === this.lastSig) return;
     // A 2D<->3D glide owns node positions right now. Rebuilding the node array, refitting the
     // camera, and reheating the force sim here would scatter the in-flight morph for a frame
@@ -1698,6 +1778,14 @@ export class WebGLRenderer {
       return node;
     });
 
+    // The "you" hub is the one fixed node: clamp it to the cloud center and FIX it there (d3
+    // fx/fy/fz) so neither the sim nor the centering force ever moves it, in every mode.
+    for (const n of this.nodes) {
+      if (n.kind !== "self") continue;
+      n.x = 0; n.y = 0; n.z = 0;
+      n.fx = 0; n.fy = 0; n.fz = 0;
+    }
+
     const totalNodes = this.nodes.length;
     const cachedFraction = totalNodes > 0 ? cachedCount / totalNodes : 0;
     // Warm load: enough nodes already have a settled position that we skip the (expensive) global
@@ -1708,6 +1796,7 @@ export class WebGLRenderer {
     this.rebuildResolvedLinks(); // resolve endpoints once; endpoint objects mutate in place during ticks
 
     if (warm && uncached.length > 0) this.placeNearNeighbors(uncached); // nudge the few new nodes next to their neighbours
+    this.carveCenterClearing(); // push any node sitting on top of the pinned You hub out to the clearing edge
 
     this.buildGeometry(); // initial geometry with starting positions
     this.fitCamera();
@@ -1798,6 +1887,34 @@ export class WebGLRenderer {
         node.y = sum.y / sum.count;
         node.z = sum.z / sum.count;
       }
+    }
+  }
+
+  /**
+   * Open the "physics space" around the pinned You hub: push any non-self node sitting inside the
+   * hub's clearing radius radially outward to its edge. Deterministic and idempotent, so it carves
+   * the same gap on a warm/mode-switch render (where the sim doesn't run) as the collide force does
+   * on a cold settle — and never jitters when only edges change (tab open/close). No-op without a
+   * self node. The backend layouts don't know about You, so the center must be cleared client-side.
+   */
+  private carveCenterClearing() {
+    if (!this.nodes.some((n) => n.kind === "self")) return;
+    const r = this.collideRadius() * SELF_CLEAR_MULT;
+    for (const n of this.nodes) {
+      if (n.kind === "self") continue;
+      const [x, y, z] = pushOutOfCenter(n.x ?? 0, n.y ?? 0, n.z ?? 0, r);
+      n.x = x; n.y = y; n.z = z;
+    }
+  }
+
+  /** Same clearing carve, applied to a target-position Map (used to keep the gap through a morph). */
+  private carveClearingInMap(positions: Map<string, [number, number, number]>) {
+    if (!this.nodes.some((n) => n.kind === "self")) return;
+    const r = this.collideRadius() * SELF_CLEAR_MULT;
+    for (const n of this.nodes) {
+      if (n.kind === "self") continue;
+      const p = positions.get(n.id);
+      if (p) positions.set(n.id, pushOutOfCenter(p[0], p[1], p[2], r));
     }
   }
 
@@ -1897,6 +2014,9 @@ export class WebGLRenderer {
     }
     const scales = new Float32Array(this.nodes.length);
     for (let i = 0; i < this.nodes.length; i++) {
+      // The "you" hub draws at a fixed prominent size (the central anchor), not degree-scaled. Its
+      // collision radius is handled separately (the clearing), so this is purely visual.
+      if (this.nodes[i].kind === "self") { scales[i] = SELF_NODE_SCALE; continue; }
       const d = deg.get(this.nodes[i].id) ?? 0;
       scales[i] = Math.min(this.cfg.nodeSizeMaxMult, this.cfg.nodeSizeMinMult + this.cfg.nodeSizeDegreeGain * Math.sqrt(d));
     }
@@ -1959,6 +2079,7 @@ export class WebGLRenderer {
     this.pointsMesh = new THREE.Points(pointsGeo, pointsMat);
     this.pointsMesh.renderOrder = 1; // draw nodes after edges so links sit under nodes (matters in 2D, where equal depth ties)
     this.group.add(this.pointsMesh);
+    this.updateHalo(); // size + place the "you" halo for the current graph
 
     // --- LineSegments (edges) — clean cohesive lavender, brighten on hover ---
     const lineCount = this.resolvedLinks.length;
@@ -1993,6 +2114,23 @@ export class WebGLRenderer {
     this.linesMesh = new THREE.LineSegments(linesGeo, linesMat);
     this.linesMesh.renderOrder = 0; // edges below nodes (see pointsMesh.renderOrder)
     this.group.add(this.linesMesh);
+  }
+
+  /**
+   * Size, tint, and place the billboard halo ring around the "you" hub (hidden when there's no self
+   * node). The hub is pinned at the layout origin, so the ring lives there too; its radius tracks the
+   * hub's drawn size so the halo scales with the graph at any zoom (sizeAttenuation sprite).
+   */
+  private updateHalo() {
+    if (!this.haloSprite) return;
+    const self = this.nodes.find((n) => n.kind === "self");
+    if (!self) { this.haloSprite.visible = false; return; }
+    const haloR = drawnNodeRadius(this.cfg.nodeSize, SELF_NODE_SCALE, this.camera?.fov ?? 60) * HALO_RING_MULT;
+    const w = (2 * haloR) / RING_TEX_RADIUS; // sprite world width so the texture's ring lands at haloR
+    this.haloSprite.scale.set(w, w, 1);
+    this.haloSprite.position.set(self.x ?? 0, self.y ?? 0, self.z ?? 0);
+    (this.haloSprite.material as THREE.SpriteMaterial).color.setHex(this.cfg.selfColor);
+    this.haloSprite.visible = true;
   }
 
   /** Resolve each link's endpoints to live node objects, dropping links with a missing end. Cached per graph. */
@@ -2159,6 +2297,9 @@ export class WebGLRenderer {
     }
     this.circleTex?.dispose();
     this.circleTex = null;
+    this.ringTex?.dispose();
+    this.ringTex = null;
+    if (this.haloSprite) { (this.haloSprite.material as THREE.Material).dispose(); this.haloSprite = null; }
 
     this.disposeMeshes();
     this.labels.dispose();
