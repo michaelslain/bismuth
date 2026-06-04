@@ -14,6 +14,16 @@ import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
 
+/** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
+function mixHex(a: number, b: number, t: number): number {
+  const ch = (shift: number) => {
+    const av = (a >> shift) & 0xff;
+    const bv = (b >> shift) & 0xff;
+    return Math.round(av + (bv - av) * t) & 0xff;
+  };
+  return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
 /** Shared pill recipe for the hover/fps HUD readouts (theme-aware for light/dark). */
 const hudPill: JSX.CSSProperties = {
   background: "var(--pop-bg)",
@@ -133,7 +143,12 @@ export function GraphView(props: {
       nodeSizeMinMult: gs.nodeSizeMinMult,
       nodeSizeDegreeGain: gs.nodeSizeDegreeGain,
       nodeSizeMaxMult: gs.nodeSizeMaxMult,
-      edgeColor: hexToIntT(ap.neutral, 0xaeb4c2),
+      // On light themes the neutral grey, alpha-blended over the pale canvas, reads as harsh dark
+      // lines. Lift the edge color toward the background and drop its opacity so links stay faint.
+      edgeColor: ap.isLight
+        ? mixHex(hexToIntT(ap.neutral, 0xaeb4c2), hexToIntT(ap.background, 0xffffff), 0.45)
+        : hexToIntT(ap.neutral, 0xaeb4c2),
+      edgeOpacity: ap.isLight ? 0.2 : 0.32,
       backgroundColor: hexToIntT(ap.background, 0x14151b),
       // Hub-label pill: dark text on a translucent-white halo for light themes (so labels
       // don't render as dark boxes on the pale canvas); the dark-theme default otherwise.

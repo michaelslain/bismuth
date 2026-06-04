@@ -139,6 +139,7 @@ export interface GraphConfig {
   nodeSizeDegreeGain: number; // size added per sqrt(degree)
   nodeSizeMaxMult: number;    // ceiling multiplier (biggest hub)
   edgeColor: number;          // link color (0xRRGGBB)
+  edgeOpacity: number;        // link material opacity (0..1) — lowered on light themes so edges read faint, not dark
   backgroundColor: number;    // canvas background (0xRRGGBB)
   labelTextColor: string;     // hub-label text (CSS color → --label-text on the DOM label overlay)
   labelBgColor: string;       // hub-label pill background (CSS color → --label-bg)
@@ -160,6 +161,7 @@ const DEFAULT_CONFIG: GraphConfig = {
   nodeSizeDegreeGain: 0.45,
   nodeSizeMaxMult: 6,
   edgeColor: EDGE_COLOR,
+  edgeOpacity: 0.32,
   backgroundColor: 0x14151b, // Ink (background token)
   labelTextColor: "rgba(232,232,238,0.95)", // dark-theme default; light flips via setConfig
   labelBgColor: "rgba(14,14,17,0.6)",
@@ -1413,6 +1415,11 @@ export class WebGLRenderer {
       if (this.scene.fog) (this.scene.fog as THREE.Fog).color = new THREE.Color(cfg.backgroundColor);
     }
 
+    // Edge opacity applies live (theme switch lowers it on light themes so links stay faint, not dark).
+    if (cfg.edgeOpacity !== prev.edgeOpacity && this.linesMesh) {
+      (this.linesMesh.material as THREE.LineBasicMaterial).opacity = cfg.edgeOpacity;
+    }
+
     // Theme switch → retint the "you" halo to the new foreground (the node point recolors via recolorNodes).
     if (cfg.selfColor !== prev.selfColor && this.haloSprite) {
       (this.haloSprite.material as THREE.SpriteMaterial).color.setHex(cfg.selfColor);
@@ -2148,7 +2155,7 @@ export class WebGLRenderer {
     const linesMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: 0.32,
+      opacity: this.cfg.edgeOpacity,
       depthWrite: false,
     });
 
