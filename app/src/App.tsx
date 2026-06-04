@@ -178,6 +178,23 @@ export default function App() {
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === activeTabId() ? fn(t) : t)));
 
+  // Update a tab by id (rename uses this — the renamed tab isn't necessarily active).
+  const updateTab = (id: string, fn: (t: Tab) => Tab) =>
+    setTabs((ts) => ts.map((t) => (t.id === id ? fn(t) : t)));
+
+  // Inline tab rename: which tab is being edited (double-click or context-menu "Rename").
+  const [renamingTabId, setRenamingTabId] = createSignal<string | null>(null);
+  const startRenameTab = (id: string) => {
+    setActiveTabId(id);
+    setRenamingTabId(id);
+  };
+  // Commit an edited name: blank/whitespace clears the override (reverts to the auto label).
+  const commitRename = (id: string, value: string) => {
+    const name = value.trim() || undefined;
+    updateTab(id, (t) => ({ ...t, name }));
+    setRenamingTabId(null);
+  };
+
   // Per-pane (per-leaf) navigation history. Each leaf id maps to a stack of the
   // contents it has shown + the current index. Session-only (not persisted): leaf
   // ids are reassigned on reload, so a restored pane seeds its history lazily from
@@ -985,6 +1002,7 @@ export default function App() {
   // joining every pane name doesn't scale. Terminal tabs get a 1-based index ("Terminal N"),
   // numbered by their position among the open terminal tabs.
   function tabBarLabel(t: Tab): string {
+    if (t.name) return t.name; // user-set name overrides the content-derived label
     const ls = leaves(t.root);
     if (ls.length > 1) return `${ls.length} panes`;
     const content = ls[0].content;
@@ -1040,22 +1058,42 @@ export default function App() {
                   data-tab-chip="true"
                   style={{ transform: `translateX(${tabShift(i())}px)` }}
                   onPointerDown={(e) => {
-                    if ((e.target as HTMLElement).closest(".tab-x")) return;
+                    if ((e.target as HTMLElement).closest(".tab-x, .tab-rename")) return;
                     viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
                   }}
+                  onDblClick={(e) => {
+                    if ((e.target as HTMLElement).closest(".tab-x")) return;
+                    startRenameTab(t.id);
+                  }}
                   onContextMenu={(e) => {
-                    const content = t.root.kind === "leaf" ? t.root.content : null;
-                    if (!content || !isExportable(content)) return;
                     e.preventDefault();
-                    openContextMenu(e.clientX, e.clientY, [
-                      { label: "Export…", icon: "Download", onSelect: () => openExport(content) },
-                    ], setEditorMenu);
+                    const content = t.root.kind === "leaf" ? t.root.content : null;
+                    const items: MenuItem[] = [
+                      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(t.id) },
+                    ];
+                    if (t.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(t.id, (x) => ({ ...x, name: undefined })) });
+                    if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
+                    openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
                   }}
                 >
                   <Show when={tabBarIcon(t)}>
                     {(icon) => <Icon value={icon()} size={13} />}
                   </Show>
-                  <span>{tabBarLabel(t)}</span>
+                  <Show when={renamingTabId() === t.id} fallback={<span>{tabBarLabel(t)}</span>}>
+                    <input
+                      class="tab-rename"
+                      value={tabBarLabel(t)}
+                      ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onBlur={(e) => commitRename(t.id, e.currentTarget.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); commitRename(t.id, e.currentTarget.value); }
+                        else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
+                        e.stopPropagation();
+                      }}
+                    />
+                  </Show>
                   <IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
                 </div>
               </>
