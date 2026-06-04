@@ -4,8 +4,8 @@ import { isValidType } from "./types";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
-const AGGREGATE_VALUES = ["sum", "avg", "count", "min", "max"] as const;
-const BIN_VALUES = ["day", "week", "month"] as const;
+const AGGREGATE_VALUES: readonly string[] = ["sum", "avg", "count", "min", "max"];
+const BIN_VALUES: readonly string[] = ["day", "week", "month"];
 
 function asArray<T>(v: unknown): T[] {
   if (Array.isArray(v)) return v as T[];
@@ -23,6 +23,10 @@ function safeYaml(text: string): Record<string, unknown> | null {
   }
 }
 
+function normalizeDir(raw: unknown): "ASC" | "DESC" {
+  return String(raw ?? "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
+}
+
 function normalizeSort(raw: unknown): SortSpec[] | undefined {
   if (!raw) return undefined;
   const items = Array.isArray(raw) ? raw : [raw];
@@ -35,8 +39,7 @@ function normalizeSort(raw: unknown): SortSpec[] | undefined {
       const o = it as Record<string, unknown>;
       const property = typeof o.property === "string" ? o.property : typeof o.column === "string" ? o.column : null;
       if (property) {
-        const dir = String(o.direction ?? "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
-        spec = { property, direction: dir };
+        spec = { property, direction: normalizeDir(o.direction) };
       }
     }
     if (spec) out.push(spec);
@@ -52,8 +55,7 @@ function normalizeGroupBy(raw: unknown): ViewConfig["groupBy"] {
   if (raw && typeof raw === "object") {
     const o = raw as Record<string, unknown>;
     if (typeof o.property === "string") {
-      const dir = String(o.direction ?? "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
-      return { property: o.property, direction: dir };
+      return { property: o.property, direction: normalizeDir(o.direction) };
     }
   }
   return undefined;
@@ -125,8 +127,8 @@ function normalizeView(raw: unknown): ViewConfig {
     // chart bindings
     x: strOrUndef(o.x),
     y: strOrUndef(o.y),
-    aggregate: (AGGREGATE_VALUES as readonly string[]).includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
-    bin: (BIN_VALUES as readonly string[]).includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
+    aggregate: AGGREGATE_VALUES.includes(o.aggregate as string) ? (o.aggregate as ViewConfig["aggregate"]) : undefined,
+    bin: BIN_VALUES.includes(o.bin as string) ? (o.bin as ViewConfig["bin"]) : undefined,
   };
 }
 
@@ -227,8 +229,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // nested `views:` block.
     if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
     // chart axis/aggregation keys (flat persistence for chart views)
-    if ((AGGREGATE_VALUES as readonly string[]).includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
-    if ((BIN_VALUES as readonly string[]).includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
+    if (AGGREGATE_VALUES.includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
+    if (BIN_VALUES.includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
   }
 
   const rows = parseRows(body, meta);

@@ -3,19 +3,9 @@ import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types"
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue } from "./renderValue";
 import { Icon } from "../icons/Icon";
+import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
-// Reuse the design's status palette for the grouped-by-status colored dots.
-const STATUS_COLOR: Record<string, string> = {
-  reading: "var(--teal)",
-  "to read": "var(--blue)",
-  toread: "var(--blue)",
-  finished: "var(--green)",
-  done: "var(--green)",
-  complete: "var(--green)",
-  abandoned: "var(--rose)",
-  dropped: "var(--rose)",
-};
 function groupColor(key: string): string {
   return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
 }

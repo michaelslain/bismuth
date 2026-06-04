@@ -1,6 +1,6 @@
 import type { Expr } from "./ast";
 import type { EvalContext } from "./types";
-import { callFunction, callMethod, parseDurationMs } from "./functions";
+import { asString, callFunction, callMethod, parseDurationMs } from "./functions";
 import { compare, looseEquals, toNumber, truthy } from "./values";
 
 function resolveIdent(name: string, ctx: EvalContext): unknown {
@@ -157,7 +157,7 @@ function evalPlus(l: unknown, r: unknown): unknown {
   // so duration() composes with + just like a "7d" literal does.
   if (l instanceof Date && typeof r === "number") return new Date(l.getTime() + r);
   if (r instanceof Date && typeof l === "number") return new Date(r.getTime() + l);
-  if (typeof l === "string" || typeof r === "string") return `${stringify(l)}${stringify(r)}`;
+  if (typeof l === "string" || typeof r === "string") return `${asString(l)}${asString(r)}`;
   return toNumber(l) + toNumber(r);
 }
 
@@ -179,8 +179,3 @@ function cmpSafe(l: unknown, r: unknown): number {
   return compare(l, r);
 }
 
-function stringify(v: unknown): string {
-  if (v === null || v === undefined) return "";
-  if (v instanceof Date) return v.toISOString();
-  return String(v);
-}

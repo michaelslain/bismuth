@@ -4,7 +4,7 @@
 // so Table/List/Kanban — and any future status display — stay in sync.
 import "./ui.css";
 
-const STATUS_COLOR: Record<string, string> = {
+export const STATUS_COLOR: Record<string, string> = {
   reading: "var(--teal)",
   "to read": "var(--blue)",
   toread: "var(--blue)",
