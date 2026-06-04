@@ -103,6 +103,18 @@ const WS_BASE = HTTP_BASE.replace(/^http/, "ws"); // http→ws, https→wss
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder();
 
+// Module-scope single-entry cache for buildExtendedAnsi (240 entries, rarely changes).
+let _extendedAnsiKey = "";
+let _extendedAnsiResult: string[] = [];
+function cachedExtendedAnsi(paletteInts: number[]): string[] {
+  const key = paletteInts.join(",");
+  if (key !== _extendedAnsiKey) {
+    _extendedAnsiKey = key;
+    _extendedAnsiResult = buildExtendedAnsi(paletteInts);
+  }
+  return _extendedAnsiResult;
+}
+
 export function TerminalTab(props: { id: string; active: () => boolean }) {
   let container!: HTMLDivElement;
   // Fix 1: Declare mutable refs at component scope so the top-level createEffect
@@ -117,6 +129,11 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
   let cursorEl: HTMLDivElement | undefined;
   let downHandler: ((e: MouseEvent) => void) | undefined;
   let upHandler: ((e: MouseEvent) => void) | undefined;
+  // Reconnection state — exponential backoff, cleared on successful open.
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  let reconnectAttempt = 0;
+  // rAF handle for debounced resize — collapses bursts during divider drag.
+  let resizeRafId = 0;
 
   const sendResize = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
@@ -132,17 +149,17 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
   // reactive context and auto-disposed on cleanup. Inside onMount it would be
   // unowned and never collected.
   createEffect(() => {
-    if (props.active()) {
-      queueMicrotask(() => {
-        try {
-          fit?.fit();
-          sendResize();
-          term?.focus();
-        } catch {
-          /* ignore during teardown */
-        }
-      });
-    }
+    if (!props.active()) return;
+    if (!term) return; // onMount hasn't completed yet — skip silently
+    queueMicrotask(() => {
+      try {
+        fit?.fit();
+        sendResize();
+        term?.focus();
+      } catch {
+        /* ignore during teardown */
+      }
+    });
   });
 
   onMount(async () => {
@@ -162,6 +179,8 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     let dataListener: { dispose: () => void } | undefined;
     onCleanup(() => {
       disposed = true;
+      clearTimeout(reconnectTimer);
+      cancelAnimationFrame(resizeRafId);
       try { ro?.disconnect(); } catch {}
       try { dataListener?.dispose(); } catch {}
       try { renderSub?.dispose(); } catch {}
@@ -201,7 +220,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
     const pal = activePaletteInts();
     const ansi = buildAnsiPalette(pal, fg, bg);
-    const extendedAnsi = buildExtendedAnsi(pal);
+    const extendedAnsi = cachedExtendedAnsi(pal);
     term = new Xterm({
       cursorBlink: false,
       fontFamily: "'Monaspace Xenon', 'FiraCode Nerd Font', 'Symbols Nerd Font', 'MesloLGS NF', 'JetBrainsMono Nerd Font', ui-monospace, 'Menlo', monospace",
@@ -228,6 +247,9 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     fit.fit();
     term.focus();
 
+    // Cache the rows element once — avoids a querySelector on every render/cursorMove event.
+    const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+
     // Custom cursor overlay that glides smoothly between positions — xterm's native
     // cursor is a class transferred between inline spans, so CSS transitions don't
     // apply. We render our own absolutely-positioned div and animate transform.
@@ -236,9 +258,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     container.appendChild(cursorEl);
 
     const updateCursor = () => {
-      if (!term || !cursorEl) return;
-      const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
-      if (!rowsEl) return;
+      if (!term || !cursorEl || !rowsEl) return;
       const cellW = rowsEl.clientWidth / term.cols;
       const cellH = rowsEl.clientHeight / term.rows;
       // The host container is padded (16px 18px) so the rows element no longer
@@ -267,9 +287,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     downHandler = (e: MouseEvent) => { mdX = e.clientX; mdY = e.clientY; };
     upHandler = (e: MouseEvent) => {
       if (Math.abs(e.clientX - mdX) > 3 || Math.abs(e.clientY - mdY) > 3) return; // dragged → ignore
-      if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
-      const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
-      if (!rowsEl) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN || !term || !rowsEl) return;
       const rect = rowsEl.getBoundingClientRect();
       const cellW = rect.width / term.cols;
       const cellH = rect.height / term.rows;
@@ -289,22 +307,50 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     container.addEventListener("mousedown", downHandler);
     container.addEventListener("mouseup", upHandler);
 
-    // Open WebSocket to backend PTY endpoint.
-    ws = new WebSocket(
-      `${WS_BASE}/terminal?cols=${term.cols}&rows=${term.rows}`
-    );
-    ws.binaryType = "arraybuffer";
+    // Wire up WebSocket to the backend PTY endpoint with exponential-backoff reconnection.
+    // Each reconnection creates a fresh PTY shell (the backend's grace period expires before
+    // the first retry fires), so reconnection starts a new session rather than resuming.
+    const connectWs = () => {
+      ws = new WebSocket(`${WS_BASE}/terminal?cols=${term!.cols}&rows=${term!.rows}`);
+      ws.binaryType = "arraybuffer";
 
-    // Backend → terminal: raw PTY output.
-    ws.onmessage = (ev) => {
-      term!.write(new Uint8Array(ev.data as ArrayBuffer));
+      ws.onopen = () => {
+        reconnectAttempt = 0;
+        sendResize();
+      };
+
+      // Backend → terminal: raw PTY output.
+      ws.onmessage = (ev) => {
+        term!.write(new Uint8Array(ev.data as ArrayBuffer));
+      };
+
+      ws.onclose = () => {
+        if (disposed) return;
+        try { term?.write("\r\n\x1b[2m[reconnecting…]\x1b[0m\r\n"); } catch {}
+        const delay = Math.min(500 * 2 ** reconnectAttempt, 8000);
+        reconnectAttempt++;
+        reconnectTimer = setTimeout(() => {
+          if (disposed) return;
+          // Re-wire dataListener to the new socket.
+          dataListener?.dispose();
+          connectWs();
+          dataListener = term!.onData((s) => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const encoded = enc.encode(s);
+            const frame = new Uint8Array(1 + encoded.length);
+            frame[0] = 0x00;
+            frame.set(encoded, 1);
+            ws.send(frame);
+          });
+        }, delay);
+      };
+
+      ws.onerror = () => {
+        try { term?.write("\r\n\x1b[31m[backend unavailable]\x1b[0m\r\n"); } catch {}
+      };
     };
-    ws.onclose = () => {
-      try { term?.write("\r\n\x1b[2m[connection closed]\x1b[0m\r\n"); } catch {}
-    };
-    ws.onerror = () => {
-      try { term?.write("\r\n\x1b[31m[backend unavailable]\x1b[0m\r\n"); } catch {}
-    };
+
+    connectWs();
 
     // Terminal → backend: stdin frames prefixed with 0x00.
     // Fix 3: use module-scoped `enc` instead of allocating per keystroke.
@@ -318,17 +364,20 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     });
 
     // Observe container size changes and refit the terminal.
-    // Fix 2: guard against zero-size rect (fired when container is display:none)
-    // to avoid propagating degenerate dimensions to the PTY.
+    // rAF-debounced: collapses the burst of callbacks during a divider drag into one
+    // fit()+sendResize() per frame. Also guards against zero-size (display:none).
     ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
       if (!rect || rect.width === 0 || rect.height === 0) return;
-      try {
-        fit?.fit();
-        sendResize();
-      } catch {
-        /* ignore during teardown */
-      }
+      cancelAnimationFrame(resizeRafId);
+      resizeRafId = requestAnimationFrame(() => {
+        try {
+          fit?.fit();
+          sendResize();
+        } catch {
+          /* ignore during teardown */
+        }
+      });
     });
     ro.observe(container);
 

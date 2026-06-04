@@ -73,3 +73,11 @@ export function resizeSession(id: string, cols: number, rows: number): void {
 export function getSession(id: string): Session | undefined {
   return sessions.get(id);
 }
+
+// Kill all PTY children synchronously on process exit so orphaned shells don't
+// outlive backend restarts (covers SIGTERM from the dev runner and hot-reload).
+process.on("exit", () => {
+  for (const id of listSessionIds()) {
+    killSession(id);
+  }
+});
