@@ -236,6 +236,11 @@ export default function App() {
       : []),
     { label: "Close pane", icon: "X", danger: true, separatorBefore: true, onSelect: () => closePane(leafId) },
   ];
+  // The pane leaf currently showing this content id in the active tab. Lets an always-mounted
+  // overlay (terminal) re-trigger its underlying pane's right-click menu — the overlay sits on
+  // top of the pane-leaf, so the leaf's own onContextMenu never fires.
+  const leafIdForContent = (content: string): string | undefined =>
+    activeTab() ? leaves(activeTab()!.root).find((l) => l.content === content)?.id : undefined;
   // Right-click menu for an editor mark (spelling / grammar / property suggestions),
   // emitted by editor/contextMenu.ts as an 'oa-context-menu' event. Rendered with the
   // SAME <ContextMenu> component as the pane menu — one menu style across the app.
@@ -916,11 +921,17 @@ export default function App() {
     onCleanup(() => window.removeEventListener("keydown", handleGlobalKeydown));
   });
 
-  // Snap the floating graph onto whichever slot is active (sidebar square when a
-  // tab is open, full main pane on an empty tab).
+  // Snap the floating graph onto whichever slot is active: a graph pane's host (when the
+  // active tab shows the graph), else the sidebar square (a tab is open), else the full main
+  // pane (empty/no tab). Targeting the pane host is what lets the one graph instance cover a
+  // split pane without remounting.
   const placeFloater = () => {
-    const slot = anyTabOpen() ? sidebarSlot : mainSlot;
-    if (!slot || !floater) return;
+    if (!floater) return;
+    const host = activeTabShowsGraph()
+      ? editorBodyEl?.querySelector<HTMLElement>("[data-graph-host]")
+      : null;
+    const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot);
+    if (!slot) return;
     const r = slot.getBoundingClientRect();
     floater.style.top = `${r.top}px`;
     floater.style.left = `${r.left}px`;
@@ -936,20 +947,21 @@ export default function App() {
     setTimeout(placeFloater, 220);
   };
   createEffect(() => {
-    activeTabId(); // re-place whenever the active tab changes
+    activeTab(); // re-place on active-tab change AND on its pane tree mutating (split / divider drag)
     tabs().length; // …or when tabs open/close
     sidebarVisible(); // …or when the sidebar is shown/hidden
-    activeTabShowsGraph(); // …or when the mini-graph slot un-collapses (graph tab → note tab)
+    activeTabShowsGraph(); // …or when the graph moves between the sidebar slot and a pane host
     requestAnimationFrame(placeFloaterSettled);
   });
   onMount(() => {
     window.addEventListener("resize", placeFloater);
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
-  // Keep terminal overlay rects in sync when the body resizes (window resize, divider drag).
+  // Keep the terminal overlays AND the graph floater in sync when the body resizes
+  // (window resize, sidebar toggle, divider drag).
   onMount(() => {
     if (!editorBodyEl) return;
-    const ro = new ResizeObserver(measureTerminalHosts);
+    const ro = new ResizeObserver(() => { measureTerminalHosts(); placeFloater(); });
     ro.observe(editorBodyEl);
     onCleanup(() => ro.disconnect());
   });
@@ -1074,16 +1086,12 @@ export default function App() {
                 // a save itself needs no client-side graph poke.
                 onSaved={() => {}}
                 onOpen={openFile}
-                onOpenQuickSwitcher={() => setPalette("file")}
                 onNewTerminal={openTerminal}
                 noteNames={noteCandidates}
                 tagNames={tagCandidates}
-                // A ::graph pane renders the full Knowledge Graph (not the cramped sidebar one).
-                renderGraph={() => (
-                  <Suspense fallback={<div class="graph-root" style={{ flex: 1, "min-height": 0 }} />}>
-                    <GraphView fill graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
-                  </Suspense>
-                )}
+                // A ::graph pane renders just a `data-graph-host` placeholder; the single
+                // always-mounted `.graph-floater` graph below is repositioned over it (so it
+                // survives splits/tab switches without a remount). See placeFloater.
               />
             )}
           </Show>
@@ -1096,7 +1104,16 @@ export default function App() {
             {(id) => {
               const rect = () => terminalHostRects().get(id);
               return (
-                <div class="terminal-overlay" style={{
+                <div class="terminal-overlay"
+                  // The overlay covers the pane-leaf, so re-trigger the leaf's pane menu
+                  // (split/close/equalize) on right-click instead of the browser default.
+                  onContextMenu={(e) => {
+                    const leafId = leafIdForContent(id);
+                    if (!leafId) return;
+                    e.preventDefault();
+                    openContextMenu(e.clientX, e.clientY, paneMenuItems(leafId), setPaneMenu);
+                  }}
+                  style={{
                   position: "absolute",
                   left: rect() ? `${rect()!.x}px` : "0",
                   top: rect() ? `${rect()!.y}px` : "0",
@@ -1113,9 +1130,15 @@ export default function App() {
           </For>
         </div>
       </main>
-      <div class="graph-floater" classList={{ hidden: activeTabShowsGraph(), docked: anyTabOpen() }} ref={floater}>
+      {/* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
+          the sidebar mini-square, the full main pane (no tabs), or — when a tab shows a graph
+          pane — that pane's `data-graph-host` (placed by placeFloater). Reusing one instance
+          everywhere means a split/tab-switch repositions it instead of tearing down + rebuilding
+          the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
+          only apply in the cramped sidebar square, not when it covers a full graph pane. */}
+      <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" style={{ width: "100%", height: "100%" }} />}>
-          <GraphView fill mini={anyTabOpen()} visible={!activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
