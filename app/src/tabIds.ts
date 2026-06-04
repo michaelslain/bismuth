@@ -1,6 +1,5 @@
 // app/src/tabIds.ts
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
-export const CALENDAR_TAB = "::calendar";
 export const SEARCH_TAB = "::search";
 export const EMPTY_PANE = "::empty";
 // The Knowledge Graph as a first-class tab (the "Open graph view" / "New tab" commands open this).
@@ -25,7 +24,6 @@ function noteName(path: string): string {
 // `terminalIndex` lets the caller pass the 1-based position among open terminal tabs
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
-  if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
@@ -39,7 +37,6 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 // Lucide icon NAME for a pane/tab content id, or undefined for plain notes / empty panes.
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
-  if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "Share2";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";

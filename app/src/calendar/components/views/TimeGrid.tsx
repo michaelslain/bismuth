@@ -2,6 +2,7 @@ import { For, Index } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { toDateStr, formatGutterHour, formatTime } from '../../dates'
+import { resolveCategoryColor } from '../../categoryColor'
 import { showEventModal, dragState, settings } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
@@ -145,7 +146,7 @@ export function TimeGrid(props: Props) {
       const { startMin: evStart, endMin: evEnd } = eventMinutes(state.event)
       const duration = evEnd - evStart
       endMin = clamp(startMin + duration)
-      color = props.categories.find(c => c.name === state.event.category)?.color ?? 'var(--interactive-accent)'
+      color = resolveCategoryColor(props.categories.find(c => c.name === state.event.category)?.color)
     }
 
     if (endMin <= startMin) endMin = startMin + 15
@@ -154,8 +155,8 @@ export function TimeGrid(props: Props) {
     const height = Math.max(((endMin - startMin) / (24 * 60)) * GRID_PX, 10)
 
     return (
-      <div class="drag-ghost" style={{ top: `${top}px`, height: `${height}px`, background: color }}>
-        {formatTime(minutesToStr(startMin), settings.value.militaryTime)} – {formatTime(minutesToStr(endMin), settings.value.militaryTime)}
+      <div class="cal-drag-ghost" style={{ top: `${top}px`, height: `${height}px`, background: color }}>
+        {formatTime(minutesToStr(startMin), settings.value.militaryTime)} — {formatTime(minutesToStr(endMin), settings.value.militaryTime)}
       </div>
     )
   }

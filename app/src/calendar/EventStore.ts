@@ -8,20 +8,6 @@ export interface CalendarStorage {
   save(data: EventsFile): void
 }
 
-const KEY = 'three-brains.calendar'
-
-export class LocalStorageBackend implements CalendarStorage {
-  load(): EventsFile | null {
-    try {
-      const raw = localStorage.getItem(KEY)
-      return raw ? (JSON.parse(raw) as EventsFile) : null
-    } catch { return null }
-  }
-  save(data: EventsFile): void {
-    try { localStorage.setItem(KEY, JSON.stringify(data)) } catch { /* ignore quota */ }
-  }
-}
-
 export class MemoryBackend implements CalendarStorage {
   private data: EventsFile | null = null
   load() { return this.data }
@@ -30,7 +16,7 @@ export class MemoryBackend implements CalendarStorage {
 
 export class EventStore {
   private data: EventsFile = { events: [], categories: [] }
-  constructor(private storage: CalendarStorage = new LocalStorageBackend()) {}
+  constructor(private storage: CalendarStorage = new MemoryBackend()) {}
 
   async load(): Promise<void> {
     const raw = this.storage.load()
@@ -50,7 +36,11 @@ export class EventStore {
     return result
   }
 
-  getCategories(): Category[] { return this.data.categories }
+  // Return a fresh array, not the live internal one: callers assign this straight to
+  // a Solid signal (`categories.value = store.getCategories()`), and Solid skips the
+  // update if the reference is unchanged — so an in-place category edit would never
+  // re-render. A new array each call makes those assignments actually propagate.
+  getCategories(): Category[] { return [...this.data.categories] }
 
   async addEvent(event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
     const newEvent = { ...event, id: uuid() }

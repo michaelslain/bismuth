@@ -7,6 +7,8 @@ import { refreshEvents } from '../refresh'
 import { Modal } from '../../ui/Modal'
 import { Field } from '../../ui/Field'
 import { TextButton } from '../../ui/TextButton'
+import { TextInput } from '../../ui/TextInput'
+import { Select } from '../../ui/Select'
 
 const uuid = () => crypto.randomUUID()
 const RECURRENCE_TYPES: RecurrenceType[] = ['daily', 'weekly', 'biweekly', 'monthly']
@@ -99,46 +101,52 @@ export function EventModal(props: { store: EventStore }) {
   return (
     <Modal onClose={() => (showEventModal.value = null)} class="event-modal">
       <h3>{editing ? 'Edit Event' : 'New Event'}</h3>
-      <Field label="Title"><input value={title()} onInput={e => setTitle(e.currentTarget.value)} /></Field>
-      <Field label="Date"><input type="date" value={date()} onInput={e => setDate(e.currentTarget.value)} /></Field>
-      <label><input type="checkbox" checked={allDay()} onChange={e => setAllDay(e.currentTarget.checked)} /> All day</label>
+      <Field label="Title"><TextInput value={title()} onInput={setTitle} /></Field>
+      <Field label="Date"><TextInput type="date" value={date()} onInput={setDate} /></Field>
+      <label class="event-modal-check"><input type="checkbox" checked={allDay()} onChange={e => setAllDay(e.currentTarget.checked)} /> All day</label>
       <Show when={!allDay()}>
-        <Field label="Start"><input type="time" value={startTime()} onInput={e => setStartTime(e.currentTarget.value)} /></Field>
-        <Field label="End"><input type="time" value={endTime()} onInput={e => setEndTime(e.currentTarget.value)} /></Field>
+        <div class="event-modal-row">
+          <Field label="Start"><TextInput type="time" value={startTime()} onInput={setStartTime} /></Field>
+          <Field label="End"><TextInput type="time" value={endTime()} onInput={setEndTime} /></Field>
+        </div>
       </Show>
-      <Field label="Location"><input value={location()} onInput={e => setLocation(e.currentTarget.value)} /></Field>
-      <Field label="Link"><input value={link()} onInput={e => setLink(e.currentTarget.value)} /></Field>
-      <Field label="Description"><textarea value={description()} onInput={e => setDescription(e.currentTarget.value)} /></Field>
+      <Field label="Location"><TextInput value={location()} onInput={setLocation} /></Field>
+      <Field label="Link"><TextInput value={link()} onInput={setLink} /></Field>
+      <Field label="Description"><TextInput multiline value={description()} onInput={setDescription} /></Field>
       <Field label="Category">
-        <select value={category()} onChange={e => setCategory(e.currentTarget.value)}>
-          <option value="">None</option>
-          <For each={categories.value}>{c => <option value={c.name}>{c.name}</option>}</For>
-        </select>
+        <Select
+          value={category()}
+          onChange={setCategory}
+          placeholder="None"
+          options={[{ value: '', label: 'None' }, ...categories.value.map(c => ({ value: c.name, label: c.name }))]}
+        />
       </Field>
       <Field label="Recurrence">
-        <select value={recType()} onChange={e => setRecType(e.currentTarget.value as RecurrenceType | '')}>
-          <option value="">None</option>
-          <For each={RECURRENCE_TYPES}>{t => <option value={t}>{t}</option>}</For>
-        </select>
+        <Select
+          value={recType()}
+          onChange={v => setRecType(v as RecurrenceType | '')}
+          placeholder="None"
+          options={[{ value: '', label: 'None' }, ...RECURRENCE_TYPES.map(t => ({ value: t, label: t }))]}
+        />
       </Field>
       <Show when={recType()}>
         <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
           <div class="day-picker">
             <For each={DOW}>{([label, i]) => (
-              <TextButton variant={recDays().includes(i) ? 'selected' : 'unselected'} type="button"
+              <TextButton size="sm" variant={recDays().includes(i) ? 'selected' : 'unselected'} type="button"
                 onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{(label as string).toUpperCase()}</TextButton>
             )}</For>
           </div>
         </Show>
-        <Field label="Start date"><input type="date" value={recStart()} onInput={e => setRecStart(e.currentTarget.value)} /></Field>
-        <Field label="End date (optional)"><input type="date" value={recEnd()} onInput={e => setRecEnd(e.currentTarget.value)} /></Field>
+        <Field label="Start date"><TextInput type="date" value={recStart()} onInput={setRecStart} /></Field>
+        <Field label="End date (optional)"><TextInput type="date" value={recEnd()} onInput={setRecEnd} /></Field>
       </Show>
       <div class="modal-actions">
         <Show when={editing}>
-          <TextButton danger onClick={handleDelete} style={{ 'margin-right': 'auto' }}>DELETE</TextButton>
+          <TextButton size="sm" danger onClick={handleDelete} style={{ 'margin-right': 'auto' }}>DELETE</TextButton>
         </Show>
-        <TextButton onClick={handleSave}>SAVE</TextButton>
-        <TextButton onClick={() => (showEventModal.value = null)}>CANCEL</TextButton>
+        <TextButton size="sm" onClick={() => (showEventModal.value = null)}>CANCEL</TextButton>
+        <TextButton size="sm" variant="selected" onClick={handleSave}>SAVE</TextButton>
       </div>
     </Modal>
   )

@@ -37,10 +37,10 @@ function headerLabel(): string {
 
   if (v === 'week') {
     const [ws, we] = weekRange(d, mondayFirst)
-    return `${ws} – ${we}`
+    return `${ws} — ${we}`
   }
 
-  if (v === '3day') return `${toDateStr(d)} – ${toDateStr(addDays(d, 2))}`
+  if (v === '3day') return `${toDateStr(d)} — ${toDateStr(addDays(d, 2))}`
 
   return toDateStr(d)
 }
@@ -53,7 +53,7 @@ export function Toolbar() {
         <VBtn icon="ChevronLeft" iconSize={16} title="Previous" onClick={() => navigate(-1)} />
         <VBtn icon="ChevronRight" iconSize={16} title="Next" onClick={() => navigate(1)} />
       </div>
-      <Crumb serif>{headerLabel()}</Crumb>
+      <Crumb>{headerLabel()}</Crumb>
       <ViewBarSpacer />
       <SegmentedToggle
         value={currentView.value}
