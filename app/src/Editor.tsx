@@ -213,6 +213,10 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  // The text of our most recent write to the current buffer. Used to recognize the
+  // SSE echo of our own save even after we've typed further, so we don't reload the
+  // (now-stale) on-disk content over in-flight edits. Reset when the buffer switches.
+  let lastSavedText: string | undefined;
 
   // Value-dedupe the path. props.path is read through a chain (active tab → pane tree →
   // leaf content) that re-emits whenever the tab object changes — e.g. on every pane
@@ -222,6 +226,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   const currentPath = createMemo(() => props.path);
 
   const save = async (path: string, text: string) => {
+    lastSavedText = text; // record before the await so a fast echo still matches
     await api.write(path, text);
     props.onSaved();
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
@@ -240,6 +245,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const path = currentPath();
     // Destroy the previous view when this effect re-runs (path changed or cleanup).
     onCleanup(() => { if (view) unregisterEditor(view); view?.destroy(); });
+    lastSavedText = undefined; // different buffer — forget the prior file's save text
     if (!path) return;
 
     // Treat a missing file as an empty note (new, not yet written).
@@ -465,6 +471,14 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       lastIgnoredVersion = change.version;
       return;
     }
+    if (onDisk === lastSavedText) {
+      // The echo of OUR OWN save, but we've typed further since it was written
+      // (current is ahead of onDisk). Reloading here would revert those in-flight
+      // characters and disturb the viewport — a "random" jump while typing. Skip;
+      // the pending autosave will write `current` and reconcile to it shortly.
+      lastIgnoredVersion = change.version;
+      return;
+    }
     // Replace the doc while preserving cursor/selection by character offset.
     // Clamp to the new doc length in case the file got shorter.
     const sel = view.state.selection.main;
@@ -480,8 +494,54 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       selection: { anchor, head },
       annotations: ExternalReload.of(true),
     });
+    // Restore the scroll position. The synchronous set covers the simple case, but
+    // CodeMirror re-measures line heights asynchronously after a full-document replace
+    // (line wrapping + live-preview block widgets change heights), and that re-measure
+    // can clobber scrollTop back to 0 — the "scrolls to the top" glitch. Re-assert the
+    // position inside requestMeasure (after CM's own layout pass) so it sticks.
     view.scrollDOM.scrollTop = scrollTop;
+    view.requestMeasure({
+      read: () => null,
+      write: () => {
+        if (view && view.scrollDOM.scrollTop !== scrollTop) view.scrollDOM.scrollTop = scrollTop;
+      },
+    });
     lastIgnoredVersion = change.version;
+  });
+
+  // Keep the reader's scroll position when a setting that changes EDITOR TYPOGRAPHY is
+  // edited live (the common case: you're in settings.yaml and backspace a digit in
+  // editorFontSize / lineHeight). Those leaves feed settingsCssVars → the editor reflows →
+  // CodeMirror re-measures and scrolls its caret back into view. Because the typography
+  // settings sit at the TOP of settings.yaml, that caret is near the top, so the viewport
+  // "teleports to the top". This effect tracks ONLY those geometry-affecting leaves (so it
+  // is inert for every other edit) and re-pins scrollTop across the reflow.
+  //
+  // We correct via CM's own requestMeasure rather than requestAnimationFrame: the write
+  // callback runs right AFTER CM's measure-time scroll but BEFORE the browser paints, so the
+  // viewport never visibly moves (an rAF correction lands a frame late → a visible up/down
+  // bounce). We re-queue across a few measure cycles because the reflow (and CM's scroll)
+  // can span more than one cycle after the CSS variables change.
+  createEffect(() => {
+    const a = settings.appearance;
+    const e = settings.editor;
+    void [a.editorFont, a.editorFontSize, a.monoScale, e.lineHeight]; // tracked deps (CSS-reflow leaves)
+    const v = view;
+    if (!v) return;
+    const keep = v.scrollDOM.scrollTop;
+    let cycles = 0;
+    const repin = () => {
+      if (view !== v) return; // buffer switched / view destroyed
+      v.requestMeasure({
+        read: () => null,
+        write: () => {
+          if (view !== v) return;
+          if (v.scrollDOM.scrollTop !== keep) v.scrollDOM.scrollTop = keep;
+          if (++cycles < 6) repin();
+        },
+      });
+    };
+    repin();
   });
 
   // The inline title shows only for real `.md` notes — not config buffers

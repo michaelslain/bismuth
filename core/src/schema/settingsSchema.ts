@@ -74,7 +74,10 @@ export const SETTINGS_SCHEMA: Schema = {
     linkDistance: { type: "number", default: 5, min: 1, max: 40, doc: "Target distance between linked nodes." },
     centering: { type: "number", default: 0.13, min: 0, max: 0.5, doc: "Pull toward center; higher = denser ball." },
     nodeSize: { type: "number", default: 6, min: 2, max: 16, doc: "Base node radius." },
-    viewMode: { type: enumType(["2d", "3d"]), default: "3d", doc: "3d = volumetric orbit; 2d = flat birdseye." },
+    // NOTE: the graph 2D/3D dimension is intentionally NOT a setting. It's a transient,
+    // per-window UI toggle (localStorage-backed) in app/src/GraphView.tsx, so switching it
+    // never rewrites settings.yaml (which used to reload an open settings buffer and scroll
+    // it to the top).
     showGraphLabels: { type: "boolean", default: true, doc: "Master toggle for in-scene labels." },
     graphLabelHubCount: { type: "number", default: 10, min: 0, max: 30, doc: "Top-degree nodes that always get a label." },
     nodeSizeMinMult: { type: "number", default: 0.4, min: 0.1, max: 1, doc: "Size multiplier for a 0/1-degree leaf node (the smallest dots)." },

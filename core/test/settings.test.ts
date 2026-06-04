@@ -89,7 +89,7 @@ test("initializeSettings writes a clean (comment-free) defaults file when missin
   // The materialized defaults parse back to the DEFAULTS object shape.
   const parsed = parseYaml(res!.raw) as Record<string, any>;
   expect(parsed.appearance.theme).toBe("oxide-duotone");
-  expect(parsed.graph.viewMode).toBe("3d");
+  expect(parsed.graph.nodeSize).toBe(6);
   expect(parsed.calendar.defaultView).toBe("week");
 });
 
@@ -143,7 +143,7 @@ test("serializeSettingsForFrontend returns defaults when no file exists", async 
   const vault = await emptyVault();
   const data = await serializeSettingsForFrontend(vault);
   expect((data.appearance as any).theme).toBe("oxide-duotone");
-  expect((data.graph as any).viewMode).toBe("3d");
+  expect((data.graph as any).nodeSize).toBe(6);
 });
 
 test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", async () => {
