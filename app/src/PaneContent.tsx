@@ -1,7 +1,7 @@
 // app/src/PaneContent.tsx
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
-import { Switch, Match, Suspense, lazy, type JSX } from "solid-js";
+import { Switch, Match, Suspense, lazy } from "solid-js";
 import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
 import { CalendarPage } from "./calendar/CalendarPage";
@@ -19,13 +19,9 @@ export function PaneContent(props: {
   path: string;
   onSaved: () => void;
   onOpen: (path: string) => void;
-  onOpenQuickSwitcher: () => void;
   onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
-  // Renders the Knowledge Graph for a ::graph pane. Supplied by App (which owns the graph data +
-  // mode), so PaneContent need not thread the whole graph signal through the pane tree.
-  renderGraph?: () => JSX.Element;
 }) {
   return (
     <Switch
@@ -57,7 +53,12 @@ export function PaneContent(props: {
         <SearchView onOpen={props.onOpen} />
       </Match>
       <Match when={props.path === GRAPH_TAB}>
-        {props.renderGraph?.()}
+        {/* Graph panes show a transparent placeholder. The real WebGL graph lives in
+            the always-mounted `.graph-floater` overlay in App.tsx, repositioned over
+            this host so its Three.js renderer + camera survive a split/tab switch
+            instead of being torn down and rebuilt (which reset the view). Same pattern
+            as the terminal overlay above. */}
+        <div data-graph-host style={{ width: "100%", height: "100%" }} />
       </Match>
       <Match when={props.path.endsWith(".sheet")}>
         <SheetView path={props.path} onSaved={props.onSaved} />
@@ -79,7 +80,7 @@ export function PaneContent(props: {
           Tasks page was removed) falls back to an empty pane rather than trying
           to load it as a note. */}
       <Match when={isSentinel(props.path)}>
-        <EmptyPane onOpenFile={props.onOpenQuickSwitcher} onNewTerminal={props.onNewTerminal} />
+        <EmptyPane onNewTerminal={props.onNewTerminal} />
       </Match>
     </Switch>
   );

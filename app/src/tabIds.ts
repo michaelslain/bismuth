@@ -28,7 +28,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === CALENDAR_TAB) return "Calendar";
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
-  if (content === EMPTY_PANE) return "(empty)";
+  if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
