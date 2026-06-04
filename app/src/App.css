@@ -105,8 +105,6 @@ body { background: var(--bg); color: var(--fg); }
    animating width — var(--sidebar-w) is inherited from .layout and interpolates, so
    the graph collapses/reveals smoothly along with the rest of the sidebar. */
 .graph-floater.docked { clip-path: inset(0 calc(var(--sidebar-width, 280px) - var(--sidebar-w)) 0 0); }
-/* Hidden when the active tab already shows the graph in a pane — never two graphs at once. */
-.graph-floater.hidden { display: none; }
 /* The left "toolzone" of the design's 40px top strip. Height matches .tabbar so the two
    top bars' bottom divider lines align into one continuous row across the app.
    .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
@@ -212,9 +210,10 @@ body { background: var(--bg); color: var(--fg); }
 
 /* While any view drag is in progress: grabbing cursor + no accidental text selection. */
 html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-select: none !important; }
-/* …and let drops pass through the always-mounted terminal overlay to the pane-leaf
-   beneath it (the overlay's host placeholder lives inside the leaf). */
-html.view-dragging .terminal-overlay { pointer-events: none; }
+/* …and let drops pass through the always-mounted terminal overlay + graph floater to the
+   pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). */
+html.view-dragging .terminal-overlay,
+html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */
 .palette-overlay { position: fixed; inset: 0; z-index: 100; display: flex; justify-content: center; align-items: flex-start; padding-top: var(--palette-top-offset, 12vh); background: var(--scrim-bg); backdrop-filter: blur(3px); font-family: "Monaspace Xenon", ui-monospace, monospace; }
@@ -472,10 +471,12 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
 .structopt.on svg { color: var(--teal); }
 @container (max-width: 520px) { .agents-card, .agents-foot, .agents-label, .agents-crown { display: none; } }
 
-/* Empty-pane placeholder (the design's centered hint state). */
-.empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; color: var(--faint); user-select: none; }
-.empty .empty-title { font-family: var(--editor-font); font-size: 16px; color: var(--text-muted); }
-.empty .ehint { font-size: 12.5px; color: var(--text-muted); display: flex; flex-direction: column; gap: 11px; align-items: center; }
+/* Empty pane: a centered "new terminal" icon (styled to match the sidebar toolbar icons,
+   .sidebar-icons .btn--icon) above a faint italic hint that the pane is fillable. */
+.empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; user-select: none; }
+.empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+.empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.empty .empty-hint { font-style: italic; font-size: 12.5px; color: var(--faint); max-width: 220px; padding: 0 16px; text-align: center; text-wrap: balance; }
 
 .pane-header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 4px 10px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border-soft); background: var(--rail); white-space: nowrap; cursor: grab; }
 .pane-header:active { cursor: grabbing; }
