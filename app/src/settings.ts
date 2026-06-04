@@ -64,6 +64,11 @@ export interface Settings {
   vault: {
     backupOnSave: boolean; // gate the git snapshot taken on every save
   };
+  attachments: {
+    folder: string;                 // where new pasted/dropped attachments are saved
+    onDrop: "copy" | "reference";   // external drag behavior (⌥-drop always references)
+    naming: string;                 // filename template for pasted clipboard images
+  };
   calendar: {
     defaultView: "month" | "week" | "3day" | "day";
     weekStartsOnMonday: boolean;

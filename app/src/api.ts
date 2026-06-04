@@ -80,6 +80,23 @@ export const api = {
   graphViews: () => getJson<{ second: ViewLayout; third: ViewLayout }>("/graph/views"),
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
+  // Absolute URL to a vault file's BINARY bytes (image/PDF/audio/video), resolved
+  // filename-first by the backend. Used as the `src` of an embed widget. Honors the
+  // window's bound backend via apiBase() so multi-window/?api= previews load correctly.
+  assetUrl: (target: string) => `${BASE}/asset?path=${encodeURIComponent(target)}`,
+  // Upload pasted/dropped attachment bytes to `targetPath` (under the attachments
+  // folder). The backend de-collides the name and returns the path actually written,
+  // whose basename the caller inserts as `![[basename]]`.
+  uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
+    const r = await fetch(`${BASE}/asset?path=${encodeURIComponent(targetPath)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes,
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const { path } = (await r.json()) as { path: string };
+    return path;
+  },
   // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
   // editor autosave + settings.yaml persistence actually reach disk.
   write: (path: string, contents: string) =>
