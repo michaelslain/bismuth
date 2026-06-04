@@ -415,7 +415,7 @@ html.view-dragging .terminal-overlay { pointer-events: none; }
     radial-gradient(36% 44% at var(--glow-x3, 34%) var(--glow-y3, 62%), color-mix(in srgb, var(--graph-2) 18%, transparent), transparent 70%); }
 .graph-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
   background: radial-gradient(120% 90% at 50% 30%, transparent 42%, var(--vignette-edge, color-mix(in srgb, var(--bg) 70%, #000)) 100%); }
-.graph-viewbar { gap: 8px; padding: 0 12px; }
+.graph-viewbar { gap: 8px; padding: 0 12px; background: var(--pop-bg); backdrop-filter: blur(8px); }
 .graph-vb-right { display: inline-flex; align-items: center; gap: 8px; }
 .graph-area { container-type: inline-size; }
 /* Native-text label overlay. Pills match the graph chrome (hover HUD / legend) exactly: inherits
