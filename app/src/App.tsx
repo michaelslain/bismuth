@@ -781,9 +781,12 @@ export default function App() {
     }
   });
 
-  onMount(() => {
-    refreshAgents();
-    const t = setInterval(refreshAgents, 2000); // live agent-network polling
+  // Only poll the agent graph while the user is in agents mode — avoids 2s background
+  // fetches when nobody is looking at the network view.
+  createEffect(() => {
+    if (mode() !== "agents") return;
+    void refreshAgents();
+    const t = setInterval(refreshAgents, 2000);
     onCleanup(() => clearInterval(t));
   });
   const registerFileEvents = () => {
@@ -966,16 +969,17 @@ export default function App() {
     onCleanup(() => ro.disconnect());
   });
 
-  // Precompute each single-pane terminal tab's 1-based index once per tabs() change, so
-  // tabBarLabel is O(1) per chip instead of re-filtering all tabs (which made the tab
-  // strip O(tabs²)). Keyed by tab id.
-  const terminalTabIndex = createMemo<Map<string, number>>(() => {
+  // Maps each terminal content id (::term:<uuid>) to a 1-based index in order of
+  // first appearance across all leaves in all tabs. Used by both the tab bar chips
+  // and pane headers so "Terminal N" is consistent regardless of split state.
+  const terminalContentIndex = createMemo<Map<string, number>>(() => {
     const m = new Map<string, number>();
     let n = 0;
     for (const tt of tabs()) {
-      const tl = leaves(tt.root);
-      if (tl.length === 1 && tl[0].content.startsWith(TERMINAL_PREFIX)) {
-        m.set(tt.id, ++n);
+      for (const l of leaves(tt.root)) {
+        if (l.content.startsWith(TERMINAL_PREFIX) && !m.has(l.content)) {
+          m.set(l.content, ++n);
+        }
       }
     }
     return m;
@@ -989,7 +993,7 @@ export default function App() {
     if (ls.length > 1) return `${ls.length} panes`;
     const content = ls[0].content;
     if (content.startsWith(TERMINAL_PREFIX)) {
-      return contentLabel(content, terminalTabIndex().get(t.id) ?? 1);
+      return contentLabel(content, terminalContentIndex().get(content));
     }
     return contentLabel(content);
   }
@@ -1093,6 +1097,7 @@ export default function App() {
                 onNewTerminal={openTerminal}
                 noteNames={noteCandidates}
                 tagNames={tagCandidates}
+                terminalLabel={(content) => contentLabel(content, terminalContentIndex().get(content))}
                 // A ::graph pane renders just a `data-graph-host` placeholder; the single
                 // always-mounted `.graph-floater` graph below is repositioned over it (so it
                 // survives splits/tab switches without a remount). See placeFloater.

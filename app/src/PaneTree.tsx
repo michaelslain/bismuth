@@ -28,6 +28,7 @@ type PaneTreeProps = {
   onNewTerminal: () => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
+  terminalLabel?: (content: string) => string;
 };
 
 const DRAG_MIME = "application/x-oa-path"; // a file dragged from the tree
@@ -93,13 +94,13 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           class="pane-header"
           onPointerDown={(e) => {
             if ((e.target as HTMLElement).classList.contains("pane-header-x")) return;
-            props.onStartPaneDrag(e, props.node.id, contentLabel(props.node.content));
+            props.onStartPaneDrag(e, props.node.id, props.terminalLabel?.(props.node.content) ?? contentLabel(props.node.content));
           }}
         >
           <Show when={contentIcon(props.node.content)}>
             {(icon) => <Icon value={icon()} size={13} class="pane-header-icon" />}
           </Show>
-          <span class="pane-header-label">{contentLabel(props.node.content)}</span>
+          <span class="pane-header-label">{props.terminalLabel?.(props.node.content) ?? contentLabel(props.node.content)}</span>
           <IconButton
             icon="X"
             label="Close pane"
