@@ -73,6 +73,16 @@ test("wikilinks spanning multiple lines work", () => {
   expect(Array.isArray(extractWikilinks(md))).toBe(true);
 });
 
+test("embeds (![[...]]) are NOT extracted — they are render-only, not graph links", () => {
+  const md = `Link [[Real Note]] but embed ![[Resonance.pdf]] and ![[Diagram.png]] and ![[Other Note]].`;
+  expect(extractWikilinks(md)).toEqual(["Real Note"]);
+});
+
+test("an embed adjacent to a real link only excludes the embed", () => {
+  const md = `![[image.png]][[Note]]`;
+  expect(extractWikilinks(md)).toEqual(["Note"]);
+});
+
 test("wikilinks inside a fenced code block are NOT extracted", () => {
   const md = "Real [[Outside]]\n```\nsee [[Inside]]\n```\nmore [[Also Outside]]";
   expect(extractWikilinks(md).sort()).toEqual(["Also Outside", "Outside"]);

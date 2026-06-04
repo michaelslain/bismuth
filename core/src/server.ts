@@ -4,7 +4,7 @@ import { createSseRegistry, formatEvent } from "./sse";
 import { createAsyncCache } from "./asyncCache";
 import { buildGraph } from "./engine";
 import { attachLayout, computeViewLayouts } from "./layout-cache";
-import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry } from "./files";
+import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry, resolveAsset, writeBinary, uniqueAssetPath } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { AppError } from "./error";
@@ -35,6 +35,17 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
+
+/** Cap on a single uploaded attachment (POST /asset). Bounds memory + disk per request. */
+const MAX_ASSET_BYTES = 100 * 1024 * 1024; // 100 MB
+
+/** True if `rel` is a safe attachment destination: a vault-relative path of plain
+ *  (non-dot) segments with no traversal. Rejecting dot-segments blocks writing into
+ *  `.git/` (whose hooks would execute on the next git-backed save), `.obsidian/`, etc. */
+function isSafeAssetTarget(rel: string): boolean {
+  const segs = rel.split("/");
+  return segs.length > 0 && segs.every((s) => s !== "" && s !== "." && s !== ".." && !s.startsWith("."));
+}
 
 /** Extract a note basename (last path segment without the .md extension). */
 const noteBasename = (p: string) => p.split("/").pop()!.replace(/\.md$/, "");
@@ -350,6 +361,43 @@ export function createServer(cfg: CoreConfig) {
       await writeNote(cfg.vault, path, contents);
       await invalidate(path);
       return ok();
+    },
+
+    // Serve a vault file as BINARY (image/PDF/audio/video) for `![[...]]` embeds. Resolves
+    // FILENAME-FIRST (resolveAsset), streams the bytes with a Content-Type inferred from the
+    // extension (Bun.file). Read-only; traversal is guarded inside resolveAsset/resolveInVault.
+    "GET /asset": async (_, url) => {
+      const path = requireQueryParam(url, "path");
+      const abs = await resolveAsset(cfg.vault, path);
+      if (!abs) return error("asset not found", 404);
+      const file = Bun.file(abs);
+      // Short cache so re-opening a note doesn't re-fetch (and re-walk the vault for the
+      // filename-first resolution) every time; `private` keeps it out of shared proxies.
+      return new Response(file, {
+        headers: { "Content-Type": file.type || "application/octet-stream", "Cache-Control": "private, max-age=60" },
+      });
+    },
+
+    // Save pasted/dropped attachment bytes into the vault. The frontend sends the desired
+    // vault-relative path (under the configured attachments folder) as ?path= and the raw
+    // bytes as the body; the backend de-collides the name and returns the path actually used
+    // so the caller inserts the right `![[basename]]`. NOT a mutation: attachments are invisible
+    // to the graph/tree/search caches (listTree excludes them), so nothing needs invalidating —
+    // the subsequent note edit that inserts the embed triggers its own normal invalidation.
+    "POST /asset": async (req, url) => {
+      const target = requireQueryParam(url, "path");
+      // Defense in depth: only ever CREATE a plain file under the vault. Reject dotfolder
+      // segments (e.g. `.git/hooks/pre-commit`, which the next backupOnSave git commit would
+      // execute → RCE) and traversal. resolveInVault (in writeBinary) blocks vault-escape;
+      // uniqueAssetPath ensures we never overwrite an existing file.
+      if (!isSafeAssetTarget(target)) return error("invalid attachment path", 400);
+      const declared = Number(req.headers.get("content-length") ?? 0);
+      if (declared > MAX_ASSET_BYTES) return error("attachment too large", 413);
+      const bytes = await req.arrayBuffer();
+      if (bytes.byteLength > MAX_ASSET_BYTES) return error("attachment too large", 413);
+      const finalRel = uniqueAssetPath(cfg.vault, target);
+      await writeBinary(cfg.vault, finalRel, bytes);
+      return ok({ path: finalRel });
     },
 
     "GET /meta": async (_, url) => {

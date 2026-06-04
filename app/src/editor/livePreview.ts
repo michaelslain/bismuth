@@ -233,7 +233,9 @@ function pushInline(
  *  the brackets + folder path off the cursor line. Used for both body and frontmatter
  *  lines so links in properties get the same treatment. Click handling lives in Editor.tsx. */
 function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number, onCursor: boolean) {
-  for (const m of text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
+  // `(?<!!)` skips EMBEDS (`![[...]]`) — they're rendered by embedBlock, not styled as
+  // links here (mirrors the graph's extractWikilinks exclusion in core/src/wikilinks.ts).
+  for (const m of text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
     const { from: visFrom, to: visTo } = wikilinkVisibleRange(m[1], s);

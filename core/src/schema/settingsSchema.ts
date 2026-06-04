@@ -94,6 +94,27 @@ export const SETTINGS_SCHEMA: Schema = {
   vault: object({
     backupOnSave: { type: "boolean", default: true, doc: "Take a git snapshot after every save." },
   }),
+  // Where pasted/dropped attachments (images, PDFs, audio, video) are saved, and what
+  // happens when you drag a file in from outside the vault. Embeds always RESOLVE by
+  // filename (like wikilinks), so `folder` only sets where NEW files land — moving an
+  // attachment later never breaks its `![[name]]` embed.
+  attachments: object({
+    folder: {
+      type: "string",
+      default: "attachments",
+      doc: 'Folder for new pasted/dropped attachments (relative to the vault root). Created automatically if missing; "" = vault root, "." = the current note\'s folder.',
+    },
+    onDrop: {
+      type: enumType(["copy", "reference"]),
+      default: "copy",
+      doc: "Dragging a file in from outside the vault: copy it into the attachment folder (default, keeps the vault self-contained), or reference it in place (⌥-drop always references). Pasted clipboard images always copy in. Note: reference-in-place is best-effort in the browser build (the referenced file isn't in the vault, so the embed only resolves on desktop).",
+    },
+    naming: {
+      type: "string",
+      default: "Pasted image {timestamp}",
+      doc: "Filename for pasted clipboard images (the extension is added automatically). {timestamp} → a sortable date-time stamp; name collisions get a numeric suffix.",
+    },
+  }),
   calendar: object({
     // defaultView enum is coupled to ViewType in app/src/calendar/types.ts.
     defaultView: { type: enumType(CALENDAR_VIEWS), default: "week", doc: "Default calendar view." },

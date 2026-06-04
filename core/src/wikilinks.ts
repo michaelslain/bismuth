@@ -1,5 +1,9 @@
-/** Regex pattern to match wikilinks: [[target]], [[target|display]], [[target#anchor]]. */
-const WIKILINK_REGEX = /\[\[([^\]]+?)\]\]/g;
+/** Regex pattern to match wikilinks: [[target]], [[target|display]], [[target#anchor]].
+ *  The negative lookbehind `(?<!!)` skips EMBEDS (`![[target]]`): an embed is a
+ *  render-only directive (image/PDF/audio/video/note transclusion), not a graph
+ *  relationship, so it must not produce a link edge. Plain `[[link]]` is unaffected
+ *  (only a `!` immediately before `[[` is excluded). */
+const WIKILINK_REGEX = /(?<!!)\[\[([^\]]+?)\]\]/g;
 
 /**
  * Blank out fenced (``` / ~~~) and inline (`) code spans so that tags/wikilinks

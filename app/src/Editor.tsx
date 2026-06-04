@@ -18,6 +18,7 @@ import { tasksQuery } from "./editor/tasksQuery";
 import { mathBlock } from "./editor/mathBlock";
 import { basesBlock } from "./editor/basesBlock";
 import { viewBlock } from "./editor/viewBlock";
+import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { iconNames } from "./icons/registry";
 import { settingsCompletion, type VaultPath } from "./editor/settingsComplete";
@@ -33,6 +34,7 @@ import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wik
 import { findBareUrls } from "./editor/urls";
 import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
+import { pushToast } from "./Toast";
 import { registerEditor, unregisterEditor } from "./editorRegistry";
 import { NoteTitle } from "./NoteTitle";
 import "./Editor.css";
@@ -152,6 +154,61 @@ function vaultPaths(): VaultPath[] {
   return cachedVaultPaths;
 }
 
+// --- Attachment intake (paste / drag-drop) ----------------------------------
+// Pasted clipboard images and dropped media files are COPIED into the vault's
+// attachment folder (the default; ⌥-drop or attachments.onDrop:"reference" inserts a
+// bare name instead) and an `![[basename]]` embed is inserted at the cursor. Resolution
+// is filename-first server-side, so inserting the basename keeps the link portable.
+const MIME_EXT: Record<string, string> = {
+  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp",
+  "image/svg+xml": "svg", "image/avif": "avif", "image/bmp": "bmp",
+};
+const extFromMime = (mime: string): string => MIME_EXT[mime] ?? (mime.split("/")[1] || "bin");
+
+const isEmbeddableFile = (f: File): boolean =>
+  /^(image|audio|video)\//.test(f.type) || f.type === "application/pdf";
+
+/** Vault-relative destination for a new attachment, honoring settings.attachments.folder
+ *  ("" = vault root, "." = the current note's folder). */
+function attachmentTarget(fileName: string, notePath: string | null): string {
+  // Strip leading + trailing slashes so a stray `folder: /attachments` still lands
+  // vault-relative (the backend would otherwise reject the absolute-looking path).
+  const folder = settings.attachments.folder.trim().replace(/^\/+|\/+$/g, "");
+  if (folder === ".") {
+    const slash = (notePath ?? "").lastIndexOf("/");
+    return (slash === -1 ? "" : (notePath ?? "").slice(0, slash + 1)) + fileName;
+  }
+  return folder ? `${folder}/${fileName}` : fileName;
+}
+
+/** Filename for a pasted clipboard image from the naming template (e.g. "Pasted image 20260603143012.png"). */
+function pastedImageName(ext: string): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  const tmpl = settings.attachments.naming || "Pasted image {timestamp}";
+  return `${tmpl.replace("{timestamp}", stamp)}.${ext}`;
+}
+
+/** Replace the current selection with `text`, leaving the cursor just after it. */
+function insertAtCursor(view: EditorView, text: string): void {
+  const { from, to } = view.state.selection.main;
+  view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
+}
+
+/** Read a file's bytes, upload into the attachment folder, then insert `![[basename]]` at
+ *  the cursor. The arrayBuffer() read is INSIDE the try so a failed/unreadable blob toasts
+ *  instead of escaping as an unhandled rejection. */
+async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, notePath: string | null): Promise<void> {
+  try {
+    const bytes = await file.arrayBuffer();
+    const finalPath = await api.uploadAsset(attachmentTarget(fileName, notePath), bytes);
+    insertAtCursor(view, `![[${finalPath.split("/").pop() ?? fileName}]]`);
+  } catch (e) {
+    pushToast(`Couldn't save attachment: ${(e as Error).message}`);
+  }
+}
+
 export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
@@ -262,6 +319,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           syntaxHighlighting(codeHighlightStyle),
           basesBlock(() => path),
           viewBlock(() => path),
+          embedBlock(props.noteNames),
           vaultCompletion({
             getNotes: props.noteNames,
             getTags: props.tagNames,
@@ -289,13 +347,58 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...extensions,
           EditorView.domEventHandlers({
             focus: (_e, v) => { registerEditor(v); return false; },
+            // Paste an image from the clipboard (e.g. a screenshot) → copy it into the
+            // attachment folder and insert an embed. Non-image pastes fall through to
+            // CodeMirror's normal text paste.
+            paste: (e, view) => {
+              const items = (e as ClipboardEvent).clipboardData?.items;
+              if (!items) return false;
+              for (const it of items) {
+                if (it.kind === "file" && it.type.startsWith("image/")) {
+                  const file = it.getAsFile();
+                  if (!file) continue;
+                  e.preventDefault();
+                  void uploadAndInsert(view, file, pastedImageName(extFromMime(file.type)), path);
+                  return true;
+                }
+              }
+              return false;
+            },
+            // Allow dropping files onto the editor (the default would navigate away).
+            dragover: (e) => {
+              if ((e as DragEvent).dataTransfer?.types?.includes("Files")) e.preventDefault();
+              return false;
+            },
+            // Drop an image/audio/video/PDF from outside → copy into the attachment folder
+            // (default) and embed it. ⌥-drop or attachments.onDrop:"reference" inserts a bare
+            // `![[name]]` reference instead (no copy). Move/reference-by-absolute-path are
+            // desktop-only refinements (the browser can't read a dropped file's real path).
+            drop: (e, view) => {
+              const dt = (e as DragEvent).dataTransfer;
+              const files = dt ? [...dt.files].filter(isEmbeddableFile) : [];
+              if (files.length === 0) return false; // not a media drop — let CM handle text
+              e.preventDefault();
+              const pos = view.posAtCoords({ x: (e as DragEvent).clientX, y: (e as DragEvent).clientY });
+              if (pos != null) view.dispatch({ selection: { anchor: pos } });
+              const reference = (e as DragEvent).altKey || settings.attachments.onDrop === "reference";
+              for (const f of files) {
+                if (reference) {
+                  insertAtCursor(view, `![[${f.name}]]`); // best-effort; resolves only if already in-vault
+                } else {
+                  void uploadAndInsert(view, f, f.name, path);
+                }
+              }
+              return true;
+            },
             mousedown: (e, view) => {
               // `false` = nearest-position mode: precise mode returns null when the click
               // lands between glyphs or on padding, which made links intermittently dead.
               const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY }, false);
               if (pos == null) return false;
               const line = view.state.doc.lineAt(pos);
-              for (const m of line.text.matchAll(/\[\[([^\]]+?)\]\]/g)) {
+              // `(?<!!)` skips EMBEDS (`![[...]]`): clicking one while editing must not
+              // navigate to it as a note (it's rendered media, not a link).
+              for (const m of line.text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
                 const s = line.from + (m.index ?? 0), en = s + m[0].length;
                 if (pos >= s && pos <= en) {
                   const { target } = parseWikilink(m[1]);

@@ -157,6 +157,63 @@ export async function writeNote(root: string, rel: string, contents: string): Pr
   await Bun.write(full, contents);
 }
 
+/** Resolve an EMBED target (`![[target]]`) to an absolute file path, FILENAME-FIRST —
+ *  matching wikilink semantics (name, not path). An exact vault-relative path wins;
+ *  otherwise the first file anywhere in the vault whose basename matches. Strips a
+ *  trailing `#fragment` (e.g. PDF `#page=3`) and `|size` defensively. Returns null when
+ *  nothing matches. Walks the tree on each miss — fine for normal vaults; the browser
+ *  caches the served bytes by URL, so repeat views don't re-resolve. */
+export async function resolveAsset(root: string, target: string): Promise<string | null> {
+  const clean = target.split("#")[0].split("|")[0].trim();
+  if (!clean) return null;
+  // 1. exact vault-relative path (handles `attachments/foo.png` and a root-level file)
+  try {
+    const abs = resolveInVault(root, clean);
+    if (existsSync(abs) && statSync(abs).isFile()) return abs;
+  } catch {
+    // path escapes the vault — ignore and fall through to a basename search
+  }
+  // 2. filename-first: the first file in the vault whose basename equals the target's
+  const base = clean.split("/").pop()!;
+  const matches = await walkDir(root, (d) => !d.isDirectory() && d.name === base);
+  const hit = matches.find((m) => !m.isDir);
+  return hit ? join(root, hit.rel) : null;
+}
+
+/** Write raw bytes to a vault-relative path, creating parent dirs (the attachment
+ *  folder is auto-created on first use). Path-traversal guarded via resolveInVault. */
+export async function writeBinary(root: string, rel: string, bytes: ArrayBuffer | Uint8Array): Promise<void> {
+  const full = resolveInVault(root, rel);
+  mkdirSync(dirname(full), { recursive: true });
+  await Bun.write(full, bytes);
+}
+
+/** Pick a non-colliding vault-relative path for `rel` by appending " 1", " 2", … to the
+ *  basename (before the extension) until the path is free. Returns the chosen rel path so
+ *  the caller can insert the actual basename. Lets two pasted screenshots coexist. */
+export function uniqueAssetPath(root: string, rel: string): string {
+  const free = (r: string): boolean => {
+    try {
+      return !existsSync(resolveInVault(root, r));
+    } catch {
+      return false; // escapes the vault — never treat as free
+    }
+  };
+  if (free(rel)) return rel;
+  const slash = rel.lastIndexOf("/");
+  const dir = slash === -1 ? "" : rel.slice(0, slash + 1);
+  const name = slash === -1 ? rel : rel.slice(slash + 1);
+  const dot = name.lastIndexOf(".");
+  // dot <= 0 → no extension, or a leading-dot name: treat the whole name as the stem.
+  const stem = dot <= 0 ? name : name.slice(0, dot);
+  const ext = dot <= 0 ? "" : name.slice(dot);
+  for (let i = 1; i < 10000; i++) {
+    const cand = `${dir}${stem} ${i}${ext}`;
+    if (free(cand)) return cand;
+  }
+  return `${dir}${stem} ${Date.now()}${ext}`; // pathological fallback
+}
+
 export function deleteEntry(root: string, path: string): { trashPath: string } {
   const fromAbs = resolveInVault(root, path);
   if (!existsSync(fromAbs)) throw createError("ENOENT", `does not exist: ${path}`, 404);
