@@ -2,23 +2,12 @@ import { createSignal, For, Show, batch, onMount, onCleanup } from "solid-js";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { CardBody } from "./CardBody";
+import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = "order";
 
-// Status palette from the design: Reading=teal, To Read=blue, Finished=green,
-// Abandoned=rose; unknown columns get the accent.
-const STATUS_COLOR: Record<string, string> = {
-  reading: "var(--teal)",
-  "to read": "var(--blue)",
-  toread: "var(--blue)",
-  finished: "var(--green)",
-  done: "var(--green)",
-  complete: "var(--green)",
-  abandoned: "var(--rose)",
-  dropped: "var(--rose)",
-};
 function columnColor(key: string): string {
   return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
 }

@@ -82,7 +82,8 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
   - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`, `/replace`
-  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`
+  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 20 MB)
+  - GET reads also include: `GET /asset` (serve a vault media file by filename — filename-first resolution, used by embedBlock)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
@@ -126,9 +127,9 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
 - `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
-- `tabIds.ts` — Sentinel ids for non-file pane contents (`::calendar`, `::search`, `::empty`, plus prefixed `::flashcards:`, `::term:`, `::export:`); settings/graph/notes are routed by file path or their own ids
+- `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, plus prefixed `::flashcards:`, `::term:`, `::export:`). Settings is the settings.yaml file opened by path; notes/bases/sheets/drawings are routed by file path. No `::calendar` sentinel — calendar is a Bases view.
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock`/`viewBlock` (embed Bases/view in a doc), `tasksQuery` (embed task queries), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock`/`viewBlock` (embed Bases/view in a doc), `tasksQuery` (embed task queries), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables rendered as interactive widgets), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -138,8 +139,8 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `Terminal.tsx` / `Terminal.css` — xterm.js terminal tab, WebSocket-backed by `core/src/terminal.ts`
 - `Toast.tsx`, `telemetry.ts` — Toast notifications, lightweight client telemetry (SSE errors, poll catch-ups)
 - `serverVersion.ts` — Single `EventSource` to `/events` plus fallback `/version` poll
-- `bases/` — Bases view renderers (Table, Cards, Kanban, List, Map, plus shared `renderValue`)
-- `calendar/` — Calendar feature: see "Calendar" section below
+- `bases/` — Bases view renderers (Table, Cards, Kanban, List, Map, Calendar, Flashcards, Bar, Line, Stat, Heatmap, plus shared `renderValue`)
+- `calendar/` — Calendar state + components (no standalone page; rendered as a Bases view — see "Calendar" section below)
 - `api.ts` — HTTP client for core endpoints
 - `settings.ts` — Settings store: seeded synchronously from the spine `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves via `POST /set-setting` (see `settingsDiff.ts`) so the backend can merge in place without clobbering comments / the property registry. Precise `Settings` interface mirrors the schema (kept honest by `settings.parity.test.ts`).
 - `settingsCssVars.ts` — Projects appearance/ui/calendar/terminal settings into `:root` CSS custom properties; stylesheets reference them via `var(--name, fallback)`. Add a CSS-driven setting = one schema entry + one line here + one `var()` in CSS.
@@ -187,15 +188,16 @@ A ` ```view ` block references a base (`of: [[Base]]`) or runs a task query (`ta
 
 **Scoped-tasks example** (Google Keep → Do Now): a `Google Keep` base with `source: notes` + `where: file.inFolder("Google Keep")` (cards view); a `Do Now` base with `source: tasks` + `from: "[[Google Keep]]"` (list, grouped) shows only the tasks inside Google Keep's notes.
 
-### Calendar (`app/src/calendar/`)
+### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
-Standalone calendar feature with its own state store and views.
+Calendar is a **Bases view kind** — there is no standalone calendar page. To open a calendar, create a `.base` file with `views: [{ type: calendar }]` (or switch an existing base to calendar view). The calendar view is rendered by `app/src/bases/CalendarView.tsx`.
 
-- `CalendarPage.tsx` — Top-level view
-- `EventStore.ts` — Event state + persistence (tested in `EventStore.test.ts`)
+The `app/src/calendar/` directory holds the shared state and components consumed by that view:
+- `EventStore.ts` — Event CRUD + persistence (tested in `EventStore.test.ts`)
 - `state.ts` — Reactive view state (active date, zoom, selection)
 - `dates.ts` — Date helpers (tested in `dates.test.ts`)
 - `types.ts` — Event / category types
+- `categoryColor.ts` — Status→color mapping for event categories
 - `refresh.ts` — Refresh wiring
 - `components/` — `EventChip`, `EventModal`, `RecurrenceDialog`, `CategoryPanel`, `Toolbar`
 - `components/views/` — `MonthView`, `WeekView`, `ThreeDayView`, `DayView`, `TimeGrid`
@@ -239,6 +241,8 @@ A real spreadsheet document type — a sibling to notes and bases, **not** a Bas
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
 **The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is a first-class tab content — `PaneContent` routes it to a full `GraphView` via a `renderGraph()` prop supplied by `App` (which owns the graph data + mode). There is **no floating "default view"**: `App` seeds a `::graph` tab when nothing is restored, and the close handlers reopen one if every tab closes (tabs are never empty). The `new-tab` and `open-graph` commands both open it. When the active tab already shows the graph in a pane, the sidebar mini-graph (`.graph-floater`) hides + its slot collapses so the graph never renders twice at once.
+
+**Tab renaming**: Double-click or right-click → Rename on any tab to set a custom label. The name is stored as a `name` field on the `Leaf` node in `panes.ts` and overrides the automatic `contentLabel()`-derived title. Cleared by renaming to empty.
 
 ### Commands & Sidebar Toolbar
 
@@ -301,7 +305,7 @@ app/src/
   GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + WebGL renderer, DOM LabelLayer, youNode, AgentsGraph, collide, labelSelection
   FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
   bases/ calendar/ palette/ drawing/   # feature view-sets
-  ui/      # shared primitives (Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, gallery/, popover/) + buttonClass
+  ui/      # shared primitives (Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, TextInput, Select, Field, EmptyState, Modal, gallery/, popover/) + buttonClass
   icons/ dnd/   # Lucide Icon+registry+picker; drag-drop geometry + viewDrag
   api.ts serverVersion.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts
   Toast.tsx telemetry.ts App.css   # toasts, client telemetry, global styles + CSS vars
@@ -313,7 +317,7 @@ app/src/
 ```bash
 cd app && bun run dev
 ```
-This runs the Tauri app + backend server concurrently. Open `http://localhost:5173` in the browser (dev server) or use the native Tauri window. Backend runs on port 4321.
+This runs the Tauri app + backend server concurrently. Open `http://localhost:1420/` in the browser (dev server) or use the native Tauri window. Backend runs on port 4321.
 
 ### Running tests
 ```bash
@@ -389,6 +393,8 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENO
 
 The "agents" graph mode visualizes Claude Code instances running this project across machines. Each agent is a node; directed edges represent messages between agents. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
 
+**2D/3D toggle**: The renderer's 2D vs 3D mode is a **transient localStorage toggle** (not a `settings.yaml` key). It persists across sessions via `localStorage` but is not user-facing in the settings file. Toggle via the graph toolbar or the `GraphView` mode control.
+
 ### Performance Optimizations
 Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder.
 
@@ -423,6 +429,7 @@ Common test files:
 - `app/src/graph/collide.test.ts`, `labelSelection.test.ts` — Graph helpers
 - `app/src/calendar/EventStore.test.ts`, `dates.test.ts` — Calendar
 - `app/src/editor/wikilink.test.ts`, `tag.test.ts` — Editor extensions
+- `app/src/editor/tableModel.test.ts` — GFM table parsing + serialization
 
 ## Gotchas & Edge Cases
 

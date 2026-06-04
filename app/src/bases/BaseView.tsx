@@ -23,6 +23,8 @@ import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "../ui/ViewBar";
 import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
 
+function noteLabel(path: string) { return path.split("/").pop()!.replace(/\.(base|md)$/, ""); }
+
 interface Loaded {
   config: BaseConfig;
   spec?: SourceSpec;          // undefined for a view block with no of:/tasks: → empty state
@@ -96,7 +98,7 @@ export function BaseView(props: {
         const config = parseBase(text);
         return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null, basePath: props.path };
       }
-      const name = props.path.split("/").pop()!.replace(/\.md$/, "");
+      const name = noteLabel(props.path);
       const { config, rows } = parseBaseFile(text, { name, path: props.path });
       const spec: SourceSpec = config.source ?? { kind: "base" };
       return { config, spec, inlineRows: spec.kind === "base" ? rows : null, basePath: props.path };
@@ -136,7 +138,7 @@ export function BaseView(props: {
   const editPath = () => data()?.basePath;
   const baseName = createMemo(() => {
     const p = editPath();
-    return p ? p.split("/").pop()!.replace(/\.(base|md)$/, "") : undefined;
+    return p ? noteLabel(p) : undefined;
   });
 
   return (

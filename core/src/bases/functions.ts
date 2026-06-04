@@ -1,7 +1,7 @@
 import type { EvalContext } from "./types";
 import { isLink, toNumber, truthy, type Link } from "./values";
 
-function asString(v: unknown): string {
+export function asString(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (v instanceof Date) return v.toISOString();
   if (isLink(v)) return (v as Link).display ?? (v as Link).path;

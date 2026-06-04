@@ -3,6 +3,7 @@
 // plus MiniSearch-backed ranking (searchVault) modeled on the Omnisearch plugin.
 import MiniSearch from "minisearch";
 import { listMarkdown, readNote } from "./files";
+import { fileBasename } from "./pathUtils";
 
 export interface SearchOpts {
   caseSensitive: boolean;
@@ -88,10 +89,6 @@ interface IndexDoc {
   body: string;
 }
 
-function basenameOf(path: string): string {
-  return path.split("/").pop()!.replace(/\.md$/, "");
-}
-
 // Per-vault cached search index: the built MiniSearch index plus the per-path body map.
 // listMarkdown + readNote over the whole vault on every keystroke-driven search is the
 // hot cost; this builds once and reuses until a file-watch change invalidates it (see
@@ -125,7 +122,7 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
   for (const p of paths) {
     const body = await readNote(root, p);
     bodies.set(p, body);
-    docs.push({ id: p, basename: basenameOf(p), headings: extractHeadings(body), tags: extractTags(body), body });
+    docs.push({ id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractTags(body), body });
   }
   const mini = new MiniSearch<IndexDoc>({
     fields: ["basename", "headings", "tags", "body"],

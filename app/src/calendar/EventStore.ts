@@ -3,6 +3,10 @@ import { expandRecurrence, toDateStr, addDays } from './dates'
 
 const uuid = () => crypto.randomUUID()
 
+function dayBefore(isoDate: string): string {
+  return toDateStr(addDays(new Date(isoDate + 'T00:00:00'), -1))
+}
+
 export interface CalendarStorage {
   load(): EventsFile | null
   save(data: EventsFile): void
@@ -63,9 +67,8 @@ export class EventStore {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
     const { seriesId, endDate: originalEndDate } = master.recurrence
-    const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
+    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
     if (!originalEndDate || originalEndDate > occurrenceDate) {
       const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
@@ -80,12 +83,15 @@ export class EventStore {
     for (const m of masters) await this.updateEvent(m.id, updates)
   }
 
+  private async truncateSeriesBefore(master: CalendarEvent, occurrenceDate: string): Promise<void> {
+    await this.updateEvent(master.id, { recurrence: { ...master.recurrence!, endDate: dayBefore(occurrenceDate) } })
+  }
+
   async editFollowing(masterId: string, occurrenceDate: string, updates: Partial<CalendarEvent>): Promise<void> {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
     const originalEndDate = master.recurrence.endDate
-    const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
+    await this.truncateSeriesBefore(master, occurrenceDate)
     const { id, ...masterRest } = master
     await this.addEvent({ ...masterRest, ...updates, recurrence: { ...master.recurrence, ...(updates.recurrence ?? {}), startDate: occurrenceDate, endDate: originalEndDate, seriesId: uuid() } })
   }
@@ -94,9 +100,8 @@ export class EventStore {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
     const { seriesId, endDate: originalEndDate } = master.recurrence
-    const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
+    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
     if (!originalEndDate || originalEndDate > occurrenceDate) {
       const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
@@ -111,8 +116,7 @@ export class EventStore {
   async deleteFollowing(masterId: string, occurrenceDate: string): Promise<void> {
     const master = this.data.events.find(e => e.id === masterId)
     if (!master?.recurrence) return
-    const dayBefore = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), -1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore } })
+    await this.truncateSeriesBefore(master, occurrenceDate)
   }
 
   async addCategory(category: Category): Promise<void> { this.data.categories.push(category); await this.save() }
