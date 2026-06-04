@@ -4,7 +4,6 @@
 import { Switch, Match, Suspense, lazy } from "solid-js";
 import { FileView } from "./FileView";
 import { Flashcards } from "./Flashcards";
-import { CalendarPage } from "./calendar/CalendarPage";
 import { BaseView } from "./bases/BaseView";
 import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
@@ -12,7 +11,7 @@ import { DrawingPage } from "./drawing/DrawingPage";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { CALENDAR_TAB, SEARCH_TAB, GRAPH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
+import { SEARCH_TAB, GRAPH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -45,9 +44,6 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path.startsWith(FLASHCARDS_PREFIX)}>
         <Flashcards note={props.path.slice(FLASHCARDS_PREFIX.length)} />
-      </Match>
-      <Match when={props.path === CALENDAR_TAB}>
-        <CalendarPage />
       </Match>
       <Match when={props.path === SEARCH_TAB}>
         <SearchView onOpen={props.onOpen} />

@@ -1,6 +1,6 @@
 import { onMount, createEffect, Show, Switch, Match } from "solid-js";
 import { EventStore, MemoryBackend } from "../calendar/EventStore";
-import { currentView, currentDate, settings, showEventModal } from "../calendar/state";
+import { currentView, currentDate, settings, showEventModal, applyDefaultView, userSwitchedView, reconcileDefaultView } from "../calendar/state";
 import { refreshEvents } from "../calendar/refresh";
 import { Toolbar } from "../calendar/components/Toolbar";
 import { MonthView } from "../calendar/components/views/MonthView";
@@ -28,6 +28,15 @@ export function CalendarView(props: { basePath?: string; onChange?: () => void }
     if (backend) await backend.init();
     await store.load();
     await refreshEvents(store);
+  });
+
+  // The settings store seeds synchronously from DEFAULTS ('week') and hydrates
+  // settings.yaml asynchronously, so `currentView` captured the seed at module load
+  // and never saw the user's saved defaultView. Reconcile once hydration lands — but
+  // stop the moment the user manually switches views, so we never clobber that switch.
+  createEffect(() => {
+    const next = reconcileDefaultView(settings.value.defaultView, currentView.value, userSwitchedView);
+    if (next !== null) applyDefaultView(next);
   });
 
   createEffect(() => {

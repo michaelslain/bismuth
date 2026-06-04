@@ -97,6 +97,40 @@
 .ui-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .ui-field > span { opacity: 0.85; }
 
+/* ── TextInput / Select trigger (shared form-control chrome) ─────────────────
+   One look for every text field and dropdown trigger: surface fill, soft border,
+   accent focus ring. Mono UI font + 13px to match the rest of the chrome. */
+.ui-input {
+  width: 100%;
+  box-sizing: border-box;
+  /* The VALUE you type is content, not chrome — render it in the prose font (Lora)
+     like note bodies, while labels/buttons stay mono. Lora reads optically smaller
+     than mono, so bump the size a touch to match the surrounding 13px chrome. */
+  font-family: var(--editor-font);
+  font-size: 15px;
+  padding: 7px 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 7px;
+  color: var(--fg);
+  outline: none;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.ui-input::placeholder { color: var(--text-muted); }
+.ui-input:hover:not(:focus) { border-color: var(--border); }
+.ui-input:focus { border-color: var(--accent); background: var(--surface-1); }
+textarea.ui-input { resize: none; min-height: 76px; line-height: 1.5; }
+
+/* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
+   list is a portaled <PopoverList> above the modal overlay; a transparent backdrop
+   between the overlay and the list catches outside clicks. */
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
+.ui-select-trigger:focus { border-color: var(--accent); }
+.ui-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-select-placeholder { color: var(--text-muted); }
+.ui-select-caret { flex: none; opacity: 0.55; }
+.ui-select-backdrop { position: fixed; inset: 0; z-index: 1090; }
+
 /* ── EmptyState / Loading ────────────────────────────────────────────────── */
 .ui-empty { color: var(--text-muted); }
 .ui-empty-block { text-align: center; margin: auto; display: flex; flex-direction: column; gap: 16px; }
