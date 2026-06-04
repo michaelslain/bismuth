@@ -32,15 +32,15 @@ describe("settings.yaml boot states (must not brick)", () => {
   });
 
   it("4. wrong-typed values -> per-key fall back to defaults", () => {
-    const s = bootFromYaml("appearance:\n  editorFontSize: big\ngraph:\n  viewMode: foo\n");
+    const s = bootFromYaml("appearance:\n  editorFontSize: big\ncalendar:\n  defaultView: foo\n");
     // editorFontSize default kept (string != number)
     expect(s.appearance.editorFontSize).toBe(DEFAULTS.appearance.editorFontSize);
-    // viewMode is a string default and "foo" is a string, so the typed merge
+    // defaultView is a string-enum default and "foo" is a string, so the typed merge
     // accepts it (enum validity is surfaced as an editor squiggle, not a brick).
-    expect(typeof s.graph.viewMode).toBe("string");
+    expect(typeof s.calendar.defaultView).toBe("string");
     // every other field still fully shaped
     expect(s.editor.autoSaveDelay).toBe(DEFAULTS.editor.autoSaveDelay);
-    expect(s.calendar.defaultView).toBe(DEFAULTS.calendar.defaultView);
+    expect(s.graph.nodeSize).toBe(DEFAULTS.graph.nodeSize);
   });
 
   it("first-launch import is a no-op once the file has user values", () => {
