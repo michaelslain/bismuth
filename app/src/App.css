@@ -185,6 +185,21 @@ body { background: var(--bg); color: var(--fg); }
 /* Tab close button: trim the default icon-button padding so the X doesn't dominate the chip. */
 .tab .tab-x { padding: 2px; margin-right: -4px; }
 
+/* Inline rename input — sits in place of the label span, sized to match the tab text so
+   the chip doesn't jump. Borderless/transparent so it reads as editing the tab itself. */
+.tab-rename {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface-1, var(--bg));
+  border: 1px solid var(--accent, var(--border-soft));
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin: -2px 0;
+  width: 11ch;
+  min-width: 4ch;
+  outline: none;
+}
+
 /* Trailing new-tab / terminal actions, sitting just after the last tab in the strip.
    Styled to match the sidebar toolbar icon buttons (same size, muted color, hover). */
 .tabbar-actions { display: flex; align-items: center; gap: 3px; padding: 0 8px; flex: 0 0 auto; }

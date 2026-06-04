@@ -13,7 +13,9 @@ export type Split = {
   b: PaneNode;
 };
 export type PaneNode = Leaf | Split;
-export type Tab = { id: string; root: PaneNode; focusId: string };
+// `name` is an optional user-set label that overrides the content-derived tab title
+// (see contentLabel/tabBarLabel). Undefined = fall back to the automatic label.
+export type Tab = { id: string; root: PaneNode; focusId: string; name?: string };
 
 // Globally-unique ids. A counter would reset to 0 on page reload while persisted layouts
 // keep their old ids — so a fresh split could mint an id that collides with an existing
@@ -364,7 +366,9 @@ export function deserializeTabs(
     const focusId = resolveFocus(root, idMap.get(t.focusId) ?? "");
     const tabId = newId();
     tabIdMap.set(t.id, tabId);
-    tabs.push({ id: tabId, root, focusId });
+    // Preserve a user-set tab name across reloads; ignore non-string/blank values.
+    const name = typeof t.name === "string" && t.name.trim() ? t.name : undefined;
+    tabs.push({ id: tabId, root, focusId, name });
   }
   const activeTabId = tabIdMap.get(parsed.activeTabId ?? "") ?? tabs[0]?.id ?? null;
   return { tabs, activeTabId };
