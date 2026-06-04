@@ -670,7 +670,7 @@ test("GET /settings returns parsed app settings with defaults", async () => {
   try {
     const s = await (await fetch(`${base}/settings`)).json();
     expect(s.appearance.theme).toBe("oxide-duotone");
-    expect(s.graph.viewMode).toBe("3d");
+    expect(s.graph.nodeSize).toBe(6);
     expect(s.properties).toBeUndefined();
   } finally {
     server.stop(true);

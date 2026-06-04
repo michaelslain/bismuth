@@ -3,7 +3,7 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
-import { settings, setSettings, DEFAULT_ACCENT_PALETTE } from "./settings";
+import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
@@ -36,6 +36,27 @@ const hudPill: JSX.CSSProperties = {
 function hoverLabel(node: HoverNode): string {
   return node.kind === "note" ? `${node.id}.md` : node.label;
 }
+
+// Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
+// NOT a persisted setting. Toggling it must never write settings.yaml (doing so
+// rewrote the file canonically, which reloaded an open settings buffer and scrolled
+// it to the top). It's a module-level signal so every GraphView instance (the home
+// tab + the sidebar mini-graph) shares one value, seeded from localStorage so the
+// preference survives reload without touching the vault.
+const VIEW_MODE_KEY = "oa:graph:viewMode";
+const readStoredViewMode = (): "2d" | "3d" => {
+  try {
+    const v = localStorage.getItem(VIEW_MODE_KEY);
+    return v === "2d" || v === "3d" ? v : "3d";
+  } catch {
+    return "3d";
+  }
+};
+const [graphViewMode, setGraphViewMode] = createSignal<"2d" | "3d">(readStoredViewMode());
+const setViewModePersisted = (m: "2d" | "3d") => {
+  setGraphViewMode(m);
+  try { localStorage.setItem(VIEW_MODE_KEY, m); } catch { /* private mode / quota — in-memory only */ }
+};
 
 type GraphMode = "2nd" | "3rd" | "both" | "agents";
 
@@ -137,7 +158,7 @@ export function GraphView(props: {
       linkDistance: gs.linkDistance,
       centering: gs.centering,
       nodeSize: gs.nodeSize,
-      viewMode: gs.viewMode,
+      viewMode: graphViewMode(),
       showGraphLabels: gs.showGraphLabels,
       graphLabelHubCount: gs.graphLabelHubCount,
       nodeSizeMinMult: gs.nodeSizeMinMult,
@@ -187,7 +208,7 @@ export function GraphView(props: {
 
   onCleanup(() => renderer.destroy());
 
-  const setViewMode = (m: "2d" | "3d") => setSettings("graph", "viewMode", m);
+  const setViewMode = (m: "2d" | "3d") => setViewModePersisted(m);
   const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents" };
   const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
   const nodeCount = () => props.graph?.nodes?.length ?? 0;
@@ -210,7 +231,7 @@ export function GraphView(props: {
         />
         <ViewBarSpacer />
         <span class="graph-vb-wide graph-vb-right">
-          <SegmentedToggle value={settings.graph.viewMode} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
+          <SegmentedToggle value={graphViewMode()} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
           <Show when={props.fill}>
             <IconTextButton icon="Search" size="sm" variant={menuOpen() ? "selected" : "unselected"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>
@@ -262,7 +283,7 @@ export function GraphView(props: {
         <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", "z-index": 4, display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
           <div class="graph-bottom-narrow" style={{ gap: "2px", "align-items": "stretch", "background": "var(--pop-bg)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
             <SegmentedToggle
-              value={settings.graph.viewMode}
+              value={graphViewMode()}
               onChange={setViewMode}
               size="sm"
               options={[

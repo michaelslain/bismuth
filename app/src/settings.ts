@@ -45,7 +45,8 @@ export interface Settings {
     linkDistance: number;
     centering: number;   // forceX/Y/Z strength toward origin
     nodeSize: number;
-    viewMode: "2d" | "3d"; // 3d = volumetric orbit; 2d = flat birdseye, locked rotation
+    // viewMode (2D/3D) is intentionally NOT here — it's a transient per-window UI toggle
+    // (localStorage) in GraphView.tsx, not a persisted setting. See settingsSchema.ts.
     showGraphLabels: boolean;     // master toggle for in-scene labels
     graphLabelHubCount: number;   // number of top-degree nodes that always get a label (0..30)
     nodeSizeMinMult: number;      // size multiplier for a 0/1-degree leaf

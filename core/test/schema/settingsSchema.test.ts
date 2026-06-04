@@ -70,13 +70,14 @@ test("graph.repulsion is a number with the old slider bounds and default", () =>
   expect(graph.repulsion.max).toBe(-1);
 });
 
-test("graph color settings are gone (derived from appearance) and viewMode enum is 2d|3d", () => {
+test("graph color settings are gone (derived from appearance); viewMode is not a setting", () => {
   const graph = objectFields(SETTINGS_SCHEMA.graph);
   expect(graph.palette).toBeUndefined();
   expect(graph.edgeColor).toBeUndefined();
   expect(graph.backgroundColor).toBeUndefined();
-  expect(graph.viewMode.type).toEqual({ kind: "enum", values: ["2d", "3d"] });
-  expect(graph.viewMode.default).toBe("3d");
+  // The 2D/3D dimension is a transient per-window UI toggle (localStorage in
+  // GraphView.tsx), deliberately NOT persisted in settings.yaml.
+  expect(graph.viewMode).toBeUndefined();
 });
 
 test("calendar section mirrors the calendar defaults", () => {
@@ -131,7 +132,7 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
   expect(d.appearance.icon).toBe("hopper-crystal");
   expect(d.appearance.accent).toBeUndefined(); // flat color keys removed; theme owns color
   expect(d.graph.repulsion).toBe(-10);
-  expect(d.graph.viewMode).toBe("3d");
+  expect(d.graph.viewMode).toBeUndefined(); // 2D/3D is transient UI state, not a setting
   expect(d.editor.autoSaveDelay).toBe(800);
   expect(d.vault.backupOnSave).toBe(true);
   expect(d.calendar.defaultView).toBe("week");
