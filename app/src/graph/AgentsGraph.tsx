@@ -24,9 +24,6 @@ const STRUCTURES: Record<string, Structure> = {
   dictatorship: { name: "Dictatorship", icon: "Shield", ruler: "you", directed: true,
     desc: "One agent commands; all others obey.",
     edges: [["you", "a1"], ["you", "a2"], ["you", "a3"], ["you", "a4"], ["you", "a5"]] },
-  monarchy: { name: "Monarchy", icon: "Crown", ruler: "you", directed: true,
-    desc: "A single ruler with a chain of delegation.",
-    edges: [["you", "a1"], ["you", "a2"], ["a1", "a3"], ["a1", "a4"], ["a2", "a5"]] },
   democracy: { name: "Democracy", icon: "Vote", ruler: null, directed: false,
     desc: "Every agent is equal; consensus by quorum.",
     edges: [["you", "a1"], ["you", "a2"], ["you", "a3"], ["you", "a4"], ["you", "a5"],
@@ -34,12 +31,6 @@ const STRUCTURES: Record<string, Structure> = {
   republic: { name: "Republic", icon: "Landmark", ruler: null, directed: true,
     desc: "Agents elect representatives who decide.",
     edges: [["a3", "a1"], ["a4", "a1"], ["a5", "a2"], ["a1", "you"], ["a2", "you"]] },
-  politburo: { name: "Politburo", icon: "Users", ruler: null, directed: false,
-    desc: "A small inner committee steers the rest.",
-    edges: [["you", "a1"], ["you", "a2"], ["a1", "a2"], ["a1", "a3"], ["a2", "a4"], ["you", "a5"]] },
-  mesh: { name: "Mesh / Anarchy", icon: "Network", ruler: null, directed: false,
-    desc: "No center — peers link freely.",
-    edges: [["a1", "a2"], ["a2", "a3"], ["a3", "a4"], ["a4", "a5"], ["a5", "a1"], ["you", "a3"], ["you", "a5"], ["you", "a1"]] },
 };
 
 const W = 1054, H = 772;
