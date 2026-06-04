@@ -5,6 +5,35 @@ import { settings } from '../../settings'
 import { Modal } from '../../ui/Modal'
 import { TextButton } from '../../ui/TextButton'
 import { IconButton } from '../../ui/IconButton'
+import { TextInput } from '../../ui/TextInput'
+import { THEME_SWATCHES, isThemeToken, categoryColorHex } from '../categoryColor'
+
+/** Colour picker: the theme palette swatches (stored as tokens so they track the
+ *  theme) plus a custom "any colour" well backed by the native picker. */
+function CategorySwatches(props: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div class="cat-swatches">
+      <For each={THEME_SWATCHES}>{tok => (
+        <button
+          type="button"
+          class="cat-swatch"
+          classList={{ selected: props.value === tok }}
+          style={{ background: `var(--${tok})` }}
+          title={tok}
+          onClick={() => props.onChange(tok)}
+        />
+      )}</For>
+      <label
+        class="cat-swatch cat-swatch-custom"
+        classList={{ selected: !isThemeToken(props.value) }}
+        style={!isThemeToken(props.value) ? { background: props.value } : undefined}
+        title="Custom colour"
+      >
+        <input type="color" value={categoryColorHex(props.value)} onInput={e => props.onChange(e.currentTarget.value)} />
+      </label>
+    </div>
+  )
+}
 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
@@ -54,18 +83,24 @@ export function CategoryPanel(props: { store: EventStore }) {
         <div class="category-list">
           <For each={categories.value}>{c => (
             <div class="category-row">
-              <input type="color" value={c.color} onInput={e => handleColorChange(c.name, e.currentTarget.value)} />
-              <span>{c.name}</span>
-              <IconButton label="Delete category" icon="X" iconSize={12} onClick={() => handleDelete(c.name)} />
+              <div class="cat-row-main">
+                <span class="cat-name">{c.name}</span>
+                <CategorySwatches value={c.color} onChange={col => handleColorChange(c.name, col)} />
+              </div>
+              <IconButton label="Delete category" icon="X" iconSize={14} onClick={() => handleDelete(c.name)} />
             </div>
           )}</For>
         </div>
+        <div class="cat-divider" />
+        <div class="cat-add-label">New category</div>
         <div class="category-add-row">
-          <input type="color" value={newColor()} onInput={e => setNewColor(e.currentTarget.value)} />
-          <input placeholder="Category name" value={newName()} onInput={e => setNewName(e.currentTarget.value)} />
-          <TextButton onClick={handleAdd}>ADD</TextButton>
+          <div class="cat-row-head">
+            <TextInput placeholder="Category name" value={newName()} onInput={setNewName} />
+            <TextButton size="sm" variant="selected" onClick={handleAdd}>ADD</TextButton>
+          </div>
+          <CategorySwatches value={newColor()} onChange={setNewColor} />
         </div>
-        <div class="modal-actions"><TextButton onClick={() => (showCategoryPanel.value = false)}>DONE</TextButton></div>
+        <div class="modal-actions"><TextButton size="sm" variant="selected" onClick={() => (showCategoryPanel.value = false)}>DONE</TextButton></div>
       </Modal>
     </Show>
   )

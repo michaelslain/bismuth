@@ -1,4 +1,13 @@
-.calendar-app {
+/* These Obsidian-compat variables are consumed by the calendar surfaces AND by the
+   modal/panel surfaces (event modal, category panel, recurrence dialog, event detail).
+   The modals render through the shared <Modal>, which Portals them to document.body —
+   OUTSIDE `.calendar-app` — so they must also be declared on the panel classes, or
+   `var(--background-primary)` resolves to nothing and the panels render transparent. */
+.calendar-app,
+.event-modal,
+.category-panel,
+.recurrence-dialog,
+.event-detail {
   --background-primary: var(--bg);
   --background-secondary: var(--panel);
   --background-modifier-border: var(--border);
@@ -17,6 +26,21 @@
 .calendar-app input,
 .calendar-app select,
 .calendar-app textarea { font-family: var(--font-interface); }
+
+/* The modal panels are portaled to <body>, outside `.calendar-app`, so they don't
+   inherit the app font/size and would fall back to the UA serif at the 16px body
+   size. Pin the mono UI font + the app's 13px control scale on the whole panel
+   (headers, labels, inputs, buttons) so it matches the rest of the chrome. */
+.event-modal,
+.category-panel,
+.recurrence-dialog,
+.event-detail { font-family: var(--font-interface); font-size: 13px; }
+.event-modal h3,
+.category-panel h3,
+.recurrence-dialog h3 { font-family: var(--font-interface); font-size: 14px; font-weight: 600; letter-spacing: 0.01em; margin: 0 0 2px; }
+/* Start/End sit side by side. */
+.event-modal-row { display: flex; gap: 10px; }
+.event-modal-row > * { flex: 1; min-width: 0; }
 
 /* EVERY calendar button shares the app's graph-toggle look (GraphView btnStyle):
    borderless, muted by default, brighter on hover, subtle neutral highlight when
@@ -115,14 +139,16 @@
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
 .event-chip-title p, .event-chip-location p, .event-modal-description-preview > p:first-child { margin: 0; }
 .event-chip-title *, .event-chip-location * { color: inherit; }
-.drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: 7px; padding: 6px 9px; font-size: 11px; color: #fff; font-weight: 500; pointer-events: none; }
+/* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
+   global pane drag-and-drop ghost (App.css, position:fixed) and would override this. */
+.cal-drag-ghost { position: absolute; left: 3px; right: 3px; z-index: 10; opacity: 0.7; border-radius: 7px; padding: 6px 9px; font-size: 11px; color: #fff; font-weight: 500; pointer-events: none; }
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; }
 .event-modal { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 340px; max-width: 500px; width: 100%; display: flex; flex-direction: column; gap: 10px; max-height: 90vh; overflow-y: auto; }
-.event-modal h3 { margin: 0; }
-.event-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9em; }
-.event-modal input, .event-modal select, .event-modal textarea { padding: 6px 8px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); font-family: var(--font-text); }
-.event-modal textarea { min-height: 80px; resize: none; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+/* The lone raw checkbox label ("All day") — the Field labels are .ui-field and
+   style themselves; this is the only bare <label>, laid out inline. */
+.event-modal-check { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.event-modal-check input[type="checkbox"] { width: auto; margin: 0; accent-color: var(--accent); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
 .day-picker { display: flex; gap: 4px; flex-wrap: wrap; }
 /* day-picker chips inherit the shared button style; selected days get an accent tint
    (matches the app's selection states like .tab.active / .palette-row.selected). */
@@ -136,9 +162,34 @@
 .recurrence-dialog-actions { display: flex; flex-direction: column; gap: 8px; }
 /* recurrence choices inherit the shared button style; just widen + left-align. */
 .recurrence-dialog-actions button { padding: 8px 10px; text-align: left; }
-.category-panel { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 300px; display: flex; flex-direction: column; gap: 12px; }
-.category-list { display: flex; flex-direction: column; gap: 6px; }
-.category-row { display: flex; align-items: center; gap: 8px; }
-.category-row span { flex: 1; }
-.category-add-row { display: flex; align-items: center; gap: 8px; }
-.category-add-row input:not([type="color"]) { flex: 1; padding: 6px; border-radius: 4px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-normal); }
+.category-panel { background: var(--background-primary); border-radius: 10px; padding: 26px; min-width: 360px; display: flex; flex-direction: column; gap: 20px; }
+.category-panel h3 { margin: 0 0 4px; }
+.category-list { display: flex; flex-direction: column; gap: 24px; }
+/* Existing category: name + swatches stacked on the left, delete × vertically
+   centred against the whole block on the right. */
+.category-row { display: flex; flex-direction: row; align-items: center; gap: 10px; }
+.cat-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
+/* Add-new: name + ADD on top, colour picker below. */
+.category-add-row { display: flex; flex-direction: column; gap: 11px; }
+.cat-row-head { display: flex; align-items: center; gap: 8px; }
+.cat-row-head .ui-input { flex: 1; }
+.cat-name { flex: 1; font-size: 13px; line-height: 1; }
+/* Visual break between the existing categories and the "add new" affordance. */
+.cat-divider { height: 1px; background: var(--border-soft); margin: 4px 0; }
+.cat-add-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 2px; }
+
+/* Colour picker: theme palette swatches + a custom "any colour" well. */
+.cat-swatches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cat-swatch {
+  width: 20px; height: 20px; flex: none; padding: 0; cursor: pointer; box-sizing: border-box;
+  border-radius: 6px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
+  -webkit-appearance: none; appearance: none;
+}
+.cat-swatch:hover { transform: scale(1.08); }
+/* Selected swatch gets a contrast ring (gap ring in panel bg, then an fg outline). */
+.cat-swatch.selected { box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 3.5px var(--fg); }
+/* The custom well: a rainbow hint when unused, the chosen colour when set; the native
+   picker fills it invisibly so clicking anywhere on the well opens it. */
+.cat-swatch-custom { position: relative; overflow: hidden; background-image: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #4ade80, #22d3ee, #3b82f6, #a855f7, #f43f5e); }
+.cat-swatch-custom.selected { background-image: none; }
+.cat-swatch-custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; padding: 0; cursor: pointer; }
