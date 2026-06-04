@@ -9,6 +9,9 @@ import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
 import { CodeHeader } from "./CodeHeader";
+import { type TableBlock, groupTableBlocks } from "./tableModel";
+import { TableWidget } from "./tableWidget";
+import { activeTableField, setActiveTableEffect } from "./tableState";
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
@@ -282,7 +285,10 @@ interface BlockRegions {
   frontmatterClose: number | null;
   fenceLines: Set<number>;
   codeLines: Set<number>;
-  tableLineSet: Set<number>;
+  // GFM pipe tables grouped into blocks, plus a line → block lookup. A block renders
+  // as the editable <table> widget unless it is the "active" (raw-source) block.
+  tableBlocks: TableBlock[];
+  tableBlockByLine: Map<number, TableBlock>;
   // Every line that belongs to a (closed) fenced code block → its block.
   codeBlockByLine: Map<number, CodeBlock>;
 }
@@ -339,40 +345,25 @@ function computeBlockRegions(doc: Text): BlockRegions {
     frontmatterClose = lastBodyLine + 1; // the closing `---`
   }
 
-  // precompute GFM table line sets (scan whole doc)
-  const tableLineSet = new Set<number>();
-  // A table separator line: starts with optional whitespace, then |?[:-| chars]+
-  const sepRe = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
-  for (let i = 1; i <= doc.lines; i++) {
-    const lineText = doc.line(i).text;
-    const prevLineText = i > 1 ? doc.line(i - 1).text : "";
-    // check if this is a separator row
-    if (sepRe.test(lineText) && prevLineText.includes("|")) {
-      // mark the header line (i-1), the separator (i), and following contiguous pipe lines
-      if (!tableLineSet.has(i - 1)) tableLineSet.add(i - 1);
-      tableLineSet.add(i);
-      // collect following rows
-      for (let j = i + 1; j <= doc.lines; j++) {
-        if (doc.line(j).text.includes("|")) {
-          tableLineSet.add(j);
-        } else {
-          break;
-        }
-      }
-    }
-  }
+  // precompute GFM table blocks (header + separator + contiguous body rows)
+  const { blocks: tableBlocks, byLine: tableBlockByLine } = groupTableBlocks(doc);
 
-  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableLineSet, codeBlockByLine };
+  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine };
 }
 
 /** Run the per-visible-line decoration pass using pre-computed block regions.
  *  This is cheap: it only iterates view.visibleRanges and must run on every
  *  update (including cursor moves) so that the cursor-line reveal stays correct. */
 function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSet {
-  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableLineSet, codeBlockByLine } = regions;
+  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine } = regions;
   const deco: Range<Decoration>[] = [];
   const doc = view.state.doc;
   const cursorLine = doc.lineAt(view.state.selection.main.head).number;
+  // The table block (by header line) currently shown as raw source, if any. The
+  // rendered <table> block widgets themselves come from tableWidgetField (a StateField)
+  // — block decorations may not be provided by a ViewPlugin. Here we only need the
+  // active-block id so the per-line pass below renders the raw source for it.
+  const activeTableOpen = view.state.field(activeTableField, false) ?? null;
   // The frontmatter `---` fences stay collapsed until the cursor is inside the
   // block (i.e. you start editing it) — mirroring how code fences hide off-block.
   const editingFrontmatter =
@@ -446,9 +437,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         continue;
       }
 
-      // GFM table: monospace and skip inline rules
-      if (tableLineSet.has(line.number)) {
-        deco.push(tableLine.range(line.from));
+      // GFM table. A non-active block is covered by the block-replace widget pushed
+      // above, so its lines need no per-line decoration (skip them). The active
+      // (raw-source) block shows monospace pipes for structural / power edits.
+      const tableBlock = tableBlockByLine.get(line.number);
+      if (tableBlock) {
+        if (tableBlock.startLine === activeTableOpen) deco.push(tableLine.range(line.from));
         pos = line.to + 1;
         continue;
       }
@@ -628,8 +622,39 @@ const activeCodeField = StateField.define<number | null>({
   },
 });
 
+// Block-level decorations (here: the editable <table> widget that replaces a whole
+// table block) MUST be provided by a StateField — CodeMirror forbids block decorations
+// from a ViewPlugin. We rebuild this set whenever the doc changes, the selection moves,
+// or the active (raw) table changes (all of which can flip a block between rendered and
+// raw). Each non-active table block is replaced by one TableWidget spanning its source.
+function buildTableWidgets(state: EditorState): DecorationSet {
+  const doc = state.doc;
+  const activeOpen = state.field(activeTableField, false) ?? null;
+  const { blocks } = groupTableBlocks(doc);
+  const deco: Range<Decoration>[] = [];
+  for (const b of blocks) {
+    if (b.startLine === activeOpen) continue;
+    const from = doc.line(b.startLine).from;
+    const to = doc.line(b.endLine).to;
+    deco.push(Decoration.replace({ widget: new TableWidget(b.cells, b.aligns), block: true }).range(from, to));
+  }
+  return Decoration.set(deco, true);
+}
+
+const tableWidgetField = StateField.define<DecorationSet>({
+  create: (state) => buildTableWidgets(state),
+  update(value, tr) {
+    const activeChanged = tr.effects.some((e) => e.is(setActiveTableEffect));
+    if (tr.docChanged || tr.selection || activeChanged) return buildTableWidgets(tr.state);
+    return value.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 export const livePreview = [
   activeCodeField,
+  activeTableField,
+  tableWidgetField,
   EditorView.domEventHandlers({
     dblclick: (e, view) => {
       const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
@@ -669,7 +694,9 @@ export const livePreview = [
       }
 
       update(u: ViewUpdate) {
-        const activeChanged = u.startState.field(activeCodeField, false) !== u.state.field(activeCodeField, false);
+        const activeChanged =
+          u.startState.field(activeCodeField, false) !== u.state.field(activeCodeField, false) ||
+          u.startState.field(activeTableField, false) !== u.state.field(activeTableField, false);
         if (u.docChanged || u.viewportChanged || u.selectionSet || activeChanged) {
           // Refresh the block-region cache only when document content changes.
           // On selectionSet / viewportChanged alone, reuse the cached sets —
@@ -788,7 +815,46 @@ export const livePreview = [
       "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     ".cm-fm-key": { color: "var(--accent)" },
+    // Raw (active) table source — monospace pipes for structural / power edits.
     ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))" },
+    // Rendered editable table (the block-replace widget). Cells are contenteditable.
+    // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
+    // table's top-right corner instead of floating off in the full-width line box.
+    ".cm-table-wrap": { position: "relative", width: "fit-content", "max-width": "100%", margin: "0.6em 0 1.4em 0" },
+    ".cm-table-rendered": { "border-collapse": "collapse", "table-layout": "auto" },
+    ".cm-table-rendered th, .cm-table-rendered td": {
+      border: "1px solid color-mix(in srgb, var(--fg) 18%, transparent)",
+      padding: "0.32em 0.6em",
+      "text-align": "left",
+      "vertical-align": "top",
+      "line-height": "1.5",
+      "min-width": "2.5em",
+    },
+    ".cm-table-rendered th": { "font-weight": "600", background: "var(--surface-2)" },
+    ".cm-td:focus": { outline: "none", "box-shadow": "inset 0 0 0 2px var(--accent)", "border-radius": "2px" },
+    // `+` edge bars: a thin add-column bar just off the right border and an add-row bar
+    // just below the bottom border. Faint, fade in on hover, accent on their own hover.
+    ".cm-table-edge": {
+      position: "absolute",
+      display: "flex",
+      "align-items": "center",
+      "justify-content": "center",
+      padding: "0",
+      color: "color-mix(in srgb, var(--fg) 45%, transparent)",
+      background: "color-mix(in srgb, var(--fg) 6%, transparent)",
+      border: "1px solid color-mix(in srgb, var(--fg) 12%, transparent)",
+      cursor: "pointer",
+      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-size": "0.85em",
+      "line-height": "1",
+      opacity: "0",
+      transition: "opacity 120ms, background 120ms, color 120ms",
+    },
+    ".cm-table-wrap:hover .cm-table-edge": { opacity: "1" },
+    ".cm-table-edge:hover": { background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--accent)" },
+    // Add-column: full-height bar hugging the right border. Add-row: full-width bar under it.
+    ".cm-table-add-col": { top: "0", bottom: "0", right: "-0.95em", width: "0.8em", "border-radius": "0 5px 5px 0" },
+    ".cm-table-add-row": { left: "0", right: "0", bottom: "-0.95em", height: "0.8em", "border-radius": "0 0 5px 5px" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {
