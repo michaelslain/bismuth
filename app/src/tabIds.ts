@@ -4,8 +4,6 @@ export const SEARCH_TAB = "::search";
 export const EMPTY_PANE = "::empty";
 // The Knowledge Graph as a first-class tab (the "Open graph view" / "New tab" commands open this).
 export const GRAPH_TAB = "::graph";
-// Per-note flashcard review screen: FLASHCARDS_PREFIX + "<note path>".
-export const FLASHCARDS_PREFIX = "::flashcards:";
 // Embedded terminal session: TERMINAL_PREFIX + "<uuid>".
 export const TERMINAL_PREFIX = "::term:";
 // Export options screen for a file: EXPORT_PREFIX + "<file path>".
@@ -28,7 +26,6 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
-  if (content.startsWith(FLASHCARDS_PREFIX)) return noteName(content.slice(FLASHCARDS_PREFIX.length));
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
   if (content.endsWith(".sheet")) return content.split("/").pop()!.replace(/\.sheet$/, "");
   return noteName(content);
@@ -40,7 +37,6 @@ export function contentIcon(content: string): string | undefined {
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "Share2";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
-  if (content.startsWith(FLASHCARDS_PREFIX)) return "Layers";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (content.endsWith(".sheet")) return "Table";
   if (content.endsWith(".draw")) return "PenTool";
