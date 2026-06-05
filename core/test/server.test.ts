@@ -1159,3 +1159,46 @@ test("daemon routes: status + devices read shared state, owner round-trips", asy
     else process.env.OA_CLAUDEBOT_HOME = prev;
   }
 });
+
+test("GET /daemon/install returns a never-throwing install status", async () => {
+  // installStatus() degrades to a safe default whenever it can't talk to the
+  // claude-bot installer entrypoint, so the route always answers with a valid
+  // { installed, running } object (never 500) regardless of host state.
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/daemon/install`);
+    expect(res.ok).toBe(true);
+    const status = await res.json();
+    expect(typeof status.installed).toBe("boolean");
+    expect(typeof status.running).toBe("boolean");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /daemon/setup is a read-table system action (no vault mutation)", async () => {
+  // Setup is adopt-only. Depending on whether the claude-bot installer entrypoint
+  // is resolvable in this checkout, it either returns a parsed { action, status }
+  // (200) or surfaces a clear error (500) — but it must NOT 404 and must NOT bump
+  // the vault version (it is NOT a mutatingHandler route).
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    const res = await fetch(`${base}/daemon/setup`, { method: "POST" });
+    expect(res.status).not.toBe(404);
+    if (res.ok) {
+      const result = await res.json();
+      expect(typeof result.action).toBe("string");
+      expect(result.status).toBeDefined();
+    }
+    // Not a mutation: the vault version must be unchanged.
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBe(v0);
+  } finally {
+    server.stop(true);
+  }
+});

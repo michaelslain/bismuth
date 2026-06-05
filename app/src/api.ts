@@ -26,6 +26,7 @@ import type { Card } from "../../core/src/srs/types";
 import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
+import type { InstallStatus, SetupResult } from "../../core/src/claudebot";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
@@ -157,4 +158,8 @@ export const api = {
   daemonStatus: () => getJson<DaemonStatus>("/daemon/status"),
   daemonDevices: () => getJson<DeviceList>("/daemon/devices"),
   setDaemonOwner: (deviceId: string) => postJson<Owner>("/daemon/owner", { deviceId }),
+  // claude-bot daemon install probe (read-only) + the idempotent, adopt-only setup
+  // action (bridged to the claude-bot package's installer entrypoint server-side).
+  daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
+  daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
 };
