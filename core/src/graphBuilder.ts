@@ -1,5 +1,39 @@
-import { listMarkdown, readNote } from "./files";
 import type { GraphNode, GraphEdge } from "./graph";
+
+/**
+ * The minimal vault file-access surface the graph builders need: list the
+ * markdown files under a root, and read one note's contents. This is the single
+ * IO seam of the whole graph pipeline (vault.ts / memory.ts / engine.ts all
+ * funnel through here).
+ *
+ * Desktop/Bun supplies this from `files.ts` (the lazy default below). On iPad,
+ * where no Bun process exists, the mobile entrypoint calls `setVaultReader()`
+ * with a `tauri-plugin-fs`-backed implementation before the first graph build —
+ * so `graphBuilder` never statically imports `files.ts`, keeping `Bun.Glob` &
+ * friends out of the WebView bundle.
+ */
+export interface VaultReader {
+  listMarkdown(root: string): Promise<string[]>;
+  readNote(root: string, rel: string): Promise<string>;
+}
+
+let reader: VaultReader | null = null;
+
+/** Install the vault reader (e.g. a tauri-plugin-fs one on iOS). Desktop/tests
+ *  never call this and fall back to the lazy `files.ts` default. */
+export function setVaultReader(r: VaultReader): void {
+  reader = r;
+}
+
+/** Resolve the active reader, lazily defaulting to the Bun `files.ts` impl.
+ *  The dynamic import keeps `files.ts` out of graphBuilder's *static* dep graph,
+ *  so a mobile build that installs a reader first never loads Bun-coupled code. */
+async function getReader(): Promise<VaultReader> {
+  if (reader) return reader;
+  const files = await import("./files");
+  reader = { listMarkdown: files.listMarkdown, readNote: files.readNote };
+  return reader;
+}
 
 /**
  * Shared graph builder for vault and memory notes.
@@ -20,6 +54,7 @@ export async function buildGraphFromNotes(
   byBase: Map<string, string>;
   byPath: Map<string, string>;
 }> {
+  const { listMarkdown, readNote } = await getReader();
   const rels = await listMarkdown(root);
   const nodes: GraphNode[] = [];
   const byBase = new Map<string, string>();
