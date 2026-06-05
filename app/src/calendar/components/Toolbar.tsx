@@ -1,4 +1,4 @@
-import { currentView, currentDate, showCategoryPanel, showEventModal, settings } from '../state'
+import { currentView, currentDate, showCategoryPanel, showCalendarSettings, showEventModal, settings } from '../state'
 import { Icon } from '../../icons/Icon'
 import { ViewBar, Crumb, ViewBarSpacer, VBtn } from '../../ui/ViewBar'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
@@ -62,6 +62,7 @@ export function Toolbar() {
         options={VIEWS}
       />
       <VBtn icon="Tag" iconSize={13} active={showCategoryPanel.value} onClick={() => (showCategoryPanel.value = !showCategoryPanel.value)}>Categories</VBtn>
+      <VBtn icon="Settings2" iconSize={13} active={showCalendarSettings.value} onClick={() => (showCalendarSettings.value = !showCalendarSettings.value)}>Settings</VBtn>
       <button class="vbtn cal-cta" onClick={() => (showEventModal.value = { date: toDateStr(currentDate.value) })}>
         <Icon value="Plus" size={14} />Event
       </button>

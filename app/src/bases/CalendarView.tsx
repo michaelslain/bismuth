@@ -1,6 +1,6 @@
 import { onMount, createEffect, Show, Switch, Match } from "solid-js";
 import { EventStore, MemoryBackend } from "../calendar/EventStore";
-import { currentView, currentDate, settings, showEventModal, applyDefaultView, userSwitchedView, reconcileDefaultView } from "../calendar/state";
+import { currentView, currentDate, settings, showEventModal, showCalendarSettings, applyDefaultView, userSwitchedView, reconcileDefaultView } from "../calendar/state";
 import { refreshEvents } from "../calendar/refresh";
 import { Toolbar } from "../calendar/components/Toolbar";
 import { MonthView } from "../calendar/components/views/MonthView";
@@ -10,6 +10,7 @@ import { DayView } from "../calendar/components/views/DayView";
 import { EventModal } from "../calendar/components/EventModal";
 import { RecurrenceDialog } from "../calendar/components/RecurrenceDialog";
 import { CategoryPanel } from "../calendar/components/CategoryPanel";
+import { CalendarSettings } from "../calendar/components/CalendarSettings";
 import "../calendar/Calendar.css";
 import { BaseBackend } from "./calendarBase";
 
@@ -59,6 +60,9 @@ export function CalendarView(props: { basePath?: string; onChange?: () => void }
       <Show when={showEventModal.value} keyed><EventModal store={store} /></Show>
       <RecurrenceDialog store={store} />
       <CategoryPanel store={store} />
+      <Show when={showCalendarSettings.value && props.basePath} keyed>
+        <CalendarSettings basePath={props.basePath!} onChange={props.onChange} />
+      </Show>
     </div>
   );
 }
