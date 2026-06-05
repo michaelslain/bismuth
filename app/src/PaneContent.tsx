@@ -3,7 +3,6 @@
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
 import { Switch, Match, Suspense, lazy } from "solid-js";
 import { FileView } from "./FileView";
-import { Flashcards } from "./Flashcards";
 import { BaseView } from "./bases/BaseView";
 import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
@@ -11,7 +10,7 @@ import { DrawingPage } from "./drawing/DrawingPage";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { SEARCH_TAB, GRAPH_TAB, FLASHCARDS_PREFIX, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
+import { SEARCH_TAB, GRAPH_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -41,9 +40,6 @@ export function PaneContent(props: {
         <Suspense fallback={<div class="exp" />}>
           <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
         </Suspense>
-      </Match>
-      <Match when={props.path.startsWith(FLASHCARDS_PREFIX)}>
-        <Flashcards note={props.path.slice(FLASHCARDS_PREFIX.length)} />
       </Match>
       <Match when={props.path === SEARCH_TAB}>
         <SearchView onOpen={props.onOpen} />
