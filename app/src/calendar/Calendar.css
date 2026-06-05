@@ -90,7 +90,7 @@
 .ev.ghost { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
 .ev.ghost .event-chip-time { color: var(--faint); }
 .event-chip-time { font-size: 0.95em; opacity: 0.85; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; font-family: var(--font-interface); }
-.event-chip-title { font-weight: 600; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
+.event-chip-title { font-weight: 400; white-space: normal; line-height: 1.3; word-break: break-word; flex-shrink: 0; }
 .event-chip-meta { display: flex; align-items: center; gap: 3px; overflow: hidden; flex-shrink: 1; min-height: 0; }
 .event-chip-location { opacity: 0.8; overflow: hidden; white-space: normal; word-break: break-word; }
 .event-chip-link { flex-shrink: 0; }
@@ -162,34 +162,215 @@
 .recurrence-dialog-actions { display: flex; flex-direction: column; gap: 8px; }
 /* recurrence choices inherit the shared button style; just widen + left-align. */
 .recurrence-dialog-actions button { padding: 8px 10px; text-align: left; }
-.category-panel { background: var(--background-primary); border-radius: 10px; padding: 26px; min-width: 360px; display: flex; flex-direction: column; gap: 20px; }
-.category-panel h3 { margin: 0 0 4px; }
-.category-list { display: flex; flex-direction: column; gap: 24px; }
-/* Existing category: name + swatches stacked on the left, delete × vertically
-   centred against the whole block on the right. */
-.category-row { display: flex; flex-direction: row; align-items: center; gap: 10px; }
-.cat-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
-/* Add-new: name + ADD on top, colour picker below. */
-.category-add-row { display: flex; flex-direction: column; gap: 11px; }
-.cat-row-head { display: flex; align-items: center; gap: 8px; }
-.cat-row-head .ui-input { flex: 1; }
-.cat-name { flex: 1; font-size: 13px; line-height: 1; }
-/* Visual break between the existing categories and the "add new" affordance. */
-.cat-divider { height: 1px; background: var(--border-soft); margin: 4px 0; }
-.cat-add-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 2px; }
+/* ============================================================
+   Categories modal — redesign (see ~/Downloads/claude-design-categories).
+   Shares the `.evm-modal` chrome (header/body/footer/inputs/buttons);
+   these are the categories-specific surfaces.
+   ============================================================ */
+/* single-line header (no subtitle) — center the title/icon/close together.
+   Double-class for specificity so it beats the shared `.evm-modal .evm-head`
+   chrome (which uses flex-start for the event modal's two-line header). */
+.evm-modal.category-panel .evm-head { align-items: center; }
+.evm-modal.category-panel .evm-mark { height: 24px; }
 
-/* Colour picker: theme palette swatches + a custom "any colour" well. */
-.cat-swatches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.cat-swatch {
-  width: 20px; height: 20px; flex: none; padding: 0; cursor: pointer; box-sizing: border-box;
-  border-radius: 6px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent);
-  -webkit-appearance: none; appearance: none;
+/* existing categories — compact rows in one grouped card */
+.evm-modal .cat-group { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: visible; }
+.evm-modal .cat-row { display: flex; align-items: center; gap: 12px; padding: 10px 13px; }
+.evm-modal .cat-row + .cat-row { border-top: 1px solid var(--border2); }
+.evm-modal .cat-name { flex: 1; font-family: var(--serif); font-size: 15.5px; font-weight: 600; color: var(--hi); letter-spacing: -.01em; cursor: default; }
+.evm-modal .cat-del { width: 24px; height: 24px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 6px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .cat-del:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
+/* inline rename: sits exactly where the name was (negative margins cancel the
+   padding so the text doesn't jump), with a subtle tint + thin inset accent ring. */
+.evm-modal .cat-nameedit { flex: 1; min-width: 0; font-family: var(--serif); font-size: 15.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); background: color-mix(in srgb, var(--accent) 9%, transparent); border: none; border-radius: 6px; padding: 3px 7px; margin: -3px -7px; outline: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* color chip + palette popover */
+.evm-modal .cat-chipwrap { position: relative; flex: 0 0 auto; display: inline-flex; }
+.evm-modal .cat-chip { width: 20px; height: 20px; border-radius: 6px; border: 1px solid rgba(255, 255, 255, .16); padding: 0; cursor: pointer; box-shadow: 0 1px 2px rgba(0, 0, 0, .35); transition: filter .12s; }
+.evm-modal .cat-chip:hover { filter: brightness(1.1); }
+.evm-modal .cat-chip.open { box-shadow: 0 0 0 2px var(--surface2), 0 0 0 3.5px var(--accent); }
+.evm-modal .cat-pop { position: absolute; z-index: 30; top: calc(100% + 7px); left: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); padding: 8px; }
+.evm-modal .cat-pop.up { top: auto; bottom: calc(100% + 7px); }
+.evm-modal .cat-sws { display: flex; gap: 6px; align-items: center; }
+.evm-modal .cat-sw { width: 22px; height: 22px; border: none; padding: 0; cursor: pointer; position: relative; border-radius: 6px; transition: transform .12s; }
+.evm-modal .cat-sw:hover { transform: translateY(-1px); }
+.evm-modal .cat-sw.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3px currentColor; }
+/* custom "any colour" well — native picker fills it invisibly */
+.evm-modal .cat-sw.custom { overflow: hidden; background-image: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #4ade80, #22d3ee, #3b82f6, #a855f7, #f43f5e); }
+.evm-modal .cat-sw.custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; padding: 0; cursor: pointer; }
+
+/* new category — distinct dashed card */
+.evm-modal .cat-add { margin-top: 18px; border: 1px dashed var(--border); border-radius: 12px; padding: 13px 13px 14px; background: color-mix(in srgb, var(--surface2) 40%, transparent); display: flex; flex-direction: column; gap: 11px; }
+.evm-modal .cat-add-head { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 7px; }
+.evm-modal .cat-newrow { display: flex; gap: 10px; align-items: center; }
+.evm-modal .cat-newrow .ui-input { flex: 1; }
+
+/* ============================================================
+   Calendar settings modal — redesign (see ~/Downloads/claude-design-settings).
+   Maps the note's columns to the calendar's fields. Shares `.evm-modal` chrome.
+   ============================================================ */
+/* single-line header — center like the categories modal */
+.evm-modal.calendar-settings .evm-head { align-items: center; }
+.evm-modal.calendar-settings .evm-mark { height: 24px; }
+
+.evm-modal .set-sect { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); display: flex; align-items: center; gap: 9px; margin: 2px 0; }
+.evm-modal .set-sect::after { content: ''; flex: 1; height: 1px; background: var(--border2); }
+.evm-modal .set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px 18px; }
+.evm-modal .set-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.evm-modal .set-field.span { grid-column: 1 / -1; }
+.evm-modal .set-lab { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--hi); }
+.evm-modal .set-lab svg { color: var(--accent); flex: 0 0 auto; }
+.evm-modal .set-lab .req { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 2px 6px; }
+.evm-modal .set-lab .opt { margin-left: auto; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 6px; }
+
+/* custom column-picker select */
+.evm-modal .set-select { position: relative; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 12px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 9px; cursor: pointer; transition: border-color .14s, box-shadow .14s; }
+.evm-modal .set-select:hover { border-color: var(--border); }
+.evm-modal .set-select.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.evm-modal .set-select .lead { color: var(--faint); flex: 0 0 auto; display: inline-flex; }
+.evm-modal .set-select .col { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13.5px; color: var(--teal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .set-select .col.empty { color: var(--faint); }
+.evm-modal .set-select .chev { color: var(--faint); flex: 0 0 auto; }
+.evm-modal .set-hint { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+
+/* column dropdown popover */
+.evm-modal .set-pop { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 18px 44px rgba(0, 0, 0, .55); padding: 6px; max-height: 208px; overflow: auto; }
+.evm-modal .set-pop.up { top: auto; bottom: calc(100% + 6px); }
+.evm-modal .set-popitem { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 9px; border-radius: 7px; font-family: var(--mono); font-size: 12.5px; color: var(--hi); cursor: pointer; }
+.evm-modal .set-popitem svg { color: var(--faint); flex: 0 0 auto; }
+.evm-modal .set-popitem:hover { background: var(--accent-soft); }
+.evm-modal .set-popitem.on { background: var(--accent-soft); }
+.evm-modal .set-popitem.on svg { color: var(--accent); }
+.evm-modal .set-popitem .sp { flex: 1; min-width: 0; }
+
+/* reset button in footer */
+.evm-modal .set-reset { font-size: 12px; color: var(--lo); display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.evm-modal .set-reset:hover { color: var(--hi); }
+
+/* ============================================================
+   New Event modal — redesign (see ~/Downloads/claude-design).
+   `.event-modal` IS the card (the <Modal> portals it inside `.ui-overlay`,
+   which supplies the centered scrim). Design tokens (--surface2, --hi,
+   --serif…) are aliased here onto the app's real CSS vars so the design
+   CSS ports almost verbatim and re-themes automatically (incl. light mode).
+   ============================================================ */
+.evm-modal {
+  /* token aliases: design name -> app var */
+  --surface: var(--surface-1);
+  --surface2: var(--surface-2);
+  --border2: var(--border-soft);
+  --hi: var(--fg);
+  --serif: var(--editor-font, 'Lora', Georgia, serif);
+  --mono: "Monaspace Xenon", ui-monospace, monospace;
+  --azure: var(--blue);
+  --orchid: var(--accent-purple, var(--violet));
+
+  position: relative;
+  width: 548px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-modal, 0 40px 110px rgba(0, 0, 0, .6)), 0 8px 24px rgba(0, 0, 0, .4);
+  display: flex;
+  flex-direction: column;
 }
-.cat-swatch:hover { transform: scale(1.08); }
-/* Selected swatch gets a contrast ring (gap ring in panel bg, then an fg outline). */
-.cat-swatch.selected { box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 3.5px var(--fg); }
-/* The custom well: a rainbow hint when unused, the chosen colour when set; the native
-   picker fills it invisibly so clicking anywhere on the well opens it. */
-.cat-swatch-custom { position: relative; overflow: hidden; background-image: conic-gradient(from 0deg, #f43f5e, #f59e0b, #facc15, #4ade80, #22d3ee, #3b82f6, #a855f7, #f43f5e); }
-.cat-swatch-custom.selected { background-image: none; }
-.cat-swatch-custom input[type="color"] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: none; padding: 0; cursor: pointer; }
+
+/* header */
+.evm-modal .evm-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 10px; }
+.evm-modal .evm-mark { width: 24px; height: 34px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
+.evm-modal .evm-htext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.evm-modal .evm-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -.01em; color: var(--hi); line-height: 1.1; }
+.evm-modal .evm-sub { font-size: 11px; color: var(--faint); letter-spacing: .02em; }
+.evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; }
+.evm-modal .evm-x:hover { background: rgba(255, 255, 255, .06); color: var(--hi); }
+
+/* body (scrolls when tall) */
+.evm-modal .evm-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+
+/* big serif title input */
+.evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
+.evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
+.evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; }
+.evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
+
+/* labels + field shells */
+.evm-modal .evm-lab { font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--faint); margin-bottom: 7px; display: flex; align-items: center; gap: 6px; }
+.evm-modal .evm-field { display: flex; flex-direction: column; }
+.evm-modal .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+.evm-modal .evm-in { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 12px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 9px; color: var(--hi); transition: border-color .15s, box-shadow .15s; }
+.evm-modal .evm-in.tall { height: auto; align-items: flex-start; padding: 11px 12px; }
+.evm-modal .evm-in .lead { color: var(--faint); flex: 0 0 auto; display: inline-flex; }
+.evm-modal .evm-in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.evm-modal .evm-in:focus-within .lead { color: var(--accent); }
+.evm-modal .evm-in input, .evm-modal .evm-in textarea { flex: 1; min-width: 0; border: none; outline: none; background: none; font-family: var(--mono); font-size: 13.5px; color: var(--hi); }
+.evm-modal .evm-in textarea { resize: none; line-height: 1.6; min-height: 48px; }
+.evm-modal .evm-in input::placeholder, .evm-modal .evm-in textarea::placeholder { color: var(--faint); }
+.evm-modal .evm-in.serif input, .evm-modal .evm-in.serif textarea { font-family: var(--serif); font-size: 15px; }
+.evm-modal .evm-in.serif textarea { line-height: 1.55; }
+.evm-modal .evm-in.serif input::placeholder, .evm-modal .evm-in.serif textarea::placeholder { font-style: italic; }
+
+/* rendered-markdown description preview (click to edit) */
+.evm-modal .evm-mdprev { display: block; min-height: 76px; cursor: text; font-family: var(--mono); font-size: 13px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 7px; padding: 8px 10px; }
+.evm-modal .evm-mdprev:hover { border-color: var(--border); }
+.evm-modal .evm-mdprev > :first-child { margin-top: 0; }
+.evm-modal .evm-mdprev > :last-child { margin-bottom: 0; }
+.evm-modal .evm-mdprev p { margin: 0 0 8px; }
+.evm-modal .evm-mdprev ul, .evm-modal .evm-mdprev ol { margin: 0 0 8px; padding-left: 20px; }
+.evm-modal .evm-mdprev li { margin: 0 0 3px; }
+.evm-modal .evm-mdprev h1, .evm-modal .evm-mdprev h2, .evm-modal .evm-mdprev h3 { font-size: 16px; font-weight: 600; margin: 4px 0 6px; }
+.evm-modal .evm-mdprev a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+.evm-modal .evm-mdprev code { font-family: var(--mono); font-size: .88em; background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
+.evm-modal .evm-mdprev pre { font-family: var(--mono); font-size: 12px; background: var(--rail); border: 1px solid var(--border2); padding: 9px 11px; border-radius: 7px; overflow-x: auto; margin: 0 0 8px; }
+.evm-modal .evm-mdprev pre code { background: none; padding: 0; }
+.evm-modal .evm-mdprev blockquote { margin: 0 0 8px; padding-left: 11px; border-left: 2px solid var(--border); color: var(--lo); }
+
+/* date row: date + all-day toggle inline */
+.evm-modal .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: end; }
+.evm-modal .evm-allday { display: flex; align-items: center; gap: 9px; height: 40px; padding: 0 4px; font-size: 12.5px; color: var(--hi); cursor: pointer; white-space: nowrap; }
+.evm-modal .evm-toggle { width: 36px; height: 20px; border-radius: 11px; position: relative; flex: 0 0 auto; background: var(--surface2); border: 1px solid var(--border); transition: background .18s, border-color .18s; }
+.evm-modal .evm-toggle.on { background: var(--accent); border-color: transparent; }
+.evm-modal .evm-toggle i { position: absolute; top: 1.5px; left: 1.5px; width: 15px; height: 15px; border-radius: 50%; background: #fff; transition: left .18s; }
+.evm-modal .evm-toggle.on i { left: 18px; }
+
+/* time sub-row */
+.evm-modal .evm-times { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; align-items: center; }
+.evm-modal .evm-times .dash { color: var(--faint); font-size: 13px; }
+
+/* category chips (selectable) */
+.evm-modal .evm-cats { display: flex; flex-wrap: wrap; gap: 7px; }
+.evm-modal .evm-cat { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12px; cursor: pointer; user-select: none; background: var(--surface2); border: 1px solid var(--border2); color: var(--lo); transition: background .14s, border-color .14s, color .14s; }
+.evm-modal .evm-cat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cc, var(--faint)); }
+.evm-modal .evm-cat:hover { color: var(--hi); border-color: var(--border); }
+.evm-modal .evm-cat.on { color: var(--hi); background: color-mix(in srgb, var(--cc, var(--accent)) 15%, transparent); border-color: color-mix(in srgb, var(--cc, var(--accent)) 45%, transparent); }
+
+/* recurrence segmented */
+.evm-modal .evm-seg { display: flex; gap: 2px; background: var(--rail); border: 1px solid var(--border2); border-radius: 9px; padding: 2px; }
+.evm-modal .evm-seg span { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border-radius: 7px; font-size: 11.5px; color: var(--lo); cursor: pointer; white-space: nowrap; transition: background .14s, color .14s; }
+.evm-modal .evm-seg span:hover { color: var(--hi); }
+.evm-modal .evm-seg span.on { color: var(--hi); background: var(--surface2); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+
+/* weekday picker */
+.evm-modal .evm-dows { display: flex; gap: 5px; margin-top: 10px; }
+.evm-modal .evm-dow { flex: 1; height: 30px; border-radius: 7px; display: grid; place-items: center; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); background: transparent; border: 1px solid transparent; cursor: pointer; user-select: none; transition: background .14s, color .14s, border-color .14s; }
+.evm-modal .evm-dow:hover { color: var(--lo); background: var(--surface2); }
+.evm-modal .evm-dow.on { color: var(--hi); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.evm-modal .evm-ends { margin-top: 13px; }
+.evm-modal .evm-ends .evm-lab .opt { text-transform: none; letter-spacing: 0; color: var(--faint); }
+
+/* footer */
+.evm-modal .evm-foot { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--border2); background: var(--rail); }
+.evm-modal .evm-foot .sp { flex: 1; }
+.evm-modal .evm-foot .hintkey { font-size: 10.5px; color: var(--faint); display: flex; align-items: center; gap: 6px; }
+.evm-modal .evm-foot .hintkey b { font-family: var(--mono); background: var(--surface2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; color: var(--lo); font-weight: 400; }
+.evm-modal .evm-btn { height: 32px; padding: 0 13px; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 7px; font-family: var(--mono); font-size: 12px; font-weight: 500; cursor: pointer; transition: background .14s, border-color .14s; }
+.evm-modal .evm-btn.ghost { background: transparent; color: var(--lo); border: 1px solid transparent; }
+.evm-modal .evm-btn.ghost:hover { background: var(--surface2); color: var(--hi); }
+.evm-modal .evm-btn.ghost.danger:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
+.evm-modal .evm-btn.primary { background: var(--surface2); color: var(--hi); border: 1px solid var(--border); font-weight: 600; }
+.evm-modal .evm-btn.primary:hover { background: color-mix(in srgb, var(--hi) 9%, var(--surface2)); border-color: var(--lo); }

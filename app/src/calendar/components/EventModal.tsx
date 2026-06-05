@@ -1,18 +1,29 @@
-import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
+import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js'
 import { CalendarEvent, RecurrenceType } from '../types'
 import { categories, showEventModal, recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { toDateStr } from '../dates'
 import { refreshEvents } from '../refresh'
 import { Modal } from '../../ui/Modal'
-import { Field } from '../../ui/Field'
-import { TextButton } from '../../ui/TextButton'
+import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
-import { Select } from '../../ui/Select'
+import { TextButton } from '../../ui/TextButton'
+import { IconTextButton } from '../../ui/IconTextButton'
+import { SegmentedToggle } from '../../ui/SegmentedToggle'
+import { renderMarkdown } from '../../bases/markdown'
 
 const uuid = () => crypto.randomUUID()
-const RECURRENCE_TYPES: RecurrenceType[] = ['daily', 'weekly', 'biweekly', 'monthly']
+// Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
+const RECUR: [string, RecurrenceType | ''][] = [
+  ['None', ''], ['Daily', 'daily'], ['Weekly', 'weekly'], ['Biweekly', 'biweekly'], ['Monthly', 'monthly'],
+]
 const DOW: [string, number][] = [['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]]
+
+function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
 
 export function EventModal(props: { store: EventStore }) {
   const modal = showEventModal.value
@@ -34,11 +45,17 @@ export function EventModal(props: { store: EventStore }) {
   const [location, setLocation] = createSignal(editing?.location ?? '')
   const [link, setLink] = createSignal(editing?.link ?? '')
   const [description, setDescription] = createSignal(editing?.description ?? '')
+  const [descEditing, setDescEditing] = createSignal(false)
+  // focus the description textarea when entering edit mode (TextInput renders fresh)
+  let descRef: HTMLDivElement | undefined
+  createEffect(() => { if (descEditing()) queueMicrotask(() => descRef?.querySelector('textarea')?.focus()) })
   const [category, setCategory] = createSignal(editing?.category ?? '')
   const [recType, setRecType] = createSignal<RecurrenceType | ''>(editing?.recurrence?.type ?? '')
   const [recDays, setRecDays] = createSignal<number[]>(editing?.recurrence?.daysOfWeek ?? getDefaultDaysOfWeek())
   const [recStart, setRecStart] = createSignal(editing?.recurrence?.startDate ?? defaultDate)
   const [recEnd, setRecEnd] = createSignal(editing?.recurrence?.endDate ?? '')
+
+  const close = () => (showEventModal.value = null)
 
   async function handleDelete(): Promise<void> {
     if (!editing) return
@@ -99,54 +116,129 @@ export function EventModal(props: { store: EventStore }) {
   })
 
   return (
-    <Modal onClose={() => (showEventModal.value = null)} class="event-modal">
-      <h3>{editing ? 'Edit Event' : 'New Event'}</h3>
-      <Field label="Title"><TextInput value={title()} onInput={setTitle} /></Field>
-      <Field label="Date"><TextInput type="date" value={date()} onInput={setDate} /></Field>
-      <label class="event-modal-check"><input type="checkbox" checked={allDay()} onChange={e => setAllDay(e.currentTarget.checked)} /> All day</label>
-      <Show when={!allDay()}>
-        <div class="event-modal-row">
-          <Field label="Start"><TextInput type="time" value={startTime()} onInput={setStartTime} /></Field>
-          <Field label="End"><TextInput type="time" value={endTime()} onInput={setEndTime} /></Field>
+    <Modal onClose={close} class="event-modal evm-modal">
+      <div class="evm-head">
+        <div class="evm-mark"><Icon value="calendar-plus" size={18} /></div>
+        <div class="evm-htext">
+          <div class="evm-title">{editing ? 'Edit Event' : 'New Event'}</div>
+          <div class="evm-sub">{prettyDate(date())}</div>
         </div>
-      </Show>
-      <Field label="Location"><TextInput value={location()} onInput={setLocation} /></Field>
-      <Field label="Link"><TextInput value={link()} onInput={setLink} /></Field>
-      <Field label="Description"><TextInput multiline value={description()} onInput={setDescription} /></Field>
-      <Field label="Category">
-        <Select
-          value={category()}
-          onChange={setCategory}
-          placeholder="None"
-          options={[{ value: '', label: 'None' }, ...categories.value.map(c => ({ value: c.name, label: c.name }))]}
-        />
-      </Field>
-      <Field label="Recurrence">
-        <Select
-          value={recType()}
-          onChange={v => setRecType(v as RecurrenceType | '')}
-          placeholder="None"
-          options={[{ value: '', label: 'None' }, ...RECURRENCE_TYPES.map(t => ({ value: t, label: t }))]}
-        />
-      </Field>
-      <Show when={recType()}>
-        <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
-          <div class="day-picker">
-            <For each={DOW}>{([label, i]) => (
-              <TextButton size="sm" variant={recDays().includes(i) ? 'selected' : 'unselected'} type="button"
-                onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{(label as string).toUpperCase()}</TextButton>
+        <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+      </div>
+
+      <div class="evm-body">
+        {/* title */}
+        <div class="evm-titlefield">
+          <input class="evm-titlein" type="text" placeholder="Untitled event" autofocus
+            value={title()} onInput={e => setTitle(e.currentTarget.value)} />
+        </div>
+
+        {/* date + all-day */}
+        <div class="evm-field">
+          <div class="evm-daterow">
+            <div>
+              <div class="evm-lab"><Icon value="calendar" size={12} strokeWidth={2} />Date</div>
+              <TextInput type="date" value={date()} onInput={setDate} />
+            </div>
+            <div>
+              <div class="evm-lab" style={{ visibility: 'hidden' }}>x</div>
+              <div class="evm-allday" role="button" onClick={() => setAllDay(v => !v)}>
+                <span class={'evm-toggle' + (allDay() ? ' on' : '')}><i /></span>
+                All day
+              </div>
+            </div>
+          </div>
+          <Show when={!allDay()}>
+            <div class="evm-times" style={{ 'margin-top': '12px' }}>
+              <TextInput type="time" value={startTime()} onInput={setStartTime} />
+              <span class="dash">→</span>
+              <TextInput type="time" value={endTime()} onInput={setEndTime} />
+            </div>
+          </Show>
+        </div>
+
+        {/* location + link */}
+        <div class="evm-grid">
+          <div class="evm-field">
+            <div class="evm-lab"><Icon value="map-pin" size={12} strokeWidth={2} />Location</div>
+            <TextInput placeholder="Add a place" value={location()} onInput={setLocation} />
+          </div>
+          <div class="evm-field">
+            <div class="evm-lab"><Icon value="link" size={12} strokeWidth={2} />Link</div>
+            <TextInput placeholder="meet.example.com/…" value={link()} onInput={setLink} />
+          </div>
+        </div>
+
+        {/* description — markdown: edit as plain text, renders on blur */}
+        <div class="evm-field" ref={descRef}>
+          <div class="evm-lab"><Icon value="text-align-start" size={12} strokeWidth={2} />Description <span class="opt">· markdown</span></div>
+          <Show
+            when={descEditing() || !description().trim()}
+            fallback={
+              <div class="evm-mdprev" role="button" tabindex="0"
+                title="Click to edit"
+                onClick={() => setDescEditing(true)}
+                innerHTML={renderMarkdown(description())} />
+            }
+          >
+            <TextInput multiline placeholder="Notes, agenda, links to vault… (markdown)"
+              value={description()}
+              onInput={setDescription}
+              onBlur={() => setDescEditing(false)} />
+          </Show>
+        </div>
+
+        {/* category */}
+        <div class="evm-field">
+          <div class="evm-lab"><Icon value="tag" size={12} strokeWidth={2} />Category</div>
+          <div class="evm-cats">
+            <div class={'evm-cat' + (category() === '' ? ' on' : '')} role="button"
+              style={{ '--cc': 'var(--faint)' }} onClick={() => setCategory('')}>
+              <span class="dot" />None
+            </div>
+            <For each={categories.value}>{c => (
+              <div class={'evm-cat' + (category() === c.name ? ' on' : '')} role="button"
+                style={{ '--cc': c.color }} onClick={() => setCategory(c.name)}>
+                <span class="dot" />{c.name}
+              </div>
             )}</For>
           </div>
-        </Show>
-        <Field label="Start date"><TextInput type="date" value={recStart()} onInput={setRecStart} /></Field>
-        <Field label="End date (optional)"><TextInput type="date" value={recEnd()} onInput={setRecEnd} /></Field>
-      </Show>
-      <div class="modal-actions">
+        </div>
+
+        {/* recurrence */}
+        <div class="evm-field">
+          <div class="evm-lab"><Icon value="repeat" size={12} strokeWidth={2} />Repeat</div>
+          <SegmentedToggle
+            value={recType()}
+            onChange={v => setRecType(v)}
+            size="sm"
+            options={RECUR.map(([label, val]) => ({ id: val, label }))}
+          />
+          <Show when={recType() === 'weekly' || recType() === 'biweekly'}>
+            <div class="evm-dows">
+              <For each={DOW}>{([label, i]) => (
+                <div class={'evm-dow' + (recDays().includes(i) ? ' on' : '')} role="button"
+                  onClick={() => setRecDays(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i])}>{label}</div>
+              )}</For>
+            </div>
+          </Show>
+          <Show when={recType()}>
+            <div class="evm-ends">
+              <div class="evm-lab"><Icon value="calendar-x" size={12} strokeWidth={2} />Ends <span class="opt">· optional</span></div>
+              <TextInput type="date" value={recEnd()} onInput={setRecEnd} />
+            </div>
+          </Show>
+        </div>
+      </div>
+
+      <div class="evm-foot">
         <Show when={editing}>
-          <TextButton size="sm" danger onClick={handleDelete} style={{ 'margin-right': 'auto' }}>DELETE</TextButton>
+          <TextButton size="sm" danger onClick={handleDelete}>DELETE</TextButton>
         </Show>
-        <TextButton size="sm" onClick={() => (showEventModal.value = null)}>CANCEL</TextButton>
-        <TextButton size="sm" variant="selected" onClick={handleSave}>SAVE</TextButton>
+        <span class="hintkey"><b>esc</b> to cancel</span>
+        <div class="sp" />
+        <TextButton size="sm" onClick={close}>CANCEL</TextButton>
+        <IconTextButton icon="Check" size="sm" variant="selected" onClick={handleSave}>SAVE EVENT</IconTextButton>
       </div>
     </Modal>
   )
