@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installStatus, runSetup, resolveEntrypoint } from "../src/claudebot";
+import { installStatus, runSetup, resolveEntrypoint, installedEntrypoint } from "../src/claudebot";
 import type { SpawnResult } from "../src/claudebot";
 
 // A fake entrypoint path so we never resolve (or spawn) the real claude-bot
@@ -102,7 +102,7 @@ test("resolveEntrypoint derives the bin path from the resolved package, no hardc
     }
     throw new Error(`cannot resolve ${spec}`);
   };
-  const entry = resolveEntrypoint(resolve);
+  const entry = resolveEntrypoint({ resolve, installed: () => null });
   expect(entry).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
 });
 
@@ -113,14 +113,14 @@ test("resolveEntrypoint prefers a directly-resolvable bin export when present", 
     }
     throw new Error(`cannot resolve ${spec}`);
   };
-  expect(resolveEntrypoint(resolve)).toBe("/pkg/claude-bot/bin/ensure-installed.ts");
+  expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/pkg/claude-bot/bin/ensure-installed.ts");
 });
 
 test("resolveEntrypoint returns null when the package isn't resolvable at all", () => {
   const resolve = (): never => {
     throw new Error("not found");
   };
-  expect(resolveEntrypoint(resolve)).toBeNull();
+  expect(resolveEntrypoint({ resolve, installed: () => null })).toBeNull();
 });
 
 test("resolveEntrypoint prefers $OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts when it exists on disk", () => {
@@ -137,7 +137,7 @@ test("resolveEntrypoint prefers $OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts whe
       if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
       throw new Error(`cannot resolve ${spec}`);
     };
-    expect(resolveEntrypoint({ resolve })).toBe(entry);
+    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe(entry);
   } finally {
     if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
     else process.env.OA_CLAUDEBOT_BUNDLE = prev;
@@ -155,7 +155,7 @@ test("resolveEntrypoint falls back to the package when $OA_CLAUDEBOT_BUNDLE is s
       if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
       throw new Error(`cannot resolve ${spec}`);
     };
-    expect(resolveEntrypoint({ resolve })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
+    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
   } finally {
     if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
     else process.env.OA_CLAUDEBOT_BUNDLE = prev;
@@ -171,7 +171,7 @@ test("resolveEntrypoint ignores an unset $OA_CLAUDEBOT_BUNDLE and uses the packa
       if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
       throw new Error(`cannot resolve ${spec}`);
     };
-    expect(resolveEntrypoint({ resolve })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
+    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
   } finally {
     if (prev !== undefined) process.env.OA_CLAUDEBOT_BUNDLE = prev;
   }
@@ -207,4 +207,84 @@ test("resolveEntrypoint never throws when the injected exists probe blows up", (
   });
   // Bundle probe failed and the dep doesn't resolve -> null, no throw.
   expect(entry).toBeNull();
+});
+
+test("installedEntrypoint parses a launchd plist to the installed clone's entrypoint", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cb-installed-"));
+  try {
+    const clone = join(dir, "Documents", "dev", "claude-bot");
+    mkdirSync(join(clone, "bin"), { recursive: true });
+    writeFileSync(join(clone, "bin", "ensure-installed.ts"), "// entry\n");
+    const plist = join(dir, "com.claude-bot.daemon.plist");
+    writeFileSync(
+      plist,
+      `<plist><dict><key>ProgramArguments</key><array><string>/opt/homebrew/bin/bun</string><string>run</string><string>${join(clone, "daemon", "index.ts")}</string></array></dict></plist>`,
+    );
+    expect(installedEntrypoint({ configPath: plist })).toBe(join(clone, "bin", "ensure-installed.ts"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("installedEntrypoint parses a systemd unit's ExecStart path", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cb-systemd-"));
+  try {
+    const clone = join(dir, "claude-bot");
+    mkdirSync(join(clone, "bin"), { recursive: true });
+    writeFileSync(join(clone, "bin", "ensure-installed.ts"), "// entry\n");
+    const unit = join(dir, "claude-bot.service");
+    writeFileSync(unit, `[Service]\nExecStart=/home/u/.bun/bin/bun run ${join(clone, "daemon", "index.ts")}\n`);
+    expect(installedEntrypoint({ configPath: unit })).toBe(join(clone, "bin", "ensure-installed.ts"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("installedEntrypoint returns null when no daemon is installed", () => {
+  expect(installedEntrypoint({ configPath: "/no/such/plist", exists: () => false })).toBeNull();
+});
+
+test("installedEntrypoint returns null when the config has no daemon entry", () => {
+  expect(
+    installedEntrypoint({ configPath: "/p", read: () => "<plist></plist>", exists: () => true }),
+  ).toBeNull();
+});
+
+test("installedEntrypoint never throws when reading the config fails", () => {
+  expect(
+    installedEntrypoint({
+      configPath: "/p",
+      exists: () => true,
+      read: () => {
+        throw new Error("EACCES");
+      },
+    }),
+  ).toBeNull();
+});
+
+test("resolveEntrypoint prefers an already-installed claude-bot over the bundle and dep", () => {
+  const entry = resolveEntrypoint({
+    installed: () => "/usr/local/claude-bot/bin/ensure-installed.ts",
+    env: { OA_CLAUDEBOT_BUNDLE: "/bundle" },
+    exists: () => true, // bundle would also "exist", but install wins
+    resolve: () => "/dep/bin/ensure-installed.ts",
+  });
+  expect(entry).toBe("/usr/local/claude-bot/bin/ensure-installed.ts");
+});
+
+test("resolveEntrypoint falls back to the bundle when nothing is installed", () => {
+  const entry = resolveEntrypoint({
+    installed: () => null,
+    env: { OA_CLAUDEBOT_BUNDLE: "/bundle" },
+    exists: () => true,
+  });
+  expect(entry).toBe(join("/bundle", "bin", "ensure-installed.ts"));
+});
+
+test("resolveEntrypoint still accepts the back-compat function form", () => {
+  // The bare (spec) => string signature is still accepted and never throws.
+  const r = resolveEntrypoint((spec) => {
+    throw new Error(spec);
+  });
+  expect(r === null || typeof r === "string").toBe(true);
 });

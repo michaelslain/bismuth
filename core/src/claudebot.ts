@@ -17,7 +17,8 @@
 // resolvable yet, spawn error, non-JSON output) degrades to a safe default of
 // { installed: false, running: false } so the UI/route can't crash.
 import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
 export const DAEMON_LABEL = "com.claude-bot.daemon";
@@ -40,6 +41,57 @@ export interface SetupResult {
 /** Safe default returned whenever we can't talk to the installer entrypoint. */
 const UNKNOWN_STATUS: InstallStatus = { installed: false, running: false, daemonLabel: DAEMON_LABEL };
 
+/** Default launchd plist / systemd unit path the daemon would be installed at. */
+function defaultDaemonConfigPath(): string {
+  if (process.platform === "linux") {
+    return join(homedir(), ".config", "systemd", "user", "claude-bot.service");
+  }
+  return join(homedir(), "Library", "LaunchAgents", `${DAEMON_LABEL}.plist`);
+}
+
+/**
+ * Pull the daemon entry path out of a launchd plist or systemd unit — in both
+ * formats the daemon is launched as `bun run <abs>/daemon/index.ts`, so we match
+ * the absolute path ending in `daemon/index.ts`.
+ */
+function extractDaemonEntry(config: string): string | null {
+  const m = config.match(/(\/[^\s<>"']*\/daemon\/index\.ts)/);
+  return m ? m[1] : null;
+}
+
+/** Injectable inputs for {@link installedEntrypoint} (tests). */
+export interface InstalledLookup {
+  /** Path to the launchd plist / systemd unit (defaults to the platform location). */
+  configPath?: string;
+  /** Read a file to a string (defaults to `node:fs` readFileSync). */
+  read?: (path: string) => string;
+  /** On-disk existence check (defaults to `node:fs` existsSync). */
+  exists?: (path: string) => boolean;
+}
+
+/**
+ * Detect a claude-bot that is ALREADY installed on this machine and return its
+ * own `bin/ensure-installed.ts`. We parse the installed launchd plist / systemd
+ * unit to recover the daemon's real path (e.g. the user's existing clone), so the
+ * app uses the already-downloaded copy instead of its own bundle. Returns null
+ * when nothing is installed (or the entry can't be derived). NEVER throws.
+ */
+export function installedEntrypoint(opts: InstalledLookup = {}): string | null {
+  const exists = opts.exists ?? existsSync;
+  const read = opts.read ?? ((p: string) => readFileSync(p, "utf8"));
+  const configPath = opts.configPath ?? defaultDaemonConfigPath();
+  try {
+    if (!exists(configPath)) return null;
+    const entry = extractDaemonEntry(read(configPath));
+    if (!entry) return null;
+    // <root>/daemon/index.ts -> <root>/bin/ensure-installed.ts
+    const ep = join(dirname(dirname(entry)), "bin", "ensure-installed.ts");
+    return exists(ep) ? ep : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Options for {@link resolveEntrypoint}, all injectable so resolution is unit-testable. */
 export interface ResolveOptions {
   /** Custom package resolver (defaults to `createRequire(import.meta.url).resolve`). */
@@ -48,30 +100,40 @@ export interface ResolveOptions {
   env?: Record<string, string | undefined>;
   /** On-disk existence check (defaults to `node:fs` existsSync) for the bundled entrypoint. */
   exists?: (path: string) => boolean;
+  /** Detector for an already-installed claude-bot (defaults to {@link installedEntrypoint}). */
+  installed?: () => string | null;
 }
 
 /**
  * Resolve the claude-bot installer entrypoint. Precedence:
- *  (1) BUNDLED copy — when `$OA_CLAUDEBOT_BUNDLE` is set AND
+ *  (1) ALREADY-INSTALLED claude-bot on this machine — parse the launchd plist /
+ *      systemd unit to recover the daemon's real path and use its own
+ *      `bin/ensure-installed.ts`. We prefer the copy that's already downloaded +
+ *      running over our bundle, so the app adopts the user's existing daemon.
+ *  (2) BUNDLED copy — when `$OA_CLAUDEBOT_BUNDLE` is set AND
  *      `<that>/bin/ensure-installed.ts` exists on disk (the packaged-app case:
  *      whoever launches the core server points this at the Tauri-bundled
- *      claude-bot resource dir). Highest precedence.
- *  (2) the RESOLVED `file:` dev dep — derive `bin/ensure-installed.ts` from the
+ *      claude-bot resource dir).
+ *  (3) the RESOLVED `file:` dev dep — derive `bin/ensure-installed.ts` from the
  *      linked package (preferring a directly-resolvable bin/exports entry, then
  *      falling back to deriving it next to the resolved package.json).
  *
  * NEVER throws; returns null if nothing resolves.
  *
- * All inputs are injectable via {@link ResolveOptions} so the env + existence
- * precedence is unit-testable. A bare `(spec) => string` resolver is still
- * accepted for back-compat with the original signature.
+ * All inputs are injectable via {@link ResolveOptions} so the precedence is
+ * unit-testable. A bare `(spec) => string` resolver is still accepted for
+ * back-compat with the original signature.
  */
 export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => string)): string | null {
   const options: ResolveOptions = typeof opts === "function" ? { resolve: opts } : (opts ?? {});
   const env = options.env ?? process.env;
   const exists = options.exists ?? existsSync;
 
-  // (1) Highest precedence: the Tauri-bundled, relocatable claude-bot copy.
+  // (1) Highest precedence: a claude-bot already installed on this machine.
+  const installed = (options.installed ?? (() => installedEntrypoint({ exists })))();
+  if (installed) return installed;
+
+  // (2) The Tauri-bundled, relocatable claude-bot copy.
   const bundle = env.OA_CLAUDEBOT_BUNDLE;
   if (bundle) {
     const bundled = join(bundle, "bin", "ensure-installed.ts");
@@ -82,7 +144,7 @@ export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => str
     }
   }
 
-  // (2) The existing `file:` dev-dep resolution.
+  // (3) The existing `file:` dev-dep resolution.
   const req = createRequire(import.meta.url);
   const tryResolve = options.resolve ?? ((spec: string) => req.resolve(spec));
   // Preferred: the package declares a bin/exports entry we can resolve directly.
