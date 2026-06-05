@@ -1,4 +1,7 @@
 import { test, expect } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { installStatus, runSetup, resolveEntrypoint } from "../src/claudebot";
 import type { SpawnResult } from "../src/claudebot";
 
@@ -118,4 +121,90 @@ test("resolveEntrypoint returns null when the package isn't resolvable at all", 
     throw new Error("not found");
   };
   expect(resolveEntrypoint(resolve)).toBeNull();
+});
+
+test("resolveEntrypoint prefers $OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts when it exists on disk", () => {
+  // A real temp dir laid out like a bundled claude-bot copy.
+  const bundle = mkdtempSync(join(tmpdir(), "oa-claudebot-bundle-"));
+  mkdirSync(join(bundle, "bin"), { recursive: true });
+  const entry = join(bundle, "bin", "ensure-installed.ts");
+  writeFileSync(entry, "// stub entrypoint\n");
+  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
+  process.env.OA_CLAUDEBOT_BUNDLE = bundle;
+  try {
+    // Even with a resolver that WOULD resolve the file: dep, the bundle wins.
+    const resolve = (spec: string): string => {
+      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
+      throw new Error(`cannot resolve ${spec}`);
+    };
+    expect(resolveEntrypoint({ resolve })).toBe(entry);
+  } finally {
+    if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
+    else process.env.OA_CLAUDEBOT_BUNDLE = prev;
+    rmSync(bundle, { recursive: true, force: true });
+  }
+});
+
+test("resolveEntrypoint falls back to the package when $OA_CLAUDEBOT_BUNDLE is set but the file is missing", () => {
+  // Point the env at a dir that has NO bin/ensure-installed.ts on disk.
+  const bundle = mkdtempSync(join(tmpdir(), "oa-claudebot-empty-"));
+  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
+  process.env.OA_CLAUDEBOT_BUNDLE = bundle;
+  try {
+    const resolve = (spec: string): string => {
+      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
+      throw new Error(`cannot resolve ${spec}`);
+    };
+    expect(resolveEntrypoint({ resolve })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
+  } finally {
+    if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
+    else process.env.OA_CLAUDEBOT_BUNDLE = prev;
+    rmSync(bundle, { recursive: true, force: true });
+  }
+});
+
+test("resolveEntrypoint ignores an unset $OA_CLAUDEBOT_BUNDLE and uses the package", () => {
+  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
+  delete process.env.OA_CLAUDEBOT_BUNDLE;
+  try {
+    const resolve = (spec: string): string => {
+      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
+      throw new Error(`cannot resolve ${spec}`);
+    };
+    expect(resolveEntrypoint({ resolve })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
+  } finally {
+    if (prev !== undefined) process.env.OA_CLAUDEBOT_BUNDLE = prev;
+  }
+});
+
+test("resolveEntrypoint honors injected env + exists for the bundle precedence (hermetic)", () => {
+  const bundleDir = "/staged/resources/claude-bot";
+  const expected = join(bundleDir, "bin", "ensure-installed.ts");
+  const seen: string[] = [];
+  const entry = resolveEntrypoint({
+    env: { OA_CLAUDEBOT_BUNDLE: bundleDir },
+    exists: (p) => {
+      seen.push(p);
+      return p === expected;
+    },
+    resolve: () => {
+      throw new Error("should not consult the package when the bundle resolves");
+    },
+  });
+  expect(entry).toBe(expected);
+  expect(seen).toContain(expected);
+});
+
+test("resolveEntrypoint never throws when the injected exists probe blows up", () => {
+  const entry = resolveEntrypoint({
+    env: { OA_CLAUDEBOT_BUNDLE: "/whatever" },
+    exists: () => {
+      throw new Error("EACCES");
+    },
+    resolve: () => {
+      throw new Error("dep missing");
+    },
+  });
+  // Bundle probe failed and the dep doesn't resolve -> null, no throw.
+  expect(entry).toBeNull();
 });

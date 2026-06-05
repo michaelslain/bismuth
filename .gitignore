@@ -8,3 +8,6 @@ superpowers/
 .claude/
 .DS_Store
 *.log
+
+# Staged claude-bot Tauri resource (built by app/scripts/bundle-claudebot.ts) — heavy artifact, never committed
+app/src-tauri/resources/claude-bot/
