@@ -7,6 +7,7 @@
 // the WebView bundle never includes them). iPad: the mobile entrypoint calls
 // `setFileAccess()` with a `tauri-plugin-fs`-backed impl before the first read,
 // so the dynamic import never fires and no Bun-coupled code loads.
+import type { TreeEntry } from "./graph";
 
 /** Minimal file stat the Bases feed needs (size + timestamps in ms). */
 export interface FileStat {
@@ -19,6 +20,8 @@ export interface FileStat {
 export interface FileAccess {
   /** All markdown files under the vault, vault-relative. */
   listMarkdown(root: string): Promise<string[]>;
+  /** The full file/folder tree (md + .base + .sheet + .draw + folders) for the sidebar. */
+  listTree(root: string): Promise<TreeEntry[]>;
   /** Read one note's UTF-8 contents (vault-relative path). */
   readNote(root: string, rel: string): Promise<string>;
   /** Write one note's UTF-8 contents (vault-relative path). */
@@ -50,6 +53,7 @@ export async function getFileAccess(): Promise<FileAccess> {
   const { join } = await import("node:path");
   access = {
     listMarkdown: files.listMarkdown,
+    listTree: files.listTree,
     readNote: files.readNote,
     writeNote: files.writeNote,
     listBases: files.listBases,

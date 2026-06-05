@@ -9,6 +9,7 @@ import type { GraphNode } from "../src/graph";
 function memAccess(vault: Record<string, string>): FileAccess {
   return {
     listMarkdown: async () => Object.keys(vault),
+    listTree: async () => Object.keys(vault).map((path) => ({ path, kind: "file" as const })),
     readNote: async (_root, rel) => vault[rel] ?? "",
     writeNote: async () => {},
     listBases: async () => [],

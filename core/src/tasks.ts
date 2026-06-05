@@ -2,7 +2,7 @@
 // emoji-signifier format. One Task per checkbox list item, tracking the source file
 // and 0-indexed line so the line can be toggled back in place.
 
-import { listMarkdown, readNote } from "./files";
+import { getFileAccess } from "./fileAccess";
 import { addDaysISO } from "./dates";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
@@ -225,6 +225,7 @@ export function toggleTaskLine(line: string, today: string): string {
 
 /** Read every markdown file in the vault and return all checkbox tasks across them. */
 export async function collectVaultTasks(root: string): Promise<Task[]> {
+  const { listMarkdown, readNote } = await getFileAccess();
   const rels = await listMarkdown(root);
   const contents = await Promise.all(
     rels.map(async (rel) => ({ rel, content: await readNote(root, rel) }))
@@ -243,6 +244,7 @@ export async function collectVaultTasks(root: string): Promise<Task[]> {
  * and line numbers stay identical (write-back relies on path+line).
  */
 export async function collectTasksFromPaths(root: string, paths: string[]): Promise<Task[]> {
+  const { readNote } = await getFileAccess();
   const contents = await Promise.all(paths.map((p) => readNote(root, p).catch(() => "")));
   return paths.flatMap((p, i) => extractTasks(contents[i], p));
 }
