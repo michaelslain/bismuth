@@ -16,7 +16,6 @@ export interface CommandHandlers {
   newFolder: () => void;
   newSpreadsheet: () => void;
   newDrawing: () => void | Promise<void>;
-  openFlashcards: () => void;
   openGraph: () => void;
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
@@ -64,7 +63,6 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "terminal": h.openTerminal,
     "search": h.openSearch,
     "settings": h.openSettings,
-    "flashcards": h.openFlashcards,
     "graph-2nd": () => h.setMode("2nd"),
     "graph-3rd": () => h.setMode("3rd"),
     "graph-both": () => h.setMode("both"),

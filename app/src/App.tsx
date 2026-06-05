@@ -28,7 +28,7 @@ import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../co
 import { withYouNode } from "./graph/youNode";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, FLASHCARDS_PREFIX, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
@@ -486,7 +486,6 @@ export default function App() {
   };
   const newSpreadsheet = () => void newDoc("Spreadsheet", "sheet");
   const newDrawing = () => void newDoc("Drawing", "draw");
-  const openFlashcards = () => openInNewTab(FLASHCARDS_PREFIX);
   // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
   const openGraph = () => openInNewTab(GRAPH_TAB);
   // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
@@ -503,7 +502,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
