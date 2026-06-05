@@ -17,6 +17,7 @@
 // resolvable yet, spawn error, non-JSON output) degrades to a safe default of
 // { installed: false, running: false } so the UI/route can't crash.
 import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export const DAEMON_LABEL = "com.claude-bot.daemon";
@@ -39,18 +40,51 @@ export interface SetupResult {
 /** Safe default returned whenever we can't talk to the installer entrypoint. */
 const UNKNOWN_STATUS: InstallStatus = { installed: false, running: false, daemonLabel: DAEMON_LABEL };
 
+/** Options for {@link resolveEntrypoint}, all injectable so resolution is unit-testable. */
+export interface ResolveOptions {
+  /** Custom package resolver (defaults to `createRequire(import.meta.url).resolve`). */
+  resolve?: (spec: string) => string;
+  /** Env lookup (defaults to `process.env`) — drives the OA_CLAUDEBOT_BUNDLE precedence. */
+  env?: Record<string, string | undefined>;
+  /** On-disk existence check (defaults to `node:fs` existsSync) for the bundled entrypoint. */
+  exists?: (path: string) => boolean;
+}
+
 /**
- * Resolve the claude-bot installer entrypoint from the RESOLVED package (not a
- * hardcoded absolute path), per the setup contract. The claude-bot package's
- * own `exports`/`bin` may not be wired yet, but the package directory is linked
- * (a `file:` dep), so we resolve its package.json and derive `bin/ensure-installed.ts`
- * next to it. Returns null if the package isn't resolvable (dep missing).
+ * Resolve the claude-bot installer entrypoint. Precedence:
+ *  (1) BUNDLED copy — when `$OA_CLAUDEBOT_BUNDLE` is set AND
+ *      `<that>/bin/ensure-installed.ts` exists on disk (the packaged-app case:
+ *      whoever launches the core server points this at the Tauri-bundled
+ *      claude-bot resource dir). Highest precedence.
+ *  (2) the RESOLVED `file:` dev dep — derive `bin/ensure-installed.ts` from the
+ *      linked package (preferring a directly-resolvable bin/exports entry, then
+ *      falling back to deriving it next to the resolved package.json).
  *
- * Injectable for tests via the `resolve` option.
+ * NEVER throws; returns null if nothing resolves.
+ *
+ * All inputs are injectable via {@link ResolveOptions} so the env + existence
+ * precedence is unit-testable. A bare `(spec) => string` resolver is still
+ * accepted for back-compat with the original signature.
  */
-export function resolveEntrypoint(resolve?: (spec: string) => string): string | null {
+export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => string)): string | null {
+  const options: ResolveOptions = typeof opts === "function" ? { resolve: opts } : (opts ?? {});
+  const env = options.env ?? process.env;
+  const exists = options.exists ?? existsSync;
+
+  // (1) Highest precedence: the Tauri-bundled, relocatable claude-bot copy.
+  const bundle = env.OA_CLAUDEBOT_BUNDLE;
+  if (bundle) {
+    const bundled = join(bundle, "bin", "ensure-installed.ts");
+    try {
+      if (exists(bundled)) return bundled;
+    } catch {
+      // existence probe failed (weird path/perms) — fall through to the dep.
+    }
+  }
+
+  // (2) The existing `file:` dev-dep resolution.
   const req = createRequire(import.meta.url);
-  const tryResolve = resolve ?? ((spec: string) => req.resolve(spec));
+  const tryResolve = options.resolve ?? ((spec: string) => req.resolve(spec));
   // Preferred: the package declares a bin/exports entry we can resolve directly.
   for (const spec of ["claude-bot/bin/ensure-installed.ts", "claude-bot/bin/ensure-installed"]) {
     try {
