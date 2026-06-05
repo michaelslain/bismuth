@@ -29,6 +29,7 @@ import { searchVault, invalidateSearchIndex } from "./search";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
+import { daemonStatus, listDevices, setOwner } from "./daemon";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -493,6 +494,17 @@ export function createServer(cfg: CoreConfig) {
       const deck = url.searchParams.get("deck") ?? undefined;
       return ok(await dueCards(cfg.vault, todayISO(), deck));
     },
+
+    // claude-bot daemon supervision. These read the shared state files under the
+    // claude-bot home dir (OA_CLAUDEBOT_HOME, default ~/.claude-bot) that the daemon
+    // authors; vault-independent, so they live here regardless of cfg.vault.
+    "GET /daemon/status": async (_, __) => {
+      return ok(daemonStatus());
+    },
+
+    "GET /daemon/devices": async (_, __) => {
+      return ok(listDevices());
+    },
   };
 
 
@@ -738,6 +750,26 @@ export function createServer(cfg: CoreConfig) {
       await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
       return ok({ path, created: true });
     }),
+
+    // Claim a device as the claude-bot daemon owner: write owner.json (byte-compatible
+    // with what the daemon reads). owner.json lives outside the vault, so there's
+    // nothing in the graph/tree caches to invalidate — pass a stable constant scope
+    // (no vault path) so the mutating handler's path-derived invalidation is a no-op.
+    "POST /daemon/owner": mutatingHandler(
+      async (req) => {
+        const { deviceId } = (await req.json()) as { deviceId?: unknown };
+        if (typeof deviceId !== "string" || deviceId.length === 0) {
+          return error("missing deviceId", 400);
+        }
+        try {
+          return ok(setOwner(deviceId));
+        } catch (e) {
+          // setOwner throws when deviceId isn't a known, heartbeating device.
+          return error((e as Error).message, 400);
+        }
+      },
+      () => "::daemon-owner",
+    ),
   };
 
   // Warm the graph + tree caches off the critical path so the first webview request

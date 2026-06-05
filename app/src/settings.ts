@@ -92,6 +92,10 @@ export interface Settings {
     fileWatchDebounceMs: number; // backend: coalesce file changes (ms)
     sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
+  daemon: {
+    enabled: boolean; // supervise the claude-bot daemon
+    home: string;     // override claude-bot home dir ("" = ~/.claude-bot)
+  };
   terminal: {
     fontSize: number;          // px
     lineHeight: number;        // multiplier

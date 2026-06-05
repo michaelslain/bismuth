@@ -37,6 +37,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "graph-agents",    label: "Graph: Agents",             icon: "Users" },
   { id: "equalize-panes",  label: "Equalize panes",            icon: "Columns3" },
   { id: "toggle-sidebar",  label: "Toggle sidebar",            icon: "PanelLeft" },
+  { id: "daemon-owner",    label: "Set daemon owner device…",  icon: "Server" },
 ];
 
 /** All command ids, in catalog order. */

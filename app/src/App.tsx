@@ -20,6 +20,7 @@ import { debounce } from "./debounce";
 import { ToastHost, pushToast } from "./Toast";
 import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
+import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { openAppWindow, pickFolder } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
@@ -477,6 +478,10 @@ export default function App() {
       pushToast(`Open folder failed: ${(e as Error).message}`);
     }
   };
+  // claude-bot daemon owner picker. A small modal that lists heartbeating devices and
+  // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
+  const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false);
+  const openDaemonOwner = () => setDaemonOwnerOpen(true);
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -503,7 +508,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openFlashcards, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1198,6 +1203,9 @@ export default function App() {
       </Show>
       <Show when={folderPromptOpen()}>
         <FolderPrompt onClose={() => setFolderPromptOpen(false)} onOpen={doOpenFolder} />
+      </Show>
+      <Show when={daemonOwnerOpen()}>
+        <DaemonOwnerModal onClose={() => setDaemonOwnerOpen(false)} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (
