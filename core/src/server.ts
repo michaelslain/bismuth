@@ -29,7 +29,7 @@ import { searchVault, invalidateSearchIndex } from "./search";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride } from "./daemon";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -92,7 +92,7 @@ export function createServer(cfg: CoreConfig) {
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
   // boot and whenever settings.yaml changes (see classifyVault).
   let appConfig: AppConfig = SETTINGS_DEFAULTS as AppConfig;
-  void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
+  void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
 
   // /graph and /tree go through a deduped, invalidation-safe cache (see asyncCache.ts):
   // concurrent first requests share one build, and a file change mid-build won't
@@ -149,7 +149,7 @@ export function createServer(cfg: CoreConfig) {
         // settings.yaml drives the property registry + appearance — both graph
         // and tree consumers should refetch; /schema reads it fresh on demand.
         // Also refresh the backend runtime config (debounce, heartbeat, …).
-        void loadAppConfig(cfg.vault).then((c) => { appConfig = c; }).catch(() => {});
+        void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
         graph = true;
         tree = true;
         continue;
@@ -800,7 +800,8 @@ export function createServer(cfg: CoreConfig) {
         const allowed =
           !origin ||
           /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
-          /^tauri:\/\//.test(origin);
+          /^tauri:\/\//.test(origin) ||
+          /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
         if (!allowed) {
           return withCors(error("forbidden origin", 403));
         }

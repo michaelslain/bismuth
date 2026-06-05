@@ -17,9 +17,19 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync } from "node:fs";
 
-/** Resolved claude-bot home dir: OA_CLAUDEBOT_HOME, else ~/.claude-bot. */
+// Optional home override fed from settings.yaml (daemon.home) by server.ts. The
+// OA_CLAUDEBOT_HOME env var still wins (ops/dev override), per the integration
+// contract; this fills in when the env var is absent.
+let homeOverride = "";
+
+/** Set the settings-driven home override (empty/whitespace clears it). */
+export function setClaudeBotHomeOverride(home: string | null | undefined): void {
+  homeOverride = (home ?? "").trim();
+}
+
+/** Resolved claude-bot home dir: OA_CLAUDEBOT_HOME env, else the settings override, else ~/.claude-bot. */
 export function claudeBotHome(): string {
-  return process.env.OA_CLAUDEBOT_HOME || join(homedir(), ".claude-bot");
+  return process.env.OA_CLAUDEBOT_HOME || homeOverride || join(homedir(), ".claude-bot");
 }
 
 export interface Owner {
