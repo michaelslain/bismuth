@@ -1,12 +1,11 @@
-import { basename } from "node:path";
-import { realpath } from "node:fs/promises";
 import type { Row, SourceSpec } from "./types";
 import { buildVaultRows } from "../basesData";
 import { buildTaskRows, filterTaskRows } from "./tasksData";
 import { parseBaseFile } from "./parse";
 import { passesFilter } from "./filters";
 import { toContext } from "./query";
-import { readNote } from "../files";
+import { getFileAccess } from "../fileAccess";
+import { fileBasename } from "../pathUtils";
 import { refToPath } from "./sourceSpec";
 
 export interface SourceCtx {
@@ -26,27 +25,23 @@ export interface SourceCtx {
  */
 export async function resolveBaseRows(path: string, ctx: SourceCtx): Promise<Row[]> {
   const seen = ctx.seen ?? new Set<string>();
+  const fa = await getFileAccess();
 
   // Resolve symlinks to their real paths to detect cycles even through symlink chains.
-  // E.g., if A -> link-to-A or A -> B -> link-to-A, both are caught.
-  let realPath = path;
-  try {
-    realPath = await realpath(path);
-  } catch {
-    // If realpath fails (e.g., file doesn't exist), use the path as-is for cycle detection.
-    // The file read below will catch the actual error.
-  }
+  // E.g., if A -> link-to-A or A -> B -> link-to-A, both are caught. Best-effort:
+  // realPath() falls back to the input path when it can't resolve (e.g. on iOS).
+  const realPath = await fa.realPath(path);
 
   if (seen.has(realPath)) return []; // cycle: A -> ... -> A (possibly through symlinks)
   seen.add(realPath);
 
   let text: string;
   try {
-    text = await readNote(ctx.root, path);
+    text = await fa.readNote(ctx.root, path);
   } catch {
     return [];
   }
-  const name = basename(path).replace(/\.(md|base)$/, "");
+  const name = fileBasename(path);
   const { config, rows } = parseBaseFile(text, { name, path });
   // No declared source => inline (own-rows) base: return its table rows.
   if (!config.source) return rows;

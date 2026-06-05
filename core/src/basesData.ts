@@ -1,13 +1,11 @@
-import { stat, type Stats } from "node:fs/promises";
-import { join } from "node:path";
-import { listMarkdown, readNote } from "./files";
+import { getFileAccess, type FileStat } from "./fileAccess";
 import { parseFrontmatter } from "./frontmatter";
 import { extractTags } from "./tags";
 import { extractWikilinks } from "./wikilinks";
 import { pathParts } from "./vault";
 import type { FileMeta, Row } from "./bases/types";
 
-function fileMeta(rel: string, st: Stats | null, tags: string[], links: string[]): FileMeta {
+function fileMeta(rel: string, st: FileStat | null, tags: string[], links: string[]): FileMeta {
   const { name, ext, folder } = pathParts(rel);
 
   // Use file stats if available (null when the file was deleted since the list).
@@ -22,15 +20,16 @@ function fileMeta(rel: string, st: Stats | null, tags: string[], links: string[]
 }
 
 export async function buildVaultRows(root: string): Promise<Row[]> {
+  const { listMarkdown, readNote, statNote } = await getFileAccess();
   const files = await listMarkdown(root);
   // Read body and stat each file concurrently (one Promise.all over both async calls)
-  // instead of a synchronous statSync per file in the build loop. stat() resolves to null
-  // on failure (file deleted since list) — matching the old try/catch-to-zero behavior.
+  // instead of a synchronous statSync per file in the build loop. statNote() resolves to
+  // null on failure (file deleted since list) — matching the old try/catch-to-zero behavior.
   const contents = await Promise.all(
     files.map(async (rel) => {
       const [raw, st] = await Promise.all([
         readNote(root, rel),
-        stat(join(root, rel)).catch(() => null),
+        statNote(root, rel),
       ]);
       return { rel, raw, st };
     })
@@ -45,10 +44,8 @@ export async function buildVaultRows(root: string): Promise<Row[]> {
   return rows;
 }
 
-// Also expose .base file discovery here for reuse.
+// .base file discovery, kept here for backward-compatible imports; delegates to
+// the active FileAccess (Bun glob on desktop, tauri-plugin-fs on iOS).
 export async function listBases(root: string): Promise<string[]> {
-  const glob = new Bun.Glob("**/*.base");
-  const out: string[] = [];
-  for await (const p of glob.scan({ cwd: root, dot: false })) out.push(p);
-  return out.sort();
+  return (await getFileAccess()).listBases(root);
 }

@@ -2,7 +2,7 @@
 // Vault full-text search: a pure line matcher (findMatches) for snippets/replace,
 // plus MiniSearch-backed ranking (searchVault) modeled on the Omnisearch plugin.
 import MiniSearch from "minisearch";
-import { listMarkdown, readNote } from "./files";
+import { getFileAccess } from "./fileAccess";
 import { fileBasename } from "./pathUtils";
 
 export interface SearchOpts {
@@ -116,6 +116,7 @@ export function invalidateSearchIndex(root?: string): void {
 }
 
 async function buildSearchIndex(root: string): Promise<SearchIndex> {
+  const { listMarkdown, readNote } = await getFileAccess();
   const paths = await listMarkdown(root);
   const bodies = new Map<string, string>();
   const docs: IndexDoc[] = [];

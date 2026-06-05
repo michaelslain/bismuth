@@ -1,4 +1,4 @@
-import { listMarkdown, readNote, writeNote } from "../files";
+import { getFileAccess } from "../fileAccess";
 import { parseFrontmatter } from "../frontmatter";
 import { extractTags } from "../tags";
 import { createError } from "../error";
@@ -64,6 +64,7 @@ function toCards(pc: ParsedCard, cardIndex: number, notePath: string, deck: stri
 }
 
 export async function collectCards(vault: string): Promise<Card[]> {
+  const { listMarkdown, readNote } = await getFileAccess();
   const rels = await listMarkdown(vault);
   const contents = await Promise.all(
     rels.map(async (rel) => ({ rel, text: await readNote(vault, rel) })),
@@ -87,6 +88,7 @@ export async function collectCards(vault: string): Promise<Card[]> {
  * this note). Deck falls back to "" when the note has no flashcard tag.
  */
 export async function noteCards(vault: string, notePath: string): Promise<Card[]> {
+  const { readNote } = await getFileAccess();
   const text = await readNote(vault, notePath);
   const { data, body } = parseFrontmatter(text);
   const deck = noteDeck(extractTags(data, body)) ?? "";
@@ -139,6 +141,7 @@ export async function applyReview(
     throw createError("CARD_FORMAT_ERROR", `invalid cardId indices: ${cardId}`);
   }
 
+  const { readNote, writeNote } = await getFileAccess();
   const text = await readNote(vault, notePath);
   const { body } = parseFrontmatter(text);
   const head = text.slice(0, text.length - body.length);

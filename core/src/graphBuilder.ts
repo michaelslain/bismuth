@@ -1,5 +1,5 @@
-import { listMarkdown, readNote } from "./files";
 import type { GraphNode, GraphEdge } from "./graph";
+import { getFileAccess } from "./fileAccess";
 
 /**
  * Shared graph builder for vault and memory notes.
@@ -20,6 +20,7 @@ export async function buildGraphFromNotes(
   byBase: Map<string, string>;
   byPath: Map<string, string>;
 }> {
+  const { listMarkdown, readNote } = await getFileAccess();
   const rels = await listMarkdown(root);
   const nodes: GraphNode[] = [];
   const byBase = new Map<string, string>();

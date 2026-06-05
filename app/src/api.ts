@@ -17,7 +17,7 @@ const BASE = resolveBase(globalThis.location?.search, import.meta.env.VITE_API_B
 
 /** The backend this window is bound to (already query/env resolved). Exposed so the UI
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
-export const apiBase = (): string => BASE;
+export const apiBase = (): string => transport.base();
 
 import type { GraphData, TreeEntry, ViewLayout } from "../../core/src/graph";
 import type { SearchOpts, SearchResult } from "./searchOpts";
@@ -28,53 +28,91 @@ import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 import type { InstallStatus, SetupResult } from "../../core/src/claudebot";
 
+// --- Transport seam -------------------------------------------------------
+// Everything the `api` object needs from the outside world is funnelled through
+// a `Transport`. On desktop/browser this is plain HTTP to the Bun backend (the
+// historical behavior). On iPad/iOS — where no Bun process can run — a future
+// in-process transport will implement the same surface against in-WebView logic
+// + tauri-plugin-fs, and `setTransport()` swaps it in at boot. Keeping the verbs
+// (incl. post/put returning a `Response`, a web standard available in WKWebView)
+// identical means zero call-site changes when the backend moves in-process.
+export interface Transport {
+  getJson<T>(path: string): Promise<T>;
+  getText(path: string): Promise<string>;
+  post(path: string, body: unknown): Promise<Response>;
+  put(path: string, body: unknown): Promise<Response>;
+  postJson<T>(path: string, body: unknown): Promise<T>;
+  /** Upload attachment bytes to `targetPath`; returns the path actually written. */
+  uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>;
+  /** `src`-able URL for a vault media file (image/PDF/audio/video). */
+  assetUrl(target: string): string;
+  /** URL passed to `new EventSource(...)` for live change events. */
+  eventsUrl(): string;
+  /** The resolved backend base (used to pin `?api=` windows). */
+  base(): string;
+}
+
+/** HTTP transport: the original fetch-against-`base` behavior, unchanged. */
+export function httpTransport(base: string): Transport {
+  /** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
+  async function request<T>(
+    method: "GET" | "POST" | "PUT",
+    path: string,
+    body?: unknown,
+    responseType?: "json" | "text",
+  ): Promise<T | Response | string> {
+    const r = await fetch(`${base}${path}`, {
+      method,
+      ...(body !== undefined && {
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    if (responseType === "json") return r.json() as Promise<T>;
+    if (responseType === "text") return r.text() as Promise<string>;
+    return r;
+  }
+  return {
+    getJson: <T>(path: string) => request<T>("GET", path, undefined, "json") as Promise<T>,
+    getText: (path: string) => request("GET", path, undefined, "text") as Promise<string>,
+    post: (path: string, body: unknown) => request("POST", path, body) as Promise<Response>,
+    put: (path: string, body: unknown) => request("PUT", path, body) as Promise<Response>,
+    postJson: <T>(path: string, body: unknown) => request<T>("POST", path, body, "json") as Promise<T>,
+    uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
+      const r = await fetch(`${base}/asset?path=${encodeURIComponent(targetPath)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes,
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { path } = (await r.json()) as { path: string };
+      return path;
+    },
+    assetUrl: (target: string) => `${base}/asset?path=${encodeURIComponent(target)}`,
+    eventsUrl: () => `${base}/events`,
+    base: () => base,
+  };
+}
+
+// Active transport. Defaults to HTTP against the runtime-resolved `BASE`; a
+// mobile entrypoint may `setTransport(inProcessTransport())` before first use.
+let transport: Transport = httpTransport(BASE);
+/** Swap the active transport (e.g. an in-process one on iOS). Desktop never calls this. */
+export const setTransport = (t: Transport): void => {
+  transport = t;
+};
+
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
-export const eventsUrl = () => `${BASE}/events`;
+export const eventsUrl = () => transport.eventsUrl();
 
-/** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
-async function request<T>(
-  method: "GET" | "POST" | "PUT",
-  path: string,
-  body?: unknown,
-  responseType?: "json" | "text",
-): Promise<T | Response | string> {
-  const r = await fetch(`${BASE}${path}`, {
-    method,
-    ...(body !== undefined && {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }),
-  });
-  if (!r.ok) throw new Error(await r.text());
-  if (responseType === "json") return r.json() as Promise<T>;
-  if (responseType === "text") return r.text() as Promise<string>;
-  return r;
-}
-
-/** GET and parse JSON. */
-async function getJson<T>(path: string): Promise<T> {
-  return request<T>("GET", path, undefined, "json") as Promise<T>;
-}
-
-/** POST JSON. */
-async function post(path: string, body: unknown): Promise<Response> {
-  return request("POST", path, body) as Promise<Response>;
-}
-
-/** PUT JSON. */
-async function put(path: string, body: unknown): Promise<Response> {
-  return request("PUT", path, body) as Promise<Response>;
-}
-
-/** POST JSON and parse JSON response. */
-async function postJson<T>(path: string, body: unknown): Promise<T> {
-  return request<T>("POST", path, body, "json") as Promise<T>;
-}
-
-/** GET and parse text. */
-async function getText(path: string): Promise<string> {
-  return request("GET", path, undefined, "text") as Promise<string>;
-}
+// Thin call-site helpers that route through the active transport. Kept as
+// free functions so the `api` object below reads exactly as before.
+const getJson = <T>(path: string) => transport.getJson<T>(path);
+const getText = (path: string) => transport.getText(path);
+const post = (path: string, body: unknown) => transport.post(path, body);
+const put = (path: string, body: unknown) => transport.put(path, body);
+const postJson = <T>(path: string, body: unknown) => transport.postJson<T>(path, body);
 
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
@@ -84,21 +122,13 @@ export const api = {
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),
   // Absolute URL to a vault file's BINARY bytes (image/PDF/audio/video), resolved
   // filename-first by the backend. Used as the `src` of an embed widget. Honors the
-  // window's bound backend via apiBase() so multi-window/?api= previews load correctly.
-  assetUrl: (target: string) => `${BASE}/asset?path=${encodeURIComponent(target)}`,
+  // window's bound backend via the transport so multi-window/?api= previews load correctly.
+  assetUrl: (target: string) => transport.assetUrl(target),
   // Upload pasted/dropped attachment bytes to `targetPath` (under the attachments
   // folder). The backend de-collides the name and returns the path actually written,
   // whose basename the caller inserts as `![[basename]]`.
-  uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
-    const r = await fetch(`${BASE}/asset?path=${encodeURIComponent(targetPath)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: bytes,
-    });
-    if (!r.ok) throw new Error(await r.text());
-    const { path } = (await r.json()) as { path: string };
-    return path;
-  },
+  uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
+    transport.uploadAsset(targetPath, bytes),
   // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
   // editor autosave + settings.yaml persistence actually reach disk.
   write: (path: string, contents: string) =>
