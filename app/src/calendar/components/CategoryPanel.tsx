@@ -1,36 +1,44 @@
-import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
+import { createSignal, createEffect, onCleanup, onMount, For, Show } from 'solid-js'
 import { categories, showCategoryPanel } from '../state'
 import { EventStore } from '../EventStore'
 import { settings } from '../../settings'
 import { Modal } from '../../ui/Modal'
-import { TextButton } from '../../ui/TextButton'
-import { IconButton } from '../../ui/IconButton'
+import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
-import { THEME_SWATCHES, isThemeToken, categoryColorHex } from '../categoryColor'
+import { TextButton } from '../../ui/TextButton'
+import { IconTextButton } from '../../ui/IconTextButton'
+import { THEME_SWATCHES, isThemeToken, categoryColorHex, resolveCategoryColor } from '../categoryColor'
 
-/** Colour picker: the theme palette swatches (stored as tokens so they track the
- *  theme) plus a custom "any colour" well backed by the native picker. */
-function CategorySwatches(props: { value: string; onChange: (c: string) => void }) {
+/** Palette popover: the theme swatches (stored as tokens so they track the theme)
+ *  plus a custom "any colour" well backed by the native picker. */
+function Palette(props: { value: string; onPick: (c: string) => void; up?: boolean }) {
   return (
-    <div class="cat-swatches">
-      <For each={THEME_SWATCHES}>{tok => (
-        <button
-          type="button"
-          class="cat-swatch"
-          classList={{ selected: props.value === tok }}
-          style={{ background: `var(--${tok})` }}
-          title={tok}
-          onClick={() => props.onChange(tok)}
-        />
-      )}</For>
-      <label
-        class="cat-swatch cat-swatch-custom"
-        classList={{ selected: !isThemeToken(props.value) }}
-        style={!isThemeToken(props.value) ? { background: props.value } : undefined}
-        title="Custom colour"
-      >
-        <input type="color" value={categoryColorHex(props.value)} onInput={e => props.onChange(e.currentTarget.value)} />
-      </label>
+    <div class={'cat-pop' + (props.up ? ' up' : '')} onClick={e => e.stopPropagation()}>
+      <div class="cat-sws">
+        <For each={THEME_SWATCHES}>{tok => (
+          <button type="button" class={'cat-sw' + (props.value === tok ? ' on' : '')}
+            style={{ color: `var(--${tok})`, background: `var(--${tok})` }}
+            title={tok} aria-label={tok} onClick={() => props.onPick(tok)} />
+        )}</For>
+        <label class={'cat-sw custom' + (!isThemeToken(props.value) ? ' on' : '')}
+          style={!isThemeToken(props.value) ? { color: props.value, background: props.value } : undefined}
+          title="Custom colour">
+          <input type="color" value={categoryColorHex(props.value)} onInput={e => props.onPick(e.currentTarget.value)} />
+        </label>
+      </div>
+    </div>
+  )
+}
+
+function ColorChip(props: { color: string; open: boolean; up?: boolean; onToggle: () => void; onPick: (c: string) => void }) {
+  return (
+    <div class="cat-chipwrap">
+      <button type="button" class={'cat-chip' + (props.open ? ' open' : '')}
+        style={{ background: resolveCategoryColor(props.color) }}
+        aria-label="Choose colour" onClick={e => { e.stopPropagation(); props.onToggle() }} />
+      <Show when={props.open}>
+        <Palette value={props.color} onPick={props.onPick} up={props.up} />
+      </Show>
     </div>
   )
 }
@@ -38,19 +46,23 @@ function CategorySwatches(props: { value: string; onChange: (c: string) => void 
 export function CategoryPanel(props: { store: EventStore }) {
   const [newName, setNewName] = createSignal('')
   const [newColor, setNewColor] = createSignal(settings.calendar.defaultCategoryColor)
+  // which colour popover is open: a category name, the literal 'new', or null
+  const [picker, setPicker] = createSignal<string | null>(null)
+  // which category is being renamed inline (its current name), or null
+  const [editName, setEditName] = createSignal<string | null>(null)
+
+  const close = () => (showCategoryPanel.value = false)
 
   async function handleAdd(): Promise<void> {
-    if (!newName().trim()) return
-    await props.store.addCategory({ name: newName().trim(), color: newColor() })
+    const name = newName().trim()
+    if (!name || categories.value.some(c => c.name === name)) return
+    await props.store.addCategory({ name, color: newColor() })
     categories.value = props.store.getCategories()
     setNewName('')
     setNewColor(settings.calendar.defaultCategoryColor)
   }
 
   async function handleDelete(name: string): Promise<void> {
-    // Reassign orphaned events to a stable default category if one exists
-    // ('Uncategorized' / 'Default'); otherwise clear the category so events
-    // become uncategorized rather than silently moved to an arbitrary neighbor.
     const reassign = categories.value.find(
       c => c.name !== name && (c.name === 'Uncategorized' || c.name === 'Default'),
     )?.name
@@ -63,11 +75,19 @@ export function CategoryPanel(props: { store: EventStore }) {
     categories.value = props.store.getCategories()
   }
 
+  async function handleRename(oldName: string, raw: string): Promise<void> {
+    const name = raw.trim()
+    setEditName(null)
+    if (!name || name === oldName || categories.value.some(c => c.name === name)) return
+    await props.store.updateCategory(oldName, { name })
+    categories.value = props.store.getCategories()
+  }
+
   onMount(() => {
-    // Escape-to-close is handled by <Modal>; this keeps Enter-to-add.
+    // Escape-to-close is handled by <Modal>; this keeps Enter-to-add when not renaming.
     function onKey(e: KeyboardEvent): void {
       const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT' && editName() === null) {
         e.preventDefault()
         handleAdd()
       }
@@ -76,31 +96,78 @@ export function CategoryPanel(props: { store: EventStore }) {
     onCleanup(() => window.removeEventListener('keydown', onKey))
   })
 
+  // Close an open colour popover when clicking anywhere outside a chip/popover.
+  createEffect(() => {
+    if (picker() === null) return
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement)?.closest('.cat-chipwrap')) setPicker(null)
+    }
+    window.addEventListener('mousedown', onDown)
+    onCleanup(() => window.removeEventListener('mousedown', onDown))
+  })
+
   return (
     <Show when={showCategoryPanel.value}>
-      <Modal onClose={() => (showCategoryPanel.value = false)} class="category-panel">
-        <h3>Categories</h3>
-        <div class="category-list">
-          <For each={categories.value}>{c => (
-            <div class="category-row">
-              <div class="cat-row-main">
-                <span class="cat-name">{c.name}</span>
-                <CategorySwatches value={c.color} onChange={col => handleColorChange(c.name, col)} />
-              </div>
-              <IconButton label="Delete category" icon="X" iconSize={14} onClick={() => handleDelete(c.name)} />
-            </div>
-          )}</For>
-        </div>
-        <div class="cat-divider" />
-        <div class="cat-add-label">New category</div>
-        <div class="category-add-row">
-          <div class="cat-row-head">
-            <TextInput placeholder="Category name" value={newName()} onInput={setNewName} />
-            <TextButton size="sm" variant="selected" onClick={handleAdd}>ADD</TextButton>
+      <Modal onClose={close} class="category-panel evm-modal">
+        <div class="evm-head">
+          <div class="evm-mark"><Icon value="tags" size={18} /></div>
+          <div class="evm-htext">
+            <div class="evm-title">Categories</div>
           </div>
-          <CategorySwatches value={newColor()} onChange={setNewColor} />
+          <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
         </div>
-        <div class="modal-actions"><TextButton size="sm" variant="selected" onClick={() => (showCategoryPanel.value = false)}>DONE</TextButton></div>
+
+        <div class="evm-body">
+          {/* existing categories — compact rows, one chip each */}
+          <Show when={categories.value.length}>
+            <div class="cat-group">
+              <For each={categories.value}>{c => (
+                <div class="cat-row">
+                  <ColorChip color={c.color} open={picker() === c.name}
+                    onToggle={() => setPicker(p => p === c.name ? null : c.name)}
+                    onPick={col => { handleColorChange(c.name, col); setPicker(null) }} />
+                  <Show
+                    when={editName() === c.name}
+                    fallback={
+                      <span class="cat-name" title="Double-click to rename"
+                        onDblClick={() => { setPicker(null); setEditName(c.name) }}>{c.name}</span>
+                    }
+                  >
+                    <input class="cat-nameedit" value={c.name}
+                      ref={el => queueMicrotask(() => { el.focus(); el.select() })}
+                      onBlur={e => handleRename(c.name, e.currentTarget.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); handleRename(c.name, e.currentTarget.value) }
+                        else if (e.key === 'Escape') { e.preventDefault(); setEditName(null) }
+                      }} />
+                  </Show>
+                  <button class="cat-del" aria-label={'Delete ' + c.name}
+                    onClick={() => { handleDelete(c.name); setPicker(null) }}><Icon value="x" size={14} /></button>
+                </div>
+              )}</For>
+            </div>
+          </Show>
+
+          {/* new category — separated dashed card */}
+          <div class="cat-add">
+            <div class="cat-add-head"><Icon value="plus" size={12} strokeWidth={2.2} />New category</div>
+            <div class="cat-newrow">
+              <ColorChip color={newColor()} open={picker() === 'new'} up
+                onToggle={() => setPicker(p => p === 'new' ? null : 'new')}
+                onPick={col => { setNewColor(col); setPicker(null) }} />
+              <TextInput placeholder="Category name" value={newName()}
+                onInput={setNewName}
+                onKeyDown={e => { if (e.key === 'Enter') handleAdd() }} />
+              <IconTextButton icon="Plus" size="sm" variant="selected" onClick={handleAdd}>ADD</IconTextButton>
+            </div>
+          </div>
+        </div>
+
+        <div class="evm-foot">
+          <span class="hintkey"><b>esc</b> to close</span>
+          <div class="sp" />
+          <TextButton size="sm" variant="selected" onClick={close}>DONE</TextButton>
+        </div>
       </Modal>
     </Show>
   )

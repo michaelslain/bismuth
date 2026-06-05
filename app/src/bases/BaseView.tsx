@@ -156,13 +156,17 @@ export function BaseView(props: {
           </Show>
           <ViewBarSpacer />
           <Show when={editPath()}>
-            <VBtn
-              icon={settingsMode() ? "X" : "Settings"}
-              active={settingsMode()}
-              onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
-            >
-              {settingsMode() ? "CLOSE" : "SETTINGS"}
-            </VBtn>
+            {/* Calendar has its own Settings modal in its toolbar, so the generic
+                base SETTINGS panel is hidden for it (SOURCE stays). */}
+            <Show when={activeType() !== "calendar"}>
+              <VBtn
+                icon={settingsMode() ? "X" : "Settings"}
+                active={settingsMode()}
+                onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
+              >
+                {settingsMode() ? "CLOSE" : "SETTINGS"}
+              </VBtn>
+            </Show>
             <VBtn
               icon={sourceMode() ? "X" : "Code"}
               active={sourceMode()}

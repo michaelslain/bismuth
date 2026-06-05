@@ -103,23 +103,23 @@
 .ui-input {
   width: 100%;
   box-sizing: border-box;
-  /* The VALUE you type is content, not chrome — render it in the prose font (Lora)
-     like note bodies, while labels/buttons stay mono. Lora reads optically smaller
-     than mono, so bump the size a touch to match the surrounding 13px chrome. */
+  /* Input VALUES use the prose font (Lora) like note bodies; reads optically
+     smaller than mono so the size is bumped a touch. */
   font-family: var(--editor-font);
   font-size: 15px;
-  padding: 7px 11px;
+  padding: 9px 12px;
   background: var(--surface-2);
   border: 1px solid var(--border-soft);
-  border-radius: 7px;
+  border-radius: 9px;
   color: var(--fg);
   outline: none;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 .ui-input::placeholder { color: var(--text-muted); }
 .ui-input:hover:not(:focus) { border-color: var(--border); }
-.ui-input:focus { border-color: var(--accent); background: var(--surface-1); }
-textarea.ui-input { resize: none; min-height: 76px; line-height: 1.5; }
+/* Signature focus treatment: accent border + a soft accent glow ring. */
+.ui-input:focus, .ui-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea.ui-input { resize: none; min-height: 62px; line-height: 1.6; }
 
 /* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
    list is a portaled <PopoverList> above the modal overlay; a transparent backdrop

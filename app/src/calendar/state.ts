@@ -73,6 +73,7 @@ export const showEventModal = createBox<{
   date?: string; event?: CalendarEvent; masterId?: string; occurrenceDate?: string; startTime?: string; endTime?: string
 } | null>(null)
 export const showCategoryPanel = createBox(false)
+export const showCalendarSettings = createBox(false)
 
 export type DragState =
   | { type: 'create'; date: string; startMinutes: number; currentMinutes: number }
