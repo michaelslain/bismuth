@@ -37,6 +37,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "equalize-panes",  label: "Equalize panes",            icon: "Columns3" },
   { id: "toggle-sidebar",  label: "Toggle sidebar",            icon: "PanelLeft" },
   { id: "daemon-owner",    label: "Set daemon owner device…",  icon: "Server" },
+  { id: "daemon-setup",    label: "Set up claude-bot daemon…", icon: "Download" },
 ];
 
 /** All command ids, in catalog order. */

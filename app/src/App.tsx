@@ -21,6 +21,7 @@ import { ToastHost, pushToast } from "./Toast";
 import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
+import { DaemonSetupModal } from "./DaemonSetupModal";
 import { openAppWindow, pickFolder } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
@@ -482,6 +483,10 @@ export default function App() {
   // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
   const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false);
   const openDaemonOwner = () => setDaemonOwnerOpen(true);
+  // claude-bot daemon install/repair panel. Idempotent, adopt-only setup: shows
+  // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
+  const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false);
+  const openDaemonSetup = () => setDaemonSetupOpen(true);
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -507,7 +512,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1205,6 +1210,9 @@ export default function App() {
       </Show>
       <Show when={daemonOwnerOpen()}>
         <DaemonOwnerModal onClose={() => setDaemonOwnerOpen(false)} />
+      </Show>
+      <Show when={daemonSetupOpen()}>
+        <DaemonSetupModal onClose={() => setDaemonSetupOpen(false)} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (

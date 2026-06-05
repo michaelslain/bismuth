@@ -30,6 +30,7 @@ import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
 import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride } from "./daemon";
+import { installStatus, runSetup } from "./claudebot";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -504,6 +505,20 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /daemon/devices": async (_, __) => {
       return ok(listDevices());
+    },
+
+    // claude-bot daemon install/setup, bridged to the claude-bot package's
+    // idempotent, ADOPT-ONLY installer entrypoint (core/src/claudebot.ts).
+    // Read-only install probe + a one-shot setup action — both system actions,
+    // NOT vault mutations, so they live in the READ routes (like POST /open-folder),
+    // never through mutatingHandler. installStatus() never throws; runSetup() is
+    // adopt-only (it does nothing when the daemon is already installed/running).
+    "GET /daemon/install": async (_, __) => {
+      return ok(await installStatus());
+    },
+
+    "POST /daemon/setup": async (_, __) => {
+      return ok(await runSetup());
     },
   };
 
