@@ -140,6 +140,13 @@ export const SETTINGS_SCHEMA: Schema = {
     fileWatchDebounceMs: { type: "number", default: 250, min: 50, max: 2000, doc: "Coalesce rapid file changes for this long before rebuilding caches (ms)." },
     sseHeartbeatMs: { type: "number", default: 5000, min: 1000, max: 30000, doc: "Keepalive ping interval for the live-update stream (ms)." },
   }),
+  // claude-bot daemon supervision. Bismuth reads/writes the daemon's shared state
+  // files (device list + owner-device selection) under its home dir. The owner
+  // device is the single source of truth in owner.json — NOT a setting here.
+  daemon: object({
+    enabled: { type: "boolean", default: false, doc: "Supervise the claude-bot daemon." },
+    home: { type: "string", default: "", doc: "Override claude-bot home dir; empty = ~/.claude-bot." },
+  }),
   terminal: object({
     fontSize: { type: "number", default: 13, min: 9, max: 20, doc: "Terminal font size (px)." },
     lineHeight: { type: "number", default: 1.5, min: 1.2, max: 2, doc: "Terminal line height (multiplier)." },

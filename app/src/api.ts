@@ -25,6 +25,7 @@ import type { Task } from "../../core/src/tasks";
 import type { Card } from "../../core/src/srs/types";
 import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
+import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 
 /** Absolute URL for the SSE stream; passed to `new EventSource(...)`. */
 export const eventsUrl = () => `${BASE}/events`;
@@ -150,4 +151,10 @@ export const api = {
   // place, preserving comments + the property registry + unknown keys).
   setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
   saveDrawing: (path: string, doc: unknown) => post("/drawing/save", { path, doc }).then(() => {}),
+
+  // claude-bot daemon supervision. Status (running + this device + owner), the list
+  // of heartbeating devices, and claiming a device as the owner (writes owner.json).
+  daemonStatus: () => getJson<DaemonStatus>("/daemon/status"),
+  daemonDevices: () => getJson<DeviceList>("/daemon/devices"),
+  setDaemonOwner: (deviceId: string) => postJson<Owner>("/daemon/owner", { deviceId }),
 };

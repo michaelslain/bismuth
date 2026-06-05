@@ -34,6 +34,8 @@ export interface CommandHandlers {
   openFolder: () => void | Promise<void>;
   newWindow: () => void | Promise<void>;
   exportActive: () => void;
+  // Open the modal to pick which device owns the claude-bot daemon.
+  openDaemonOwner: () => void;
 }
 
 export interface BoundCommand {
@@ -71,6 +73,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "graph-agents": () => h.setMode("agents"),
     "equalize-panes": h.equalizePanes,
     "toggle-sidebar": h.toggleSidebar,
+    "daemon-owner": h.openDaemonOwner,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {

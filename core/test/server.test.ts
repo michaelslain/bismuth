@@ -1102,3 +1102,60 @@ test("POST /set-setting serializes concurrent requests without clobbering change
     server.stop(true);
   }
 });
+
+test("daemon routes: status + devices read shared state, owner round-trips", async () => {
+  const { vault, memory } = await makeSampleVault();
+  // Point the daemon home at a tmp dir with fake state so the routes are deterministic.
+  const home = mkdtempSync(join(tmpdir(), "claude-bot-"));
+  const { writeFileSync } = await import("node:fs");
+  writeFileSync(join(home, "device-id"), "dev-a");
+  writeFileSync(
+    join(home, "devices.json"),
+    JSON.stringify({
+      "dev-a": { label: "laptop", lastSeenISO: "2026-06-01T00:00:00.000Z" },
+      "dev-b": { label: "desktop", lastSeenISO: "2026-06-02T00:00:00.000Z" },
+    }),
+  );
+  const prev = process.env.OA_CLAUDEBOT_HOME;
+  process.env.OA_CLAUDEBOT_HOME = home;
+
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const status = await (await fetch(`${base}/daemon/status`)).json();
+    expect(status.running).toBe(false); // no daemon.pid written
+    expect(status.thisDeviceId).toBe("dev-a");
+    expect(status.owner).toBeNull(); // unclaimed
+
+    const devices = await (await fetch(`${base}/daemon/devices`)).json();
+    expect(devices.ownerDeviceId).toBeNull();
+    expect(devices.devices.map((d: any) => d.deviceId).sort()).toEqual(["dev-a", "dev-b"]);
+
+    // Claim dev-b as owner; the response + a follow-up read both reflect it.
+    const claimed = await (
+      await fetch(`${base}/daemon/owner`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId: "dev-b" }),
+      })
+    ).json();
+    expect(claimed.ownerDeviceId).toBe("dev-b");
+    expect(claimed.ownerLabel).toBe("desktop");
+    expect(Object.keys(claimed).sort()).toEqual(["ownerDeviceId", "ownerLabel", "updatedAt"]);
+
+    const after = await (await fetch(`${base}/daemon/status`)).json();
+    expect(after.owner.ownerDeviceId).toBe("dev-b");
+
+    // An unknown device is rejected with a 400.
+    const bad = await fetch(`${base}/daemon/owner`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId: "nope" }),
+    });
+    expect(bad.status).toBe(400);
+  } finally {
+    server.stop(true);
+    if (prev === undefined) delete process.env.OA_CLAUDEBOT_HOME;
+    else process.env.OA_CLAUDEBOT_HOME = prev;
+  }
+});
