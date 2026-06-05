@@ -21,7 +21,8 @@ export type Tab = { id: string; root: PaneNode; focusId: string; name?: string }
 // keep their old ids — so a fresh split could mint an id that collides with an existing
 // pane, and since ops match by id they'd hit both. crypto.randomUUID never repeats.
 function newId(): string {
-  return crypto.randomUUID();
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "id-" + Math.random().toString(36).slice(2) + "-" + Math.random().toString(36).slice(2);
 }
 
 export function makeLeaf(content: string): Leaf {
