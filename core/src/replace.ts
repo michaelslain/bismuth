@@ -3,7 +3,7 @@
 // across files and writes the changed ones. The caller (server) takes a git
 // backup BEFORE invoking replaceInVault so bulk edits are recoverable.
 import { buildMatcher, type SearchOpts } from "./search";
-import { listMarkdown, readNote, writeNote } from "./files";
+import { getFileAccess } from "./fileAccess";
 
 export interface ReplaceResult {
   /** Total number of individual matches replaced across all files. */
@@ -44,6 +44,7 @@ export async function replaceInVault(
   opts: SearchOpts,
   scope: string,
 ): Promise<ReplaceResult> {
+  const { listMarkdown, readNote, writeNote } = await getFileAccess();
   const paths = scope === "vault" ? await listMarkdown(root) : [scope];
   let replaced = 0;
   const files: string[] = [];
