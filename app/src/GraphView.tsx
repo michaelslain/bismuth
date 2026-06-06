@@ -3,12 +3,14 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
+import { AgentsGraph } from "./graph/AgentsGraph";
+import { layoutAgentGraph } from "./graph/agentLayout";
+import type { Org } from "./graph/agentOrg";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
-import { AgentsGraph } from "./graph/AgentsGraph";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
@@ -133,12 +135,20 @@ export function GraphView(props: {
       });
     });
     mounted = true;
-    if (lastGraph) { renderer.render(lastGraph); refreshUiData(); }
+    if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
   });
 
+  // Agents mode renders through the SAME WebGL graph as the knowledge graph, for BOTH 2D
+  // and 3D: layoutAgentGraph gives the nodes a pyramid position2d (used in 2D) and leaves
+  // 3D to the force layout (the "molecule"), plus the org's communication channels. The
+  // AgentsGraph overlay (cards + org picker) sits on top. Reacts to the org signal.
+  const [agentOrg, setAgentOrg] = createSignal<Org>("republic");
+  const rendererGraph = (): GraphData =>
+    props.mode === "agents" ? layoutAgentGraph(props.graph, agentOrg()) : props.graph;
+
   createEffect(() => {
-    const g = props.graph;
-    lastGraph = g;
+    lastGraph = props.graph;
+    const g = rendererGraph();
     if (mounted) { renderer.render(g); refreshUiData(); }
   });
 
@@ -151,7 +161,8 @@ export function GraphView(props: {
     const ap = resolveAppearance(settings.appearance);
     const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
     renderer.setConfig({
-      spin: gs.spin,
+      spin: props.mode === "agents" ? false : gs.spin, // agents = a tidy pyramid; no idle storm-spin
+
       spinSpeed: gs.spinSpeed,
       palette: paletteToInts(palette),
       repulsion: gs.repulsion,
@@ -243,14 +254,14 @@ export function GraphView(props: {
             places a crisp <div> here (replaces low-res in-canvas sprites). Layered above the glow. */}
         <div class="graph-labels" ref={labelsEl} />
         {/* Iridescent cluster-glow + depth vignette over the canvas (design's BigGraph
-            look). Screen-blended glow tints, gated per mode; pure CSS, no renderer cost. */}
-        <Show when={props.mode !== "agents"}>
-          <div class="graph-glow" data-mode={props.mode} ref={glowEl} />
-          <div class="graph-vignette" />
-        </Show>
-        {/* Agents mode: the SVG governance-structure picker overlays the WebGL canvas. */}
+            look). Screen-blended glow tints; pure CSS, no renderer cost. Shown in every
+            mode, agents included. */}
+        <div class="graph-glow" data-mode={props.mode} ref={glowEl} />
+        <div class="graph-vignette" />
+        {/* Agents mode: the WebGL graph renders the nodes (2D pyramid / 3D molecule); this
+            overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>
-          <AgentsGraph />
+          <AgentsGraph agents={props.graph} org={agentOrg()} setOrg={setAgentOrg} />
         </Show>
         {/* Floating cluster-legend card (non-agents) — hidden in the cramped sidebar via container query. */}
         <Show when={props.mode !== "agents"}>

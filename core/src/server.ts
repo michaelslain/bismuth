@@ -20,7 +20,8 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
-import { createTerminalSession, killSession, resizeSession, getSession } from "./terminal";
+import { createTerminalSession, killSession, resizeSession, getSession, listSessionIds } from "./terminal";
+import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
@@ -422,8 +423,48 @@ export function createServer(cfg: CoreConfig) {
       return ok(await getVaultSchema(cfg.vault));
     },
 
+    // The "agents" graph: live Claude Code sessions running in THIS app's terminal
+    // tabs + their subagents. Reads the in-process relay registry (populated by the
+    // relay hooks via POST /relay/*). Prunes the registry against the live pty set
+    // first (closed tabs leave no terminal-close hook, so cleanup happens here), then
+    // builds the graph. The frontend polls this while agents mode is active.
     "GET /agent-graph": async (_, __) => {
-      return ok(buildAgentGraph());
+      const live = new Set(listSessionIds());
+      relayPrune(live);
+      return ok(buildAgentGraph(relaySnapshot(), live));
+    },
+
+    // Relay ingest endpoints — posted to by the relay plugin's hooks (loaded
+    // per-session via `claude --plugin-dir <relay>` only inside app terminals). They
+    // update the in-process agent registry; they are NOT vault mutations, so they
+    // live in the read table (no cache invalidation). All are best-effort: the hooks
+    // never block the user, so a 400 here is silently swallowed client-side.
+    "POST /relay/session": async (req) => {
+      const { sessionId, terminalId, cwd } = (await req.json()) as { sessionId?: string; terminalId?: string; cwd?: string };
+      if (!sessionId || !terminalId) return error("missing sessionId/terminalId", 400);
+      registerSession({ sessionId, terminalId, cwd: cwd ?? "" });
+      return ok({ ok: true });
+    },
+
+    "POST /relay/session/end": async (req) => {
+      const { sessionId } = (await req.json()) as { sessionId?: string };
+      if (!sessionId) return error("missing sessionId", 400);
+      endSession(sessionId);
+      return ok({ ok: true });
+    },
+
+    "POST /relay/subagent/start": async (req) => {
+      const { parentSessionId, agentId, agentType } = (await req.json()) as { parentSessionId?: string; agentId?: string; agentType?: string };
+      if (!parentSessionId || !agentId) return error("missing parentSessionId/agentId", 400);
+      startSubagent({ parentSessionId, agentId, agentType: agentType ?? "agent" });
+      return ok({ ok: true });
+    },
+
+    "POST /relay/subagent/stop": async (req) => {
+      const { agentId, lastMessage } = (await req.json()) as { agentId?: string; lastMessage?: string };
+      if (!agentId) return error("missing agentId", 400);
+      stopSubagent({ agentId, lastMessage });
+      return ok({ ok: true });
     },
 
     "GET /tasks": async (_, __) => {
@@ -820,7 +861,9 @@ export function createServer(cfg: CoreConfig) {
         if (!allowed) {
           return withCors(error("forbidden origin", 403));
         }
-        const session = createTerminalSession({ cwd: cfg.vault, cols, rows });
+        // Tabs report to THIS server's port so the in-tab Claude sessions' relay
+        // hooks reach the right core (multiple windows = multiple backends).
+        const session = createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port });
         const upgraded = server.upgrade(req, { data: { sessionId: session.id } });
         if (!upgraded) {
           killSession(session.id);

@@ -1,0 +1,91 @@
+import { test, expect, beforeEach } from "bun:test";
+import {
+  registerSession,
+  endSession,
+  startSubagent,
+  stopSubagent,
+  snapshot,
+  prune,
+  resetRelay,
+} from "../src/relay";
+
+beforeEach(() => resetRelay());
+
+test("register then snapshot returns the session", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj" }, 1000);
+  const s = snapshot(1000);
+  expect(s.sessions).toHaveLength(1);
+  expect(s.sessions[0]).toMatchObject({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: 1000 });
+});
+
+test("re-registering the same sessionId is a heartbeat: bumps lastSeen, keeps subagents + cwd", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  // UserPromptSubmit re-posts the session (possibly with an empty cwd) — must not wipe a1 or cwd.
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "" }, 5000);
+  const s = snapshot(5000);
+  expect(s.sessions[0]).toMatchObject({ sessionId: "s1", lastSeen: 5000, cwd: "/x/proj" });
+  expect(s.subagents.map((x) => x.agentId)).toEqual(["a1"]);
+});
+
+test("re-running claude in the same tab replaces the old session + drops its subagents", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  // New session_id, SAME terminalId → the old one is evicted.
+  registerSession({ sessionId: "s2", terminalId: "tab-1", cwd: "/x" }, 2000);
+  const s = snapshot(2000);
+  expect(s.sessions.map((x) => x.sessionId)).toEqual(["s2"]);
+  expect(s.subagents).toHaveLength(0);
+});
+
+test("endSession removes the session and its subagents", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Plan" }, 1100);
+  endSession("s1");
+  const s = snapshot(1200);
+  expect(s.sessions).toHaveLength(0);
+  expect(s.subagents).toHaveLength(0);
+});
+
+test("subagent start/stop lifecycle; stop stores last message", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  expect(snapshot(1100).subagents[0]).toMatchObject({ agentId: "a1", done: false });
+  stopSubagent({ agentId: "a1", lastMessage: "hello from subagent" }, 1200);
+  const sub = snapshot(1200).subagents[0];
+  expect(sub).toMatchObject({ done: true, doneAt: 1200, lastMessage: "hello from subagent" });
+});
+
+test("stopping an unknown subagent is a no-op", () => {
+  stopSubagent({ agentId: "ghost" }, 1000);
+  expect(snapshot(1000).subagents).toHaveLength(0);
+});
+
+test("finished subagents are pruned after the TTL", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  stopSubagent({ agentId: "a1" }, 1200);
+  // Within TTL → still present.
+  expect(snapshot(1200 + 30_000).subagents).toHaveLength(1);
+  // Past TTL → pruned.
+  expect(snapshot(1200 + 61_000).subagents).toHaveLength(0);
+});
+
+test("prune drops sessions whose terminal tab has closed, plus their subagents", () => {
+  registerSession({ sessionId: "s1", terminalId: "tab-1", cwd: "/x" }, 1000);
+  startSubagent({ parentSessionId: "s1", agentId: "a1", agentType: "Explore" }, 1100);
+  registerSession({ sessionId: "s2", terminalId: "tab-2", cwd: "/y" }, 1000);
+  // tab-1 closed → s1 + a1 gone; tab-2 still open → s2 survives.
+  prune(new Set(["tab-2"]), 1200);
+  const s = snapshot(1200);
+  expect(s.sessions.map((x) => x.sessionId)).toEqual(["s2"]);
+  expect(s.subagents).toHaveLength(0);
+});
+
+test("prune drops orphaned subagents whose parent session is gone (even if not done)", () => {
+  // a running subagent whose parent session was never registered (out-of-order event)
+  startSubagent({ parentSessionId: "ghost", agentId: "a1", agentType: "Plan" }, 1100);
+  expect(snapshot(1100).subagents).toHaveLength(1); // present until pruned
+  prune(new Set(), 1200);
+  expect(snapshot(1200).subagents).toHaveLength(0);
+});

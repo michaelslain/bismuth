@@ -21,6 +21,10 @@ export interface GraphNode {
   kind: NodeKind;
   state?: NodeState;
   folder?: string;
+  /** For "agent" nodes only: the id of the parent node (a subagent's spawning session).
+   *  Roots (terminal-tab sessions) have no parent; the frontend connects the "you" hub
+   *  to every parent-less agent node in agents mode. */
+  parent?: string;
   /** Precomputed 3D layout coordinate [x,y,z], attached by the backend (see layout-cache.ts). */
   position?: [number, number, number];
   /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */
