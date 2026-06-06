@@ -1,99 +1,70 @@
-import { join, basename } from "node:path";
-import { homedir } from "node:os";
-import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
+import type { RelaySnapshot } from "./relay";
 
-interface RelayAgent {
-  id: string;
-  host: string;
-  cwd: string;
-  pid?: number;
-  registered_at?: string;
-  last_seen: string;
-  status?: Record<string, unknown>;
-}
+/** A session counts as "awake" if it heartbeat within this window, else "idle". */
+const AWAKE_MS = 10 * 60 * 1000;
 
-interface RelayMessage {
-  id?: string;
-  from: string;
-  to?: string;
-  kind?: string;
-  body?: string;
-  ts?: string;
-}
+const sessionNodeId = (sessionId: string): string => `agent:sess:${sessionId}`;
+const subagentNodeId = (agentId: string): string => `agent:sub:${agentId}`;
 
-interface RelayState {
-  agents: Record<string, RelayAgent>;
-  inboxes: Record<string, RelayMessage[]>;
-  board?: RelayMessage[];
-}
-
-const TEN_MINUTES_MS = 10 * 60 * 1000;
-
-function agentLabel(agent: RelayAgent): string {
-  if (agent.cwd) return basename(agent.cwd);
-  const colonIdx = agent.id.indexOf(":");
-  return colonIdx >= 0 ? agent.id.slice(colonIdx + 1) : agent.id;
-}
-
-export function buildAgentGraph(statePath?: string): GraphData {
-  const path = statePath ?? join(homedir(), ".claude-communicate", "relay-state.json");
-
-  let state: RelayState;
-  try {
-    const text = readFileSync(path, "utf-8");
-    state = JSON.parse(text) as RelayState;
-  } catch {
-    return { nodes: [], edges: [] };
-  }
-
-  const agents = state.agents ?? {};
-  const inboxes = state.inboxes ?? {};
-  const agentIds = new Set(Object.keys(agents));
-
-  const now = Date.now();
-  const nodes: GraphNode[] = Object.values(agents).map((agent) => {
-    const lastSeenMs = new Date(agent.last_seen).getTime();
-    const isValidTime = Number.isFinite(lastSeenMs);
-    const state = isValidTime && now - lastSeenMs <= TEN_MINUTES_MS ? "awake" : "idle";
-    return { id: agent.id, label: agentLabel(agent), kind: "agent" as const, state };
-  });
-
+/**
+ * Build the "agents" graph: a tree of the Claude Code work running inside Bismuth's
+ * terminal tabs — each live terminal session, with its subagents hanging off it.
+ *
+ * Pure over its inputs:
+ * - `snapshot` is the relay registry's current contents (see relay.ts).
+ * - `liveTerminalIds` is the set of pty ids currently open in the app
+ *   (terminal.ts `listSessionIds()`); a session whose terminal tab has closed is
+ *   dropped, so the graph reflects only what's actually open right now.
+ *
+ * The "you" hub and the you→session edges are injected on the frontend (like the
+ * other brain views); this returns only session + subagent nodes and the
+ * session→subagent edges. Subagent nodes carry `parent` so the frontend can wire
+ * "you" to every parent-less (root) agent node.
+ */
+export function buildAgentGraph(
+  snapshot: RelaySnapshot,
+  liveTerminalIds: Set<string>,
+  now: number = Date.now(),
+): GraphData {
+  const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
-  const edgeKeys = new Set<string>();
+  const liveSessionIds = new Set<string>();
 
-  /** Add an edge if valid and not a duplicate. */
-  const addEdge = (edge: GraphEdge): void => {
-    const key = `${edge.from}|${edge.to}|${edge.kind}`;
-    if (!edgeKeys.has(key) && agentIds.has(edge.from) && agentIds.has(edge.to)) {
-      edgeKeys.add(key);
-      edges.push(edge);
-    }
-  };
+  // A session with a running (not-done) subagent is actively working even if it hasn't
+  // heartbeat recently (UserPromptSubmit doesn't fire mid-turn), so it stays awake —
+  // avoids an "idle" root with an "awake" child during long Agent-tool calls.
+  const sessionsWithRunningSub = new Set(
+    snapshot.subagents.filter((sub) => !sub.done).map((sub) => sub.parentSessionId),
+  );
 
-  // Extract message edges from agent inboxes
-  for (const [recipientId, messages] of Object.entries(inboxes)) {
-    if (!agentIds.has(recipientId)) continue;
-    for (const msg of messages) {
-      if (msg.from && agentIds.has(msg.from)) {
-        addEdge({ from: msg.from, to: recipientId, kind: "message" });
-      }
-    }
+  for (const s of snapshot.sessions) {
+    // Only sessions whose terminal tab is still open. (Closing a tab kills the pty —
+    // and the claude process in it — so there's nothing live to show.)
+    if (!liveTerminalIds.has(s.terminalId)) continue;
+    liveSessionIds.add(s.sessionId);
+    const awake = now - s.lastSeen <= AWAKE_MS || sessionsWithRunningSub.has(s.sessionId);
+    nodes.push({
+      id: sessionNodeId(s.sessionId),
+      label: basename(s.cwd) || s.terminalId,
+      kind: "agent",
+      state: awake ? "awake" : "idle",
+    });
   }
 
-  // Connect agents with the same label (different instances of same machine/project)
-  const byLabel = new Map<string, string[]>();
-  for (const node of nodes) {
-    const ids = byLabel.get(node.label) ?? [];
-    ids.push(node.id);
-    byLabel.set(node.label, ids);
-  }
-
-  for (const ids of byLabel.values()) {
-    // Connect all pairs of agents with the same label
-    for (let i = 0; i < ids.length; i++)
-      for (let j = i + 1; j < ids.length; j++)
-        addEdge({ from: ids[i], to: ids[j], kind: "link" });
+  for (const sub of snapshot.subagents) {
+    // Drop orphans whose parent session is gone (closed tab / re-run claude).
+    if (!liveSessionIds.has(sub.parentSessionId)) continue;
+    const parentId = sessionNodeId(sub.parentSessionId);
+    nodes.push({
+      id: subagentNodeId(sub.agentId),
+      label: sub.agentType,
+      kind: "agent",
+      state: sub.done ? "idle" : "awake",
+      parent: parentId,
+    });
+    edges.push({ from: parentId, to: subagentNodeId(sub.agentId), kind: "message" });
   }
 
   return { nodes, edges };

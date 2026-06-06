@@ -462,14 +462,15 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* ── Agents governance picker (graph "Agents" mode) ───────────────────────────
    SVG diagram + two floating cards. container-type lets the cards hide in the
    cramped sidebar mini-panel and show only at full-pane width. */
-.agents-graph { position: absolute; inset: 0; overflow: hidden; container-type: inline-size;
-  background: var(--graph-bg, radial-gradient(120% 90% at 50% 30%, color-mix(in srgb, var(--bg) 94%, #fff) 0%, #07080d 72%)); }
+/* Overlay over the WebGL agents graph: transparent + click-through, so the canvas
+   (which renders the nodes in 2D pyramid / 3D molecule) shows + stays interactive. */
+.agents-graph { position: absolute; inset: 0; overflow: hidden; pointer-events: none; container-type: inline-size; }
 .agents-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .agents-label { position: absolute; font-size: 11.5px; color: var(--fg); white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px var(--label-halo), 0 0 8px var(--label-halo); }
 .agents-label.self { font-weight: 600; }
 .agents-deg { color: var(--faint); margin-left: 7px; }
 .agents-crown { position: absolute; transform: translate(-50%, -180%); color: var(--graph-4); z-index: 3; pointer-events: none; filter: drop-shadow(0 1px 4px var(--label-halo)); }
-.agents-card { position: absolute; left: 18px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; backdrop-filter: blur(8px); width: 206px; z-index: 4; }
+.agents-card { position: absolute; left: 18px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; backdrop-filter: blur(8px); width: 206px; z-index: 4; pointer-events: auto; }
 .agents-status { top: 18px; padding: 13px 15px; }
 .agents-structures { top: 140px; padding: 12px 12px 13px; }
 .agents-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; padding-left: 3px; }

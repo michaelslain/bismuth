@@ -1,0 +1,9 @@
+#!/bin/bash
+# Bismuth terminal shim. Prepended to PATH by core/src/terminal.ts for the shell in
+# each app terminal tab, so a bare `claude` started there transparently loads the
+# agent-graph relay plugin (per-session, no global install).
+#
+# BISMUTH_REAL_CLAUDE is the real claude binary, resolved by terminal.ts BEFORE this
+# shim's dir was put on PATH — so exec'ing it here never recurses into the shim.
+# BISMUTH_RELAY_PLUGIN is the relay plugin dir (relay/).
+exec "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"

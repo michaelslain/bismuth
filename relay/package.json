@@ -1,0 +1,11 @@
+{
+  "name": "@oa/relay",
+  "version": "0.1.0",
+  "description": "Bismuth agent-graph plugin: hooks + types for app-terminal Claude Code sessions",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.4.0"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "bismuth-relay",
+  "version": "0.1.0",
+  "description": "Reports a Bismuth terminal-tab Claude Code session (and its subagents) to the in-app agent graph via hooks. Loaded per-session with --plugin-dir; no global install.",
+  "author": {
+    "name": "Michael Slain"
+  }
+}
