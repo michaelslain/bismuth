@@ -10,6 +10,7 @@ import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
+import { DaemonList } from "./DaemonList";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
@@ -271,12 +272,24 @@ export function GraphView(props: {
         <Show when={props.mode === "agents"}>
           <AgentsGraph agents={props.graph} org={agentOrg()} setOrg={setAgentOrg} />
         </Show>
-        {/* Floating cluster-legend card (non-agents) — hidden in the cramped sidebar via container query. */}
-        <Show when={props.mode !== "agents"}>
+        {/* Floating cluster-legend card (non-agents, non-daemon) — hidden in the cramped sidebar via container query. */}
+        <Show when={props.mode !== "agents" && props.mode !== "daemon"}>
           <div class="graph-legend-card graph-wide">
             <div class="graph-card-h">{modeLabel()} · clusters</div>
             <div class="graph-legend-rows">
               <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
+            </div>
+          </div>
+        </Show>
+        {/* Daemon-mode list: crons and processes with live status. */}
+        <Show when={props.mode === "daemon"}>
+          <div class="graph-legend-card graph-wide daemon-legend">
+            <div class="graph-card-h">daemon · services</div>
+            <div class="graph-legend-rows">
+              <DaemonList
+                nodes={props.graph.nodes}
+                onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }}
+              />
             </div>
           </div>
         </Show>
