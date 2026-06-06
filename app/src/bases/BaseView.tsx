@@ -3,7 +3,7 @@ import { api } from "../api";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
 import { refToPath } from "../../../core/src/bases/sourceSpec";
-import type { BaseConfig, Row, ViewResult, SourceSpec, ViewBlock } from "../../../core/src/bases/types";
+import type { BaseConfig, Row, ViewResult, SourceSpec, QueryBlock, FileMeta } from "../../../core/src/bases/types";
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
 import { ListView } from "./ListView";
@@ -24,6 +24,19 @@ import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
 
 function noteLabel(path: string) { return path.split("/").pop()!.replace(/\.(base|md)$/, ""); }
+
+/** A minimal FileMeta for the host note, exposed to an embedded base as `this.file`
+ *  so filters like `file.hasLink(this.file)` (match notes linking back to the host)
+ *  and `this.file.name` resolve. tags/links are left empty — `this.file` is used to
+ *  identify the host by name/path, not to read its own tags. */
+function hostFileMeta(path: string): FileMeta {
+  const name = noteLabel(path);
+  const slash = path.lastIndexOf("/");
+  const folder = slash >= 0 ? path.slice(0, slash) : "";
+  const dot = path.lastIndexOf(".");
+  const ext = dot > slash ? path.slice(dot + 1) : "";
+  return { name, basename: name, path, folder, ext, size: 0, ctime: 0, mtime: 0, tags: [], links: [] };
+}
 
 interface Loaded {
   config: BaseConfig;
@@ -60,19 +73,25 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
 
 /**
  * Unified view host. Renders any source (base / notes / tasks) as any view type.
- * Inputs (priority order): `view` (a ```view block spec), `path` (a type:base / .base file),
- * or `source` (inline ```base YAML).
+ * Inputs (priority order): `view` (a flat ```query block spec), `path` (a `type: base` md file),
+ * or `source` (inline ```query YAML).
  */
 export function BaseView(props: {
   path?: string;
   source?: string;
-  view?: ViewBlock;
+  view?: QueryBlock;
   hostPath?: string;
   onOpen?: (path: string) => void;
 }) {
   const [hostMeta] = createResource(
     () => props.hostPath,
-    async (p) => (p ? ((await api.meta(p)) as Record<string, unknown>) : undefined),
+    async (p) => {
+      if (!p) return undefined;
+      const fm = (await api.meta(p)) as Record<string, unknown>;
+      // Attach the host note's file identity so an embedded base can reference it as
+      // `this.file` (e.g. `file.hasLink(this.file)` for back-link filters).
+      return { ...fm, file: hostFileMeta(p) };
+    },
   );
 
   async function loadConfig(): Promise<Loaded> {
@@ -93,14 +112,14 @@ export function BaseView(props: {
       return { config, spec: v.source, inlineRows: null, basePath: v.source?.kind === "base" ? refToPath(v.source.ref) : undefined };
     }
     if (props.path) {
+      // A base file is a `type: base` md note (no `.base` extension).
       const text = await api.read(props.path);
-      if (props.path.endsWith(".base")) {
-        const config = parseBase(text);
-        return { config, spec: config.source ?? { kind: "notes" }, inlineRows: null, basePath: props.path };
-      }
       const name = noteLabel(props.path);
       const { config, rows } = parseBaseFile(text, { name, path: props.path });
-      const spec: SourceSpec = config.source ?? { kind: "base" };
+      // No explicit source: a md base WITH an inline table renders its own rows; without
+      // one (a query base — filters/views over the vault) it defaults to notes, so a query
+      // base "just works" instead of rendering empty.
+      const spec: SourceSpec = config.source ?? (rows.length ? { kind: "base" } : { kind: "notes" });
       return { config, spec, inlineRows: spec.kind === "base" ? rows : null, basePath: props.path };
     }
     const config = parseBase(props.source ?? "");
@@ -214,7 +233,7 @@ export function BaseView(props: {
                           <CardsView result={res()} config={data()!.config} />
                         </Match>
                         <Match when={res().view.type === "list"}>
-                          <ListView result={res()} config={data()!.config} />
+                          <ListView result={res()} config={data()!.config} onChange={refetch} />
                         </Match>
                         <Match when={res().view.type === "map"}>
                           <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />

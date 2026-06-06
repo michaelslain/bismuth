@@ -5,14 +5,15 @@ import type { ExportDeps } from "./types";
 
 const enc = new TextDecoder();
 
-// A .base read returns a table view ordering name + author; everything else is a
-// markdown note. The base path now parses the file and runs the view (mirroring the
-// live BaseView), so the fixture must be real base YAML.
-const BASE_YAML = "views:\n  - type: table\n    order:\n      - file.name\n      - author\n";
+// A base is a `type: base` md file whose view orders name + author; everything else is a
+// markdown note. Export detects a base by its frontmatter (not extension), parses the file
+// and runs the view (mirroring the live BaseView), so the fixture is a type:base md.
+const BASE_MD = "---\ntype: base\nviews:\n  - type: table\n    order:\n      - file.name\n      - author\n---\n";
 
 function deps(over: Partial<ExportDeps> = {}): ExportDeps {
   return {
-    read: async (p: string) => (p.endsWith(".base") ? BASE_YAML : "# Title\n\nbody"),
+    // "Reading.md" is the base fixture; any other .md is a plain note.
+    read: async (p: string) => (p.includes("Reading") ? BASE_MD : "# Title\n\nbody"),
     resolveRows: async () => [{ file: { name: "Dune", path: "Dune.md" } as any, note: { author: "H" }, formula: {} }],
     htmlToPdf: async (html) => new TextEncoder().encode("PDF:" + html.length),
     drawingToPng: async () => ({ bytes: new Uint8Array([1, 2]), dataUrl: "data:image/png;base64,AQI=" }),
@@ -47,13 +48,13 @@ describe("renderExport", () => {
   });
 
   test("base -> md builds a markdown table from resolved rows", async () => {
-    const r = await renderExport("Reading.base", "md", deps());
+    const r = await renderExport("Reading.md", "md", deps());
     expect(r.filename).toBe("Reading.md");
     expect(enc.decode(r.bytes)).toContain("| name | author |");
   });
 
   test("base -> html builds a styled html table", async () => {
-    const r = await renderExport("Reading.base", "html", deps());
+    const r = await renderExport("Reading.md", "html", deps());
     expect(r.previewHtml).toContain("<th>name</th>");
     expect(r.previewHtml).toContain("<!doctype html>");
   });
@@ -87,7 +88,7 @@ describe("renderPreview (never generates bytes / never runs html->pdf)", () => {
   });
 
   test("base html preview is the rendered table", async () => {
-    const r = await renderPreview("Reading.base", "html", deps());
+    const r = await renderPreview("Reading.md", "html", deps());
     expect(r.previewHtml).toContain("<th>name</th>");
   });
 

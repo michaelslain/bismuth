@@ -132,7 +132,8 @@ export const api = {
   templates: () => getJson<Array<{ name: string; path: string }>>("/templates"),
   dailyNote: (id: string) => postJson<{ path: string; created: boolean }>("/daily-note", { id }),
   tasks: () => getJson<Task[]>("/tasks"),
-  toggleTask: (path: string, line: number) => postJson<unknown>("/tasks/toggle", { path, line }),
+  // /tasks/toggle returns plain "ok" (a mutation), not JSON — use post(), like move/create.
+  toggleTask: (path: string, line: number) => post("/tasks/toggle", { path, line }),
 
   noteCards: (path: string) =>
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),

@@ -14,10 +14,8 @@ import { api } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
 import { foldBlocks } from "./editor/foldBlocks";
-import { tasksQuery } from "./editor/tasksQuery";
 import { mathBlock } from "./editor/mathBlock";
-import { basesBlock } from "./editor/basesBlock";
-import { viewBlock } from "./editor/viewBlock";
+import { queryBlock } from "./editor/queryBlock";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { iconNames } from "./icons/registry";
@@ -323,8 +321,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...(ed.lineNumbers ? [lineNumbers()] : []),
           markdown({ codeLanguages: languages }),
           syntaxHighlighting(codeHighlightStyle),
-          basesBlock(() => path),
-          viewBlock(() => path),
+          queryBlock(() => path),
           embedBlock(props.noteNames),
           vaultCompletion({
             getNotes: props.noteNames,
@@ -340,7 +337,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
-          ...(ed.livePreview ? [livePreview, foldBlocks(() => path), tasksQuery, mathBlock()] : []),
+          ...(ed.livePreview ? [livePreview, foldBlocks(() => path), mathBlock()] : []),
           // Harper spell + grammar check, toggled by editor.spellcheck (default true).
           ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
         ];

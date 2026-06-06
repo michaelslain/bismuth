@@ -8,7 +8,7 @@ describe("export tab id", () => {
   });
   test("label is 'Export: <name>'", () => {
     expect(contentLabel(EXPORT_PREFIX + "a/b/note.md")).toBe("Export: note");
-    expect(contentLabel(EXPORT_PREFIX + "Reading.base")).toBe("Export: Reading");
+    expect(contentLabel(EXPORT_PREFIX + "Reading.md")).toBe("Export: Reading");
   });
   test("icon is Download", () => {
     expect(contentIcon(EXPORT_PREFIX + "a/note.md")).toBe("Download");

@@ -6,8 +6,11 @@ describe("formatsFor", () => {
   test("note offers html, pdf, md", () => {
     expect(formatsFor("a/b/note.md")).toEqual(["html", "pdf", "md"]);
   });
-  test("base offers html, pdf, md", () => {
-    expect(formatsFor("Reading.base")).toEqual(["html", "pdf", "md"]);
+  test("a base is a type:base md file, so it uses the md formats", () => {
+    expect(formatsFor("Reading.md")).toEqual(["html", "pdf", "md"]);
+  });
+  test("the legacy .base extension is no longer exportable", () => {
+    expect(formatsFor("Reading.base")).toEqual([]);
   });
   test("sheet offers html, pdf", () => {
     expect(formatsFor("budget.sheet")).toEqual(["html", "pdf"]);

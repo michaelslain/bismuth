@@ -2,9 +2,10 @@
 import type { ExportFormat } from "./types";
 import { ext } from "./exporters";
 
+// A base is a `type: base` md file, so it falls under `md` (same formats) — there is
+// no separate `base` extension.
 const MATRIX: Record<string, ExportFormat[]> = {
   md: ["html", "pdf", "md"],
-  base: ["html", "pdf", "md"],
   sheet: ["html", "pdf"],
   draw: ["pdf", "png"],
 };

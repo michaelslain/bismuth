@@ -44,11 +44,3 @@ export async function buildVaultRows(root: string): Promise<Row[]> {
   }
   return rows;
 }
-
-// Also expose .base file discovery here for reuse.
-export async function listBases(root: string): Promise<string[]> {
-  const glob = new Bun.Glob("**/*.base");
-  const out: string[] = [];
-  for await (const p of glob.scan({ cwd: root, dot: false })) out.push(p);
-  return out.sort();
-}

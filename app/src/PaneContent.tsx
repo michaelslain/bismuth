@@ -3,7 +3,6 @@
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
 import { Switch, Match, Suspense, lazy } from "solid-js";
 import { FileView } from "./FileView";
-import { BaseView } from "./bases/BaseView";
 import { SheetView } from "./SheetView";
 import { EmptyPane } from "./EmptyPane";
 import { DrawingPage } from "./drawing/DrawingPage";
@@ -33,9 +32,8 @@ export function PaneContent(props: {
         />
       }
     >
-      {/* Export must win before the extension arms below: an export id like
-          "::export:Reading.base" ends with ".base", so without this ordering it
-          would be caught by the .base arm and render the BaseView, not ExportView. */}
+      {/* Export must win before the extension arms below so an export id is never
+          mistaken for the file it targets. */}
       <Match when={props.path.startsWith(EXPORT_PREFIX)}>
         <Suspense fallback={<div class="exp" />}>
           <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
@@ -55,9 +53,8 @@ export function PaneContent(props: {
       <Match when={props.path.endsWith(".sheet")}>
         <SheetView path={props.path} onSaved={props.onSaved} />
       </Match>
-      <Match when={props.path.endsWith(".base")}>
-        <BaseView path={props.path} onOpen={props.onOpen} />
-      </Match>
+      {/* A base is a `type: base` md file — routed by FileView (the fallback), which
+          reads its frontmatter and renders BaseView. There is no `.base` extension. */}
       <Match when={props.path.endsWith(".draw")}>
         <DrawingPage path={props.path} />
       </Match>

@@ -30,6 +30,23 @@ test("resolves bare, note., and file. identifiers", () => {
   expect(run("file.name")).toBe("housing");
 });
 
+test("file.asLink(text) returns a Link with custom display text", () => {
+  expect(run('file.asLink("a quote (p1)")')).toEqual({ __link: true, path: "housing.md", display: "a quote (p1)" });
+  // No arg -> falls back to the file name as the display.
+  expect(run("file.asLink()")).toEqual({ __link: true, path: "housing.md", display: "housing" });
+});
+
+test("file.hasLink accepts a FileMeta (this.file), matching by name", () => {
+  // The host note's identity arrives as this.file; a note links to it by basename.
+  const hostFile = { name: "internship", basename: "internship", path: "internship.md", folder: "", ext: "md", size: 0, ctime: 0, mtime: 0, tags: [], links: [] };
+  const c = ctx({ this: { file: hostFile } });
+  expect(run("file.hasLink(this.file)", c)).toBe(true);   // ctx file.links = ["internship"]
+  const c2 = ctx({ this: { file: { ...hostFile, name: "nope" } } });
+  expect(run("file.hasLink(this.file)", c2)).toBe(false);
+  // Plain-string arg still works (back-compat).
+  expect(run('file.hasLink("internship")')).toBe(true);
+});
+
 test("unary operators", () => {
   expect(run("!done")).toBe(true);
   expect(run("-age")).toBe(-2);
