@@ -292,7 +292,7 @@ export function createServer(cfg: CoreConfig) {
       // brain mode), so the client fetches them here on that switch. Cheap on repeat once
       // cached; a later /graph then includes them too.
       const graph = await graphCache.get();
-      const views = computeViewLayouts(graph, cfg.vault);
+      const views = await computeViewLayouts(graph, cfg.vault);
       // Attach the computed views onto the cached graph object IN PLACE rather than
       // invalidating the cache. `graphCache.get()` returns the live cached reference, so
       // mutating `.views` makes a subsequent /graph include them too — without forcing the

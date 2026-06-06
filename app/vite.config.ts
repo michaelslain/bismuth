@@ -19,13 +19,25 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          three: ["three", "d3-force-3d"],
-          xterm: ["@xterm/xterm", "@xterm/addon-fit"],
-          exportpdf: ["jspdf", "html2canvas"],
-          codemirror: ["codemirror"],
-          katex: ["katex"],
-          marked: ["marked"],
+        // Function-form so we can pin Vite's shared `__vitePreload` helper into its
+        // own tiny chunk. Otherwise Rollup hoists the helper into whichever vendor
+        // chunk it lands in (it ended up in `exportpdf`), and because the entry needs
+        // the helper it then statically imports that whole chunk — dragging
+        // jspdf+html2canvas (~175 KB gz) into boot even though ExportView is lazy.
+        manualChunks(id) {
+          if (id.includes("vite/preload-helper") || id.includes("vite/modulepreload"))
+            return "vite";
+          if (id.includes("jspdf") || id.includes("html2canvas")) return "exportpdf";
+          if (id.includes("/three/") || id.includes("d3-force-3d")) return "three";
+          if (id.includes("@xterm/")) return "xterm";
+          if (id.includes("/katex/")) return "katex";
+          if (id.includes("/marked/")) return "marked";
+          // NOTE: intentionally NO codemirror rule. FileView/Editor are now lazy, so
+          // Rollup auto-splits CodeMirror into its own chunk that loads on first note
+          // open. Forcing all @codemirror/@lezer into one manual chunk would also pull
+          // in @codemirror/language-data's per-language grammars (normally dynamically
+          // imported on demand), bloating the editor chunk ~5×. Let Rollup keep those
+          // grammar modules as separate lazy chunks.
         },
       },
     },

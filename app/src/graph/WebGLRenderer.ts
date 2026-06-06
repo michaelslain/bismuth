@@ -45,12 +45,16 @@ const EDGE_CULL_KEEP = 5;      // while highlighting, keep ~this many non-focuse
 // the graph. Radius is a fraction of link distance; min spacing between any two nodes is
 // 2*radius. Multiple solver iterations per tick make the floor hold even inside densely
 // linked cliques, where a single pass lets the link/centering pull overpower it.
-const COLLIDE_RATIO = 0.9;
-const COLLIDE_ITERATIONS = 3;
+// 1.25 (was 0.9): raises the min-spacing floor (min gap between any two node centers = 2×floor) so
+// the field is airier and nodes stop visually crowding/overlapping. Kept in sync with layout.ts.
+const COLLIDE_RATIO = 1.25;
+// Kept in sync with the backend precompute (core/src/layout.ts). 6 (was 3): more solver passes so
+// overlaps resolve within the settle — especially in 2D, where Z-separated nodes collapse onto XY.
+const COLLIDE_ITERATIONS = 6;
 // Big nodes collide as their drawn circle (not a point); this pads that circle so neighbouring hubs
 // keep a small visible gap instead of merely touching. Only affects nodes whose padded radius beats
-// the spacing floor (the largest hubs) — leaves are untouched.
-const COLLIDE_SIZE_PADDING = 1.25;
+// the spacing floor (the largest hubs) — leaves are untouched. Kept in sync with layout.ts.
+const COLLIDE_SIZE_PADDING = 1.55;
 // The "you" hub is fixed at the cloud center and given this much of the spacing floor as its own
 // collision radius, so a small ring of empty "physics space" opens around it separating it from
 // the surrounding cluster (the central-anchor look from the design). × the floor (collideRadius()).

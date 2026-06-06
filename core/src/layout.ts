@@ -43,10 +43,17 @@ export type Positions = Record<string, [number, number, number]>;
 
 // Force constants mirrored from the renderer (WebGLRenderer.ts) so a precomputed layout matches
 // what the live renderer would settle to — otherwise the renderer's warm-skip would re-settle them.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 100, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13 };
+// numPivots 50 (was 100): the PivotMDS Gram build is O(k²·n), so halving pivots is ~4× cheaper on
+// the cold path and visually indistinguishable (PivotMDS only seeds the force refine, which sets the
+// final shape). Warm rebuilds skip PivotMDS entirely (initialPositions), so this only bites first-ever
+// builds. NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
+const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13 };
 const LINK_STRENGTH = 0.18;
-const COLLIDE_RATIO = 0.9;
-const COLLIDE_ITERATIONS = 3;
+const COLLIDE_RATIO = 1.25;
+// 6 (was 3): more solver passes per tick so overlaps actually resolve within the refine budget —
+// notably in the 2D view, where nodes separated only along Z in 3D collapse onto the same XY and
+// need the collide force to push them apart. Must match the renderer (WebGLRenderer.ts).
+const COLLIDE_ITERATIONS = 6;
 const MANYBODY_THETA = 1.5;
 const MODE_2D_SPACING = 1.8;
 const PIVOT_TARGET_RADIUS = 100; // PivotMDS output is scaled to this RMS radius; force refine sets the final scale
@@ -60,7 +67,7 @@ const NODE_FOV_DEG = 60;         // renderer PerspectiveCamera fov
 const SIZE_MIN_MULT = 0.4;
 const SIZE_DEGREE_GAIN = 0.45;
 const SIZE_MAX_MULT = 6;
-const COLLIDE_SIZE_PADDING = 1.25; // leave a small gap between big circles instead of merely touching
+const COLLIDE_SIZE_PADDING = 1.55; // gap around big hubs (was 1.25) so they don't visually cover neighbors
 const degreeScale = (deg: number) => Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(deg));
 const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_FOV_DEG * Math.PI) / 180) / 2)) / 2;
 
@@ -187,18 +194,14 @@ export function pivotMDS(adj: number[][], n: number, dim: number, numPivots: num
 type RN = SimNode & { id: string };
 type RL = SimLink<RN>;
 
-/**
- * Full layout: PivotMDS initial placement + a short d3-force-3d refinement (same forces as the
- * renderer). Returns id → [x, y, z] with integer coordinates (z = 0 in 2D mode).
- */
-export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): Positions {
-  const o = { ...DEFAULTS, ...options };
+/** All layout setup short of running the tick loop: build the adjacency, seed coordinates
+ *  (PivotMDS or `initialPositions`), and construct the stopped d3-force simulation. Shared by the
+ *  sync `computeLayout` and the async, event-loop-yielding `computeLayoutAsync`. */
+function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): { sim: ReturnType<typeof forceSimulation<RN>>; nodes: RN[]; dim: 2 | 3 } {
   const dim = o.dimensions;
   const RANDOM_COORD_RADIUS = 160;
-  const ids = input.nodes.map((n) => n.id);
+  const ids = input.nodes.map((nd) => nd.id);
   const n = ids.length;
-  const positions: Positions = {};
-  if (n === 0) return positions;
 
   const index = new Map<string, number>();
   ids.forEach((id, i) => index.set(id, i));
@@ -211,7 +214,7 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
     links.push({ source: e.from, target: e.to });
   }
 
-  const seed = options.initialPositions;
+  const seed = o.initialPositions;
   const X = seed
     ? ids.map((id) => {
         const p = seed[id];
@@ -249,8 +252,45 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
     .force("y", forceY<RN>(0).strength(o.centering));
   if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
   sim.stop();
-  for (let i = 0; i < o.refineTicks; i++) sim.tick();
+  return { sim, nodes, dim };
+}
 
+/** Round out the settled simulation into the id → [x,y,z] integer-coordinate map (z=0 in 2D). */
+function extractPositions(nodes: RN[], dim: 2 | 3): Positions {
+  const positions: Positions = {};
   for (const nd of nodes) positions[nd.id] = [Math.round(nd.x ?? 0), Math.round(nd.y ?? 0), Math.round(dim === 3 ? (nd.z ?? 0) : 0)];
   return positions;
+}
+
+/**
+ * Full layout: PivotMDS initial placement (or `initialPositions` warm-start) + a short d3-force-3d
+ * refinement (same forces as the renderer). Returns id → [x, y, z] with integer coordinates (z = 0
+ * in 2D mode). Synchronous: the whole tick loop runs to completion on the calling thread — use
+ * `computeLayoutAsync` on the server hot path so a big graph doesn't stall concurrent requests.
+ */
+export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): Positions {
+  const o = { ...DEFAULTS, ...options };
+  if (input.nodes.length === 0) return {};
+  const { sim, nodes, dim } = prepareLayout(input, o);
+  for (let i = 0; i < o.refineTicks; i++) sim.tick();
+  return extractPositions(nodes, dim);
+}
+
+/**
+ * Identical result to `computeLayout`, but yields to the event loop every `YIELD_EVERY` force ticks
+ * so a multi-thousand-node settle doesn't monopolize Bun's single thread and block other requests
+ * (/tree, /file, /settings) for seconds. d3-force ticks are deterministic regardless of when we
+ * yield between them, so the output matches the sync path exactly.
+ */
+const YIELD_EVERY = 16;
+const yieldToEventLoop = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
+export async function computeLayoutAsync(input: LayoutInput, options: LayoutOptions = {}): Promise<Positions> {
+  const o = { ...DEFAULTS, ...options };
+  if (input.nodes.length === 0) return {};
+  const { sim, nodes, dim } = prepareLayout(input, o);
+  for (let i = 0; i < o.refineTicks; i++) {
+    sim.tick();
+    if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
+  }
+  return extractPositions(nodes, dim);
 }
