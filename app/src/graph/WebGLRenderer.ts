@@ -14,8 +14,9 @@ import {
   type SimNode,
   type SimLink,
 } from "d3-force-3d";
-import type { GraphData, NodeKind } from "../../../core/src/graph";
+import type { GraphData, NodeKind, DaemonVizState } from "../../../core/src/graph";
 import { SELF_NODE_ID } from "../../../core/src/graph";
+import { nodeVisualState } from "../../../core/src/daemonViz";
 import { nodeCollideRadius, drawnNodeRadius } from "./collide";
 import { LabelLayer } from "./LabelLayer";
 import { computeAlwaysOnSet } from "./labelSelection";
@@ -148,6 +149,11 @@ export interface GraphConfig {
   labelTextColor: string;     // hub-label text (CSS color → --label-text on the DOM label overlay)
   labelBgColor: string;       // hub-label pill background (CSS color → --label-bg)
   selfColor: number;          // the "you" hub color (0xRRGGBB) — the appearance foreground token
+  // DAEMON-mode color tokens (0xRRGGBB). Only used to color cron/process nodes (kind daemon/cron/process);
+  // every other mode ignores them. `nodeVisualState` picks which token applies per node.
+  daemonAccent?: number;      // the ::daemon hub anchor (accent token); cron/process fills use the per-node palette
+  daemonNeutral?: number;     // base daemon-node fill (disabled), muted token
+  daemonFg?: number;          // theme foreground token (--fg); carried for parity, not used by the border model
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -170,7 +176,27 @@ const DEFAULT_CONFIG: GraphConfig = {
   labelTextColor: "rgba(232,232,238,0.95)", // dark-theme default; light flips via setConfig
   labelBgColor: "rgba(14,14,17,0.6)",
   selfColor: 0xffffff,       // foreground token (overridden per-theme by GraphView)
+  daemonAccent: 0x3f6bf0,
+  daemonNeutral: 0xaeb4c2,
+  daemonFg: 0xffffff, // foreground token (overridden per-theme by GraphView)
 };
+
+// DAEMON border-layer tunables (NO glow). The border is a second Points mesh, normal-alpha blended,
+// drawn on top of the node points with a crisp hollow RING sprite — a clean flat outline, not a halo.
+//   BORDER_SIZE_MULT  — border point size = node point size × this (how far out the ring sits).
+//   BORDER_ALPHA      — peak ring alpha; the per-node alpha = (border==="palette") ? this : 0.
+//   BORDER_SCALE_MULT — border point's per-node scale relative to the node's own degree scale.
+// Tune BORDER_SIZE_MULT / BORDER_SCALE_MULT so the ring hugs the node's rim (a thin outline just
+// around the dot, not far out); BORDER_ALPHA sets how solid the outline reads.
+const BORDER_SIZE_MULT = 1.12;
+const BORDER_ALPHA = 1.0;
+const BORDER_SCALE_MULT = 1.0;
+// Stroke thickness of the border ring inside its own texture (fraction of the texture size). Bigger =
+// chunkier ring. Paired with BORDER_TEX_RADIUS (the ring's radius within the texture) below.
+const BORDER_TEX_STROKE = 0.08;
+const BORDER_TEX_RADIUS = 0.84; // ring radius as a fraction of the half-texture (leaves room for the stroke)
+// Running node draws slightly larger than its resting size so it stands out (solid palette fill).
+const DAEMON_RUNNING_SCALE = 1.5;
 
 const MODE_TWEEN_MS = 500; // duration of the 2D<->3D flatten/expand glide
 const FRAME_TWEEN_MS = 450; // duration of the "z" zoom-to-fit-node-and-neighbors glide
@@ -286,6 +312,32 @@ function makeRingTexture(): THREE.Texture {
   return tex;
 }
 
+/**
+ * A crisp hollow RING texture (white stroke, transparent center + transparent outside) for the DAEMON
+ * BORDER layer. NOT a glow — a clean flat outline. Rendered with NORMAL alpha blending on top of the
+ * node points so an idle (bg-filled) daemon reads as a hollow, palette-outlined dot. Thicker stroke
+ * than the "you" halo ring so it reads as a solid border. Stroke/radius driven by BORDER_TEX_STROKE /
+ * BORDER_TEX_RADIUS so the ring can be tuned without touching the renderer.
+ */
+function makeBorderRingTexture(): THREE.Texture {
+  const s = 256;
+  const cv = document.createElement("canvas");
+  cv.width = cv.height = s;
+  const ctx = cv.getContext("2d")!;
+  const c = s / 2;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = s * BORDER_TEX_STROKE;
+  ctx.beginPath();
+  ctx.arc(c, c, (s / 2) * BORDER_TEX_RADIUS, 0, Math.PI * 2);
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(cv);
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 type N3 = SimNode & {
   id: string;
   label: string;
@@ -293,6 +345,7 @@ type N3 = SimNode & {
   folder?: string;
   community?: number;          // Louvain community id (color + cluster grouping), from the backend
   communityLabel?: string;     // exemplar name for the community (highest-degree member's label)
+  daemon?: DaemonVizState;     // DAEMON-mode viz state (cron/process nodes only) — drives opacity + tint
   // Backend-precomputed target layouts for each mode — the 2D↔3D tween morphs straight to these
   // (no re-settle). Populated from the graph's position/position2d in render().
   pos3d?: [number, number, number];
@@ -308,7 +361,10 @@ export interface HoverNode {
   folder?: string;
 }
 
-function graphSig(nodes: { id: string }[], edges: { from: string; to: string }[]): string {
+function graphSig(
+  nodes: { id: string; daemon?: DaemonVizState }[],
+  edges: { from: string; to: string }[],
+): string {
   // Order-independent edge hash (summed per-edge FNV-1a). The node-id set + edge COUNT alone can't
   // tell that the "you" hub re-pointed from one open tab to another (same count, same node set) —
   // that swap must still re-render, so fold the edge endpoints into the signature.
@@ -319,7 +375,15 @@ function graphSig(nodes: { id: string }[], edges: { from: string; to: string }[]
     for (let i = 0; i < s.length; i++) { x = Math.imul(x ^ s.charCodeAt(i), 16777619); }
     h = (h + (x >>> 0)) >>> 0;
   }
-  return nodes.map((n) => n.id).sort().join(",") + "|" + edges.length + "|" + h;
+  // DAEMON mode: cron/process nodes keep the same id+edges across polls, but their viz state
+  // (enabled / running) changes — fold it in so a state change re-renders (recomputing each node's
+  // fill + border ring). Only enabled+running drive the encoding now (lastResult/lastFiredMs dropped),
+  // so they're not folded. No-op for every other mode (no daemon field).
+  const daemonSig = nodes
+    .filter((n) => n.daemon)
+    .map((n) => `${n.id}:${n.daemon!.enabled}:${n.daemon!.running}`)
+    .join(";");
+  return nodes.map((n) => n.id).sort().join(",") + "|" + edges.length + "|" + h + "|" + daemonSig;
 }
 
 /** Push a point radially out to radius `r` if it sits inside it (else leave it); a point exactly at
@@ -348,6 +412,11 @@ export class WebGLRenderer {
   private group!: THREE.Group;
   private pointsMesh: THREE.Points | null = null;
   private linesMesh: THREE.LineSegments | null = null;
+  // DAEMON-mode border layer: a second (normal-alpha) Points mesh drawn on top of the node points,
+  // giving each enabled-but-idle cron/process node a crisp palette-colored ring (a hollow outlined
+  // dot) — NO glow. Built only in DAEMON mode (null otherwise), so every other graph mode renders
+  // exactly as before. Positions track pointsMesh frame-by-frame.
+  private borderMesh: THREE.Points | null = null;
   private labels = new LabelLayer();
   private labelOverlay: HTMLElement | null = null; // DOM container the labels render into
   private activeFileId: string | null = null;
@@ -397,6 +466,7 @@ export class WebGLRenderer {
   private leaveHandler?: () => void;
   private circleTex: THREE.Texture | null = null;
   private ringTex: THREE.Texture | null = null;
+  private borderTex: THREE.Texture | null = null;
   private haloSprite: THREE.Sprite | null = null;
   private baseColors: Float32Array = new Float32Array(0); // node colors, for hover restore
   private baseScales: Float32Array = new Float32Array(0); // per-node degree size multiplier, before near-cull
@@ -518,6 +588,8 @@ export class WebGLRenderer {
 
     // Circle sprite for round nodes
     this.circleTex = makeCircleTexture();
+    // Crisp hollow ring sprite for the DAEMON border layer (built lazily; reused across rebuilds).
+    this.borderTex = makeBorderRingTexture();
 
     // Billboard halo ring for the "you" hub — always faces the camera, tinted to the hub color,
     // sized in buildGeometry/updateHalo. Hidden until a self node is present.
@@ -1367,9 +1439,40 @@ export class WebGLRenderer {
         return this.paletteColor("agent:" + n.label);
       case "self":
         return new THREE.Color(this.cfg.selfColor); // the "you" hub — foreground token, stands apart from clusters
+      case "daemon":
+        return new THREE.Color(this.cfg.daemonAccent ?? this.cfg.selfColor); // the claude-bot hub — accent anchor
+      case "cron":
+      case "process":
+        return this.daemonNodeColor(n); // own fill (base/bg/palette) + opacity baked in from nodeVisualState (DAEMON)
       default:
         return new THREE.Color(this.palette[2] ?? this.palette[0] ?? 0x3f6bf0);
     }
+  }
+
+  /**
+   * DAEMON-mode cron/process node's OWN point FILL color (the border ring is a separate layer): take
+   * the fill token from `nodeVisualState`, then bake its opacity into the color by lerping toward the
+   * canvas background (the points material has no per-vertex alpha, so a faded node = a node mixed
+   * toward the background). Only reached for kind cron/process, so it never touches any other mode.
+   *   fill "palette" → running: the whole node is its stable per-node palette color (solid).
+   *   fill "bg"      → enabled-idle: the node fill IS the canvas background, so it reads as a hollow
+   *                    dot — only the palette border ring (drawn by the border layer) outlines it.
+   *   fill "base"    → disabled: muted neutral, faded toward bg via opacity.
+   */
+  private daemonNodeColor(n: N3): THREE.Color {
+    const vs = nodeVisualState(
+      n.daemon ?? { enabled: true, running: false, lastResult: null, lastFiredMs: null },
+    );
+    const bg = new THREE.Color(this.cfg.backgroundColor);
+    let color: THREE.Color;
+    if (vs.fill === "palette") {
+      color = this.paletteColor(n.id); // running → the node's stable per-node palette color (solid fill)
+    } else if (vs.fill === "bg") {
+      color = bg.clone(); // enabled-idle → exactly the canvas background
+    } else {
+      color = new THREE.Color(this.cfg.daemonNeutral ?? 0xaeb4c2); // disabled → muted base
+    }
+    return color.lerp(bg, 1 - vs.opacity); // opacity 1 → full color; opacity 0 → background
   }
 
   /** Link distance for the current view mode (2D spreads wider than 3D). */
@@ -1404,13 +1507,24 @@ export class WebGLRenderer {
     this.palette = cfg.palette;
 
     if (this.pointsMesh) (this.pointsMesh.material as THREE.PointsMaterial).size = cfg.nodeSize;
+    if (this.borderMesh) (this.borderMesh.material as THREE.PointsMaterial).size = cfg.nodeSize * BORDER_SIZE_MULT;
 
     // Compare palette by content (GraphView builds a fresh array each effect run from
     // the accentPalette tokens, so reference identity would recolor on every config push).
     const paletteChanged =
       cfg.palette.length !== prev.palette.length ||
       cfg.palette.some((c, i) => c !== prev.palette[i]);
-    if (paletteChanged && this.pointsMesh) this.recolorNodes();
+    // DAEMON tokens (node fill + border color) come in via setConfig on a theme switch too — recolor
+    // the daemon nodes + border ring if any of them moved, even when the cluster palette itself didn't.
+    // The bg-filled idle node tracks backgroundColor; the border ring is a per-node palette color, so
+    // a palette change must also re-tint the ring.
+    const daemonColorsChanged =
+      cfg.daemonAccent !== prev.daemonAccent ||
+      cfg.daemonNeutral !== prev.daemonNeutral ||
+      cfg.daemonFg !== prev.daemonFg ||
+      cfg.backgroundColor !== prev.backgroundColor;
+    if ((paletteChanged || daemonColorsChanged) && this.pointsMesh) this.recolorNodes();
+    if ((paletteChanged || daemonColorsChanged) && this.borderMesh) this.recolorBorder();
 
     // Background color applies instantly; edge color + node-size multipliers apply on the
     // next graph render (re-settle below covers a size change).
@@ -1476,6 +1590,9 @@ export class WebGLRenderer {
     );
     // The "you" hub is always labeled — it's the anchor of the view, never decluttered away.
     if (this.nodes.some((n) => n.id === SELF_NODE_ID)) set.add(SELF_NODE_ID);
+    // DAEMON mode: the daemon/cron/process graph is small, so always-label every node — the
+    // names ARE the content here (which cron, which process), not a decluttered overview.
+    for (const n of this.nodes) if (n.kind === "daemon" || n.kind === "cron" || n.kind === "process") set.add(n.id);
     this.labels.setAlwaysOnSet(set);
   }
 
@@ -1697,6 +1814,40 @@ export class WebGLRenderer {
     // Without this the edge buffer remains in its hover state (focused bright, others culled)
     // while the node buffer has snapped back to flat resting colors — a half-hovered view.
     if (this.hoveredId) this.setHighlightTargets();
+  }
+
+  /**
+   * Recompute the DAEMON border layer's per-node ring color + per-node alpha from the live theme/ids.
+   * Each enabled-but-idle cron/process node (`border === "palette"`) gets a crisp ring in its STABLE
+   * per-node palette color (`paletteColor(n.id)`, the same hash used for its running fill) at
+   * BORDER_ALPHA; every other node (running / disabled / non-daemon) gets alpha 0 (no ring). Normal
+   * alpha blending — so the alpha attribute, not a black vertex color, is what hides a node's ring.
+   */
+  private recolorBorder() {
+    if (!this.borderMesh) return;
+    const colAttr = this.borderMesh.geometry.getAttribute("color") as THREE.BufferAttribute;
+    const aAttr = this.borderMesh.geometry.getAttribute("aAlpha") as THREE.BufferAttribute;
+    const col = colAttr.array as Float32Array;
+    const alpha = aAttr.array as Float32Array;
+    for (let i = 0; i < this.nodes.length; i++) {
+      const n = this.nodes[i];
+      const hasBorder =
+        (n.kind === "cron" || n.kind === "process") &&
+        n.daemon != null &&
+        nodeVisualState(n.daemon).border === "palette";
+      if (hasBorder) {
+        const c = this.paletteColor(this.nodes[i].id); // stable per-node ring color (matches running fill)
+        col[i * 3] = c.r;
+        col[i * 3 + 1] = c.g;
+        col[i * 3 + 2] = c.b;
+        alpha[i] = BORDER_ALPHA;
+      } else {
+        col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0;
+        alpha[i] = 0; // no ring (running / disabled / non-daemon)
+      }
+    }
+    colAttr.needsUpdate = true;
+    aAttr.needsUpdate = true;
   }
 
   /**
@@ -2041,9 +2192,9 @@ export class WebGLRenderer {
     this.sim.restart();
   }
 
-  /** Remove both meshes from the scene group and free their GPU resources. */
+  /** Remove the node/edge/border meshes from the scene group and free their GPU resources. */
   private disposeMeshes() {
-    for (const mesh of [this.pointsMesh, this.linesMesh]) {
+    for (const mesh of [this.pointsMesh, this.linesMesh, this.borderMesh]) {
       if (!mesh) continue;
       this.group.remove(mesh);
       mesh.geometry.dispose();
@@ -2051,6 +2202,7 @@ export class WebGLRenderer {
     }
     this.pointsMesh = null;
     this.linesMesh = null;
+    this.borderMesh = null;
   }
 
   /**
@@ -2070,9 +2222,98 @@ export class WebGLRenderer {
       // collision radius is handled separately (the clearing), so this is purely visual.
       if (this.nodes[i].kind === "self") { scales[i] = SELF_NODE_SCALE; continue; }
       const d = deg.get(this.nodes[i].id) ?? 0;
-      scales[i] = Math.min(this.cfg.nodeSizeMaxMult, this.cfg.nodeSizeMinMult + this.cfg.nodeSizeDegreeGain * Math.sqrt(d));
+      let s = Math.min(this.cfg.nodeSizeMaxMult, this.cfg.nodeSizeMinMult + this.cfg.nodeSizeDegreeGain * Math.sqrt(d));
+      // DAEMON mode: a running cron/process draws slightly larger so it stands out (accent + bigger).
+      const n = this.nodes[i];
+      if ((n.kind === "cron" || n.kind === "process") && n.daemon?.running) s *= DAEMON_RUNNING_SCALE;
+      scales[i] = s;
     }
     return scales;
+  }
+
+  /**
+   * Build the DAEMON-mode border layer: a second `THREE.Points` mesh drawn on top of the node points.
+   * Each enabled-but-idle cron/process node (`border === "palette"`) gets a crisp ring in its STABLE
+   * per-node palette color (`paletteColor(n.id)`); running, disabled, and non-daemon nodes get nothing.
+   * NO glow — a clean flat outline so an idle (bg-filled) node reads as a hollow, palette-outlined dot.
+   *
+   * Mechanism: NORMAL alpha blending + a crisp hollow-ring sprite. The ring color is baked into the
+   * vertex COLOR; whether a ring shows is a per-node `aAlpha` attribute (1 = ring, 0 = none) injected
+   * into the fragment shader and multiplied into the final alpha — so "no ring" nodes vanish cleanly
+   * (a black vertex color would otherwise paint a black ring under normal blending). Point size = node
+   * size × BORDER_SIZE_MULT (the ring sits just outside the node rim); per-node aScale = node scale ×
+   * BORDER_SCALE_MULT. Drawn on top (renderOrder 2, depthTest off) so the ring is never occluded by
+   * the bg-filled idle node it outlines. Only built when the graph contains cron/process nodes.
+   */
+  private buildBorderLayer() {
+    const isDaemonMode = this.nodes.some((n) => n.kind === "cron" || n.kind === "process");
+    if (!isDaemonMode || !this.borderTex) return;
+
+    const nodeCount = this.nodes.length;
+    const positions = new Float32Array(nodeCount * 3);
+    const colors = new Float32Array(nodeCount * 3); // ring color (per-node palette); alpha gates visibility
+    const alphas = new Float32Array(nodeCount); // per-node ring alpha: BORDER_ALPHA for idle daemons, else 0
+    const scales = new Float32Array(nodeCount);
+
+    for (let i = 0; i < nodeCount; i++) {
+      const n = this.nodes[i];
+      positions[i * 3] = n.x ?? 0;
+      positions[i * 3 + 1] = n.y ?? 0;
+      positions[i * 3 + 2] = n.z ?? 0;
+
+      const hasBorder =
+        (n.kind === "cron" || n.kind === "process") &&
+        n.daemon != null &&
+        nodeVisualState(n.daemon).border === "palette";
+      if (hasBorder) {
+        const c = this.paletteColor(n.id); // stable per-node ring color (matches the running fill)
+        colors[i * 3] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+        alphas[i] = BORDER_ALPHA;
+      } else {
+        colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = 0;
+        alphas[i] = 0;
+      }
+      scales[i] = (this.baseScales[i] ?? 1) * BORDER_SCALE_MULT;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute("aAlpha", new THREE.BufferAttribute(alphas, 1));
+    geo.setAttribute("aScale", new THREE.BufferAttribute(scales, 1));
+
+    const mat = new THREE.PointsMaterial({
+      size: this.cfg.nodeSize * BORDER_SIZE_MULT,
+      sizeAttenuation: true,
+      vertexColors: true,
+      map: this.borderTex,
+      transparent: true,
+      blending: THREE.NormalBlending, // flat outline, NOT additive — no glow
+      depthWrite: false, // a thin border shouldn't occlude anything
+      depthTest: true, // depth-sort with the nodes so the ring doesn't float on top of closer nodes / the hub
+    });
+    // Per-node size (aScale → gl_PointSize) + per-node ring alpha (aAlpha → multiplied into the
+    // fragment's final alpha so "no ring" nodes don't paint a black ring under normal blending).
+    mat.onBeforeCompile = (shader) => {
+      shader.vertexShader =
+        "attribute float aScale;\nattribute float aAlpha;\nvarying float vAlpha;\n" +
+        shader.vertexShader
+          .replace("gl_PointSize = size;", "gl_PointSize = size * aScale;")
+          .replace("void main() {", "void main() {\n  vAlpha = aAlpha;");
+      shader.fragmentShader =
+        "varying float vAlpha;\n" +
+        shader.fragmentShader.replace(
+          "#include <opaque_fragment>",
+          // opaque_fragment is what ASSIGNS gl_FragColor, so multiply our per-node alpha in AFTER it.
+          "#include <opaque_fragment>\n  gl_FragColor.a *= vAlpha;",
+        );
+    };
+
+    this.borderMesh = new THREE.Points(geo, mat);
+    this.borderMesh.renderOrder = 1.5; // just above the node fill so the ring reads over its own dot, but depth-tested so it sorts with the rest of the graph (not floating on top)
+    this.group.add(this.borderMesh);
   }
 
   private buildGeometry() {
@@ -2131,6 +2372,7 @@ export class WebGLRenderer {
     this.pointsMesh = new THREE.Points(pointsGeo, pointsMat);
     this.pointsMesh.renderOrder = 1; // draw nodes after edges so links sit under nodes (matters in 2D, where equal depth ties)
     this.group.add(this.pointsMesh);
+    this.buildBorderLayer(); // DAEMON-mode per-node palette border rings (no-op in every other mode)
     this.updateHalo(); // size + place the "you" halo for the current graph
 
     // --- LineSegments (edges) — clean cohesive lavender, brighten on hover ---
@@ -2237,6 +2479,14 @@ export class WebGLRenderer {
     }
     posAttr.needsUpdate = true;
     this.pointsMesh.geometry.computeBoundingSphere();
+
+    // Keep the DAEMON border layer locked onto the node positions (it shares the node coords 1:1).
+    if (this.borderMesh) {
+      const gAttr = this.borderMesh.geometry.getAttribute("position") as THREE.BufferAttribute;
+      (gAttr.array as Float32Array).set(posArray);
+      gAttr.needsUpdate = true;
+      this.borderMesh.geometry.computeBoundingSphere();
+    }
 
     const linePosAttr = this.linesMesh.geometry.getAttribute("position") as THREE.BufferAttribute;
     this.writeEdgePositions(linePosAttr.array as Float32Array);
@@ -2352,6 +2602,8 @@ export class WebGLRenderer {
     this.circleTex = null;
     this.ringTex?.dispose();
     this.ringTex = null;
+    this.borderTex?.dispose();
+    this.borderTex = null;
     if (this.haloSprite) { (this.haloSprite.material as THREE.Material).dispose(); this.haloSprite = null; }
 
     this.disposeMeshes();

@@ -117,6 +117,7 @@ const postJson = <T>(path: string, body: unknown) => transport.postJson<T>(path,
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
+  daemonGraph: () => getJson<GraphData>("/daemon/graph"),
   graphViews: () => getJson<{ second: ViewLayout; third: ViewLayout }>("/graph/views"),
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),

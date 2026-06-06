@@ -31,6 +31,7 @@ import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
 import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride } from "./daemon";
+import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup } from "./claudebot";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
@@ -546,6 +547,17 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /daemon/devices": async (_, __) => {
       return ok(listDevices());
+    },
+
+    // DAEMON graph mode: the claude-bot daemon hub + a node per cron / process, read straight
+    // from the shared state files under the claude-bot home (never throws → degrades to empty).
+    // Vault-independent, like the other /daemon/* reads. Polled by the frontend while in daemon mode.
+    "GET /daemon/graph": async (_, __) => {
+      // Position the daemon star the same way the vault graph is laid out: attach
+      // backend-computed position2d/position3d so the WebGL renderer can place nodes
+      // (unlike agents mode, daemon has no separate SVG layout). Cached by graph sig,
+      // so polled state changes (opacity/tint) keep stable positions.
+      return ok(await attachLayout(daemonGraph(), "daemon"));
     },
 
     // claude-bot daemon install/setup, bridged to the claude-bot package's
