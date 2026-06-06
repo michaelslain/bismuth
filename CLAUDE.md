@@ -231,14 +231,7 @@ Each PTY's env is built by `buildPtyEnv` (pure, tested): besides `TERM`, it inje
 
 ### Sheets (`app/src/SheetView.tsx` + `app/src/sheet/`)
 
-A real spreadsheet document type — a sibling to notes and bases, **not** a Bases view (the data lives in the file's cells, not in notes). A `.sheet` file is a Univer workbook JSON snapshot (`IWorkbookData`). Powered by the **Univer** SDK (`@univerjs/presets` + `preset-sheets-core`/`-sort`/`-filter`, v0.25). Free-form A1 cells, 400+ formulas with a recalc dependency graph, sort/filter, number formats, merged cells, freeze panes.
-
-- All Univer code is quarantined behind one adapter, `app/src/sheet/univerSheet.ts` (`mountSheet`/`getSnapshot`/`setDark`/`dispose`), reached only via dynamic `import()` from `SheetView.tsx` so Univer is code-split out of the main bundle. Each mount gets a fresh child container (disposing then re-creating into the same node renders blank).
-- `app/src/sheet/snapshot.ts` (pure, unit-tested): `parseSnapshot` (empty/whitespace ⇒ blank workbook), `serializeSnapshot`. `app/src/sheet/sync.ts` (pure, unit-tested): `isExternalChange` — the single-writer reload predicate.
-- Routing: `PaneContent.tsx` sends `*.sheet` paths to `SheetView` (a `type: base` md routes to `BaseView` via `FileView`). `core/src/files.ts` `listTree` lists `.sheet` so they appear in the tree. `tabIds.ts` gives them a `Table` icon + extension-stripped label.
-- Persistence reuses `api.read`/`api.write` (no new endpoints). Edits debounce-save (snapshot-equality skip avoids no-op writes); the **baseline is Univer's own serialization of the freshly-mounted workbook**, so mount-time commands aren't mistaken for edits and an unedited sheet is never written. A version/echo guard (`isExternalChange` + a `dirty` flag) reloads on genuine external edits but never clobbers in-progress edits.
-- Created via "New Spreadsheet" (file-tree context menu, toolbar, command palette) — an empty file that `SheetView` turns into a blank workbook on first open. Dark mode tracks `settings.appearance.theme` live via `univerAPI.toggleDarkMode`.
-- **Not in v1** (deferred, each cheap to add): `.xlsx` import/export, charts, pivot tables, real-time collaboration, vault cross-references. Tauri/WKWebView canvas rendering is unverified (developed/tested in the browser).
+A `.sheet` file is a Univer workbook JSON snapshot. Powered by `@univerjs/presets` (v0.25), code-split via dynamic `import()` behind `sheet/univerSheet.ts` (`mountSheet`/`getSnapshot`/`setDark`/`dispose`). `sheet/snapshot.ts` handles parse/serialize (pure, tested); `sheet/sync.ts` (`isExternalChange`) gates external-edit reloads. Routing: `PaneContent.tsx` sends `*.sheet` to `SheetView`; `listTree` lists them in the sidebar. Persistence reuses `api.read`/`api.write`. Created via "New Spreadsheet". Dark mode via `univerAPI.toggleDarkMode`.
 
 ### Panes / Tabs
 
@@ -254,15 +247,11 @@ Commands are split into pure data and behavior so the palette and the sidebar he
 - `core/src/commands.ts` — `COMMAND_CATALOG` (`id`, `label`, `icon`) + `COMMAND_IDS`. Pure data; lives in core so the settings schema derives the `toolbar.command` enum from it.
 - `app/src/commands.ts` — `bindCommands(handlers)` maps each id to a live `{id, label, icon, action}`. Both `CommandPalette` and the toolbar `<For>` consume the map. `resolveButtonCommands(btn, map)` resolves a toolbar item to its ordered list of bound commands (precedence below), dropping unresolved ids — the toolbar `<For>` uses it to fire each command on click.
 
-The bar above the file tree is configured by the `toolbar:` list in `settings.yaml` (seeded with New note / New folder / Open terminal). Each item is `{ command: <id> | commands: [<id>, …], icon: <Lucide name|emoji>, tooltip?: <text> }`. A button runs either one command (`command:`) or several in order (`commands:`, a list) on a single click; a non-empty `commands` wins over `command` (setting both → a lint warning). At runtime, ids that don't resolve are silently skipped, and a button renders **disabled** only when *none* of its ids resolve. A top-level list slips past the section-merge loop in `serializeSettingsForFrontend`, so it's special-cased via `readToolbarFrom` (mirrors `folderIcons`) — items with no resolvable command and other malformed items are dropped, an explicit empty list is honored. The `command:`/`icon:` fields and the `commands:` list members autocomplete inside the list via `editor/settingsComplete.ts` (the bare list-scalar case has its own branch).
+The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each item: `{ command: <id> | commands: [<id>, …], icon: <Lucide|emoji>, tooltip? }`. `commands` list wins over `command`; unresolved ids silently skip; button disabled only if none resolve. Special-cased via `readToolbarFrom` (mirrors `folderIcons`). Fields autocomplete in the editor via `settingsComplete.ts`.
 
 **Adding a command:** add an entry to `COMMAND_CATALOG` (core) and a matching `action` binding in `bindCommands` (app). The `toolbar.command` enum, its autocomplete, and the palette pick it up automatically. (Adding any new *top-level* schema key also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`.)
 
-**File-menu commands** (there is no separate "File menu" UI — each file option is just a command, surfaced in the palette / bindable to the toolbar / keybindable, and trivially mappable to a native macOS menu later):
-- `new-folder` / `new-note` — create in the vault (pre-existing).
-- `export` — opens the export tab for the focused file (falls back to the active tab's content for single-pane tabs; `isSentinel`/`isExportable`-guarded, toasts otherwise).
-- `new-window` — reopen the **current** folder in a new window, pinned to this window's backend via `?api=` (browser: `window.open`).
-- `open-folder` — open a **chosen** folder as its own brain in a new window, Obsidian-style process-per-vault: `POST /open-folder` spawns a sibling core server pointed at the folder (`core/src/openFolder.ts`, free-port + readiness-poll, injectable spawn/probe for tests) and returns its `{url}`; the frontend opens a window with `?api=<url>`. The browser uses a typed-path modal (`FolderPrompt.tsx`); a native OS folder picker + native Tauri window are desktop-build enhancements that don't change this mechanism.
+**File-menu commands**: `new-folder`/`new-note` (create), `export` (export tab for focused file), `new-window` (reopen current folder in new window via `?api=`), `open-folder` (open chosen folder as new brain: `POST /open-folder` → sibling core server → `?api=<url>` window).
 
 **Runtime backend base** (`app/src/api.ts`): `BASE` is resolved at runtime — `?api=<url>` query param wins, then the `VITE_API_BASE` build env, then the default port — so one frontend build serves multiple windows each talking to a different backend. `apiBase()` exposes the resolved value for building `?api=` window URLs.
 
@@ -404,28 +393,13 @@ Debounced 250ms file-watch; version-based polling (refetch only when `/version` 
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
-The "agents" graph is powered by a small Claude Code plugin (`relay/`) that reports each
-terminal-tab Claude session — and its subagents — to an **in-process registry in core**
-(`core/src/relay.ts`). This is the merged successor to the old standalone, cross-machine
-`claude-communicate` daemon; that Tailscale/`:7777` system was dropped. There is no daemon
-and nothing installed in `~/.claude` — the plugin loads **per-session** only inside app
-terminals.
+A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. No daemon, nothing installed in `~/.claude` — the plugin loads per-session only inside app terminals.
 
-Mechanism (confirmed against Claude Code v2.1.165 — `SubagentStart`/`SubagentStop` hooks):
-1. `core/src/terminal.ts` spawns each tab's pty with `CLAUDE_TERMINAL_ID` (the pty id) +
-   `CLAUDE_RELAY_URL` (this core server) + a PATH shim (`relay/shim/claude`) that makes a
-   bare `claude` run `claude --plugin-dir <relay>`. So the plugin is present only in app
-   terminals (provenance is the env var); external Claude sessions never report in.
-2. The plugin's hooks (`relay/hooks/hooks.json`) POST to core's `/relay/*` routes:
-   `SessionStart`/`UserPromptSubmit` → register/heartbeat the session;
-   `SubagentStart`/`SubagentStop` → add/finish a subagent. All best-effort (never block the
-   session; no-op without `CLAUDE_TERMINAL_ID`).
-3. `agents.ts` builds the graph from the registry; `GET /agent-graph` prunes the registry
-   against the live pty set first (closed tabs leave no hook, so cleanup is at read time).
+1. `terminal.ts` injects `CLAUDE_TERMINAL_ID` + `CLAUDE_RELAY_URL` into each pty env and prepends a PATH shim (`relay/shim/claude`) so a bare `claude` auto-loads the plugin via `--plugin-dir`.
+2. Plugin hooks POST to `/relay/*`: `SessionStart`/`UserPromptSubmit` → register/heartbeat; `SubagentStart`/`SubagentStop` → add/finish subagent. Best-effort, no-op without `CLAUDE_TERMINAL_ID`.
+3. `agents.ts` builds the graph from the registry; `/agent-graph` prunes stale sessions (closed tabs) at read time.
 
-Scope is deliberately app-local: NO cross-machine agents, NO inter-agent messaging/inbox
-(those were the dropped daemon's job). Lifecycle is trivial — the registry lives only while
-the app's core server runs, which is exactly when app-terminal sessions can exist.
+Scope: app-local only. No cross-machine agents, no messaging. Registry lives only while the core server runs.
 
 ## Testing
 
