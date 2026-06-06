@@ -107,8 +107,9 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
       return false;
     }
 
-    // Include supported file types; .draw files get special icon marker
-    if (name.endsWith(".md") || name.endsWith(".draw") || name.endsWith(".base") ||
+    // Include supported file types; .draw files get special icon marker.
+    // (A base is a `type: base` md file — no separate `.base` extension.)
+    if (name.endsWith(".md") || name.endsWith(".draw") ||
         name.endsWith(".sheet") || name.endsWith(".yaml") || name.endsWith(".yml")) {
       return name.endsWith(".draw") ? { data: "PenTool" } : true;
     }
@@ -147,7 +148,7 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
       // .draw file with icon marker
       out.push({ path: entry.rel, kind: "file", icon: "PenTool" });
     } else {
-      // .base, .sheet, .yaml, .yml
+      // .sheet, .yaml, .yml
       out.push({ path: entry.rel, kind: "file" });
     }
   }

@@ -6,12 +6,9 @@ import { Switch, Match, Suspense, lazy } from "solid-js";
 // tab on boot is the graph, so the editor is never needed at first paint — defer it
 // off the entry bundle until a note is actually opened.
 const FileView = lazy(() => import("./FileView").then((m) => ({ default: m.FileView })));
-// Lazy too: none of these render at boot (the home tab is the graph), and BaseView
-// transitively pulls `marked` (via its Calendar/Flashcards renderers) into the entry.
-// Routed by Match arm on path extension, so each gets its own Suspense below.
-const BaseView = lazy(() => import("./bases/BaseView").then((m) => ({ default: m.BaseView })));
 const SheetView = lazy(() => import("./SheetView").then((m) => ({ default: m.SheetView })));
 const DrawingPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.DrawingPage })));
+
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
@@ -43,9 +40,8 @@ export function PaneContent(props: {
         </Suspense>
       }
     >
-      {/* Export must win before the extension arms below: an export id like
-          "::export:Reading.base" ends with ".base", so without this ordering it
-          would be caught by the .base arm and render the BaseView, not ExportView. */}
+      {/* Export must win before the extension arms below so an export id is never
+          mistaken for the file it targets. */}
       <Match when={props.path.startsWith(EXPORT_PREFIX)}>
         <Suspense fallback={<div class="exp" />}>
           <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
@@ -67,11 +63,8 @@ export function PaneContent(props: {
           <SheetView path={props.path} onSaved={props.onSaved} />
         </Suspense>
       </Match>
-      <Match when={props.path.endsWith(".base")}>
-        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
-          <BaseView path={props.path} onOpen={props.onOpen} />
-        </Suspense>
-      </Match>
+      {/* A base is a `type: base` md file — routed by FileView (the fallback), which
+          reads its frontmatter and renders BaseView. There is no `.base` extension. */}
       <Match when={props.path.endsWith(".draw")}>
         <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
           <DrawingPage path={props.path} />

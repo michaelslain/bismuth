@@ -1,10 +1,10 @@
 // Renders `![[file]]` and `![](url)` EMBEDS inline in the editor: images (with `|width`
-// or `|WxH`), PDFs (with `#page=N`), audio, video, and `.md` note transclusion. Modeled on
-// basesBlock.ts (a StateField is REQUIRED for block decorations) + fenceBlock.ts's cursor
-// reveal: a standalone embed on its own line becomes a block widget; an inline `![[icon|18]]`
-// becomes an inline widget; when the cursor enters the embed the raw source is revealed for
-// editing. `.base` embeds are left to basesBlock. Media bytes come from GET /asset (resolved
-// FILENAME-FIRST server-side), so the frontend passes the bare target — no path lookup needed.
+// or `|WxH`), PDFs (with `#page=N`), audio, video, and `.md` note transclusion. Like
+// queryBlock.ts, block decorations come from a StateField (CodeMirror forbids them from
+// view plugins). A standalone embed on its own line becomes a block widget; an inline
+// `![[icon|18]]` becomes an inline widget; when the cursor enters the embed the raw source
+// is revealed for editing. Media bytes come from GET /asset (resolved FILENAME-FIRST
+// server-side), so the frontend passes the bare target — no path lookup needed.
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { parseWikilink, resolveNotePath, type NoteCandidate } from "./wikilink";
@@ -48,11 +48,10 @@ function parseSize(alias?: string): { width?: number; height?: number } {
   return m[2] ? { width: +m[1], height: +m[2] } : { width: +m[1] };
 }
 
-/** Build an EmbedSpec from a `![[target#frag|alias]]` inner string, or null to skip
- *  (e.g. a `.base` embed, owned by basesBlock). */
+/** Build an EmbedSpec from a `![[target#frag|alias]]` inner string, or null to skip. */
 function specForWikiEmbed(inner: string): EmbedSpec | null {
   const { target, alias, heading } = parseWikilink(inner);
-  if (!target || /\.base$/i.test(target)) return null;
+  if (!target) return null;
   const kind = kindForTarget(target);
   if (kind === "note") return { kind, target };
   const src = api.assetUrl(target); // backend resolves filename-first

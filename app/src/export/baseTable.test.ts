@@ -27,7 +27,9 @@ function deps(read: string, rows: Row[]): ExportDeps {
 // resolve to all notes and let runView apply the filters — the path that was broken
 // when export used a { kind:"base", ref } spec and got zero rows.
 describe("baseToTable — filters-style base", () => {
-  const BASE = `filters:
+  const BASE = `---
+type: base
+filters:
   and:
     - file.inFolder("reading/books")
     - status == "finished"
@@ -36,6 +38,7 @@ views:
     order:
       - file.name
       - status
+---
 `;
 
   test("exports only the rows matching the base filters, with the view's columns", async () => {
@@ -44,13 +47,13 @@ views:
       row("Hyperion", "reading/books", { status: "reading" }),    // dropped: status
       row("Journal", "notes", { status: "finished" }),            // dropped: folder
     ];
-    const t = await baseToTable("reading/finished.base", deps(BASE, rows));
+    const t = await baseToTable("reading/finished.md", deps(BASE, rows));
     expect(t.columns).toEqual(["name", "status"]);
     expect(t.rows).toEqual([["Dune", "finished"]]);
   });
 
   test("an unfiltered notes-default base passes rows through", async () => {
-    const t = await baseToTable("x.base", deps("views:\n  - type: table\n    order: [file.name]\n", [
+    const t = await baseToTable("x.md", deps("---\ntype: base\nviews:\n  - type: table\n    order: [file.name]\n---\n", [
       row("A", "f", {}),
       row("B", "f", {}),
     ]));

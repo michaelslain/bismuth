@@ -1,8 +1,7 @@
 // Shared base class for CodeMirror WidgetType instances that mount a Solid.js
 // component into a DOM container.
 //
-// The boilerplate repeated across BaseBlockWidget, BaseEmbedWidget, and
-// ViewBlockWidget is:
+// The boilerplate repeated across widgets like QueryBlockWidget is:
 //   1. create a <div> with a className
 //   2. call solid-js/web `render()` and stash the dispose fn on the element
 //   3. in destroy(), read it back and call it

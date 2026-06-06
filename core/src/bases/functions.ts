@@ -77,16 +77,40 @@ export function callMethod(receiver: unknown, name: string, args: unknown[], ctx
 
 type FileMeta = { tags: string[]; links: string[]; folder: string; path: string; [k: string]: unknown };
 
+/** Basename of a path: drop the folder and the trailing extension. Wikilink targets
+ *  (what f.links stores) are basenames with no folder / .md / #heading / |alias. */
+function baseName(p: string): string {
+  const seg = p.slice(p.lastIndexOf("/") + 1);
+  return seg.replace(/\.[^.]+$/, "");
+}
+
+/** The link target a hasLink/asLink argument should be compared against. Accepts a
+ *  bare note name (string), a FileMeta (e.g. `this.file`), or a Link, and normalizes
+ *  all three to the basename used in f.links — so `file.hasLink(this.file)` matches. */
+function linkName(a: unknown): string {
+  if (a && typeof a === "object") {
+    const o = a as Record<string, unknown>;
+    if (o.__link === true && typeof o.path === "string") return baseName(o.path);   // a Link
+    if (typeof o.name === "string") return o.name;                                   // a FileMeta
+    if (typeof o.path === "string") return baseName(o.path);
+  }
+  return asString(a);
+}
+
 function callFileMethod(f: FileMeta, name: string, args: unknown[], ctx: EvalContext): unknown {
   switch (name) {
     case "hasTag":
       return args.some((a) => f.tags.includes(asString(a)));
     case "hasLink":
-      return args.some((a) => f.links.includes(asString(a)));
+      // Accept a name, a FileMeta (this.file), or a Link — all compared by basename.
+      return args.some((a) => f.links.includes(linkName(a)));
     case "inFolder":
       return f.folder === asString(args[0]) || f.folder.startsWith(asString(args[0]) + "/");
     case "hasProperty":
       return args.length > 0 ? Object.prototype.hasOwnProperty.call(ctx.note, asString(args[0])) : false;
+    case "asLink":
+      // A Link to this file with optional custom display text (Obsidian's file.asLink).
+      return { __link: true, path: f.path, display: args[0] != null ? asString(args[0]) : asString(f.name) } as Link;
   }
   return undefined;
 }
