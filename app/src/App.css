@@ -451,6 +451,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* The "you" hub label: bigger + bold — the central anchor, not an ambient annotation. */
 .graph-label--self { font-size: 14px; font-weight: 700; padding: 3px 8px; }
 .graph-legend-card { position: absolute; left: 18px; top: 18px; z-index: 4; max-width: 230px; background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 11px; padding: 12px 14px; backdrop-filter: blur(8px); }
+.graph-legend-card.daemon-legend { max-width: 290px; }
 .graph-legend-rows { max-height: 240px; overflow: auto; }
 .graph-card-h { font-size: 10px; letter-spacing: .08em; color: var(--faint); text-transform: uppercase; margin-bottom: 9px; }
 .graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--faint); background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 9px; padding: 7px 12px; }
