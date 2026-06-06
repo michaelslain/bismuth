@@ -55,7 +55,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
   let graph: Awaited<ReturnType<typeof buildGraph>> | null = null;
 
   async function getGraph() {
-    if (!graph) graph = attachLayout(await buildGraph(vault, memory), vault);
+    if (!graph) graph = await attachLayout(await buildGraph(vault, memory), vault);
     return graph;
   }
 
@@ -97,7 +97,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
         return getGraph();
       case "GET /graph/views": {
         const g = await getGraph();
-        const views = computeViewLayouts(g, vault);
+        const views = await computeViewLayouts(g, vault);
         g.views = views;
         return views;
       }

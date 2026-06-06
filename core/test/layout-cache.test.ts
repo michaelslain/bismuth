@@ -75,28 +75,28 @@ test("peekLayout returns null for an uncached non-empty subgraph", () => {
   expect(peekLayout(g, key)).toBeNull();
 });
 
-test("attachLayout omits views when they are not cached yet", () => {
+test("attachLayout omits views when they are not cached yet", async () => {
   const key = `test-${randomUUID()}`;
-  const out = attachLayout(brainGraph(), key);
+  const out = await attachLayout(brainGraph(), key);
   expect(out.views).toBeUndefined();
   // The full-graph positions are still attached.
   expect(out.nodes.find((n) => n.id === "n1")?.position).toBeDefined();
 });
 
-test("computeViewLayouts caches the views; a later attachLayout includes them", () => {
+test("computeViewLayouts caches the views; a later attachLayout includes them", async () => {
   const key = `test-${randomUUID()}`;
   const g = brainGraph();
 
   // Cold: no views.
-  expect(attachLayout(g, key).views).toBeUndefined();
+  expect((await attachLayout(g, key)).views).toBeUndefined();
 
   // Compute them on demand (Task 4's endpoint calls this).
-  const views = computeViewLayouts(g, key);
+  const views = await computeViewLayouts(g, key);
   expect(views.second.pos3d["n1"]).toBeDefined();
   expect(views.second.pos2d["n1"]).toHaveLength(2);
 
   // Now they're cached: attachLayout attaches them.
-  const out = attachLayout(g, key);
+  const out = await attachLayout(g, key);
   expect(out.views?.second?.pos3d["n1"]).toBeDefined();
   expect(out.views?.third?.pos3d["mem:m1"]).toBeDefined();
 });

@@ -1,6 +1,14 @@
 // app/src/export/formats.ts
 import type { ExportFormat } from "./types";
-import { ext } from "./exporters";
+
+// Inlined (was imported from ./exporters) so this module stays a pure leaf.
+// exporters.ts statically pulls in `marked` (../bases/markdown) + jspdf, and App.tsx
+// imports `isExportable` from here for render-time gating — importing exporters here
+// dragged that whole export stack toward the entry bundle. `ext` is trivial + pure.
+function ext(path: string): string {
+  const dot = path.lastIndexOf(".");
+  return dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
+}
 
 const MATRIX: Record<string, ExportFormat[]> = {
   md: ["html", "pdf", "md"],
