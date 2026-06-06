@@ -48,8 +48,9 @@ import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
 
-/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network */
-type GraphMode = "2nd" | "3rd" | "both" | "agents";
+/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
+ *  daemon=claude-bot cron/process supervision graph */
+type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 /**
  * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
@@ -86,6 +87,7 @@ export default function App() {
     readCache<GraphData>(GRAPH_CACHE_KEY) ?? { nodes: [], edges: [] },
   );
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
+  const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
 
   // Restore persisted tab/pane layout at setup (before any persist effect runs, so we
@@ -326,6 +328,7 @@ export default function App() {
   };
 
   const refreshAgents = async () => setAgents(await api.agentGraph());
+  const refreshDaemon = async () => setDaemon(await api.daemonGraph());
 
   // The graph is a visualization, not the source of truth — it can update a beat
   // after edits settle. Even with server-side `dirty` gating, a burst of real
@@ -344,6 +347,8 @@ export default function App() {
         return withYouNode(applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third), open);
       case "agents":
         return agents(); // agents mode has its own SVG "you" hub (AgentsGraph) — no injection
+      case "daemon":
+        return daemon(); // daemon mode centers on the claude-bot hub node — no "you" injection
       case "both":
         return withYouNode(graph(), open); // full brain + the you hub linking the open working set
     }
@@ -812,6 +817,15 @@ export default function App() {
     if (mode() !== "agents") return;
     void refreshAgents();
     const t = setInterval(refreshAgents, 2000);
+    onCleanup(() => clearInterval(t));
+  });
+
+  // Likewise, only poll the daemon graph while in daemon mode (~4s — cron/process state changes
+  // are coarse-grained). Mirrors the agents-mode poll above.
+  createEffect(() => {
+    if (mode() !== "daemon") return;
+    void refreshDaemon();
+    const t = setInterval(refreshDaemon, 4000);
     onCleanup(() => clearInterval(t));
   });
   const registerFileEvents = () => {

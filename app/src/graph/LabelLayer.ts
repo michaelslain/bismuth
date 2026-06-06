@@ -299,7 +299,10 @@ export class LabelLayer {
       const py = (-proj.y * 0.5 + 0.5) * args.screenH;
       const scale = args.scaleById.get(n.id) ?? 1;
       const renderedPx = renderedPixelRadius(args.nodeSize, scale, args.fovDeg, args.worldPerPixel);
-      const forced = forcedOf(n.id) || n.kind === "self"; // the "you" hub is always labeled
+      // The "you" hub is always labeled; in DAEMON mode every daemon/cron/process node is too
+      // (its NAME is the content — which cron, which process — so it bypasses the 2D size gate).
+      const isDaemonKind = n.kind === "daemon" || n.kind === "cron" || n.kind === "process";
+      const forced = forcedOf(n.id) || n.kind === "self" || isDaemonKind;
       const eff = this.shown2d.has(n.id) ? LABEL_2D_THRESHOLD_PX * LABEL_2D_HYSTERESIS : LABEL_2D_THRESHOLD_PX;
       if (!forced && renderedPx < eff) continue;
       const size = this.measure(n.label);

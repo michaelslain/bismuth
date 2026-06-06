@@ -53,6 +53,25 @@ test("GET /agent-graph returns an object with nodes and edges arrays", async () 
   }
 });
 
+test("GET /daemon/graph returns a graph with the daemon hub node (never throws)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/daemon/graph`);
+    expect(res.status).toBe(200);
+    const g = await res.json();
+    expect(Array.isArray(g.nodes)).toBe(true);
+    expect(Array.isArray(g.edges)).toBe(true);
+    // The daemon hub is always present, even with no crons/processes.
+    expect(g.nodes.some((n: any) => n.kind === "daemon")).toBe(true);
+    // No frontend "you" node is ever emitted by the backend here.
+    expect(g.nodes.some((n: any) => n.kind === "self")).toBe(false);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /version returns { version: <number> }", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });

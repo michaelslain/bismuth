@@ -1,5 +1,5 @@
-export type NodeKind = "note" | "memory" | "agent" | "tag" | "self";
-export type EdgeKind = "link" | "message" | "about" | "tag" | "open";
+export type NodeKind = "note" | "memory" | "agent" | "tag" | "self" | "daemon" | "cron" | "process";
+export type EdgeKind = "link" | "message" | "about" | "tag" | "open" | "supervises";
 
 /**
  * Id of the synthetic "you" hub. There is one self node per brain VIEW, injected on the FRONTEND
@@ -29,6 +29,21 @@ export interface GraphNode {
   community?: number;
   /** Exemplar name for the node's community (highest-degree member's label). */
   communityLabel?: string;
+  /** Daemon-mode viz state (cron/process nodes only). Drives per-node opacity + tint in the
+   *  renderer via `nodeVisualState`. Absent on every other node kind / graph mode. */
+  daemon?: DaemonVizState;
+}
+
+/** Per-node visual-state inputs carried on daemon/cron/process nodes (consumed by `nodeVisualState`). */
+export interface DaemonVizState {
+  /** Cron/process enabled flag (disabled → greyed out). */
+  enabled: boolean;
+  /** Currently executing (running → full opacity + accent). */
+  running: boolean;
+  /** Result of the most recent run ("success" | "failed" | "unknown" | null = never ran). */
+  lastResult: string | null;
+  /** Epoch-ms of the last run, or null if it has never fired (idle → faded). */
+  lastFiredMs: number | null;
 }
 export interface GraphEdge {
   from: string;

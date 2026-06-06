@@ -58,7 +58,7 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   try { localStorage.setItem(VIEW_MODE_KEY, m); } catch { /* private mode / quota — in-memory only */ }
 };
 
-type GraphMode = "2nd" | "3rd" | "both" | "agents";
+type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 export function GraphView(props: {
   graph: GraphData;
@@ -176,6 +176,13 @@ export function GraphView(props: {
       labelTextColor: ap.isLight ? ap.foreground : "rgba(232,232,238,0.95)",
       labelBgColor: ap.isLight ? "rgba(255,255,255,0.82)" : "rgba(14,14,17,0.6)",
       selfColor: hexToIntT(ap.foreground, 0xffffff),
+      // DAEMON-mode color tokens (only cron/process nodes consume these):
+      //   accent  = running node's own fill (highlighted) + the ::daemon hub anchor
+      //   neutral = base daemon-node fill (disabled / enabled-idle), the muted grey
+      //   fg      = the glow color for enabled + running nodes (theme foreground / --fg)
+      daemonAccent: hexToIntT(ap.accent, 0x3f6bf0),
+      daemonNeutral: hexToIntT(ap.neutral, 0xaeb4c2),
+      daemonFg: hexToIntT(ap.foreground, 0xffffff),
     });
     // The cluster legend's swatch colors are derived from the renderer's palette (via
     // getCommunityCentroids → colorFor). This effect can run AFTER the initial render+refresh
@@ -209,7 +216,7 @@ export function GraphView(props: {
   onCleanup(() => renderer.destroy());
 
   const setViewMode = (m: "2d" | "3d") => setViewModePersisted(m);
-  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents" };
+  const MODE_LABEL: Record<GraphMode, string> = { "2nd": "2nd brain", "3rd": "3rd brain", both: "both brains", agents: "agents", daemon: "daemon" };
   const modeLabel = () => MODE_LABEL[props.mode] ?? props.mode;
   const nodeCount = () => props.graph?.nodes?.length ?? 0;
   const edgeCount = () => props.graph?.edges?.length ?? 0;
@@ -227,6 +234,7 @@ export function GraphView(props: {
             { id: "3rd", label: "3rd" },
             { id: "both", label: "Both" },
             { id: "agents", label: "Agents" },
+            { id: "daemon", label: "Daemon" },
           ]}
         />
         <ViewBarSpacer />
