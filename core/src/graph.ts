@@ -48,6 +48,8 @@ export interface DaemonVizState {
   lastResult: string | null;
   /** Epoch-ms of the last run, or null if it has never fired (idle → faded). */
   lastFiredMs: number | null;
+  /** Cron expression from the cron definition file (cron nodes only; absent on process nodes). */
+  schedule?: string;
 }
 export interface GraphEdge {
   from: string;

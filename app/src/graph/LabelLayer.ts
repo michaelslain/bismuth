@@ -400,6 +400,10 @@ export class LabelLayer {
       }
       opacity *= zoomFade;
       if (n.kind === "self") opacity = 1; // the "you" hub never depth-fades — it's the anchor
+      // DAEMON mode is a small curated hub+crons+processes set — keep every label readable (no
+      // depth fade), only the zoom-out fade still applies so the overview can still declutter.
+      const isDaemonKind = n.kind === "daemon" || n.kind === "cron" || n.kind === "process";
+      if (isDaemonKind) opacity = zoomFade;
       const inAlwaysOn = this.alwaysOn.has(id);
       const priority = args.searchMatches?.has(id) ? 1 : this.priorityOf(id, inAlwaysOn);
       cands.push({ id, px, py, w: size.w, h: size.h, priority, opacity });

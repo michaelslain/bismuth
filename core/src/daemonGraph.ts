@@ -184,6 +184,7 @@ export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
         running: c.running,
         lastResult: c.lastFired?.result ?? null,
         lastFiredMs: toMs(c.lastFired?.timestamp),
+        schedule: c.schedule || undefined,
       },
     });
     edges.push({ from: DAEMON_NODE_ID, to: id, kind: "supervises" });
