@@ -2,7 +2,7 @@
 //
 // StateField extension that renders multi-line $$ ... $$ math blocks via KaTeX.
 // Block-replace decorations MUST live in a StateField (not a ViewPlugin) — CM forbids
-// `block: true` decorations from plugins.  This mirrors the pattern in fenceBlock.ts.
+// `block: true` decorations from plugins.  Same pattern as queryBlock.ts.
 
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";

@@ -1,6 +1,7 @@
 import { For, type JSX } from "solid-js";
 import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
+import { isLink, type Link } from "../../../core/src/bases/values";
 import { Icon } from "../icons/Icon";
 import { Stars } from "../ui/Stars";
 import { StatusText } from "../ui/StatusDot";
@@ -11,6 +12,13 @@ export { statusColor } from "../ui/StatusDot";
 
 export function capitalize(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
+/** A row is a task (one checkbox line) when it carries the task projection
+ *  (note.line + note.status + note.raw), as produced by taskToRow. */
+export function isTaskRow(row: Row): boolean {
+  const n = row.note as Record<string, unknown> | undefined;
+  return !!n && typeof n.line === "number" && typeof n.status === "string" && "raw" in n;
 }
 
 /** Bare property name (drop file./note./this./formula. namespace), lowercased. */
@@ -59,8 +67,11 @@ export function renderStars(n: number): JSX.Element {
 /** First-column title cell: accent book icon + medium-weight label. */
 export function renderTitle(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
-  const label = v == null ? "" : String(v);
-  const open = () => window.dispatchEvent(new CustomEvent("oa-open", { detail: row.file.path }));
+  // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
+  // its own target; otherwise stringify and open this row's note.
+  const label = isLink(v) ? ((v as Link).display ?? (v as Link).path) : v == null ? "" : String(v);
+  const target = isLink(v) ? (v as Link).path : row.file.path;
+  const open = () => window.dispatchEvent(new CustomEvent("oa-open", { detail: target }));
   return (
     <span class={styles.cellTitle}>
       <Icon value="Book" size={14} />
@@ -101,6 +112,24 @@ export function columnLabel(id: string, config: BaseConfig): string {
 export function renderValue(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
   if (v === null || v === undefined) return <span class="oa-empty">—</span>;
+
+  // A Link value (from file.asLink(...), the link() function, or a link-typed column)
+  // renders as a clickable note link, not "[object Object]".
+  if (isLink(v)) {
+    const link = v as Link;
+    const label = link.display || link.path.replace(/\.md$/, "").split("/").pop() || link.path;
+    return (
+      <a
+        href="#"
+        onClick={(e) => {
+          e.preventDefault();
+          window.dispatchEvent(new CustomEvent("oa-open", { detail: link.path }));
+        }}
+      >
+        {label}
+      </a>
+    );
+  }
 
   if (id === "file.name") {
     return (

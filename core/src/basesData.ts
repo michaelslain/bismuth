@@ -43,9 +43,3 @@ export async function buildVaultRows(root: string): Promise<Row[]> {
   }
   return rows;
 }
-
-// .base file discovery, kept here for backward-compatible imports; delegates to
-// the active FileAccess (Bun glob on desktop, tauri-plugin-fs on iOS).
-export async function listBases(root: string): Promise<string[]> {
-  return (await getFileAccess()).listBases(root);
-}

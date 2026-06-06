@@ -15,7 +15,7 @@ export function isSentinel(content: string): boolean {
 
 // Bare note name from a vault path ("a/b/c.md" -> "c").
 function noteName(path: string): string {
-  return path.split("/").pop()!.replace(/\.(md|draw|base|sheet)$/, "");
+  return path.split("/").pop()!.replace(/\.(md|draw|sheet)$/, "");
 }
 
 // Human label for a pane/tab content id — used by both the tab bar and pane headers.

@@ -131,7 +131,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
 - `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, plus prefixed `::flashcards:`, `::term:`, `::export:`). Settings is the settings.yaml file opened by path; notes/bases/sheets/drawings are routed by file path. No `::calendar` sentinel — calendar is a Bases view.
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `basesBlock`/`viewBlock` (embed Bases/view in a doc), `tasksQuery` (embed task queries), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables rendered as interactive widgets), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — the view into a base/notes; body is a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables rendered as interactive widgets), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -166,7 +166,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 
 ### Bases (`core/src/bases/` + `app/src/bases/`)
 
-Obsidian-Bases-compatible query/view system. A `.base` YAML file declares filters, formulas, and one or more views over the vault's notes.
+A query/view system. A **base is a `type: base` md file** — its frontmatter declares filters, formulas, and one or more views over the vault's notes (`FileView` routes a `type: base` note to `BaseView`). There is **no `.base` extension**.
 
 **Backend pipeline** (`core/src/bases/`):
 - `lexer.ts` → `parser.ts` → `parse.ts` — Tokenize and parse the Bases expression grammar (filters, formulas, view configs)
@@ -177,7 +177,7 @@ Obsidian-Bases-compatible query/view system. A `.base` YAML file declares filter
 
 **Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) now spans 11 kinds — `TableView`, `CardsView`, `KanbanView`, `ListView`, `MapView`, plus `CalendarView`, `FlashcardsView`, and the chart views `BarView`/`LineView`/`StatView`/`HeatmapView` (backed by `core/src/bases/chart.ts`). `renderValue.tsx` formats cell values consistently across views. `BaseView.tsx` is the host that picks the right renderer.
 
-Bases can also be embedded inside a note via a code block; the editor extension `editor/basesBlock.ts` renders them inline.
+A base can also be **queried inside a note** via a ` ```query ` code block — the only embedded block (there is no ` ```base `/` ```view `/` ```tasks `). Its body is either a full inline base config (top-level `views:`/`filters:`/`formulas:`/`source:`) or a flat query spec (`of: [[Base]]`, `tasks: <dsl>`, `where:`, `group:`, `view:`). Rendered inline by `editor/queryBlock.ts`.
 
 **Sources & composition** (`sourceSpec.ts`, `source.ts`): every base/view resolves a `SourceSpec` to a uniform `Row[]`:
 - `{ kind: "base", ref }` — render another base; **resolves that base's OWN source recursively** (composition), not just its static table rows.
@@ -186,13 +186,13 @@ Bases can also be embedded inside a note via a code block; the editor extension 
 
 Frontmatter accepts a string (`source: notes where #book`, plus top-level `from:`/`ref:`) or an object; `normalizeSource()` coerces both. `resolveSource`/`resolveBaseRows` are cycle-guarded (a `seen` set). All resolution is **server-side** via `POST /rows {spec}` (one resolver); `BaseView.resolveRows` is just `inlineRows ?? api.resolveRows(spec)`.
 
-A ` ```view ` block references a base (`of: [[Base]]`) or runs a task query (`tasks: <dsl>`, optionally `from: [[Base]]`). It does **not** iterate notes itself — that's a base's job. A block with neither `of:` nor `tasks:` has no source and renders an empty state.
+Inside a flat ` ```query `: `of: [[Base]]` renders that base, `tasks: <dsl>` runs a task query (optionally `from: [[Base]]`), `where:` filters, `view:` picks the render mode. It does **not** iterate notes itself — that's a base's job. A flat block with neither `of:` nor `tasks:` has no source and renders an empty state.
 
 **Scoped-tasks example** (Google Keep → Do Now): a `Google Keep` base with `source: notes` + `where: file.inFolder("Google Keep")` (cards view); a `Do Now` base with `source: tasks` + `from: "[[Google Keep]]"` (list, grouped) shows only the tasks inside Google Keep's notes.
 
 ### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
-Calendar is a **Bases view kind** — there is no standalone calendar page. To open a calendar, create a `.base` file with `views: [{ type: calendar }]` (or switch an existing base to calendar view). The calendar view is rendered by `app/src/bases/CalendarView.tsx`.
+Calendar is a **Bases view kind** — there is no standalone calendar page. To open a calendar, create a `type: base` md with `views: [{ type: calendar }]` (or switch an existing base to calendar view). The calendar view is rendered by `app/src/bases/CalendarView.tsx`.
 
 The `app/src/calendar/` directory holds the shared state and components consumed by that view:
 - `EventStore.ts` — Event CRUD + persistence (tested in `EventStore.test.ts`)
@@ -210,7 +210,7 @@ Obsidian-Tasks-compatible task system. Tasks are not a standalone subsystem — 
 - `core/src/tasks.ts` — Extract task items from markdown (status, due/scheduled/start dates, recurrence, tags); `collectTasksFromPaths` scopes extraction to a note subset
 - `core/src/tasks-query.ts` — Query DSL (`not done`, `due before tomorrow`, etc.)
 - `core/src/bases/taskRow.ts` — `taskToRow`/`filterTaskRows`: project tasks as base `Row`s so any view renders them
-- `editor/tasksQuery.ts` — CodeMirror extension that renders an inline ` ```tasks ` query block inside a note (the lightweight throwaway path)
+- Tasks are queried via a ` ```query ` block with `tasks: <dsl>` (or a `type: base` md with `source: tasks`) — there is no separate ` ```tasks ` block
 - `POST /tasks/toggle` — Server-side toggle endpoint (rewrites the markdown line)
 
 ### Flashcards / SRS (`core/src/srs/` + `app/src/Flashcards.tsx`)
@@ -235,7 +235,7 @@ A real spreadsheet document type — a sibling to notes and bases, **not** a Bas
 
 - All Univer code is quarantined behind one adapter, `app/src/sheet/univerSheet.ts` (`mountSheet`/`getSnapshot`/`setDark`/`dispose`), reached only via dynamic `import()` from `SheetView.tsx` so Univer is code-split out of the main bundle. Each mount gets a fresh child container (disposing then re-creating into the same node renders blank).
 - `app/src/sheet/snapshot.ts` (pure, unit-tested): `parseSnapshot` (empty/whitespace ⇒ blank workbook), `serializeSnapshot`. `app/src/sheet/sync.ts` (pure, unit-tested): `isExternalChange` — the single-writer reload predicate.
-- Routing: `PaneContent.tsx` sends `*.sheet` paths to `SheetView` (like `*.base` → `BaseView`). `core/src/files.ts` `listTree` lists `.sheet` so they appear in the tree. `tabIds.ts` gives them a `Table` icon + extension-stripped label.
+- Routing: `PaneContent.tsx` sends `*.sheet` paths to `SheetView` (a `type: base` md routes to `BaseView` via `FileView`). `core/src/files.ts` `listTree` lists `.sheet` so they appear in the tree. `tabIds.ts` gives them a `Table` icon + extension-stripped label.
 - Persistence reuses `api.read`/`api.write` (no new endpoints). Edits debounce-save (snapshot-equality skip avoids no-op writes); the **baseline is Univer's own serialization of the freshly-mounted workbook**, so mount-time commands aren't mistaken for edits and an unedited sheet is never written. A version/echo guard (`isExternalChange` + a `dirty` flag) reloads on genuine external edits but never clobbers in-progress edits.
 - Created via "New Spreadsheet" (file-tree context menu, toolbar, command palette) — an empty file that `SheetView` turns into a blank workbook on first open. Dark mode tracks `settings.appearance.theme` live via `univerAPI.toggleDarkMode`.
 - **Not in v1** (deferred, each cheap to add): `.xlsx` import/export, charts, pivot tables, real-time collaboration, vault cross-references. Tauri/WKWebView canvas rendering is unverified (developed/tested in the browser).
@@ -304,7 +304,7 @@ core/test/  # one *.test.ts per module; helpers.ts → makeSampleVault()
 
 app/src/
   App.tsx panes.ts PaneTree.tsx PaneContent.tsx tabIds.ts   # root, pure pane-tree model, routing
-  Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, basesBlock, tasksQuery, wikilink, tag, settingsComplete…)
+  Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, queryBlock, wikilink, tag, settingsComplete…)
   FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
   GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + WebGL renderer, DOM LabelLayer, youNode (+withYouAgents), agentGraphSig, collide, labelSelection
   FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/

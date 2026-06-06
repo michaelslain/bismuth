@@ -152,10 +152,11 @@ export interface ParsedBase {
   rows: Row[];
 }
 
-// A ```view block parsed from a note body. `source` is undefined when the block
+// A flat ```query block parsed from a note body. `source` is undefined when the block
 // references neither a base (`of:`) nor a task query (`tasks:`) — the host then
-// renders an empty state instead of dumping the whole vault.
-export interface ViewBlock {
+// renders an empty state instead of dumping the whole vault. `as` is the render mode
+// (set in the block via `view:`, or the legacy `as:`).
+export interface QueryBlock {
   source?: SourceSpec;
   as: ViewType;
   where?: string;
