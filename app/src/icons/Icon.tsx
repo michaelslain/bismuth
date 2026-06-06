@@ -8,9 +8,18 @@
 //
 // SVGs inherit `currentColor`, so icons pick up the surrounding text color and
 // theme automatically.
-import { Show, type Component } from "solid-js";
+//
+// Boot behaviour: only a small core of icons is bundled in the entry chunk; the
+// full ~1,700-icon manifest loads lazily (see registry.ts). An icon-NAME that
+// isn't in the core yet would otherwise flash its literal text ("ShareIcon")
+// for a beat before the SVG appears. To avoid that we render a blank,
+// correctly-sized placeholder while the name is still *pending* the full
+// manifest, and kick that load immediately. Emojis / arbitrary glyphs are not
+// icon names, so they render as text right away (their final state).
+import { Show, createEffect, type Component } from "solid-js";
 import { Dynamic } from "solid-js/web";
-import { resolveIcon } from "./registry";
+import { resolveIcon, fullRegistryLoaded, ensureFullRegistry } from "./registry";
+import { looksLikeIconName } from "./registry-core";
 
 export interface IconProps {
   /** Lucide name (any casing, optional Li/Lu prefix) OR an emoji / arbitrary string. */
@@ -31,13 +40,38 @@ export const Icon: Component<IconProps> = (props) => {
     return v ? v : props.fallback ?? "";
   };
   const comp = () => resolveIcon(spec());
+  // An icon-name that hasn't resolved yet is pending the lazy full manifest:
+  // show a blank box (no text flash) instead of the literal name. Once the full
+  // set is loaded and it still doesn't resolve, it's genuinely not an icon —
+  // fall through to rendering the raw glyph/text.
+  const pending = () => !comp() && looksLikeIconName(spec()) && !fullRegistryLoaded();
+  // Start the full-manifest load as soon as a pending icon is on screen, so the
+  // blank window is as short as possible (don't wait for the idle scheduler).
+  createEffect(() => {
+    if (pending()) ensureFullRegistry();
+  });
   return (
     <Show
       when={comp()}
       fallback={
-        <span class={props.class} aria-hidden="true">
-          {spec()}
-        </span>
+        <Show
+          when={pending()}
+          fallback={
+            <span class={props.class} aria-hidden="true">
+              {spec()}
+            </span>
+          }
+        >
+          <span
+            class={props.class}
+            aria-hidden="true"
+            style={{
+              display: "inline-block",
+              width: `${props.size ?? 16}px`,
+              height: `${props.size ?? 16}px`,
+            }}
+          />
+        </Show>
       }
     >
       {(C) => (
