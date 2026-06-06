@@ -19,23 +19,31 @@
 import { createSignal } from "solid-js";
 import type { LucideIcon } from "lucide-solid";
 import { createIconRegistry, type IconEntry, type IconRegistry } from "./registry-core";
+import { assertSeedMatchesNames } from "./seedNames";
 
 // --- Static boot core (per-icon subpath imports → tree-shaken into the entry) ---
 import AppWindow from "lucide-solid/icons/app-window";
+import ArrowDown from "lucide-solid/icons/arrow-down";
 import ArrowLeft from "lucide-solid/icons/arrow-left";
 import ArrowRight from "lucide-solid/icons/arrow-right";
+import ArrowUp from "lucide-solid/icons/arrow-up";
 import Book from "lucide-solid/icons/book";
+import BookOpen from "lucide-solid/icons/book-open";
 import Brain from "lucide-solid/icons/brain";
 import Calendar from "lucide-solid/icons/calendar";
+import CaseSensitive from "lucide-solid/icons/case-sensitive";
 import Check from "lucide-solid/icons/check";
 import ChevronDown from "lucide-solid/icons/chevron-down";
 import ChevronLeft from "lucide-solid/icons/chevron-left";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import ChevronUp from "lucide-solid/icons/chevron-up";
 import Clock from "lucide-solid/icons/clock";
+import Code from "lucide-solid/icons/code";
+import Columns3 from "lucide-solid/icons/columns-3";
 import Copy from "lucide-solid/icons/copy";
 import Crown from "lucide-solid/icons/crown";
 import Download from "lucide-solid/icons/download";
+import Eraser from "lucide-solid/icons/eraser";
 import Eye from "lucide-solid/icons/eye";
 import File from "lucide-solid/icons/file";
 import FilePlus from "lucide-solid/icons/file-plus";
@@ -44,49 +52,87 @@ import Folder from "lucide-solid/icons/folder";
 import FolderOpen from "lucide-solid/icons/folder-open";
 import FolderPlus from "lucide-solid/icons/folder-plus";
 import Hash from "lucide-solid/icons/hash";
+import Highlighter from "lucide-solid/icons/highlighter";
 import Image from "lucide-solid/icons/image";
+import Landmark from "lucide-solid/icons/landmark";
 import Link from "lucide-solid/icons/link";
+import Lock from "lucide-solid/icons/lock";
 import Menu from "lucide-solid/icons/menu";
 import Minus from "lucide-solid/icons/minus";
 import Network from "lucide-solid/icons/network";
 import Notebook from "lucide-solid/icons/notebook";
+import PanelBottom from "lucide-solid/icons/panel-bottom";
 import PanelLeft from "lucide-solid/icons/panel-left";
+import PanelRight from "lucide-solid/icons/panel-right";
+import Pen from "lucide-solid/icons/pen";
 import Pencil from "lucide-solid/icons/pencil";
 import PenTool from "lucide-solid/icons/pen-tool";
 import Plus from "lucide-solid/icons/plus";
+import Redo2 from "lucide-solid/icons/redo-2";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
+import Regex from "lucide-solid/icons/regex";
 import Repeat from "lucide-solid/icons/repeat";
+import Replace from "lucide-solid/icons/replace";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
 import Search from "lucide-solid/icons/search";
 import Server from "lucide-solid/icons/server";
 import Settings from "lucide-solid/icons/settings";
+import Settings2 from "lucide-solid/icons/settings-2";
 import Share from "lucide-solid/icons/share";
+import Share2 from "lucide-solid/icons/share-2";
+import SquarePlus from "lucide-solid/icons/square-plus";
 import SquareTerminal from "lucide-solid/icons/square-terminal";
 import Star from "lucide-solid/icons/star";
 import Table from "lucide-solid/icons/table";
 import Tag from "lucide-solid/icons/tag";
 import Trash2 from "lucide-solid/icons/trash-2";
+import Undo2 from "lucide-solid/icons/undo-2";
 import Users from "lucide-solid/icons/users";
+import Vote from "lucide-solid/icons/vote";
+import WholeWord from "lucide-solid/icons/whole-word";
+import Wrench from "lucide-solid/icons/wrench";
 import X from "lucide-solid/icons/x";
 import Zap from "lucide-solid/icons/zap";
 
+// Every icon the app's own chrome can render on the first frame — toolbar +
+// command palette, file tree, tab bar, graph toolbar, editor/find-replace and
+// drawing toolbars. These are eagerly bundled (per-icon subpath imports, so they
+// tree-shake) and therefore resolve SYNCHRONOUSLY — no blank/text flash. The
+// only icons that fall back to the lazy full manifest are arbitrary *user* icons
+// (note frontmatter, custom folder icons), which can't be known ahead of time.
+//
+// Keep this in sync with SEED_ICON_NAMES (the pure, lucide-free mirror used by
+// tests): the assertion below throws on boot if they ever drift, and
+// registry-seed.test.ts asserts every command-catalog icon is covered.
 const SEED: Record<string, LucideIcon> = {
-  AppWindow, ArrowLeft, ArrowRight, Book, Brain, Calendar, Check, ChevronDown,
-  ChevronLeft, ChevronRight, ChevronUp, Clock, Copy, Crown, Download, Eye, File,
-  FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Image, Link, Menu,
-  Minus, Network, Notebook, PanelLeft, Pencil, PenTool, Plus, RefreshCw, Repeat,
-  RotateCcw, Search, Server, Settings, Share, SquareTerminal, Star, Table, Tag,
-  Trash2, Users, X, Zap,
+  AppWindow, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Book, BookOpen, Brain,
+  Calendar, CaseSensitive, Check, ChevronDown, ChevronLeft, ChevronRight,
+  ChevronUp, Clock, Code, Columns3, Copy, Crown, Download, Eraser, Eye, File,
+  FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
+  Landmark, Link, Lock, Menu, Minus, Network, Notebook, PanelBottom, PanelLeft,
+  PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
+  Replace, RotateCcw, Search, Server, Settings, Settings2, Share, Share2,
+  SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
+  WholeWord, Wrench, X, Zap,
 } as unknown as Record<string, LucideIcon>;
+
+// Boot guard: the eager import map and its pure name-mirror must list the exact
+// same icons, so the test (which can't import lucide) stays trustworthy.
+assertSeedMatchesNames(Object.keys(SEED));
 
 const seedRegistry = createIconRegistry<LucideIcon>(SEED);
 
 // Full registry, loaded lazily off the entry. The signal drives the reactive swap.
 const [fullRegistry, setFullRegistry] = createSignal<IconRegistry<LucideIcon> | null>(null);
 
+/** True once the full lucide manifest has resolved. <Icon> reads this to know
+ *  whether an unresolved icon-name is still pending (show a blank placeholder)
+ *  or genuinely unknown (full set is loaded, so render the raw glyph as text). */
+export const fullRegistryLoaded = (): boolean => fullRegistry() !== null;
+
 let loadStarted = false;
 /** Idempotently load the full lucide manifest (async, off the entry chunk). */
-function ensureFullRegistry(): void {
+export function ensureFullRegistry(): void {
   if (loadStarted) return;
   loadStarted = true;
   import("lucide-solid")
