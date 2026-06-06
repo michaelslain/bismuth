@@ -1,6 +1,6 @@
 // app/src/icons/registry-core.test.ts
 import { test, expect } from "bun:test";
-import { createIconRegistry, normalizeIconKey } from "./registry-core";
+import { createIconRegistry, normalizeIconKey, looksLikeIconName } from "./registry-core";
 
 // A fake manifest standing in for lucide-solid's `icons` (PascalCase -> component).
 // Values are sentinel strings so we can assert which icon resolved.
@@ -12,6 +12,7 @@ const manifest: Record<string, string> = {
   List: "list-cmp", // guards against over-eager "Li" stripping
   Library: "library-cmp",
   FileText: "filetext-cmp",
+  Share: "share-cmp", // canonical only — the "ShareIcon" alias must fold to this
 };
 
 test("normalizeIconKey lowercases and strips non-alphanumerics", () => {
@@ -49,6 +50,40 @@ test("direct match beats Li/Lu stripping", () => {
   // "Library" normalizes directly to "library" even though it starts with "Li".
   expect(r.resolve("Library")).toBe("library-cmp");
   expect(r.resolve("LiBrary")).toBe("library-cmp");
+});
+
+test("resolves the React-style 'Icon' suffix alias to the canonical icon", () => {
+  const r = createIconRegistry(manifest);
+  // The seed core holds only canonical names; "ShareIcon" must still resolve so
+  // it renders instantly instead of flashing its text until the full set loads.
+  expect(r.resolve("ShareIcon")).toBe("share-cmp");
+  expect(r.resolve("share-icon")).toBe("share-cmp");
+  expect(r.resolve("FileTextIcon")).toBe("filetext-cmp");
+  expect(r.resolve("CarFrontIcon")).toBe("carfront-cmp");
+});
+
+test("'Icon' suffix stripping is a fallback — direct matches and non-icons win", () => {
+  const r = createIconRegistry(manifest);
+  // A real name that merely happens to be unknown after stripping stays null.
+  expect(r.resolve("BananaIcon")).toBeNull();
+  // Don't strip into nonexistence: "Icon" alone has nothing left to match.
+  expect(r.resolve("Icon")).toBeNull();
+});
+
+test("looksLikeIconName distinguishes icon names from glyphs", () => {
+  expect(looksLikeIconName("Share")).toBe(true);
+  expect(looksLikeIconName("ShareIcon")).toBe(true);
+  expect(looksLikeIconName("car-front")).toBe(true);
+  expect(looksLikeIconName("Grid3x2")).toBe(true);
+  // Emojis / arbitrary glyphs / punctuation are not icon names → render as text.
+  expect(looksLikeIconName("🪶")).toBe(false);
+  expect(looksLikeIconName("✨")).toBe(false);
+  expect(looksLikeIconName("→")).toBe(false);
+  expect(looksLikeIconName("X")).toBe(false); // single char
+  expect(looksLikeIconName("")).toBe(false);
+  expect(looksLikeIconName("   ")).toBe(false);
+  expect(looksLikeIconName(null)).toBe(false);
+  expect(looksLikeIconName(undefined)).toBe(false);
 });
 
 test("returns null for emoji / arbitrary glyphs / empty", () => {
