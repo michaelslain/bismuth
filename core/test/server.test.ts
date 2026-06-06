@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { createServer } from "../src/server";
 import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
+import { resetRelay } from "../src/relay";
+import { createTerminalSession, killSession } from "../src/terminal";
 import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
@@ -49,6 +51,43 @@ test("GET /agent-graph returns an object with nodes and edges arrays", async () 
     expect(Array.isArray(ag.nodes)).toBe(true);
     expect(Array.isArray(ag.edges)).toBe(true);
   } finally {
+    server.stop(true);
+  }
+});
+
+test("relay ingest routes reject missing required fields", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    expect((await post("/relay/session", { sessionId: "s1" })).status).toBe(400); // no terminalId
+    expect((await post("/relay/subagent/start", { agentId: "a1" })).status).toBe(400); // no parentSessionId
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("relay hooks → registry → /agent-graph renders the session + subagent tree", async () => {
+  resetRelay();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  // A live terminal makes its id pass the agent-graph "open tab" filter.
+  const term = createTerminalSession({ cwd: vault, cols: 80, rows: 24 });
+  const post = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    await post("/relay/session", { sessionId: "sess-1", terminalId: term.id, cwd: "/x/my-proj" });
+    await post("/relay/subagent/start", { parentSessionId: "sess-1", agentId: "ag-1", agentType: "Explore" });
+    const g = await (await fetch(`${base}/agent-graph`)).json();
+    expect(g.nodes.find((n: any) => n.id === "agent:sess:sess-1")).toMatchObject({ kind: "agent", label: "my-proj" });
+    expect(g.nodes.find((n: any) => n.id === "agent:sub:ag-1")).toMatchObject({ kind: "agent", label: "Explore", parent: "agent:sess:sess-1" });
+    expect(g.edges).toContainEqual({ from: "agent:sess:sess-1", to: "agent:sub:ag-1", kind: "message" });
+  } finally {
+    killSession(term.id);
+    resetRelay();
     server.stop(true);
   }
 });

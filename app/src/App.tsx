@@ -28,6 +28,7 @@ import { installAppMenu } from "./nativeAppMenu";
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import { withYouNode } from "./graph/youNode";
+import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, contentLabel, contentIcon, isSentinel } from "./tabIds";
@@ -325,7 +326,16 @@ export default function App() {
     }
   };
 
-  const refreshAgents = async () => setAgents(await api.agentGraph());
+  // A 2s poll that returns the same network is a no-op (see agentGraphSig) — without
+  // this, each poll would hand the renderer a fresh graph and re-settle the force layout.
+  let lastAgentsSig = "";
+  const refreshAgents = async () => {
+    const g = await api.agentGraph();
+    const sig = agentGraphSig(g);
+    if (sig === lastAgentsSig) return;
+    lastAgentsSig = sig;
+    setAgents(g);
+  };
 
   // The graph is a visualization, not the source of truth — it can update a beat
   // after edits settle. Even with server-side `dirty` gating, a burst of real
@@ -343,7 +353,7 @@ export default function App() {
       case "3rd":
         return withYouNode(applyView(subgraphByKinds(graph(), THIRD_BRAIN_KINDS), graph().views?.third), open);
       case "agents":
-        return agents(); // agents mode has its own SVG "you" hub (AgentsGraph) — no injection
+        return agents(); // raw sessions/subagents; GraphView lays it out (you hub, pyramid/molecule, channels)
       case "both":
         return withYouNode(graph(), open); // full brain + the you hub linking the open working set
     }

@@ -19,11 +19,12 @@ For first-time setup without existing vaults, see **Creating Test Vaults** below
 
 ## Project Overview
 
-**Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with three core workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
+**Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with four workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
 
 - **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with Claude-bot memory
 - **cli**: Command-line interface for managing vaults (`oa` binary)
 - **app**: Tauri + Solid + TypeScript desktop application with CodeMirror editor and 3D/2D graph visualizations
+- **relay**: A tiny Claude Code plugin (hooks only) that reports each terminal-tab Claude session + its subagents to core's in-process agent registry, powering the "agents" graph (see Relay Integration)
 
 The system treats knowledge as a "three-brain" model:
 - **You** (self node): Central hub representing the user
@@ -82,7 +83,7 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
   - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
   - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`, `/replace`
-  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 20 MB)
+  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 20 MB), `/relay/session`, `/relay/session/end`, `/relay/subagent/start`, `/relay/subagent/stop` (agent-graph ingest from the relay plugin's hooks — update the in-process registry, no vault-cache invalidation)
   - GET reads also include: `GET /asset` (serve a vault media file by filename — filename-first resolution, used by embedBlock)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
@@ -96,10 +97,11 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `wikilinks.ts` — Extract `[[WikiLink]]` patterns from markdown
 - `tags.ts` — Extract `#tag` from frontmatter and markdown body
 - `memory.ts` — Build memory graph from Claude-bot memory notes (in `mem:` namespace)
-- `agents.ts` — Build agent interaction graph from Claude Communicate relay
+- `agents.ts` — Build the "agents" graph (you → terminal-tab sessions → subagents) from the in-process relay registry; pure over a `RelaySnapshot` + the live pty-id set
+- `relay.ts` — In-process registry of terminal-tab Claude sessions + their subagents, populated by the relay plugin's hooks via `POST /relay/*`, pruned against the live pty set (see Relay Integration)
 - `backup.ts` — Git commit snapshot of vault
 - `tasks.ts`, `tasks-query.ts` — Tasks extraction + query DSL (Obsidian Tasks-compatible)
-- `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`)
+- `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`). Injects relay provenance into each tab's env (`CLAUDE_TERMINAL_ID`, `CLAUDE_RELAY_URL`) + a PATH shim (`relay/shim/claude`) so a bare `claude` in a tab auto-loads the relay plugin via `--plugin-dir` (`buildPtyEnv`, pure + tested)
 - `dates.ts` — Date math shared by tasks, SRS, calendar
 - `basesData.ts` — Vault-wide data feed consumed by the Bases query engine
 - `bases/` — Bases DSL: see "Bases" section below
@@ -225,6 +227,8 @@ Spaced-repetition reviews extracted from markdown notes:
 
 In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over WebSocket on `/terminal`. Frontend renders with xterm.js, with the ANSI palette wired from the graph color theme (`buildAnsiPalette`). DOM-rendered (not canvas), styled to match the editor.
 
+Each PTY's env is built by `buildPtyEnv` (pure, tested): besides `TERM`, it injects the relay provenance (`CLAUDE_TERMINAL_ID` = the pty id, `CLAUDE_RELAY_URL` = this core server) and prepends a PATH shim (`relay/shim/claude`) so a bare `claude` in the tab transparently loads the agent-graph relay plugin via `--plugin-dir`. `claude` is resolved once via `Bun.which` (with PATH augmented by common install dirs); if it can't be resolved the shim is skipped and the tab is a plain shell. See Relay Integration.
+
 ### Sheets (`app/src/SheetView.tsx` + `app/src/sheet/`)
 
 A real spreadsheet document type — a sibling to notes and bases, **not** a Bases view (the data lives in the file's cells, not in notes). A `.sheet` file is a Univer workbook JSON snapshot (`IWorkbookData`). Powered by the **Univer** SDK (`@univerjs/presets` + `preset-sheets-core`/`-sort`/`-filter`, v0.25). Free-form A1 cells, 400+ formulas with a recalc dependency graph, sort/filter, number formats, merged cells, freeze panes.
@@ -287,7 +291,7 @@ Module purposes are described in the **Architecture** section above; this is jus
 ```
 core/src/
   server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
-  engine.ts vault.ts memory.ts agents.ts graphBuilder.ts   # graph composition + builders
+  engine.ts vault.ts memory.ts agents.ts relay.ts graphBuilder.ts   # graph composition + builders (relay.ts = agent-graph registry)
   graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
   files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts
   asyncCache.ts changeClassifier.ts   # dedup cache + selective-invalidation classifier
@@ -302,7 +306,7 @@ app/src/
   App.tsx panes.ts PaneTree.tsx PaneContent.tsx tabIds.ts   # root, pure pane-tree model, routing
   Editor.tsx editor/   # CodeMirror wrapper + extensions (livePreview, autocomplete, foldBlocks, basesBlock, tasksQuery, wikilink, tag, settingsComplete…)
   FileTree.tsx fileTreeOps.ts ContextMenu.tsx nativeMenu.ts FolderPrompt.tsx EmptyPane.tsx
-  GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + WebGL renderer, DOM LabelLayer, youNode, AgentsGraph, collide, labelSelection
+  GraphView.tsx GraphSearch.tsx ClusterLegend.tsx graph/   # graph shell + WebGL renderer, DOM LabelLayer, youNode (+withYouAgents), agentGraphSig, collide, labelSelection
   FileView.tsx NoteTitle.tsx Flashcards.tsx Terminal.tsx SheetView.tsx sheet/ ExportView.tsx export/
   bases/ calendar/ palette/ drawing/   # feature view-sets
   ui/      # shared primitives (Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, TextInput, Select, Field, EmptyState, Modal, gallery/, popover/) + buttonClass
@@ -389,23 +393,39 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENO
 - **"2nd" brain**: Self + vault notes + tags (excludes memory)
 - **"3rd" brain**: Self + memory (excludes vault)
 - **"both"**: Full brain (self + vault + memory + edges between them)
-- **"agents"**: Agent interaction network showing Claude Code instances communicating via relay (see Relay Integration below)
+- **"agents"**: Live tree of the Claude Code work running in THIS app's terminal tabs — you → each terminal-tab session → its subagents (see Relay Integration below)
 
-The "agents" graph mode visualizes Claude Code instances running this project across machines. Each agent is a node; directed edges represent messages between agents. Built from `/agent-graph` endpoint (populated by `agents.ts` from Claude Communicate relay heartbeats).
+The "agents" graph mode visualizes the Claude Code sessions running inside Bismuth's own terminal tabs and the subagents they spawn. The "you" hub connects to each terminal-tab session (a root agent node); each session connects to its subagents (guaranteed depth 1 — subagents can't spawn subagents). Built from the `/agent-graph` endpoint (`agents.ts` over the in-process relay registry, filtered to sessions whose terminal tab is still open). The frontend polls `/agent-graph` (with a change-signature dedup) only while agents mode is active.
 
 **2D/3D toggle**: The renderer's 2D vs 3D mode is a **transient localStorage toggle** (not a `settings.yaml` key). It persists across sessions via `localStorage` but is not user-facing in the settings file. Toggle via the graph toolbar or the `GraphView` mode control.
 
 ### Performance Optimizations
 Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder.
 
-### Relay Integration
+### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
-**Bismuth** integrates with **Claude Communicate** (inter-agent relay system) to:
-- Track which Claude Code instances are running the project (via `/agent-graph` endpoint)
-- Visualize agent communication network in "agents" graph mode
-- Enable agents to coordinate vault changes across machines
+The "agents" graph is powered by a small Claude Code plugin (`relay/`) that reports each
+terminal-tab Claude session — and its subagents — to an **in-process registry in core**
+(`core/src/relay.ts`). This is the merged successor to the old standalone, cross-machine
+`claude-communicate` daemon; that Tailscale/`:7777` system was dropped. There is no daemon
+and nothing installed in `~/.claude` — the plugin loads **per-session** only inside app
+terminals.
 
-See `claude-communicate-project-status` in claude-bot memory for Phase 2 (auto-discovery, circular prevention).
+Mechanism (confirmed against Claude Code v2.1.165 — `SubagentStart`/`SubagentStop` hooks):
+1. `core/src/terminal.ts` spawns each tab's pty with `CLAUDE_TERMINAL_ID` (the pty id) +
+   `CLAUDE_RELAY_URL` (this core server) + a PATH shim (`relay/shim/claude`) that makes a
+   bare `claude` run `claude --plugin-dir <relay>`. So the plugin is present only in app
+   terminals (provenance is the env var); external Claude sessions never report in.
+2. The plugin's hooks (`relay/hooks/hooks.json`) POST to core's `/relay/*` routes:
+   `SessionStart`/`UserPromptSubmit` → register/heartbeat the session;
+   `SubagentStart`/`SubagentStop` → add/finish a subagent. All best-effort (never block the
+   session; no-op without `CLAUDE_TERMINAL_ID`).
+3. `agents.ts` builds the graph from the registry; `GET /agent-graph` prunes the registry
+   against the live pty set first (closed tabs leave no hook, so cleanup is at read time).
+
+Scope is deliberately app-local: NO cross-machine agents, NO inter-agent messaging/inbox
+(those were the dropped daemon's job). Lifecycle is trivial — the registry lives only while
+the app's core server runs, which is exactly when app-terminal sessions can exist.
 
 ## Testing
 
