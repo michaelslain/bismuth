@@ -2273,8 +2273,9 @@ export class WebGLRenderer {
     this.cloudRadius = radius;
 
     // Compute camera distance from FOV and radius.
+    // Clamp to a minimum so tiny graphs (e.g. just the "you" node) don't fill the whole screen.
     const fov = (this.camera.fov * Math.PI) / 180;
-    const distance = (radius / Math.sin(fov / 2)) * 1.25;
+    const distance = Math.max((radius / Math.sin(fov / 2)) * 1.25, 120);
     this.controls.target.set(cx, cy, cz);
     this.camera.position.set(cx, cy, cz + distance);
     this.camera.near = Math.max(0.1, distance / 1000);
