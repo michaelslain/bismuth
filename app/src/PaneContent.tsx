@@ -2,11 +2,17 @@
 // Routes one pane's content id (a note path or a ::sentinel) to the right view.
 // Shared by single-pane tabs and split panes so routing lives in exactly one place.
 import { Switch, Match, Suspense, lazy } from "solid-js";
-import { FileView } from "./FileView";
-import { BaseView } from "./bases/BaseView";
-import { SheetView } from "./SheetView";
+// Lazy: FileView → Editor → @codemirror/* (+ harper.js glue) is ~117 KB gz. The home
+// tab on boot is the graph, so the editor is never needed at first paint — defer it
+// off the entry bundle until a note is actually opened.
+const FileView = lazy(() => import("./FileView").then((m) => ({ default: m.FileView })));
+// Lazy too: none of these render at boot (the home tab is the graph), and BaseView
+// transitively pulls `marked` (via its Calendar/Flashcards renderers) into the entry.
+// Routed by Match arm on path extension, so each gets its own Suspense below.
+const BaseView = lazy(() => import("./bases/BaseView").then((m) => ({ default: m.BaseView })));
+const SheetView = lazy(() => import("./SheetView").then((m) => ({ default: m.SheetView })));
+const DrawingPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.DrawingPage })));
 import { EmptyPane } from "./EmptyPane";
-import { DrawingPage } from "./drawing/DrawingPage";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
 import type { NoteCandidate } from "./editor/wikilink";
@@ -24,13 +30,17 @@ export function PaneContent(props: {
   return (
     <Switch
       fallback={
-        <FileView
-          path={props.path}
-          onSaved={props.onSaved}
-          onOpen={props.onOpen}
-          noteNames={props.noteNames}
-          tagNames={props.tagNames}
-        />
+        // FileView is lazy; the fallback keeps the pane's full box during the brief
+        // chunk load so a split/tab doesn't flash a collapsed pane.
+        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+          <FileView
+            path={props.path}
+            onSaved={props.onSaved}
+            onOpen={props.onOpen}
+            noteNames={props.noteNames}
+            tagNames={props.tagNames}
+          />
+        </Suspense>
       }
     >
       {/* Export must win before the extension arms below: an export id like
@@ -53,13 +63,19 @@ export function PaneContent(props: {
         <div data-graph-host style={{ width: "100%", height: "100%" }} />
       </Match>
       <Match when={props.path.endsWith(".sheet")}>
-        <SheetView path={props.path} onSaved={props.onSaved} />
+        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+          <SheetView path={props.path} onSaved={props.onSaved} />
+        </Suspense>
       </Match>
       <Match when={props.path.endsWith(".base")}>
-        <BaseView path={props.path} onOpen={props.onOpen} />
+        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+          <BaseView path={props.path} onOpen={props.onOpen} />
+        </Suspense>
       </Match>
       <Match when={props.path.endsWith(".draw")}>
-        <DrawingPage path={props.path} />
+        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+          <DrawingPage path={props.path} />
+        </Suspense>
       </Match>
       <Match when={props.path.startsWith(TERMINAL_PREFIX)}>
         {/* Terminal panes show a transparent placeholder. The real xterm view
