@@ -214,7 +214,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
       "x", "y",
     ] as const;
     for (const k of FIELD_KEYS) {
-      if (typeof raw[k] === "string") (config.views[0] as Record<string, unknown>)[k] = raw[k];
+      if (typeof raw[k] === "string") (config.views[0] as unknown as Record<string, unknown>)[k] = raw[k];
     }
     // Top-level view shaping (visible columns / sort / group / group-order) configures the default view too.
     if (Array.isArray(raw.order)) config.views[0].order = (raw.order as unknown[]).map(String);

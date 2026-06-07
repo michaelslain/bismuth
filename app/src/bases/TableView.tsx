@@ -18,7 +18,7 @@ export function TableView(props: {
   onWidthsChange?: (widths: Record<string, number>) => void;
 }) {
   const cols = (): string[] => props.result.columns;
-  const [dragIdx, setDragIdx] = createSignal<number | null>(null);
+  const [, setDragIdx] = createSignal<number | null>(null);
   const [overIdx, setOverIdx] = createSignal<number | null>(null);
   const [w, setW] = createSignal<Record<string, number>>(props.widths ?? {});
   // Index of the column currently being resized (drives the visual cue + table-layout:fixed lock).

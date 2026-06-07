@@ -1,6 +1,7 @@
 import { join, dirname, resolve, sep } from "node:path";
 import { mkdirSync, renameSync, existsSync, writeFileSync, statSync } from "node:fs";
-import { readdir, Dirent } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import { parseFrontmatter } from "./frontmatter";
 import { createError } from "./error";
 import type { TreeEntry } from "./graph";
@@ -95,7 +96,7 @@ export async function listBases(root: string): Promise<string[]> {
 const iconCache = new Map<string, { mtime: number; icon: string | null }>();
 
 export async function listTree(root: string): Promise<TreeEntry[]> {
-  const entries = await walkDir(root, (d, rel) => {
+  const entries = await walkDir(root, (d) => {
     if (d.isDirectory()) {
       return true; // Include all directories
     }
@@ -258,7 +259,7 @@ export async function listTemplates(
     return [];
   }
 
-  const entries = await walkDir(absFolder, (d, rel) => {
+  const entries = await walkDir(absFolder, (d) => {
     // Filter to only include .md files (skip directories)
     if (d.isDirectory()) {
       return false; // Don't include dirs, but still recurse

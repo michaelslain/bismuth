@@ -52,7 +52,7 @@ export function EventModal(props: { store: EventStore }) {
   const [category, setCategory] = createSignal(editing?.category ?? '')
   const [recType, setRecType] = createSignal<RecurrenceType | ''>(editing?.recurrence?.type ?? '')
   const [recDays, setRecDays] = createSignal<number[]>(editing?.recurrence?.daysOfWeek ?? getDefaultDaysOfWeek())
-  const [recStart, setRecStart] = createSignal(editing?.recurrence?.startDate ?? defaultDate)
+  const [recStart] = createSignal(editing?.recurrence?.startDate ?? defaultDate)
   const [recEnd, setRecEnd] = createSignal(editing?.recurrence?.endDate ?? '')
 
   const close = () => (showEventModal.value = null)

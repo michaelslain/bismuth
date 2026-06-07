@@ -5,6 +5,10 @@
     "module": "ESNext",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    // The app imports core source directly (../../core/src/*.ts), so the app program
+    // type-checks core too — which uses the Bun global + node: builtins. Include both
+    // ambient type sets here (vite/client still comes via src/vite-env.d.ts).
+    "types": ["bun", "node"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

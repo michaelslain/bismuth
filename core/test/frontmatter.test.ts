@@ -54,7 +54,7 @@ test("frontmatter with object/nested values", () => {
   const md = `---\nmetadata:\n  key: value\n  nested: data\n---\nBody`;
   const { data } = parseFrontmatter(md);
   expect(typeof data.metadata).toBe("object");
-  expect(data.metadata?.key).toBe("value");
+  expect((data.metadata as Record<string, unknown>)?.key).toBe("value");
 });
 
 test("frontmatter with special characters in values", () => {
@@ -90,7 +90,7 @@ test("frontmatter with empty array", () => {
   const md = `---\ntags: []\n---\nBody`;
   const { data } = parseFrontmatter(md);
   expect(Array.isArray(data.tags)).toBe(true);
-  expect(data.tags.length).toBe(0);
+  expect((data.tags as unknown[]).length).toBe(0);
 });
 
 test("frontmatter with multiline string value", () => {
