@@ -30,7 +30,7 @@ import { searchVault, invalidateSearchIndex } from "./search";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup } from "./claudebot";
 
@@ -572,6 +572,34 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /daemon/setup": async (_, __) => {
       return ok(await runSetup());
+    },
+
+    // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
+    // frontmatter in the shared <home>/{crons,processes}/<name>.md), and run a cron on
+    // command (drops a trigger file the daemon polls). These mutate the claude-bot
+    // daemon's shared files, NOT the vault — so, like POST /daemon/setup and the /relay/*
+    // hooks, they live in the READ routes (no vault-cache invalidation; the frontend
+    // re-polls /daemon/graph). Unknown name → setCronEnabled/runCron throw AppError
+    // ("ENOENT") → 404 via the dispatch catch.
+    "POST /daemon/cron/toggle": async (req) => {
+      const { name, enabled } = (await req.json()) as { name?: string; enabled?: boolean };
+      if (!name || typeof enabled !== "boolean") return error("missing name/enabled", 400);
+      setCronEnabled(name, enabled);
+      return ok({ ok: true });
+    },
+
+    "POST /daemon/cron/run": async (req) => {
+      const { name } = (await req.json()) as { name?: string };
+      if (!name) return error("missing name", 400);
+      runCron(name);
+      return ok({ ok: true });
+    },
+
+    "POST /daemon/process/toggle": async (req) => {
+      const { name, enabled } = (await req.json()) as { name?: string; enabled?: boolean };
+      if (!name || typeof enabled !== "boolean") return error("missing name/enabled", 400);
+      setProcessEnabled(name, enabled);
+      return ok({ ok: true });
     },
   };
 

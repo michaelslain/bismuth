@@ -3,10 +3,20 @@
 // OA_CLAUDEBOT_HOME at a fresh tmp dir and writes fake state files (device-id /
 // devices.json / owner.json), then asserts the contract-exact shapes.
 import { test, expect, afterEach } from "bun:test";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listDevices, getOwner, setOwner, thisDeviceId, daemonStatus } from "../src/daemon";
+import {
+  listDevices,
+  getOwner,
+  setOwner,
+  thisDeviceId,
+  daemonStatus,
+  setCronEnabled,
+  setProcessEnabled,
+  runCron,
+} from "../src/daemon";
+import { daemonSnapshot } from "../src/daemonGraph";
 
 const created: string[] = [];
 
@@ -139,4 +149,90 @@ test("daemonStatus reports not running for a dead pid", () => {
     "daemon.pid": "2147483646",
   });
   expect(daemonStatus().running).toBe(false);
+});
+
+// ── enable / disable / run (writes to the shared claude-bot files) ────────────
+
+/** Write `<home>/<subdir>/<name>.md` with the given frontmatter map + body. */
+function writeDef(home: string, subdir: "crons" | "processes", name: string, fm: Record<string, string>, body = "do the thing"): void {
+  mkdirSync(join(home, subdir), { recursive: true });
+  const lines = ["---", ...Object.entries(fm).map(([k, v]) => `${k}: ${v}`), "---", body, ""];
+  writeFileSync(join(home, subdir, `${name}.md`), lines.join("\n"));
+}
+
+/** The frontmatter block of a written `*.md`, for asserting raw lines claude-bot's
+ *  naive parser will read (it splits each `key: value` line as a string). */
+function frontmatterText(home: string, subdir: string, base: string): string {
+  const md = readFileSync(join(home, subdir, `${base}.md`), "utf8");
+  return md.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
+}
+
+test("setCronEnabled flips the cron's enabled frontmatter (claude-bot-readable) both ways", () => {
+  const home = makeHome({});
+  writeDef(home, "crons", "dream", { schedule: '"0 * * * *"' });
+
+  setCronEnabled("dream", false, home);
+  // Raw line claude-bot's parser reads: `enabled: false` (bare, not quoted).
+  expect(frontmatterText(home, "crons", "dream")).toMatch(/^enabled: false$/m);
+  // And Bismuth's own reader sees it disabled.
+  expect(daemonSnapshot(home).crons.find((c) => c.name === "dream")?.enabled).toBe(false);
+  // The schedule (and body) survive the edit.
+  expect(daemonSnapshot(home).crons.find((c) => c.name === "dream")?.schedule).toBe("0 * * * *");
+
+  setCronEnabled("dream", true, home);
+  expect(frontmatterText(home, "crons", "dream")).toMatch(/^enabled: true$/m);
+  expect(daemonSnapshot(home).crons.find((c) => c.name === "dream")?.enabled).toBe(true);
+});
+
+test("setCronEnabled does NOT write a trigger (crons re-read each tick)", () => {
+  const home = makeHome({});
+  writeDef(home, "crons", "dream", { schedule: '"0 * * * *"' });
+  setCronEnabled("dream", false, home);
+  expect(existsSync(join(home, "crons", ".triggers"))).toBe(false);
+});
+
+test("setProcessEnabled flips frontmatter AND drops a reconcile trigger named by basename", () => {
+  const home = makeHome({});
+  writeDef(home, "processes", "engage-loop", { command: '"bun run loop.ts"' });
+
+  setProcessEnabled("engage-loop", false, home);
+  expect(frontmatterText(home, "processes", "engage-loop")).toMatch(/^enabled: false$/m);
+  // The general process-trigger port: a file named by the FILE basename.
+  expect(existsSync(join(home, "processes", ".triggers", "engage-loop"))).toBe(true);
+  expect(daemonSnapshot(home).processes.find((p) => p.name === "engage-loop")?.enabled).toBe(false);
+});
+
+test("runCron writes a trigger file named by the cron's basename, validating it exists", () => {
+  const home = makeHome({});
+  writeDef(home, "crons", "vault-review", { schedule: '"0 */4 * * *"' });
+
+  runCron("vault-review", home);
+  // claude-bot's processTriggers() loads `<base>.md`, so the trigger MUST be the basename.
+  expect(existsSync(join(home, "crons", ".triggers", "vault-review"))).toBe(true);
+  // Content is an ISO timestamp (matches claude-bot's requestCronRun).
+  const body = readFileSync(join(home, "crons", ".triggers", "vault-review"), "utf8");
+  expect(Number.isNaN(Date.parse(body))).toBe(false);
+});
+
+test("resolves by frontmatter `name` when it differs from the filename, but keys the trigger by FILENAME", () => {
+  const home = makeHome({});
+  // File is `weird.md`, but its display name (the graph node label) is "Pretty Name".
+  writeDef(home, "crons", "weird", { name: '"Pretty Name"', schedule: '"0 0 * * *"' });
+
+  // Toggle/run by the label (what the UI sends) — resolves the backing file…
+  setCronEnabled("Pretty Name", false, home);
+  expect(frontmatterText(home, "crons", "weird")).toMatch(/^enabled: false$/m);
+
+  runCron("Pretty Name", home);
+  // …but the trigger filename is the FILE basename `weird` (what claude-bot loads), not the label.
+  expect(existsSync(join(home, "crons", ".triggers", "weird"))).toBe(true);
+  expect(existsSync(join(home, "crons", ".triggers", "Pretty Name"))).toBe(false);
+});
+
+test("unknown cron/process name throws (404 AppError)", () => {
+  const home = makeHome({});
+  writeDef(home, "crons", "dream", { schedule: '"0 * * * *"' });
+  expect(() => setCronEnabled("nope", false, home)).toThrow();
+  expect(() => runCron("nope", home)).toThrow();
+  expect(() => setProcessEnabled("nope", false, home)).toThrow();
 });
