@@ -78,6 +78,9 @@ export function GraphView(props: {
   // stop the hidden sidebar mini-graph from burning frames when the main pane shows the
   // graph. Defaults to visible. Tab/window backgrounding also pauses it (visibilitychange).
   visible?: boolean;
+  // Daemon mode: re-poll /daemon/graph after a supervision action (enable/disable/run)
+  // so the services card reflects it immediately instead of waiting for the 4s poll.
+  onDaemonChanged?: () => void;
 }) {
   let host!: HTMLDivElement;
   let glowEl: HTMLDivElement | undefined; // the CSS atmosphere glow — slid/scaled to follow nodes
@@ -288,6 +291,7 @@ export function GraphView(props: {
             <div class="graph-legend-rows">
               <DaemonList
                 nodes={props.graph.nodes}
+                onChanged={() => props.onDaemonChanged?.()}
                 onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }}
               />
             </div>
