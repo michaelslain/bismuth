@@ -1,7 +1,6 @@
 // app/src/drawing/DrawingPage.tsx
 import { createResource, createSignal, Index, Show } from "solid-js";
 import { api } from "../api";
-import { settings } from "../settings";
 import { debounce } from "../debounce";
 import { emptyDoc, parseDoc, type DrawingDoc, type PaperBg } from "../../../core/src/drawing/model";
 import { createDrawingStore } from "./store";
@@ -11,9 +10,10 @@ import { TextButton } from "../ui/TextButton";
 import { Icon } from "../icons/Icon";
 import "./Drawing.css";
 
-// size + smoothing default to one of the 5 discrete toolbar levels so a button reads as active.
+// size defaults to one of the 5 discrete toolbar levels so a button reads as active;
+// smoothing is a simple on/off (default on — relax the stroke once on release).
 const DEFAULT_TOOLS: ToolState = {
-  tool: "pen", color: "fg", size: 5, smoothing: 0.55, holdToStraighten: true, holdDelayMs: 480,
+  tool: "pen", color: "fg", size: 5, smooth: true, holdToStraighten: true, holdDelayMs: 480,
 };
 
 export function DrawingPage(props: { path: string }) {
