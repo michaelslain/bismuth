@@ -24,3 +24,4 @@ test("a single-point stroke still yields a dot outline (no crash)", () => {
   const s: Stroke = { t: "pen", c: "#fff", w: 4, pts: [5, 5, 255] };
   expect(strokeOutline(s, resolve).fill.length).toBeGreaterThan(2);
 });
+

@@ -3,9 +3,10 @@ import { onMount, onCleanup, createEffect } from "solid-js";
 import { PAGE_W, PAGE_H, type DrawingDoc, type Stroke, type Tool } from "../../../core/src/drawing/model";
 import { renderPage, drawStroke, type Ctx2D } from "../../../core/src/drawing/render2d";
 import { themeColors } from "../../../core/src/drawing/theme";
-import { streamlinePoint, widthFor, isRealPressure } from "./input";
+import { smoothStrokePoints } from "../../../core/src/drawing/smooth";
+import { widthFor, isRealPressure } from "./input";
 
-export interface ToolState { tool: Tool | "eraser"; color: string; size: number; smoothing: number;
+export interface ToolState { tool: Tool | "eraser"; color: string; size: number; smooth: boolean;
   holdToStraighten: boolean; holdDelayMs: number; }
 
 export function DrawingCanvas(props: {
@@ -26,7 +27,7 @@ export function DrawingCanvas(props: {
   function clearLive() { live.getContext("2d")!.clearRect(0, 0, live.width, live.height); }
 
   let drawing = false, hasReal = false, holdTimer: ReturnType<typeof setTimeout> | undefined;
-  let filt = { x: 0, y: 0 }, lastRaw = { x: 0, y: 0, t: 0 }, current: Stroke | null = null;
+  let lastRaw = { x: 0, y: 0, t: 0 }, current: Stroke | null = null;
 
   const toLocal = (e: PointerEvent) => {
     const r = live.getBoundingClientRect();
@@ -63,8 +64,10 @@ export function DrawingCanvas(props: {
   function onDown(e: PointerEvent) {
     const ts = props.tools(); drawing = true; live.setPointerCapture(e.pointerId);
     hasReal = isRealPressure(e.pressure);
-    const p = toLocal(e); filt = { ...p }; lastRaw = { x: p.x, y: p.y, t: e.timeStamp };
+    const p = toLocal(e); lastRaw = { x: p.x, y: p.y, t: e.timeStamp };
     if (ts.tool === "eraser") { eraseAt(p); current = null; return; }
+    // Always capture the raw cursor path so drawing feels immediate (no input lag). If
+    // "smooth" is on, the finished stroke is relaxed once on release (see onUp).
     current = { t: ts.tool, c: ts.color, w: ts.size, pts: [p.x, p.y, pressureByte(e.pressure, 0)] };
     armHold();
   }
@@ -77,10 +80,10 @@ export function DrawingCanvas(props: {
       const dt = Math.max(ev.timeStamp - lastRaw.t, 1);
       const dist = Math.hypot(raw.x - lastRaw.x, raw.y - lastRaw.y);
       const speed = (dist / dt) * 16;
-      filt = streamlinePoint(filt, raw, ts.smoothing);
       if (isRealPressure(ev.pressure)) hasReal = true;
       if (current && !current.straight) {
-        current.pts.push(filt.x, filt.y, pressureByte(ev.pressure, speed));
+        // Push the RAW point so the live stroke tracks the cursor with no lag.
+        current.pts.push(raw.x, raw.y, pressureByte(ev.pressure, speed));
         if (dist > 3) armHold();
       }
       lastRaw = { x: raw.x, y: raw.y, t: ev.timeStamp };
@@ -90,7 +93,12 @@ export function DrawingCanvas(props: {
   }
   function onUp() {
     if (!drawing) return; drawing = false; clearTimeout(holdTimer);
-    if (current && current.pts.length >= 3) props.onCommit(current);
+    if (current && current.pts.length >= 3) {
+      // Smooth mode relaxes the finished freehand stroke into a flowing curve (a straight
+      // stroke is already just two endpoints, so leave it alone).
+      if (props.tools().smooth && !current.straight) current.pts = smoothStrokePoints(current.pts);
+      props.onCommit(current);
+    }
     current = null; clearLive();
   }
   function eraseAt(p: { x: number; y: number }) {
@@ -104,7 +112,10 @@ export function DrawingCanvas(props: {
   }
 
   onMount(() => {
-    for (const c of [base, live]) { c.width = PAGE_W * DPR; c.height = PAGE_H * DPR; c.style.width = PAGE_W + "px"; c.style.height = PAGE_H + "px"; }
+    // Backing store stays at the fixed page resolution (the drawing coordinate space);
+    // CSS sizes the canvas responsively to fill the tab. toLocal() maps pointer coords
+    // through getBoundingClientRect, so strokes stay correct at any display size.
+    for (const c of [base, live]) { c.width = PAGE_W * DPR; c.height = PAGE_H * DPR; }
     repaintBase();
     live.addEventListener("pointerdown", onDown);
     live.addEventListener("pointermove", onMove);
@@ -118,9 +129,9 @@ export function DrawingCanvas(props: {
 
   return (
     <div class="draw-page-shadow">
-      <div style={{ position: "relative", width: PAGE_W + "px", height: PAGE_H + "px" }}>
-        <canvas ref={base} class="draw-canvas" style={{ position: "absolute", inset: "0" }} />
-        <canvas ref={live} class="draw-canvas draw-live" style={{ position: "absolute", inset: "0" }} />
+      <div class="draw-page">
+        <canvas ref={base} class="draw-canvas" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }} />
+        <canvas ref={live} class="draw-canvas draw-live" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }} />
       </div>
     </div>
   );

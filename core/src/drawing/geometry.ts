@@ -22,7 +22,10 @@ export function strokeOutline(
     size: s.w * (isHl ? 4 : 2),
     thinning: s.straight || isHl ? 0 : 0.6,
     smoothing: 0.5,
-    streamline: 0.5,
+    // streamline is a trailing EMA on the INPUT — its only effect here is lag, so keep it off.
+    // The live stroke is raw (immediate); a "smooth" stroke is resampled + splined on release
+    // (smoothStrokePoints), so the points reaching getStroke are already dense and smooth.
+    streamline: 0,
     simulatePressure: false,
     last: true,
   });

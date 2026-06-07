@@ -13,16 +13,11 @@ const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
   { id: "eraser", icon: "Eraser", title: "Eraser" },
 ];
 
-// Five discrete levels (≈20% steps) replacing the size + smoothing sliders.
+// Five discrete size levels (≈20% steps) replacing the size slider.
 const SIZE_LEVELS = [2, 5, 9, 14, 20];
-const SMOOTH_LEVELS = [0.18, 0.37, 0.55, 0.74, 0.92];
-const SMOOTH_ICONS = [
-  "M2 13 L6 3 L10 13 L14 3 L18 13 L22 3",
-  "M2 12 L6 5 L10 12 L14 5 L18 12 L22 5",
-  "M2 11 Q6 4 10 8 Q14 12 18 8 Q20 6 22 8",
-  "M2 10 C6 3 10 13 14 8 C17 5 20 9 22 8",
-  "M2 9 C8 5 16 11 22 8",
-];
+// Smoothing is a simple on/off: a sharp (jagged) path vs. a smooth (relaxed) curve.
+const SHARP_PATH = "M2 13 L6 3 L10 13 L14 3 L18 13 L22 3";
+const SMOOTH_PATH = "M2 9 C8 4 16 14 22 7";
 
 const dotIcon = (size: number) => (
   <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
@@ -59,38 +54,45 @@ export function Toolbar(props: {
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));
   const sizeOpts = SIZE_LEVELS.map((s) => ({ id: s, label: dotIcon(s), title: `Size ${s}` }));
-  const smoothOpts = SMOOTH_LEVELS.map((v, i) => ({ id: v, label: smoothIcon(SMOOTH_ICONS[i]), title: `Smoothing ${Math.round(v * 100)}%` }));
+  const smoothOpts = [
+    { id: false, label: smoothIcon(SHARP_PATH), title: "Sharp (raw)" },
+    { id: true, label: smoothIcon(SMOOTH_PATH), title: "Smooth (relax on release)" },
+  ];
   const paperOpts = (["blank", "lines", "grid", "dots"] as PaperBg[]).map((p) => ({ id: p, label: paperIcon(p), title: p[0].toUpperCase() + p.slice(1) }));
 
   return (
     <div class="draw-toolbar">
-      <div class="draw-group">
-        <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
+      {/* Story 1: tools + colors. */}
+      <div class="draw-row">
+        <div class="draw-group">
+          <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
+        </div>
+        <div class="draw-group">
+          <For each={colors()}>{(c) => (
+            <TextButton variant={t().color === c ? "selected" : "unselected"} class="draw-swatch"
+              style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
+              onClick={() => props.setTools({ color: c })} />
+          )}</For>
+        </div>
       </div>
-      <div class="draw-group">
-        <For each={colors()}>{(c) => (
-          <TextButton variant={t().color === c ? "selected" : "unselected"} class="draw-swatch"
-            style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
-            onClick={() => props.setTools({ color: c })} />
-        )}</For>
-      </div>
-      {/* Force the dock onto a second story: tools + colors above, the rest below. */}
-      <div class="draw-break" />
-      <div class="draw-group">
-        <span class="draw-label">Size</span>
-        <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
-      </div>
-      <div class="draw-group">
-        <span class="draw-label">Smooth</span>
-        <SegmentedToggle options={smoothOpts} value={t().smoothing} onChange={(v) => props.setTools({ smoothing: v })} segmentClass="draw-iconseg" />
-      </div>
-      <div class="draw-group">
-        <span class="draw-label">Paper</span>
-        <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
-      </div>
-      <div class="draw-group">
-        <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
-        <IconButton class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
+      {/* Story 2: size + smooth + paper + undo/redo. */}
+      <div class="draw-row">
+        <div class="draw-group">
+          <span class="draw-label">Size</span>
+          <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
+        </div>
+        <div class="draw-group">
+          <span class="draw-label">Smooth</span>
+          <SegmentedToggle options={smoothOpts} value={t().smooth} onChange={(v) => props.setTools({ smooth: v })} segmentClass="draw-iconseg" />
+        </div>
+        <div class="draw-group">
+          <span class="draw-label">Paper</span>
+          <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
+        </div>
+        <div class="draw-group">
+          <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
+          <IconButton class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
+        </div>
       </div>
     </div>
   );

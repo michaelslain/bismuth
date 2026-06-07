@@ -9,6 +9,7 @@ export interface Ctx2D {
   lineCap: string; lineJoin: string; globalAlpha: number; globalCompositeOperation: string;
   save(): void; restore(): void;
   beginPath(): void; moveTo(x: number, y: number): void; lineTo(x: number, y: number): void;
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void;
   closePath(): void; fill(): void; stroke(): void;
   arc(x: number, y: number, r: number, a0: number, a1: number): void;
   fillRect(x: number, y: number, w: number, h: number): void;
@@ -25,11 +26,26 @@ function drawBackground(ctx: Ctx2D, paper: Paper, t: ThemeColors, w: number, h: 
   ctx.restore();
 }
 
+// perfect-freehand returns the stroke as an OUTLINE polygon (a ring of vertices). Connecting
+// those with straight lineTo's renders a faceted/"geometric" edge. Instead connect them with
+// quadratic curves through the midpoints of consecutive vertices (perfect-freehand's own
+// getSvgPathFromStroke trick) so the filled edge reads as a smooth, flowing contour.
 function fillPolygon(ctx: Ctx2D, fill: number[][]) {
-  if (fill.length < 2) return;
+  const n = fill.length;
+  if (n < 2) return;
   ctx.beginPath();
-  ctx.moveTo(fill[0][0], fill[0][1]);
-  for (let i = 1; i < fill.length; i++) ctx.lineTo(fill[i][0], fill[i][1]);
+  if (n < 3) {
+    ctx.moveTo(fill[0][0], fill[0][1]);
+    for (let i = 1; i < n; i++) ctx.lineTo(fill[i][0], fill[i][1]);
+    ctx.closePath(); ctx.fill(); return;
+  }
+  // Start at the midpoint of the last→first edge so the ring closes smoothly.
+  const sx = (fill[n - 1][0] + fill[0][0]) / 2, sy = (fill[n - 1][1] + fill[0][1]) / 2;
+  ctx.moveTo(sx, sy);
+  for (let i = 0; i < n; i++) {
+    const a = fill[i], b = fill[(i + 1) % n];
+    ctx.quadraticCurveTo(a[0], a[1], (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+  }
   ctx.closePath();
   ctx.fill();
 }
