@@ -16,7 +16,21 @@ const CONFIG = {
   ADD_ATTR: ["target"],
 };
 
-/** Sanitize an HTML fragment for safe innerHTML injection. */
+// DOMPurify's default export is a ready instance in the browser (window present
+// at import) but an uninitialized factory under a headless runtime (Bun tests /
+// SSR, no `window`). Resolve a working sanitizer once: the live instance if it
+// has `.sanitize`, else bind the factory to a real `window` if one exists.
+const purify: { sanitize: (s: string, c?: unknown) => unknown } | null =
+  typeof (DOMPurify as { sanitize?: unknown }).sanitize === "function"
+    ? (DOMPurify as unknown as { sanitize: (s: string, c?: unknown) => unknown })
+    : typeof window !== "undefined"
+      ? (DOMPurify as unknown as (w: Window) => { sanitize: (s: string, c?: unknown) => unknown })(window)
+      : null;
+
+/** Sanitize an HTML fragment for safe innerHTML injection. Sanitization needs a
+ *  DOM; with none (headless tests/SSR, where nothing is injected) the input is
+ *  passed through unchanged — every real innerHTML surface runs in the browser. */
 export function sanitizeHtml(dirty: string): string {
-  return DOMPurify.sanitize(dirty ?? "", CONFIG) as unknown as string;
+  if (!purify) return dirty ?? "";
+  return purify.sanitize(dirty ?? "", CONFIG) as string;
 }
