@@ -83,9 +83,6 @@ export const THEMES: Record<ThemeName, ColorTokens> = {
     surface: "#161827",
     surface2: "#1E2133",
     accentPalette: ["#22C6D6", "#3F9BE6", "#5C7BEE", "#8B6CF0", "#B16AD6"],
-    categoryGreen: "#43D49A",
-    categoryGold: "#F2C53D",
-    categoryRose: "#F0509B",
   },
   "gunmetal-teal": {
     background: "#0E1014",
