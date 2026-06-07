@@ -238,6 +238,76 @@
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
 .groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
 
+/* Embedded query header: flush to the block edges (query hard-left, source icon hard-right). */
+:global(.viewbar).embeddedBar { padding-left: 0; padding-right: 0; }
+
+/* Faint "query" label in an embedded query's header bar (in line with the SOURCE icon). */
+.queryLabel {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: calc(1em * var(--mono-scale, 0.85));
+  color: var(--text-muted);
+  opacity: 0.6;
+  letter-spacing: 0.02em;
+}
+
+/* ── Native task list ─────────────────────────────────────────────────────────
+   Tasks render like the editor's inline `- [ ]` lines (not a bordered table row):
+   borderless, wrapping, the same checkbox glyph + markdown description + metadata.
+   The checkbox styles mirror livePreview's `.cm-task-checkbox` so embedded and
+   standalone task views look identical. */
+.taskItem {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55em;
+  padding: 1px 18px;
+  /* Inherit the surrounding type size so an embedded query reads as part of the note
+     (matches the editor font) rather than the base-view's fixed px. */
+  font-size: inherit;
+  line-height: 1.6;
+  color: var(--fg);
+  cursor: text;
+}
+.taskCheck {
+  flex: 0 0 auto;
+  position: relative;
+  width: 1.08em;
+  height: 1.08em;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--fg) 34%, transparent);
+  border-radius: 0.32em;
+  align-self: center;
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+.taskCheck:hover { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.taskCheck[data-status='done'] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.taskCheck[data-status='doing'] { border-color: var(--accent-purple); }
+.taskCheck[data-status='cancelled'] { border-color: color-mix(in srgb, var(--fg) 28%, transparent); opacity: 0.65; }
+.ckGlyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  pointer-events: none;
+}
+.ckGlyph :global(svg) { color: #fff; flex: 0 0 auto; }
+.taskCheck[data-status='done'] .ckCheck { opacity: 1; }
+.taskCheck[data-status='doing'] .ckSlash { opacity: 1; }
+.taskCheck[data-status='cancelled'] .ckDash { opacity: 1; }
+.ckSlash::before { content: ''; width: 0.13em; height: 0.66em; border-radius: 0.07em; background: var(--accent-purple); transform: rotate(45deg); }
+.ckDash::before { content: ''; width: 0.5em; height: 0.13em; border-radius: 0.07em; background: color-mix(in srgb, var(--fg) 60%, transparent); }
+.taskBody { flex: 1; min-width: 0; word-break: break-word; }
+.taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
+.taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+.taskTag { color: var(--teal); }
+.taskMeta { margin-left: 0.5em; font-size: 0.84em; color: var(--text-muted); white-space: nowrap; }
+.taskMeta.overdue { color: var(--accent); }
+.taskPrio { margin-left: 0.4em; font-size: 0.9em; }
+
 /* ---- Map ---- */
 .mapWrap { flex: 1 1 auto; min-height: var(--map-min-height, 480px); display: flex; }
 .map {

@@ -313,6 +313,14 @@ function computeBlockRegions(doc: Text): BlockRegions {
           j++;
         }
         if (j <= doc.lines) {
+          // ```query is owned by queryBlock.ts, which replaces the whole fence with the
+          // rendered view. Skip it here so livePreview doesn't ALSO render it as a code
+          // block (which would collide with that block replace and leak the raw query).
+          // Still advance past its lines so the body isn't re-processed as markdown.
+          if (m[1].trim() === "query") {
+            i = j + 1;
+            continue;
+          }
           // closed block: record it and mark all its lines
           const block: CodeBlock = { open, close: j, lang: m[1].trim(), body: bodyLines.join("\n") };
           fenceLines.add(open);
