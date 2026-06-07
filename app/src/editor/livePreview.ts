@@ -12,6 +12,7 @@ import { CodeHeader } from "./CodeHeader";
 import { type TableBlock, groupTableBlocks } from "./tableModel";
 import { TableWidget } from "./tableWidget";
 import { activeTableField, setActiveTableEffect } from "./tableState";
+import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
@@ -291,6 +292,10 @@ interface BlockRegions {
   tableBlockByLine: Map<number, TableBlock>;
   // Every line that belongs to a (closed) fenced code block → its block.
   codeBlockByLine: Map<number, CodeBlock>;
+  // Line numbers covered by a blank-line-delimited HTML block. The block itself
+  // is rendered by htmlBlockField (a StateField widget); the per-line pass skips
+  // these lines so it neither double-decorates nor misreads the raw HTML.
+  htmlBlockLines: Set<number>;
 }
 
 /** Scan the whole document once and return the block-region sets.
@@ -348,14 +353,20 @@ function computeBlockRegions(doc: Text): BlockRegions {
   // precompute GFM table blocks (header + separator + contiguous body rows)
   const { blocks: tableBlocks, byLine: tableBlockByLine } = groupTableBlocks(doc);
 
-  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine };
+  // precompute blank-line-delimited HTML blocks (rendered by htmlBlockField)
+  const htmlBlockLines = new Set<number>();
+  for (const b of scanHtmlBlocks(doc)) {
+    for (let k = b.fromLine; k <= b.toLine; k++) htmlBlockLines.add(k);
+  }
+
+  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine, htmlBlockLines };
 }
 
 /** Run the per-visible-line decoration pass using pre-computed block regions.
  *  This is cheap: it only iterates view.visibleRanges and must run on every
  *  update (including cursor moves) so that the cursor-line reveal stays correct. */
 function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSet {
-  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine } = regions;
+  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine, htmlBlockLines } = regions;
   const deco: Range<Decoration>[] = [];
   const doc = view.state.doc;
   const cursorLine = doc.lineAt(view.state.selection.main.head).number;
@@ -447,6 +458,14 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         continue;
       }
 
+      // HTML block: rendered by htmlBlockField (or shown raw when the cursor is
+      // inside it). Either way the per-line markdown pass must leave these lines
+      // alone — skip so we don't misread raw HTML as headings/lists/etc.
+      if (htmlBlockLines.has(line.number)) {
+        pos = line.to + 1;
+        continue;
+      }
+
       // headings: size the whole line, hide the leading "#"s off the cursor line
       const hm = text.match(/^(#{1,6})\s+/);
       if (hm) {
@@ -517,6 +536,13 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         }
       }
 
+      // inline HTML (<br>, <b>…</b>, <span style=…>…</span>, …): off the cursor
+      // line each grouped span becomes a rendered widget; on it the raw tags dim.
+      // Returns the covered spans so math (the other inline REPLACE) can skip them
+      // — two overlapping replace decorations would throw.
+      const htmlSpans = pushInlineHtml(deco, view.state, line.from, line.to, onCursor);
+      const inHtmlSpan = (s: number, e: number) => htmlSpans.some((h) => s < h.to && e > h.from);
+
       // math: process $$...$$ (block) before $...$ (inline) — skip if cursor is on this line
       if (!onCursor) {
         // block math: $$...$$  (single-line, non-empty inner)
@@ -524,6 +550,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         for (const m of text.matchAll(blockMathRe)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
+          if (inHtmlSpan(s, end)) continue;
           const expr = m[1];
           deco.push(Decoration.replace({ widget: new MathWidget(expr, true) }).range(s, end));
         }
@@ -534,6 +561,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         for (const m of text.matchAll(inlineMathRe)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
+          if (inHtmlSpan(s, end)) continue;
           const expr = m[1];
           deco.push(Decoration.replace({ widget: new MathWidget(expr, false) }).range(s, end));
         }
@@ -655,6 +683,7 @@ export const livePreview = [
   activeCodeField,
   activeTableField,
   tableWidgetField,
+  htmlBlockField,
   EditorView.domEventHandlers({
     dblclick: (e, view) => {
       const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
@@ -666,6 +695,19 @@ export const livePreview = [
     },
     mousedown: (e, view) => {
       const target = e.target as HTMLElement;
+      // Click a rendered HTML block → drop the cursor into it so it reveals raw
+      // source for editing (the field collapses the widget while the cursor is
+      // inside). Ignore clicks on links inside it (let them navigate).
+      const htmlBlock = target.closest(".cm-html-block") as HTMLElement | null;
+      if (htmlBlock && !target.closest("a")) {
+        const from = Number(htmlBlock.getAttribute("data-from"));
+        if (Number.isFinite(from)) {
+          e.preventDefault();
+          view.dispatch({ selection: { anchor: from } });
+          view.focus();
+          return true;
+        }
+      }
       const box = target.closest(".cm-task-checkbox");
       if (!box) return false;
       e.preventDefault(); // keep cursor put so the line stays in preview mode
@@ -922,6 +964,13 @@ export const livePreview = [
     ".cm-list-marker": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-math": { display: "inline-block", "vertical-align": "middle" },
     ".cm-math .katex-display": { "text-align": "left", margin: "0.4em 0" },
+    // Rendered raw HTML. Inline spans flow with the prose; block elements get a
+    // little breathing room. Images stay responsive. Links inherit the editor's
+    // accent link styling. Both are sanitized before injection (sanitizeHtml.ts).
+    ".cm-html-inline": { "white-space": "normal" },
+    ".cm-html-block": { margin: "0.4em 0", "line-height": "1.55" },
+    ".cm-html-inline img, .cm-html-block img": { "max-width": "100%", height: "auto" },
+    ".cm-html-inline a, .cm-html-block a": { color: "var(--accent)", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     ".cm-diagnostic-error": { "border-left": "3px solid #e5484d" },
     ".cm-diagnostic-warning": { "border-left": "3px solid #f5a623" },
     // Squiggles are colored by CATEGORY (via each diagnostic's markClass), not by
