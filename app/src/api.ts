@@ -27,6 +27,7 @@ import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 import type { InstallStatus, SetupResult } from "../../core/src/claudebot";
+import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 
 // --- Transport seam -------------------------------------------------------
 // Everything the `api` object needs from the outside world is funnelled through
@@ -183,7 +184,10 @@ export const api = {
   // Persist a single setting by path (the backend merges it into settings.yaml in
   // place, preserving comments + the property registry + unknown keys).
   setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
-  saveDrawing: (path: string, doc: unknown) => post("/drawing/save", { path, doc }).then(() => {}),
+  // Drawings persist as plain `.draw` files (serialized JSON) via the same PUT /file
+  // write path as notes — there is no dedicated /drawing/save route.
+  saveDrawing: (path: string, doc: DrawingDoc) =>
+    put("/file", { path, contents: serializeDoc(doc) }).then(() => {}),
 
   // claude-bot daemon supervision. Status (running + this device + owner), the list
   // of heartbeating devices, and claiming a device as the owner (writes owner.json).

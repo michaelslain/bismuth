@@ -1,24 +1,28 @@
 /* app/src/drawing/Drawing.css */
 .draw-canvas { background: transparent; border-radius: 2px; touch-action: none; }
-.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: max-content; margin: 0 auto; }
+/* The page fills the tab width (capped so it doesn't get absurdly wide on huge monitors)
+   and keeps the letter aspect ratio; the canvases inside fill it via inset:0 + 100%. */
+.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: 100%; max-width: 1400px; margin: 0 auto; }
+.draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
 .draw-live { cursor: crosshair; }
 
-/* Floating bottom-center tool dock (the design's .drawtools) — TWO rows ("2 stories"):
-   tools + colors on the top row, size + smooth + paper + undo/redo on the bottom row.
-   A full-width flex break (.draw-break) forces the second story; groups are divided by
-   hairline rules. */
+/* Floating bottom-center tool dock (the design's .drawtools) — exactly TWO rows
+   ("2 stories"): tools + colors on the top row, size + smooth + paper + undo/redo on
+   the bottom row. Each story is its own non-wrapping flex row so the dock never spills
+   onto a third line; groups are divided by hairline rules. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
-  display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 4px; align-items: center; padding: 7px 9px;
+  display: flex; flex-direction: column; gap: 5px; align-items: center; padding: 7px 9px;
+  max-width: calc(100% - 24px);
   background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
   box-shadow: var(--shadow-card);
 }
+/* One story: a single non-wrapping row of groups. */
+.draw-row { display: flex; flex-wrap: nowrap; justify-content: center; gap: 4px; align-items: center; }
 /* Group dividers are hairline rules matching the design's .ddiv. */
 .draw-group { display: flex; gap: 2px; align-items: center; padding-right: 7px; margin-right: 3px; border-right: 1px solid var(--border-soft); }
-/* Drop the trailing divider on the last group of EACH row (last child + the one before the break). */
+/* Drop the trailing divider on the last group of each row. */
 .draw-group:last-child { border-right: none; padding-right: 0; margin-right: 0; }
-/* Forced row break: a zero-height full-width flex item that pushes following groups to story 2. */
-.draw-break { flex-basis: 100%; height: 0; }
 /* Icon-only dock: hide the group text labels (icons are self-descriptive). */
 .draw-label { display: none; }
 /* Icon segments (tools / size dots / smoothness lines) — icon centered. */
@@ -32,9 +36,11 @@
 .draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
 .draw-stage {
-  flex: 1; overflow: auto; padding: 24px 0 90px; display: flex; flex-direction: column; align-items: center; gap: 20px;
+  flex: 1; overflow: auto; padding: 24px 24px 90px; display: flex; flex-direction: column; align-items: stretch; gap: 20px;
   background:
     radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--fg) 7%, transparent) 1px, transparent 0) 0 0 / 22px 22px,
     var(--bg);
 }
+/* The page wrappers stretch to fill width; the "Add page" button stays its natural size. */
+.draw-stage > button { align-self: center; }
 .draw-loading { padding: 24px; opacity: 0.6; }

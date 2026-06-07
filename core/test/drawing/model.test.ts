@@ -24,6 +24,7 @@ test("serialize then parse round-trips a doc", () => {
   expect(parseDoc(serializeDoc(d))).toEqual(d);
 });
 
+
 test("parseDoc rejects non-drawing JSON with a clear error", () => {
   expect(() => parseDoc('{"hello":1}')).toThrow(/not a drawing/i);
 });
