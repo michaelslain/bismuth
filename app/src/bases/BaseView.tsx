@@ -18,6 +18,7 @@ import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
 import { capitalize } from "./renderValue";
 import { TextButton } from "../ui/TextButton";
+import { IconButton } from "../ui/IconButton";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "../ui/ViewBar";
 import { Loading } from "../ui/EmptyState";
@@ -45,7 +46,8 @@ interface Loaded {
   basePath?: string;
 }
 
-/** Raw source editor for a base file — a textarea + Save, used by the per-view Source toggle. */
+/** Raw source editor for a base file — a textarea + Save, used by the per-view Source
+ *  toggle. (Embedded ```query blocks edit their fence inline in the editor instead.) */
 function SourceEditor(props: { path: string; onClose: () => void }) {
   const [text, setText] = createSignal<string | null>(null);
   onMount(async () => setText(await api.read(props.path)));
@@ -82,6 +84,9 @@ export function BaseView(props: {
   view?: QueryBlock;
   hostPath?: string;
   onOpen?: (path: string) => void;
+  // For an embedded ```query block: reveal the raw fence inline in the editor. When set,
+  // the SOURCE icon appears even without a base file and triggers inline editing.
+  embeddedSource?: { onReveal: () => void };
 }) {
   const [hostMeta] = createResource(
     () => props.hostPath,
@@ -162,9 +167,10 @@ export function BaseView(props: {
 
   return (
     <div class={styles.host}>
-      <Show when={(data()?.config.views.length ?? 0) > 1 || editPath()}>
-        <ViewBar>
+      <Show when={(data()?.config.views.length ?? 0) > 1 || editPath() || props.embeddedSource}>
+        <ViewBar class={props.embeddedSource ? styles.embeddedBar : ""}>
           <Show when={baseName()}>{(n) => <Crumb icon="Table">{n()}</Crumb>}</Show>
+          <Show when={props.embeddedSource}><span class={styles.queryLabel}>query</span></Show>
           <Show when={(data()?.config.views.length ?? 0) > 1}>
             <SegmentedToggle
               class={styles.tabs}
@@ -174,31 +180,35 @@ export function BaseView(props: {
             />
           </Show>
           <ViewBarSpacer />
-          <Show when={editPath()}>
-            {/* Calendar has its own Settings modal in its toolbar, so the generic
-                base SETTINGS panel is hidden for it (SOURCE stays). */}
-            <Show when={activeType() !== "calendar"}>
-              <VBtn
-                icon={settingsMode() ? "X" : "Settings"}
-                active={settingsMode()}
-                onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
-              >
-                {settingsMode() ? "CLOSE" : "SETTINGS"}
-              </VBtn>
-            </Show>
+          {/* SETTINGS is a base-FILE panel; Calendar has its own. SOURCE also shows for an
+              embedded query (edits the fence body). */}
+          <Show when={editPath() && activeType() !== "calendar"}>
             <VBtn
-              icon={sourceMode() ? "X" : "Code"}
-              active={sourceMode()}
-              onClick={() => { setSourceMode(!sourceMode()); setSettingsMode(false); }}
+              icon={settingsMode() ? "X" : "Settings"}
+              active={settingsMode()}
+              onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
             >
-              {sourceMode() ? "CLOSE SOURCE" : "SOURCE"}
+              {settingsMode() ? "CLOSE" : "SETTINGS"}
             </VBtn>
+          </Show>
+          <Show when={editPath() || props.embeddedSource}>
+            <IconButton
+              icon={editPath() && sourceMode() ? "X" : "Code"}
+              label="Source"
+              variant={editPath() && sourceMode() ? "selected" : "normal"}
+              onClick={() => {
+                // Embedded query: reveal the fence inline in the editor. Base file: toggle
+                // the textarea source panel.
+                if (props.embeddedSource) props.embeddedSource.onReveal();
+                else { setSourceMode(!sourceMode()); setSettingsMode(false); }
+              }}
+            />
           </Show>
         </ViewBar>
       </Show>
 
       <div class={styles.body}>
-        <Show when={sourceMode()}>
+        <Show when={sourceMode() && editPath()}>
           <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
         </Show>
         <Show when={settingsMode() && !!data()}>

@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Show, type JSX } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue, isTaskRow } from "./renderValue";
@@ -10,6 +10,107 @@ import styles from "./BaseView.module.css";
 
 function groupColor(key: string): string {
   return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
+}
+
+// Task status (todo/done/in-progress/cancelled/other) -> the native checkbox's
+// data-status (matches livePreview's `.cm-task-checkbox` glyph states).
+function checkStatus(s: unknown): "todo" | "done" | "doing" | "cancelled" {
+  if (s === "done") return "done";
+  if (s === "in-progress") return "doing";
+  if (s === "cancelled") return "cancelled";
+  return "todo";
+}
+
+const PRIORITY_MARK: Record<string, string> = {
+  highest: "🔺", high: "⏫", medium: "🔼", low: "🔽", lowest: "⏬",
+};
+
+// Render a task description as lightweight inline markdown — wikilinks become
+// clickable, #tags get the tag color, **bold**/*italic* render — so a task line
+// reads like it does in the editor instead of as flat, truncated text.
+const INLINE_RE = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\(([^)]+)\)|(^|\s)#([A-Za-z0-9_/-]+)|\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+function renderTaskText(text: string): JSX.Element[] {
+  const out: JSX.Element[] = [];
+  let last = 0;
+  let m: RegExpExecArray | null;
+  INLINE_RE.lastIndex = 0;
+  while ((m = INLINE_RE.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1] !== undefined) {
+      // [[wikilink]] -> open the note
+      const [target, display] = m[1].split("|");
+      const label = display ?? target.split("/").pop() ?? target;
+      const path = target.endsWith(".md") ? target : `${target}.md`;
+      out.push(
+        <span class={styles.taskLink} onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("oa-open", { detail: path })); }}>
+          {label}
+        </span>,
+      );
+    } else if (m[2] !== undefined) {
+      // [label](url) -> external links open in a new tab; note paths open in-app
+      const url = m[3];
+      const external = /^https?:\/\//.test(url);
+      out.push(
+        <span class={styles.taskLink} title={url} onClick={(e) => {
+          e.stopPropagation();
+          if (external) window.open(url, "_blank", "noopener");
+          else window.dispatchEvent(new CustomEvent("oa-open", { detail: url.endsWith(".md") ? url : `${url}.md` }));
+        }}>
+          {m[2]}
+        </span>,
+      );
+    } else if (m[5] !== undefined) {
+      if (m[4]) out.push(m[4]); // preserve the whitespace captured before the tag
+      out.push(<span class={styles.taskTag}>#{m[5]}</span>);
+    } else if (m[6] !== undefined) {
+      out.push(<strong>{m[6]}</strong>);
+    } else if (m[7] !== undefined) {
+      out.push(<em>{m[7]}</em>);
+    }
+    last = INLINE_RE.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+
+/** One task line, rendered like the editor's native `- [ ]` items: the same checkbox
+ *  glyph, a markdown description, and the parsed signifiers (priority + dates + recurrence). */
+function TaskRow(props: { row: Row; onToggle: (row: Row, e: Event) => void }) {
+  const n = () => props.row.note;
+  const status = () => checkStatus(n().status);
+  const done = () => n().status === "done";
+  const desc = () => String(n().description ?? props.row.file.name);
+  const priority = () => n().priority as string | undefined;
+  const due = () => n().due as string | undefined;
+  const scheduled = () => n().scheduled as string | undefined;
+  const start = () => n().start as string | undefined;
+  const recurrence = () => n().recurrence as string | undefined;
+  const overdue = () => !!due() && !done() && due()! < todayISO();
+
+  return (
+    <div class={styles.taskItem}>
+      <span
+        class={styles.taskCheck}
+        data-status={status()}
+        title="Toggle task"
+        onClick={(e) => props.onToggle(props.row, e)}
+      >
+        <span class={`${styles.ckGlyph} ${styles.ckCheck}`}><Icon value="Check" size={11} strokeWidth={3} /></span>
+        <span class={`${styles.ckGlyph} ${styles.ckSlash}`} />
+        <span class={`${styles.ckGlyph} ${styles.ckDash}`} />
+      </span>
+      <span class={`${styles.taskBody} ${done() ? styles.done : ""}`}>
+        {renderTaskText(desc())}
+        <Show when={priority() && priority() !== "none"}>
+          <span class={styles.taskPrio} title={`${priority()} priority`}>{PRIORITY_MARK[priority()!]}</span>
+        </Show>
+        <Show when={start()}><span class={styles.taskMeta}>🛫 {start()}</span></Show>
+        <Show when={scheduled()}><span class={styles.taskMeta}>⏳ {scheduled()}</span></Show>
+        <Show when={due()}><span class={`${styles.taskMeta} ${overdue() ? styles.overdue : ""}`}>📅 {due()}</span></Show>
+        <Show when={recurrence()}><span class={styles.taskMeta}>🔁 {recurrence()}</span></Show>
+      </span>
+    </div>
+  );
 }
 
 export function ListView(props: { result: ViewResult; config: BaseConfig; onChange?: () => void }) {
@@ -41,35 +142,8 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
             </Show>
             <For each={group.rows}>
               {(row) => {
-                // Task rows render as an interactive checkbox + description + due date.
-                if (isTaskRow(row)) {
-                  const done = row.note.status === "done";
-                  const desc = String(row.note.description ?? row.file.name);
-                  const due = row.note.due as string | undefined;
-                  const overdue = !!due && !done && due < todayISO();
-                  return (
-                    <div class={styles.lrow} onClick={() => open(row)} style={{ cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={done}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => toggle(row, e)}
-                        style={{ cursor: "pointer", flex: "0 0 auto", margin: "0" }}
-                      />
-                      <span
-                        class={styles.ltext}
-                        style={done ? { "text-decoration": "line-through", opacity: "0.55" } : {}}
-                      >
-                        {desc}
-                      </span>
-                      <Show when={due}>
-                        <span style={{ color: overdue ? "var(--accent)" : "var(--text-muted)", "font-size": "11px", flex: "0 0 auto" }}>
-                          {due}
-                        </span>
-                      </Show>
-                    </div>
-                  );
-                }
+                // Task rows render as a native checkbox line (see TaskRow).
+                if (isTaskRow(row)) return <TaskRow row={row} onToggle={toggle} />;
 
                 const title = resolveProperty(firstCol(), row);
                 const author = authorCol() ? resolveProperty(authorCol()!, row) : null;
