@@ -186,11 +186,10 @@ export function BaseView(props: {
           <Show when={editPath() && activeType() !== "calendar"}>
             <VBtn
               icon="Settings"
+              title="Settings"
               active={settingsMode()}
               onClick={() => { setSettingsMode(true); setSourceMode(false); }}
-            >
-              SETTINGS
-            </VBtn>
+            />
           </Show>
           <Show when={editPath() || props.embeddedSource}>
             <IconButton
