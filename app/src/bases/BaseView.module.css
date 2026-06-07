@@ -196,16 +196,49 @@
 /* Retained for BodyCard's "Loading…" placeholder. */
 .cardKey { color: var(--text-muted); }
 
-.bodyCard { border: 1px solid var(--border-soft, var(--border)); border-radius: 11px; padding: 13px 14px; background: var(--surface-1, var(--panel)); }
-.todoList { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
-.todoItem { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.todoCheckbox { flex: 0 0 auto; cursor: pointer; accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
-.todoText { flex: 1 1 auto; min-width: 0; border: none; background: transparent; color: var(--fg); font: inherit; padding: 2px 0; outline: none; border-bottom: 1px solid transparent; transition: border-color 120ms ease; }
-.todoText:focus { border-bottom-color: var(--accent); }
-.todoDone .todoText { color: var(--oa-muted); text-decoration: line-through; }
-.todoRemove:global(.btn) { flex: 0 0 auto; opacity: 0; transition: opacity 120ms ease; }
-.todoItem:hover .todoRemove { opacity: 1; }
-.todoAdd:global(.btn) { align-self: flex-start; margin-top: 6px; }
+.bodyCard {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 11px;
+  padding: 13px 14px;
+  background: var(--surface-1, var(--panel));
+}
+
+/* Google-Keep masonry: cards keep their natural height and pack into columns, so
+   a short note stays short instead of stretching to match the tallest in its row. */
+.bodyGrid { column-count: 3; column-gap: 14px; }
+.bodyGrid > .bodyCard { break-inside: avoid; margin: 0 0 14px; }
+
+/* The note body rendered as real markdown (renderNoteBody). Task lists are tightened
+   into a label-free Keep-style checklist; the checkbox stays inline so a task's text
+   (with its links and trailing signifiers) wraps naturally instead of column-splitting. */
+.cardMd { font-family: var(--editor-font); font-size: 14px; line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
+.cardMd :global(ul), .cardMd :global(ol) { list-style: none; margin: 4px 0; padding-left: 0; }
+.cardMd :global(li) { padding: 1px 0; }
+.cardMd :global(li input[type="checkbox"]) { margin: 0 7px 0 0; vertical-align: -2px; accent-color: var(--accent); cursor: pointer; }
+.cardMd :global(li p) { display: inline; margin: 0; }
+.cardMd :global(p) { margin: 4px 0; }
+.cardMd :global(a) { color: var(--accent); text-decoration: none; cursor: pointer; }
+.cardMd :global(a:hover) { text-decoration: underline; }
+.cardMd :global(pre) { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2, var(--bg)); font-size: 12px; }
+.cardMd :global(code), .cardMd :global(pre) { font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.cardMd :global(h1), .cardMd :global(h2), .cardMd :global(h3), .cardMd :global(h4) {
+  font-family: var(--editor-font); font-weight: 600; font-size: 1em;
+  color: var(--fg); margin: 10px 0 4px;
+}
+.cardMd :global(h1:first-child), .cardMd :global(h2:first-child), .cardMd :global(h3:first-child) { margin-top: 0; }
+.cardMd :global(img) { max-width: 100%; border-radius: 6px; }
+
+/* Completed tasks live behind this expander at the bottom of the card. */
+.doneToggle {
+  align-self: flex-start; margin-top: 8px; padding: 4px 0;
+  background: none; border: none; cursor: pointer;
+  font-family: inherit; font-size: 12px; color: var(--text-muted);
+}
+.doneToggle:hover { color: var(--fg); }
+.cardMdDone { opacity: 0.62; }
+.cardMdDone :global(li) { text-decoration: line-through; }
 
 /* ---------- list view ---------- */
 .list { padding: 8px 0; }

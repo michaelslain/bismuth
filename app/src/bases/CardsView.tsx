@@ -30,7 +30,7 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
             <Show when={group.key !== ""}>
               <div class={styles.groupHeader}>{group.key}</div>
             </Show>
-            <div class={styles.cardGrid}>
+            <div class={isBody() ? styles.bodyGrid : styles.cardGrid}>
               <For each={group.rows}>
                 {(row) => (
                   <Show

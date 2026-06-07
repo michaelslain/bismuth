@@ -1,29 +1,63 @@
-import { createSignal, createMemo, For, Show, onMount } from "solid-js";
+import { createSignal, createMemo, Show, onMount } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { renderValue } from "./renderValue";
-import { TextButton } from "../ui/TextButton";
-import { IconButton } from "../ui/IconButton";
+import { renderNoteBody } from "./markdown";
 import styles from "./BaseView.module.css";
 
-// Matches a markdown checklist line: indent, the check char, then the text.
-const CHECKLIST_RE = /^(\s*)- \[([ xX])\]\s?(.*)$/;
-
-interface TodoItem {
-  lineIndex: number; // index into the full lines array
-  indent: string;
-  checked: boolean;
-  text: string;
+// Strip a leading YAML frontmatter block so the card shows just the note body —
+// same as `.md` transclusion (embedBlock).
+function stripFrontmatter(text: string): string {
+  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
+// A checklist line whose box is anything other than empty (`[x]`, `[-]`, `[/]`, …)
+// is treated as completed and tucked into the collapsible section at the bottom,
+// Google-Keep style. `[ ]` (and every non-task line) stays in the open section.
+const DONE_TASK_RE = /^\s*- \[[^ \]]\]/;
+const HEADING_RE = /^#{1,6}\s/;
+// Lines that GFM renders as an actual checkbox, in document order — used to map a
+// clicked checkbox back to its source line for the toggle.
+const OPEN_BOX_RE = /^\s*- \[ \]/;
+const DONE_BOX_RE = /^\s*- \[[xX]\]/;
+
+// Drop headings with no remaining content beneath them (their tasks all moved to the
+// completed section) so an all-done card collapses to title + "N completed".
+function pruneEmptyHeadings(lines: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (HEADING_RE.test(lines[i])) {
+      let hasContent = false;
+      for (let j = i + 1; j < lines.length && !HEADING_RE.test(lines[j]); j++) {
+        if (lines[j].trim() !== "") { hasContent = true; break; }
+      }
+      if (!hasContent) continue;
+    }
+    out.push(lines[i]);
+  }
+  return out;
+}
+
+// marked renders task checkboxes `disabled`; un-disable them so they're clickable.
+function enableCheckboxes(html: string): string {
+  return html.replace(/\sdisabled(="")?/g, "");
+}
+
+/**
+ * A Google-Keep-style preview card: the note's body rendered as real markdown
+ * (`renderNoteBody` — standard renderer + Obsidian `[[wikilinks]]`), with completed
+ * tasks hidden behind a "N completed" expander. Checkboxes toggle the underlying
+ * task (`api.toggleTask`); links open the note. Cards take their natural height; the
+ * grid (`.bodyGrid`) lays them out as a masonry so a short note stays short.
+ */
 export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConfig }) {
   const [content, setContent] = createSignal<string>("");
   const [loaded, setLoaded] = createSignal(false);
+  const [showDone, setShowDone] = createSignal(false);
 
   onMount(async () => {
     try {
-      const text = await api.read(props.row.file.path);
-      setContent(text);
+      setContent(await api.read(props.row.file.path));
     } catch {
       setContent("");
     } finally {
@@ -33,138 +67,77 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
 
   const firstCol = () => props.result.columns[0] ?? "file.name";
 
-  // Derive checklist items from the current content. Recomputes on every write.
-  const items = createMemo<TodoItem[]>(() => {
-    const lines = content().split("\n");
-    const out: TodoItem[] = [];
-    for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(CHECKLIST_RE);
-      if (m) {
-        out.push({
-          lineIndex: i,
-          indent: m[1],
-          checked: m[2].toLowerCase() === "x",
-          text: m[3],
-        });
-      }
-    }
-    return out;
+  // Partition the body into open lines (rendered up top) and completed task lines
+  // (inside the expander), plus the absolute file-line index of every rendered
+  // checkbox so a click maps back to the source line.
+  const parts = createMemo(() => {
+    const raw = content();
+    const body = stripFrontmatter(raw).split("\n");
+    const open: string[] = [];
+    const done: string[] = [];
+    for (const line of body) (DONE_TASK_RE.test(line) ? done : open).push(line);
+
+    const openLines: number[] = [];
+    const doneLines: number[] = [];
+    raw.split("\n").forEach((l, i) => {
+      if (OPEN_BOX_RE.test(l)) openLines.push(i);
+      else if (DONE_BOX_RE.test(l)) doneLines.push(i);
+    });
+
+    return {
+      openHtml: enableCheckboxes(renderNoteBody(pruneEmptyHeadings(open).join("\n"))),
+      doneHtml: enableCheckboxes(renderNoteBody(done.join("\n"))),
+      doneCount: done.length,
+      openLines,
+      doneLines,
+    };
   });
 
-  function buildLine(indent: string, checked: boolean, text: string): string {
-    return `${indent}- [${checked ? "x" : " "}] ${text}`;
-  }
-
-  /** Split content into lines, apply mutator, join, persist. */
-  async function commit(mutate: (lines: string[]) => void): Promise<void> {
-    const lines = content().split("\n");
-    mutate(lines);
-    const next = lines.join("\n");
-    setContent(next);
-    await api.write(props.row.file.path, next);
-  }
-
-  // Rewrite a single line by its index in the full file, persist, and re-derive.
-  async function writeLine(lineIndex: number, newLine: string) {
-    await commit((lines) => {
-      if (lineIndex < 0 || lineIndex >= lines.length) return;
-      lines[lineIndex] = newLine;
-    });
-  }
-
-  async function toggle(item: TodoItem) {
-    await writeLine(item.lineIndex, buildLine(item.indent, !item.checked, item.text));
-  }
-
-  async function commitText(item: TodoItem, newText: string) {
-    if (newText === item.text) return;
-    await writeLine(item.lineIndex, buildLine(item.indent, item.checked, newText));
-  }
-
-  async function removeItem(item: TodoItem) {
-    await commit((lines) => {
-      if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
-      lines.splice(item.lineIndex, 1);
-    });
-  }
-
-  let listEl: HTMLDivElement | undefined;
-
-  // Append a new empty todo to the end of the file, then focus its input.
-  async function addItem() {
-    await commit((lines) => {
-      if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-      lines.push("- [ ] ");
-    });
-    queueMicrotask(() => {
-      const inputs = listEl?.querySelectorAll<HTMLInputElement>(`.${styles.todoText}`);
-      inputs?.[inputs.length - 1]?.focus();
-    });
-  }
-
-  // Insert a new empty todo immediately AFTER the given item (Trello-style:
-  // Enter on any line creates the next one with matching indent). Persists the
-  // current text of `item` along the way so the user doesn't lose what they typed.
-  async function addAfter(item: TodoItem, currentText: string) {
-    await commit((lines) => {
-      if (item.lineIndex < 0 || item.lineIndex >= lines.length) return;
-      lines[item.lineIndex] = buildLine(item.indent, item.checked, currentText);
-      const newLine = `${item.indent}- [ ] `;
-      lines.splice(item.lineIndex + 1, 0, newLine);
-    });
-    // Focus the newly inserted input — it sits at the position the new item now
-    // occupies in the rendered list (count of checklist lines up to and including
-    // the new index in the file).
-    queueMicrotask(() => {
-      const inputs = listEl?.querySelectorAll<HTMLInputElement>(`.${styles.todoText}`);
-      // We added at file index item.lineIndex+1; find its new index in `items()`.
-      const newItem = items().find((t) => t.lineIndex === item.lineIndex + 1);
-      const focusIdx = newItem ? items().indexOf(newItem) : (inputs?.length ?? 1) - 1;
-      inputs?.[focusIdx]?.focus();
-    });
+  // One delegated handler per section: checkbox click -> toggle the mapped source
+  // line; link click -> open the note (the standard `oa-open` nav) or external URL.
+  async function onCardClick(e: MouseEvent, lineIdx: number[]) {
+    const container = e.currentTarget as HTMLElement;
+    const target = e.target as HTMLElement;
+    const box = target.closest('input[type="checkbox"]') as HTMLInputElement | null;
+    if (box) {
+      e.preventDefault();
+      const k = [...container.querySelectorAll('input[type="checkbox"]')].indexOf(box);
+      const idx = lineIdx[k];
+      if (idx == null) return;
+      try {
+        await api.toggleTask(props.row.file.path, idx);
+        setContent(await api.read(props.row.file.path));
+      } catch { /* best-effort: leave the card as-is on failure */ }
+      return;
+    }
+    const a = target.closest("a") as HTMLAnchorElement | null;
+    if (!a) return;
+    const wl = a.getAttribute("data-href");
+    if (wl) {
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent("oa-open", { detail: wl }));
+      return;
+    }
+    const href = a.getAttribute("href");
+    if (!href || href === "#") return;
+    e.preventDefault();
+    if (/^https?:\/\//.test(href)) window.open(href, "_blank", "noopener");
+    else window.dispatchEvent(new CustomEvent("oa-open", { detail: href.endsWith(".md") ? href : `${href}.md` }));
   }
 
   return (
     <div class={styles.bodyCard}>
       <div class={styles.cardTitle}>{renderValue(firstCol(), props.row)}</div>
       <Show when={loaded()} fallback={<div class={styles.cardKey}>Loading…</div>}>
-        <div class={styles.todoList} ref={listEl}>
-          <For each={items()}>
-            {(item) => (
-              <div class={`${styles.todoItem} ${item.checked ? styles.todoDone : ""}`}>
-                <input
-                  type="checkbox"
-                  class={styles.todoCheckbox}
-                  checked={item.checked}
-                  onChange={() => void toggle(item)}
-                />
-                <input
-                  type="text"
-                  class={styles.todoText}
-                  value={item.text}
-                  onBlur={(e) => void commitText(item, e.currentTarget.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      // Persist current text + add a new item right below; the new
-                      // input gets focus so you can keep typing.
-                      void addAfter(item, e.currentTarget.value);
-                    }
-                  }}
-                />
-                <IconButton
-                  icon="X"
-                  label="Remove item"
-                  class={styles.todoRemove}
-                  onClick={() => void removeItem(item)}
-                />
-              </div>
-            )}
-          </For>
-          <TextButton class={styles.todoAdd} onClick={() => void addItem()}>
-            ADD ITEM
-          </TextButton>
-        </div>
+        <div class={styles.cardMd} onClick={(e) => void onCardClick(e, parts().openLines)} innerHTML={parts().openHtml} />
+        <Show when={parts().doneCount > 0}>
+          <button class={styles.doneToggle} onClick={() => setShowDone(!showDone())}>
+            {showDone() ? "▾" : "▸"} {parts().doneCount} completed
+          </button>
+          <Show when={showDone()}>
+            <div class={`${styles.cardMd} ${styles.cardMdDone}`} onClick={(e) => void onCardClick(e, parts().doneLines)} innerHTML={parts().doneHtml} />
+          </Show>
+        </Show>
       </Show>
     </div>
   );
