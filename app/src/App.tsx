@@ -1217,7 +1217,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" style={{ width: "100%", height: "100%" }} />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>

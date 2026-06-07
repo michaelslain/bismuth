@@ -15,7 +15,9 @@
 // that has never run yet, or a partially-written file, degrades to empty/null).
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
+import { AppError } from "./error";
 
 // Optional home override fed from settings.yaml (daemon.home) by server.ts. The
 // OA_CLAUDEBOT_HOME env var still wins (ops/dev override), per the integration
@@ -152,4 +154,97 @@ export function setOwner(deviceId: string): Owner {
   };
   writeFileSync(join(claudeBotHome(), "owner.json"), JSON.stringify(owner, null, 2));
   return owner;
+}
+
+// ── Daemon supervision: enable / disable / run ───────────────────────────────
+// Bismuth controls the daemon's crons + background processes by writing the SAME
+// shared files claude-bot reads (the read side lives in daemonGraph.ts). claude-bot
+// keys both crons and processes by their FILE basename (`<name>.md`) — its loader
+// reads `<dir>/<name>.md` and its `requestCronRun` drops a trigger file named by that
+// basename. The graph node's label, though, is `frontmatter.name ?? basename` (see
+// daemonGraph.buildDaemonGraph), so we resolve the backing file by matching either.
+
+/**
+ * Resolve which `<dir>/<*.md>` file backs a cron/process referred to by `name`
+ * (a graph node's label). Returns the file BASENAME (no extension) — the canonical
+ * id claude-bot keys on — or null when no file matches. Only ever returns a real
+ * entry from `dir`, so callers can safely `join(dir, base + ".md")` (no traversal).
+ */
+function resolveDaemonFile(dir: string, name: string): string | null {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir).filter((f) => f.endsWith(".md") && !f.startsWith("."));
+  } catch {
+    return null;
+  }
+  // Common case: the label IS the filename.
+  if (entries.includes(`${name}.md`)) return name;
+  // Otherwise match a file whose frontmatter `name` overrides its basename.
+  for (const f of entries) {
+    try {
+      const data = parseFrontmatter(readFileSync(join(dir, f), "utf8")).data;
+      if (typeof data.name === "string" && data.name === name) return f.slice(0, -3);
+    } catch {
+      // unreadable file — skip
+    }
+  }
+  return null;
+}
+
+/** Drop a trigger file the daemon polls (`<dir>/.triggers/<base>`). This is claude-bot's
+ *  general file-based control port — for crons it means "run now", for processes "reconcile
+ *  runtime to disk `enabled`". Best-effort: only the running, owner daemon consumes it. */
+function writeTrigger(dir: string, base: string): void {
+  const triggerDir = join(dir, ".triggers");
+  mkdirSync(triggerDir, { recursive: true });
+  writeFileSync(join(triggerDir, base), new Date().toISOString());
+}
+
+/** Flip the `enabled` frontmatter of a cron/process `*.md`, preserving the rest of the
+ *  file (comments, key order, body). Returns the resolved file basename. Throws
+ *  AppError("ENOENT") if no file matches. */
+function setEnabled(subdir: "crons" | "processes", name: string, enabled: boolean, home: string): string {
+  const dir = join(home, subdir);
+  const base = resolveDaemonFile(dir, name);
+  if (!base) {
+    const what = subdir === "crons" ? "Cron" : "Process";
+    throw new AppError("ENOENT", `${what} "${name}" not found`, 404);
+  }
+  const file = join(dir, `${base}.md`);
+  writeFileSync(file, setFrontmatterKey(readFileSync(file, "utf8"), "enabled", enabled));
+  return base;
+}
+
+/** Enable/disable a cron by editing its `enabled` frontmatter. The daemon re-reads
+ *  every cron file on its next scheduler tick, so no trigger is needed for crons. */
+export function setCronEnabled(name: string, enabled: boolean, home: string = claudeBotHome()): void {
+  setEnabled("crons", name, enabled, home);
+}
+
+/**
+ * Enable/disable a background process. Flips its `enabled` frontmatter on disk (the
+ * source of truth — instant in the graph read, honored on the next daemon boot) AND
+ * drops a reconcile trigger at `<home>/processes/.triggers/<basename>`. Unlike crons,
+ * the daemon doesn't re-read process defs per tick, so the trigger nudges the running
+ * daemon to bring this process's RUNTIME in line with its new on-disk `enabled` (start
+ * it / stop it) via claude-bot's general process-trigger port. No-op vs the live process
+ * if the daemon isn't running; the disk flip still takes effect on next boot.
+ */
+export function setProcessEnabled(name: string, enabled: boolean, home: string = claudeBotHome()): void {
+  const base = setEnabled("processes", name, enabled, home);
+  writeTrigger(join(home, "processes"), base);
+}
+
+/**
+ * Request claude-bot to run a cron NOW, out of schedule: drop a trigger file at
+ * `<home>/crons/.triggers/<basename>` — the exact contract claude-bot's daemon polls
+ * (~5s) via processTriggers(). Fires only if the daemon is running AND this device is
+ * the owner; otherwise the file is consumed without firing. Throws AppError("ENOENT")
+ * if no cron matches `name`.
+ */
+export function runCron(name: string, home: string = claudeBotHome()): void {
+  const dir = join(home, "crons");
+  const base = resolveDaemonFile(dir, name);
+  if (!base) throw new AppError("ENOENT", `Cron "${name}" not found`, 404);
+  writeTrigger(dir, base);
 }

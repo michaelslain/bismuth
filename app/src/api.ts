@@ -119,6 +119,12 @@ export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
   daemonGraph: () => getJson<GraphData>("/daemon/graph"),
+  // Daemon supervision writes (claude-bot crons + processes). Enable/disable edits the
+  // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the
+  // raw Response so the caller can surface a toast on failure (404 = unknown name).
+  setCronEnabled: (name: string, enabled: boolean) => post("/daemon/cron/toggle", { name, enabled }),
+  runCron: (name: string) => post("/daemon/cron/run", { name }),
+  setProcessEnabled: (name: string, enabled: boolean) => post("/daemon/process/toggle", { name, enabled }),
   graphViews: () => getJson<{ second: ViewLayout; third: ViewLayout }>("/graph/views"),
   tree: () => getJson<TreeEntry[]>("/tree"),
   read: (path: string) => getText(`/file?path=${encodeURIComponent(path)}`),

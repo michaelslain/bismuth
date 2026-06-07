@@ -1,8 +1,18 @@
 // app/src/DaemonList.tsx
 // Daemon-mode sidebar panel: lists cron and process nodes with live status.
 // Replaces the community ClusterLegend when graph mode is "daemon".
-import { For, Show, createMemo } from "solid-js";
+//
+// Right-clicking a row opens the app's shared context menu (openContextMenu →
+// native menu in Tauri, else the HTML <ContextMenu>) to enable/disable a cron or
+// process and run a cron on command. Actions hit the /daemon/* write routes, toast
+// the result, and ask the parent to re-poll the graph so the row updates at once.
+import { For, Show, createMemo, createSignal } from "solid-js";
+import { Portal } from "solid-js/web";
 import type { GraphNode } from "../../core/src/graph";
+import { openContextMenu } from "./nativeMenu";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { api } from "./api";
+import { pushToast } from "./Toast";
 
 function relTime(ms: number): string {
   const diff = Date.now() - ms;
@@ -72,7 +82,11 @@ function statusLabel(node: GraphNode): string {
   return "never";
 }
 
-function CronRow(props: { node: GraphNode; onFocus: (ids: string[]) => void }) {
+function CronRow(props: {
+  node: GraphNode;
+  onFocus: (ids: string[]) => void;
+  onMenu: (node: GraphNode, e: MouseEvent) => void;
+}) {
   const status = () => nodeStatus(props.node);
   const freq = () => {
     const s = props.node.daemon?.schedule;
@@ -82,6 +96,7 @@ function CronRow(props: { node: GraphNode; onFocus: (ids: string[]) => void }) {
     <div
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => props.onFocus([props.node.id])}
+      onContextMenu={(e) => props.onMenu(props.node, e)}
       style={{
         display: "flex",
         "align-items": "center",
@@ -146,12 +161,17 @@ function CronRow(props: { node: GraphNode; onFocus: (ids: string[]) => void }) {
   );
 }
 
-function ProcessRow(props: { node: GraphNode; onFocus: (ids: string[]) => void }) {
+function ProcessRow(props: {
+  node: GraphNode;
+  onFocus: (ids: string[]) => void;
+  onMenu: (node: GraphNode, e: MouseEvent) => void;
+}) {
   const enabled = () => props.node.daemon?.enabled !== false;
   return (
     <div
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => props.onFocus([props.node.id])}
+      onContextMenu={(e) => props.onMenu(props.node, e)}
       style={{
         display: "flex",
         "align-items": "center",
@@ -200,10 +220,68 @@ function ProcessRow(props: { node: GraphNode; onFocus: (ids: string[]) => void }
 export function DaemonList(props: {
   nodes: GraphNode[];
   onFocus: (ids: string[]) => void;
+  /** Re-poll the daemon graph after an action so the row reflects it immediately. */
+  onChanged?: () => void;
 }) {
   const crons = createMemo(() => props.nodes.filter((n) => n.kind === "cron"));
   const processes = createMemo(() => props.nodes.filter((n) => n.kind === "process"));
   const empty = createMemo(() => crons().length === 0 && processes().length === 0);
+
+  const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+
+  /** The name claude-bot keys on = the node label (frontmatter name ?? filename). */
+  const nameOf = (node: GraphNode) => node.label;
+
+  async function toggleEnabled(node: GraphNode) {
+    const enabled = node.daemon?.enabled !== false;
+    const verb = enabled ? "Disabled" : "Enabled";
+    const call = node.kind === "cron" ? api.setCronEnabled : api.setProcessEnabled;
+    const res = await call(nameOf(node), !enabled);
+    if (res.ok) {
+      pushToast(`${verb} ${node.label}`);
+      props.onChanged?.();
+    } else {
+      pushToast(`Couldn't ${enabled ? "disable" : "enable"} ${node.label}`);
+    }
+  }
+
+  async function runNow(node: GraphNode) {
+    const res = await api.runCron(nameOf(node));
+    if (res.ok) {
+      pushToast(`Triggered ${node.label}`);
+      // The daemon fires it on its next poll (~5s); nudge a refresh so the row's
+      // "running" state shows up shortly after.
+      setTimeout(() => props.onChanged?.(), 600);
+    } else {
+      pushToast(`Couldn't run ${node.label}`);
+    }
+  }
+
+  function itemsFor(node: GraphNode): MenuItem[] {
+    const enabled = node.daemon?.enabled !== false;
+    const toggle: MenuItem = enabled
+      ? { label: "Disable", icon: "PowerOff", onSelect: () => void toggleEnabled(node) }
+      : { label: "Enable", icon: "Power", onSelect: () => void toggleEnabled(node) };
+    if (node.kind === "cron") {
+      return [
+        {
+          label: "Run now",
+          icon: "Play",
+          // claude-bot ignores a run trigger for an already-running job.
+          disabled: node.daemon?.running === true,
+          onSelect: () => void runNow(node),
+        },
+        { ...toggle, separatorBefore: true },
+      ];
+    }
+    return [toggle];
+  }
+
+  const openMenu = (node: GraphNode, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openContextMenu(e.clientX, e.clientY, itemsFor(node), setMenu);
+  };
 
   return (
     <div
@@ -237,7 +315,7 @@ export function DaemonList(props: {
         >
           Crons <span style={{ opacity: 0.6 }}>{crons().length}</span>
         </div>
-        <For each={crons()}>{(node) => <CronRow node={node} onFocus={props.onFocus} />}</For>
+        <For each={crons()}>{(node) => <CronRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
       </Show>
       <Show when={processes().length > 0}>
         <div
@@ -253,7 +331,17 @@ export function DaemonList(props: {
         >
           Processes <span style={{ opacity: 0.6 }}>{processes().length}</span>
         </div>
-        <For each={processes()}>{(node) => <ProcessRow node={node} onFocus={props.onFocus} />}</For>
+        <For each={processes()}>{(node) => <ProcessRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
+      </Show>
+      <Show when={menu()}>
+        {(m) => (
+          // Portal to <body>: the menu is `position: fixed`, but `.graph-legend-card`'s
+          // backdrop-filter makes it a containing block — without the portal the menu
+          // would be positioned relative to the card, not the viewport (lands off-cursor).
+          <Portal>
+            <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />
+          </Portal>
+        )}
       </Show>
     </div>
   );
