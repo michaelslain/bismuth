@@ -124,6 +124,7 @@ function normalizeView(raw: unknown): ViewConfig {
     dueField: strOrUndef(o.dueField),
     easeField: strOrUndef(o.easeField),
     intervalField: strOrUndef(o.intervalField),
+    bidirectional: o.bidirectional === true ? true : undefined,
     // chart bindings
     x: strOrUndef(o.x),
     y: strOrUndef(o.y),
@@ -231,6 +232,8 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // chart axis/aggregation keys (flat persistence for chart views)
     if (AGGREGATE_VALUES.includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
     if (BIN_VALUES.includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
+    // flashcards: top-level `bidirectional` configures the default view (flat persistence).
+    if (typeof raw.bidirectional === "boolean") config.views[0].bidirectional = raw.bidirectional;
   }
 
   const rows = parseRows(body, meta);

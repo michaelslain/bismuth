@@ -173,8 +173,20 @@ export const api = {
   reviewCard: (id: string, response: "hard" | "good" | "easy", question?: string) =>
     post("/cards/review", { id, response, question }),
   // Row-based review for a flashcard base: advances the row's due/ease/interval columns.
-  reviewCardRow: (file: string, index: number, response: "hard" | "good" | "easy") =>
-    post("/cards/review", { file, index, response }),
+  // `fields` overrides which columns to advance — a bidirectional reverse review passes
+  // the `*Back` triple so each direction is scheduled independently.
+  reviewCardRow: (
+    file: string,
+    index: number,
+    response: "hard" | "good" | "easy",
+    fields?: { due: string; ease: string; interval: string },
+  ) =>
+    post("/cards/review", {
+      file,
+      index,
+      response,
+      ...(fields ? { dueField: fields.due, easeField: fields.ease, intervalField: fields.interval } : {}),
+    }),
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
   deleteProperty: (path: string, key: string) => post("/delete-property", { path, key }),
