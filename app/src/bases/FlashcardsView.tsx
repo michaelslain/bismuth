@@ -9,8 +9,8 @@ import type { BaseConfig, Row } from "../../../core/src/bases/types";
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (lucide-solid icons, Solid client-only code). Import
 // for local use, and re-export to preserve the existing `./FlashcardsView` public surface.
-import { buildQueue, nextPosAfterGrade, type QueueItem } from "./flashcardsQueue";
-export { buildQueue, nextPosAfterGrade, type QueueItem };
+import { buildQueue, nextPosAfterGrade, backField as revScheduleCol, type QueueItem, type CardDir } from "./flashcardsQueue";
+export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir };
 
 /**
  * Flashcards view over a base's rows. Cards are table rows (front/back/due/ease/interval).
@@ -32,19 +32,34 @@ export function FlashcardsView(props: {
   const frontField = () => view().frontField ?? "front";
   const backField = () => view().backField ?? "back";
   const dueField = () => view().dueField ?? "due";
+  const easeField = () => view().easeField ?? "ease";
+  const intervalField = () => view().intervalField ?? "interval";
+  const bidirectional = () => !!view().bidirectional;
   const today = new Date().toISOString().slice(0, 10);
 
   const [cram, setCram] = createSignal(false);
 
   // The review queue: due cards normally; ALL cards in cram mode (order preserved).
-  const queue = createMemo(() => buildQueue(props.rows, dueField(), today, cram()));
+  // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
+  const queue = createMemo(() => buildQueue(props.rows, dueField(), today, cram(), bidirectional()));
 
   const [pos, setPos] = createSignal(0);
   const [revealed, setRevealed] = createSignal(false);
 
   const current = () => (pos() < queue().length ? queue()[pos()] : null);
-  const frontHtml = (r: Row) => renderMarkdown(String(r.note[frontField()] ?? ""));
-  const backHtml = (r: Row) => renderMarkdown(String(r.note[backField()] ?? ""));
+  // Prompt = the side being asked; answer = the side revealed. For a reverse card the
+  // back column is the prompt and the front column is the answer.
+  const promptCol = (it: QueueItem) => (it.dir === "fwd" ? frontField() : backField());
+  const answerCol = (it: QueueItem) => (it.dir === "fwd" ? backField() : frontField());
+  const promptHtml = (it: QueueItem) => renderMarkdown(String(it.r.note[promptCol(it)] ?? ""));
+  const answerHtml = (it: QueueItem) => renderMarkdown(String(it.r.note[answerCol(it)] ?? ""));
+
+  // Which scheduling columns a direction advances: forward uses the base triple,
+  // reverse uses the `*Back` companions so each direction is scheduled independently.
+  const scheduleFields = (dir: CardDir) =>
+    dir === "fwd"
+      ? { due: dueField(), ease: easeField(), interval: intervalField() }
+      : { due: revScheduleCol(dueField()), ease: revScheduleCol(easeField()), interval: revScheduleCol(intervalField()) };
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
@@ -57,7 +72,7 @@ export function FlashcardsView(props: {
     // the due-only queue on the onReviewed refetch. The shorter queue shifts the
     // next card into the current pos, so we stay put (mirrors deleteCurrent)
     // rather than incrementing into a queue whose membership just changed.
-    if (persisted) await api.reviewCardRow(props.basePath!, c.index, response);
+    if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
     setPos(nextPosAfterGrade(pos(), { cram: cram(), persisted }));
     if (!cram()) props.onReviewed();
   };
@@ -199,18 +214,25 @@ export function FlashcardsView(props: {
           <div class="review">
             <div class="review-progress">
               {pos() + 1} / {queue().length}
+              <Show when={bidirectional()}>
+                {" · "}
+                <span class="card-dir" title={current()!.dir === "fwd" ? "front → back" : "back → front"}>
+                  {current()!.dir === "fwd" ? "front → back" : "back → front"}
+                </span>
+              </Show>
               <Show when={cram()}> · cram (not scheduled)</Show>
             </div>
 
             {/*
-              Keyed by the row index via <For> over a single-element array: <For> reconciles by
-              item value, so when the current card's index changes the element is disposed and a
-              fresh one is created (instant reset to front + entrance anim). When only the row data
-              refreshes (same index) the value is unchanged, so it does NOT remount. The flip is a
-              transform transition on the persistent element, so it only animates when toggling
-              `revealed` on the SAME (already-mounted) card — never a backward flip between cards.
+              Keyed by row index + direction via <For> over a single-element array: <For> reconciles
+              by item value, so when the current card's index OR direction changes the element is
+              disposed and a fresh one is created (instant reset to front + entrance anim). Keying on
+              direction too means a bidirectional row's forward→reverse hand-off remounts cleanly
+              instead of flipping backward. When only the row data refreshes (same index+dir) the
+              value is unchanged, so it does NOT remount. The flip is a transform transition on the
+              persistent element, so it only animates when toggling `revealed` on the SAME card.
             */}
-            <For each={[current()!.index]}>
+            <For each={[`${current()!.index}:${current()!.dir}`]}>
               {() => (
                 <div
                   class={`flip-card card-appear ${revealed() ? "flipped" : ""}`}
@@ -218,11 +240,11 @@ export function FlashcardsView(props: {
                 >
                   <div class="flip-inner">
                     <div class="flip-face flip-front">
-                      <div class="card-md" innerHTML={frontHtml(current()!.r)} />
+                      <div class="card-md" innerHTML={promptHtml(current()!)} />
                     </div>
                     <div class="flip-face flip-back">
-                      <div class="card-front-label" innerHTML={frontHtml(current()!.r)} />
-                      <div class="card-md" innerHTML={backHtml(current()!.r)} />
+                      <div class="card-front-label" innerHTML={promptHtml(current()!)} />
+                      <div class="card-md" innerHTML={answerHtml(current()!)} />
                     </div>
                   </div>
                 </div>
