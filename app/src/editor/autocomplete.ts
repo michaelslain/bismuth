@@ -11,6 +11,8 @@ import { normalizeTag } from "../../../core/src/schema/coerce";
 import type { Schema, PropertyType } from "../../../core/src/schema/types";
 import { matchTemplateTokenPrefix } from "./templateToken";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
+import { querySource } from "./queryComplete";
+import { taskSource } from "./taskComplete";
 
 // Shared insert for every completion source: replace [from,to) with `insert`, put the
 // cursor `cursorOffset` chars past `from`, and tag the change as a picked completion so
@@ -287,6 +289,8 @@ export function vaultCompletion(opts: {
       enumValueSource(opts.getSchema, opts.inFrontmatter),
       tagListSource(opts.getTags, opts.inFrontmatter),
       // body-position sources
+      querySource(),          // inside a ```query block: keys / view / tasks-DSL / group
+      taskSource(),           // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
       templateTokenSource(),
       wikilinkSource(opts.getNotes),
       tagSource(opts.getTags),
