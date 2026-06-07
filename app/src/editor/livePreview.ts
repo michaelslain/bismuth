@@ -881,6 +881,19 @@ export const livePreview = [
       "min-width": "2.5em",
     },
     ".cm-table-rendered th": { "font-weight": "600", background: "var(--surface-2)" },
+    // Inline markdown rendered INSIDE a cell's display face (see inlineMarkdown.ts).
+    // `marked` emits native <code>/<a>/<del>; mirror the prose inline-mark styling so a
+    // cell looks the same as the same marks elsewhere in the editor. <strong>/<em> use
+    // the browser defaults (bold / italic), and wikilinks reuse the `.cm-wikilink` rule.
+    ".cm-table-rendered code": {
+      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      background: "rgba(140,140,140,0.18)",
+      padding: "0 3px",
+      "border-radius": "3px",
+    },
+    ".cm-table-rendered a": { color: "var(--accent)", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
+    ".cm-table-rendered del": { opacity: "0.7" },
     ".cm-td:focus": { outline: "none", "box-shadow": "inset 0 0 0 2px var(--accent)", "border-radius": "2px" },
     // `+` edge bars: a thin add-column bar just off the right border and an add-row bar
     // just below the bottom border. Faint, fade in on hover, accent on their own hover.

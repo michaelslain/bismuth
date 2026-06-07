@@ -9,6 +9,8 @@
 import { EditorView, WidgetType } from "@codemirror/view";
 import { type Align, groupTableBlocks, serializeTable } from "./tableModel";
 import { setActiveTableEffect } from "./tableState";
+import { renderInlineMarkdown } from "./inlineMarkdown";
+import { onMathReady } from "./katexLoader";
 
 // Item shape understood by App's shared `oa-context-menu` handler (mirrors EditorMenuItem).
 type TableMenuItem = { label: string; onSelect: () => void; icon?: string; disabled?: boolean; separatorBefore?: boolean };
@@ -30,12 +32,22 @@ function edgeBar(cls: string, label: string, onTrigger: () => void): HTMLButtonE
   return btn;
 }
 
-/** Read the current cell grid out of the rendered table DOM (display text per cell). */
+/** Read the current cell grid (raw markdown SOURCE per cell) out of the rendered table
+ *  DOM. A cell normally displays rendered markdown, so its source is kept in `data-src`;
+ *  the one cell currently being edited holds its live (possibly unsaved) source as the
+ *  contenteditable text, so we read that — this captures an in-flight edit when a
+ *  `+`/menu action commits while a cell still has focus. */
 function readGrid(root: HTMLElement): string[][] {
   const rows: string[][] = [];
   for (const tr of Array.from(root.querySelectorAll("tr"))) {
     const cells = Array.from(tr.querySelectorAll<HTMLElement>("[data-cell]"));
-    if (cells.length) rows.push(cells.map((c) => (c.innerText ?? "").replace(/\r?\n/g, " ").trim()));
+    if (cells.length)
+      rows.push(
+        cells.map((c) => {
+          const raw = c.dataset.editing === "1" ? (c.innerText ?? "") : (c.dataset.src ?? "");
+          return raw.replace(/\r?\n/g, " ").trim();
+        }),
+      );
   }
   return rows;
 }
@@ -90,6 +102,32 @@ export class TableWidget extends WidgetType {
     const table = document.createElement("table");
     table.className = "cm-table-rendered";
 
+    // A cell has two faces: a DISPLAY face (rendered inline markdown, shown when idle)
+    // and an EDIT face (raw markdown source as plain text, shown while focused). We swap
+    // between them on focus so the user formats prose but edits the underlying markdown.
+    const renderDisplay = (cell: HTMLElement): void => {
+      cell.innerHTML = renderInlineMarkdown(cell.dataset.src ?? "");
+      // Inline `$math$` renders empty until KaTeX lazy-loads; re-render this cell once it
+      // lands (unless the user has since started editing it).
+      const maths = cell.querySelectorAll<HTMLElement>(".cm-inline-math");
+      if (maths.length && Array.from(maths).some((m) => !m.firstChild)) {
+        onMathReady(() => {
+          if (cell.isConnected && cell.dataset.editing !== "1") renderDisplay(cell);
+        });
+      }
+    };
+    const enterEdit = (cell: HTMLElement): void => {
+      if (cell.dataset.editing === "1") return;
+      cell.dataset.editing = "1";
+      cell.textContent = cell.dataset.src ?? ""; // reveal raw markdown for editing
+    };
+    const leaveEdit = (cell: HTMLElement): void => {
+      if (cell.dataset.editing !== "1") return;
+      cell.dataset.editing = "";
+      cell.dataset.src = (cell.innerText ?? "").replace(/\r?\n/g, " ").trim();
+      renderDisplay(cell); // back to the formatted face
+    };
+
     const focusCell = (r: number, c: number): boolean => {
       const el = root.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`);
       if (!el) return false;
@@ -120,7 +158,12 @@ export class TableWidget extends WidgetType {
         cell.setAttribute("spellcheck", "false");
         const a = this.aligns[c] ?? "none";
         if (a !== "none") cell.style.textAlign = a;
-        cell.textContent = row[c] ?? "";
+        cell.dataset.src = row[c] ?? ""; // raw markdown source (source of truth)
+        renderDisplay(cell); // initial face: rendered inline markdown
+        // Swap to the raw-source face on focus and back to the rendered face on blur, so
+        // the cell shows formatted markdown when idle but is edited as plain source.
+        cell.addEventListener("focusin", () => enterEdit(cell));
+        cell.addEventListener("focusout", () => leaveEdit(cell));
         // Take full control of clicks: CodeMirror's own mousedown would move the editor
         // selection to the (atomic) widget boundary and focus the doc instead of the
         // cell, so we stop it, then focus the cell and drop the caret at the click point
