@@ -15,8 +15,6 @@ export OA_MEMORY="/path/to/your/memory"         # Claude-bot memory directory
 cd app && bun run dev                            # Tauri app + backend on :4321
 ```
 
-For first-time setup without existing vaults, see **Creating Test Vaults** below.
-
 ## Project Overview
 
 **Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with four workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
@@ -24,7 +22,7 @@ For first-time setup without existing vaults, see **Creating Test Vaults** below
 - **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with Claude-bot memory
 - **cli**: Command-line interface for managing vaults (`oa` binary)
 - **app**: Tauri + Solid + TypeScript desktop application with CodeMirror editor and 3D/2D graph visualizations
-- **relay**: A tiny Claude Code plugin (hooks only) that reports each terminal-tab Claude session + its subagents to core's in-process agent registry, powering the "agents" graph (see Relay Integration)
+- **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process registry, powering the "agents" graph (see Relay Integration)
 
 The system treats knowledge as a "three-brain" model:
 - **You** (self node): Central hub representing the user
@@ -33,15 +31,11 @@ The system treats knowledge as a "three-brain" model:
 
 ## Environment Setup
 
-`bun run dev` requires two env vars (it errors if unset; both dirs must exist):
-- `OA_VAULT` — 2nd-brain vault dir (markdown files), e.g. `~/my-vault`
-- `OA_MEMORY` — 3rd-brain memory dir (Claude-bot notes), e.g. `~/.claude/memories`
-
-First-time dev with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo "# Hello" > /tmp/test-vault/example.md`, then export both and `cd app && bun run dev`.
+`bun run dev` requires two env vars (errors if unset; both dirs must exist): `OA_VAULT` (2nd-brain markdown vault) and `OA_MEMORY` (3rd-brain Claude-bot notes). First-time with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo "# Hello" > /tmp/test-vault/example.md`, export both, then `cd app && bun run dev`.
 
 ## Development Artifacts
 
-Plans, design docs, and other temporary dev artifacts live outside the source tree in `~/.claude/bismuth-docs/` (git-ignored, not committed).
+Plans, design docs, and temporary dev artifacts live outside the source tree in `~/.claude/bismuth-docs/` (git-ignored).
 
 ## Key Commands
 
@@ -65,13 +59,7 @@ Plans, design docs, and other temporary dev artifacts live outside the source tr
 
 ### Running Multiple Agents Concurrently
 
-When multiple Claude Code sessions run this project, port conflicts occur on default `:4321` (backend) and `:1420` (Tauri). Override with:
-
-```bash
-OA_VAULT="/path" OA_MEMORY="/path" PORT=4322 bun run dev
-```
-
-Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignments across active sessions.
+Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For more, override: `OA_VAULT="/path" OA_MEMORY="/path" PORT=4322 bun run dev` (the standalone server takes `--port`; the frontend reads `VITE_API_BASE`). See `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/`.
 
 ## Architecture
 
@@ -81,15 +69,15 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 
 **Key modules**:
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
-  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`
-  - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update`, `/row/delete`, `/replace`
-  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 20 MB), `/relay/session`, `/relay/session/end`, `/relay/subagent/start`, `/relay/subagent/stop` (agent-graph ingest from the relay plugin's hooks — update the in-process registry, no vault-cache invalidation)
+  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`, plus the daemon reads `/daemon/status`, `/daemon/devices`, `/daemon/graph` (daemon-mode graph), `/daemon/install` (see Daemon Integration)
+  - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update` (create/update a base row — `index:null` creates), `/row/delete`, `/replace`, `/daemon/owner` (claim this device as owner)
+  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 100 MB), `/relay/session`, `/relay/session/end`, `/relay/subagent/start`, `/relay/subagent/stop` (agent-graph ingest from the relay plugin's hooks), `/daemon/setup`, `/daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/process/toggle` (all daemon-shared-state writes, NOT vault mutations — no cache invalidation)
   - GET reads also include: `GET /asset` (serve a vault media file by filename — filename-first resolution, used by embedBlock)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
-- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag", "self" (the "you" hub — one per brain view, NOT from the backend builders; injected on the frontend from the open tabs/panes, see `app/src/graph/youNode.ts`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag", "open" (you→an open note)
+- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag", "self" (the "you" hub — one per brain view, NOT from the backend builders; injected on the frontend from the open tabs/panes, see `app/src/graph/youNode.ts`), plus the daemon-mode kinds "daemon"/"cron"/"process" (a node may carry a `DaemonVizState`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag", "open" (you→an open note), "supervises" (daemon hub→cron/process)
 - `layout.ts` — Pure layout computation (pivot-MDS + force simulation). Produces 2D and 3D `Positions` maps used by the renderer
 - `layout-cache.ts` — `attachLayout()` writes precomputed `position2d` / `position3d` onto graph nodes, keyed by vault. Frontend morphs between them instead of running its own force sim
 - `files.ts` — File I/O: list markdown, read/write notes, path-traversal rejection
@@ -99,6 +87,9 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `memory.ts` — Build memory graph from Claude-bot memory notes (in `mem:` namespace)
 - `agents.ts` — Build the "agents" graph (you → terminal-tab sessions → subagents) from the in-process relay registry; pure over a `RelaySnapshot` + the live pty-id set
 - `relay.ts` — In-process registry of terminal-tab Claude sessions + their subagents, populated by the relay plugin's hooks via `POST /relay/*`, pruned against the live pty set (see Relay Integration)
+- `daemon.ts` — Reads/writes the claude-bot daemon's shared state files (device-id, devices.json, owner.json, daemon.pid); exports `daemonStatus`/`listDevices`/`getOwner`/`setOwner`/`setCronEnabled`/`setProcessEnabled`/`runCron`. Never throws — degrades gracefully on missing files. Home dir from `daemon.home` setting. See Daemon Integration
+- `daemonGraph.ts` — Builds the "daemon" graph (daemon hub → cron/process nodes, `supervises` edges) from the daemon's on-disk crons/processes; `daemonSnapshot`/`buildDaemonGraph`/`daemonGraph`
+- `daemonViz.ts` — Pure `nodeVisualState(state)` mapping a daemon node's `{enabled, running}` → visual tokens (fill/border/opacity): disabled = dim, no border; running = solid palette fill; enabled-idle = base fill + palette border ring
 - `backup.ts` — Git commit snapshot of vault
 - `tasks.ts`, `tasks-query.ts` — Tasks extraction + query DSL (Obsidian Tasks-compatible)
 - `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`). Injects relay provenance into each tab's env (`CLAUDE_TERMINAL_ID`, `CLAUDE_RELAY_URL`) + a PATH shim (`relay/shim/claude`) so a bare `claude` in a tab auto-loads the relay plugin via `--plugin-dir` (`buildPtyEnv`, pure + tested)
@@ -107,19 +98,9 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `bases/` — Bases DSL: see "Bases" section below
 - `srs/` — Spaced-repetition system: see "Flashcards / SRS" section below
 
-**Caching strategy**:
-- `cachedGraph` and `cachedTree` persist until vault/memory files change
-- File-watch changes trigger a debounced 250ms invalidation timer
-- On invalidation, the server fingerprints changed notes via `changeClassifier.ts` to determine which caches are dirty (graph, tree, or both)
-- Only truly "dirty" caches are invalidated; content-only edits that don't affect links/tags/icon stay silent to graph/tree consumers
-- The server bumps `version` (so editors reconcile external edits) and pushes an SSE event on `/events` with `{version, paths, dirty}` so subscribers know which caches need refetching
+**Caching strategy**: `cachedGraph`/`cachedTree` persist until vault/memory files change. A file-watch change starts a debounced 250ms timer; on fire the server fingerprints changed notes via `changeClassifier.ts` to mark which caches are dirty (graph/tree/both) — content-only edits that don't touch links/tags/icon stay silent. It then bumps `version` and pushes an SSE event `{version, paths, dirty}` on `/events`.
 
-**Data flow**:
-1. Frontend opens a single `EventSource("/events")` connection on boot (`app/src/serverVersion.ts`)
-2. On each SSE event, frontend re-fetches `/graph` (or just `/file` for the changed path)
-3. A low-frequency `/version` poll runs as a belt-and-suspenders fallback for dropped SSE connections (proxies, sleep)
-4. Graph is computed lazily on first request after invalidation
-5. Node positions are precomputed on the backend (`layout.ts`) and attached to nodes, not force-simulated in the browser
+**Data flow**: frontend opens one `EventSource("/events")` on boot (`serverVersion.ts`); each event re-fetches `/graph` (or just `/file`); a low-frequency `/version` poll is the dropped-SSE fallback. The graph is computed lazily on first request after invalidation; node positions are precomputed on the backend (`layout.ts`) and attached, not force-simulated in the browser.
 
 ### Frontend App (`app/`)
 
@@ -129,9 +110,9 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `App.tsx` — Root. Owns the tab + pane tree, active file routing, graph mode, settings persistence, global keyboard handling
 - `panes.ts` — Pure binary-tree model for split panes (Leaf/Split nodes). Fully unit-tested in `panes.test.ts`
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
-- `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, plus prefixed `::flashcards:`, `::term:`, `::export:`). Settings is the settings.yaml file opened by path; notes/bases/sheets/drawings are routed by file path. No `::calendar` sentinel — calendar is a Bases view.
+- `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`). Notes/bases/sheets/drawings/settings route by file path; no `::calendar` sentinel (calendar is a Bases view).
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — the view into a base/notes; body is a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables rendered as interactive widgets), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — renders a `BaseView` from a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec; SOURCE button toggles raw editing, auto-collapses when the cursor leaves), `queryComplete` (autocomplete inside ` ```query ` blocks — keys, view types, task-DSL snippets), `taskComplete` (task-metadata autocomplete in `- [ ]` lines — `due`/`scheduled`/`priority` keywords expand to emoji), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion; resizable, size persisted as `|WxH`), `htmlPreview` (render sanitized raw HTML — block + inline), `inlineMarkdown` (markdown rendering inside table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables — contenteditable cells, Shift+Enter multi-line, drag-resize columns/rows persisted per-note), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -144,12 +125,12 @@ Check `concurrent-agents-ports.md` in `~/.claude/bismuth-docs/` for port assignm
 - `bases/` — Bases view renderers (Table, Cards, Kanban, List, Map, Calendar, Flashcards, Bar, Line, Stat, Heatmap, plus shared `renderValue`)
 - `calendar/` — Calendar state + components (no standalone page; rendered as a Bases view — see "Calendar" section below)
 - `api.ts` — HTTP client for core endpoints
-- `settings.ts` — Settings store: seeded synchronously from the spine `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves via `POST /set-setting` (see `settingsDiff.ts`) so the backend can merge in place without clobbering comments / the property registry. Precise `Settings` interface mirrors the schema (kept honest by `settings.parity.test.ts`).
+- `settings.ts` — Settings store: seeded from `DEFAULTS`, hydrated from `GET /settings`, persisted by PATCHing only changed leaves via `POST /set-setting` (`settingsDiff.ts`) so the backend merges in place without clobbering comments. `Settings` interface mirrors the schema (`settings.parity.test.ts`).
 - `settingsCssVars.ts` — Projects appearance/ui/calendar/terminal settings into `:root` CSS custom properties; stylesheets reference them via `var(--name, fallback)`. Add a CSS-driven setting = one schema entry + one line here + one `var()` in CSS.
 
 **Graph rendering**:
 - `graph/WebGLRenderer.ts` — Three.js renderer for both 2D (flat birdseye) and 3D (volumetric orbit) modes, morphing between the backend's precomputed layouts
-- `graph/LabelLayer.ts` — DOM-overlay file-name labels: each visible label is a native `<div>` (UI font, theme-matched via CSS vars) absolutely positioned over the canvas — NOT Three.js sprites. Pooled/reused divs, viewport culling, occlusion, zoom-band discovery, an "always-on" hub set, and a bold/larger always-on "you" hub label. `setColors()` pushes per-theme `--label-text`/`--label-bg` custom props onto the overlay
+- `graph/LabelLayer.ts` — DOM-overlay file-name labels: pooled native `<div>`s positioned over the canvas (NOT Three.js sprites), with viewport culling, occlusion, zoom-band discovery, and an always-on hub set (incl. a bold "you" label). `setColors()` pushes per-theme `--label-text`/`--label-bg`
 - `graph/labelSelection.ts` — Pure `computeAlwaysOnSet` (top-N nodes by undirected edge count). Unit-tested
 - `graph/collide.ts` — Per-node collision-radius helpers (big hubs repel as their drawn circle, not a point)
 - `graph/d3-force-3d.d.ts` — Type stubs for d3-force-3d library
@@ -175,7 +156,7 @@ A query/view system. A **base is a `type: base` md file** — its frontmatter de
 - `functions.ts` — Built-in functions on file/number/string/array/date values (method-dispatch tables per type)
 - `query.ts` — Apply a Base to the vault data feed (`basesData.ts`) and return rows + grouping
 
-**Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) now spans 11 kinds — `TableView`, `CardsView`, `KanbanView`, `ListView`, `MapView`, plus `CalendarView`, `FlashcardsView`, and the chart views `BarView`/`LineView`/`StatView`/`HeatmapView` (backed by `core/src/bases/chart.ts`). `renderValue.tsx` formats cell values consistently across views. `BaseView.tsx` is the host that picks the right renderer.
+**Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) spans 11 string kinds — `table|cards|list|kanban|map|calendar|flashcards|bar|line|stat|heatmap` (charts backed by `bases/chart.ts`). `BaseView.tsx` is the host that picks the renderer (full-pane views like calendar/flashcards render directly from `data().rows`); `renderValue.tsx` formats cells.
 
 A base can also be **queried inside a note** via a ` ```query ` code block — the only embedded block (there is no ` ```base `/` ```view `/` ```tasks `). Its body is either a full inline base config (top-level `views:`/`filters:`/`formulas:`/`source:`) or a flat query spec (`of: [[Base]]`, `tasks: <dsl>`, `where:`, `group:`, `view:`). Rendered inline by `editor/queryBlock.ts`.
 
@@ -184,70 +165,64 @@ A base can also be **queried inside a note** via a ` ```query ` code block — t
 - `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expression; `from: [[Base]]` scopes to that base's notes.
 - `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: [[Base]]` scopes extraction to that base's notes (NOT the whole vault). No `from` = degenerate global case.
 
-Frontmatter accepts a string (`source: notes where #book`, plus top-level `from:`/`ref:`) or an object; `normalizeSource()` coerces both. `resolveSource`/`resolveBaseRows` are cycle-guarded (a `seen` set). All resolution is **server-side** via `POST /rows {spec}` (one resolver); `BaseView.resolveRows` is just `inlineRows ?? api.resolveRows(spec)`.
+Frontmatter accepts a string (`source: notes where #book`) or an object; `normalizeSource()` coerces both. Resolution is cycle-guarded and **server-side** via `POST /rows {spec}`; `BaseView.resolveRows` = `inlineRows ?? api.resolveRows(spec)`.
 
-Inside a flat ` ```query `: `of: [[Base]]` renders that base, `tasks: <dsl>` runs a task query (optionally `from: [[Base]]`), `where:` filters, `view:` picks the render mode. It does **not** iterate notes itself — that's a base's job. A flat block with neither `of:` nor `tasks:` has no source and renders an empty state.
+In a flat block: `of: [[Base]]` renders that base, `tasks: <dsl>` runs a task query (optionally `from: [[Base]]`), `where:`/`view:` filter and pick the mode. It does not iterate notes itself (that's a base's job); neither `of:` nor `tasks:` → empty state.
 
-**Scoped-tasks example** (Google Keep → Do Now): a `Google Keep` base with `source: notes` + `where: file.inFolder("Google Keep")` (cards view); a `Do Now` base with `source: tasks` + `from: "[[Google Keep]]"` (list, grouped) shows only the tasks inside Google Keep's notes.
+**Scoped-tasks example**: a `Do Now` base with `source: tasks` + `from: "[[Google Keep]]"` shows only the tasks inside the `Google Keep` base's notes (not the whole vault).
 
 ### Calendar (`app/src/calendar/` + `app/src/bases/CalendarView.tsx`)
 
 Calendar is a **Bases view kind** — there is no standalone calendar page. To open a calendar, create a `type: base` md with `views: [{ type: calendar }]` (or switch an existing base to calendar view). The calendar view is rendered by `app/src/bases/CalendarView.tsx`.
 
-The `app/src/calendar/` directory holds the shared state and components consumed by that view:
-- `EventStore.ts` — Event CRUD + persistence (tested in `EventStore.test.ts`)
-- `state.ts` — Reactive view state (active date, zoom, selection)
-- `dates.ts` — Date helpers (tested in `dates.test.ts`)
-- `types.ts` — Event / category types
-- `categoryColor.ts` — Status→color mapping for event categories
-- `refresh.ts` — Refresh wiring
-- `components/` — `EventChip`, `EventModal`, `RecurrenceDialog`, `CategoryPanel`, `Toolbar`
-- `components/views/` — `MonthView`, `WeekView`, `ThreeDayView`, `DayView`, `TimeGrid`
+The `app/src/calendar/` directory holds the shared state + components the view consumes: `EventStore.ts` (event CRUD + persistence), `state.ts` (reactive view state), `dates.ts` (date helpers), `types.ts`, `categoryColor.ts` (status→color), `refresh.ts`, `components/` (`EventChip`/`EventModal`/`RecurrenceDialog`/`CategoryPanel`/`Toolbar`), and `components/views/` (`Month`/`Week`/`ThreeDay`/`Day`/`TimeGrid`).
 
 ### Tasks (`core/src/tasks*.ts`)
 
-Obsidian-Tasks-compatible task system. Tasks are not a standalone subsystem — they are a **base source** (`source: tasks`, optionally `from: [[Base]]` to scope to a base's notes). There is no global Tasks page; a focused list is just a base. See the Bases "Sources & composition" section.
-- `core/src/tasks.ts` — Extract task items from markdown (status, due/scheduled/start dates, recurrence, tags); `collectTasksFromPaths` scopes extraction to a note subset
-- `core/src/tasks-query.ts` — Query DSL (`not done`, `due before tomorrow`, etc.)
-- `core/src/bases/taskRow.ts` — `taskToRow`/`filterTaskRows`: project tasks as base `Row`s so any view renders them
-- Tasks are queried via a ` ```query ` block with `tasks: <dsl>` (or a `type: base` md with `source: tasks`) — there is no separate ` ```tasks ` block
-- `POST /tasks/toggle` — Server-side toggle endpoint (rewrites the markdown line)
+Obsidian-Tasks-compatible. Tasks are a **base source** (`source: tasks`, optionally `from: [[Base]]`), not a standalone subsystem — a focused list is just a base (see Bases "Sources & composition"), queried via a ` ```query ` block with `tasks: <dsl>` (no separate ` ```tasks ` block).
+- `tasks.ts` — extract task items from markdown (status, due/scheduled/start, recurrence, tags); `collectTasksFromPaths` scopes to a note subset. `tasks-query.ts` — query DSL (error-collecting, relative dates, sort, AND/OR). `bases/taskRow.ts` — `taskToRow`/`filterTaskRows` project tasks as base `Row`s. `POST /tasks/toggle` rewrites the markdown line.
 
-### Flashcards / SRS (`core/src/srs/` + `app/src/Flashcards.tsx`)
+### Flashcards / SRS (`core/src/srs/` + `app/src/bases/FlashcardsView.tsx`)
 
-Spaced-repetition reviews extracted from markdown notes:
-- `srs/parser.ts` — Parses `?` / `??` flashcard syntax out of notes
-- `srs/cards.ts` — Card model + persistence; also exports `applyReview` (the review-recording entry point)
-- `srs/scheduler.ts` — SM-2-style scheduling (next-due, ease factor)
-- `srs/types.ts`, `srs/reviewRow.ts` — Card/review types and `applyReviewToRow` (row-based reviews for Bases)
-- Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`, `POST /cards/review`
-- `Flashcards.tsx` — Review UI
+Spaced-repetition reviews. Flashcards are a **Bases view kind** (`flashcards`) over a base's rows — the review UI is `app/src/bases/FlashcardsView.tsx`, not a standalone page. There are two code paths:
+- **Markdown cards** (`srs/parser.ts` parses `?`/`??` syntax out of notes; `srs/cards.ts` = card model + persistence + `applyReview`).
+- **Row cards** (a base's rows with front/back/due/ease/interval columns; `srs/reviewRow.ts` `applyReviewToRow` applies SM-2 to a row's scheduling columns).
+- `srs/scheduler.ts` — SM-2-style scheduling (next-due, ease factor) shared by both. `srs/types.ts` — shared types.
+- `app/src/bases/flashcardsQueue.ts` — pure, unit-tested review-queue logic: `buildQueue(rows, dueField, today, cram, bidirectional)`, `nextPosAfterGrade`, stable row-index tracking.
+- **Bidirectional cards**: when enabled, each row yields TWO queue entries (forward + reverse); the reverse direction is scheduled independently in `*Back` companion columns (`dueBack`/`easeBack`/`intervalBack`, via `backField`). Toggle in `BaseSettings.tsx`.
+- **Cram mode** reviews everything ignoring due dates and NEVER writes scheduling (practice, not review).
+- Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due` (GET reads); `POST /cards/review` is dual-mode — `{id, response}` drives markdown cards (`applyReview`), `{file, index, response, dueField?…}` drives row cards (`applyReviewToRow`). Card add/edit/delete in the review UI go through `POST /row/update` (`index:null` = add) and `POST /row/delete`.
 
 ### Terminal (`core/src/terminal.ts` + `app/src/Terminal.tsx`)
 
 In-app terminal tabs. Backend spawns a PTY via `bun-pty` and bridges it over WebSocket on `/terminal`. Frontend renders with xterm.js, with the ANSI palette wired from the graph color theme (`buildAnsiPalette`). DOM-rendered (not canvas), styled to match the editor.
 
-Each PTY's env is built by `buildPtyEnv` (pure, tested): besides `TERM`, it injects the relay provenance (`CLAUDE_TERMINAL_ID` = the pty id, `CLAUDE_RELAY_URL` = this core server) and prepends a PATH shim (`relay/shim/claude`) so a bare `claude` in the tab transparently loads the agent-graph relay plugin via `--plugin-dir`. `claude` is resolved once via `Bun.which` (with PATH augmented by common install dirs); if it can't be resolved the shim is skipped and the tab is a plain shell. See Relay Integration.
+Each PTY's env is built by `buildPtyEnv` (pure, tested): it injects relay provenance (`CLAUDE_TERMINAL_ID`, `CLAUDE_RELAY_URL`) and prepends a PATH shim (`relay/shim/claude`) so a bare `claude` auto-loads the agent-graph relay plugin via `--plugin-dir`. If `claude` can't be resolved (`Bun.which`), the shim is skipped and the tab is a plain shell. See Relay Integration.
 
 ### Sheets (`app/src/SheetView.tsx` + `app/src/sheet/`)
 
-A `.sheet` file is a Univer workbook JSON snapshot. Powered by `@univerjs/presets` (v0.25), code-split via dynamic `import()` behind `sheet/univerSheet.ts` (`mountSheet`/`getSnapshot`/`setDark`/`dispose`). `sheet/snapshot.ts` handles parse/serialize (pure, tested); `sheet/sync.ts` (`isExternalChange`) gates external-edit reloads. Routing: `PaneContent.tsx` sends `*.sheet` to `SheetView`; `listTree` lists them in the sidebar. Persistence reuses `api.read`/`api.write`. Created via "New Spreadsheet". Dark mode via `univerAPI.toggleDarkMode`.
+A `.sheet` file is a Univer workbook JSON snapshot (`@univerjs/presets` v0.25), code-split via dynamic `import()` behind `sheet/univerSheet.ts`. `sheet/snapshot.ts` (parse/serialize, pure) + `sheet/sync.ts` (`isExternalChange` gates external-edit reloads). `PaneContent` routes `*.sheet` → `SheetView`; persistence reuses `api.read`/`api.write`; created via "New Spreadsheet".
+
+### Drawing (`app/src/drawing/` + `core/src/drawing/`)
+
+A `.draw` file is a versioned JSON document (`DrawingDoc`: pages, strokes, paper background) — a multi-page vector sketch surface routed by `PaneContent.tsx` (lazy-loaded `DrawingPage.tsx`), created via "New Drawing".
+- **Backend (`core/src/drawing/`, pure + headless)**: `model.ts` (doc schema, parse/serialize), `geometry.ts` (stroke outlines via perfect-freehand), `smooth.ts` (post-release 4-stage spline relaxation: dedupe → arc-length resample → Gaussian denoise → centripetal Catmull-Rom), `render2d.ts` (Canvas 2D draw, highlighter multiply-blend), `paper.ts` (blank/lines/grid/dots backgrounds), `theme.ts` (7-color palette, theme-aware ink), `export.ts` (`renderDocToPng`/`renderDocToPdf` via `@napi-rs/canvas` + `pdf-lib` — headless only, NOT an HTTP route).
+- **Frontend (`app/src/drawing/`)**: `DrawingCanvas.tsx` (dual canvas — committed base + live draft; pointer + stylus pressure/velocity width), `Toolbar.tsx`, `store.ts` (pages + undo/redo), `input.ts` (stylus detection, width calc).
+- **Persistence**: saved through the generic `PUT /file` (no dedicated drawing route). Raw input is captured lag-free; smoothing is applied on pointer-release.
 
 ### Panes / Tabs
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
-**The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is a first-class tab content — `PaneContent` routes it to a full `GraphView` via a `renderGraph()` prop supplied by `App` (which owns the graph data + mode). There is **no floating "default view"**: `App` seeds a `::graph` tab when nothing is restored, and the close handlers reopen one if every tab closes (tabs are never empty). The `new-tab` and `open-graph` commands both open it. When the active tab already shows the graph in a pane, the sidebar mini-graph (`.graph-floater`) hides + its slot collapses so the graph never renders twice at once.
+**The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is first-class tab content — `PaneContent` routes it to a full `GraphView` via `App`'s `renderGraph()` prop. There is no floating "default view": `App` seeds a `::graph` tab when nothing is restored and reopens one if all tabs close (tabs are never empty). When a pane already shows the graph, the sidebar mini-graph (`.graph-floater`) hides so it never renders twice.
 
 **Tab renaming**: Double-click or right-click → Rename on any tab to set a custom label. The name is stored as a `name` field on the `Leaf` node in `panes.ts` and overrides the automatic `contentLabel()`-derived title. Cleared by renaming to empty.
 
 ### Commands & Sidebar Toolbar
 
-Commands are split into pure data and behavior so the palette and the sidebar header bar (`.sidebar-icons`, above the file tree) share one source:
-- `core/src/commands.ts` — `COMMAND_CATALOG` (`id`, `label`, `icon`) + `COMMAND_IDS`. Pure data; lives in core so the settings schema derives the `toolbar.command` enum from it.
-- `app/src/commands.ts` — `bindCommands(handlers)` maps each id to a live `{id, label, icon, action}`. Both `CommandPalette` and the toolbar `<For>` consume the map. `resolveButtonCommands(btn, map)` resolves a toolbar item to its ordered list of bound commands (precedence below), dropping unresolved ids — the toolbar `<For>` uses it to fire each command on click.
+Commands are split into pure data and behavior so the palette and the sidebar header bar (`.sidebar-icons`) share one source: `core/src/commands.ts` (`COMMAND_CATALOG` pure data → schema derives the `toolbar.command` enum) + `app/src/commands.ts` (`bindCommands(handlers)` → live `{id,label,icon,action}` map; `resolveButtonCommands` resolves a toolbar item to its ordered bound commands).
 
-The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each item: `{ command: <id> | commands: [<id>, …], icon: <Lucide|emoji>, tooltip? }`. `commands` list wins over `command`; unresolved ids silently skip; button disabled only if none resolve. Special-cased via `readToolbarFrom` (mirrors `folderIcons`). Fields autocomplete in the editor via `settingsComplete.ts`.
+The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each item: `{ command: <id> | commands: [<id>, …], icon: <Lucide|emoji>, tooltip? }`. `commands` list wins; unresolved ids skip; button disabled only if none resolve.
 
 **Adding a command:** add an entry to `COMMAND_CATALOG` (core) and a matching `action` binding in `bindCommands` (app). The `toolbar.command` enum, its autocomplete, and the palette pick it up automatically. (Adding any new *top-level* schema key also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`.)
 
@@ -257,30 +232,24 @@ The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each
 
 ### Keybindings
 
-Global keyboard shortcuts are configured via the `keybindings:` section of `settings.yaml` (the **last** section in a fresh file) — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands:
-- `core/src/keybindings.ts` — `KEYBINDING_CATALOG` (`id`, `label`, `default`, `doc`) + `KEYBINDING_IDS`. Pure data in core; the settings schema derives the `keybindings` object section from it (one `keybind`-typed key per action, defaulting to the previously hardcoded combo).
-- `app/src/keybindings.ts` — the pure matcher: `parseCombo`/`matchesCombo`/`matchesKeybinding`, plus the authoring helpers (`KEYBIND_MODIFIERS`, `KEYBIND_KEYS`, `modifierFamily`, `eventToCombo`). `"Mod"` = Cmd on macOS / Ctrl elsewhere (CodeMirror convention); modifier matching is **exact** (so `Mod+D` and `Mod+Shift+D` stay distinct); combos are comma-separated alternatives (`"Mod+\`, Mod+J"`). Matches the produced key OR the physical `event.code` (so macOS Option-composed chars like `Alt+S`→"ß" still match). `App.tsx` `handleGlobalKeydown` matches events against `settings.keybindings.<id>`.
-- **`keybind` PropertyType** (`core/src/schema/types.ts`, validated leniently in `validate.ts`) drives a smart, order-free shortcut autocomplete in `editor/settingsComplete.ts` (`keybindCompletions`): completes the current `+`-separated token with the remaining modifier families + the key list, plus a **"Record shortcut…"** option that listens to the keyboard for 3s and writes the captured combo.
+Global shortcuts come from the `keybindings:` section of `settings.yaml` — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands: `core/src/keybindings.ts` (`KEYBINDING_CATALOG` pure data → schema derives the section) + `app/src/keybindings.ts` (pure matcher `matchesKeybinding` + authoring helpers). `"Mod"` = Cmd/Ctrl; modifier matching is **exact**; combos are comma-separated alternatives; matches the produced key OR physical `event.code` (so Option-composed chars still match). The `keybind` PropertyType drives an order-free shortcut autocomplete in `editor/settingsComplete.ts` (incl. a "Record shortcut…" option).
 
-**Adding a keybinding:** add an entry to `KEYBINDING_CATALOG` (core) and read `settings.keybindings.<id>` via `matchesKeybinding` at the handler. The schema field, autocomplete, and `keybindings.<id>` default are derived automatically.
+**Adding a keybinding:** add an entry to `KEYBINDING_CATALOG` (core) and read `settings.keybindings.<id>` via `matchesKeybinding` at the handler — schema field, autocomplete, and default are derived automatically.
 
 ## Workspace Management
 
-The three workspaces are linked via Bun's `workspaces` feature in the root `package.json`:
-- `core` exports `@oa/core` (backend library)
-- `app` imports `@oa/core` for the UI
-- `cli` imports `@oa/core` for command-line operations
-
-To add a dependency to a workspace: `cd <workspace> && bun add <package>`. Use `bun install` (root) to sync all workspaces.
+Workspaces are linked via Bun's `workspaces` in the root `package.json`: `core` exports `@oa/core`, which `app` (UI) and `cli` both import; `relay` is the hooks-only plugin. Add a dep with `cd <workspace> && bun add <package>`; `bun install` (root) syncs all.
 
 ## Module Organization
 
-Module purposes are described in the **Architecture** section above; this is just the layout. (Compact — one line per dir/group.)
+Module purposes are in the **Architecture** section above; this is just the layout.
 
 ```
 core/src/
   server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
   engine.ts vault.ts memory.ts agents.ts relay.ts graphBuilder.ts   # graph composition + builders (relay.ts = agent-graph registry)
+  daemon.ts daemonGraph.ts daemonViz.ts   # claude-bot daemon state reader + daemon-mode graph + node-visual encoder
+  drawing/   # .draw vector docs (model/geometry/smooth/render2d/paper/theme/export — pure, headless)
   graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
   files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts
   asyncCache.ts changeClassifier.ts   # dedup cache + selective-invalidation classifier
@@ -307,16 +276,7 @@ app/src/
 ## Development Workflow
 
 ### Running the full stack
-```bash
-cd app && bun run dev
-```
-This runs the Tauri app + backend server concurrently. Open `http://localhost:1420/` in the browser (dev server) or use the native Tauri window. Backend runs on port 4321.
-
-### Running tests
-```bash
-bun test core
-```
-Tests use Bun's built-in test runner. Each module has a corresponding `.test.ts` file with unit tests.
+`cd app && bun run dev` runs the Tauri app + backend concurrently — open `http://localhost:1420/` (dev server) or the native Tauri window; backend on `:4321`. Tests: `bun test core`.
 
 ### Editing notes & hot-reload
 - Editing a `.md` in the vault: server debounces 250ms → invalidates cache → bumps version → pushes SSE with changed paths + `dirty:{graph,tree}` flags; frontend re-fetches `/graph` (or just `/file`). A low-frequency `/version` poll recovers a silently-dropped SSE (proxy/sleep). Two edits within 250ms = only the second triggers an update.
@@ -337,13 +297,10 @@ Add a route to the `routes` (read) or `mutatingRoutes` (write) table in `core/sr
 Update `NodeKind`/`EdgeKind` in `core/src/graph.ts`, emit them from the extractors (`buildVaultGraph()` in `vault.ts`), and adjust frontend mode filtering in `App.tsx` if needed.
 
 ### Adding a setting
-The schema is the single source of truth; defaults must equal the current hardcoded value so upgrades are behaviorally a no-op.
-1. Add an entry (type, `default`, `min`/`max` or enum, a clear `doc`) to the right section of `core/src/schema/settingsSchema.ts`. New top-level section? Add it there. `DEFAULTS`, the YAML autocomplete, and the linter pick it up automatically; on next app open `reconcileSettings` adds the key to existing `settings.yaml` files (preserving user values/comments/unknown keys).
-2. Add the matching field to the `Settings` interface in `app/src/settings.ts` (`settings.parity.test.ts` fails until schema ↔ interface match).
-3. Wire the consumer:
-   - **CSS-driven** (looks/sizes/spacing/colors): add a `--var` mapping in `app/src/settingsCssVars.ts` and reference `var(--name, <fallback>)` in the stylesheet.
-   - **Frontend logic**: read `settings.<section>.<key>` directly (the store is reactive).
-   - **Backend** (layout/debounce/SRS/etc.): read from `appConfig.<section>.<key>` in `core/src/server.ts` (cached via `loadAppConfig`, reloaded on settings change); thread into the module. User edits persist through `POST /set-setting`, which merges one key in place.
+The schema is the single source of truth; defaults must equal the current hardcoded value so upgrades are a behavioral no-op.
+1. Add an entry (type, `default`, `min`/`max` or enum, `doc`) to `core/src/schema/settingsSchema.ts` — `DEFAULTS`, autocomplete, linter, and `reconcileSettings` (adds the key to existing files, preserving comments) pick it up automatically.
+2. Add the matching field to the `Settings` interface in `app/src/settings.ts` (`settings.parity.test.ts` enforces schema ↔ interface match).
+3. Wire the consumer: **CSS-driven** → a `--var` in `settingsCssVars.ts` + `var(--name, <fallback>)` in CSS; **frontend logic** → read `settings.<section>.<key>` (reactive); **backend** → read `appConfig.<section>.<key>` in `server.ts` (cached via `loadAppConfig`). Edits persist via `POST /set-setting` (merges one key in place).
 
 ### Debugging graph construction
 Run the server standalone (`bun run core/src/server.ts --vault <v> --memory <m>`), `curl :4321/graph | jq`; see `core/test/vault.test.ts` / `engine.test.ts` for examples.
@@ -356,7 +313,7 @@ Extend `core/src/srs/scheduler.ts`; expose config in `settingsSchema.ts` (e.g. `
 
 ## Error Handling
 
-Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENOENT", "File not found")` (factory, picks status from code) or `new AppError(code, msg, status)`. `mutatingHandler` in `server.ts` maps `AppError.statusCode` to the HTTP response; generic `Error` → 500. Codes → status: `ENOENT`/`CARD_NOT_FOUND`/`BASE_NOT_FOUND` 404, `EACCES` 403, `EEXIST`/`CARD_CONTENT_CHANGED` 409, `EINVAL`/`PARSE_ERROR`/`SCHEMA_ERROR`/`CARD_FORMAT_ERROR`/`BASE_CYCLE` 400, `INTERNAL_ERROR` 500.
+Backend errors use the `AppError` class (`core/src/error.ts`): `createError(code, msg)` (factory picks status from code) or `new AppError(code, msg, status)`. `mutatingHandler` maps `AppError.statusCode` to the response; generic `Error` → 500. Codes → status: `ENOENT`/`*_NOT_FOUND` 404, `EACCES` 403, `EEXIST`/`*_CONTENT_CHANGED` 409, `EINVAL`/`PARSE_ERROR`/`SCHEMA_ERROR`/`*_FORMAT_ERROR`/`BASE_CYCLE` 400, `INTERNAL_ERROR` 500.
 
 ## Shared Helpers (avoid re-duplicating)
 
@@ -364,6 +321,7 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENO
 - **`core/src/files.ts` `walkDir(root, filter)`** — recursive dir walk behind `listTree`/`listTemplates`; filter returns `true`/`false`/`{data}`.
 - **`core/src/frontmatter.ts` `mutateFrontmatter(yaml, mutate)`** — edits frontmatter via the `yaml` Document API (preserves comments/key order/flow arrays), falls back to stringify on malformed input.
 - **Resilience**: `app/src/serverVersion.ts` tracks a `ConnectionState` (connected/disconnected/reconnecting). On SSE loss it shows a "Connection lost" toast and polls `/version` at 1s (vs 5s) until reconnect, then auto-dismisses.
+- **`app/src/sanitizeHtml.ts` `sanitizeHtml(dirty)`** — DOMPurify wrapper for safe `innerHTML` of any vault-rendered HTML (markdown, live-preview, cards, calendar, export). Browser/headless-aware (passes input through when no `window`, so Bun tests work). Always route rendered HTML through it — used by `bases/markdown.ts`, `editor/htmlPreview.ts`, `editor/livePreview.ts`.
 
 ## Key Concepts
 
@@ -383,8 +341,9 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError("ENO
 - **"3rd" brain**: Self + memory (excludes vault)
 - **"both"**: Full brain (self + vault + memory + edges between them)
 - **"agents"**: Live tree of the Claude Code work running in THIS app's terminal tabs — you → each terminal-tab session → its subagents (see Relay Integration below)
+- **"daemon"**: The claude-bot daemon's supervised work — a daemon hub → its crons + processes (`supervises` edges), node fill/border encoding enabled/running state (see Daemon Integration below)
 
-The "agents" graph mode visualizes the Claude Code sessions running inside Bismuth's own terminal tabs and the subagents they spawn. The "you" hub connects to each terminal-tab session (a root agent node); each session connects to its subagents (guaranteed depth 1 — subagents can't spawn subagents). Built from the `/agent-graph` endpoint (`agents.ts` over the in-process relay registry, filtered to sessions whose terminal tab is still open). The frontend polls `/agent-graph` (with a change-signature dedup) only while agents mode is active.
+The "agents" mode visualizes Claude Code sessions in Bismuth's own terminal tabs + their subagents (you → session → subagents, depth 1). Built from `/agent-graph` (`agents.ts` over the relay registry, filtered to open tabs); the frontend polls it (change-signature dedup) only while agents mode is active.
 
 **2D/3D toggle**: The renderer's 2D vs 3D mode is a **transient localStorage toggle** (not a `settings.yaml` key). It persists across sessions via `localStorage` but is not user-facing in the settings file. Toggle via the graph toolbar or the `GraphView` mode control.
 
@@ -395,11 +354,16 @@ Debounced 250ms file-watch; version-based polling (refetch only when `/version` 
 
 A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. No daemon, nothing installed in `~/.claude` — the plugin loads per-session only inside app terminals.
 
-1. `terminal.ts` injects `CLAUDE_TERMINAL_ID` + `CLAUDE_RELAY_URL` into each pty env and prepends a PATH shim (`relay/shim/claude`) so a bare `claude` auto-loads the plugin via `--plugin-dir`.
-2. Plugin hooks POST to `/relay/*`: `SessionStart`/`UserPromptSubmit` → register/heartbeat; `SubagentStart`/`SubagentStop` → add/finish subagent. Best-effort, no-op without `CLAUDE_TERMINAL_ID`.
-3. `agents.ts` builds the graph from the registry; `/agent-graph` prunes stale sessions (closed tabs) at read time.
+`terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + the PATH shim so a bare `claude` auto-loads the plugin. Plugin hooks POST `/relay/*`: `SessionStart`/`UserPromptSubmit` register/heartbeat, `SubagentStart`/`SubagentStop` add/finish subagents (best-effort, no-op without `CLAUDE_TERMINAL_ID`). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions at read time.
 
 Scope: app-local only. No cross-machine agents, no messaging. Registry lives only while the core server runs.
+
+### Daemon Integration (`core/src/daemon.ts` + `daemonGraph.ts` + `daemonViz.ts`)
+
+Bismuth reads (and minimally writes) the **claude-bot daemon's** shared on-disk state to power the "daemon" graph mode and the daemon sidebar (`app/src/DaemonList.tsx`, which replaces `ClusterLegend` in daemon mode). The daemon itself is a separate background process; Bismuth never starts/stops it.
+- `daemon.ts` reads `device-id`/`devices.json`/`owner.json`/`daemon.pid` and the crons/processes under the daemon home (the `daemon.home` setting; defaults to `~/.claude-bot`). `daemonGraph.ts` turns crons/processes into a hub+children graph with `supervises` edges; `daemonViz.ts` is the pure node-visual encoder.
+- Endpoints: GET `/daemon/status`, `/daemon/devices`, `/daemon/graph` (polled by the frontend only while in daemon mode), `/daemon/install`; POST `/daemon/owner` (claims this device — a vault mutation), and the shared-state writes `/daemon/setup`, `/daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/process/toggle` (NOT vault mutations — no SSE/cache invalidation). Right-click a cron/process in `DaemonList` to enable/disable or run it.
+- Setup is **idempotent / adopt-only**: it never clobbers, restarts, or repoints a live daemon (see the claude-bot setup contract).
 
 ## Testing
 
@@ -409,27 +373,13 @@ bun test core
 bun test core -- [pattern]  # Filter by filename
 ```
 
-Common test files:
-- `core/test/vault.test.ts` — Note graph building, wikilink extraction
-- `core/test/engine.test.ts` — Graph composition (vault + memory + agents)
-- `core/test/tags.test.ts`, `wikilinks.test.ts` — Extraction
-- `core/test/server.test.ts`, `sse.test.ts` — HTTP + SSE behavior
-- `core/test/bases/` — Bases DSL (lexer/parser/evaluate/query)
-- `core/test/srs/` — SRS scheduler + parser
-- `core/test/tasks.test.ts`, `tasks-query.test.ts` — Tasks
-- `core/test/layout.test.ts` — Layout computation
-- `core/test/terminal.test.ts`, `terminal-ws.test.ts` — PTY + WebSocket
-- `app/src/panes.test.ts`, `settings.test.ts` — Pure frontend modules
-- `app/src/graph/collide.test.ts`, `labelSelection.test.ts` — Graph helpers
-- `app/src/calendar/EventStore.test.ts`, `dates.test.ts` — Calendar
-- `app/src/editor/wikilink.test.ts`, `tag.test.ts` — Editor extensions
-- `app/src/editor/tableModel.test.ts` — GFM table parsing + serialization
+Each module has a colocated `*.test.ts`. Notable: `core/test/{vault,engine,server,sse,layout,tasks,tasks-query,daemon,daemonViz}.test.ts`, `core/test/{bases,srs,drawing}/`, and frontend `app/src/{panes,settings}.test.ts`, `app/src/graph/{collide,labelSelection}.test.ts`, `app/src/calendar/*.test.ts`, `app/src/editor/{wikilink,tag,tableModel}.test.ts`.
 
 ## Gotchas & Edge Cases
 
-- **Layouts come from the backend, not the browser**: `position2d` / `position3d` are computed in `core/src/layout.ts` and attached via `layout-cache.ts`. The renderer morphs between them — it does not run a local force simulation. If positions look wrong, suspect the backend layout, not browser state.
-- **File-watch debounce timing**: The 250ms debounce can hide rapid successive edits. If you edit a note twice within 250ms, only the second change triggers a graph rebuild.
-- **SSE can silently die**: Proxies and OS sleep can drop the `/events` connection without an explicit close. The fallback `/version` poll catches this — if updates feel slow, check the EventSource state in `serverVersion.ts` and telemetry counters in `telemetry.ts`.
-- **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches a file named `Another Note.md` anywhere in the vault, even in different folders. Ambiguous matches are undefined behavior.
-- **Memory graph requires Claude-bot memory directory**: If `OA_MEMORY` points to a non-existent or empty directory, the memory graph will be empty. Set up sample notes in memory directory to see "3rd brain" mode.
-- **Concurrent agent port conflicts**: Running multiple instances on the same machine requires port overrides; see "Running Multiple Agents Concurrently" section. Default 4321/1420 will only work for one instance.
+- **Layouts come from the backend, not the browser**: `position2d`/`position3d` are computed in `core/src/layout.ts`, attached via `layout-cache.ts`; the renderer only morphs. If positions look wrong, suspect the backend layout.
+- **File-watch debounce**: the 250ms debounce hides rapid successive edits (two within 250ms → only the second rebuilds).
+- **SSE can silently die**: proxies/OS-sleep drop `/events` without a close — the fallback `/version` poll recovers it (`serverVersion.ts`, `telemetry.ts`).
+- **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches `Another Note.md` anywhere; ambiguous matches are undefined.
+- **Memory graph needs `OA_MEMORY`**: a missing/empty dir → empty "3rd brain".
+- **Concurrent-instance port conflicts**: default 4321/1420 serve one instance; override ports for more (see "Running Multiple Agents Concurrently").
