@@ -192,9 +192,47 @@ export function validateEntry(
 }
 
 /**
+ * Recursively flag keys absent from the schema, at every object-nesting level.
+ * Top-level unknown sections AND unknown nested keys (e.g. a stale `graph.viewMode`)
+ * are both reported. Open-map object types — those with empty `fields`, like
+ * `properties` / `folderIcons`, which legitimately hold arbitrary user keys — are
+ * never recursed into, so their contents are never flagged.
+ */
+function collectUnknownKeys(
+  obj: Record<string, unknown>,
+  fields: Schema,
+  mode: ValidateMode,
+  basePath: string[],
+  out: Diagnostic[],
+): void {
+  for (const [key, value] of Object.entries(obj)) {
+    const entry = fields[key];
+    if (!entry) {
+      out.push({
+        path: [...basePath, key],
+        severity: mode === "settings" ? "warning" : "info",
+        message: `unknown property: ${key}`,
+      });
+      continue;
+    }
+    const type = entry.type;
+    if (
+      typeof type === "object" &&
+      type.kind === "object" &&
+      Object.keys(type.fields).length > 0 &&
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value)
+    ) {
+      collectUnknownKeys(value as Record<string, unknown>, type.fields, mode, [...basePath, key], out);
+    }
+  }
+}
+
+/**
  * Walk a parsed document object against a Schema and collect diagnostics.
  * - Known keys: validated via validateEntry (type + range).
- * - Unknown keys: info (frontmatter) / warning (settings).
+ * - Unknown keys (at any nesting depth): info (frontmatter) / warning (settings).
  * - Missing required keys: ignored (frontmatter) / error (settings).
  */
 export function validateDocument(
@@ -208,16 +246,12 @@ export function validateDocument(
   const obj = parsed as Record<string, unknown>;
   const out: Diagnostic[] = [];
 
+  // Unknown keys at every nesting level (recursive; open-map sections excluded).
+  collectUnknownKeys(obj, schema, opts.mode, [], out);
+
   for (const [key, value] of Object.entries(obj)) {
     const entry = schema[key];
-    if (!entry) {
-      out.push({
-        path: [key],
-        severity: opts.mode === "settings" ? "warning" : "info",
-        message: `unknown property: ${key}`,
-      });
-      continue;
-    }
+    if (!entry) continue; // unknown keys already reported by collectUnknownKeys
     const diag = validateEntry(entry, value, opts.ctx);
     if (diag) out.push({ ...diag, path: [key, ...diag.path] });
   }
