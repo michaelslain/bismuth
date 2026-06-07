@@ -74,6 +74,9 @@ export function BaseSettings(props: {
     return out;
   };
   const [form, setForm] = createSignal<Record<string, string>>(seedFields());
+  // Flashcards: review every card both ways (front→back AND back→front), each direction
+  // scheduled independently in `*Back` companion columns.
+  const [bidi, setBidi] = createSignal<boolean>(!!view()?.bidirectional);
 
   // --- record form (columns / sort / group) ---
   const allCols = createMemo(() => columnsOf(props.rows));
@@ -115,6 +118,7 @@ export function BaseSettings(props: {
         await api.setProperty(props.basePath, "groupBy", groupProp() ? { property: groupProp(), direction: groupDir() } : null);
       } else {
         for (const f of fields()) await api.setProperty(props.basePath, f.key, form()[f.key]);
+        if (props.type === "flashcards") await api.setProperty(props.basePath, "bidirectional", bidi());
         if (isChart()) {
           await api.setProperty(props.basePath, "aggregate", aggregate());
           if (props.type !== "heatmap") await api.setProperty(props.basePath, "bin", bin());
@@ -140,8 +144,13 @@ export function BaseSettings(props: {
           </For>
         </div>
         <Show when={props.type === "flashcards"}>
+          <label class="srs-field" style={{ display: "flex", "align-items": "center", gap: "8px", cursor: "pointer" }}>
+            <input type="checkbox" checked={bidi()} onChange={(e) => setBidi(e.currentTarget.checked)} />
+            <span>Bidirectional — review each card both ways (front ↔ back)</span>
+          </label>
           <p class="ui-empty" style={{ "font-size": "12px" }}>
             Scheduling uses the standard SM-2 algorithm (fixed, not configurable). Use <strong>Cram</strong> in the deck to review everything without affecting scheduling.
+            <Show when={bidi()}> Each direction is scheduled independently (reverse state lives in <code>dueBack</code> / <code>easeBack</code> / <code>intervalBack</code>).</Show>
           </p>
         </Show>
       </Show>

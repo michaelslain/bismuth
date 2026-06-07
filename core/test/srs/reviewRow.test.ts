@@ -28,3 +28,21 @@ test("applyReviewToRow uses existing scheduling when due is set", () => {
   const next = applyReviewToRow(note, "good", "2026-05-30");
   expect(next.interval).toBeGreaterThan(10); // interval grows by ease/100
 });
+
+test("applyReviewToRow advances the reverse (*Back) columns independently when given reverse fields", () => {
+  const note = {
+    front: "red", back: "אדום",
+    due: "2026-05-01", interval: 5, ease: 250,   // forward: already scheduled
+    dueBack: null, easeBack: 250, intervalBack: 0, // reverse: a new card
+  };
+  const next = applyReviewToRow(note, "good", "2026-05-30", undefined, {
+    due: "dueBack", ease: "easeBack", interval: "intervalBack",
+  });
+  // reverse columns advance as a new card (good => 1 day)
+  expect(next.dueBack).toBe("2026-05-31");
+  expect(next.intervalBack).toBe(1);
+  // forward columns are left untouched
+  expect(next.due).toBe("2026-05-01");
+  expect(next.interval).toBe(5);
+  expect(next.ease).toBe(250);
+});

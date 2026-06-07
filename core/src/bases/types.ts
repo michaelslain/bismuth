@@ -59,6 +59,11 @@ export interface ViewConfig {
   dueField?: string;           // default "due"
   easeField?: string;          // default "ease"
   intervalField?: string;      // default "interval"
+  // When true, every card is reviewed in BOTH directions (front→back AND back→front),
+  // each direction carrying its own independent SM-2 schedule. The reverse schedule
+  // lives in companion columns: `<dueField>Back` / `<easeField>Back` / `<intervalField>Back`
+  // (defaults dueBack / easeBack / intervalBack). Replaces the old `:::` reversed card.
+  bidirectional?: boolean;
   // Chart views (bar, line, stat): axis + aggregation config.
   x?: string;                  // property id for the x-axis / category
   y?: string;                  // property id for the y-axis value

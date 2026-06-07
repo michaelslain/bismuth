@@ -781,6 +781,11 @@ export function createServer(cfg: CoreConfig) {
           question?: string;
           file?: string;
           index?: number;
+          // Which scheduling columns to advance — a bidirectional reverse review passes
+          // the `*Back` triple so each direction schedules independently. Default: forward.
+          dueField?: string;
+          easeField?: string;
+          intervalField?: string;
         };
         // Row-based review (flashcard base): advance scheduling columns on the row.
         if (body.file != null && body.index != null) {
@@ -789,7 +794,11 @@ export function createServer(cfg: CoreConfig) {
           const { rows } = parseBaseFile(text, { name, path: body.file });
           const row = rows[body.index];
           if (!row) throw new AppError("EINVAL", `row not found: ${body.file}#${body.index}`, 400);
-          const note = applyReviewToRow(row.note, body.response, todayISO(), appConfig.srs);
+          const fields =
+            body.dueField && body.easeField && body.intervalField
+              ? { due: body.dueField, ease: body.easeField, interval: body.intervalField }
+              : undefined;
+          const note = applyReviewToRow(row.note, body.response, todayISO(), appConfig.srs, fields);
           const next = upsertRow(text, { name, path: body.file }, body.index, note);
           await writeNote(cfg.vault, body.file, next);
           return ok();

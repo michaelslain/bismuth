@@ -4,25 +4,46 @@
 // lucide-solid icons and other Solid client-only code).
 import type { Row } from "../../../core/src/bases/types";
 
-export type QueueItem = { r: Row; index: number };
+/** A card's review direction. "rev" only appears for bidirectional decks. */
+export type CardDir = "fwd" | "rev";
+
+// A queue entry: the row, its stable row `index`, the direction being reviewed, and
+// the due column that governs THIS direction's schedule. A bidirectional row yields
+// two entries (fwd + rev) sharing one `index` but with distinct `dir` / `dueField`.
+export type QueueItem = { r: Row; index: number; dir: CardDir; dueField: string };
+
+/** Companion column for a forward field's reverse schedule: "due" -> "dueBack". */
+export function backField(field: string): string {
+  return field + "Back";
+}
 
 /**
  * Build the review queue from the base's rows.
  * - cram mode: ALL cards, order preserved (scheduling never changes).
  * - normal mode: only cards due today or earlier (null / empty / <= today).
+ *
  * Each item keeps the card's stable row `index` so callers can track a card by
- * identity rather than its (mutable) position within the queue.
+ * identity rather than its (mutable) position within the queue. When `bidirectional`
+ * is set, every row contributes a forward (front→back) entry AND a reverse
+ * (back→front) entry, each filtered by its OWN due column so the two directions
+ * surface and schedule independently.
  */
 export function buildQueue(
   rows: Row[],
   dueField: string,
   today: string,
   cram: boolean,
+  bidirectional = false,
 ): QueueItem[] {
-  const all = rows.map((r, index) => ({ r, index }));
+  const backDue = backField(dueField);
+  const all: QueueItem[] = [];
+  rows.forEach((r, index) => {
+    all.push({ r, index, dir: "fwd", dueField });
+    if (bidirectional) all.push({ r, index, dir: "rev", dueField: backDue });
+  });
   if (cram) return all;
-  return all.filter(({ r }) => {
-    const d = r.note[dueField];
+  return all.filter((it) => {
+    const d = it.r.note[it.dueField];
     return d == null || d === "" || String(d) <= today;
   });
 }
