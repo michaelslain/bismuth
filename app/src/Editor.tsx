@@ -10,9 +10,10 @@ import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
-import { api } from "./api";
+import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
+import { notePathFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
 import { queryBlock } from "./editor/queryBlock";
@@ -215,6 +216,11 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   // SSE echo of our own save even after we've typed further, so we don't reload the
   // (now-stale) on-disk content over in-flight edits. Reset when the buffer switches.
   let lastSavedText: string | undefined;
+  // True while the editor has local edits not yet flushed to disk (autosave is debounced).
+  // The external-reload reconcile must NOT revert to disk during this window — disk is
+  // stale and the pending save is about to overwrite it (this is what made table edits
+  // "disappear on click-off, reappear on reload").
+  let pendingSave = false;
 
   // Value-dedupe the path. props.path is read through a chain (active tab → pane tree →
   // leaf content) that re-emits whenever the tab object changes — e.g. on every pane
@@ -230,6 +236,40 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
   };
 
+  // The current buffer's path, tracked at component scope so the unload handler (added
+  // once) can flush whatever buffer is open.
+  let activePath: string | null = null;
+
+  // Flush the debounced autosave NOW, so a reload / file-switch can't drop an edit still
+  // sitting in the 800ms timer (e.g. a table cell committed on click-off right before you
+  // reload). `keepalive` lets the PUT survive page unload, where a normal async write
+  // would be cancelled.
+  const flushSave = (keepalive: boolean): void => {
+    if (!pendingSave || !view || !activePath) return;
+    clearTimeout(saveTimer);
+    const text = view.state.doc.toString();
+    pendingSave = false;
+    lastSavedText = text;
+    if (keepalive) {
+      try {
+        void fetch(`${apiBase()}/file`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: activePath, contents: text }),
+          keepalive: true,
+        });
+      } catch {
+        /* best effort on unload */
+      }
+    } else {
+      void save(activePath, text); // in-app navigation: a normal async write completes fine
+    }
+  };
+
+  const onBeforeUnload = (): void => flushSave(true);
+  if (typeof window !== "undefined") window.addEventListener("beforeunload", onBeforeUnload);
+  onCleanup(() => { if (typeof window !== "undefined") window.removeEventListener("beforeunload", onBeforeUnload); });
+
   // Re-validate the open buffer when the property registry changes — e.g. you add
   // a property to settings.yaml's `properties:` section. CM linters only re-run on
   // doc changes, so an external registry update needs an explicit re-lint or the
@@ -241,9 +281,12 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
 
   createEffect(async () => {
     const path = currentPath();
-    // Destroy the previous view when this effect re-runs (path changed or cleanup).
-    onCleanup(() => { if (view) unregisterEditor(view); view?.destroy(); });
+    activePath = path;
+    // Flush a pending save, then destroy the previous view when this effect re-runs
+    // (path changed or cleanup) — so switching files can't drop an unsaved edit.
+    onCleanup(() => { flushSave(false); if (view) unregisterEditor(view); view?.destroy(); });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
+    pendingSave = false;
     if (!path) return;
 
     // Treat a missing file as an empty note (new, not yet written).
@@ -265,8 +308,14 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const autosave = EditorView.updateListener.of((u) => {
       if (!u.docChanged) return;
       if (u.transactions.some((tr) => tr.annotation(ExternalReload))) return;
+      pendingSave = true; // local change not yet on disk → block reconcile-revert
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => save(path, u.state.doc.toString()), settings.editor.autoSaveDelay);
+      saveTimer = setTimeout(async () => {
+        const text = u.state.doc.toString();
+        await save(path, text);
+        // Clear only if nothing was typed during the write — else a newer edit is pending.
+        if (view && view.state.doc.toString() === text) pendingSave = false;
+      }, settings.editor.autoSaveDelay);
     });
 
     // Shared base for every buffer: editing, theme, gutters, autosave.
@@ -337,6 +386,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
+          notePathFacet.of(path),
           ...(ed.livePreview ? [livePreview, foldBlocks(() => path), mathBlock()] : []),
           // Harper spell + grammar check, toggled by editor.spellcheck (default true).
           ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
@@ -451,6 +501,10 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       change.paths.includes(path);
     if (!affectsUs) return;
     if (change.version === lastIgnoredVersion) return;
+    // We have un-flushed local edits — disk is stale and the pending autosave is about to
+    // overwrite it. Reverting now would clobber the local edit (e.g. a just-committed table
+    // cell). Skip; the post-save echo reconciles cleanly once disk catches up.
+    if (pendingSave) return;
 
     let onDisk: string;
     try {

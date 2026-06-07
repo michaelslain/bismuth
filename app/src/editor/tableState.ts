@@ -5,8 +5,14 @@
 // <table> widget; a block becomes "active" (shows raw pipe source for structural /
 // power edits) when the user opens it via the widget's source toggle. It stays
 // active only while the cursor remains inside its line range.
-import { StateEffect, StateField } from "@codemirror/state";
+import { Facet, StateEffect, StateField } from "@codemirror/state";
 import { groupTableBlocks } from "./tableModel";
+
+/** The current note's vault path, supplied by the editor host. The table widget reads it
+ *  to scope its persisted (visual-only) column widths / row heights per note. */
+export const notePathFacet = Facet.define<string | null, string | null>({
+  combine: (values) => values[0] ?? null,
+});
 
 /** Request raw-source mode for the table block whose header is at this 1-based line
  *  (or null to clear). */
