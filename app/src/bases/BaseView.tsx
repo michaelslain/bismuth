@@ -180,15 +180,16 @@ export function BaseView(props: {
             />
           </Show>
           <ViewBarSpacer />
-          {/* SETTINGS is a base-FILE panel; Calendar has its own. SOURCE also shows for an
+          {/* SETTINGS opens a modal overlay (same chrome as the calendar's own settings).
+              Calendar has its own settings in its toolbar. SOURCE also shows for an
               embedded query (edits the fence body). */}
           <Show when={editPath() && activeType() !== "calendar"}>
             <VBtn
-              icon={settingsMode() ? "X" : "Settings"}
+              icon="Settings"
               active={settingsMode()}
-              onClick={() => { setSettingsMode(!settingsMode()); setSourceMode(false); }}
+              onClick={() => { setSettingsMode(true); setSourceMode(false); }}
             >
-              {settingsMode() ? "CLOSE" : "SETTINGS"}
+              SETTINGS
             </VBtn>
           </Show>
           <Show when={editPath() || props.embeddedSource}>
@@ -211,18 +212,7 @@ export function BaseView(props: {
         <Show when={sourceMode() && editPath()}>
           <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
         </Show>
-        <Show when={settingsMode() && !!data()}>
-          <div class={styles.base}>
-            <BaseSettings
-              type={activeType()}
-              config={data()!.config}
-              basePath={data()!.basePath}
-              rows={data()!.rows}
-              onSaved={() => { setSettingsMode(false); refetch(); }}
-            />
-          </div>
-        </Show>
-        <Show when={!sourceMode() && !settingsMode()}>
+        <Show when={!sourceMode()}>
           <Show when={data()} fallback={<Loading />}>
             <Switch
               fallback={
@@ -280,6 +270,18 @@ export function BaseView(props: {
           </Show>
         </Show>
       </div>
+
+      {/* Settings float over the live view as a modal (same chrome as the calendar's). */}
+      <Show when={settingsMode() && !!data()}>
+        <BaseSettings
+          type={activeType()}
+          config={data()!.config}
+          basePath={data()!.basePath}
+          rows={data()!.rows}
+          onClose={() => setSettingsMode(false)}
+          onSaved={() => { setSettingsMode(false); refetch(); }}
+        />
+      </Show>
     </div>
   );
 }
