@@ -2,34 +2,38 @@ import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
 import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
 import { capitalize, columnLabel } from "./renderValue";
+import { Modal } from "../ui/Modal";
+import { Icon } from "../icons/Icon";
+import { Select } from "../ui/Select";
 import { TextButton } from "../ui/TextButton";
-import { Field } from "../ui/Field";
+import { IconTextButton } from "../ui/IconTextButton";
+// Shares the calendar settings modal chrome (.evm-modal / .set-*).
+import "../calendar/Calendar.css";
 
 interface FieldDef {
   key: string;
-  label: string;
+  /** Short role label shown next to the column dropdown. */
+  role: string;
+  icon: string;
   def: string;
+  /** Optional fields offer a "Not set" choice. */
+  optional?: boolean;
+  span?: boolean;
+  hint: string;
 }
 
 // Chart views (heatmap/bar/line/stat) all bind the same axis columns.
 const CHART_FIELDS: FieldDef[] = [
-  { key: "x", label: "X axis column (date or category)", def: "date" },
-  { key: "y", label: "Value column (blank = count rows)", def: "" },
+  { key: "x", role: "X axis", icon: "calendar", def: "date", hint: "Column plotted along the X axis — a date or a category." },
+  { key: "y", role: "Value", icon: "hash", def: "", optional: true, hint: "Numeric column to aggregate. Leave unset to count rows." },
 ];
 
 // Field-binding settings for non-tabular view types (which column means what).
 const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
   flashcards: [
-    { key: "frontField", label: "Front column", def: "front" },
-    { key: "backField", label: "Back column", def: "back" },
-    { key: "dueField", label: "Due column", def: "due" },
-  ],
-  calendar: [
-    { key: "dateField", label: "Date column", def: "date" },
-    { key: "startTimeField", label: "Start-time column", def: "startTime" },
-    { key: "endTimeField", label: "End-time column", def: "endTime" },
-    { key: "recurrenceField", label: "Recurrence column", def: "recurrence" },
-    { key: "categoryField", label: "Category column", def: "category" },
+    { key: "frontField", role: "Front", icon: "circle-question-mark", def: "front", hint: "Column shown as the card front (the prompt)." },
+    { key: "backField", role: "Back", icon: "circle-check", def: "back", hint: "Column revealed as the answer." },
+    { key: "dueField", role: "Due", icon: "calendar-clock", def: "due", span: true, hint: "Column holding each card's next-review date." },
   ],
   heatmap: CHART_FIELDS,
   bar: CHART_FIELDS,
@@ -54,11 +58,39 @@ function columnsOf(rows: Row[]): string[] {
   return hasName ? ["file.name", ...cols] : cols;
 }
 
+function noteLabel(path: string) {
+  return path.split("/").pop()!.replace(/\.(base|md)$/, "");
+}
+
+const AGG_OPTS = [
+  { value: "sum", label: "Sum" },
+  { value: "avg", label: "Average" },
+  { value: "count", label: "Count" },
+  { value: "min", label: "Min" },
+  { value: "max", label: "Max" },
+];
+const BIN_OPTS = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+];
+const DIR_OPTS = [
+  { value: "ASC", label: "Ascending" },
+  { value: "DESC", label: "Descending" },
+];
+
+/**
+ * Per-view settings as a modal overlay — same chrome as the calendar's
+ * CalendarSettings (`.evm-modal`), so every base type shares one polished design:
+ * header / sectioned body with `Select` dropdowns / footer with RESET + CANCEL + SAVE.
+ * Floats over the live view instead of replacing it.
+ */
 export function BaseSettings(props: {
   type: ViewType;
   config: BaseConfig;
   basePath?: string;
   rows: Row[];
+  onClose: () => void;
   onSaved: () => void;
 }) {
   const view = () => props.config.views[0];
@@ -66,7 +98,21 @@ export function BaseSettings(props: {
   const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];
 
-  // --- field-binding form (flashcards / calendar) ---
+  const allCols = createMemo(() => columnsOf(props.rows));
+
+  // Options for a column-binding dropdown: the available columns, always unioned
+  // with the field's current value + default so an off-screen binding still shows.
+  const colOptions = (f: FieldDef, current: string) => {
+    const seen = new Set(allCols());
+    const extra = [current, f.def].filter((c) => c && !seen.has(c));
+    return [
+      ...(f.optional ? [{ value: "", label: "Count rows" }] : []),
+      ...allCols().map((c) => ({ value: c, label: c })),
+      ...extra.map((c) => ({ value: c, label: c })),
+    ];
+  };
+
+  // --- field-binding form (flashcards / chart axes) ---
   const seedFields = (): Record<string, string> => {
     const v = (view() ?? {}) as Record<string, unknown>;
     const out: Record<string, string> = {};
@@ -79,7 +125,6 @@ export function BaseSettings(props: {
   const [bidi, setBidi] = createSignal<boolean>(!!view()?.bidirectional);
 
   // --- record form (columns / sort / group) ---
-  const allCols = createMemo(() => columnsOf(props.rows));
   const seedCols = (): { col: string; visible: boolean }[] => {
     const ord = view()?.order;
     const all = allCols();
@@ -110,6 +155,23 @@ export function BaseSettings(props: {
     setCols(arr);
   };
 
+  // None + every column, for sort/group dropdowns.
+  const propOptions = createMemo(() => [
+    { value: "", label: "None" },
+    ...allCols().map((c) => ({ value: c, label: columnLabel(c, props.config) })),
+  ]);
+
+  const reset = () => {
+    setForm(Object.fromEntries(fields().map((f) => [f.key, f.def])));
+    setCols(allCols().map((c) => ({ col: c, visible: true })));
+    setSortProp("");
+    setSortDir("ASC");
+    setGroupProp("");
+    setGroupDir("ASC");
+    setAggregate(view()?.y ? "sum" : "count");
+    setBin("day");
+  };
+
   const save = async () => {
     if (props.basePath) {
       if (isRecord()) {
@@ -128,116 +190,129 @@ export function BaseSettings(props: {
     props.onSaved();
   };
 
+  const noSettings = () => !isRecord() && !isChart() && fields().length === 0;
+
   return (
-    <div class="srs-panel">
-      <h3>{`${capitalize(props.type)} settings`}</h3>
-
-      {/* Field-binding types: flashcards / calendar */}
-      <Show when={fields().length > 0}>
-        <div class="srs-grid">
-          <For each={fields()}>
-            {(f) => (
-              <Field class="srs-field" label={f.label}>
-                <input type="text" value={form()[f.key]} placeholder={f.def} onInput={(e) => setForm({ ...form(), [f.key]: e.currentTarget.value })} />
-              </Field>
-            )}
-          </For>
+    <Modal onClose={props.onClose} class="base-settings evm-modal">
+      <div class="evm-head">
+        <div class="evm-mark"><Icon value="sliders-horizontal" size={18} /></div>
+        <div class="evm-htext">
+          <div class="evm-title">{capitalize(props.type)} settings</div>
+          <Show when={props.basePath}>{(p) => <div class="evm-sub">{noteLabel(p())}</div>}</Show>
         </div>
-        <Show when={props.type === "flashcards"}>
-          <label class="srs-field" style={{ display: "flex", "align-items": "center", gap: "8px", cursor: "pointer" }}>
-            <input type="checkbox" checked={bidi()} onChange={(e) => setBidi(e.currentTarget.checked)} />
-            <span>Bidirectional — review each card both ways (front ↔ back)</span>
-          </label>
-          <p class="ui-empty" style={{ "font-size": "12px" }}>
-            Scheduling uses the standard SM-2 algorithm (fixed, not configurable). Use <strong>Cram</strong> in the deck to review everything without affecting scheduling.
-            <Show when={bidi()}> Each direction is scheduled independently (reverse state lives in <code>dueBack</code> / <code>easeBack</code> / <code>intervalBack</code>).</Show>
-          </p>
-        </Show>
-      </Show>
-
-      {/* Chart types: aggregate + (non-heatmap) date bucket */}
-      <Show when={isChart()}>
-        <div class="srs-grid">
-          <Field class="srs-field" label="Aggregate">
-            <select value={aggregate()} onChange={(e) => setAggregate(e.currentTarget.value as "sum" | "avg" | "count" | "min" | "max")}>
-              <option value="sum">Sum</option>
-              <option value="avg">Average</option>
-              <option value="count">Count</option>
-              <option value="min">Min</option>
-              <option value="max">Max</option>
-            </select>
-          </Field>
-          <Show when={props.type !== "heatmap"}>
-            <Field class="srs-field" label="Date bucket">
-              <select value={bin()} onChange={(e) => setBin(e.currentTarget.value as "day" | "week" | "month")}>
-                <option value="day">Day</option>
-                <option value="week">Week</option>
-                <option value="month">Month</option>
-              </select>
-            </Field>
-          </Show>
-        </div>
-      </Show>
-
-      {/* Record types: columns + sort + group */}
-      <Show when={isRecord()}>
-        <div class="vs-section">
-          <h4>Columns</h4>
-          <p class="ui-empty" style={{ "font-size": "12px" }}>Check to show or hide. Drag the column headers in the table to reorder.</p>
-          <For each={cols()}>
-            {(item, i) => (
-              <label class="vs-check">
-                <input
-                  type="checkbox"
-                  checked={item.visible}
-                  disabled={item.visible && visibleCount() <= 1}
-                  title={item.visible && visibleCount() <= 1 ? "At least one column must stay visible" : undefined}
-                  onChange={() => toggle(i())}
-                />
-                {columnLabel(item.col, props.config)}
-              </label>
-            )}
-          </For>
-        </div>
-
-        <div class="srs-grid">
-          <Field class="srs-field" label="Sort by">
-            <select value={sortProp()} onChange={(e) => setSortProp(e.currentTarget.value)}>
-              <option value="">None</option>
-              <For each={allCols()}>{(c) => <option value={c}>{columnLabel(c, props.config)}</option>}</For>
-            </select>
-          </Field>
-          <Field class="srs-field" label="Sort direction">
-            <select value={sortDir()} onChange={(e) => setSortDir(e.currentTarget.value as "ASC" | "DESC")}>
-              <option value="ASC">Ascending</option>
-              <option value="DESC">Descending</option>
-            </select>
-          </Field>
-          <Field class="srs-field" label="Group by">
-            <select value={groupProp()} onChange={(e) => setGroupProp(e.currentTarget.value)}>
-              <option value="">None</option>
-              <For each={allCols()}>{(c) => <option value={c}>{columnLabel(c, props.config)}</option>}</For>
-            </select>
-          </Field>
-          <Show when={groupProp()}>
-            <Field class="srs-field" label="Group direction">
-              <select value={groupDir()} onChange={(e) => setGroupDir(e.currentTarget.value as "ASC" | "DESC")}>
-                <option value="ASC">Ascending</option>
-                <option value="DESC">Descending</option>
-              </select>
-            </Field>
-          </Show>
-        </div>
-      </Show>
-
-      <Show when={!isRecord() && !isChart() && fields().length === 0}>
-        <p class="ui-empty">No extra settings for this view type yet.</p>
-      </Show>
-
-      <div class="grade-row">
-        <TextButton onClick={save}>SAVE</TextButton>
-        <TextButton onClick={props.onSaved}>CLOSE</TextButton>
+        <div class="evm-x" role="button" aria-label="Close" onClick={props.onClose}><Icon value="x" size={16} /></div>
       </div>
-    </div>
+
+      <div class="evm-body">
+        {/* Field-binding types: flashcards / chart axes */}
+        <Show when={fields().length > 0}>
+          <div class="set-sect">Column mapping</div>
+          <div class="set-grid">
+            <For each={fields()}>{(f) => (
+              <div class={"set-field" + (f.span ? " span" : "")}>
+                <div class="set-lab">
+                  <Icon value={f.icon} size={14} strokeWidth={2} />{f.role} column
+                  {f.optional ? <span class="opt">optional</span> : <span class="req">required</span>}
+                </div>
+                <Select
+                  value={form()[f.key] ?? ""}
+                  options={colOptions(f, form()[f.key] ?? "")}
+                  placeholder={f.optional ? "Count rows" : "Not set"}
+                  onChange={(c) => setForm({ ...form(), [f.key]: c })}
+                />
+                <div class="set-hint">{f.hint}</div>
+              </div>
+            )}</For>
+          </div>
+          <Show when={props.type === "flashcards"}>
+            <div class="set-col" onClick={() => setBidi(!bidi())} style={{ "margin-top": "8px" }}>
+              <span class="set-col-name">Bidirectional — review each card both ways (front ↔ back)</span>
+              <span class={"evm-toggle" + (bidi() ? " on" : "")}><i /></span>
+            </div>
+            <div class="set-hint">
+              Scheduling uses the standard SM-2 algorithm (fixed, not configurable). Use <strong>Cram</strong> in the deck to review everything without affecting scheduling.
+              <Show when={bidi()}> Each direction is scheduled independently (reverse state lives in <code>dueBack</code> / <code>easeBack</code> / <code>intervalBack</code>).</Show>
+            </div>
+          </Show>
+        </Show>
+
+        {/* Chart types: aggregate + (non-heatmap) date bucket */}
+        <Show when={isChart()}>
+          <div class="set-sect">Aggregation</div>
+          <div class="set-grid">
+            <div class="set-field">
+              <div class="set-lab"><Icon value="sigma" size={14} strokeWidth={2} />Aggregate</div>
+              <Select value={aggregate()} options={AGG_OPTS} onChange={(v) => setAggregate(v as "sum" | "avg" | "count" | "min" | "max")} />
+              <div class="set-hint">How values are combined per X-axis bucket.</div>
+            </div>
+            <Show when={props.type !== "heatmap"}>
+              <div class="set-field">
+                <div class="set-lab"><Icon value="calendar-days" size={14} strokeWidth={2} />Date bucket</div>
+                <Select value={bin()} options={BIN_OPTS} onChange={(v) => setBin(v as "day" | "week" | "month")} />
+                <div class="set-hint">Group date values by day, week, or month.</div>
+              </div>
+            </Show>
+          </div>
+        </Show>
+
+        {/* Record types: columns + sort + group */}
+        <Show when={isRecord()}>
+          <div class="set-sect">Columns</div>
+          <div class="set-hint">Toggle to show or hide. Drag the column headers in the table to reorder.</div>
+          <div class="set-cols">
+            <For each={cols()}>{(item, i) => {
+              const locked = () => item.visible && visibleCount() <= 1;
+              return (
+                <div
+                  class="set-col"
+                  classList={{ off: !item.visible, locked: locked() }}
+                  title={locked() ? "At least one column must stay visible" : undefined}
+                  onClick={() => toggle(i())}
+                >
+                  <span class="set-col-name">{columnLabel(item.col, props.config)}</span>
+                  <span class={"evm-toggle" + (item.visible ? " on" : "")}><i /></span>
+                </div>
+              );
+            }}</For>
+          </div>
+
+          <div class="set-sect">Sort &amp; group</div>
+          <div class="set-grid">
+            <div class="set-field">
+              <div class="set-lab"><Icon value="arrow-down-up" size={14} strokeWidth={2} />Sort by</div>
+              <Select value={sortProp()} options={propOptions()} placeholder="None" onChange={setSortProp} />
+            </div>
+            <Show when={sortProp()}>
+              <div class="set-field">
+                <div class="set-lab"><Icon value="arrow-down" size={14} strokeWidth={2} />Sort direction</div>
+                <Select value={sortDir()} options={DIR_OPTS} onChange={(v) => setSortDir(v as "ASC" | "DESC")} />
+              </div>
+            </Show>
+            <div class="set-field">
+              <div class="set-lab"><Icon value="group" size={14} strokeWidth={2} />Group by</div>
+              <Select value={groupProp()} options={propOptions()} placeholder="None" onChange={setGroupProp} />
+            </div>
+            <Show when={groupProp()}>
+              <div class="set-field">
+                <div class="set-lab"><Icon value="arrow-down" size={14} strokeWidth={2} />Group direction</div>
+                <Select value={groupDir()} options={DIR_OPTS} onChange={(v) => setGroupDir(v as "ASC" | "DESC")} />
+              </div>
+            </Show>
+          </div>
+        </Show>
+
+        <Show when={noSettings()}>
+          <div class="set-hint">No extra settings for this view type yet.</div>
+        </Show>
+      </div>
+
+      <div class="evm-foot">
+        <span class="hintkey"><b>esc</b> to close</span>
+        <IconTextButton icon="RotateCcw" size="sm" iconSize={13} onClick={reset} style={{ "margin-left": "14px" }}>RESET</IconTextButton>
+        <div class="sp" />
+        <TextButton size="sm" onClick={props.onClose}>CANCEL</TextButton>
+        <IconTextButton icon="Check" size="sm" variant="selected" onClick={save}>SAVE</IconTextButton>
+      </div>
+    </Modal>
   );
 }
