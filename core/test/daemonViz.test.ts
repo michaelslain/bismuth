@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { nodeVisualState } from "../src/daemonViz";
+import { nodeVisualState, type DaemonVisual } from "../src/daemonViz";
 import type { DaemonVizState } from "../src/graph";
 
 const NOW = Date.parse("2026-06-05T12:00:00.000Z");
@@ -47,7 +47,7 @@ test("lastResult / lastFiredMs are ignored — they no longer drive the encoding
   const fresh = nodeVisualState(state({ lastResult: "failed", lastFiredMs: NOW - 1000 }), NOW);
   const stale = nodeVisualState(state({ lastResult: "success", lastFiredMs: NOW - 99 * 60 * 60 * 1000 }), NOW);
   const never = nodeVisualState(state({ lastResult: null, lastFiredMs: null }), NOW);
-  const expected = { fill: "base", border: "palette", opacity: 1 };
+  const expected: DaemonVisual = { fill: "base", border: "palette", opacity: 1 };
   expect(fresh).toEqual(expected);
   expect(stale).toEqual(expected);
   expect(never).toEqual(expected);

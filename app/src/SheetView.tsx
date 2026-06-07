@@ -1,6 +1,5 @@
 import { onMount, onCleanup, createSignal, createEffect, Show } from "solid-js";
 import { api } from "./api";
-import { settings } from "./settings";
 import { parseSnapshot, serializeSnapshot, SheetParseError, type WorkbookSnapshot } from "./sheet/snapshot";
 import { debounce } from "./debounce";
 import { onServerChange } from "./serverVersion";

@@ -55,16 +55,13 @@ let lastSseVersion = 0;
 
 // Connection error tracking for toast deduplication and exponential backoff
 let connectionErrorToastId: number | null = null;
-let lastErrorTime = 0;
 let consecutiveErrors = 0;
 
 const NORMAL_POLL_INTERVAL = 5000; // 5 seconds
 const DISCONNECTED_POLL_INTERVAL = 1000; // 1 second when disconnected
-const INITIAL_BACKOFF = 2000; // 2 seconds
-const MAX_BACKOFF = 30000; // 30 seconds max
 
 let currentPollInterval = NORMAL_POLL_INTERVAL;
-let pollIntervalHandle: number | undefined;
+let pollIntervalHandle: ReturnType<typeof setInterval> | undefined;
 
 // Try to create EventSource; if server is down, we'll catch this on first poll
 let es: EventSource | null = null;
@@ -98,9 +95,7 @@ function startPolling(): void {
 }
 
 function handleConnectionError(): void {
-  const now = Date.now();
   consecutiveErrors++;
-  lastErrorTime = now;
 
   if (connectionState() !== "disconnected") {
     setConnectionState("disconnected");

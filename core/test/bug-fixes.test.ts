@@ -174,7 +174,7 @@ source:
       const vault = tmpdir();
       const cardId = "invalid-format";
       try {
-        await applyReview(vault, cardId, "again", "2024-01-01");
+        await applyReview(vault, cardId, "good", "2024-01-01");
         expect.unreachable("Should have thrown");
       } catch (e) {
         // AppError has a code property
@@ -190,7 +190,7 @@ source:
       const vault = tmpdir();
       const cardId = "nonexistent.md::0::0";
       try {
-        await applyReview(vault, cardId, "again", "2024-01-01");
+        await applyReview(vault, cardId, "good", "2024-01-01");
         expect.unreachable("Should have thrown");
       } catch (e) {
         // readNote throws a native error, which is okay for this scenario

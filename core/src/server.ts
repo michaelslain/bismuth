@@ -94,7 +94,7 @@ export function createServer(cfg: CoreConfig) {
   // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
   // boot and whenever settings.yaml changes (see classifyVault).
-  let appConfig: AppConfig = SETTINGS_DEFAULTS as AppConfig;
+  let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig;
   void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
 
   // /graph and /tree go through a deduped, invalidation-safe cache (see asyncCache.ts):
@@ -855,7 +855,8 @@ export function createServer(cfg: CoreConfig) {
   graphCache.warm();
   treeCache.warm();
 
-  return Bun.serve({
+  type TermWsData = { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+  return Bun.serve<TermWsData>({
     port: cfg.port ?? 4321,
     async fetch(req, server) {
       const url = new URL(req.url);
@@ -885,7 +886,7 @@ export function createServer(cfg: CoreConfig) {
         // Tabs report to THIS server's port so the in-tab Claude sessions' relay
         // hooks reach the right core (multiple windows = multiple backends).
         const session = createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port });
-        const upgraded = server.upgrade(req, { data: { sessionId: session.id } });
+        const upgraded = server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
         if (!upgraded) {
           killSession(session.id);
           return withCors(error("upgrade failed", 400));

@@ -86,7 +86,7 @@ describe("spawnVaultBackend", () => {
       spawn: (c) => { cmd = c; return { pid: 1, kill() {} }; },
       probe: async () => true,
     });
-    const portFromUrl = res.url.split(":").pop();
+    const portFromUrl = res.url.split(":").pop()!;
     expect(cmd).toContain("--port");
     expect(cmd[cmd.indexOf("--port") + 1]).toBe(portFromUrl);
     expect(cmd).toContain("/abs/server.ts");

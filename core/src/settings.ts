@@ -10,6 +10,7 @@ import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
 import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
 import type { Schema, SchemaEntry } from "./schema/types";
 import type { DailyNoteConfig } from "./dailyNote";
+import type { SrsConfig } from "./srs/scheduler";
 
 export const SETTINGS_FILE = "settings.yaml";
 
@@ -329,10 +330,20 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
 
 // The typed, file-merged-over-defaults config the backend reads at runtime (layout
 // forces, file-watch debounce, SRS scheduler, …). Same merge as the frontend feed,
-// just named + typed for backend consumers. The `properties` registry is excluded.
-export type AppConfig = typeof DEFAULTS;
+// just named + typed for backend consumers. Only the sections the backend actually
+// reads are typed here; the full shape is the schema-derived DEFAULTS. The `srs`
+// section is an identity match for SrsConfig (see scheduler.ts).
+export interface AppConfig {
+  server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
+  daemon: { enabled: boolean; home: string };
+  templates?: { folder: string };
+  srs: SrsConfig;
+  // Other schema sections (graph, appearance, ui, …) are present at runtime but
+  // not read by the backend; expose them loosely so callers can reach them.
+  [section: string]: unknown;
+}
 
 /** Load the backend runtime config (settings.yaml merged over DEFAULTS). */
 export async function loadAppConfig(vault: string): Promise<AppConfig> {
-  return (await serializeSettingsForFrontend(vault)) as AppConfig;
+  return (await serializeSettingsForFrontend(vault)) as unknown as AppConfig;
 }

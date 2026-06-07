@@ -239,10 +239,6 @@ test("collectVaultTasks scans every markdown file in the vault", async () => {
 });
 
 import { collectTasksFromPaths } from "../src/tasks";
-import { writeNote } from "../src/files";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 test("collectTasksFromPaths only scans the given paths", async () => {
   const root = mkdtempSync(join(tmpdir(), "oa-scoped-"));

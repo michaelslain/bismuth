@@ -42,7 +42,7 @@ function parseLeaf(raw: string, today: string): Predicate | null {
   if (s === "is not cancelled") return (t) => t.status !== "cancelled";
 
   let m = s.match(/^is( not)? recurring$/);
-  if (m) return (t) => !!t.recurrence === !m[1];
+  if (m) { const mm = m; return (t) => !!t.recurrence === !mm[1]; }
 
   m = s.match(/^priority is( not)? (highest|high|medium|low|lowest|none)$/);
   if (m) {

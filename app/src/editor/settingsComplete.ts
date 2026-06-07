@@ -396,7 +396,7 @@ export function settingsCompletionSource(
         typeof fieldType === "object" && fieldType.kind === "enum" &&
         (fieldType as { allowPrefixes?: string[] }).allowPrefixes?.includes("daily-note:");
       const dailyIds = isCommand ? dailyNoteIdsFromDoc(ctx.state.doc.toString()) : [];
-      const dailyLabels = new Map(dailyIds.map((d) => [`daily-note:${d.id}`, d.label || d.id] as const));
+      const dailyLabels = new Map<string, string>(dailyIds.map((d) => [`daily-note:${d.id}`, d.label || d.id]));
 
       const raw = sectionKey === "properties"
         ? PROPERTY_TYPES
