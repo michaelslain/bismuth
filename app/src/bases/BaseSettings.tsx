@@ -114,7 +114,7 @@ export function BaseSettings(props: {
 
   // --- field-binding form (flashcards / chart axes) ---
   const seedFields = (): Record<string, string> => {
-    const v = (view() ?? {}) as Record<string, unknown>;
+    const v = (view() ?? {}) as unknown as Record<string, unknown>;
     const out: Record<string, string> = {};
     for (const f of fields()) out[f.key] = (v[f.key] as string) ?? f.def;
     return out;
