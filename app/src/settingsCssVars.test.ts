@@ -93,12 +93,16 @@ describe("light themes follow the design's .bis.light block, not a derived dark"
     expect(darkVars["--scrim-bg"]).toContain(THEMES["oxide-duotone"].foreground);
   });
 
-  it("categories track the theme's own ramp on light (in-palette), saturated trio on dark", () => {
+  it("category swatches derive from the theme's own accent ramp on both light and dark", () => {
+    // Preset category swatches always come from the palette so a category that stores one
+    // of these tokens auto-recolors when the theme changes (only custom hex stays fixed).
     expect(lightVars["--green"]).toBe(t.accentPalette[1]); // design --green #6FA6E6
     expect(lightVars["--gold"]).toBe(t.accentPalette[4]); // design --gold  #C08FD8
     expect(lightVars["--rose"]).toBe(t.accentPalette[3]); // design --rose  #A98FE0
-    expect(darkVars["--green"]).toBe("#43D49A");
-    expect(darkVars["--gold"]).toBe("#F2C53D");
-    expect(darkVars["--rose"]).toBe("#F0509B");
+    // Dark tracks its own theme's ramp the same way (no hardcoded saturated trio).
+    const td = THEMES["oxide-duotone"];
+    expect(darkVars["--green"]).toBe(td.accentPalette[1]);
+    expect(darkVars["--gold"]).toBe(td.accentPalette[4] ?? td.accentPalette[3]);
+    expect(darkVars["--rose"]).toBe(td.accentPalette[3]);
   });
 });
