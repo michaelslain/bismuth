@@ -102,14 +102,14 @@ export function settingsToCssVars(s: Settings): Record<string, string> {
     "--graph-2": palette[2] ?? a.accent,
     "--graph-3": palette[3] ?? a.accent,
     "--graph-4": palette[4] ?? a.accent,
-    // Category hues (statuses / event categories / map pins / chart series). A theme may
-    // pin them via ColorTokens. Otherwise: the dark themes keep the saturated Bismuth
-    // trio, while the light themes pull them into their own accent ramp so categories
-    // stay in-palette instead of the garish emerald/amber/pink clashing on a pale ground.
-    // For oxide-light, ramp[1]/[4]/[3] are exactly the design's --green/--gold/--rose.
-    "--green": a.categoryGreen ?? (light ? (palette[1] ?? a.accent) : "#43D49A"),
-    "--gold": a.categoryGold ?? (light ? (palette[4] ?? palette[3] ?? a.accent) : "#F2C53D"),
-    "--rose": a.categoryRose ?? (light ? (palette[3] ?? a.accent) : "#F0509B"),
+    // Category hues (statuses / event categories / map pins / chart series). These are the
+    // preset category swatches, so they MUST derive from the theme's accent ramp — that way a
+    // category that stores one of these tokens auto-recolors when the theme changes (only
+    // custom hex colours stay fixed). A theme may still pin a specific hue via ColorTokens;
+    // otherwise every swatch comes straight from the palette, for dark and light alike.
+    "--green": a.categoryGreen ?? (palette[1] ?? a.accent),
+    "--gold": a.categoryGold ?? (palette[4] ?? palette[3] ?? a.accent),
+    "--rose": a.categoryRose ?? (palette[3] ?? a.accent),
     "--editor-font": FONT_STACKS[s.appearance.editorFont] ?? s.appearance.editorFont,
     "--editor-font-size": s.appearance.editorFontSize + "px",
     "--sidebar-width": s.appearance.sidebarWidth + "px",
