@@ -1,7 +1,7 @@
 {
   "name": "bismuth",
   "private": true,
-  "workspaces": ["core", "cli", "app", "relay"],
+  "workspaces": ["core", "cli", "app", "relay", "mcp"],
   "scripts": {
     "test": "bun test",
     "core:serve": "bun run core/src/server.ts"

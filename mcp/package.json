@@ -1,0 +1,14 @@
+{
+  "name": "@oa/mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "MCP server that auto-attaches to Bismuth terminal-tab Claude sessions (via the relay plugin) and serves the docs/ reference + the bismuth CLI, token-frugally.",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25"
+  }
+}
