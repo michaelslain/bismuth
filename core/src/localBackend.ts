@@ -19,7 +19,7 @@ import { getFileAccess } from "./fileAccess";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
-import { upsertRow, deleteRow } from "./bases/rowOps";
+import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
@@ -179,6 +179,14 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
         if (text === null) throw new AppError("ENOENT", "note not found", 404);
         const name = fileBasename(b.file);
         await access.writeNote(vault, b.file, deleteRow(text, { name, path: b.file }, b.index));
+        emit([b.file]);
+        return "ok";
+      }
+      case "POST /row/reorder": {
+        const text = await readOrNull(b.file);
+        if (text === null) throw new AppError("ENOENT", "note not found", 404);
+        const name = fileBasename(b.file);
+        await access.writeNote(vault, b.file, reorderRow(text, { name, path: b.file }, b.from, b.to));
         emit([b.file]);
         return "ok";
       }

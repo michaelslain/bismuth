@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { upsertRow, deleteRow } from "../../src/bases/rowOps";
+import { upsertRow, deleteRow, reorderRow } from "../../src/bases/rowOps";
 import { parseBaseFile } from "../../src/bases/parse";
 
 const FILE = ["---", "type: base", "view: table", "---", "", "- id: 1", "  title: A"].join("\n");
@@ -33,6 +33,26 @@ test("deleteRow removes a row by index", () => {
 
 test("deleteRow throws on an out-of-range index", () => {
   expect(() => deleteRow(FILE, META, 5)).toThrow();
+});
+
+test("reorderRow moves a row forward, rewriting order", () => {
+  let t = FILE;
+  t = upsertRow(t, META, null, { id: 2, title: "B" });
+  t = upsertRow(t, META, null, { id: 3, title: "C" });
+  const out = reorderRow(t, META, 0, 2); // A,B,C -> B,C,A
+  expect(rows(out).map((r) => r.note.title)).toEqual(["B", "C", "A"]);
+});
+
+test("reorderRow moves a row backward", () => {
+  let t = FILE;
+  t = upsertRow(t, META, null, { id: 2, title: "B" });
+  t = upsertRow(t, META, null, { id: 3, title: "C" });
+  const out = reorderRow(t, META, 2, 0); // A,B,C -> C,A,B
+  expect(rows(out).map((r) => r.note.title)).toEqual(["C", "A", "B"]);
+});
+
+test("reorderRow throws on an out-of-range index", () => {
+  expect(() => reorderRow(FILE, META, 0, 5)).toThrow();
 });
 
 test("upsertRow into a body-less base creates the YAML rows", () => {

@@ -44,3 +44,14 @@ export function deleteRow(text: string, meta: Meta, index: number): string {
   rows.splice(index, 1);
   return reassemble(text, rows, config);
 }
+
+/** Move the row at `from` to position `to` (drag-reorder), rewriting the row order. */
+export function reorderRow(text: string, meta: Meta, from: number, to: number): string {
+  const { rows, config } = parseBaseFile(text, meta);
+  if (from < 0 || from >= rows.length) throw new Error(`row index out of range: ${from}`);
+  if (to < 0 || to >= rows.length) throw new Error(`row index out of range: ${to}`);
+  if (from === to) return text;
+  const [moved] = rows.splice(from, 1);
+  rows.splice(to, 0, moved);
+  return reassemble(text, rows, config);
+}
