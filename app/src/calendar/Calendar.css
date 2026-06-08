@@ -250,7 +250,7 @@
 /* ----- base settings (shared by every non-calendar view type) -----
    Column-visibility list: a grouped surface of toggle rows. Reuses the
    `.evm-toggle` switch (defined below in the event-modal section). */
-.evm-modal .set-cols { display: flex; flex-direction: column; background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; }
+.evm-modal .set-cols { display: flex; flex-direction: column; background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden auto; max-height: 320px; }
 .evm-modal .set-col { display: flex; align-items: center; gap: 12px; padding: 9px 13px; cursor: pointer; transition: background .12s; }
 .evm-modal .set-col + .set-col { border-top: 1px solid var(--border2); }
 .evm-modal .set-col:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
