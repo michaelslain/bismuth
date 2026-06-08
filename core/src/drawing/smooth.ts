@@ -35,9 +35,17 @@ export const lerp = (a: P, b: P, t: number): P => ({
   p: a.p + t * (b.p - a.p),
 });
 
+/**
+ * Iterate a flat [x, y, pressure, …] buffer, invoking `cb(x, y, pressure)` per point.
+ * Pressure defaults to 255 (full) when missing. Shared by toPts here and geometry's toInput.
+ */
+export function eachPoint(a: number[], cb: (x: number, y: number, p: number) => void): void {
+  for (let i = 0; i + 2 < a.length + 1; i += 3) cb(a[i], a[i + 1], a[i + 2] ?? 255);
+}
+
 export function toPts(a: number[]): P[] {
   const out: P[] = [];
-  for (let i = 0; i + 2 < a.length + 1; i += 3) out.push({ x: a[i], y: a[i + 1], p: a[i + 2] ?? 255 });
+  eachPoint(a, (x, y, p) => out.push({ x, y, p }));
   return out;
 }
 export function toFlat(ps: P[]): number[] {

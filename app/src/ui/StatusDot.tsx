@@ -20,6 +20,11 @@ export function statusColor(s: string): string {
   return STATUS_COLOR[s.trim().toLowerCase()] ?? "var(--faint)";
 }
 
+/** Resolve a status string to its category color for group/column headers (accent fallback). */
+export function groupColor(key: string): string {
+  return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
+}
+
 /** Just the dot, in a given color (e.g. List/Kanban group headers). */
 export function StatusDot(props: { color?: string; status?: string }) {
   return <span class="status-dot" style={{ background: props.color ?? (props.status ? statusColor(props.status) : "var(--faint)") }} />;

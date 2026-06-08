@@ -2,15 +2,11 @@ import { createSignal, For, Show, batch, onMount, onCleanup } from "solid-js";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { CardBody } from "./CardBody";
-import { STATUS_COLOR } from "../ui/StatusDot";
+import { groupColor } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = "order";
-
-function columnColor(key: string): string {
-  return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
-}
 
 // Module-level stash for the dragged row's vault-relative path.
 let draggedPath: string | null = null;
@@ -197,7 +193,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                 void handleDrop(group);
               }}
             >
-              <div class={styles.kanbanColHeader} style={{ color: columnColor(group.key) }}>
+              <div class={styles.kanbanColHeader} style={{ color: groupColor(group.key) }}>
                 <span class={styles.dot} />
                 <span class={styles.kanbanColTitle} style={{ color: "var(--fg)" }}>
                   {group.key === "" ? "(empty)" : group.key}

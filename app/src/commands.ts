@@ -6,7 +6,7 @@
 import { COMMAND_CATALOG } from "../../core/src/commands";
 import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
-type GraphMode = "2nd" | "3rd" | "both" | "agents";
+type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 export interface CommandHandlers {
   openSettings: () => void;

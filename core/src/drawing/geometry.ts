@@ -1,12 +1,11 @@
 import getStroke from "perfect-freehand";
 import type { Stroke } from "./model";
+import { eachPoint } from "./smooth";
 
 /** Convert a Stroke's flat pts into perfect-freehand input [[x,y,pressure01], ...]. */
 function toInput(pts: number[]): number[][] {
   const out: number[][] = [];
-  for (let i = 0; i + 2 < pts.length + 1; i += 3) {
-    out.push([pts[i], pts[i + 1], (pts[i + 2] ?? 255) / 255]);
-  }
+  eachPoint(pts, (x, y, p) => out.push([x, y, p / 255]));
   return out;
 }
 

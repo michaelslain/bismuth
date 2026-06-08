@@ -5,6 +5,8 @@ import { debounce } from "./debounce";
 import { onServerChange } from "./serverVersion";
 import { isExternalChange } from "./sheet/sync";
 import type { SheetHandle } from "./sheet/univerSheet";
+import { resolveAppearance } from "./themes";
+import { settings } from "./settings";
 
 export function SheetView(props: { path: string; onSaved?: () => void }) {
   let container!: HTMLDivElement;
@@ -48,7 +50,7 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
 
   // Keep Univer's dark mode in sync with the app theme without remounting.
   createEffect(() => {
-    const dark = true;
+    const dark = !resolveAppearance(settings.appearance).isLight;
     handle?.setDark(dark);
   });
 
