@@ -1,15 +1,19 @@
 /* app/src/drawing/Drawing.css */
 .draw-canvas { background: transparent; border-radius: 2px; touch-action: none; }
-/* The page fills the tab width (capped so it doesn't get absurdly wide on huge monitors)
-   and keeps the letter aspect ratio; the canvases inside fill it via inset:0 + 100%. */
-.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: 100%; max-width: 1400px; margin: 0 auto; }
+/* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
+   100%. The width cap + centering live on the .draw-page-zoom wrapper (which the zoom
+   control scales), so the shadow simply fills its wrapper. */
+.draw-page-shadow { box-shadow: 0 6px 28px rgba(0,0,0,.45); width: 100%; }
 .draw-page { position: relative; width: 100%; aspect-ratio: 816 / 1056; }
+/* Zoom wrapper: width = zoom × stage width (capped at zoom × 1400px), centered. At
+   zoom > 1 it overflows the stage horizontally, which scrolls. DrawingCanvas.toLocal
+   divides by getBoundingClientRect().width, so pointer mapping stays correct. */
+.draw-page-zoom { margin: 0 auto; }
 .draw-live { cursor: crosshair; }
 
-/* Floating bottom-center tool dock (the design's .drawtools) — exactly TWO rows
-   ("2 stories"): tools + colors on the top row, size + smooth + paper + undo/redo on
-   the bottom row. Each story is its own non-wrapping flex row so the dock never spills
-   onto a third line; groups are divided by hairline rules. */
+/* Floating bottom-center tool dock (the design's .drawtools) — a single non-wrapping
+   row of groups: tools | a stacked color-over-size dot column | smooth | paper | tidy |
+   undo/redo | zoom. Groups are divided by hairline rules. */
 .draw-toolbar {
   position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 5;
   display: flex; flex-direction: column; gap: 5px; align-items: center; padding: 7px 9px;
@@ -27,11 +31,17 @@
 .draw-label { display: none; }
 /* Icon segments (tools / size dots / smoothness lines) — icon centered. */
 .draw-iconseg.btn svg { display: block; }
-/* Active tool / size / smoothing segment: accent-soft fill + accent icon. */
-.draw-iconseg.btn--selected { background: var(--accent-soft); color: var(--accent); }
-.draw-swatch.btn { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--bg); box-shadow: 0 0 0 1px var(--border); cursor: pointer; padding: 0; }
-/* Active swatch ring uses the live accent (TextButton sets btn--selected). */
-.draw-swatch.btn--selected { box-shadow: 0 0 0 2px var(--accent); }
+/* Active tool / color / size / smoothing segment: accent-soft fill + accent ring.
+   Colors and sizes are now both dot SegmentedToggles, so a selected color dot reads
+   exactly like a selected size dot. */
+.draw-iconseg.btn--selected { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+/* A 2-row column inside a group (colors/sizes, smooth/paper, undo-redo/zoom). Both rows
+   left-align and share the same gap so segments line up into a tidy grid and the dock
+   stays half as wide as a single long row. */
+.draw-vstack { display: flex; flex-direction: column; gap: 3px; }
+.draw-vstack .segmented { gap: 2px; justify-content: flex-start; }
+/* Zoom % readout sits in the zoom segment; fixed width so it doesn't jitter. */
+.draw-zoompct.btn { min-width: 38px; font-size: 11px; font-variant-numeric: tabular-nums; }
 
 .draw-app { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* Dot-grid canvas backdrop (design .draw). Toolbar floats above via absolute pos. */
