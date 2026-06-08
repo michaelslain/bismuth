@@ -10,6 +10,7 @@ import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./fro
 import { AppError } from "./error";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
+import { buildTaskRows } from "./bases/tasksData";
 import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
@@ -105,7 +106,19 @@ export function createServer(cfg: CoreConfig) {
   );
   const treeCache = createAsyncCache<TreeEntry[]>(() => listTree(cfg.vault));
   let cachedRows: Row[] | null = null;
+  let cachedTasks: Row[] | null = null;
   let version = 0;
+
+  // Lazy accessors for the unscoped vault feeds, shared by /vault-data, /rows, and
+  // the source resolver. Both rebuild on next read after a file-watch change nulls them.
+  async function getCachedRows(): Promise<Row[]> {
+    if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
+    return cachedRows;
+  }
+  async function getCachedTasks(): Promise<Row[]> {
+    if (cachedTasks === null) cachedTasks = await buildTaskRows(cfg.vault, undefined);
+    return cachedTasks;
+  }
   const sse = createSseRegistry();
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -131,8 +144,9 @@ export function createServer(cfg: CoreConfig) {
     // content-only edit that's dirty to neither graph nor tree changes search results.
     // Drop it on any vault change so the next /search rebuilds from current files.
     invalidateSearchIndex(cfg.vault);
-    // Bases rows derive from arbitrary frontmatter/body — rebuild lazily on next read.
+    // Bases rows + tasks derive from arbitrary frontmatter/body — rebuild lazily on next read.
     cachedRows = null;
+    cachedTasks = null;
     version++;
     sse.publish({ version, paths, dirty });
   }
@@ -327,8 +341,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "GET /vault-data": async (_, __) => {
-      if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
-      return ok(cachedRows);
+      return ok(await getCachedRows());
     },
 
     "GET /base": async (_, url) => {
@@ -477,7 +490,18 @@ export function createServer(cfg: CoreConfig) {
     // (the body carries the spec), so it lives here, not in mutatingRoutes.
     "POST /rows": async (req, __) => {
       const { spec } = (await req.json()) as { spec: SourceSpec };
-      const rows = await resolveSource(spec, { root: cfg.vault, today: todayISO() });
+      // Per-resolution memo: base composition + notes/tasks `from:` chains can hit the
+      // unscoped vault feeds many times in one call. Memoize the providers so they build
+      // (or fetch from the server cache) at most once per /rows. Unscoped only — scoped
+      // task extraction bypasses these providers and always runs fresh.
+      let rowsMemo: Promise<Row[]> | null = null;
+      let tasksMemo: Promise<Row[]> | null = null;
+      const rows = await resolveSource(spec, {
+        root: cfg.vault,
+        today: todayISO(),
+        vaultRows: () => (rowsMemo ??= getCachedRows()),
+        vaultTasks: () => (tasksMemo ??= getCachedTasks()),
+      });
       return ok(rows);
     },
 

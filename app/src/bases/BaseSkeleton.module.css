@@ -1,0 +1,79 @@
+/* Shaped loading placeholder for a BaseView. Mirrors the table / cards silhouettes
+   (see BaseView.module.css) closely enough that the pane reads as "this view, loading"
+   rather than a bare spinner. Blocks pulse via a shared shimmer animation. */
+
+.skeleton {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* Shimmer: a soft opacity pulse on every block (cheap, reduced-motion-friendly). */
+@keyframes oa-skel-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+.skeleton .head,
+.skeleton .row,
+.skeleton .card { animation: oa-skel-pulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton .head,
+  .skeleton .row,
+  .skeleton .card { animation: none; }
+}
+
+.block {
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  border-radius: 5px;
+}
+
+/* ---- table silhouette ---- */
+.table { display: flex; flex-direction: column; }
+.head {
+  display: flex;
+  gap: 24px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.headCell {
+  composes: block;
+  height: 9px;
+  flex: 1;
+  max-width: 120px;
+  background: color-mix(in srgb, var(--fg) 13%, transparent);
+}
+.row {
+  display: flex;
+  gap: 24px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.cell { composes: block; height: 11px; flex: 1; max-width: 160px; }
+/* Stagger the row widths a touch so the placeholder doesn't read as a perfect grid. */
+.row:nth-child(odd) .cell:last-child { max-width: 90px; }
+.row:nth-child(even) .cell:first-child { max-width: 130px; }
+
+/* ---- cards silhouette ---- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+  padding: 18px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 0 0 13px;
+  border: 1px solid var(--border-soft, var(--border));
+  border-radius: 11px;
+  overflow: hidden;
+}
+.cardCover {
+  height: 72px;
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border-bottom: 1px solid var(--border-soft, var(--border));
+}
+.cardLineWide { composes: block; height: 11px; margin: 0 14px; }
+.cardLine { composes: block; height: 9px; width: 55%; margin: 0 14px; }

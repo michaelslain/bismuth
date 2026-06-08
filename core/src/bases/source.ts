@@ -15,6 +15,13 @@ export interface SourceCtx {
    *  Paths are resolved to their real paths (symlinks dereferenced) before adding to prevent
    *  symlink-based cycles (e.g., A -> link-to-A -> A). */
   seen?: Set<string>;
+  /** Optional provider for the full (unscoped) vault rows, letting the caller serve them
+   *  from a cache instead of re-scanning. Falls back to buildVaultRows(root) when absent. */
+  vaultRows?: () => Promise<Row[]>;
+  /** Optional provider for vault task rows. Called with no paths for the unscoped/global case
+   *  (the caller may cache that); with `paths` for scoped extraction (never cached). Falls back
+   *  to buildTaskRows(root, paths) when absent. */
+  vaultTasks?: (paths?: string[]) => Promise<Row[]>;
 }
 
 /**
@@ -58,7 +65,7 @@ export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<R
   }
 
   if (spec.kind === "notes") {
-    let rows = await buildVaultRows(ctx.root);
+    let rows = await (ctx.vaultRows?.() ?? buildVaultRows(ctx.root));
     if (spec.from) {
       const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
       const paths = new Set(scoped.map((r) => r.file.path));
@@ -74,6 +81,10 @@ export async function resolveSource(spec: SourceSpec, ctx: SourceCtx): Promise<R
     const scoped = await resolveBaseRows(refToPath(spec.from), ctx);
     paths = [...new Set(scoped.map((r) => r.file.path))].filter(Boolean);
   }
-  const rows = await buildTaskRows(ctx.root, paths);
+  // Unscoped (no `from`) is the global case the provider may cache; scoped extraction
+  // (paths set) must always run fresh, so only the provider's no-arg call is cacheable.
+  const rows = paths
+    ? await buildTaskRows(ctx.root, paths)
+    : await (ctx.vaultTasks?.() ?? buildTaskRows(ctx.root));
   return spec.where ? filterTaskRows(rows, spec.where, today) : rows;
 }

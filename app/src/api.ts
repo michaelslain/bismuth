@@ -115,6 +115,10 @@ const post = (path: string, body: unknown) => transport.post(path, body);
 const put = (path: string, body: unknown) => transport.put(path, body);
 const postJson = <T>(path: string, body: unknown) => transport.postJson<T>(path, body);
 
+// In-flight /rows POSTs, keyed by serialized SourceSpec, so identical concurrent
+// resolutions share one request (dedup) — see `api.resolveRows`.
+const rowsInflight = new Map<string, Promise<Row[]>>();
+
 export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
@@ -155,7 +159,17 @@ export const api = {
   base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),
   // Single source resolver: resolve a SourceSpec to Row[] server-side, following
   // base composition + scoped tasks. Replaces the per-kind client-side resolver.
-  resolveRows: (spec: SourceSpec) => postJson<Row[]>("/rows", { spec }),
+  // Concurrent identical specs (the same base reopened in a split, or many ```query
+  // blocks pointing at one base) collapse onto one in-flight POST — keyed by the
+  // serialized spec, cleared once it settles so a later refetch re-hits the server.
+  resolveRows: (spec: SourceSpec) => {
+    const key = JSON.stringify(spec);
+    const inflight = rowsInflight.get(key);
+    if (inflight) return inflight;
+    const p = postJson<Row[]>("/rows", { spec }).finally(() => rowsInflight.delete(key));
+    rowsInflight.set(key, p);
+    return p;
+  },
   rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
   rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
   rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),
