@@ -128,7 +128,7 @@
 
 /* ---------- cards view ---------- */
 .cards { display: flex; flex-direction: column; gap: 12px; padding: 18px; }
-.cardGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.cardGrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; align-items: start; }
 .card {
   background: var(--surface-1, var(--panel));
   border: 1px solid var(--border-soft, var(--border));
@@ -137,6 +137,19 @@
   display: flex;
   flex-direction: column;
 }
+/* Cards open their note on click — show it's interactive. */
+.cardGrid > .card { cursor: pointer; transition: transform 0.08s ease, box-shadow 0.08s ease, border-color 0.08s ease; }
+.cardGrid > .card:hover { transform: translateY(-2px); border-color: var(--border, var(--border-soft)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); }
+/* Image cover: a clean framed image (no gradient/spine/texture), ratio set inline. */
+.cardCoverImg {
+  width: 100%;
+  border-bottom: 1px solid var(--border-soft, var(--border));
+  background: var(--surface-2, var(--bg));
+  overflow: hidden;
+}
+.cardCoverImg img { width: 100%; height: 100%; display: block; }
+/* No body fields (e.g. only title+author, both on the cover) → drop the empty padded row. */
+.cardBodyInner:empty { display: none; }
 /* Plain (non-body) card: a generated book cover + a body row of fields. */
 .cardCover {
   height: 96px;
@@ -185,7 +198,7 @@
 .coverAuthor { position: relative; z-index: 1; font-size: 11px; color: var(--text-muted); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .cardBodyInner { padding: 13px 14px; display: flex; flex-direction: column; gap: 6px; }
-.cardTitle { font-family: var(--editor-font); font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cardTitle { font-family: var(--editor-font); font-size: 15px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; line-height: 1.25; overflow-wrap: anywhere; }
 /* Faint serif-adjacent author line under the title (Kanban; Cards shows it on the cover). */
 .cardAuthor { font-size: 11.5px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The single meta row: status word on the left, stars / page count on the right. */

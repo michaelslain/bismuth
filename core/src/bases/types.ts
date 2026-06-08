@@ -29,6 +29,12 @@ export interface ViewConfig {
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
   cardContent?: "properties" | "body";   // cards view: what to render inside each card
+  // Cards view: render an image cover from this property instead of the generated
+  // text cover. The value may be a full URL (http/https/data/blob) or a vault image
+  // path/filename (served via the asset endpoint). When unset, the text cover is used.
+  image?: string;                         // property id holding the cover URL/path, e.g. "cover"
+  imageFit?: "cover" | "contain";        // object-fit for the cover image (default "cover")
+  imageAspectRatio?: number;             // cover width÷height (CSS aspect-ratio); default 0.667 (2:3 portrait)
   // Explicit group order for a grouped view: groups appear in this declared order,
   // with any data-only keys appended (ordered by value). Kanban additionally shows
   // every listed key as a column even when empty (so a column doesn't vanish when its
