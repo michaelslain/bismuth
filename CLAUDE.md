@@ -68,12 +68,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 **Purpose**: Manages vault file system, builds knowledge graphs, watches for changes, serves HTTP API.
 
 **Key modules**:
-- `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
-  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain layouts, lazy on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/{decks,all,note,due}`, plus daemon reads `/daemon/{status,devices,graph,install}` (see Daemon Integration)
-  - POST mutations (via `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — backend is the single writer), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update` (`index:null` creates), `/row/delete`, `/row/reorder`, `/replace`, `/daemon/owner`
-  - POST/PUT in the read table (NOT mutations — no cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server → `{url}`, see `openFolder.ts`), `PUT /file`, `POST /asset` (≤100 MB), `/relay/{session,session/end,subagent/start,subagent/stop}` (agent-graph ingest from the relay plugin hooks), `/daemon/{setup,cron/toggle,cron/run,process/toggle}` (daemon-state writes, not vault mutations)
-  - GET reads also include: `GET /asset` (serve a vault media file by filename — filename-first resolution, used by embedBlock)
-  - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
+- `server.ts` — HTTP server (Bun.serve) with caching, file watching, the mutating-route abstraction, SSE broadcast, and the WS `/terminal` upgrade. Three route tables: **GET reads**, **POST mutations** (via `mutatingHandler` → invalidate caches + broadcast SSE), and **read-table POST/PUT** (no cache-invalidate: `/rows`, `/search`, `/backup`, `/open-folder`, `PUT /file`, `POST /asset`, `/relay/*`, daemon-state writes). **Full route-by-route reference: `docs/api/http-reference.md`.**
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
@@ -150,6 +145,8 @@ The `bismuth` binary (thin wrapper over `@oa/core`) controls the whole vault fro
 **Adding a command**: add a `Command` to a `src/commands/<group>.ts` map (or a new group imported in `index.ts`) — resolve inputs via `args.ts`, call core, `out(result, args)`.
 
 ### Bases (`core/src/bases/` + `app/src/bases/`)
+
+> Deep reference: `docs/bases/` (overview, sources, query-syntax, filters, functions, query-block) + `docs/bases/views/` (per view kind). This is the conceptual summary.
 
 A query/view system. A **base is a `type: base` md file** — its frontmatter declares filters, formulas, and one or more views over the vault's notes (`FileView` routes a `type: base` note to `BaseView`). There is **no `.base` extension**.
 
