@@ -1455,7 +1455,8 @@ export class WebGLRenderer {
    * canvas background (the points material has no per-vertex alpha, so a faded node = a node mixed
    * toward the background). Only reached for kind cron/process, so it never touches any other mode.
    *   fill "palette" → running: the whole node is its stable per-node palette color (solid).
-   *   fill "base"    → enabled-idle or disabled: muted neutral; opacity fades it toward bg.
+   *   fill "bg"      → enabled-idle: the circle takes the canvas background (--bg), a hollow dot.
+   *   fill "base"    → disabled: muted neutral; opacity fades it toward bg.
    */
   private daemonNodeColor(n: N3): THREE.Color {
     const vs = nodeVisualState(
@@ -1464,7 +1465,9 @@ export class WebGLRenderer {
     const bg = new THREE.Color(this.cfg.backgroundColor);
     const color = vs.fill === "palette"
       ? this.paletteColor(n.id)
-      : new THREE.Color(this.cfg.daemonNeutral ?? 0xaeb4c2);
+      : vs.fill === "bg"
+        ? bg.clone()
+        : new THREE.Color(this.cfg.daemonNeutral ?? 0xaeb4c2);
     return color.lerp(bg, 1 - vs.opacity);
   }
 
