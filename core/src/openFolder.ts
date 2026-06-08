@@ -11,8 +11,23 @@
 // the app shell; only the folder *picker* differs (native dialog vs. typed path).
 
 import { statSync } from "node:fs";
+import { basename } from "node:path";
 import { createServer } from "node:net";
 import { createError } from "./error";
+
+/**
+ * Build the argv to launch a core server for a vault on a port. Two runtimes:
+ * - **dev / from source**: `process.execPath` is the `bun` binary → `bun run <server.ts> …`.
+ * - **packaged (Tauri sidecar)**: core is a `bun build --compile` single-file binary, so
+ *   `process.execPath` IS the server — re-exec it directly with the new vault/port (the
+ *   embedded `serverEntry` path isn't a real file and must not be passed).
+ * Detected by the executable's basename ("bun" ⇒ dev; anything else ⇒ compiled).
+ */
+export function coreLaunchArgv(serverEntry: string, vault: string, memory: string, port: number): string[] {
+  const tail = ["--vault", vault, "--memory", memory, "--port", String(port)];
+  const compiled = basename(process.execPath) !== "bun";
+  return compiled ? [process.execPath, ...tail] : [process.execPath, "run", serverEntry, ...tail];
+}
 
 /** Reject anything that isn't an existing directory before we spawn a server at it. */
 export function validateVaultFolder(folder: unknown): string {
@@ -97,10 +112,7 @@ export async function spawnVaultBackend(opts: SpawnOptions): Promise<SpawnedBack
   const spawn = opts.spawn ?? defaultSpawn;
   const probe = opts.probe ?? defaultProbe;
 
-  const child = spawn(
-    [process.execPath, "run", opts.serverEntry, "--vault", vault, "--memory", opts.memory, "--port", String(port)],
-    opts.cwd,
-  );
+  const child = spawn(coreLaunchArgv(opts.serverEntry, vault, opts.memory, port), opts.cwd);
 
   // Watch for the child dying before it's ready (bad entry, port clash, crash on
   // boot) so we fail fast with a clear message instead of waiting out the timeout.

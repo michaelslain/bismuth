@@ -10,15 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "app",
-        "width": 1200,
-        "height": 800,
-        "transparent": false,
-        "backgroundColor": "#14151B"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

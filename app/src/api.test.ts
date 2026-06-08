@@ -67,6 +67,13 @@ describe("resolveBase (runtime backend selection for ?api= windows)", () => {
   test("an empty ?api= value is ignored (treated as unset)", () => {
     expect(resolveBase("?api=", "http://env:9")).toBe("http://env:9");
   });
+  test("injected __OA_API__ (bundled app spawned port) wins over env + default, trims slashes", () => {
+    expect(resolveBase("", undefined, "http://localhost:7777")).toBe("http://localhost:7777");
+    expect(resolveBase("", "http://env:9", "http://localhost:7777/")).toBe("http://localhost:7777");
+  });
+  test("?api= still wins over an injected __OA_API__", () => {
+    expect(resolveBase("?api=http://localhost:5000", "http://env:9", "http://localhost:7777")).toBe("http://localhost:5000");
+  });
   test("two windows with different ?api= resolve to different backends", () => {
     expect(resolveBase("?api=http://localhost:4323", undefined)).not.toBe(
       resolveBase("?api=http://localhost:4324", undefined),
