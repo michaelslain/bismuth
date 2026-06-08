@@ -17,7 +17,7 @@ cp -R src-tauri/target/release/bundle/macos/app.app /Applications/Bismuth.app
 open /Applications/Bismuth.app   # first launch: pick your vault folder
 ```
 
-The bundled app **runs its own backend** — it spawns the embedded `core` server (a compiled sidecar) on `:4321` at launch and kills it on quit. On first launch it prompts for your vault folder and remembers it (in `~/Library/Application Support/com.michael.obsidian/config.json`); memory defaults to `~/.claude-bot/memory`.
+The bundled app **runs its own backend** — it spawns the embedded `core` server (a compiled sidecar) on a free port at launch and kills it on quit. On first launch it prompts for your vault folder and remembers it (in `~/Library/Application Support/com.michael.obsidian/config.json`); memory defaults to `~/.claude-bot/memory`.
 
 > To just try it without installing: `cd app && bun run dev` (starts core + a dev window together; uses `OA_VAULT`/`OA_MEMORY` env). Full detail: [install](overview/install.md).
 

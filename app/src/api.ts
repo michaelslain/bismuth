@@ -4,16 +4,24 @@
 // run alongside another worktree), then the standard core port.
 // Pure so it's unit-testable: given a location.search and the build env, pick the
 // backend base. `?api=` wins (trailing slashes trimmed), then VITE_API_BASE, then default.
-export function resolveBase(search: string | undefined, envBase: string | undefined): string {
+// Precedence: `?api=` (per-window, set by "Open folder") > `injected` (window.__OA_API__,
+// set by the bundled Tauri app for the core server it spawned on a free port) >
+// VITE_API_BASE (build env) > the standard core port.
+export function resolveBase(search: string | undefined, envBase: string | undefined, injected?: string): string {
   try {
     const fromQuery = new URLSearchParams(search ?? "").get("api");
     if (fromQuery) return fromQuery.replace(/\/+$/, "");
   } catch {
-    // malformed search — fall through to the build-time default
+    // malformed search — fall through to the injected/env/default
   }
+  if (injected) return injected.replace(/\/+$/, "");
   return envBase ?? "http://localhost:4321";
 }
-const BASE = resolveBase(globalThis.location?.search, import.meta.env.VITE_API_BASE);
+const BASE = resolveBase(
+  globalThis.location?.search,
+  import.meta.env.VITE_API_BASE,
+  (globalThis as { __OA_API__?: string }).__OA_API__,
+);
 
 /** The backend this window is bound to (already query/env resolved). Exposed so the UI
  *  can build "new window" / "open folder" URLs that pin the right backend via `?api=`. */
