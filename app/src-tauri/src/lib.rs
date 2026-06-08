@@ -109,7 +109,7 @@ fn start_backend(app: &tauri::AppHandle) -> Option<u16> {
 // (the concurrently-launched dev backend).
 fn build_main_window(app: &tauri::AppHandle, injected: Option<String>) -> tauri::Result<()> {
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
-        .title("app")
+        .title("Bismuth")
         .inner_size(1200.0, 800.0);
     if let Some(api) = injected {
         builder = builder.initialization_script(&format!("window.__OA_API__={api:?};"));
@@ -142,12 +142,16 @@ fn mark_png(name: &str) -> Option<&'static [u8]> {
     })
 }
 
-// Read `appearance.icon` from the vault's settings.yaml (OA_VAULT). Returns None
-// if unset/absent. Tiny scoped scan rather than a YAML dependency: the `icon:` key
-// inside the top-level `appearance:` block.
+// Read `appearance.icon` from the active vault's settings.yaml. The vault is OA_VAULT
+// (dev) or, in a Finder-launched bundle (no shell env), the one saved in config.json.
+// Returns None if unset/absent. Tiny scoped scan rather than a YAML dependency: the
+// `icon:` key inside the top-level `appearance:` block.
 #[cfg(target_os = "macos")]
-fn vault_icon_name() -> Option<String> {
-    let vault = std::env::var("OA_VAULT").ok()?;
+fn vault_icon_name(app: &tauri::AppHandle) -> Option<String> {
+    let vault = std::env::var("OA_VAULT")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .or_else(|| read_config(app).map(|c| c.vault).filter(|v| !v.is_empty()))?;
     let text = std::fs::read_to_string(std::path::Path::new(&vault).join("settings.yaml")).ok()?;
     let mut in_appearance = false;
     for line in text.lines() {
@@ -168,11 +172,11 @@ fn vault_icon_name() -> Option<String> {
 // Set the macOS dock icon to the vault's chosen mark. Runs at the `Ready` event
 // (pre-composite), mirroring Tauri's own internal dev call.
 #[cfg(target_os = "macos")]
-fn apply_vault_dock_icon() {
+fn apply_vault_dock_icon(app: &tauri::AppHandle) {
     use objc2::{AllocAnyThread, MainThreadMarker};
     use objc2_app_kit::{NSApplication, NSImage};
     use objc2_foundation::NSData;
-    let Some(png) = vault_icon_name().and_then(|n| mark_png(&n)) else {
+    let Some(png) = vault_icon_name(app).and_then(|n| mark_png(&n)) else {
         return;
     };
     let Some(mtm) = MainThreadMarker::new() else {
@@ -213,7 +217,7 @@ pub fn run() {
     app.run(|app_handle, event| {
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Ready = event {
-            apply_vault_dock_icon();
+            apply_vault_dock_icon(app_handle);
         }
         // Kill the spawned core server when the app quits — no orphaned backend.
         if let tauri::RunEvent::Exit = event {
