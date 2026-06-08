@@ -5,10 +5,10 @@ export type FilterNode = string | { and: FilterNode[] } | { or: FilterNode[] } |
 
 // All view kinds a view can render. Calendar + flashcards are the unified additions.
 // Chart types: bar, line, stat (stat tile), heatmap.
-export type ViewType = "table" | "cards" | "list" | "kanban" | "map" | "calendar" | "flashcards" | "bar" | "line" | "stat" | "heatmap";
+export type ViewType = "table" | "cards" | "list" | "bullets" | "kanban" | "map" | "calendar" | "flashcards" | "bar" | "line" | "stat" | "heatmap";
 
 /** Exhaustive list of valid view type strings. Single source of truth. */
-export const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map", "calendar", "flashcards", "bar", "line", "stat", "heatmap"];
+export const VIEW_TYPES: ViewType[] = ["table", "cards", "list", "bullets", "kanban", "map", "calendar", "flashcards", "bar", "line", "stat", "heatmap"];
 export function isValidType(t: unknown): t is ViewType {
   return typeof t === "string" && (VIEW_TYPES as string[]).includes(t);
 }
