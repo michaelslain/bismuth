@@ -84,6 +84,7 @@ The bundled app **runs its own backend** — it spawns the embedded `core` serve
 
 - [CLI reference](cli/reference.md) — every `bismuth` command
 - [HTTP API reference](api/http-reference.md) — every core server route
+- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI
 
 ## Contributing
 
