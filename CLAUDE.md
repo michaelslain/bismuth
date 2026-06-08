@@ -112,7 +112,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
 - `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`). Notes/bases/sheets/drawings/settings route by file path; no `::calendar` sentinel (calendar is a Bases view).
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — renders a `BaseView` from a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec; SOURCE button toggles raw editing), `queryComplete` (autocomplete inside ` ```query ` blocks — keys, view types, task-DSL snippets), `taskComplete` (task-metadata autocomplete in `- [ ]` lines — `due`/`scheduled`/`priority` keywords expand to emoji), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion; resizable, persisted as `|WxH`), `htmlPreview` (sanitized raw HTML, block + inline), `inlineMarkdown` (markdown in table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables — contenteditable cells, Shift+Enter multi-line, drag-resize cols/rows), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers` (line numbers on code blocks), `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — renders a `BaseView` from a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec), `queryComplete` (autocomplete inside ` ```query ` blocks), `taskComplete` (task-metadata autocomplete in `- [ ]` lines — keywords expand to emoji), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion; resizable, persisted as `|WxH`), `htmlPreview` (sanitized raw HTML, block + inline), `inlineMarkdown` (markdown in table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables — contenteditable cells, Shift+Enter multi-line, drag-resize cols/rows), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers` (line numbers on code blocks), `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -161,11 +161,11 @@ A query/view system. A **base is a `type: base` md file** — its frontmatter de
 A base can also be **queried inside a note** via a ` ```query ` code block — the only embedded block (there is no ` ```base `/` ```view `/` ```tasks `). Its body is either a full inline base config (top-level `views:`/`filters:`/`formulas:`/`source:`) or a flat query spec (`of: [[Base]]`, `tasks: <dsl>`, `where:`, `group:`, `view:`). Rendered inline by `editor/queryBlock.ts`.
 
 **Sources & composition** (`sourceSpec.ts`, `source.ts`): every base/view resolves a `SourceSpec` to a uniform `Row[]`:
-- `{ kind: "base", ref }` — render another base; **resolves that base's OWN source recursively** (composition), not just its static table rows.
-- `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expression; `from: [[Base]]` scopes to that base's notes.
-- `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: [[Base]]` scopes extraction to that base's notes (NOT the whole vault). No `from` = degenerate global case.
+- `{ kind: "base", ref }` — render another base, resolving that base's OWN source recursively (composition), not just its static rows.
+- `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expr; `from: [[Base]]` scopes to that base's notes.
+- `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: [[Base]]` scopes extraction to that base's notes (no `from` = global).
 
-Frontmatter accepts a string (`source: notes where #book`) or an object; `normalizeSource()` coerces both. Resolution is cycle-guarded and **server-side** via `POST /rows {spec}`; `BaseView.resolveRows` = `inlineRows ?? api.resolveRows(spec)`.
+Frontmatter accepts a string (`source: notes where #book`) or an object; `normalizeSource()` coerces both. Resolution is cycle-guarded and **server-side** via `POST /rows {spec}`; `BaseView.resolveRows` = `inlineRows ?? api.resolveRows(spec)`. Perf: the server caches the unscoped vault row feed (`cachedRows`, invalidated on vault change); the client keeps an SSE-version-keyed stale-while-revalidate cache (`bases/rowCache.ts` `RowCache`) so reopening a base paints instantly from last rows (`BaseSkeleton` only on cold load) while revalidating.
 
 In a flat block: `of: [[Base]]` renders that base, `tasks: <dsl>` runs a task query (optionally `from: [[Base]]`), `where:`/`view:` filter and pick the mode. It does not iterate notes itself (that's a base's job); neither `of:` nor `tasks:` → empty state.
 
@@ -205,10 +205,10 @@ A `.sheet` file is a Univer workbook JSON snapshot (`@univerjs/presets` v0.25), 
 
 ### Drawing (`app/src/drawing/` + `core/src/drawing/`)
 
-A `.draw` file is a versioned JSON document (`DrawingDoc`: pages, strokes, paper background) — a multi-page vector sketch surface routed by `PaneContent.tsx` (lazy-loaded `DrawingPage.tsx`), created via "New Drawing".
-- **Backend (`core/src/drawing/`, pure + headless)**: `model.ts` (doc schema, parse/serialize), `geometry.ts` (stroke outlines via perfect-freehand), `smooth.ts` (post-release 4-stage spline relaxation: dedupe → arc-length resample → Gaussian denoise → centripetal Catmull-Rom), `render2d.ts` (Canvas 2D draw, highlighter multiply-blend), `paper.ts` (blank/lines/grid/dots backgrounds), `theme.ts` (7-color palette, theme-aware ink), `export.ts` (`renderDocToPng`/`renderDocToPdf` via `@napi-rs/canvas` + `pdf-lib` — headless only, NOT an HTTP route).
-- **Frontend (`app/src/drawing/`)**: `DrawingCanvas.tsx` (dual canvas — committed base + live draft; pointer + stylus pressure/velocity width), `Toolbar.tsx`, `store.ts` (pages + undo/redo), `input.ts` (stylus detection, width calc).
-- **Persistence**: saved through the generic `PUT /file` (no dedicated drawing route). Raw input is captured lag-free; smoothing is applied on pointer-release.
+A `.draw` file is a versioned JSON `DrawingDoc` (pages, strokes, paper background) — a multi-page vector sketch surface routed by `PaneContent.tsx` (lazy `DrawingPage.tsx`), created via "New Drawing".
+- **Backend (`core/src/drawing/`, pure + headless)**: `model.ts` (schema, parse/serialize), `geometry.ts` (stroke outlines via perfect-freehand), `smooth.ts` (post-release spline relaxation), `render2d.ts` (Canvas 2D, highlighter multiply-blend), `paper.ts` (blank/lines/grid/dots), `theme.ts` (7-color palette), `export.ts` (`renderDocToPng`/`renderDocToPdf` via `@napi-rs/canvas`+`pdf-lib` — headless, not a route).
+- **Frontend (`app/src/drawing/`)**: `DrawingCanvas.tsx` (dual canvas — committed base + live draft; stylus pressure/velocity width), `Toolbar.tsx`, `store.ts` (pages + undo/redo), `input.ts`.
+- **Persistence**: generic `PUT /file` (no dedicated route); raw input is lag-free, smoothing applied on pointer-release.
 
 ### Panes / Tabs
 
@@ -348,7 +348,7 @@ The "agents" mode visualizes Claude Code sessions in Bismuth's own terminal tabs
 **2D/3D toggle**: The renderer's 2D vs 3D mode is a **transient localStorage toggle** (not a `settings.yaml` key). It persists across sessions via `localStorage` but is not user-facing in the settings file. Toggle via the graph toolbar or the `GraphView` mode control.
 
 ### Performance Optimizations
-Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder.
+Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder; base loads use a server vault-row cache + client SWR row cache and precompiled task regexes.
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
