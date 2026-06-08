@@ -19,7 +19,7 @@ export function strokeOutline(
   if (s.straight && input.length >= 2) input = [input[0], input[input.length - 1]];
   const isHl = s.t === "hl";
   const fill = getStroke(input, {
-    size: s.w * (isHl ? 4 : 2),
+    size: s.w * (isHl ? 2 : 1),
     thinning: s.straight || isHl ? 0 : 0.6,
     smoothing: 0.5,
     // streamline is a trailing EMA on the INPUT — its only effect here is lag, so keep it off.

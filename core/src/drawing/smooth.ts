@@ -15,39 +15,39 @@
 // The stroke is then drawn with perfect-freehand + a quadratic-midpoint outline fill, which
 // removes the last of the faceting.
 
-interface P { x: number; y: number; p: number }
+export interface P { x: number; y: number; p: number }
 
 // px between control points after resampling. Larger = smoother (more jitter decimated),
 // smaller = more faithful. Tuned for the 816×1056 page.
-export const RESAMPLE_SPACING = 6;
+export const RESAMPLE_SPACING = 9;
 // Catmull-Rom sub-samples emitted per segment. 6–12 is plenty given the curve is also
 // rendered with a quadratic-midpoint outline path.
 export const SAMPLES_PER_SEGMENT = 8;
 // Gaussian denoise passes over the uniform points. Higher = smoother but flatter; a handful
 // on uniform spacing kills jitter with negligible shrinkage.
-export const DENOISE_PASSES = 6;
+export const DENOISE_PASSES = 12;
 const EPS = 1e-4;
 
-const dist = (a: P, b: P) => Math.hypot(b.x - a.x, b.y - a.y);
-const lerp = (a: P, b: P, t: number): P => ({
+export const dist = (a: P, b: P) => Math.hypot(b.x - a.x, b.y - a.y);
+export const lerp = (a: P, b: P, t: number): P => ({
   x: a.x + t * (b.x - a.x),
   y: a.y + t * (b.y - a.y),
   p: a.p + t * (b.p - a.p),
 });
 
-function toPts(a: number[]): P[] {
+export function toPts(a: number[]): P[] {
   const out: P[] = [];
   for (let i = 0; i + 2 < a.length + 1; i += 3) out.push({ x: a[i], y: a[i + 1], p: a[i + 2] ?? 255 });
   return out;
 }
-function toFlat(ps: P[]): number[] {
+export function toFlat(ps: P[]): number[] {
   const out: number[] = [];
   for (const q of ps) out.push(q.x, q.y, Math.max(0, Math.min(255, q.p)));
   return out;
 }
 
 /** Drop consecutive near-duplicate points; always keep the exact final point. */
-function dedupe(ps: P[], minDist = 0.6): P[] {
+export function dedupe(ps: P[], minDist = 0.6): P[] {
   if (ps.length < 2) return ps.slice();
   const out: P[] = [ps[0]];
   for (let i = 1; i < ps.length; i++) {
@@ -59,7 +59,7 @@ function dedupe(ps: P[], minDist = 0.6): P[] {
 }
 
 /** Resample a polyline to (approximately) uniform arc-length spacing; endpoints kept exact. */
-function resample(ps: P[], spacing: number): P[] {
+export function resample(ps: P[], spacing: number): P[] {
   if (ps.length < 2) return ps.slice();
   const out: P[] = [ps[0]];
   let carry = 0; // arc length walked since the last emitted point
@@ -83,7 +83,7 @@ function resample(ps: P[], spacing: number): P[] {
 
 /** Binomial [0.25, 0.5, 0.25] smoothing, `passes` times, endpoints pinned. Run on UNIFORMLY
  *  spaced points so it denoises evenly (the approximating step that removes jitter). */
-function gaussian(ps: P[], passes: number): P[] {
+export function gaussian(ps: P[], passes: number): P[] {
   if (ps.length < 3 || passes <= 0) return ps.slice();
   let cur = ps;
   for (let it = 0; it < passes; it++) {
@@ -106,7 +106,7 @@ function gaussian(ps: P[], passes: number): P[] {
  * duplicated as phantom controls so the first/last real segments exist, and the exact final
  * point is re-pinned.
  */
-function catmullRom(ps: P[], samples: number): P[] {
+export function catmullRom(ps: P[], samples: number): P[] {
   const n = ps.length;
   if (n < 3) return ps.slice();
   const pad = [ps[0], ...ps, ps[n - 1]];
@@ -135,17 +135,44 @@ function catmullRom(ps: P[], samples: number): P[] {
   return out;
 }
 
+export const arcLength = (ps: P[]): number => {
+  let len = 0;
+  for (let i = 1; i < ps.length; i++) len += dist(ps[i - 1], ps[i]);
+  return len;
+};
+
+/**
+ * Scale-adaptive smoothing strength. Handwriting strokes are short with small, meaningful
+ * features (letterforms) — full-intensity denoise melts them into illegible blobs. Long sweeping
+ * strokes have no fine detail to protect and want the full treatment. So we ramp spacing + passes
+ * from gentle → full across an arc-length window, keeping the SAME pipeline either way.
+ *   < ~80px (a letter): spacing 2, 1 pass   → mostly faithful, just de-jittered
+ *   > ~350px (a sweep):  full RESAMPLE_SPACING / DENOISE_PASSES
+ */
+function adaptiveParams(arcLen: number): { spacing: number; passes: number } {
+  const SMALL = 70, LARGE = 160;
+  const t = Math.max(0, Math.min(1, (arcLen - SMALL) / (LARGE - SMALL)));
+  return {
+    spacing: 2 + t * (RESAMPLE_SPACING - 2),
+    passes: Math.round(1 + t * (DENOISE_PASSES - 1)),
+  };
+}
+
 /**
  * Smooth a finished freehand stroke. Drop-in for the previous Laplacian version (same name +
- * signature) so the canvas just calls it on pointer-release for "smooth" strokes.
+ * signature) so the canvas just calls it on pointer-release for "smooth" strokes. With no
+ * explicit overrides the smoothing strength adapts to stroke size so handwriting stays legible.
  */
 export function smoothStrokePoints(
   pts: number[],
-  spacing: number = RESAMPLE_SPACING,
+  spacing?: number,
   samples: number = SAMPLES_PER_SEGMENT,
-  passes: number = DENOISE_PASSES,
+  passes?: number,
 ): number[] {
   const ps = dedupe(toPts(pts));
   if (ps.length < 3) return toFlat(ps); // a dot or a 2-point line: nothing to smooth
-  return toFlat(catmullRom(gaussian(resample(ps, spacing), passes), samples));
+  const auto = adaptiveParams(arcLength(ps));
+  const sp = spacing ?? auto.spacing;
+  const ps2 = passes ?? auto.passes;
+  return toFlat(catmullRom(gaussian(resample(ps, sp), ps2), samples));
 }
