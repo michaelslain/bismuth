@@ -16,8 +16,6 @@ cp -R src-tauri/target/release/bundle/macos/Bismuth.app /Applications/
 open /Applications/Bismuth.app                                 # first launch: pick your vault folder
 ```
 
-That's it — the app runs its own backend, so there's nothing else to start. (Just trying it? `cd app && bun run dev`.) Details: [install](overview/install.md).
-
 ## Start here
 
 - [Architecture](overview/architecture.md) — workspaces, the three-brain model, how it all fits together
