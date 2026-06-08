@@ -180,11 +180,13 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
       return;
     }
     state = { phase: "building", message: "rebuilding Bismuth (this takes a few minutes)…" };
-    // `bun run tauri build` in app/ — rebuilds frontend + sidecar + tools + the .app.
-    // Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
+    // `bun run tauri build --bundles app` in app/ — rebuilds frontend + sidecar + tools +
+    // the .app, but SKIPS the .dmg: self-update only swaps the .app, and the dmg packaging
+    // step (bundle_dmg.sh) is intermittently flaky, so building it would just add a failure
+    // mode. Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
     // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
     const bun = Bun.which("bun", { PATH: buildPath() }) ?? "bun";
-    const build = await runProc([bun, "run", "tauri", "build"], {
+    const build = await runProc([bun, "run", "tauri", "build", "--bundles", "app"], {
       cwd: join(repoRoot, "app"),
       timeoutMs: 900_000,
     });
