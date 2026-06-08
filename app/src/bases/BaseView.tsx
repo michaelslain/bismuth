@@ -7,6 +7,7 @@ import type { BaseConfig, Row, ViewResult, SourceSpec, QueryBlock, FileMeta } fr
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
 import { ListView } from "./ListView";
+import { BulletsView } from "./BulletsView";
 import { KanbanView } from "./KanbanView";
 import { MapView } from "./MapView";
 import { HeatmapView } from "./HeatmapView";
@@ -247,6 +248,9 @@ export function BaseView(props: {
                         </Match>
                         <Match when={res().view.type === "list"}>
                           <ListView result={res()} config={data()!.config} onChange={refetch} />
+                        </Match>
+                        <Match when={res().view.type === "bullets"}>
+                          <BulletsView result={res()} config={data()!.config} />
                         </Match>
                         <Match when={res().view.type === "map"}>
                           <MapView result={res()} config={data()!.config} onOpen={props.onOpen} />

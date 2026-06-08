@@ -42,7 +42,7 @@ const FIELDS_BY_TYPE: Partial<Record<ViewType, FieldDef[]>> = {
 };
 
 // Record view types get column-visibility + sort + group-by config.
-const RECORD_TYPES: ViewType[] = ["table", "cards", "list", "kanban", "map"];
+const RECORD_TYPES: ViewType[] = ["table", "cards", "list", "bullets", "kanban", "map"];
 
 // Chart view types get aggregate + date-bucket config.
 const CHART_TYPES: ViewType[] = ["heatmap", "bar", "line", "stat"];
