@@ -69,6 +69,7 @@ export const SETTINGS_SCHEMA: Schema = {
   }),
   graph: object({
     spin: { type: "boolean", default: true, doc: "Idle rotation of the graph." },
+    showFps: { type: "boolean", default: false, doc: "Show the frame-rate (FPS) counter on the graph." },
     spinSpeed: { type: "number", default: 0.0015, min: 0, max: 0.01, doc: "Idle spin speed (radians/frame)." },
     repulsion: { type: "number", default: -10, min: -40, max: -1, doc: "Node repulsion; more negative pushes apart harder." },
     linkDistance: { type: "number", default: 5, min: 1, max: 40, doc: "Target distance between linked nodes." },
