@@ -16,14 +16,24 @@ import { deriveTitle, renamedPath } from "./noteTitleOps";
 import "./NoteTitle.css";
 
 export function NoteTitle(props: { path: string }) {
-  let inputRef: HTMLInputElement | undefined;
+  let inputRef: HTMLTextAreaElement | undefined;
   // Title is derived from the path; re-derives automatically when the path
   // changes (e.g. renamed from the file tree).
   const title = createMemo(() => deriveTitle(props.path));
 
+  // Long titles must wrap onto multiple lines instead of being clipped, so the
+  // field is a <textarea> whose height auto-grows to fit its content. Reset to
+  // `auto` first so it can also shrink when the title gets shorter.
+  const autosize = () => {
+    if (!inputRef) return;
+    inputRef.style.height = "auto";
+    inputRef.style.height = `${inputRef.scrollHeight}px`;
+  };
+
   // Local edit buffer. Kept in sync with the derived title whenever the path
   // (and thus the title) changes, so an external rename is reflected here too.
   const [draft, setDraft] = createSignal(title());
+  createEffect(() => { draft(); autosize(); });
   createEffect(() => setDraft(title()));
 
   // setEditing-style guard: blur fires after Enter (which blurs the input), so
@@ -59,14 +69,17 @@ export function NoteTitle(props: { path: string }) {
       {/* Non-editable heading glyph — separate DOM from the field. Hidden until
           the field is focused (see CSS), then revealed in mono accent. */}
       <span class="note-title-hash" aria-hidden="true">#</span>
-      <input
+      <textarea
         ref={(el) => (inputRef = el)}
         class="note-title-input"
+        rows={1}
         value={draft()}
         spellcheck={false}
         onInput={(e) => setDraft(e.currentTarget.value)}
         onFocus={() => setFocused(true)}
         onKeyDown={(e) => {
+          // Enter commits (renames) rather than inserting a newline — the title
+          // is a single logical string that merely wraps visually.
           if (e.key === "Enter") { e.preventDefault(); inputRef?.blur(); } // commit via blur
           else if (e.key === "Escape") { revert(); inputRef?.blur(); }
         }}

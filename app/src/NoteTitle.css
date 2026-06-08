@@ -3,7 +3,10 @@
    Centered in the same 760px reading column as the editor body, baseline-aligned. */
 .note-title {
   display: flex;
-  align-items: baseline;
+  /* flex-start (not baseline): a multi-line <textarea> reports its baseline at
+     the bottom in some browsers, which would drop the `#` glyph below the title.
+     Top-align so the `#` sits beside the first line. */
+  align-items: flex-start;
   gap: 11px;
   /* Sit inside the editor's centered 760px column, aligned with the body's
      left/right padding (.cm-content padding-inline: 40px). */
@@ -34,7 +37,9 @@
 }
 
 /* Editable title text — serif Lora, 600, tight tracking (design: 31px / -.015em).
-   Borderless until focused so it reads as a heading. */
+   Borderless until focused so it reads as a heading. A <textarea> (not <input>)
+   so long titles wrap onto multiple lines instead of being clipped; its height
+   is auto-grown to fit the content in JS (see NoteTitle.tsx). */
 .note-title-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -49,4 +54,11 @@
   letter-spacing: -0.015em;
   padding: 0 2px;
   border-radius: 3px;
+  /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
+     (height is driven from scrollHeight), render as a block heading. */
+  display: block;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
