@@ -191,7 +191,7 @@ Spaced-repetition reviews. Flashcards are a **Bases view kind** (`flashcards`) o
 - `app/src/bases/flashcardsQueue.ts` — pure, unit-tested review-queue logic: `buildQueue(rows, dueField, today, cram, bidirectional)`, `nextPosAfterGrade`, stable row-index tracking.
 - **Bidirectional cards**: when enabled, each row yields TWO queue entries (forward + reverse); the reverse direction is scheduled independently in `*Back` companion columns (`dueBack`/`easeBack`/`intervalBack`, via `backField`). Toggle in `BaseSettings.tsx`.
 - **Cram mode** reviews everything ignoring due dates and NEVER writes scheduling (practice, not review).
-- Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due` (GET reads); `POST /cards/review` is dual-mode — `{id, response}` drives markdown cards (`applyReview`), `{file, index, response, dueField?…}` drives row cards (`applyReviewToRow`). Card add/edit/delete/reorder go through `POST /row/update` (`index:null` = add), `/row/delete`, `/row/reorder` (server-side rewrites via `bases/rowOps.ts` `upsertRow`/`deleteRow`/`reorderRow`); the review UI's `EditCardsModal.tsx` is the two-mode (list + bulk-add) deck editor with drag reorder.
+- Endpoints: `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due` (GET reads); `POST /cards/review` is dual-mode — `{id, response}` drives markdown cards (`applyReview`), `{file, index, response, dueField?…}` drives row cards (`applyReviewToRow`). Card add/edit/delete/reorder go through `POST /row/{update,delete,reorder}` (server-side rewrites via `bases/rowOps.ts`); `EditCardsModal.tsx` is the deck editor (list + bulk-add, drag reorder).
 
 ### Terminal (`core/src/terminal.ts` + `app/src/Terminal.tsx`)
 
