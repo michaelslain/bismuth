@@ -2,12 +2,21 @@ node_modules/
 dist/
 target/
 .superpowers/
-docs/
 superpowers/
 .worktrees/
 .claude/
 .DS_Store
 *.log
+
+# plans / scratch (dev artifacts live outside the tree in ~/.claude/bismuth-docs/)
+PLAN.md
+PLANS/
+plans/
+*.plan.md
+.claude-communicate/
+
+# Tauri generated (Rust target/ already covered above)
+app/src-tauri/gen/schemas
 
 # Staged claude-bot Tauri resource (built by app/scripts/bundle-claudebot.ts) — heavy artifact, never committed
 app/src-tauri/resources/claude-bot/
