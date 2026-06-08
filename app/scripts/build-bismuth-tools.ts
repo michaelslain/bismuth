@@ -13,7 +13,7 @@
 // Run: cd app && bun run scripts/build-bismuth-tools.ts   (or `bun run build:bismuth-tools`)
 // Wired into beforeBuildCommand so `tauri build` always has fresh tools.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, cpSync, existsSync, statSync } from "node:fs";
+import { mkdirSync, rmSync, cpSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const here = dirname(new URL(import.meta.url).pathname);
@@ -54,5 +54,16 @@ if (!existsSync(docsSrc)) {
 }
 cpSync(docsSrc, join(outDir, "docs"), { recursive: true });
 console.log(`✓ docs staged → ${join(outDir, "docs")}`);
+
+// Record where this build came from so the installed app can git-fetch/pull + rebuild to
+// self-update (core/src/selfUpdate.ts reads ${OA_BISMUTH_INSTALL_SRC}/build-origin.json).
+let sha = "";
+const rev = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
+if (rev.status === 0) sha = rev.stdout.trim();
+writeFileSync(
+  join(outDir, "build-origin.json"),
+  JSON.stringify({ repoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
+);
+console.log(`✓ build-origin → ${join(outDir, "build-origin.json")} (sha ${sha.slice(0, 7) || "unknown"})`);
 
 console.log(`✓ bismuth-tools staged → ${outDir}`);

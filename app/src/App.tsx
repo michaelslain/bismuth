@@ -23,6 +23,7 @@ import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { DaemonSetupModal } from "./DaemonSetupModal";
 import { BismuthInstallModal } from "./BismuthInstallModal";
+import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
@@ -1091,6 +1092,7 @@ export default function App() {
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
+        <UpdateBanner />
         <div class="tabbar" data-tabstrip="true">
           <For each={tabs()}>
             {(t, i) => (

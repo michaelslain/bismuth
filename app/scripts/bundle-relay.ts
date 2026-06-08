@@ -29,7 +29,9 @@ cpSync(relayDir, stagedDir, {
   recursive: true,
   filter: (src) => {
     const b = basename(src);
-    return b !== "node_modules" && b !== ".mcp.json";
+    // Drop node_modules (dev-only), .mcp.json (machine-wide install instead), and the
+    // stray .zsh_history artifact (the bundle is read-only, so zsh would fail to lock it).
+    return b !== "node_modules" && b !== ".mcp.json" && b !== ".zsh_history";
   },
 });
 

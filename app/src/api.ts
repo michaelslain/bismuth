@@ -36,6 +36,7 @@ import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 import type { InstallStatus, SetupResult } from "../../core/src/claudebot";
 import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
+import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 
 // --- Transport seam -------------------------------------------------------
@@ -243,4 +244,8 @@ export const api = {
   // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
   bismuthInstallStatus: () => getJson<BismuthStatus>("/bismuth/install"),
   bismuthInstall: () => postJson<InstallResult>("/bismuth/install", {}),
+  // Git-based self-update: auto-check status + start (background) + poll progress.
+  updateStatus: () => getJson<UpdateStatus>("/update/status"),
+  applyUpdate: () => postJson<UpdateProgress>("/update/apply", {}),
+  updateProgress: () => getJson<UpdateProgress>("/update/progress"),
 };

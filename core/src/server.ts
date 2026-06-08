@@ -35,6 +35,7 @@ import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride, setCronE
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup } from "./claudebot";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
+import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -608,6 +609,21 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /bismuth/install": async (_, __) => {
       return ok(await ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC));
+    },
+
+    // Git-based self-update (core/src/selfUpdate.ts). Auto-detects when the source build is
+    // behind origin/main; apply pulls + rebuilds + relaunches. System actions (not vault
+    // mutations), so READ routes. Apply returns immediately; the build runs in background.
+    "GET /update/status": async (_, __) => {
+      return ok(await getUpdateStatus());
+    },
+
+    "POST /update/apply": async (_, __) => {
+      return ok(await startUpdate());
+    },
+
+    "GET /update/progress": async (_, __) => {
+      return ok(getUpdateProgress());
     },
 
     // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
