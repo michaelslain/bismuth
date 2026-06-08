@@ -1,16 +1,16 @@
 # Bismuth Architecture Overview
 
-Bismuth is a personal knowledge management system built as a Bun monorepo with four workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (Claude-bot memory notes). These three data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. A fourth workspace, the relay plugin, powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server.
+Bismuth is a personal knowledge management system built as a Bun monorepo with five workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (Claude-bot memory notes). These three data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
 
 ---
 
 ## Monorepo Layout
 
-The root `package.json` declares four Bun workspaces:
+The root `package.json` declares five Bun workspaces:
 
 ```json
 {
-  "workspaces": ["core", "cli", "app", "relay"]
+  "workspaces": ["core", "cli", "app", "relay", "mcp"]
 }
 ```
 
@@ -20,6 +20,7 @@ The root `package.json` declares four Bun workspaces:
 | `app/` | `app` | Tauri + Solid.js desktop frontend; imports `@oa/core` for shared types |
 | `cli/` | `@oa/cli` | `bismuth` binary; imports `@oa/core` and calls core functions headlessly |
 | `relay/` | `@oa/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
+| `mcp/` | `@oa/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
 
 Install all workspaces at once with `bun install` from the repo root. To add a package to a specific workspace: `cd <workspace> && bun add <package>`.
 
@@ -55,6 +56,10 @@ Hook wiring (declared in `relay/hooks/hooks.json`):
 | `SubagentStop` | `bin/subagent-stop-hook.ts` | `POST /relay/subagent/stop` | Mark child finished |
 
 All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow all errors so they never block the user's Claude session. The hooks no-op if `CLAUDE_TERMINAL_ID` is absent (i.e., outside Bismuth terminals). The relay registry lives entirely in-process inside core (`core/src/relay.ts`); it does not persist across server restarts.
+
+### `mcp/` — the docs + CLI MCP server
+
+A stdio [MCP](https://modelcontextprotocol.io) server (`@oa/mcp`) that rides the **same auto-attach mechanism as relay**: the relay plugin's `relay/.mcp.json` declares it, so when a bare `claude` loads the plugin (`--plugin-dir <relay>`) Claude Code auto-starts the server — no flags, no approval prompts. It exposes the `docs/` reference and the `bismuth` CLI to that session **token-frugally** (search returns snippets, not whole pages): `mcp/src/docs.ts` (pure index/search/read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/server.ts` (low-level SDK server, 5 tools: `bismuth_docs_list`/`search`/`read`, `bismuth_cli`, `bismuth_cli_help`). Scope is app-local, like relay. See [MCP server](../mcp/overview.md).
 
 ---
 

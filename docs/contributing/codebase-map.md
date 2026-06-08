@@ -6,17 +6,18 @@ This document is a module-by-module navigation guide for the Bismuth monorepo. I
 
 ## Workspace Layout
 
-Bismuth is a Bun workspace monorepo. The root `package.json` declares four workspaces:
+Bismuth is a Bun workspace monorepo. The root `package.json` declares five workspaces:
 
 ```
 bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-json)
   core/                @oa/core — backend server, all pure logic
   app/                 app — Tauri + Solid.js desktop UI
   cli/                 @oa/cli — `bismuth` binary wrapping @oa/core
-  relay/               (unnamed) — Claude Code plugin for the agent graph
+  relay/               @oa/relay — Claude Code plugin for the agent graph
+  mcp/                 @oa/mcp — stdio MCP server (docs + CLI) for app-terminal Claude sessions
 ```
 
-`core` is the library that both `app` and `cli` import as `@oa/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
+`core` is the library that `app`, `cli`, and `mcp` import as `@oa/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
 
 Add a dep: `cd <workspace> && bun add <package>` then `bun install` at the root.
 
