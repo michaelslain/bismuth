@@ -3,14 +3,10 @@ import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types"
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue, isTaskRow } from "./renderValue";
 import { Icon } from "../icons/Icon";
-import { STATUS_COLOR } from "../ui/StatusDot";
+import { groupColor } from "../ui/StatusDot";
 import { todayISO } from "../../../core/src/dates";
 import { api } from "../api";
 import styles from "./BaseView.module.css";
-
-function groupColor(key: string): string {
-  return STATUS_COLOR[key.trim().toLowerCase()] ?? "var(--accent)";
-}
 
 // Task status (todo/done/in-progress/cancelled/other) -> the native checkbox's
 // data-status (matches livePreview's `.cm-task-checkbox` glyph states).

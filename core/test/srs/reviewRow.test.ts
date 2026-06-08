@@ -29,6 +29,24 @@ test("applyReviewToRow uses existing scheduling when due is set", () => {
   expect(next.interval).toBeGreaterThan(10); // interval grows by ease/100
 });
 
+test("applyReviewToRow coerces string-typed interval/ease from frontmatter (no NaN)", () => {
+  // Frontmatter values arrive as strings; the SM-2 math must still compute.
+  const note = { front: "q", back: "a", due: "2026-05-30", interval: "10", ease: "250" };
+  const next = applyReviewToRow(note, "good", "2026-05-30");
+  expect(Number.isNaN(next.interval as number)).toBe(false);
+  expect(next.interval).toBeGreaterThan(10); // interval grows by ease/100
+  expect(next.ease).toBe(250);
+  expect(typeof next.due).toBe("string");
+  expect(next.due).not.toContain("NaN");
+});
+
+test("applyReviewToRow falls back to defaults when interval/ease are non-numeric strings", () => {
+  const note = { front: "q", back: "a", due: "2026-05-30", interval: "oops", ease: "bad" };
+  const next = applyReviewToRow(note, "good", "2026-05-30");
+  expect(Number.isNaN(next.interval as number)).toBe(false);
+  expect(Number.isNaN(next.ease as number)).toBe(false);
+});
+
 test("applyReviewToRow advances the reverse (*Back) columns independently when given reverse fields", () => {
   const note = {
     front: "red", back: "אדום",

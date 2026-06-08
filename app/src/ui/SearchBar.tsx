@@ -1,6 +1,7 @@
 import { splitProps, type JSX } from "solid-js";
 import { Icon } from "../icons/Icon";
 import { isIconName } from "../icons/registry";
+import { warnBadIcon } from "./devWarn";
 import { searchBarClass, searchBarInputClass } from "./buttonClass";
 import "./ui.css";
 
@@ -31,7 +32,7 @@ export function SearchBar(props: SearchBarProps) {
     "autofocus", "inputRef", "children", "class", "inputClass", "inputStyle",
   ]);
   if (import.meta.env?.DEV && local.leadingIcon && !isIconName(local.leadingIcon)) {
-    console.warn(`SearchBar: leadingIcon "${local.leadingIcon}" is not a Lucide icon name. Use a Lucide icon, not a literal glyph/emoji.`);
+    warnBadIcon("SearchBar", local.leadingIcon);
   }
   return (
     <div class={searchBarClass(local.class)}>

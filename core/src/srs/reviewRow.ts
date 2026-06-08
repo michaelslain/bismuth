@@ -1,5 +1,6 @@
 import { schedule, DEFAULT_SRS, type SrsConfig } from "./scheduler";
 import type { ReviewResponse } from "./types";
+import { toNumber } from "../bases/values";
 
 /** Which note columns carry this review's SM-2 scheduling state. Defaults to the
  *  forward triple; a bidirectional reverse review passes the `*Back` companions. */
@@ -26,14 +27,16 @@ export function applyReviewToRow(
   fields: ScheduleFields = FORWARD_FIELDS,
 ): Record<string, unknown> {
   const dueVal = note[fields.due];
-  const prev =
-    dueVal == null || dueVal === ""
-      ? null
-      : {
-          due: dueVal as string,
-          interval: (note[fields.interval] as number) ?? 0,
-          ease: (note[fields.ease] as number) ?? 250,
-        };
+  let prev = null;
+  if (!(dueVal == null || dueVal === "")) {
+    const intervalN = toNumber(note[fields.interval]);
+    const easeN = toNumber(note[fields.ease]);
+    prev = {
+      due: dueVal as string,
+      interval: Number.isFinite(intervalN) ? intervalN : 0,
+      ease: Number.isFinite(easeN) ? easeN : 250,
+    };
+  }
   const next = schedule(prev, response, today, cfg);
   return { ...note, [fields.due]: next.due, [fields.interval]: next.interval, [fields.ease]: next.ease };
 }
