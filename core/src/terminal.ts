@@ -62,6 +62,10 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(p.base)) if (v !== undefined) env[k] = v;
   env.TERM = "xterm-256color";
+  // Suppress oh-my-zsh's blocking "Would you like to update? [Y/n]" prompt — an embedded
+  // app terminal shouldn't nag at startup, and the prompt eats the first keystrokes.
+  env.DISABLE_AUTO_UPDATE = "true";
+  env.DISABLE_UPDATE_PROMPT = "true";
   env.CLAUDE_RELAY_URL = p.relayUrl;
   env.CLAUDE_TERMINAL_ID = p.terminalId;
   if (p.realClaude) {
