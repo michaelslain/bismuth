@@ -1,6 +1,8 @@
 // Recurrence model + expansion, shared by the calendar view and migration.
 // Ported from the former app/src/calendar/dates.ts (UI-only formatters stay in the app).
 
+import { addDaysISO } from "../dates";
+
 export type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly";
 
 export interface Recurrence {
@@ -22,11 +24,6 @@ export function addDays(d: Date, n: number): Date {
   const result = new Date(d);
   result.setDate(result.getDate() + n);
   return result;
-}
-
-/** Add days to a "YYYY-MM-DD" string, returning a "YYYY-MM-DD" string. */
-export function addDaysStr(dateStr: string, n: number): string {
-  return toDateStr(addDays(new Date(dateStr + "T00:00:00"), n));
 }
 
 /** Number of days in the calendar month containing `d` (local). */
@@ -75,7 +72,7 @@ export function expandRecurrence(recurrence: Recurrence, rangeStart: string, ran
  * plus a fresh series starting at the split date (or null when split is past endDate).
  */
 export function splitRecurrence(rec: Recurrence, splitDate: string): [Recurrence, Recurrence | null] {
-  const before: Recurrence = { ...rec, endDate: addDaysStr(splitDate, -1) };
+  const before: Recurrence = { ...rec, endDate: addDaysISO(splitDate, -1) };
   const after: Recurrence | null =
     rec.endDate && rec.endDate < splitDate
       ? null

@@ -77,7 +77,7 @@ function extractHeadings(body: string): string {
 }
 
 /** Extract #tags from the body for index weighting. */
-function extractTags(body: string): string {
+function extractBodyTags(body: string): string {
   return (body.match(/(?:^|\s)#([A-Za-z0-9_/-]+)/g) || []).map((t) => t.trim().slice(1)).join(" ");
 }
 
@@ -123,7 +123,7 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
   for (const p of paths) {
     const body = await readNote(root, p);
     bodies.set(p, body);
-    docs.push({ id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractTags(body), body });
+    docs.push({ id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractBodyTags(body), body });
   }
   const mini = new MiniSearch<IndexDoc>({
     fields: ["basename", "headings", "tags", "body"],

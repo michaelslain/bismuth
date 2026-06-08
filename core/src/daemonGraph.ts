@@ -18,8 +18,8 @@
 // no backing file (e.g. a renamed/removed cron) are dropped.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parseFrontmatter } from "./frontmatter";
 import { claudeBotHome } from "./daemon";
+import { pidAlive, readJsonObj, readFrontmatter, isEnabled } from "./daemonState";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
 export const DAEMON_NODE_ID = "::daemon";
@@ -45,16 +45,6 @@ export interface DaemonSnapshot {
   processes: DaemonProcess[];
 }
 
-/** Read + JSON-parse a file, returning {} on any failure (missing/malformed). */
-function readJsonObj(path: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-
 /** List `*.md` basenames (without extension) directly under `dir`; [] if the dir is absent. */
 function listMarkdownNames(dir: string): string[] {
   try {
@@ -64,31 +54,6 @@ function listMarkdownNames(dir: string): string[] {
       .sort(); // deterministic order (readdir order is fs-dependent)
   } catch {
     return [];
-  }
-}
-
-/** Parse a cron/process `*.md`'s frontmatter, returning {} on any failure. */
-function readFrontmatter(path: string): Record<string, unknown> {
-  try {
-    return parseFrontmatter(readFileSync(path, "utf8")).data;
-  } catch {
-    return {};
-  }
-}
-
-/** `enabled` defaults true; only an explicit `enabled: false` disables. */
-function isEnabled(data: Record<string, unknown>): boolean {
-  return data.enabled !== false;
-}
-
-/** True when an integer pid is alive (process.kill(pid, 0) doesn't throw). */
-function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 

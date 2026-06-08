@@ -1,5 +1,6 @@
 import { marked } from "marked";
 import { sanitizeHtml } from "../sanitizeHtml";
+import { escapeHtml, escapeAttr } from "../htmlEscape";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -10,13 +11,6 @@ marked.use({ gfm: true, breaks: true });
 /** Render a markdown string to sanitized HTML (synchronous). */
 export function renderMarkdown(src: string): string {
   return sanitizeHtml(marked.parse(src ?? "", { async: false }) as string);
-}
-
-function escapeAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-function escapeText(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // Obsidian `[[wikilinks]]` aren't standard markdown, so `marked` would emit them
@@ -32,7 +26,7 @@ function wikilinksToAnchors(src: string): string {
     const target = rawTarget.split("#")[0].trim();
     const label = (alias ?? target.split("/").pop() ?? target).trim();
     const path = target.endsWith(".md") ? target : `${target}.md`;
-    return `<a class="oa-wikilink" data-href="${escapeAttr(path)}">${escapeText(label)}</a>`;
+    return `<a class="oa-wikilink" data-href="${escapeAttr(path)}">${escapeHtml(label)}</a>`;
   });
 }
 

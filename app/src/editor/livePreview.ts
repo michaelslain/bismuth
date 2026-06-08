@@ -14,6 +14,11 @@ import { TableWidget } from "./tableWidget";
 import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableState";
 import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
 
+// Indent depth from leading whitespace: tab = 2 spaces, then depth = floor(indentCols / 2).
+function indentDepth(indent: string): number {
+  return Math.floor(indent.replace(/\t/g, "  ").length / 2);
+}
+
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
 const strong = Decoration.mark({ class: "cm-strong" });
 const em = Decoration.mark({ class: "cm-em" });
@@ -500,7 +505,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         isTaskLine = true;
         const status = charToStatus(taskMatch[4]);
         const struck = status === "done" || status === "cancelled";
-        const taskDepth = Math.floor(taskMatch[1].replace(/\t/g, "  ").length / 2);
+        const taskDepth = indentDepth(taskMatch[1]);
         if (struck) {
           // strike only the task text, not the indentation/checkbox
           const textStart = line.from + taskMatch[0].length;
@@ -528,8 +533,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const isThematicBreak = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(text);
       const bulletMatch = (isThematicBreak || isTaskLine) ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
-        // Compute indent depth: tab = 2 spaces, then depth = floor(indentCols / 2)
-        const depth = Math.floor(bulletMatch[1].replace(/\t/g, "  ").length / 2);
+        const depth = indentDepth(bulletMatch[1]);
         if (onCursor) {
           // Raw, but indent like the rendered view and show the "- " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));

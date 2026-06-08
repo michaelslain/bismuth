@@ -1,12 +1,8 @@
 // app/src/export/htmlTemplate.ts
 import type { ExportTheme } from "./types";
+import { escapeHtml } from "../htmlEscape";
 
-export function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
+export { escapeHtml };
 
 interface ThemeVars {
   scheme: "dark" | "light";

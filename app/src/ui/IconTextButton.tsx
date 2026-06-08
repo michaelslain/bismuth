@@ -2,7 +2,7 @@ import { splitProps, createMemo, type JSX } from "solid-js";
 import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
 import { isIconName } from "../icons/registry";
-import { uppercaseWarning } from "./uiLint";
+import { warnBadIcon, warnNonUppercase } from "./devWarn";
 import type { ButtonState, ButtonSize } from "./buttonClass";
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
@@ -29,14 +29,11 @@ export type IconTextButtonProps = {
  */
 export function IconTextButton(props: IconTextButtonProps) {
   const [local, rest] = splitProps(props, ["icon", "iconSize", "variant", "children"]);
+  if (import.meta.env?.DEV && !isIconName(local.icon)) {
+    warnBadIcon("IconTextButton", local.icon);
+  }
   if (import.meta.env?.DEV) {
-    if (!isIconName(local.icon)) {
-      console.warn(`IconTextButton: "${local.icon}" is not a Lucide icon name.`);
-    }
-    createMemo(() => {
-      const w = uppercaseWarning(local.children);
-      if (w) console.warn(w);
-    });
+    createMemo(() => warnNonUppercase("IconTextButton", local.children));
   }
   return (
     <Button kind="text" state={local.variant ?? "normal"} {...rest}>

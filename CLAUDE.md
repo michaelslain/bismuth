@@ -89,7 +89,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 - `relay.ts` — In-process registry of terminal-tab Claude sessions + their subagents, populated by the relay plugin's hooks via `POST /relay/*`, pruned against the live pty set (see Relay Integration)
 - `daemon.ts` — Reads/writes the claude-bot daemon's shared state files (device-id, devices.json, owner.json, daemon.pid); exports `daemonStatus`/`listDevices`/`getOwner`/`setOwner`/`setCronEnabled`/`setProcessEnabled`/`runCron`. Never throws — degrades gracefully on missing files. Home dir from `daemon.home` setting. See Daemon Integration
 - `daemonGraph.ts` — Builds the "daemon" graph (daemon hub → cron/process nodes, `supervises` edges) from the daemon's on-disk crons/processes; `daemonSnapshot`/`buildDaemonGraph`/`daemonGraph`
-- `daemonViz.ts` — Pure `nodeVisualState(state)` mapping a daemon node's `{enabled, running}` → visual tokens (fill/border/opacity): disabled = dim, no border; running = solid palette fill; enabled-idle = base fill + palette border ring
+- `daemonViz.ts` — Pure `nodeVisualState(state)` mapping a daemon node's `{enabled, running}` → visual tokens (fill/border/opacity): disabled = dim; running = solid palette fill; enabled-idle = base fill + palette border ring
 - `backup.ts` — Git commit snapshot of vault
 - `tasks.ts`, `tasks-query.ts` — Tasks extraction + query DSL (Obsidian Tasks-compatible)
 - `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`). Injects relay provenance into each tab's env (`CLAUDE_TERMINAL_ID`, `CLAUDE_RELAY_URL`) + a PATH shim (`relay/shim/claude`) so a bare `claude` in a tab auto-loads the relay plugin via `--plugin-dir` (`buildPtyEnv`, pure + tested)
@@ -248,7 +248,7 @@ Module purposes are in the **Architecture** section above; this is just the layo
 core/src/
   server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
   engine.ts vault.ts memory.ts agents.ts relay.ts graphBuilder.ts   # graph composition + builders (relay.ts = agent-graph registry)
-  daemon.ts daemonGraph.ts daemonViz.ts   # claude-bot daemon state reader + daemon-mode graph + node-visual encoder
+  daemon.ts daemonGraph.ts daemonViz.ts daemonState.ts   # claude-bot daemon: state reader + daemon-mode graph + node-visual encoder + shared file-read helpers
   drawing/   # .draw vector docs (model/geometry/smooth/render2d/paper/theme/export — pure, headless)
   graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
   files.ts frontmatter.ts wikilinks.ts tags.ts pathUtils.ts backup.ts
@@ -321,7 +321,7 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError(code
 - **`core/src/files.ts` `walkDir(root, filter)`** — recursive dir walk behind `listTree`/`listTemplates`; filter returns `true`/`false`/`{data}`.
 - **`core/src/frontmatter.ts` `mutateFrontmatter(yaml, mutate)`** — edits frontmatter via the `yaml` Document API (preserves comments/key order/flow arrays), falls back to stringify on malformed input.
 - **Resilience**: `app/src/serverVersion.ts` tracks a `ConnectionState` (connected/disconnected/reconnecting). On SSE loss it shows a "Connection lost" toast and polls `/version` at 1s (vs 5s) until reconnect, then auto-dismisses.
-- **`app/src/sanitizeHtml.ts` `sanitizeHtml(dirty)`** — DOMPurify wrapper for safe `innerHTML` of any vault-rendered HTML (markdown, live-preview, cards, calendar, export). Browser/headless-aware (passes input through when no `window`, so Bun tests work). Always route rendered HTML through it — used by `bases/markdown.ts`, `editor/htmlPreview.ts`, `editor/livePreview.ts`.
+- **`app/src/sanitizeHtml.ts` `sanitizeHtml(dirty)`** — DOMPurify wrapper for safe `innerHTML` of any vault-rendered HTML (markdown, live-preview, cards, calendar, export). Browser/headless-aware (passes input through when no `window`, so Bun tests work). Always route rendered HTML through it — used by `bases/markdown.ts`, `editor/htmlPreview.ts`, `editor/livePreview.ts`. For building that HTML, escape with the canonical `app/src/htmlEscape.ts` (`escapeHtml`/`escapeAttr`) rather than re-rolling per-file escapers.
 
 ## Key Concepts
 
@@ -360,10 +360,10 @@ Scope: app-local only. No cross-machine agents, no messaging. Registry lives onl
 
 ### Daemon Integration (`core/src/daemon.ts` + `daemonGraph.ts` + `daemonViz.ts`)
 
-Bismuth reads (and minimally writes) the **claude-bot daemon's** shared on-disk state to power the "daemon" graph mode and the daemon sidebar (`app/src/DaemonList.tsx`, which replaces `ClusterLegend` in daemon mode). The daemon itself is a separate background process; Bismuth never starts/stops it.
+Bismuth reads (and minimally writes) the **claude-bot daemon's** shared on-disk state to power the "daemon" graph mode + sidebar (`app/src/DaemonList.tsx`, replaces `ClusterLegend` in daemon mode). The daemon is a separate process; Bismuth never starts/stops it.
 - `daemon.ts` reads `device-id`/`devices.json`/`owner.json`/`daemon.pid` and the crons/processes under the daemon home (the `daemon.home` setting; defaults to `~/.claude-bot`). `daemonGraph.ts` turns crons/processes into a hub+children graph with `supervises` edges; `daemonViz.ts` is the pure node-visual encoder.
-- Endpoints: GET `/daemon/status`, `/daemon/devices`, `/daemon/graph` (polled by the frontend only while in daemon mode), `/daemon/install`; POST `/daemon/owner` (claims this device — a vault mutation), and the shared-state writes `/daemon/setup`, `/daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/process/toggle` (NOT vault mutations — no SSE/cache invalidation). Right-click a cron/process in `DaemonList` to enable/disable or run it.
-- Setup is **idempotent / adopt-only**: it never clobbers, restarts, or repoints a live daemon (see the claude-bot setup contract).
+- Endpoints (full list in the server routes above): GET `/daemon/{status,devices,graph,install}` (graph polled only in daemon mode); POST `/daemon/owner` (vault mutation), plus shared-state writes `/daemon/{setup,cron/toggle,cron/run,process/toggle}` (NOT vault mutations). Right-click a cron/process in `DaemonList` to enable/disable/run.
+- Setup is **idempotent / adopt-only**: never clobbers, restarts, or repoints a live daemon.
 
 ## Testing
 
