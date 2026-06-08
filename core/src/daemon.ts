@@ -17,6 +17,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
+import { pidAlive } from "./daemonState";
 import { AppError } from "./error";
 
 // Optional home override fed from settings.yaml (daemon.home) by server.ts. The
@@ -88,17 +89,6 @@ export function getOwner(): Owner | null {
     ownerLabel: typeof o.ownerLabel === "string" ? o.ownerLabel : "",
     updatedAt: typeof o.updatedAt === "string" ? o.updatedAt : "",
   };
-}
-
-/** True when an integer pid is alive (process.kill(pid, 0) doesn't throw). */
-function pidAlive(pid: number): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Daemon liveness: <home>/daemon.pid exists AND that pid is alive. */

@@ -103,6 +103,24 @@ const WS_BASE = HTTP_BASE.replace(/^http/, "ws"); // http→ws, https→wss
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder();
 
+// WebSocket frame builders for the PTY protocol.
+// stdin frame: 0x00 prefix + raw bytes.
+function stdinFrame(bytes: Uint8Array): Uint8Array {
+  const frame = new Uint8Array(1 + bytes.length);
+  frame[0] = 0x00;
+  frame.set(bytes, 1);
+  return frame;
+}
+// resize frame: 0x01 prefix + cols, rows as little-endian uint16s.
+function resizeFrame(cols: number, rows: number): Uint8Array {
+  const frame = new Uint8Array(5);
+  const view = new DataView(frame.buffer);
+  frame[0] = 0x01;
+  view.setUint16(1, cols, true);
+  view.setUint16(3, rows, true);
+  return frame;
+}
+
 // Module-scope single-entry cache for buildExtendedAnsi (240 entries, rarely changes).
 let _extendedAnsiKey = "";
 let _extendedAnsiResult: string[] = [];
@@ -137,12 +155,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
 
   const sendResize = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
-    const frame = new Uint8Array(5);
-    const view = new DataView(frame.buffer);
-    frame[0] = 0x01;
-    view.setUint16(1, term.cols, true);
-    view.setUint16(3, term.rows, true);
-    ws.send(frame);
+    ws.send(resizeFrame(term.cols, term.rows));
   };
 
   // Fix 1: createEffect at component top level — properly owned by the component's
@@ -298,11 +311,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       const delta = targetCol - term.buffer.active.cursorX;
       if (delta === 0) return;
       const seq = (delta > 0 ? "\x1b[C" : "\x1b[D").repeat(Math.abs(delta));
-      const bytes = enc.encode(seq);
-      const frame = new Uint8Array(1 + bytes.length);
-      frame[0] = 0x00;
-      frame.set(bytes, 1);
-      ws.send(frame);
+      ws.send(stdinFrame(enc.encode(seq)));
     };
     container.addEventListener("mousedown", downHandler);
     container.addEventListener("mouseup", upHandler);
@@ -336,11 +345,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
           connectWs();
           dataListener = term!.onData((s) => {
             if (!ws || ws.readyState !== WebSocket.OPEN) return;
-            const encoded = enc.encode(s);
-            const frame = new Uint8Array(1 + encoded.length);
-            frame[0] = 0x00;
-            frame.set(encoded, 1);
-            ws.send(frame);
+            ws.send(stdinFrame(enc.encode(s)));
           });
         }, delay);
       };
@@ -356,11 +361,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // Fix 3: use module-scoped `enc` instead of allocating per keystroke.
     dataListener = term.onData((s) => {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      const encoded = enc.encode(s);
-      const frame = new Uint8Array(1 + encoded.length);
-      frame[0] = 0x00;
-      frame.set(encoded, 1);
-      ws.send(frame);
+      ws.send(stdinFrame(enc.encode(s)));
     });
 
     // Observe container size changes and refit the terminal.

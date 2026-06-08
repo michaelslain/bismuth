@@ -1,7 +1,7 @@
 import { splitProps, createMemo, type JSX } from "solid-js";
 import { Button } from "./Button";
 import type { ButtonState, ButtonSize } from "./buttonClass";
-import { uppercaseWarning } from "./uiLint";
+import { warnNonUppercase } from "./devWarn";
 
 /** Selection state — see buttonClass.ts. "normal" = standalone button. */
 export type TextButtonVariant = ButtonState;
@@ -26,10 +26,7 @@ export type TextButtonProps = {
 export function TextButton(props: TextButtonProps) {
   const [local, rest] = splitProps(props, ["variant"]);
   if (import.meta.env?.DEV) {
-    createMemo(() => {
-      const w = uppercaseWarning(rest.children);
-      if (w) console.warn(w);
-    });
+    createMemo(() => warnNonUppercase("TextButton", rest.children));
   }
   return <Button kind="text" state={local.variant ?? "normal"} {...rest} />;
 }

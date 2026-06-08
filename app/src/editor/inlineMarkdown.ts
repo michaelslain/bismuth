@@ -12,6 +12,7 @@
 // handled here (it's owned by the separate HTML pass); `marked` passes it through.
 import { Marked } from "marked";
 import { renderMath } from "./katexLoader";
+import { escapeHtml } from "../htmlEscape";
 
 // An isolated `marked` instance so our config never leaks into the global one that
 // bases/markdown.ts configures (and vice-versa). GFM gives ~~strikethrough~~ + autolinks.
@@ -22,9 +23,8 @@ export type InlineSeg =
   | { type: "wikilink"; target: string; alias: string | null }
   | { type: "math"; expr: string };
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
+// NOTE: this attr-escape additionally escapes `>` (via escapeHtml) — a different set
+// than the canonical escapeAttr (`& < "`) — so it stays local to preserve behavior.
 function escapeAttr(s: string): string {
   return escapeHtml(s).replace(/"/g, "&quot;");
 }

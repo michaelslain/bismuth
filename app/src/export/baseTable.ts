@@ -8,23 +8,13 @@
 import { parseBaseFile } from "../../../core/src/bases/parse";
 import { runView, resolveProperty } from "../../../core/src/bases/query";
 import { isLink, type Link } from "../../../core/src/bases/values";
+import { columnLabel } from "../bases/columnLabel";
 import type { ExportDeps } from "./types";
 import type { Row, BaseConfig, ViewResult } from "../../../core/src/bases/types";
 
 export interface TableData {
   columns: string[];   // display labels (header row)
   rows: string[][];    // one string[] per data row, aligned to columns
-}
-
-// Header label for a column id — mirrors app/src/bases/renderValue.ts columnLabel,
-// inlined here so the export path doesn't import the JSX/Icon UI module (which is
-// client-only and can't load under the test runner or in a worker).
-function columnLabel(id: string, config: BaseConfig): string {
-  const custom = config.properties?.[id]?.displayName;
-  if (custom) return custom;
-  if (id.startsWith("file.") || id.startsWith("note.") || id.startsWith("this.")) return id.slice(5);
-  if (id.startsWith("formula.")) return id.slice(8);
-  return id;
 }
 
 // Mirror renderValue's value-to-text mapping (minus the JSX) so exported cells read

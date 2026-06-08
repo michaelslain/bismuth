@@ -2,6 +2,7 @@ import { splitProps, type JSX } from "solid-js";
 import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
 import { isIconName } from "../icons/registry";
+import { warnBadIcon } from "./devWarn";
 import type { ButtonState, ButtonSize } from "./buttonClass";
 
 /** Selection state — see buttonClass.ts. "normal" = standalone, full opacity. */
@@ -29,7 +30,7 @@ export type IconButtonProps = {
 export function IconButton(props: IconButtonProps) {
   const [local, rest] = splitProps(props, ["icon", "label", "variant", "iconSize", "title"]);
   if (import.meta.env?.DEV && !isIconName(local.icon)) {
-    console.warn(`IconButton: "${local.icon}" is not a Lucide icon name. Use a Lucide icon, not a literal glyph/emoji.`);
+    warnBadIcon("IconButton", local.icon);
   }
   return (
     <Button

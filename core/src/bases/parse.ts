@@ -81,16 +81,18 @@ function normalizeColumnWidths(raw: unknown): Record<string, number> | undefined
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
+  const strArr = (x: unknown) => (Array.isArray(x) ? x.map(String) : undefined);
+
   const type = isValidType(o.type) ? o.type : "table";
   const name = typeof o.name === "string" && o.name.length ? o.name : "Untitled view";
   const limit = typeof o.limit === "number" ? o.limit : undefined;
-  const order = Array.isArray(o.order) ? (o.order as unknown[]).map(String) : undefined;
+  const order = strArr(o.order);
   const summaries = o.summaries && typeof o.summaries === "object"
     ? Object.fromEntries(Object.entries(o.summaries as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
     : undefined;
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined;
   const imageFit = o.imageFit === "contain" ? "contain" : o.imageFit === "cover" ? "cover" : undefined;
-  const columns = Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined;
+  const columns = strArr(o.columns);
   const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
   const lng = typeof o.lng === "string" ? o.lng : undefined;
