@@ -1,4 +1,4 @@
-import { createSignal, createResource, createMemo, onMount, Show, Switch, Match } from "solid-js";
+import { createSignal, createResource, createMemo, onMount, Show, Switch, Match, Index } from "solid-js";
 import { api } from "../api";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
@@ -50,7 +50,11 @@ interface Loaded {
  *  toggle. (Embedded ```query blocks edit their fence inline in the editor instead.) */
 function SourceEditor(props: { path: string; onClose: () => void }) {
   const [text, setText] = createSignal<string | null>(null);
+  let gutter: HTMLDivElement | undefined;
   onMount(async () => setText(await api.read(props.path)));
+  // 1-based line numbers for the gutter. A <textarea> can't carry per-line ::before,
+  // so we render a parallel gutter column and keep its scroll synced to the textarea.
+  const lines = createMemo(() => Array.from({ length: (text() ?? "").split("\n").length }, (_, i) => i + 1));
   const save = async () => {
     if (text() != null) await api.write(props.path, text()!);
     props.onClose();
@@ -58,12 +62,18 @@ function SourceEditor(props: { path: string; onClose: () => void }) {
   return (
     <div class={styles.source}>
       <Show when={text() != null} fallback={<Loading />}>
-        <textarea
-          class={styles.sourceArea}
-          value={text()!}
-          spellcheck={false}
-          onInput={(e) => setText(e.currentTarget.value)}
-        />
+        <div class={styles.sourceEditor}>
+          <div class={styles.sourceGutter} ref={gutter} aria-hidden="true">
+            <Index each={lines()}>{(n) => <div>{n()}</div>}</Index>
+          </div>
+          <textarea
+            class={styles.sourceArea}
+            value={text()!}
+            spellcheck={false}
+            onInput={(e) => setText(e.currentTarget.value)}
+            onScroll={(e) => { if (gutter) gutter.scrollTop = e.currentTarget.scrollTop; }}
+          />
+        </div>
       </Show>
       <div class={styles.sourceBar}>
         <TextButton onClick={save}>SAVE</TextButton>
