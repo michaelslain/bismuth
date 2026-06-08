@@ -11,10 +11,10 @@ git clone https://github.com/michaelslain/bismuth.git && cd bismuth
 bun install
 cd app
 bun run prebundle:claudebot                                    # stage the bundled daemon (needs sibling ../../claude-bot)
-bun run tauri build                                            # frontend + core sidecar + Bismuth.app
-cp -R src-tauri/target/release/bundle/macos/Bismuth.app /Applications/
-open /Applications/Bismuth.app                                 # first launch: pick your vault folder
+bun run tauri build                                            # builds the app + core sidecar, then opens a .dmg installer
 ```
+
+In the `.dmg` window that opens, drag **Bismuth → Applications**, eject the volume, and launch from Applications (first launch: pick your vault folder).
 
 ## Start here
 

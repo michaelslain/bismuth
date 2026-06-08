@@ -208,6 +208,8 @@ bun run tauri build
 
 The `tauri` script in `app/package.json` delegates to `@tauri-apps/cli`. This requires Rust and the Tauri prerequisites to be installed. The `beforeBuildCommand` is `bun run build && bun run build:core-sidecar`, so the Vite frontend AND the core sidecar binary are built as part of the pipeline.
 
+**To install**: the build emits a `.dmg` (and the `.app` it wraps, under `src-tauri/target/release/bundle/{dmg,macos}/`) and opens the `.dmg` window. Drag **Bismuth → Applications** there, then eject — that's the whole install (no manual `cp` needed). Re-running the build and re-dragging replaces the prior copy in place.
+
 #### Self-spawned backend (bundled app)
 
 Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundled app runs its own backend**:
