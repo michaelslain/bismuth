@@ -19,6 +19,11 @@
   line-height: 1.4;
 }
 .btn:disabled { opacity: 0.4; cursor: default; }
+/* Optical centering: in Monaspace the cap-glyph mass sits high in the em box, so
+   an all-caps label next to an icon reads as floating above the icon's center.
+   Nudge label text down 1px so the caps center on the icon. (Label is wrapped in
+   a <span class="btn-label">.) */
+.btn .btn-label { position: relative; top: 1px; }
 
 /* ── text buttons: borderless; state changes emphasis only ────────────────── */
 /* No outlines anywhere. normal = neutral text. unselected = same, dimmed/muted.

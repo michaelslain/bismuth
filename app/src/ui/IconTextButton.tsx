@@ -38,7 +38,7 @@ export function IconTextButton(props: IconTextButtonProps) {
   return (
     <Button kind="text" state={local.variant ?? "normal"} {...rest}>
       <Icon value={local.icon} size={local.iconSize ?? 14} />
-      {local.children}
+      <span class="btn-label">{local.children}</span>
     </Button>
   );
 }
