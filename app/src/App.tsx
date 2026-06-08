@@ -839,7 +839,13 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
   const registerFileEvents = () => {
-    const onOpen = (e: Event) => openFile((e as CustomEvent).detail);
+    // detail is either a path string (open in the active pane) or { path, newTab } —
+    // a card click passes { path, newTab: true } to open the note in its own tab.
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent).detail as string | { path: string; newTab?: boolean };
+      if (typeof d === "string") openFile(d);
+      else if (d && typeof d.path === "string") (d.newTab ? openInNewTab : openFile)(d.path);
+    };
     const onDeleted = (e: Event) => closeDeleted((e as CustomEvent).detail as string);
     const onMoved = (e: Event) => {
       const { from, to } = (e as CustomEvent).detail as { from: string; to: string };

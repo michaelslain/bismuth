@@ -32,8 +32,15 @@ function asNumber(v: unknown): number | null {
  * (stacks its own title + author). Status/rating/pages columns are detected from
  * `cols`; title = first column, author = next non-status/rating/pages column.
  */
-export function CardBody(props: { cols: string[]; row: Row; config: BaseConfig; titleAsField?: boolean }) {
+export function CardBody(props: { cols: string[]; row: Row; config: BaseConfig; titleAsField?: boolean; plainTitle?: boolean }) {
   const titleCol = (): string => props.cols[0] ?? "file.name";
+
+  // Plain (non-link) title text — used when the whole card is already a click target
+  // (CardsView), so the title isn't a competing inner link.
+  const titleText = (): string => {
+    const v = resolveProperty(titleCol(), props.row);
+    return v == null || typeof v === "object" ? props.row.file.name : String(v);
+  };
 
   const statusCol = (): string | undefined => findColumn(props.cols, isStatusColumn);
   const ratingCol = (): string | undefined => findColumn(props.cols, isRatingColumn);
@@ -83,7 +90,7 @@ export function CardBody(props: { cols: string[]; row: Row; config: BaseConfig; 
     <>
       {/* Cards already shows the title on the cover; Kanban stacks its own. */}
       <Show when={!props.titleAsField}>
-        <div class={styles.cardTitle}>{renderTitle(titleCol(), props.row)}</div>
+        <div class={styles.cardTitle}>{props.plainTitle ? titleText() : renderTitle(titleCol(), props.row)}</div>
       </Show>
       {/* Cards shows the author on the cover; Kanban stacks its own faint line. */}
       <Show when={!props.titleAsField && author()}>

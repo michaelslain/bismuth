@@ -14,6 +14,11 @@ function asArray<T>(v: unknown): T[] {
 function strOrUndef(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
+// A finite number, tolerating a value that round-tripped through YAML as a string ("1.45").
+function numOrUndef(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isFinite(n) ? n : undefined;
+}
 function safeYaml(text: string): Record<string, unknown> | null {
   try {
     const d = parseYaml(text);
@@ -84,6 +89,7 @@ function normalizeView(raw: unknown): ViewConfig {
     ? Object.fromEntries(Object.entries(o.summaries as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
     : undefined;
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined;
+  const imageFit = o.imageFit === "contain" ? "contain" : o.imageFit === "cover" ? "cover" : undefined;
   const columns = Array.isArray(o.columns) ? (o.columns as unknown[]).map(String) : undefined;
   const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
@@ -105,6 +111,9 @@ function normalizeView(raw: unknown): ViewConfig {
     groupBy: normalizeGroupBy(o.groupBy),
     summaries,
     cardContent,
+    image: strOrUndef(o.image),
+    imageFit,
+    imageAspectRatio: numOrUndef(o.imageAspectRatio),
     columns,
     columnWidths,
     lat,
@@ -211,7 +220,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     const FIELD_KEYS = [
       "frontField", "backField", "dueField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
-      "x", "y",
+      "x", "y", "image",
     ] as const;
     for (const k of FIELD_KEYS) {
       if (typeof raw[k] === "string") (config.views[0] as unknown as Record<string, unknown>)[k] = raw[k];
@@ -229,6 +238,10 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
     // nested `views:` block.
     if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
+    // cards view: image-cover keys (flat persistence — `image` is a string in FIELD_KEYS above).
+    if (raw.imageFit === "cover" || raw.imageFit === "contain") config.views[0].imageFit = raw.imageFit;
+    const ar = numOrUndef(raw.imageAspectRatio);
+    if (ar !== undefined) config.views[0].imageAspectRatio = ar;
     // chart axis/aggregation keys (flat persistence for chart views)
     if (AGGREGATE_VALUES.includes(raw.aggregate as string)) config.views[0].aggregate = raw.aggregate as ViewConfig["aggregate"];
     if (BIN_VALUES.includes(raw.bin as string)) config.views[0].bin = raw.bin as ViewConfig["bin"];
