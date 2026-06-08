@@ -950,6 +950,34 @@ test("POST /rows resolves a scoped-tasks spec via base composition", async () =>
   }
 });
 
+test("POST /rows notes source serves cached vault rows that a file edit invalidates", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-rows-cache-"));
+  const memory = mkdtempSync(join(tmpdir(), "oa-rows-cache-mem-"));
+  await writeNote(vault, "a.md", "---\ntags: [book]\n---\n");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const resolveNotes = async () =>
+    (await (
+      await fetch(`${base}/rows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ spec: { kind: "notes", where: 'file.hasTag("book")' } }),
+      })
+    ).json()) as any[];
+  try {
+    // Populate the shared cache via /vault-data, then resolve a notes spec — it filters
+    // the cached array rather than rescanning, and only "a" carries the tag.
+    await fetch(`${base}/vault-data`);
+    expect((await resolveNotes()).map((r) => r.file.name)).toEqual(["a"]);
+    // A new tagged note invalidates the cache; the next resolution rebuilds and sees it.
+    await writeNote(vault, "b.md", "---\ntags: [book]\n---\n");
+    await new Promise((r) => setTimeout(r, 400));
+    expect((await resolveNotes()).map((r) => r.file.name).sort()).toEqual(["a", "b"]);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
   const { vault } = await makeSampleVault();
   // Seed a settings.yaml with a comment + a custom key + the properties registry.
