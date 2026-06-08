@@ -1,9 +1,8 @@
 // app/src/drawing/Toolbar.tsx
-import { For, type JSX } from "solid-js";
+import { type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
-import { IconButton } from "../ui/IconButton";
-import { TextButton } from "../ui/TextButton";
+import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
 
@@ -15,13 +14,20 @@ const TOOLS: { id: ToolState["tool"]; icon: string; title: string }[] = [
 
 // Five discrete size levels (≈20% steps) replacing the size slider.
 const SIZE_LEVELS = [2, 5, 9, 14, 20];
-// Smoothing is a simple on/off: a sharp (jagged) path vs. a smooth (relaxed) curve.
+// Smoothing has two modes: a sharp (raw jagged) path vs. a smooth (relaxed) curve.
 const SHARP_PATH = "M2 13 L6 3 L10 13 L14 3 L18 13 L22 3";
 const SMOOTH_PATH = "M2 9 C8 4 16 14 22 7";
 
 const dotIcon = (size: number) => (
   <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
     <circle cx="11" cy="8" r={2 + (size / 20) * 5} fill="currentColor" />
+  </svg>
+);
+// A color swatch in the identical 22×16 box as dotIcon (a rounded square so it reads as
+// a swatch, not a dot) — keeps the color row and size row the same size + spacing.
+const colorSwatch = (fill: string) => (
+  <svg width="22" height="16" viewBox="0 0 22 16" aria-hidden="true">
+    <rect x="4.5" y="1.5" width="13" height="13" rx="3" fill={fill} />
   </svg>
 );
 const smoothIcon = (d: string) => (
@@ -45,6 +51,10 @@ export function Toolbar(props: {
   setBackground: (bg: PaperBg) => void;
   onUndo: () => void;
   onRedo: () => void;
+  zoom: () => number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onResetZoom: () => void;
 }) {
   const t = props.tools;
   // Fixed 7-swatch Bismuth ink palette. The first swatch ("fg") is the theme
@@ -53,45 +63,65 @@ export function Toolbar(props: {
   const swatchColor = (c: string) => (c === "fg" ? "#E7E8F2" : c);
 
   const toolOpts = TOOLS.map((x) => ({ id: x.id, label: <Icon value={x.icon} size={17} />, title: x.title }));
+  // Colors render as filled rounded-square swatches drawn in the SAME 22×16 box as the
+  // size dots, so the color row and the line-weight row are identical in size + spacing.
+  const colorOpts = () => colors().map((c) => ({ id: c, label: colorSwatch(swatchColor(c)), title: c === "fg" ? "Default ink" : c }));
   const sizeOpts = SIZE_LEVELS.map((s) => ({ id: s, label: dotIcon(s), title: `Size ${s}` }));
-  const smoothOpts = [
-    { id: false, label: smoothIcon(SHARP_PATH), title: "Sharp (raw)" },
-    { id: true, label: smoothIcon(SMOOTH_PATH), title: "Smooth (relax on release)" },
+  const smoothOpts: { id: ToolState["smoothMode"]; label: JSX.Element; title: string }[] = [
+    { id: "sharp", label: smoothIcon(SHARP_PATH), title: "Sharp (raw)" },
+    { id: "smooth", label: smoothIcon(SMOOTH_PATH), title: "Smooth (relax on release)" },
   ];
   const paperOpts = (["blank", "lines", "grid", "dots"] as PaperBg[]).map((p) => ({ id: p, label: paperIcon(p), title: p[0].toUpperCase() + p.slice(1) }));
 
+  const zoomPct = () => Math.round(props.zoom() * 100);
+
   return (
     <div class="draw-toolbar">
-      {/* Story 1: tools + colors. */}
+      {/* Two-row dock: most groups stack into a 2-row column to keep the bar narrow.
+          tools | colors/sizes | smooth/paper | undo-redo/zoom. */}
       <div class="draw-row">
         <div class="draw-group">
           <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
         </div>
+        {/* Colors on top, line-weight directly below — same box size + spacing. */}
         <div class="draw-group">
-          <For each={colors()}>{(c) => (
-            <TextButton variant={t().color === c ? "selected" : "unselected"} class="draw-swatch"
-              style={{ background: swatchColor(c) }} title={c === "fg" ? "Default ink" : c}
-              onClick={() => props.setTools({ color: c })} />
-          )}</For>
+          <div class="draw-vstack">
+            <SegmentedToggle options={colorOpts()} value={t().color} onChange={(c) => props.setTools({ color: c })} segmentClass="draw-iconseg" />
+            <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
+          </div>
         </div>
-      </div>
-      {/* Story 2: size + smooth + paper + undo/redo. */}
-      <div class="draw-row">
+        {/* Smoothing on top, paper below. */}
         <div class="draw-group">
-          <span class="draw-label">Size</span>
-          <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
+          <div class="draw-vstack">
+            <SegmentedToggle options={smoothOpts} value={t().smoothMode} onChange={(v) => props.setTools({ smoothMode: v })} segmentClass="draw-iconseg" />
+            <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
+          </div>
         </div>
+        {/* Undo/redo on top, zoom below. */}
         <div class="draw-group">
-          <span class="draw-label">Smooth</span>
-          <SegmentedToggle options={smoothOpts} value={t().smooth} onChange={(v) => props.setTools({ smooth: v })} segmentClass="draw-iconseg" />
-        </div>
-        <div class="draw-group">
-          <span class="draw-label">Paper</span>
-          <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
-        </div>
-        <div class="draw-group">
-          <IconButton class="draw-iconseg" label="Undo" icon="Undo2" iconSize={17} onClick={() => props.onUndo()} />
-          <IconButton class="draw-iconseg" label="Redo" icon="Redo2" iconSize={17} onClick={() => props.onRedo()} />
+          <div class="draw-vstack">
+            <div class="segmented">
+              <Button kind="text" state="unselected" class="draw-iconseg" title="Undo" aria-label="Undo" onClick={() => props.onUndo()}>
+                <Icon value="Undo2" size={17} />
+              </Button>
+              <Button kind="text" state="unselected" class="draw-iconseg" title="Redo" aria-label="Redo" onClick={() => props.onRedo()}>
+                <Icon value="Redo2" size={17} />
+              </Button>
+            </div>
+            <div class="segmented">
+              <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom out" aria-label="Zoom out"
+                disabled={props.zoom() <= 0.25} onClick={() => props.onZoomOut()}>
+                <Icon value="ZoomOut" size={17} />
+              </Button>
+              <Button kind="text" state="unselected" class="draw-iconseg draw-zoompct" title="Reset zoom" aria-label="Reset zoom" onClick={() => props.onResetZoom()}>
+                {zoomPct()}%
+              </Button>
+              <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom in" aria-label="Zoom in"
+                disabled={props.zoom() >= 4} onClick={() => props.onZoomIn()}>
+                <Icon value="ZoomIn" size={17} />
+              </Button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

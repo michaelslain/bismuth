@@ -98,6 +98,8 @@ import WholeWord from "lucide-solid/icons/whole-word";
 import Wrench from "lucide-solid/icons/wrench";
 import X from "lucide-solid/icons/x";
 import Zap from "lucide-solid/icons/zap";
+import ZoomIn from "lucide-solid/icons/zoom-in";
+import ZoomOut from "lucide-solid/icons/zoom-out";
 
 // Every icon the app's own chrome can render on the first frame — toolbar +
 // command palette, file tree, tab bar, graph toolbar, editor/find-replace and
@@ -119,7 +121,7 @@ const SEED: Record<string, LucideIcon> = {
   PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
   Replace, RotateCcw, Search, Server, Settings, Settings2, Share, Share2, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
-  WholeWord, Wrench, X, Zap,
+  WholeWord, Wrench, X, Zap, ZoomIn, ZoomOut,
 } as unknown as Record<string, LucideIcon>;
 
 // Boot guard: the eager import map and its pure name-mirror must list the exact

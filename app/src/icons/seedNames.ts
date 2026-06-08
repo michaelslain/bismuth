@@ -19,7 +19,7 @@ export const SEED_ICON_NAMES: readonly string[] = [
   "Redo2", "RefreshCw", "Regex", "Repeat", "Replace", "RotateCcw", "Search",
   "Server", "Settings", "Settings2", "Share", "Share2", "Square", "SquarePlus",
   "SquareTerminal", "Star", "Table", "Tag", "Trash2", "Undo2", "Users", "Vote",
-  "WholeWord", "Wrench", "X", "Zap",
+  "WholeWord", "Wrench", "X", "Zap", "ZoomIn", "ZoomOut",
 ];
 
 /**

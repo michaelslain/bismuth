@@ -6,7 +6,8 @@ import { themeColors } from "../../../core/src/drawing/theme";
 import { smoothStrokePoints } from "../../../core/src/drawing/smooth";
 import { widthFor, isRealPressure } from "./input";
 
-export interface ToolState { tool: Tool | "eraser"; color: string; size: number; smooth: boolean;
+export interface ToolState { tool: Tool | "eraser"; color: string; size: number;
+  smoothMode: "sharp" | "smooth";
   holdToStraighten: boolean; holdDelayMs: number; }
 
 export function DrawingCanvas(props: {
@@ -94,9 +95,11 @@ export function DrawingCanvas(props: {
   function onUp() {
     if (!drawing) return; drawing = false; clearTimeout(holdTimer);
     if (current && current.pts.length >= 3) {
-      // Smooth mode relaxes the finished freehand stroke into a flowing curve (a straight
-      // stroke is already just two endpoints, so leave it alone).
-      if (props.tools().smooth && !current.straight) current.pts = smoothStrokePoints(current.pts);
+      // Relax the finished freehand stroke per the active smoothing mode (a straight stroke is
+      // already just two endpoints, so leave it alone). "sharp" leaves the raw points untouched.
+      if (!current.straight && props.tools().smoothMode === "smooth") {
+        current.pts = smoothStrokePoints(current.pts);
+      }
       props.onCommit(current);
     }
     current = null; clearLive();
