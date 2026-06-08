@@ -8,15 +8,16 @@
 
 /** Canonical PascalCase names of every eagerly-seeded (instant) icon. */
 export const SEED_ICON_NAMES: readonly string[] = [
-  "AppWindow", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "Book",
-  "BookOpen", "Brain", "Calendar", "CaseSensitive", "Check", "ChevronDown",
+  "AppWindow", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "Blend", "Book",
+  "BookOpen", "Bot", "Box", "Brain", "BrainCircuit", "Calendar", "CaseSensitive",
+  "Check", "ChevronDown",
   "ChevronLeft", "ChevronRight", "ChevronUp", "Clock", "Code", "Columns3",
   "Copy", "Crown", "Download", "Eraser", "Eye", "File", "FilePlus", "FileText",
   "Folder", "FolderOpen", "FolderPlus", "Hash", "Highlighter", "Image",
   "Landmark", "Link", "Lock", "Menu", "Minus", "Network", "Notebook",
   "PanelBottom", "PanelLeft", "PanelRight", "Pen", "Pencil", "PenTool", "Plus",
   "Redo2", "RefreshCw", "Regex", "Repeat", "Replace", "RotateCcw", "Search",
-  "Server", "Settings", "Settings2", "Share", "Share2", "SquarePlus",
+  "Server", "Settings", "Settings2", "Share", "Share2", "Square", "SquarePlus",
   "SquareTerminal", "Star", "Table", "Tag", "Trash2", "Undo2", "Users", "Vote",
   "WholeWord", "Wrench", "X", "Zap",
 ];

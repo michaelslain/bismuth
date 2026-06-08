@@ -16,6 +16,7 @@ import { SegmentedToggle } from "./ui/SegmentedToggle";
 import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
+import { Icon } from "./icons/Icon";
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
 function mixHex(a: number, b: number, t: number): number {
@@ -70,6 +71,22 @@ const setViewModePersisted = (m: "2d" | "3d") => {
 };
 
 type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
+
+// One icon per control, SHARED by the two toolbars: the cramped sidebar mini-graph
+// shows the icon alone, the full-pane graph pairs it with the same text label it has
+// today (the `.graph-seg-label` span, hidden by container query when narrow). Same
+// glyph in both so the little and big toolbars read as one control at two sizes.
+const MODE_ICON: Record<GraphMode, string> = {
+  "2nd": "Brain",         // your vault — the 2nd brain
+  "3rd": "BrainCircuit",  // claude-bot memory — the 3rd brain
+  both: "Blend",          // the two brains blended into one graph
+  agents: "Network",      // terminal-tab sessions + their subagents
+  daemon: "Bot",          // the background daemon's crons + processes
+};
+// Current segment text — unchanged; only paired with an icon now.
+const MODE_SHORT: Record<GraphMode, string> = { "2nd": "2nd", "3rd": "3rd", both: "Both", agents: "Agents", daemon: "Daemon" };
+// 2D birdseye (flat) vs 3D orbit (volumetric).
+const DIM_ICON: Record<"2d" | "3d", string> = { "2d": "Square", "3d": "Box" };
 
 export function GraphView(props: {
   graph: GraphData;
@@ -252,17 +269,28 @@ export function GraphView(props: {
           value={props.mode}
           onChange={props.setMode}
           size="sm"
-          options={[
-            { id: "2nd", label: "2nd" },
-            { id: "3rd", label: "3rd" },
-            { id: "both", label: "Both" },
-            { id: "agents", label: "Agents" },
-            { id: "daemon", label: "Daemon" },
-          ]}
+          options={(["2nd", "3rd", "both", "agents", "daemon"] as GraphMode[]).map((id) => ({
+            id,
+            title: MODE_LABEL[id],
+            label: (
+              <>
+                <Icon value={MODE_ICON[id]} size={14} />
+                <span class="graph-seg-label">{MODE_SHORT[id]}</span>
+              </>
+            ),
+          }))}
         />
         <ViewBarSpacer />
         <span class="graph-vb-wide graph-vb-right">
-          <SegmentedToggle value={graphViewMode()} onChange={setViewMode} size="sm" options={[{ id: "2d", label: "2D" }, { id: "3d", label: "3D" }]} />
+          <SegmentedToggle
+            value={graphViewMode()}
+            onChange={setViewMode}
+            size="sm"
+            options={[
+              { id: "2d", title: "2D", label: <><Icon value={DIM_ICON["2d"]} size={14} />2D</> },
+              { id: "3d", title: "3D", label: <><Icon value={DIM_ICON["3d"]} size={14} />3D</> },
+            ]}
+          />
           <Show when={props.fill}>
             <IconTextButton icon="Search" size="sm" variant={menuOpen() ? "selected" : "unselected"} onClick={() => (menuOpen() ? closeMenu() : setMenuOpen(true))}>FIND</IconTextButton>
           </Show>

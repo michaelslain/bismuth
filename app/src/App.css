@@ -635,7 +635,19 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .graph-stats { position: absolute; right: 18px; bottom: 16px; z-index: 4; display: flex; align-items: center; gap: 12px; font-size: 11px; color: var(--faint); background: var(--pop-bg); border: 1px solid var(--border-soft); border-radius: 9px; padding: 7px 12px; }
 .graph-find-panel { background: var(--pop-bg-strong); border: 1px solid var(--border); border-radius: 11px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); z-index: 5; overflow: hidden; }
 .graph-bottom-narrow { display: flex; }
-@container (max-width: 520px) { .graph-vb-wide, .graph-legend-card, .graph-stats { display: none; } .graph-viewbar { height: auto; padding: 5px 6px; justify-content: center; border-bottom: none; } }
+/* Narrow (sidebar mini-graph): drop every segment's text label so the toolbar
+   controls collapse to icon-only, and match the main sidebar toolbar
+   (.sidebar-icons) — 18px icons in 28px square buttons with 3px gaps — so the
+   mini-graph chrome reads as the same toolbar. */
+@container (max-width: 520px) {
+  .graph-vb-wide, .graph-legend-card, .graph-stats, .graph-seg-label { display: none; }
+  /* Mirror .sidebar-icons chrome exactly (height 41, 10px side padding) so the bar
+     lines up with the main toolbar above it; the spacer keeps the toggle left-aligned. */
+  .graph-viewbar { height: 41px; padding: 0 10px; justify-content: center; border-bottom: none; }
+  .graph-viewbar .segmented, .graph-bottom-narrow .segmented { gap: 3px; }
+  .graph-viewbar .segmented .btn { width: 28px; height: 28px; padding: 0; border-radius: 7px; }
+  .graph-viewbar .segmented .btn svg { width: 18px; height: 18px; }
+}
 @container (min-width: 521px) { .graph-bottom-narrow, .graph-bottom-fps { display: none; } }
 
 /* ── Agents governance picker (graph "Agents" mode) ───────────────────────────
