@@ -226,7 +226,12 @@ export function createServer(cfg: CoreConfig) {
           dirty = await classifyVault(vaultPaths);
         }
         // Memory (3rd brain) feeds the graph, never the vault file tree.
-        if (memory) dirty.graph = true;
+        if (memory) {
+          dirty.graph = true;
+          // Autosave the memory repo so it's revertable + gives the dream cron a commit
+          // history to diff against (refs/bismuth/dream). Best-effort; never blocks.
+          if (cfg.memory) void commitVault(cfg.memory, snapshotMessage(new Date(), "memory")).catch(() => {});
+        }
         applyDirty(unknown ? [] : vaultPaths, dirty);
       })();
     }, appConfig.server.fileWatchDebounceMs);
@@ -250,7 +255,9 @@ export function createServer(cfg: CoreConfig) {
   }
   if (cfg.memory) {
     try {
-      watch(cfg.memory, { recursive: true }, () => {
+      watch(cfg.memory, { recursive: true }, (_event, filename) => {
+        // Ignore .git churn from our own memory autosave commits (mirrors the vault watch).
+        if (filename && isHidden(filename)) return;
         scheduleMemory();
       });
     } catch {
