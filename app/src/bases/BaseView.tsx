@@ -1,5 +1,8 @@
-import { createSignal, createResource, createMemo, onMount, Show, Switch, Match } from "solid-js";
+import { createSignal, createResource, createMemo, createEffect, onMount, Show, Switch, Match } from "solid-js";
 import { api } from "../api";
+import { serverVersion } from "../serverVersion";
+import { RowCache } from "./rowCache";
+import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
 import { refToPath } from "../../../core/src/bases/sourceSpec";
@@ -46,6 +49,15 @@ interface Loaded {
   basePath?: string;
 }
 
+/** A fully resolved base: its parsed config plus the rows the view renders. */
+type LoadedRows = Loaded & { rows: Row[] };
+
+/** Module-level SWR cache of resolved bases, shared across every BaseView instance
+ *  (and across tabs/splits) so reopening a base paints instantly from the last
+ *  resolution while it revalidates. Keyed by the view signature (path/source/view),
+ *  invalidated by the SSE server version — see `rowCache.ts`. */
+const rowCache = new RowCache<LoadedRows>();
+
 /** Raw source editor for a base file — a textarea + Save, used by the per-view Source
  *  toggle. (Embedded ```query blocks edit their fence inline in the editor instead.) */
 function SourceEditor(props: { path: string; onClose: () => void }) {
@@ -84,10 +96,17 @@ export function BaseView(props: {
   view?: QueryBlock;
   hostPath?: string;
   onOpen?: (path: string) => void;
+  // The `path` file body, already read by FileView to branch base-vs-editor. Seeds the
+  // first load so we don't re-read /file; a later refetch (e.g. after a source-edit save)
+  // re-reads from disk to pick up changes.
+  body?: string;
   // For an embedded ```query block: reveal the raw fence inline in the editor. When set,
   // the SOURCE icon appears even without a base file and triggers inline editing.
   embeddedSource?: { onReveal: () => void };
 }) {
+  // Consume the prefetched body exactly once: the initial render reuses it, any refetch
+  // reads fresh from disk.
+  let pendingBody = props.body;
   const [hostMeta] = createResource(
     () => props.hostPath,
     async (p) => {
@@ -117,8 +136,10 @@ export function BaseView(props: {
       return { config, spec: v.source, inlineRows: null, basePath: v.source?.kind === "base" ? refToPath(v.source.ref) : undefined };
     }
     if (props.path) {
-      // A base file is a `type: base` md note (no `.base` extension).
-      const text = await api.read(props.path);
+      // A base file is a `type: base` md note (no `.base` extension). Reuse the body
+      // FileView already read on the first load; re-read on any subsequent refetch.
+      const text = pendingBody ?? (await api.read(props.path));
+      pendingBody = undefined;
       const name = noteLabel(props.path);
       const { config, rows } = parseBaseFile(text, { name, path: props.path });
       // No explicit source: a md base WITH an inline table renders its own rows; without
@@ -132,14 +153,34 @@ export function BaseView(props: {
   }
 
   const sig = createMemo(() => JSON.stringify({ p: props.path, s: props.source, v: props.view }));
-  const [data, { refetch }] = createResource(sig, async () => {
+
+  // Mark cached rows stale whenever the backend version advances (a vault change) so
+  // the next resolve revalidates. The cached values stay around for an instant paint.
+  createEffect(() => rowCache.invalidate(serverVersion()));
+
+  // Re-run the resource on either a view change OR a server version bump. The version
+  // is part of the source so an SSE event (a note feeding this base changed, even in
+  // another pane) revalidates the rows instead of showing them indefinitely stale; the
+  // cache + in-flight dedup keep the extra resolves cheap, and Solid keeps the previous
+  // value painted while the new one loads (stale-while-revalidate).
+  const source = createMemo(() => ({ key: sig(), version: serverVersion() }));
+  const [fetched, { refetch }] = createResource(source, async ({ key, version }) => {
+    // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
+    if (rowCache.isFresh(key, version)) return rowCache.peek(key)!;
     const loaded = await loadConfig();
     // Single resolution path: an own-rows base already has its rows parsed client-side;
     // everything else (notes / tasks / base-ref) is resolved server-side via /rows, which
     // follows base composition + scoped tasks. No per-kind logic duplicated here anymore.
     const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.spec) : []);
-    return { ...loaded, rows };
+    const result: LoadedRows = { ...loaded, rows };
+    rowCache.set(key, result, version);
+    return result;
   });
+
+  // Effective data: the freshly fetched result when available, else the last cached
+  // resolution for this view (stale-while-revalidate) so a reopen/split paints instantly
+  // from cache instead of blanking to a spinner while /rows runs.
+  const data = createMemo<LoadedRows | undefined>(() => fetched() ?? rowCache.peek(sig()));
 
   const [activeView, setActiveView] = createSignal(0);
   const [sourceMode, setSourceMode] = createSignal(false);
@@ -212,11 +253,14 @@ export function BaseView(props: {
           <SourceEditor path={editPath()!} onClose={() => { setSourceMode(false); refetch(); }} />
         </Show>
         <Show when={!sourceMode()}>
-          <Show when={data()} fallback={<Loading />}>
+          {/* No cached/fetched data yet: show a shaped skeleton (default table outline —
+              the view kind isn't known until the config parses) so the pane shows
+              structure immediately instead of a bare spinner. */}
+          <Show when={data()} fallback={<BaseSkeleton type="table" />}>
             <Switch
               fallback={
                 <div class={styles.base}>
-                  <Show when={result()} fallback={<Loading />}>
+                  <Show when={result()} fallback={<BaseSkeleton type={activeType()} />}>
                     {(res) => (
                       <Switch
                         fallback={

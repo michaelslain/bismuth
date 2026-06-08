@@ -47,6 +47,13 @@ const DATE_FIELDS: Array<[string, "due" | "scheduled" | "start" | "done" | "crea
   ["❌", "cancelled"],
 ];
 
+// Precompiled `<emoji> YYYY-MM-DD` matchers, one per DATE_FIELDS signifier, built once
+// at module load instead of `new RegExp(...)` per task line (parseTaskLine runs once per
+// markdown line across the whole vault).
+const DATE_FIELD_REGEX = new Map<string, RegExp>(
+  DATE_FIELDS.map(([emoji]) => [emoji, new RegExp(emoji + "\\s*(\\d{4}-\\d{2}-\\d{2})")] as const),
+);
+
 function statusFromChar(c: string): TaskStatus {
   switch (c) {
     case " ":
@@ -80,7 +87,7 @@ export function parseTaskLine(line: string, path: string, lineNo: number): Task 
 
   const dates: Partial<Record<string, string>> = {};
   for (const [emoji, field] of DATE_FIELDS) {
-    const re = new RegExp(emoji + "\\s*(\\d{4}-\\d{2}-\\d{2})");
+    const re = DATE_FIELD_REGEX.get(emoji)!;
     const dm = re.exec(rest);
     if (dm) {
       dates[field] = dm[1];
@@ -172,7 +179,7 @@ function advanceRecurringBody(body: string, rule: string): { body: string; advan
   for (const [emoji] of DATE_FIELDS) {
     // Only advance the schedulable dates; done/created/cancelled don't recur forward.
     if (emoji === "✅" || emoji === "➕" || emoji === "❌") continue;
-    const re = new RegExp(emoji + "\\s*(\\d{4}-\\d{2}-\\d{2})");
+    const re = DATE_FIELD_REGEX.get(emoji)!;
     const dm = re.exec(out);
     if (dm) {
       const next = advanceDateByRecurrence(dm[1], rule);
