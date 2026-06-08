@@ -4,22 +4,19 @@ Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` 
 
 ## Get started (macOS)
 
-Build the app into `/Applications` and run it:
+From a fresh clone to the app in `/Applications`:
 
 ```bash
 git clone <repo> && cd bismuth
 bun install
-
-# build the native macOS app (compiles the frontend + the core sidecar binary), then install it
-cd app && bun run tauri build
-cp -R src-tauri/target/release/bundle/macos/app.app /Applications/Bismuth.app
-
-open /Applications/Bismuth.app   # first launch: pick your vault folder
+cd app
+bun run prebundle:claudebot                                    # stage the bundled daemon (needs sibling ../../claude-bot)
+bun run tauri build                                            # frontend + core sidecar + Bismuth.app
+cp -R src-tauri/target/release/bundle/macos/Bismuth.app /Applications/
+open /Applications/Bismuth.app                                 # first launch: pick your vault folder
 ```
 
-The bundled app **runs its own backend** — it spawns the embedded `core` server (a compiled sidecar) on a free port at launch and kills it on quit. On first launch it prompts for your vault folder and remembers it (in `~/Library/Application Support/com.michael.obsidian/config.json`); memory defaults to `~/.claude-bot/memory`.
-
-> To just try it without installing: `cd app && bun run dev` (starts core + a dev window together; uses `OA_VAULT`/`OA_MEMORY` env). Full detail: [install](overview/install.md).
+That's it — the app runs its own backend, so there's nothing else to start. (Just trying it? `cd app && bun run dev`.) Details: [install](overview/install.md).
 
 ## Start here
 
