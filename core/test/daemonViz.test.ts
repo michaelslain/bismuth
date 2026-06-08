@@ -26,9 +26,9 @@ test("disabled → dim base node, NO border (regardless of running / recency)", 
   ).toEqual({ fill: "base", border: "none", opacity: 0.15 });
 });
 
-test("enabled, not running → base-fill node + a crisp palette border ring", () => {
+test("enabled, not running → bg-fill (hollow) node + a crisp palette border ring", () => {
   expect(nodeVisualState(state(), NOW)).toEqual({
-    fill: "base",
+    fill: "bg",
     border: "palette",
     opacity: 1,
   });
@@ -47,7 +47,7 @@ test("lastResult / lastFiredMs are ignored — they no longer drive the encoding
   const fresh = nodeVisualState(state({ lastResult: "failed", lastFiredMs: NOW - 1000 }), NOW);
   const stale = nodeVisualState(state({ lastResult: "success", lastFiredMs: NOW - 99 * 60 * 60 * 1000 }), NOW);
   const never = nodeVisualState(state({ lastResult: null, lastFiredMs: null }), NOW);
-  const expected: DaemonVisual = { fill: "base", border: "palette", opacity: 1 };
+  const expected: DaemonVisual = { fill: "bg", border: "palette", opacity: 1 };
   expect(fresh).toEqual(expected);
   expect(stale).toEqual(expected);
   expect(never).toEqual(expected);

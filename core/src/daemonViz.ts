@@ -53,6 +53,7 @@ export function nodeVisualState(state: DaemonVizState, _now?: number): DaemonVis
     // Running: the entire node is its stable per-node palette color (solid). No separate border.
     return { fill: "palette", border: "none", opacity: 1 };
   }
-  // Enabled, not running: a visible muted dot + a crisp palette border ring.
-  return { fill: "base", border: "palette", opacity: 1 };
+  // Enabled, not running: a hollow dot filled with the canvas background (--bg) so only the
+  // crisp palette border ring reads — the circle itself takes on the background.
+  return { fill: "bg", border: "palette", opacity: 1 };
 }
