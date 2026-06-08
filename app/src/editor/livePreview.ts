@@ -13,6 +13,7 @@ import { type TableBlock, groupTableBlocks } from "./tableModel";
 import { TableWidget } from "./tableWidget";
 import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableState";
 import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
+import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 
 // Indent depth from leading whitespace: tab = 2 spaces, then depth = floor(indentCols / 2).
 function indentDepth(indent: string): number {
@@ -40,18 +41,9 @@ const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 // On the cursor line a list/task marker shows raw; render it in the mono font.
 const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
-// A code-block body line that carries its in-block line number (1-based). CSS
-// renders the number in the left gutter via `::before { content: attr(data-codeline) }`.
-// Cached per number so repeated renders reuse instances.
-const codeLineDecoCache = new Map<number, Decoration>();
-function codeLineDeco(n: number): Decoration {
-  let d = codeLineDecoCache.get(n);
-  if (!d) {
-    d = Decoration.line({ class: "cm-codeblock cm-code-numbered", attributes: { "data-codeline": String(n) } });
-    codeLineDecoCache.set(n, d);
-  }
-  return d;
-}
+// A code-block / frontmatter body line carries its 1-based in-block line number via
+// `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
+// `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
 const codeHeaderLine = Decoration.line({ class: "cm-code-headerline" });
 const codeHiddenLine = Decoration.line({ class: "cm-code-hidden" });
 // A fully collapsed line (zero height): used to hide the frontmatter `---`
@@ -423,7 +415,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           pos = line.to + 1;
           continue;
         }
-        deco.push(frontmatterLine.range(line.from));
+        // Property rows carry their 1-based in-block line number (the `---` delimiters
+        // never do), matching fenced code. `frontmatterOpen` is non-null here.
+        deco.push(numberedLine("cm-frontmatter", line.number - (frontmatterOpen ?? 0)).range(line.from));
         // Tint the `key:` portion in --accent (design .fm keys), leaving values --fg.
         const km = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/.exec(text);
         if (km) {
@@ -445,7 +439,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         // line number; the fence lines never do, whether rendered or revealed.
         const isBody = line.number > codeBlock.open && line.number < codeBlock.close;
         if (revealed) {
-          deco.push(isBody ? codeLineDeco(line.number - codeBlock.open).range(line.from) : codeBlockLine.range(line.from));
+          deco.push(isBody ? numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from) : codeBlockLine.range(line.from));
         } else if (line.number === codeBlock.open) {
           deco.push(codeHeaderLine.range(line.from));
           if (line.to > line.from) {
@@ -455,7 +449,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           deco.push(codeHiddenLine.range(line.from));
           if (line.to > line.from) deco.push(hide.range(line.from, line.to));
         } else {
-          deco.push(codeLineDeco(line.number - codeBlock.open).range(line.from));
+          deco.push(numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from));
         }
         pos = line.to + 1;
         continue;
@@ -697,6 +691,7 @@ export const livePreview = [
   activeTableField,
   tableWidgetField,
   htmlBlockField,
+  codeLineNumberTheme,
   EditorView.domEventHandlers({
     dblclick: (e, view) => {
       const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
@@ -814,22 +809,8 @@ export const livePreview = [
     // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
     // are hidden off-cursor (replaced by a header + collapsed close line).
     ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
-    // In-block line numbers: a faint right-aligned count hung in the editor's left
-    // padding (no layout shift to the code text). `attr(data-codeline)` is set by
-    // the codeLineDeco decoration on each body line.
-    ".cm-code-numbered": { position: "relative" },
-    ".cm-code-numbered::before": {
-      content: "attr(data-codeline)",
-      position: "absolute",
-      left: "-2.7em",
-      width: "2em",
-      "text-align": "right",
-      color: "color-mix(in srgb, var(--fg) 28%, transparent)",
-      "font-variant-numeric": "tabular-nums",
-      "-webkit-user-select": "none",
-      "user-select": "none",
-      "pointer-events": "none",
-    },
+    // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
+    // (codeLineNumbers.ts), shared with the ```query source view.
     ".cm-code-headerline": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
     ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },

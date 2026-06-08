@@ -1,8 +1,9 @@
 import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
-import { RangeSetBuilder, StateField, StateEffect, type EditorState, type Extension } from "@codemirror/state";
+import { StateField, StateEffect, type EditorState, type Extension } from "@codemirror/state";
 import { mountSolid, disposeSolid } from "./solidWidget";
 import { BaseView } from "../bases/BaseView";
 import { parseQueryBlock } from "../../../core/src/bases/queryBlock";
+import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 
 // The ONE embedded block: ```query — the view INTO a base/notes. There is no ```base,
 // ```view, or ```tasks block; everything that reads into a base/notes is a query (a
@@ -113,19 +114,31 @@ class QueryBlockWidget extends WidgetType {
   }
 }
 
-const queryBodyMark = Decoration.mark({ class: "cm-query-body" });
+// A revealed-source fence line (the ```query / closing ``` lines): monospace, no number.
+const queryBodyLine = Decoration.line({ class: "cm-query-body" });
 
 // Replace each ```query fence with its rendered view — except blocks currently revealed
 // for inline source editing, which show as the raw fence in the editor's monospace code
-// font (edited like any code, auto-saved).
+// font (edited like any code, auto-saved). Revealed body lines carry their 1-based
+// in-block line number (matching fenced code); the fence lines don't.
 function buildDecorations(state: EditorState, hostPath: string): DecorationSet {
   const revealed = state.field(revealedField);
-  const builder = new RangeSetBuilder<Decoration>();
+  const doc = state.doc;
+  const deco: ReturnType<Decoration["range"]>[] = [];
   queryRanges(state).forEach((r, i) => {
-    if (revealed.has(i)) builder.add(r.from, r.to, queryBodyMark); // raw, monospace
-    else builder.add(r.from, r.to, Decoration.replace({ widget: new QueryBlockWidget(r.body, hostPath), block: true }));
+    if (revealed.has(i)) {
+      const openLine = doc.lineAt(r.from).number;
+      const closeLine = doc.lineAt(r.to).number;
+      for (let ln = openLine; ln <= closeLine; ln++) {
+        const line = doc.line(ln);
+        const isBody = ln > openLine && ln < closeLine;
+        deco.push((isBody ? numberedLine("cm-query-body", ln - openLine) : queryBodyLine).range(line.from));
+      }
+    } else {
+      deco.push(Decoration.replace({ widget: new QueryBlockWidget(r.body, hostPath), block: true }).range(r.from, r.to));
+    }
   });
-  return builder.finish();
+  return Decoration.set(deco, true);
 }
 
 // Monospace the revealed source, matching the editor's code font.
@@ -170,5 +183,5 @@ export function queryBlock(getHostPath: () => string | null): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [revealedField, collapseOnClickOutside, queryTheme, decoField];
+  return [revealedField, collapseOnClickOutside, queryTheme, codeLineNumberTheme, decoField];
 }
