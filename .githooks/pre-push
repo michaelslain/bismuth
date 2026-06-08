@@ -1,0 +1,4 @@
+#!/bin/sh
+# Docs gate: block on broken docs links, warn on stale docs. See scripts/check-docs.ts.
+# Enabled via: git config core.hooksPath .githooks
+exec bun run scripts/check-docs.ts --pre-push
