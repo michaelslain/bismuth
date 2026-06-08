@@ -84,7 +84,8 @@ const KEY_SPECS: KeySpec[] = [
 ];
 
 const VIEW_DOCS: Record<string, string> = {
-  table: "Rows × columns grid.", cards: "Card per row.", list: "Compact bullet list.",
+  table: "Rows × columns grid.", cards: "Card per row.", list: "Compact list with row icons.",
+  bullets: "Plain markdown bullet list, grouped — no table chrome.",
   kanban: "Columns grouped by a field.", calendar: "Rows placed on a calendar by date.",
   map: "Rows with coordinates on a map.", flashcards: "Spaced-repetition review of rows.",
   bar: "Bar chart.", line: "Line chart.", stat: "Single aggregate number.", heatmap: "Calendar heatmap.",

@@ -60,6 +60,9 @@
   padding: 9px 14px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
+  /* Column headers are chrome (like the view tabs / query label), so they read in the
+     mono UI font, not the prose serif (--editor-font) the table body inherits. */
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 11px;
   letter-spacing: 0.03em;
   vertical-align: bottom;
@@ -123,7 +126,7 @@
 .thResizable:hover .thResize::after { background: color-mix(in srgb, var(--fg) 30%, transparent); }
 .thResize:hover::after, .thAtEdge .thResize::after { background: var(--accent); }
 .table td { overflow: hidden; text-overflow: ellipsis; }
-.groupRow td { font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; }
+.groupRow td { font-family: "Monaspace Xenon", ui-monospace, monospace; font-weight: 500; background: color-mix(in srgb, var(--fg) 4%, transparent); color: var(--text-muted); font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; }
 .summary { font-weight: 500; color: var(--text-muted); border-top: 2px solid var(--border); }
 
 /* ---------- cards view ---------- */
@@ -283,6 +286,18 @@
 
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
 .groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
+
+/* ---------- bullets view (plain markdown-style list, no table chrome) ---------- */
+/* Reads like the note's own `- item` prose: group key as a small serif heading, then a
+   real <ul> of clickable links. No column header, no row borders, no per-row icons. */
+.bullets { padding: 6px 6px 14px; font-family: var(--editor-font); font-size: 15px; color: var(--fg); }
+.bulletGroupHead { font-weight: 600; font-size: 1.05em; color: var(--fg); letter-spacing: -0.01em; margin: 14px 0 5px; }
+.bulletGroup:first-child .bulletGroupHead { margin-top: 2px; }
+.bulletList { margin: 0; padding-left: 1.5em; list-style: disc; }
+.bulletItem { margin: 3px 0; line-height: 1.55; }
+.bulletItem::marker { color: var(--text-muted); }
+.bulletItem a { color: var(--accent); text-decoration: none; cursor: pointer; }
+.bulletItem a:hover { text-decoration: underline; }
 
 /* Embedded query header: flush to the block edges (query hard-left, source icon hard-right). */
 :global(.viewbar).embeddedBar { padding-left: 0; padding-right: 0; }
