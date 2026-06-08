@@ -6,6 +6,7 @@ import { IconTextButton } from "../ui/IconTextButton";
 import { Icon } from "../icons/Icon";
 import { EmptyState } from "../ui/EmptyState";
 import { Modal } from "../ui/Modal";
+import { TextInput } from "../ui/TextInput";
 import { renderMarkdown } from "./markdown";
 import { EditCardsModal } from "./EditCardsModal";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
@@ -241,6 +242,7 @@ export function FlashcardsView(props: {
         <EditCardsModal
           rows={props.rows}
           basePath={props.basePath!}
+          deckName={props.basePath!.split("/").pop()!.replace(/\.md$/, "")}
           frontField={frontField()}
           backField={backField()}
           onClose={() => setEditing(false)}
@@ -324,32 +326,35 @@ export function FlashcardsView(props: {
 
       <Show when={editingCard() && props.basePath}>
         <Modal onClose={() => setEditingCard(false)} class="cards-modal card-edit-one">
-          <div class="cards-modal-head">
-            <h2>Edit card</h2>
+          <div class="cards-head">
+            <h2 class="cards-title">Edit card</h2>
+            <div class="sp" />
             <IconButton icon="X" label="Close" onClick={() => setEditingCard(false)} />
           </div>
           <div class="card-edit-one-body">
             <label class="card-edit-labeled">
               <span>Front</span>
-              <textarea
+              <TextInput
+                multiline
                 class="card-edit-field"
                 value={cardFront()}
                 placeholder="Front / prompt…"
-                onInput={(e) => setCardFront(e.currentTarget.value)}
+                onInput={setCardFront}
               />
             </label>
             <label class="card-edit-labeled">
               <span>Back</span>
-              <textarea
+              <TextInput
+                multiline
                 class="card-edit-field"
                 value={cardBack()}
                 placeholder="Back / answer…"
-                onInput={(e) => setCardBack(e.currentTarget.value)}
+                onInput={setCardBack}
               />
             </label>
             <div class="card-edit-one-actions">
-              <TextButton size="lg" onClick={() => setEditingCard(false)}>CANCEL</TextButton>
-              <TextButton size="lg" onClick={saveCardEdit}>SAVE</TextButton>
+              <TextButton onClick={() => setEditingCard(false)}>CANCEL</TextButton>
+              <TextButton variant="selected" onClick={saveCardEdit}>SAVE</TextButton>
             </div>
           </div>
         </Modal>

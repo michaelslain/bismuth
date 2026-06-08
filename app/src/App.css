@@ -421,35 +421,131 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .flashcards-host .ui-empty .inline-bolt { display: inline-flex; vertical-align: -0.18em; color: var(--text-muted); margin: 0 1px; }
 .flashcards-host .ui-empty code { font-family: "Lora", serif; font-style: italic; background: none; padding: 0; }
 
-/* Edit-cards modal: scrollable list of front/back editors + an add row. */
+/* ── Edit-cards modal — "claude-design" handoff ───────────────────────────────
+   Two modes: a reorderable Front/Back list (markdown-overlay cells) + a bulk-add
+   paster with a live preview. Built on Modal + SegmentedToggle + the Button family. */
 .cards-modal {
-  width: min(640px, 92vw); max-height: 82vh; display: flex; flex-direction: column;
-  background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+  width: min(940px, 94vw); height: min(840px, 92vh); display: flex; flex-direction: column;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface-1));
+  border: 1px solid var(--border); border-radius: 18px;
   box-shadow: var(--shadow-modal); overflow: hidden;
 }
-.cards-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px 12px; border-bottom: 1px solid var(--border-soft); }
-.cards-modal-head h2 { margin: 0; font-size: 16px; }
-.cards-modal-list { flex: 1 1 auto; overflow-y: auto; padding: 12px 18px; display: flex; flex-direction: column; gap: 12px; }
-.cards-modal-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 24px 0; }
-.cards-modal-add { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; padding: 14px 18px 16px; border-top: 1px solid var(--border-soft); }
-.card-edit-row { display: flex; align-items: flex-start; gap: 10px; }
-.card-edit-num { flex: 0 0 auto; width: 20px; padding-top: 8px; text-align: right; font-size: 11px; color: var(--faint); }
-.card-edit-fields { flex: 1 1 auto; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.card-edit-field {
-  font-family: "Lora", serif; font-size: 15px; line-height: 1.5; color: var(--fg);
-  background: var(--bg); border: 1px solid var(--border); border-radius: 7px;
-  padding: 8px 10px; min-height: 44px; resize: vertical; box-sizing: border-box; width: 100%;
-}
-.card-edit-field:focus { outline: none; border-color: var(--accent); }
-.card-edit-field::placeholder { opacity: 0.45; }
-.cards-modal-add .card-edit-fields { flex-direction: row; }
-.cards-modal-add .card-edit-field { flex: 1; }
+.cards-modal .sp { flex: 1; }
 
-/* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. */
-.card-edit-one { max-height: none; }
-.card-edit-one-body { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 18px; }
+.cards-head { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 20px 24px 16px; border-bottom: 1px solid var(--border-soft); }
+.cards-title { margin: 0; font-family: "Lora", serif; font-size: 21px; font-weight: 600; letter-spacing: -0.01em; }
+.cards-meta { color: var(--text-muted); font-size: 13px; display: flex; align-items: center; gap: 7px; }
+.cards-meta .dot { color: var(--faint); }
+
+.cards-modebar { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 14px 24px; }
+.cards-modebar .segmented .btn { gap: 7px; }
+.cards-hint { color: var(--faint); font-size: 11px; white-space: nowrap; }
+.cards-hint .key, .cards-lefthint .key { border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-muted); font-size: 10px; }
+
+/* ── Cards list ── */
+.cards-listwrap { flex: 1 1 auto; overflow-y: auto; padding: 0 24px 8px; }
+.cards-collbl {
+  display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: 12px; align-items: center;
+  padding: 6px 4px 8px; position: sticky; top: 0; z-index: 2;
+  background: linear-gradient(180deg, var(--surface-1) 70%, transparent);
+  font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--faint);
+}
+.cards-collbl span:first-child { text-align: center; }
+.cards-row { display: grid; grid-template-columns: 30px 1fr 1fr 34px; gap: 12px; align-items: stretch; padding: 9px 4px; border-top: 1px solid var(--border-soft); position: relative; }
+.cards-row:first-of-type { border-top: 0; }
+.cards-row.dragging { opacity: 0.4; }
+.cards-row.dropbefore::before { content: ""; position: absolute; left: 30px; right: 34px; top: -1px; height: 2px; background: var(--accent); border-radius: 2px; }
+.cards-num { display: flex; align-items: flex-start; justify-content: center; padding-top: 11px; color: var(--faint); font-size: 11px; cursor: grab; user-select: none; }
+.cards-num:hover { color: var(--text-muted); }
+.cards-num:active { cursor: grabbing; }
+.cards-num-add { color: var(--accent); cursor: default; font-size: 15px; }
+
+/* Markdown-overlay cell. The rendered .cell-md sits in normal flow and DRIVES the
+   cell height (so it auto-grows with content, with no fragile JS / font-load race);
+   a transparent textarea overlays it and reveals the raw monospace text on focus.
+   Chrome matches the standard .ui-input (surface fill, soft border, accent focus ring). */
+.cell { position: relative; }
+.cell-md {
+  min-height: 44px; padding: 9px 12px; box-sizing: border-box; overflow: hidden;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13.5px; line-height: 1.5; color: var(--fg);
+  background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 9px;
+  white-space: pre-wrap; word-break: break-word; transition: border-color 0.14s;
+}
+.cell:hover .cell-md { border-color: var(--border); }
+.cell-back .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
+.cell-md strong { color: var(--fg); font-weight: 600; }
+.cell-md em { font-style: italic; color: var(--teal); }
+.cell-md code { font-size: 0.9em; background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--blue); padding: 1px 5px; border-radius: 4px; }
+.cell-ph { color: var(--text-muted); }
+.cell textarea {
+  position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13.5px; line-height: 1.5;
+  color: transparent; caret-color: transparent;
+  background: transparent; border: 1px solid transparent; border-radius: 9px;
+  padding: 9px 12px; outline: none; box-sizing: border-box;
+}
+.cell:focus-within textarea { color: var(--fg); caret-color: var(--accent); background: var(--surface-2); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cell:focus-within .cell-md { visibility: hidden; }
+.cell textarea::placeholder { color: transparent; }
+.cell:focus-within textarea::placeholder { color: var(--text-muted); }
+.cell-tag { position: absolute; top: -7px; left: 10px; z-index: 3; font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); padding: 0 4px; background: var(--surface-1); opacity: 0; transition: opacity 0.14s; }
+.cell:focus-within .cell-tag { opacity: 1; }
+/* Draft row: plain monospace inputs (no markdown overlay), dashed until focused. */
+.cards-draft .cell textarea {
+  position: relative; height: auto; min-height: 44px; display: block; overflow: hidden;
+  color: var(--fg); caret-color: var(--accent); background: transparent; border: 1px dashed var(--border);
+}
+.cards-draft .cell textarea:focus { background: var(--surface-2); border-style: solid; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.cards-draft .cell textarea::placeholder { color: var(--text-muted); }
+
+.cards-del { display: flex; align-items: flex-start; padding-top: 8px; }
+.cards-del .btn--icon { width: 28px; height: 28px; padding: 0; opacity: 0; transition: opacity 0.14s; }
+.cards-row:hover .cards-del .btn--icon { opacity: 1; }
+.cards-draft { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 14px; }
+.cards-addrow { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px 6px; }
+.cards-lefthint { color: var(--faint); font-size: 11px; }
+
+/* ── Bulk add ── */
+.cards-bulkwrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 4px 24px 0; }
+.cards-bulk-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 6px 0 12px; }
+.cards-lab { color: var(--faint); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; }
+.cards-chiprow { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.cards-bulk-grid { flex: 1 1 auto; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 16px; min-height: 0; padding-bottom: 16px; }
+.cards-bulk-input { display: flex; flex-direction: column; min-height: 0; }
+.cards-bulk-input label { color: var(--faint); font-size: 10.5px; letter-spacing: 0.16em; text-transform: uppercase; margin-bottom: 8px; }
+/* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + sizing. */
+.cards-bulk-input textarea.cards-bulk-textarea {
+  flex: 1; min-height: 240px; resize: none;
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13px; line-height: 1.7;
+}
+.cards-bulk-preview { display: flex; flex-direction: column; min-height: 0; }
+.cards-pvhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.cards-cnt { color: var(--accent); font-size: 12px; }
+.cards-pvlist { flex: 1; overflow-y: auto; border: 1px solid var(--border-soft); border-radius: 11px; background: var(--bg); padding: 6px; }
+.cards-pvcard { display: grid; grid-template-columns: 18px 1fr; gap: 9px; padding: 9px 10px; border-radius: 8px; }
+.cards-pvcard:nth-child(odd) { background: color-mix(in srgb, var(--fg) 2%, transparent); }
+.cards-pi { color: var(--faint); font-size: 10px; font-family: "Monaspace Xenon", ui-monospace, monospace; padding-top: 3px; text-align: right; }
+.cards-pf { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13px; color: var(--fg); line-height: 1.45; }
+.cards-pb { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 12.5px; color: var(--text-muted); line-height: 1.45; margin-top: 3px; }
+.cards-pb::before { content: "→ "; color: var(--blue); font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 11px; }
+.cards-pvcard.bad .cards-pf { color: var(--accent-purple); }
+.cards-warn-em { color: var(--accent-purple); font-style: italic; }
+.cards-warn { color: var(--accent-purple); font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 10px; margin-top: 3px; }
+.cards-pvempty { display: flex; height: 100%; align-items: center; justify-content: center; color: var(--faint); font-size: 12px; text-align: center; padding: 30px; }
+
+/* ── Footer ── */
+.cards-foot { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; padding: 16px 24px; border-top: 1px solid var(--border-soft); }
+.cards-count { color: var(--text-muted); font-size: 12px; }
+.cards-count b { color: var(--fg); font-weight: 600; }
+
+/* Single-card edit modal (the card's own ✎ action): Front/Back labelled fields. Narrower. */
+.card-edit-one { width: min(560px, 92vw); height: auto; }
+.card-edit-one-body { display: flex; flex-direction: column; gap: 14px; padding: 18px 24px 20px; }
 .card-edit-labeled { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--text-muted); }
-.card-edit-labeled .card-edit-field { min-height: 64px; }
+/* The standard TextInput (.ui-input) supplies the chrome; override font (mono) + min-height. */
+.card-edit-labeled textarea.card-edit-field {
+  font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: 13.5px; line-height: 1.5; min-height: 64px; resize: vertical;
+}
 .card-edit-one-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 2px; }
 .srs-panel { max-width: 640px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 16px; }
 .srs-panel h3 { margin: 0; }

@@ -159,6 +159,7 @@ export const api = {
   rowCreate: (file: string, note: Record<string, unknown>) => post("/row/update", { file, index: null, note }),
   rowUpdate: (file: string, index: number, note: Record<string, unknown>) => post("/row/update", { file, index, note }),
   rowDelete: (file: string, index: number) => post("/row/delete", { file, index }),
+  rowReorder: (file: string, from: number, to: number) => post("/row/reorder", { file, from, to }),
 
   move: (from: string, to: string) => post("/move", { from, to }),
   del: (path: string) => postJson<{ trashPath: string }>("/delete", { path }),
