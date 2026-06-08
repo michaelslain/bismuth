@@ -168,6 +168,18 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** `InstallStatus` = `{ installed: boolean, running: boolean, daemonLabel?: string, home?: string, plistPath?: string }`. Read-only install probe bridged to the claude-bot package (`installStatus`). **Never throws / never 500** — degrades to `{ installed:false, running:false }` (the `UNKNOWN_STATUS` default) when the entrypoint can't be reached.
 
+### `GET /bismuth/install`
+- **Params:** none.
+- **Response:** `BismuthStatus` = `{ installed: boolean, version: string|null, cliPath: string|null, cliLinked: boolean, mcpRegistered: boolean }` — read-only status of the **machine-wide** `bismuth` CLI + MCP install (`getBismuthStatus`, `core/src/bismuthInstall.ts`). `installed` = a version marker exists at `~/.bismuth/.version`; `version` is its stored content hash; `cliPath`/`cliLinked` describe the CLI symlink on PATH; `mcpRegistered` = `claude mcp get bismuth` succeeds. **Never throws.** See [machine-wide install](../mcp/overview.md).
+
+### `GET /update/status`
+- **Params:** none.
+- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `OA_BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
+
+### `GET /update/progress`
+- **Params:** none.
+- **Response:** `UpdateProgress` = `{ phase: "idle"|"pulling"|"building"|"ready"|"error", message?: string, log?: string }` — the in-memory state of the current/last self-update run (`getUpdateProgress`). Polled by `UpdateBanner.tsx` after `POST /update/apply`. `log` carries the tail of git/build stderr on failure. **Never throws.**
+
 ---
 
 ## POST in the read table (NOT mutations)
@@ -218,6 +230,12 @@ These mutate the claude-bot daemon's shared on-disk files (NOT the vault), so th
 - **`POST /daemon/cron/toggle`** — body `{ name?, enabled? }`. `setCronEnabled(name, enabled)` (rewrites the `enabled` frontmatter in `<home>/crons/<name>.md`). Response `{ ok: true }`. `400 "missing name/enabled"` if `name` absent or `enabled` not a boolean. Unknown name → `setCronEnabled` throws `AppError("ENOENT")` → `404` via the dispatch catch.
 - **`POST /daemon/cron/run`** — body `{ name? }`. `runCron(name)` (drops a trigger file the daemon polls). Response `{ ok: true }`. `400 "missing name"` if absent. Unknown name → `404`.
 - **`POST /daemon/process/toggle`** — body `{ name?, enabled? }`. `setProcessEnabled(name, enabled)`. Response `{ ok: true }`. `400 "missing name/enabled"` on bad input; unknown name → `404`.
+
+### Machine-wide install / self-update (read table)
+These run system actions (filesystem + git + `claude mcp` + a rebuild) but are **not** vault mutations, so they live in the read table with no vault-cache invalidation. All never throw.
+
+- **`POST /bismuth/install`** — body none. `ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC)` — the idempotent, version-gated machine-wide install of the `bismuth` CLI + MCP from the bundled tools resource (`core/src/bismuthInstall.ts`). Response `InstallResult` = `{ action, status: BismuthStatus, warnings: string[] }`, where `action` ∈ `"up-to-date"` | `"installed"` | `"updated"` | `"would-install"` | `"would-update"` | `"skipped-no-src"`. A no-op (`"up-to-date"`) when the bundled-binary content hash matches `~/.bismuth/.version` AND the CLI symlink + MCP registration are present; `"skipped-no-src"` when `OA_BISMUTH_INSTALL_SRC` is unset / incomplete (the dev case). See [machine-wide install](../mcp/overview.md).
+- **`POST /update/apply`** — body none. `startUpdate()` (`core/src/selfUpdate.ts`) — starts the git self-update and **returns immediately** with the initial `UpdateProgress` (the heavy `git pull` + `bun run tauri build` runs in the background; poll `GET /update/progress`). Idempotent while a run is in flight (returns the current `state`). Guards: returns `phase:"error"` when not a bundled source build, when the repo has uncommitted changes (`dirty`), and `phase:"idle"` when already up to date. See [self-update](../overview/self-update.md).
 
 ### `POST /asset`
 > Listed in the read table — uploading an attachment is NOT a graph/tree/search mutation (attachments are excluded from those caches; the subsequent note edit that inserts the embed triggers its own invalidation).
@@ -409,6 +427,11 @@ On `close`, the PTY data/exit listeners are disposed immediately (so no `ws.send
 | POST | `/daemon/cron/toggle` | read | no |
 | POST | `/daemon/cron/run` | read | no |
 | POST | `/daemon/process/toggle` | read | no |
+| GET | `/bismuth/install` | read | no |
+| POST | `/bismuth/install` | read | no |
+| GET | `/update/status` | read | no |
+| POST | `/update/apply` | read | no |
+| GET | `/update/progress` | read | no |
 | POST | `/replace` | mutating | yes |
 | POST | `/move` | mutating | yes (from+to) |
 | POST | `/delete` | mutating | yes |

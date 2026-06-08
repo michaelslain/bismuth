@@ -22,6 +22,7 @@ In the `.dmg` window that opens, drag **Bismuth → Applications**, eject the vo
 - [Install & run](overview/install.md) — prerequisites, env vars, dev/build, multiple instances
 - [Storage](overview/storage.md) — where everything is stored on disk + in the browser
 - [Data flow](overview/data-flow.md) — file-watch → SSE → frontend, caching, layouts
+- [Self-update](overview/self-update.md) — the git-based in-place app updater (detect → pull → rebuild → swap)
 
 ## The vault
 
@@ -72,8 +73,21 @@ In the `.dmg` window that opens, drag **Bismuth → Applications**, eject the vo
 
 - [Graph](graph/overview.md) — node/edge kinds, the 5 modes, layout
 - [Terminal & relay](terminal/overview.md) — in-app terminals, the agents graph
-- [Daemon integration](daemon/overview.md) — the claude-bot daemon graph + controls
-- [Daemon storage](daemon/storage.md) — the `~/.claude-bot` on-disk layout
+- [Daemon integration](daemon/overview.md) — the claude-bot daemon graph + controls (Bismuth's consumer side)
+- [Daemon storage](daemon/storage.md) — the `~/.claude-bot` on-disk layout Bismuth reads
+
+## claude-bot
+
+The persistent AI daemon Bismuth integrates with — a **separate project** (sibling repo) documented here from its own (producer) side, alongside Bismuth's integration seams.
+
+- [Overview](claude-bot/overview.md) — what claude-bot is, the three layers, how it relates to Bismuth, section index
+- [Daemon supervisor](claude-bot/daemon.md) — `daemon/index.ts` + `session.ts`: boot/shutdown, the persistent session, owner gating
+- [Crons & processes](claude-bot/crons-and-processes.md) — file-based crons + background processes: frontmatter, scheduling, state files, triggers
+- [Memory store](claude-bot/memory.md) — the markdown memory graph: note format, backlinks, query vs search, the dream cycle
+- [MCP server](claude-bot/mcp.md) — claude-bot's own stdio MCP server + full 26-tool catalog (distinct from Bismuth's MCP)
+- [Communication & hooks](claude-bot/communication.md) — the recall/collect hooks + single-owner device gating (no cross-machine messaging)
+- [Installation](claude-bot/install.md) — `bin/ensure-installed.ts` (adopt-only), launchd/systemd, the relocatable bundle, how Bismuth invokes it
+- [Storage](claude-bot/storage.md) — the `~/.claude-bot` on-disk tree from claude-bot's writer view
 
 ## Interfaces
 

@@ -7,6 +7,8 @@ malformed files and never throws — a daemon that has never run, or a partially
 degrades to empty/null/false. This document is the exhaustive reference for every file Bismuth
 reads, its exact byte-level shape, and the `daemon.home` setting that controls where Bismuth looks.
 
+> This is the **consumer** view (what Bismuth reads). For the **producer** view — the same `~/.claude-bot` tree from claude-bot's own writers, plus every file claude-bot authors that Bismuth doesn't read (`session-id`, `CLAUDE.md`, `logs/`, process `.pids/`, etc.) — see [claude-bot storage](../claude-bot/storage.md). Note that the `daemon.home` / `OA_CLAUDEBOT_HOME` resolution below is **Bismuth-only**: claude-bot itself always writes to `~/.claude-bot` (no env override on its side).
+
 ---
 
 ## Home Directory Resolution
@@ -399,5 +401,11 @@ See [daemonViz](../daemon/overview.md) for how `{ enabled, running }` maps to vi
 
 `GET /daemon/graph` serves this graph (polled by the frontend only while daemon mode is active).
 `GET /daemon/status` and `GET /daemon/devices` return `DaemonStatus` and `DeviceList` respectively.
+
+## See Also
+
+- [claude-bot storage](../claude-bot/storage.md) — the producer view of this exact tree.
+- [claude-bot crons & processes](../claude-bot/crons-and-processes.md) — the full cron/process file model + trigger semantics Bismuth writes into.
+- [Daemon integration overview](overview.md) — the graph mode, controls, and `/daemon/*` routes.
 
 Source: core/src/daemon.ts, core/src/daemonGraph.ts, core/src/daemonState.ts, core/test/daemon.test.ts, core/test/daemonGraph.test.ts

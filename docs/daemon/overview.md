@@ -2,6 +2,8 @@
 
 This document covers Bismuth's read/write window onto the **claude-bot daemon** — a separate, independently-managed background process that runs scheduled crons and supervised background processes. Bismuth shares the daemon's on-disk state files to power the "daemon" graph mode and sidebar panel. Bismuth **never starts, stops, or restarts the daemon process**, and it **never installs the daemon itself without an explicit user action**. All reads degrade gracefully when the daemon has never run or its files are partially written.
 
+> **Looking for claude-bot itself?** This page is the **consumer** side (what Bismuth reads/writes). The **producer** side — claude-bot's daemon, memory store, MCP server, crons/processes, hooks, and install path — is documented in [the claude-bot section](../claude-bot/overview.md). Of particular relevance: [the daemon supervisor](../claude-bot/daemon.md), [crons & processes](../claude-bot/crons-and-processes.md) (the file formats Bismuth writes into), [installation](../claude-bot/install.md) (the `bin/ensure-installed.ts` entrypoint Bismuth spawns), and [storage](../claude-bot/storage.md) (the same on-disk tree from the writer's view).
+
 ---
 
 ## What the Daemon Is
@@ -387,9 +389,11 @@ The install/setup path is deliberately conservative:
 - **`POST /daemon/setup`** runs `ensure-installed.ts` (no flag). This is the claude-bot package's idempotent entrypoint: if the daemon is already installed and running, it reports `"adopted"` and does nothing. It never clobbers a live daemon, never repoints a running daemon at a different home, and never restarts it.
 
 The entrypoint is resolved via a three-step lookup (`resolveEntrypoint` in `core/src/claudebot.ts`):
-1. An already-installed claude-bot on this machine (parsed from the launchd plist or systemd unit).
+1. An already-installed claude-bot on this machine (parsed from the launchd plist or systemd unit — `installedEntrypoint()` matches the absolute path ending in `daemon/index.ts` and derives `../bin/ensure-installed.ts`).
 2. The Tauri-bundled copy (`$OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts`).
-3. The linked `claude-bot` dev-dep in the monorepo.
+3. The linked `claude-bot` dev-dep in the monorepo (resolved via `createRequire`).
+
+The entrypoint itself — its exact flags, the single-JSON-line output (`{installed,running,daemonLabel,home,plistPath}` for `--status`; `{action,status}` for the default `ensureInstalled()` path), and why it's adopt-only — is the claude-bot project's; see [claude-bot installation](../claude-bot/install.md). The relocatable `dist/claude-bot/` tree that `$OA_CLAUDEBOT_BUNDLE` points at is produced by claude-bot's `scripts/bundle.ts`.
 
 ---
 
@@ -456,6 +460,7 @@ export function isEnabled(data: Record<string, unknown>): boolean {
 
 ## Related Docs
 
+- [claude-bot section](../claude-bot/overview.md) — the daemon itself (producer side): [daemon supervisor](../claude-bot/daemon.md), [crons & processes](../claude-bot/crons-and-processes.md), [installation](../claude-bot/install.md), [on-disk storage](../claude-bot/storage.md)
 - [Graph types](../graph/overview.md) — `NodeKind`, `EdgeKind`, `GraphNode.daemon`, `DaemonVizState`
 - [Agents graph](../terminal/overview.md) — the "agents" graph mode (terminal-tab sessions vs daemon supervision)
 - [Settings schema](../settings/overview.md) — `daemon.enabled`, `daemon.home`
