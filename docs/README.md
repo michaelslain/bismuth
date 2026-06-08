@@ -10,20 +10,16 @@ Build the app into `/Applications` and run it:
 git clone <repo> && cd bismuth
 bun install
 
-# point at your vault + memory dirs (both must already exist)
-export OA_VAULT="$HOME/Documents/bismuth-vault"
-export OA_MEMORY="$HOME/.claude-bot/memory"
-
-# build the native macOS app, then install it
+# build the native macOS app (compiles the frontend + the core sidecar binary), then install it
 cd app && bun run tauri build
 cp -R src-tauri/target/release/bundle/macos/app.app /Applications/Bismuth.app
 
-# the app talks to the core backend on :4321 — start it, then open the app
-bun run ../core/src/server.ts --vault "$OA_VAULT" --memory "$OA_MEMORY" --port 4321 &
-open /Applications/Bismuth.app
+open /Applications/Bismuth.app   # first launch: pick your vault folder
 ```
 
-> The bundled app doesn't launch the backend itself yet, so `core` must be running on `:4321` (the command above). To just try it without installing, run `cd app && bun run dev` — that starts the backend + a dev window together. Full detail: [install](overview/install.md).
+The bundled app **runs its own backend** — it spawns the embedded `core` server (a compiled sidecar) on `:4321` at launch and kills it on quit. On first launch it prompts for your vault folder and remembers it (in `~/Library/Application Support/com.michael.obsidian/config.json`); memory defaults to `~/.claude-bot/memory`.
+
+> To just try it without installing: `cd app && bun run dev` (starts core + a dev window together; uses `OA_VAULT`/`OA_MEMORY` env). Full detail: [install](overview/install.md).
 
 ## Start here
 

@@ -12,6 +12,10 @@
     {
       "identifier": "fs:scope",
       "allow": [{ "path": "$DOWNLOAD/*" }]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [{ "name": "binaries/bismuth-core", "sidecar": true, "args": true }]
     }
   ]
 }

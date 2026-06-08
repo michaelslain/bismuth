@@ -9,6 +9,7 @@
     "build": "vite build",
     "serve": "vite preview",
     "prebundle:claudebot": "bun run scripts/bundle-claudebot.ts",
+    "build:core-sidecar": "bun run scripts/build-core-sidecar.ts",
     "tauri": "tauri"
   },
   "license": "MIT",
