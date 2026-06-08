@@ -8,11 +8,13 @@ function tmp() {
   return mkdtempSync(join(tmpdir(), "oa-term-"));
 }
 
-const ENV_BASE = { base: { PATH: "/usr/bin" }, relayUrl: "http://localhost:4321", terminalId: "tab-1", pluginDir: "/repo/relay", shimDir: "/repo/relay/shim", zdotDir: "/repo/relay/shim/zdotdir" };
+const ENV_BASE = { base: { PATH: "/usr/bin" }, relayUrl: "http://localhost:4321", terminalId: "tab-1", shimAvailable: true, pluginDir: "/repo/relay", shimDir: "/repo/relay/shim", zdotDir: "/repo/relay/shim/zdotdir" };
 
-test("buildPtyEnv points ZDOTDIR at the zsh init dir when claude resolves", () => {
+test("buildPtyEnv points ZDOTDIR at the zsh init dir whenever the shim is available", () => {
   expect(buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" }).ZDOTDIR).toBe("/repo/relay/shim/zdotdir");
-  expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).ZDOTDIR).toBeUndefined();
+  // Decoupled from realClaude: the zdotdir init resolves `claude` from PATH when it's null.
+  expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).ZDOTDIR).toBe("/repo/relay/shim/zdotdir");
+  expect(buildPtyEnv({ ...ENV_BASE, shimAvailable: false, realClaude: null }).ZDOTDIR).toBeUndefined();
 });
 
 test("buildPtyEnv sets relay provenance vars + TERM", () => {
@@ -22,17 +24,26 @@ test("buildPtyEnv sets relay provenance vars + TERM", () => {
   expect(env.CLAUDE_TERMINAL_ID).toBe("tab-1");
 });
 
-test("buildPtyEnv prepends the shim to PATH + sets shim vars when claude resolves", () => {
+test("buildPtyEnv prepends the shim to PATH + sets BISMUTH_REAL_CLAUDE when claude resolves", () => {
   const env = buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" });
   expect(env.BISMUTH_REAL_CLAUDE).toBe("/usr/local/bin/claude");
   expect(env.BISMUTH_RELAY_PLUGIN).toBe("/repo/relay");
   expect(env.PATH).toBe("/repo/relay/shim:/usr/bin");
 });
 
-test("buildPtyEnv skips the shim entirely when claude is not resolvable", () => {
+test("buildPtyEnv activates the zsh shim without a resolved claude (no REAL_CLAUDE, PATH unchanged)", () => {
   const env = buildPtyEnv({ ...ENV_BASE, realClaude: null });
+  expect(env.BISMUTH_RELAY_PLUGIN).toBe("/repo/relay");
+  expect(env.ZDOTDIR).toBe("/repo/relay/shim/zdotdir");
   expect(env.BISMUTH_REAL_CLAUDE).toBeUndefined();
+  expect(env.PATH).toBe("/usr/bin"); // PATH shim only added when a binary is resolved
+});
+
+test("buildPtyEnv skips the shim entirely when relay is not available", () => {
+  const env = buildPtyEnv({ ...ENV_BASE, shimAvailable: false, realClaude: "/usr/local/bin/claude" });
   expect(env.BISMUTH_RELAY_PLUGIN).toBeUndefined();
+  expect(env.ZDOTDIR).toBeUndefined();
+  expect(env.BISMUTH_REAL_CLAUDE).toBeUndefined();
   expect(env.PATH).toBe("/usr/bin"); // unchanged
 });
 

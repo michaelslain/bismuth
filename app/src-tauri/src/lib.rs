@@ -90,7 +90,18 @@ fn start_backend(app: &tauri::AppHandle) -> Option<u16> {
         Ok(c) => c,
         Err(e) => { eprintln!("bismuth: sidecar resolve failed: {e}"); return None; }
     };
-    let cmd = sidecar.args(["--vault", &vault, "--memory", &memory, "--port", &port.to_string()]);
+    let mut cmd = sidecar.args(["--vault", &vault, "--memory", &memory, "--port", &port.to_string()]);
+    // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach)
+    // and bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on boot). Tauri
+    // stages bundle.resources under <resource_dir>/resources/<path>, so prefer that; fall
+    // back to <resource_dir> directly for layout robustness.
+    if let Ok(res) = app.path().resource_dir() {
+        let staged = res.join("resources");
+        let base = if staged.join("relay").is_dir() { staged } else { res };
+        cmd = cmd
+            .env("OA_RELAY_BUNDLE", base.join("relay"))
+            .env("OA_BISMUTH_INSTALL_SRC", base.join("bismuth-tools"));
+    }
     match cmd.spawn() {
         Ok((mut rx, child)) => {
             app.state::<Backend>().0.lock().unwrap().replace(child);

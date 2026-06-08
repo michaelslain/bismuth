@@ -34,6 +34,7 @@ import { fileBasename } from "./pathUtils";
 import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup } from "./claudebot";
+import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -598,6 +599,17 @@ export function createServer(cfg: CoreConfig) {
       return ok(await runSetup());
     },
 
+    // Machine-wide bismuth CLI + MCP install (core/src/bismuthInstall.ts). Like the daemon
+    // routes above: a read-only status probe + an idempotent, version-gated ensure — system
+    // actions, NOT vault mutations, so they live in the READ routes. Both never throw.
+    "GET /bismuth/install": async (_, __) => {
+      return ok(await getBismuthStatus());
+    },
+
+    "POST /bismuth/install": async (_, __) => {
+      return ok(await ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC));
+    },
+
     // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
     // frontmatter in the shared <home>/{crons,processes}/<name>.md), and run a cron on
     // command (drops a trigger file the daemon polls). These mutate the claude-bot
@@ -1025,4 +1037,16 @@ if (import.meta.main) {
   const portArg = cliArg("port");
   const s = createServer({ vault, memory, port: portArg ? Number(portArg) : 4321 });
   console.log(`core listening on http://localhost:${s.port}`);
+
+  // Bundled app: ensure the machine-wide bismuth CLI + MCP are installed/current from the
+  // staged tools resource (OA_BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
+  // Best-effort + non-blocking; never crashes the server.
+  if (process.env.OA_BISMUTH_INSTALL_SRC) {
+    ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC)
+      .then((r) => {
+        console.log(`bismuth tools: ${r.action}`);
+        for (const w of r.warnings) console.warn(`bismuth tools: ${w}`);
+      })
+      .catch((e) => console.warn(`bismuth tools install failed: ${e?.message ?? e}`));
+  }
 }

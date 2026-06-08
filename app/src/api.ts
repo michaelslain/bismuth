@@ -35,6 +35,7 @@ import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 import type { InstallStatus, SetupResult } from "../../core/src/claudebot";
+import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 
 // --- Transport seam -------------------------------------------------------
@@ -239,4 +240,7 @@ export const api = {
   // action (bridged to the claude-bot package's installer entrypoint server-side).
   daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
   daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
+  // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
+  bismuthInstallStatus: () => getJson<BismuthStatus>("/bismuth/install"),
+  bismuthInstall: () => postJson<InstallResult>("/bismuth/install", {}),
 };

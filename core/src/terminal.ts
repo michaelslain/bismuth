@@ -3,7 +3,7 @@ import type { IPty } from "bun-pty";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
+import { whichClaude } from "./claudeWhich";
 
 export interface Session {
   id: string;
@@ -14,37 +14,28 @@ export interface Session {
 
 const sessions = new Map<string, Session>();
 
-// The relay plugin dir (relay/) and its PATH shim, resolved relative to this source
-// file (core/src/terminal.ts → ../../relay). REAL_CLAUDE is resolved ONCE here using
-// the core process's PATH — which never contains the shim dir — so the shim can exec
-// it without recursing. Null when `claude` isn't on PATH (e.g. a minimal GUI-app
-// PATH); then we skip the shim and a tab just runs a plain shell (provenance env is
-// still set, so an explicit `claude --plugin-dir` still reports in).
-const RELAY_PLUGIN_DIR = resolve(import.meta.dir, "..", "..", "relay");
+// The relay plugin dir (relay/) and its PATH shim. In dev it's resolved relative to this
+// source file (core/src/terminal.ts → ../../relay); in the bundled app the compiled
+// sidecar sets OA_RELAY_BUNDLE to the Tauri-staged relay resource (import.meta.dir is a
+// virtual path there, so the source-relative path wouldn't exist). REAL_CLAUDE is
+// resolved ONCE here using an augmented PATH so the shim can exec it without recursing;
+// null when `claude` isn't found (the zdotdir init then resolves it from the user's
+// rc-loaded PATH).
+const RELAY_PLUGIN_DIR = process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay");
 const SHIM_DIR = join(RELAY_PLUGIN_DIR, "shim");
 // zsh init dir: ZDOTDIR points here so we can define a `claude` shell function AFTER the
 // user's .zshrc loads — robust against a .zshrc that re-prepends PATH (which shadows a
 // plain PATH shim). zsh-only; other shells fall back to the PATH shim.
 const ZDOTDIR_DIR = join(SHIM_DIR, "zdotdir");
-// Resolve `claude` once, with PATH augmented by common install dirs so the shim still
-// works when the core process inherited a minimal PATH (e.g. a packaged GUI app launched
-// by launchd: /usr/bin:/bin:/usr/sbin:/sbin). Resolved BEFORE the shim dir is on PATH, so
-// the shim's exec never recurses into itself.
-const CLAUDE_LOOKUP_PATH = [
-  process.env.PATH,
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  join(homedir(), ".bun", "bin"),
-  join(homedir(), ".local", "bin"),
-].filter(Boolean).join(":");
-const REAL_CLAUDE = Bun.which("claude", { PATH: CLAUDE_LOOKUP_PATH });
+// Resolve `claude` once via the augmented lookup PATH (so it works from a packaged GUI
+// app's minimal PATH). Resolved BEFORE the shim dir is on PATH, so the shim's exec never
+// recurses. Null when not found — the zdotdir init then resolves it from the rc-loaded PATH.
+const REAL_CLAUDE = whichClaude();
 
-// In a compiled sidecar binary (the bundled app), import.meta.dir is a virtual path, so
-// relay/ — the shim + zdotdir — isn't on disk (only claude-bot is shipped as a resource).
-// Detect that and skip the shim entirely. Otherwise we'd point ZDOTDIR at a nonexistent
-// dir and the tab would lose the user's ~/.zshrc (no oh-my-zsh, no user PATH — so even
-// their own `claude` vanishes). When skipped, a tab is a plain login shell that loads the
-// user's normal rc. The shim only ever activates in the dev repo, where relay/ exists.
+// Activate the relay shim only when its files are actually present — the dev repo, or the
+// bundled app via OA_RELAY_BUNDLE (the staged relay resource). If absent, skip it so the
+// tab still runs the user's normal login shell (oh-my-zsh, their PATH, their `claude`)
+// rather than pointing ZDOTDIR at a nonexistent dir.
 const SHIM_AVAILABLE = existsSync(ZDOTDIR_DIR);
 
 export interface PtyEnvParams {
@@ -53,7 +44,9 @@ export interface PtyEnvParams {
   relayUrl: string;
   /** This tab's id; flows to the session's hooks as CLAUDE_TERMINAL_ID (provenance). */
   terminalId: string;
-  /** Resolved real `claude` binary, or null to skip the shim. */
+  /** Whether the relay shim files exist (dev repo or bundled). When true, the zsh shim activates. */
+  shimAvailable: boolean;
+  /** Resolved real `claude` binary, or null — the zdotdir init resolves it from PATH when null. */
   realClaude: string | null;
   pluginDir: string;
   shimDir: string;
@@ -63,9 +56,11 @@ export interface PtyEnvParams {
 
 /**
  * Build the PTY environment: the parent env (undefined values stripped) + TERM, plus
- * the relay provenance vars (CLAUDE_RELAY_URL, CLAUDE_TERMINAL_ID). When `claude` is
- * resolvable, also prepend the PATH shim so a bare `claude` in the tab transparently
- * loads the relay plugin (`--plugin-dir`) — per-session, no global install. Pure.
+ * the relay provenance vars (CLAUDE_RELAY_URL, CLAUDE_TERMINAL_ID). When the relay shim
+ * is available, point ZDOTDIR at our zsh init (sources the user's rc, then defines a
+ * `claude` function loading the relay plugin) — independent of whether a real `claude`
+ * was pre-resolved (the init falls back to PATH). A resolved `claude` additionally enables
+ * BISMUTH_REAL_CLAUDE + the non-zsh PATH shim. Pure.
  */
 export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   const env: Record<string, string> = {};
@@ -77,15 +72,18 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   env.DISABLE_UPDATE_PROMPT = "true";
   env.CLAUDE_RELAY_URL = p.relayUrl;
   env.CLAUDE_TERMINAL_ID = p.terminalId;
-  if (p.realClaude) {
-    env.BISMUTH_REAL_CLAUDE = p.realClaude;
+  if (p.shimAvailable) {
+    // zsh: load our init dir, which sources the user's rc then defines a `claude` function
+    // (un-shadowable by PATH ordering) that loads the relay plugin. Works even without a
+    // pre-resolved binary — the zdotdir .zshrc resolves `claude` from the rc-loaded PATH.
     env.BISMUTH_RELAY_PLUGIN = p.pluginDir;
-    // zsh: load our init (which sources the user's rc, then defines a `claude` function
-    // that can't be shadowed by PATH ordering). Harmless for non-zsh shells.
     env.ZDOTDIR = p.zdotDir;
-    // Fallback for non-zsh shells: prepend the shim dir (avoid a trailing empty PATH
-    // element, which POSIX reads as cwd).
-    env.PATH = env.PATH ? `${p.shimDir}:${env.PATH}` : p.shimDir;
+    if (p.realClaude) {
+      env.BISMUTH_REAL_CLAUDE = p.realClaude;
+      // Fallback for non-zsh shells: prepend the PATH shim (avoid a trailing empty PATH
+      // element, which POSIX reads as cwd). Needs a resolved binary to exec.
+      env.PATH = env.PATH ? `${p.shimDir}:${env.PATH}` : p.shimDir;
+    }
   }
   return env;
 }
@@ -105,7 +103,8 @@ export function createTerminalSession(opts: {
     base: process.env,
     relayUrl: `http://localhost:${opts.relayPort ?? 4321}`,
     terminalId: id,
-    realClaude: SHIM_AVAILABLE ? REAL_CLAUDE : null,
+    shimAvailable: SHIM_AVAILABLE,
+    realClaude: REAL_CLAUDE,
     pluginDir: RELAY_PLUGIN_DIR,
     shimDir: SHIM_DIR,
     zdotDir: ZDOTDIR_DIR,

@@ -5,6 +5,13 @@
 # any nested shells behave normally.
 export ZDOTDIR="$HOME"
 [[ -f "$HOME/.zshrc" ]] && source "$HOME/.zshrc"
-if [[ -n "$BISMUTH_REAL_CLAUDE" && -n "$BISMUTH_RELAY_PLUGIN" ]]; then
-  claude() { command "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"; }
+# Prefer the binary the core process resolved ($BISMUTH_REAL_CLAUDE); otherwise resolve it
+# from the now-rc-loaded PATH (`whence -p` = the real binary, ignoring any alias/function),
+# so relay attaches even when the bundled sidecar's minimal PATH couldn't find claude.
+# `command "$...path"` can't recurse into the function, so there's no infinite loop.
+if [[ -n "$BISMUTH_RELAY_PLUGIN" ]]; then
+  [[ -z "$BISMUTH_REAL_CLAUDE" ]] && BISMUTH_REAL_CLAUDE="$(whence -p claude 2>/dev/null)"
+  if [[ -n "$BISMUTH_REAL_CLAUDE" ]]; then
+    claude() { command "$BISMUTH_REAL_CLAUDE" --plugin-dir "$BISMUTH_RELAY_PLUGIN" "$@"; }
+  fi
 fi

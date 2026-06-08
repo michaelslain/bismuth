@@ -218,6 +218,15 @@ Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundl
 - At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__OA_API__ = "http://localhost:<free>"` before any app JS runs; `api.ts` `resolveBase` reads it (precedence: `?api=` > `__OA_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
 - **Vault resolution**: a Finder-launched app has no shell env, so `OA_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.michael.obsidian/config.json`); on first launch (or if the saved vault is missing) it shows a native folder picker, persists the choice, and defaults memory to `~/.claude-bot/memory`. Cancelling the picker leaves the app open with no backend.
 
+#### Bundled resources: relay + machine-wide tools
+
+`beforeBuildCommand` also stages two more resources alongside the core sidecar, and `lib.rs` points the sidecar at them via env vars:
+
+- **`resources/relay`** (`app/scripts/bundle-relay.ts`, hooks-only — no `node_modules`/`.mcp.json`) → `OA_RELAY_BUNDLE`. `core/src/terminal.ts` resolves the relay shim from it so app terminal tabs auto-load the agent-graph relay plugin (the source-relative `relay/` doesn't exist inside the compiled sidecar). The shim's zdotdir sources the user's `~/.zshrc` first, so oh-my-zsh + their `PATH` + their `claude` all still work — the `claude` function is added on top.
+- **`resources/bismuth-tools`** (`app/scripts/build-bismuth-tools.ts` — compiled `bismuth` + `bismuth-mcp` binaries + the `docs/` tree) → `OA_BISMUTH_INSTALL_SRC`. On boot the sidecar runs `ensureBismuthInstalled` (`core/src/bismuthInstall.ts`): a **version-gated, idempotent** machine-wide install — copies the tools to `~/.bismuth/`, symlinks `bismuth` onto `PATH`, and registers the MCP in the user's global `~/.claude.json` (`claude mcp add -s user`). No-op when the bundled binaries are unchanged (hash at `~/.bismuth/.version`). See [MCP server](../mcp/overview.md).
+
+> **DMG build hygiene**: tauri's `bundle_dmg.sh` can fail if a prior failed build left a `/Volumes/dmg.*` scratch volume mounted. `beforeBuildCommand` runs `app/scripts/predmg-clean.ts` first to detach stale volumes + remove `rw.*.dmg` scratch, so re-running `tauri build` self-heals.
+
 ### Preview the Vite build
 
 ```bash

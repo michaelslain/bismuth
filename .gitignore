@@ -20,5 +20,9 @@ app/src-tauri/gen/schemas
 
 # Staged claude-bot Tauri resource (built by app/scripts/bundle-claudebot.ts) — heavy artifact, never committed
 app/src-tauri/resources/claude-bot/
+# Staged relay plugin resource (built by app/scripts/bundle-relay.ts) — generated, never committed
+app/src-tauri/resources/relay/
+# Compiled bismuth cli/mcp + docs install source (built by app/scripts/build-bismuth-tools.ts) — heavy, never committed
+app/src-tauri/resources/bismuth-tools/
 # Compiled core sidecar binary (built by app/scripts/build-core-sidecar.ts) — heavy + platform-specific, never committed
 app/src-tauri/binaries/
