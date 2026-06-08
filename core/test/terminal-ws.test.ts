@@ -94,9 +94,16 @@ test("0x01 resize frame propagates to the PTY", async () => {
     ws.send(frame);
     // Give the PTY a moment to apply the new winsize before querying it.
     await new Promise((r) => setTimeout(r, 100));
-    // Ask the shell to report COLUMNS/LINES.
-    sendStdin(ws, "stty size\n");
-    const got = await collect(ws, (s) => /\b50\s+132\b/.test(s));
+    // Ask the shell to report rows/cols. Retry a few times: the first command can
+    // race with the shell finishing startup (rc files, prompt theming) under load and
+    // get eaten, so re-send `stty size` until the new winsize (50 132) shows up.
+    const seen = collect(ws, (s) => /\b50\s+132\b/.test(s), 8000);
+    for (let i = 0; i < 8; i++) {
+      sendStdin(ws, "stty size\n");
+      const hit = await Promise.race([seen, new Promise((r) => setTimeout(() => r(null), 800))]);
+      if (hit) break;
+    }
+    const got = await seen;
     expect(got).toMatch(/\b50\s+132\b/);
     ws.close();
   } finally {
