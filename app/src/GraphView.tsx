@@ -40,6 +40,14 @@ function hoverLabel(node: HoverNode): string {
   return node.kind === "note" ? `${node.id}.md` : node.label;
 }
 
+// FPS readout color is a fixed traffic-light scale (green/yellow/red), NOT derived
+// from the theme's palette CSS vars — it should mean the same thing in every theme.
+function fpsColor(fps: number): string {
+  if (fps >= 50) return "#3fb950"; // green: smooth
+  if (fps >= 30) return "#d29922"; // yellow: usable
+  return "#f85149";                // red: janky
+}
+
 // Graph dimension (2D birdseye vs 3D orbit) is a *transient* per-window UI choice,
 // NOT a persisted setting. Toggling it must never write settings.yaml (doing so
 // rewrote the file canonically, which reloaded an open settings buffer and scrolled
@@ -301,7 +309,7 @@ export function GraphView(props: {
         <Show when={props.mode !== "agents"}>
           <div class="graph-stats graph-wide">
             <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
-            <Show when={fps() !== null}><span style={{ color: "var(--green)" }}>{fps()} fps</span></Show>
+            <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
           </div>
         </Show>
         {/* Find panel: search only. Clusters live in the floating legend card; there's no
@@ -343,8 +351,8 @@ export function GraphView(props: {
               </span>
             )}
           </Show>
-          <Show when={fps() !== null}>
-            <span class="graph-bottom-fps" style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "var(--pop-bg)", color: "var(--text-muted)", "font-size": "10px", padding: "2px 7px" }}>
+          <Show when={settings.graph.showFps && fps() !== null}>
+            <span class="graph-bottom-fps" style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "var(--pop-bg)", color: fpsColor(fps()!), "font-size": "10px", padding: "2px 7px" }}>
               {fps()} fps
             </span>
           </Show>
