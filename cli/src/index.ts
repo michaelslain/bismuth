@@ -18,11 +18,12 @@ import { commands as drawCmds } from "./commands/draw";
 import { commands as serveCmds } from "./commands/serve";
 import { commands as exportCmds } from "./commands/export";
 import { commands as apiCmds } from "./commands/api";
+import { commands as installCmds } from "./commands/install";
 
 const registry: CommandMap = {
   ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
   ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
-  ...exportCmds, ...apiCmds,
+  ...exportCmds, ...apiCmds, ...installCmds,
 };
 
 function printHelp(): void {

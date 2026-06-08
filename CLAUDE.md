@@ -20,7 +20,7 @@ cd app && bun run dev                             # Tauri app + backend on :4321
 - **cli**: Command-line interface for managing vaults (`bismuth` binary)
 - **app**: Tauri + Solid + TypeScript desktop application with CodeMirror editor and 3D/2D graph visualizations
 - **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process registry, powering the "agents" graph (see Relay Integration)
-- **mcp**: A stdio MCP server that auto-attaches to app-terminal Claude sessions (via the relay plugin's `.mcp.json`) and serves the `docs/` reference + `bismuth` CLI token-frugally (see MCP Integration)
+- **mcp**: A stdio MCP server (the `docs/` reference + `bismuth` CLI, token-frugal) — per-tab in dev, installed machine-wide by the bundled app (see MCP Integration)
 
 The system treats knowledge as a "three-brain" model:
 - **You** (self node): Central hub representing the user
@@ -134,11 +134,11 @@ Default ports `:4321`/`:1420` serve one instance. For more, override the port: `
 
 The `bismuth` binary (thin wrapper over `@oa/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`OA_VAULT`.
 
-- `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase like `task toggle`, then one-word), `--help`, error-wrap.
-- `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`memoryDir`/`today`/`out`/`fail`) + `src/types.ts` (`Command`/`CommandMap`) — the shared seam every group imports.
-- `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. Groups: `file`, `note`, `search`, `graph`, `task`, `base`(+`row*`), `card`, `prop`, `settings`(+`folder-icon`), `daemon` (reads/writes `~/.claude-bot`, no vault), `draw`, `serve`+`backup`, `export` (note/base/sheet/drawing → md|html|png; **pdf of notes is browser-only**), `api` (`agent-graph` + generic `api <METHOD> <path>` passthrough to a running server — for in-server-memory things like the relay registry a standalone process can't read).
+- `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase, then one-word), `--help`, error-wrap.
+- `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`out`/`fail`…) + `src/types.ts` (`Command`/`CommandMap`) — the shared seam every group imports.
+- `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. Groups: `file`, `note`, `search`, `graph`, `task`, `base`(+`row*`), `card`, `prop`, `settings`(+`folder-icon`), `daemon` (reads/writes `~/.claude-bot`, no vault), `draw`, `serve`+`backup`, `export` (→ md|html|png; **pdf browser-only**), `api` (`<METHOD> <path>` passthrough to a running server, for in-memory things like the relay registry), `install` (machine-wide cli+mcp, see MCP Integration).
 
-**Adding a command**: add a `Command` to a `src/commands/<group>.ts` map (or a new group imported in `index.ts`) — resolve inputs via `args.ts`, call core, `out(result, args)`.
+**Adding a command**: add a `Command` to a `src/commands/<group>.ts` map (or a new group imported in `index.ts`) — resolve via `args.ts`, call core, `out(result, args)`.
 
 ### Bases (`core/src/bases/` + `app/src/bases/`)
 
@@ -252,7 +252,7 @@ core/src/
   asyncCache.ts changeClassifier.ts   # dedup cache + selective-invalidation classifier
   search.ts replace.ts templates.ts dailyNote.ts openFolder.ts   # back POST /search,/replace,/daily-note,/open-folder
   settings.ts                          # settings.yaml lifecycle (reconcile, per-vault write mutex, property registry)
-  commands.ts keybindings.ts error.ts dates.ts basesData.ts tasks.ts tasks-query.ts terminal.ts
+  commands.ts keybindings.ts error.ts dates.ts basesData.ts tasks.ts tasks-query.ts terminal.ts bismuthInstall.ts claudeWhich.ts
   bases/   # Bases DSL (lexer/parser/evaluate/filters/functions/query)
   srs/     # SRS (cards/parser/scheduler)
 core/test/  # one *.test.ts per module; helpers.ts → makeSampleVault()
@@ -268,11 +268,11 @@ app/src/
   icons/ dnd/   # Lucide Icon+registry+picker; drag-drop geometry + viewDrag
   api.ts serverVersion.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts
   Toast.tsx telemetry.ts App.css   # toasts, client telemetry, global styles + CSS vars
-app/src-tauri/   # Tauri shell (Rust): lib.rs spawns the compiled core sidecar + first-run vault picker (see Desktop app & core sidecar)
+app/src-tauri/   # Tauri shell (Rust): lib.rs spawns the core sidecar + first-run vault picker (see Desktop app & core sidecar)
 
 mcp/src/
-  docs.ts cli.ts server.ts   # stdio MCP server: docs index/search/read + CLI bridge + 5-tool server (see MCP Integration)
-relay/   # Claude Code plugin: hooks/ (session/subagent → POST /relay/*) + shim/ (PATH claude wrapper) + .mcp.json (declares the mcp server)
+  docs.ts cli.ts server.ts   # stdio MCP server: docs index/search/read + CLI bridge + 5 tools (see MCP Integration)
+relay/   # Claude Code plugin: hooks/ (→ POST /relay/*) + shim/ (zsh claude wrapper); see Relay Integration
 ```
 
 ## Development Workflow
@@ -352,19 +352,17 @@ Debounced file-watch + version-gated refetch + backend-precomputed layouts (see 
 
 ### Desktop app & core sidecar (`app/src-tauri/` + `app/scripts/build-core-sidecar.ts`)
 
-The bundled `/Applications` app is self-contained — it **spawns its own `core` backend** instead of relying on `bun run dev`. `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary (`bun build --compile` → `app/src-tauri/binaries/bismuth-core-<triple>`, shipped via `tauri.conf.json` `externalBin`). On launch (release only, `!cfg!(debug_assertions)`), `src/lib.rs` picks a free port, spawns the sidecar (`--vault --memory --port`) via `tauri-plugin-shell`, kills it on exit, and builds the main window with an init script setting `window.__OA_API__` (read by `api.ts` `resolveBase`; precedence `?api=` > `__OA_API__` > `VITE_API_BASE` > `:4321`). **Vault resolution**: a Finder-launched app has no shell env, so `lib.rs` reads `config.json` from the app-config dir and, on first run or a missing vault, shows a native folder picker (memory defaults to `~/.claude-bot/memory`). `openFolder.ts` `coreLaunchArgv` re-execs the compiled binary directly vs `bun run server.ts` by testing `basename(process.execPath) !== "bun"`. Deep detail: `docs/overview/install.md`.
+The bundled `/Applications` app is self-contained — it **spawns its own `core` backend** instead of relying on `bun run dev`. `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary (`bun build --compile` → `binaries/bismuth-core-<triple>`, shipped via `externalBin`). On launch (release only, `!cfg!(debug_assertions)`), `src/lib.rs` picks a free port, spawns the sidecar (`--vault --memory --port`) via `tauri-plugin-shell`, kills it on exit, and builds the main window with an init script setting `window.__OA_API__` (read by `api.ts` `resolveBase`). **Vault resolution**: a Finder-launched app has no shell env, so `lib.rs` reads `config.json` from the app-config dir and, on first run or a missing vault, shows a native folder picker (memory → `~/.claude-bot/memory`). `openFolder.ts` `coreLaunchArgv` re-execs the compiled binary vs `bun run server.ts` (compiled-binary detection). The build also stages `resources/relay` (hooks-only) + `resources/bismuth-tools` (compiled cli+mcp+docs); `lib.rs` passes `OA_RELAY_BUNDLE`/`OA_BISMUTH_INSTALL_SRC` to the sidecar (relay auto-loads in tabs; machine-wide install runs on boot — see MCP Integration). Deep detail: `docs/overview/install.md`.
 
 ### MCP Integration (`mcp/` workspace)
 
-A stdio [MCP](https://modelcontextprotocol.io) server that **auto-attaches to every Claude Code session launched in a Bismuth app terminal** — same mechanism as relay: the relay plugin's `relay/.mcp.json` declares it, so `claude --plugin-dir <relay>` auto-starts it (no flags, no prompts). It serves the `docs/` reference + `bismuth` CLI **token-frugally**: `mcp/src/docs.ts` (pure index/search/read; search returns snippets, not full bodies), `mcp/src/cli.ts` (spawns the CLI), `mcp/src/server.ts` (low-level `@modelcontextprotocol/sdk` `Server`, no zod; 5 tools: `bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`). Scope is app-local (dev repo), like relay — no global install. Deep detail: `docs/mcp/overview.md`.
+A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` reference + `bismuth` CLI **token-frugally** (snippet-only search): `docs.ts`/`cli.ts`/`server.ts` (low-level `@modelcontextprotocol/sdk`, no zod). 5 tools: `bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`. **Dev**: auto-attaches per-tab via the relay plugin's `relay/.mcp.json`. **Bundled app**: installed **machine-wide** — on boot the sidecar runs a version-gated idempotent install (`core/src/bismuthInstall.ts`) copying compiled `bismuth`+`bismuth-mcp`+docs to `~/.bismuth`, symlinking the cli onto PATH (`/usr/local/bin`), and registering the mcp in the user's global `~/.claude.json` (`claude mcp add -s user`). Also `bismuth install` + an in-app command. Deep detail: `docs/mcp/overview.md`.
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
-A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. No daemon, nothing installed in `~/.claude` — the plugin loads per-session only inside app terminals.
+A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. Loads per-session inside app terminals (bundled via `OA_RELAY_BUNDLE`; nothing in `~/.claude`).
 
-`terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + the PATH shim so a bare `claude` auto-loads the plugin. Plugin hooks POST `/relay/*`: `SessionStart`/`UserPromptSubmit` register/heartbeat, `SubagentStart`/`SubagentStop` add/finish subagents (best-effort, no-op without `CLAUDE_TERMINAL_ID`). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions at read time.
-
-Scope: app-local only. No cross-machine agents, no messaging. Registry lives only while the core server runs.
+`terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim (ZDOTDIR) so a bare `claude` auto-loads the plugin — the shim sources the user's rc, so oh-my-zsh + their `claude` keep working. Hooks POST `/relay/*`: `SessionStart`/`UserPromptSubmit` register/heartbeat, `SubagentStart`/`SubagentStop` add/finish (best-effort, no-op without `CLAUDE_TERMINAL_ID`). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions. App-local only; registry lives only while core runs.
 
 ### Daemon Integration (`core/src/daemon.ts` + `daemonGraph.ts` + `daemonViz.ts`)
 

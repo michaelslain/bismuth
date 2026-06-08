@@ -37,6 +37,8 @@ export interface CommandHandlers {
   openDaemonOwner: () => void;
   // Open the panel to install/repair (adopt) the claude-bot daemon.
   openDaemonSetup: () => void;
+  // Open the panel to install the bismuth CLI + MCP machine-wide.
+  openBismuthInstall: () => void;
 }
 
 export interface BoundCommand {
@@ -75,6 +77,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "toggle-sidebar": h.toggleSidebar,
     "daemon-owner": h.openDaemonOwner,
     "daemon-setup": h.openDaemonSetup,
+    "bismuth-install": h.openBismuthInstall,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {

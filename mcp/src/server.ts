@@ -8,9 +8,11 @@ import {
 import { listDocs, searchDocs, readDoc } from "./docs";
 import { runCli, cliHelp } from "./cli";
 
-// mcp/src → repo root → docs/
+// mcp/src → repo root → docs/. In a machine-wide install the compiled binary lives in
+// ~/.bismuth (import.meta.dir is virtual), so the installer sets OA_DOCS_DIR (→ the staged
+// docs) and OA_BISMUTH_CLI (→ the compiled cli binary, consumed in cli.ts).
 const repoRoot = resolve(import.meta.dir, "..", "..");
-const docsRoot = repoRoot + "/docs";
+const docsRoot = process.env.OA_DOCS_DIR ?? repoRoot + "/docs";
 
 const server = new Server(
   { name: "bismuth", version: "0.1.0" },

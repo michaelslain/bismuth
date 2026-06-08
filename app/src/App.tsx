@@ -22,6 +22,7 @@ import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { DaemonSetupModal } from "./DaemonSetupModal";
+import { BismuthInstallModal } from "./BismuthInstallModal";
 import { openAppWindow, pickFolder } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
@@ -502,6 +503,9 @@ export default function App() {
   // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
   const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false);
   const openDaemonSetup = () => setDaemonSetupOpen(true);
+  // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
+  const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false);
+  const openBismuthInstall = () => setBismuthInstallOpen(true);
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -527,7 +531,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1243,6 +1247,9 @@ export default function App() {
       </Show>
       <Show when={daemonSetupOpen()}>
         <DaemonSetupModal onClose={() => setDaemonSetupOpen(false)} />
+      </Show>
+      <Show when={bismuthInstallOpen()}>
+        <BismuthInstallModal onClose={() => setBismuthInstallOpen(false)} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (

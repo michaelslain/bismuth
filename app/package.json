@@ -9,7 +9,10 @@
     "build": "vite build",
     "serve": "vite preview",
     "prebundle:claudebot": "bun run scripts/bundle-claudebot.ts",
+    "prebundle:relay": "bun run scripts/bundle-relay.ts",
+    "predmg:clean": "bun run scripts/predmg-clean.ts",
     "build:core-sidecar": "bun run scripts/build-core-sidecar.ts",
+    "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "tauri": "tauri"
   },
   "license": "MIT",
