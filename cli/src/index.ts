@@ -1,49 +1,71 @@
-import { buildGraph } from "../../core/src/engine";
-import { commitVault, snapshotMessage } from "../../core/src/backup";
-import { createServer, cliArg } from "../../core/src/server";
-import { parseDoc } from "../../core/src/drawing/model";
-import { renderDocToPng, renderDocToPdf } from "../../core/src/drawing/export";
-import { readFileSync, writeFileSync } from "node:fs";
+// `bismuth` CLI entry point. Merges every command group (cli/src/commands/*.ts)
+// into one registry and dispatches by longest-match: it tries a two-word command
+// phrase ("task toggle") first, then a one-word command ("graph"). Each group is a
+// thin wrapper over `@oa/core` functions — no running server required for the
+// file-based commands (the app's vault watcher picks up writes live).
+import type { CommandMap } from "./types";
+import { commands as fileCmds } from "./commands/file";
+import { commands as noteCmds } from "./commands/note";
+import { commands as searchCmds } from "./commands/search";
+import { commands as graphCmds } from "./commands/graph";
+import { commands as taskCmds } from "./commands/task";
+import { commands as baseCmds } from "./commands/base";
+import { commands as cardCmds } from "./commands/card";
+import { commands as propCmds } from "./commands/prop";
+import { commands as settingsCmds } from "./commands/settings";
+import { commands as daemonCmds } from "./commands/daemon";
+import { commands as drawCmds } from "./commands/draw";
+import { commands as serveCmds } from "./commands/serve";
+import { commands as exportCmds } from "./commands/export";
+import { commands as apiCmds } from "./commands/api";
 
-const USAGE = "usage: oa <graph|backup|serve|render> --vault <dir> [--memory <dir>] [--port n]";
+const registry: CommandMap = {
+  ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
+  ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
+  ...exportCmds, ...apiCmds,
+};
 
-function fail(): never {
-  console.error(USAGE);
+function printHelp(): void {
+  console.log("bismuth — control every aspect of a Bismuth vault from the shell\n");
+  console.log("usage: bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]\n");
+  const keys = Object.keys(registry).sort();
+  const width = Math.max(...keys.map((k) => k.length));
+  for (const k of keys) {
+    const c = registry[k];
+    const usage = c.usage ? ` ${c.usage}` : "";
+    console.log(`  ${k.padEnd(width)}  ${c.summary}${usage}`);
+  }
+  console.log("\nmost commands need a vault: pass --vault <dir> or set OA_VAULT.");
+}
+
+const argv = Bun.argv.slice(2);
+
+if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] === "help") {
+  printHelp();
+  process.exit(0);
+}
+
+// Longest-match dispatch: prefer a two-word phrase, then a single word.
+const two = argv.length >= 2 ? `${argv[0]} ${argv[1]}` : null;
+let cmdKey: string | null = null;
+let rest: string[] = [];
+if (two && registry[two]) {
+  cmdKey = two;
+  rest = argv.slice(2);
+} else if (registry[argv[0]]) {
+  cmdKey = argv[0];
+  rest = argv.slice(1);
+}
+
+if (!cmdKey) {
+  console.error(`unknown command: ${argv.slice(0, 2).join(" ")}\n`);
+  printHelp();
   process.exit(1);
 }
 
-const cmd = Bun.argv[2];
-const args = Bun.argv.slice(3);
-
-if (cmd === "render") {
-  const file = args.find((a) => !a.startsWith("--"));
-  if (!file) {
-    console.error("usage: oa render <path.draw> [--pdf|--png] [--out <file>]");
-    process.exit(1);
-  }
-  const pdf = args.includes("--pdf");
-  const doc = parseDoc(readFileSync(file, "utf8"));
-  const bytes = pdf ? await renderDocToPdf(doc, "dark") : await renderDocToPng(doc, "dark");
-  const outIdx = args.indexOf("--out");
-  const out = outIdx !== -1 ? args[outIdx + 1] : `${file}.${pdf ? "pdf" : "png"}`;
-  writeFileSync(out, bytes);
-  console.log(`wrote ${out}`);
-} else {
-  const vault = cliArg("vault");
-  const memory = cliArg("memory");
-
-  if (!vault) fail();
-
-  if (cmd === "graph") {
-    console.log(JSON.stringify(await buildGraph(vault, memory), null, 2));
-  } else if (cmd === "backup") {
-    const committed = await commitVault(vault, snapshotMessage());
-    console.log(committed ? "committed" : "nothing to commit");
-  } else if (cmd === "serve") {
-    const port = cliArg("port");
-    const s = createServer({ vault, memory, port: port ? Number(port) : 4321 });
-    console.log(`core listening on http://localhost:${s.port}`);
-  } else {
-    fail();
-  }
+try {
+  await registry[cmdKey].run(rest);
+} catch (e) {
+  console.error(`error: ${e instanceof Error ? e.message : String(e)}`);
+  process.exit(1);
 }
