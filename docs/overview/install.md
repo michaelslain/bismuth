@@ -19,16 +19,17 @@ Install Tauri prerequisites: https://tauri.app/start/prerequisites/
 
 ## Repository Layout (Monorepo)
 
-Bismuth is a Bun workspace monorepo. The root `package.json` declares four workspaces:
+Bismuth is a Bun workspace monorepo. The root `package.json` declares five workspaces:
 
 ```json
-"workspaces": ["core", "cli", "app", "relay"]
+"workspaces": ["core", "cli", "app", "relay", "mcp"]
 ```
 
 - **core** — backend HTTP server (`core/src/server.ts`)
 - **app** — Tauri + Solid + Vite desktop frontend
-- **cli** — `oa` command-line binary
+- **cli** — `bismuth` command-line binary
 - **relay** — Claude Code plugin hooks (no standalone process)
+- **mcp** — stdio MCP server serving `docs/` + the `bismuth` CLI to app-terminal Claude sessions
 
 ---
 
@@ -40,7 +41,7 @@ Run once from the repo root. Bun installs all workspaces in a single pass.
 bun install
 ```
 
-This installs dependencies for all four workspaces. Do not run `npm install` or `yarn`; they do not understand Bun workspaces.
+This installs dependencies for all five workspaces. Do not run `npm install` or `yarn`; they do not understand Bun workspaces.
 
 ---
 
