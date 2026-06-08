@@ -9,6 +9,13 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+// Quit the app — invoked by the frontend after a self-update build succeeds, so the
+// detached updater script (waiting on our pid) can swap the .app bundle + relaunch.
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 // Handle to the spawned core server, killed when the app exits so we never orphan it.
 struct Backend(Mutex<Option<CommandChild>>);
 
@@ -70,6 +77,15 @@ fn resolve_vault_memory(app: &tauri::AppHandle) -> Option<(String, String)> {
     Some((vault, memory))
 }
 
+// The running .app bundle path (…/Bismuth.app), derived from the executable. None in dev
+// (the binary isn't inside a .app), which self-disables the git self-updater.
+fn running_app_path() -> Option<std::path::PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    exe.ancestors()
+        .find(|p| p.extension().map(|e| e == "app").unwrap_or(false))
+        .map(|p| p.to_path_buf())
+}
+
 // Find a free TCP port by binding :0 and reading the assigned port.
 fn pick_free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
@@ -101,6 +117,13 @@ fn start_backend(app: &tauri::AppHandle) -> Option<u16> {
         cmd = cmd
             .env("OA_RELAY_BUNDLE", base.join("relay"))
             .env("OA_BISMUTH_INSTALL_SRC", base.join("bismuth-tools"));
+    }
+    // Self-update: tell the sidecar which .app is running + our pid, so the detached
+    // updater can swap the bundle after we quit (core/src/selfUpdate.ts). Absent in dev.
+    if let Some(app_path) = running_app_path() {
+        cmd = cmd
+            .env("OA_APP_PATH", &app_path)
+            .env("OA_APP_PID", std::process::id().to_string());
     }
     match cmd.spawn() {
         Ok((mut rx, child)) => {
@@ -208,7 +231,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, quit_app])
         .setup(|app| {
             // Bundled builds spawn their own core server on a free port; in dev
             // (`bun run dev`) the concurrently-launched core already owns :4321, so
