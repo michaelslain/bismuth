@@ -40,6 +40,7 @@ export interface Settings {
   };
   graph: {
     spin: boolean;
+    showFps: boolean;    // show the FPS counter on the graph
     spinSpeed: number;   // radians/frame
     repulsion: number;   // d3 forceManyBody strength (negative = push apart)
     linkDistance: number;
