@@ -69,15 +69,15 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 
 **Key modules**:
 - `server.ts` — HTTP server (Bun.serve) with caching, file watching, mutating-route abstraction, SSE broadcast. Routes:
-  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain-view layouts, computed lazily on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/decks`, `/cards/all`, `/cards/note`, `/cards/due`, plus the daemon reads `/daemon/status`, `/daemon/devices`, `/daemon/graph` (daemon-mode graph), `/daemon/install` (see Daemon Integration)
-  - POST mutations (go through `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — the backend is the single writer of settings), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update` (create/update a base row — `index:null` creates), `/row/delete`, `/row/reorder` (move a row from→to), `/replace`, `/daemon/owner` (claim this device as owner)
-  - POST/PUT in the read table (NOT mutations — no auto cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, following base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server pointed at another folder; returns its `{url}` — see `openFolder.ts`), `PUT /file`, `POST /asset` (upload attachment, capped at 100 MB), `/relay/session`, `/relay/session/end`, `/relay/subagent/start`, `/relay/subagent/stop` (agent-graph ingest from the relay plugin's hooks), `/daemon/setup`, `/daemon/cron/toggle`, `/daemon/cron/run`, `/daemon/process/toggle` (all daemon-shared-state writes, NOT vault mutations — no cache invalidation)
+  - GET reads: `/version`, `/events` (SSE), `/graph`, `/graph/views` (per-brain layouts, lazy on mode switch), `/tree`, `/vault-data`, `/file`, `/meta`, `/config`, `/settings`, `/schema`, `/templates`, `/base`, `/agent-graph`, `/tasks`, `/cards/{decks,all,note,due}`, plus daemon reads `/daemon/{status,devices,graph,install}` (see Daemon Integration)
+  - POST mutations (via `mutatingHandler` — invalidate caches + broadcast SSE): `/move`, `/delete`, `/restore`, `/create`, `/set-property`, `/delete-property`, `/set-setting` (merge one settings.yaml key in place — backend is the single writer), `/folder-icon`, `/daily-note`, `/tasks/toggle`, `/cards/review`, `/row/update` (`index:null` creates), `/row/delete`, `/row/reorder`, `/replace`, `/daemon/owner`
+  - POST/PUT in the read table (NOT mutations — no cache-invalidate): `/rows` (resolve a `SourceSpec` → `Row[]`, base composition + scoped tasks), `/search`, `/backup` (git snapshot), `/open-folder` (spawn a sibling core server → `{url}`, see `openFolder.ts`), `PUT /file`, `POST /asset` (≤100 MB), `/relay/{session,session/end,subagent/start,subagent/stop}` (agent-graph ingest from the relay plugin hooks), `/daemon/{setup,cron/toggle,cron/run,process/toggle}` (daemon-state writes, not vault mutations)
   - GET reads also include: `GET /asset` (serve a vault media file by filename — filename-first resolution, used by embedBlock)
   - GET `/terminal` upgrades to WebSocket for terminal PTY sessions
 - `sse.ts` — Server-sent event registry. `formatEvent`, `createSseRegistry`. Pushes `{version, paths, dirty: {graph, tree}}` on file changes — graph/tree consumers use `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — Graph composition. Merges vault graph + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — Builds vault knowledge graph from markdown files. Two-pass algorithm: (1) create note nodes, (2) extract wikilinks + tags + frontmatter metadata, create edges
-- `graph.ts` — Graph type definitions. Node kinds: "note", "memory", "agent", "tag", "self" (the "you" hub — one per brain view, NOT from the backend builders; injected on the frontend from the open tabs/panes, see `app/src/graph/youNode.ts`), plus the daemon-mode kinds "daemon"/"cron"/"process" (a node may carry a `DaemonVizState`). Edge kinds: "link" (wikilinks), "message" (memory), "about" (memory→vault), "tag", "open" (you→an open note), "supervises" (daemon hub→cron/process)
+- `graph.ts` — Graph types. Node kinds: "note", "memory", "agent", "tag", "self" (the "you" hub — injected on the frontend from open tabs/panes, see `app/src/graph/youNode.ts`, NOT from backend builders), + daemon-mode "daemon"/"cron"/"process" (may carry `DaemonVizState`). Edge kinds: "link", "message", "about" (memory→vault), "tag", "open" (you→open note), "supervises" (daemon→cron/process)
 - `layout.ts` — Pure layout computation (pivot-MDS + force simulation). Produces 2D and 3D `Positions` maps used by the renderer
 - `layout-cache.ts` — `attachLayout()` writes precomputed `position2d` / `position3d` onto graph nodes, keyed by vault. Frontend morphs between them instead of running its own force sim
 - `files.ts` — File I/O: list markdown, read/write notes, path-traversal rejection
@@ -112,7 +112,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
 - `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`). Notes/bases/sheets/drawings/settings route by file path; no `::calendar` sentinel (calendar is a Bases view).
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block — renders a `BaseView` from a full inline base config OR a flat `of:`/`tasks:`/`where:`/`view:` spec), `queryComplete` (autocomplete inside ` ```query ` blocks), `taskComplete` (task-metadata autocomplete in `- [ ]` lines — keywords expand to emoji), `embedBlock` (render `![[file]]` and `![](url)` inline — images, PDFs, audio, video, `.md` note transclusion; resizable, persisted as `|WxH`), `htmlPreview` (sanitized raw HTML, block + inline), `inlineMarkdown` (markdown in table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM pipe tables — contenteditable cells, Shift+Enter multi-line, drag-resize cols/rows), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers` (line numbers on code blocks), `harperSpellcheck`, `settingsComplete`/`yamlSchema` (settings autocomplete + lint), `editorContextMenu`
+- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block → `BaseView` from a full base config or flat `of:`/`tasks:`/`where:`/`view:` spec), `queryComplete`, `taskComplete` (task-metadata autocomplete, keywords→emoji), `embedBlock` (`![[file]]`/`![](url)` inline — images/PDF/audio/video/`.md` transclusion; resizable `|WxH`), `htmlPreview` (sanitized raw HTML), `inlineMarkdown` (markdown in table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM tables — contenteditable, Shift+Enter, drag-resize), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers`, `harperSpellcheck`, `settingsComplete`/`yamlSchema`, `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles
@@ -141,9 +141,13 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 
 ### CLI (`cli/`)
 
-**Purpose**: Lightweight wrapper around core library.
+The `bismuth` binary (thin wrapper over `@oa/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`OA_VAULT`.
 
-**Entry point**: `src/index.ts` (exports `oa` binary). Imports `@oa/core` to expose vault operations from the shell.
+- `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase like `task toggle`, then one-word), `--help`, error-wrap.
+- `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`memoryDir`/`today`/`out`/`fail`) + `src/types.ts` (`Command`/`CommandMap`) — the shared seam every group imports.
+- `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. Groups: `file`, `note`, `search`, `graph`, `task`, `base`(+`row*`), `card`, `prop`, `settings`(+`folder-icon`), `daemon` (reads/writes `~/.claude-bot`, no vault), `draw`, `serve`+`backup`, `export` (note/base/sheet/drawing → md|html|png; **pdf of notes is browser-only**), `api` (`agent-graph` + generic `api <METHOD> <path>` passthrough to a running server — for in-server-memory things like the relay registry a standalone process can't read).
+
+**Adding a command**: add a `Command` to a `src/commands/<group>.ts` map (or a new group imported in `index.ts`) — resolve inputs via `args.ts`, call core, `out(result, args)`.
 
 ### Bases (`core/src/bases/` + `app/src/bases/`)
 
@@ -156,7 +160,7 @@ A query/view system. A **base is a `type: base` md file** — its frontmatter de
 - `functions.ts` — Built-in functions on file/number/string/array/date values (method-dispatch tables per type)
 - `query.ts` — Apply a Base to the vault data feed (`basesData.ts`) and return rows + grouping
 
-**Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) spans 12 string kinds — `table|cards|list|bullets|kanban|map|calendar|flashcards|bar|line|stat|heatmap` (`bullets` = plain markdown list; charts backed by `bases/chart.ts`). `BaseView.tsx` is the host that picks the renderer (full-pane views like calendar/flashcards render directly from `data().rows`); `renderValue.tsx` formats cells.
+**Frontend views** (`app/src/bases/`): one renderer per view kind. `ViewType` (`core/src/bases/types.ts`) spans 12 kinds — `table|cards|list|bullets|kanban|map|calendar|flashcards|bar|line|stat|heatmap` (`bullets` = markdown list; charts via `bases/chart.ts`). `BaseView.tsx` hosts/picks the renderer (full-pane views like calendar/flashcards render from `data().rows`); `renderValue.tsx` formats cells.
 
 A base can also be **queried inside a note** via a ` ```query ` code block — the only embedded block (there is no ` ```base `/` ```view `/` ```tasks `). Its body is either a full inline base config (top-level `views:`/`filters:`/`formulas:`/`source:`) or a flat query spec (`of: [[Base]]`, `tasks: <dsl>`, `where:`, `group:`, `view:`). Rendered inline by `editor/queryBlock.ts`.
 
@@ -165,7 +169,7 @@ A base can also be **queried inside a note** via a ` ```query ` code block — t
 - `{ kind: "notes", where?, from? }` — vault notes filtered by a Bases expr; `from: [[Base]]` scopes to that base's notes.
 - `{ kind: "tasks", where?, from? }` — checkbox tasks; `from: [[Base]]` scopes extraction to that base's notes (no `from` = global).
 
-Frontmatter accepts a string (`source: notes where #book`) or an object; `normalizeSource()` coerces both. Resolution is cycle-guarded and **server-side** via `POST /rows {spec}`; `BaseView.resolveRows` = `inlineRows ?? api.resolveRows(spec)`. Perf: the server caches the unscoped vault row feed (`cachedRows`, invalidated on vault change); the client keeps an SSE-version-keyed stale-while-revalidate cache (`bases/rowCache.ts` `RowCache`) so reopening a base paints instantly from last rows (`BaseSkeleton` only on cold load) while revalidating.
+Frontmatter accepts a string (`source: notes where #book`) or object; `normalizeSource()` coerces both. Resolution is cycle-guarded and **server-side** via `POST /rows {spec}`; `BaseView.resolveRows` = `inlineRows ?? api.resolveRows(spec)`. Perf: server caches the unscoped vault row feed (`cachedRows`); client keeps an SSE-version-keyed stale-while-revalidate cache (`bases/rowCache.ts`) so reopening paints instantly (`BaseSkeleton` only on cold load) while revalidating.
 
 In a flat block: `of: [[Base]]` renders that base, `tasks: <dsl>` runs a task query (optionally `from: [[Base]]`), `where:`/`view:` filter and pick the mode. It does not iterate notes itself (that's a base's job); neither `of:` nor `tasks:` → empty state.
 
@@ -214,7 +218,7 @@ A `.draw` file is a versioned JSON `DrawingDoc` (pages, strokes, paper backgroun
 
 A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
-**The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is first-class tab content — `PaneContent` routes it to a full `GraphView` via `App`'s `renderGraph()` prop. There is no floating "default view": `App` seeds a `::graph` tab when nothing is restored and reopens one if all tabs close (tabs are never empty). When a pane already shows the graph, the sidebar mini-graph (`.graph-floater`) hides so it never renders twice.
+**The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is first-class tab content — `PaneContent` routes it to a `GraphView` via `App`'s `renderGraph()` prop. `App` seeds a `::graph` tab when nothing is restored and reopens one if all tabs close (tabs are never empty). When a pane shows the graph, the sidebar mini-graph (`.graph-floater`) hides so it never renders twice.
 
 **Tab renaming**: Double-click or right-click → Rename on any tab to set a custom label. The name is stored as a `name` field on the `Leaf` node in `panes.ts` and overrides the automatic `contentLabel()`-derived title. Cleared by renaming to empty.
 
@@ -232,7 +236,7 @@ The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each
 
 ### Keybindings
 
-Global shortcuts come from the `keybindings:` section of `settings.yaml` — nothing is hardcoded in `App.tsx`. Same split-data pattern as commands: `core/src/keybindings.ts` (`KEYBINDING_CATALOG` pure data → schema derives the section) + `app/src/keybindings.ts` (pure matcher `matchesKeybinding` + authoring helpers). `"Mod"` = Cmd/Ctrl; modifier matching is **exact**; combos are comma-separated alternatives; matches the produced key OR physical `event.code` (so Option-composed chars still match). The `keybind` PropertyType drives an order-free shortcut autocomplete in `editor/settingsComplete.ts` (incl. a "Record shortcut…" option).
+Global shortcuts come from `keybindings:` in `settings.yaml` (nothing hardcoded in `App.tsx`). Same split-data pattern as commands: `core/src/keybindings.ts` (`KEYBINDING_CATALOG` → schema) + `app/src/keybindings.ts` (matcher `matchesKeybinding` + helpers). `"Mod"` = Cmd/Ctrl; modifier matching is **exact**; combos comma-separated; matches the produced key OR physical `event.code` (Option-composed chars still match). The `keybind` PropertyType drives an order-free autocomplete in `editor/settingsComplete.ts` (incl. "Record shortcut…").
 
 **Adding a keybinding:** add an entry to `KEYBINDING_CATALOG` (core) and read `settings.keybindings.<id>` via `matchesKeybinding` at the handler — schema field, autocomplete, and default are derived automatically.
 
@@ -321,7 +325,7 @@ Backend errors use the `AppError` class (`core/src/error.ts`): `createError(code
 - **`core/src/files.ts` `walkDir(root, filter)`** — recursive dir walk behind `listTree`/`listTemplates`; filter returns `true`/`false`/`{data}`.
 - **`core/src/frontmatter.ts` `mutateFrontmatter(yaml, mutate)`** — edits frontmatter via the `yaml` Document API (preserves comments/key order/flow arrays), falls back to stringify on malformed input.
 - **Resilience**: `app/src/serverVersion.ts` tracks a `ConnectionState` (connected/disconnected/reconnecting). On SSE loss it shows a "Connection lost" toast and polls `/version` at 1s (vs 5s) until reconnect, then auto-dismisses.
-- **`app/src/sanitizeHtml.ts` `sanitizeHtml(dirty)`** — DOMPurify wrapper for safe `innerHTML` of any vault-rendered HTML (markdown, live-preview, cards, calendar, export). Browser/headless-aware (passes input through when no `window`, so Bun tests work). Always route rendered HTML through it — used by `bases/markdown.ts`, `editor/htmlPreview.ts`, `editor/livePreview.ts`. For building that HTML, escape with the canonical `app/src/htmlEscape.ts` (`escapeHtml`/`escapeAttr`) rather than re-rolling per-file escapers.
+- **`app/src/sanitizeHtml.ts` `sanitizeHtml(dirty)`** — DOMPurify wrapper for safe `innerHTML` of any vault-rendered HTML; browser/headless-aware (passes through when no `window`, so Bun tests work). Always route rendered HTML through it. Build that HTML by escaping with the canonical `app/src/htmlEscape.ts` (`escapeHtml`/`escapeAttr`), not per-file escapers.
 
 ## Key Concepts
 
@@ -348,7 +352,7 @@ The "agents" mode visualizes Claude Code sessions in Bismuth's own terminal tabs
 **2D/3D toggle**: The renderer's 2D vs 3D mode is a **transient localStorage toggle** (not a `settings.yaml` key). It persists across sessions via `localStorage` but is not user-facing in the settings file. Toggle via the graph toolbar or the `GraphView` mode control.
 
 ### Performance Optimizations
-Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant graph builder; base loads use a server vault-row cache + client SWR row cache and precompiled task regexes.
+Debounced 250ms file-watch; version-based polling (refetch only when `/version` increments); backend-precomputed 2D/3D layouts (renderer morphs, no browser force-sim) cached in localStorage; lazy WebGL init; live-preview rescans only on content change; malformed-YAML-tolerant; base loads use a server row cache + client SWR cache + precompiled task regexes
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
