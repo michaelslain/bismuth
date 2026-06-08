@@ -7,7 +7,7 @@ Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` 
 From a fresh clone to the app in `/Applications`:
 
 ```bash
-git clone <repo> && cd bismuth
+git clone https://github.com/michaelslain/bismuth.git && cd bismuth
 bun install
 cd app
 bun run prebundle:claudebot                                    # stage the bundled daemon (needs sibling ../../claude-bot)
