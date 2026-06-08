@@ -89,7 +89,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 - `relay.ts` — In-process registry of terminal-tab Claude sessions + their subagents, populated by the relay plugin's hooks via `POST /relay/*`, pruned against the live pty set (see Relay Integration)
 - `daemon.ts` — Reads/writes the claude-bot daemon's shared state files (device-id, devices.json, owner.json, daemon.pid); exports `daemonStatus`/`listDevices`/`getOwner`/`setOwner`/`setCronEnabled`/`setProcessEnabled`/`runCron`. Never throws — degrades gracefully on missing files. Home dir from `daemon.home` setting. See Daemon Integration
 - `daemonGraph.ts` — Builds the "daemon" graph (daemon hub → cron/process nodes, `supervises` edges) from the daemon's on-disk crons/processes; `daemonSnapshot`/`buildDaemonGraph`/`daemonGraph`
-- `daemonViz.ts` — Pure `nodeVisualState(state)` mapping a daemon node's `{enabled, running}` → visual tokens (fill/border/opacity): disabled = dim; running = solid palette fill; enabled-idle = base fill + palette border ring
+- `daemonViz.ts` — Pure `nodeVisualState(state)` mapping a daemon node's `{enabled, running}` → visual tokens (fill/border/opacity): disabled = dim; running = solid palette fill; enabled-idle = `bg` (hollow) fill + palette border ring
 - `backup.ts` — Git commit snapshot of vault
 - `tasks.ts`, `tasks-query.ts` — Tasks extraction + query DSL (Obsidian Tasks-compatible)
 - `terminal.ts` — PTY session manager backing the in-app terminal tabs (`bun-pty`). Injects relay provenance into each tab's env (`CLAUDE_TERMINAL_ID`, `CLAUDE_RELAY_URL`) + a PATH shim (`relay/shim/claude`) so a bare `claude` in a tab auto-loads the relay plugin via `--plugin-dir` (`buildPtyEnv`, pure + tested)
