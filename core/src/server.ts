@@ -12,7 +12,7 @@ import { buildAgentGraph } from "./agents";
 import { buildVaultRows } from "./basesData";
 import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
-import { upsertRow, deleteRow } from "./bases/rowOps";
+import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
 import { todayISO } from "./dates";
@@ -756,6 +756,18 @@ export function createServer(cfg: CoreConfig) {
         const text = await readNote(cfg.vault, file);
         const name = fileBasename(file);
         const next = deleteRow(text, { name, path: file }, index);
+        await writeNote(cfg.vault, file, next);
+        return ok();
+      },
+      (b) => b.file,
+    ),
+
+    "POST /row/reorder": mutatingHandler(
+      async (req) => {
+        const { file, from, to } = (await req.json()) as { file: string; from: number; to: number };
+        const text = await readNote(cfg.vault, file);
+        const name = fileBasename(file);
+        const next = reorderRow(text, { name, path: file }, from, to);
         await writeNote(cfg.vault, file, next);
         return ok();
       },
