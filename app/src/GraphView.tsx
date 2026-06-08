@@ -275,7 +275,7 @@ export function GraphView(props: {
             label: (
               <>
                 <Icon value={MODE_ICON[id]} size={14} />
-                <span class="graph-seg-label">{MODE_SHORT[id]}</span>
+                <span class="graph-seg-label btn-label">{MODE_SHORT[id]}</span>
               </>
             ),
           }))}
@@ -287,8 +287,8 @@ export function GraphView(props: {
             onChange={setViewMode}
             size="sm"
             options={[
-              { id: "2d", title: "2D", label: <><Icon value={DIM_ICON["2d"]} size={14} />2D</> },
-              { id: "3d", title: "3D", label: <><Icon value={DIM_ICON["3d"]} size={14} />3D</> },
+              { id: "2d", title: "2D", label: <><Icon value={DIM_ICON["2d"]} size={14} /><span class="btn-label">2D</span></> },
+              { id: "3d", title: "3D", label: <><Icon value={DIM_ICON["3d"]} size={14} /><span class="btn-label">3D</span></> },
             ]}
           />
           <Show when={props.fill}>

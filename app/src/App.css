@@ -177,6 +177,9 @@ body { background: var(--bg); color: var(--fg); }
 .tabbar { display: flex; align-items: stretch; overflow-x: auto; border-bottom: 1px solid var(--border-soft); background: var(--rail); position: relative; }
 .tab { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; font-size: var(--tab-font-size, 12px); cursor: pointer; color: var(--text-muted); border-right: 1px solid var(--border-soft); white-space: nowrap; user-select: none; position: relative; transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1), opacity 0.12s ease, color 0.12s ease, background 0.12s ease; }
 .tab > svg { color: var(--faint); }
+/* Optical centering: Monaspace caps sit high in the em box, so the label reads as
+   floating above the tab's icon / close X. Nudge it down 1px to center it. */
+.tab > span { position: relative; top: 1px; }
 .tab:hover { color: var(--fg); }
 /* Active tab is signified by a lightened background (like the segmented switchers), no accent line. */
 .tab.active { color: var(--fg); background: var(--surface-2); }
