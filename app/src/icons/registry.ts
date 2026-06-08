@@ -27,9 +27,13 @@ import ArrowDown from "lucide-solid/icons/arrow-down";
 import ArrowLeft from "lucide-solid/icons/arrow-left";
 import ArrowRight from "lucide-solid/icons/arrow-right";
 import ArrowUp from "lucide-solid/icons/arrow-up";
+import Blend from "lucide-solid/icons/blend";
 import Book from "lucide-solid/icons/book";
 import BookOpen from "lucide-solid/icons/book-open";
+import Bot from "lucide-solid/icons/bot";
+import Box from "lucide-solid/icons/box";
 import Brain from "lucide-solid/icons/brain";
+import BrainCircuit from "lucide-solid/icons/brain-circuit";
 import Calendar from "lucide-solid/icons/calendar";
 import CaseSensitive from "lucide-solid/icons/case-sensitive";
 import Check from "lucide-solid/icons/check";
@@ -80,6 +84,7 @@ import Settings from "lucide-solid/icons/settings";
 import Settings2 from "lucide-solid/icons/settings-2";
 import Share from "lucide-solid/icons/share";
 import Share2 from "lucide-solid/icons/share-2";
+import Square from "lucide-solid/icons/square";
 import SquarePlus from "lucide-solid/icons/square-plus";
 import SquareTerminal from "lucide-solid/icons/square-terminal";
 import Star from "lucide-solid/icons/star";
@@ -105,13 +110,14 @@ import Zap from "lucide-solid/icons/zap";
 // tests): the assertion below throws on boot if they ever drift, and
 // registry-seed.test.ts asserts every command-catalog icon is covered.
 const SEED: Record<string, LucideIcon> = {
-  AppWindow, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Book, BookOpen, Brain,
-  Calendar, CaseSensitive, Check, ChevronDown, ChevronLeft, ChevronRight,
+  AppWindow, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
+  Bot, Box, Brain, BrainCircuit, Calendar, CaseSensitive, Check, ChevronDown,
+  ChevronLeft, ChevronRight,
   ChevronUp, Clock, Code, Columns3, Copy, Crown, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
   Landmark, Link, Lock, Menu, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
-  Replace, RotateCcw, Search, Server, Settings, Settings2, Share, Share2,
+  Replace, RotateCcw, Search, Server, Settings, Settings2, Share, Share2, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
   WholeWord, Wrench, X, Zap,
 } as unknown as Record<string, LucideIcon>;
