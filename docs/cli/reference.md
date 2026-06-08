@@ -502,6 +502,39 @@ This is the escape hatch for any endpoint without a dedicated CLI command (see t
 
 ---
 
+## Install commands (`commands/install.ts`)
+
+Install the `bismuth` CLI + MCP server **machine-wide** from a built tools source (the bundled app's `bismuth-tools` resource, or `--src <dir>`). Idempotent + version-gated — a no-op when the bundled binaries are unchanged. Doesn't touch the vault. See [self-update](../overview/self-update.md) and the [MCP server](../mcp/overview.md).
+
+### `install [--src <dir>] [--status] [--dry-run]`
+With `--status`, prints the `BismuthStatus` (CLI on PATH? MCP registered? installed version). Otherwise copies the compiled `bismuth`/`bismuth-mcp` + docs into `~/.bismuth`, symlinks the CLI onto PATH (`/usr/local/bin`, fallback `~/.local/bin`), and registers the MCP in the user's global Claude config (`claude mcp add -s user`). `--dry-run` reports the action with no side effects. Source dir: `--src` → `OA_BISMUTH_INSTALL_SRC`.
+```bash
+bismuth install --status --pretty
+bismuth install --src /path/to/bismuth-tools
+```
+
+### `uninstall`
+Removes the machine-wide CLI symlink (if it's ours), the global MCP registration (`claude mcp remove -s user bismuth`), and `~/.bismuth`.
+
+## Checkpoint commands (`commands/checkpoint.ts`)
+
+A **checkpoint** is a lightweight git ref (`refs/bismuth/<name>`) marking how far a periodic consumer has processed a repo's autosave history — a *bookmark*, not a branch. Every consumer reads the same linear history and remembers its own position, so they advance independently, side by side (invisible to normal git, never pushed). This lets background jobs process only "what changed since I last ran": the **dream** cron over `~/.claude-bot/memory` (`refs/bismuth/dream`), **vault-review** over the vault (`refs/bismuth/vault-review`). Headless; generic over any git-tracked dir via `--dir` (falls back to `--vault`/`OA_VAULT`). By default each op commits pending changes first so the delta reflects the latest on-disk state — pass `--no-commit` to diff against existing history only (e.g. a protected vault).
+
+### `checkpoint diff <ref> --dir <path> [--no-commit]`
+Lists files changed since `refs/bismuth/<ref>`: `{ base, head, files: [{status, path}] }`. First run (ref unset) → `base: null` and every tracked file at HEAD is reported as added (`status: "A"`).
+```bash
+bismuth checkpoint diff dream --dir ~/.claude-bot/memory --pretty
+bismuth checkpoint diff vault-review --dir "$HOME/Documents/library of alexandria" --no-commit
+```
+
+### `checkpoint advance <ref> --dir <path> [--no-commit]`
+Moves the ref to HEAD (call after successfully processing the delta). Returns `{ ref, head }`.
+
+### `checkpoint ref <ref> --dir <path>`
+Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
+
+---
+
 ## Command index (by domain)
 
 | Command | Group file | Needs vault? | Output |
@@ -520,5 +553,7 @@ This is the escape hatch for any endpoint without a dedicated CLI command (see t
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
 | `agent-graph` `api` | api.ts | **no** (needs running server) | JSON / text |
+| `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
+| `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/files.ts
+Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts
