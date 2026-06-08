@@ -2,6 +2,7 @@ import { spawn as spawnPty } from "bun-pty";
 import type { IPty } from "bun-pty";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 
 export interface Session {
@@ -37,6 +38,14 @@ const CLAUDE_LOOKUP_PATH = [
   join(homedir(), ".local", "bin"),
 ].filter(Boolean).join(":");
 const REAL_CLAUDE = Bun.which("claude", { PATH: CLAUDE_LOOKUP_PATH });
+
+// In a compiled sidecar binary (the bundled app), import.meta.dir is a virtual path, so
+// relay/ — the shim + zdotdir — isn't on disk (only claude-bot is shipped as a resource).
+// Detect that and skip the shim entirely. Otherwise we'd point ZDOTDIR at a nonexistent
+// dir and the tab would lose the user's ~/.zshrc (no oh-my-zsh, no user PATH — so even
+// their own `claude` vanishes). When skipped, a tab is a plain login shell that loads the
+// user's normal rc. The shim only ever activates in the dev repo, where relay/ exists.
+const SHIM_AVAILABLE = existsSync(ZDOTDIR_DIR);
 
 export interface PtyEnvParams {
   base: Record<string, string | undefined>;
@@ -96,7 +105,7 @@ export function createTerminalSession(opts: {
     base: process.env,
     relayUrl: `http://localhost:${opts.relayPort ?? 4321}`,
     terminalId: id,
-    realClaude: REAL_CLAUDE,
+    realClaude: SHIM_AVAILABLE ? REAL_CLAUDE : null,
     pluginDir: RELAY_PLUGIN_DIR,
     shimDir: SHIM_DIR,
     zdotDir: ZDOTDIR_DIR,

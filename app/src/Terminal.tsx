@@ -8,6 +8,7 @@ import "./Terminal.css";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts } from "./themeColors";
 import { resolveAppearance } from "./themes";
+import { apiBase } from "./api";
 
 // The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
 function activePaletteInts(): number[] {
@@ -95,10 +96,11 @@ function buildExtendedAnsi(paletteInts: number[]): string[] {
   return out;
 }
 
-// Derive the WebSocket base URL from the same env var that the HTTP api.ts uses,
-// so that VITE_API_BASE overrides work for ws:// too.
-const HTTP_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:4321";
-const WS_BASE = HTTP_BASE.replace(/^http/, "ws"); // http→ws, https→wss
+// Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses.
+// apiBase() honors ?api= > window.__OA_API__ > VITE_API_BASE > :4321, so the bundled
+// app's free-port sidecar (injected as __OA_API__) is reached too — not just :4321.
+// Computed at connect time, since __OA_API__/?api= are only known at runtime.
+const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder();
@@ -320,7 +322,7 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     // Each reconnection creates a fresh PTY shell (the backend's grace period expires before
     // the first retry fires), so reconnection starts a new session rather than resuming.
     const connectWs = () => {
-      ws = new WebSocket(`${WS_BASE}/terminal?cols=${term!.cols}&rows=${term!.rows}`);
+      ws = new WebSocket(`${wsBase()}/terminal?cols=${term!.cols}&rows=${term!.rows}`);
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
