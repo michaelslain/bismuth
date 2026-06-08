@@ -33,9 +33,9 @@ The system treats knowledge as a "three-brain" model:
 
 `bun run dev` requires two env vars (errors if unset; both dirs must exist): `OA_VAULT` (2nd-brain markdown vault) and `OA_MEMORY` (3rd-brain Claude-bot notes). First-time with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo "# Hello" > /tmp/test-vault/example.md`, export both, then `cd app && bun run dev`.
 
-## Development Artifacts
+## Documentation
 
-Plans, design docs, and temporary dev artifacts live outside the source tree in `~/.claude/bismuth-docs/` (git-ignored).
+`docs/` (committed) is the exhaustive, code-anchored reference for the whole system — query/bases/view/formatter/settings syntax, CLI, daemon, storage, HTTP API — and the intended Claude-Code/MCP integration surface alongside the `bismuth` CLI. Start at `docs/README.md`; keep it current. (Scratch dev artifacts still live in `~/.claude/bismuth-docs/`, git-ignored.)
 
 ## Key Commands
 
@@ -112,7 +112,7 @@ Default ports `:4321` (backend) / `:1420` (Tauri) only serve one instance. For m
 - `PaneTree.tsx` / `PaneContent.tsx` — Renders the pane tree; each Leaf hosts a note, Bases view, spreadsheet (`.sheet`), drawing (`.draw`, via `drawing/`), calendar, tasks, flashcards, terminal, or an export view (`export/`)
 - `tabIds.ts` — Sentinel ids for non-file pane contents (`::graph`, `::search`, `::empty`, prefixed `::flashcards:`/`::term:`/`::export:`). Notes/bases/sheets/drawings/settings route by file path; no `::calendar` sentinel (calendar is a Bases view).
 - `Editor.tsx` — CodeMirror 6 editor with markdown, live-preview, wikilink/tag autocomplete, embedded bases/tasks blocks
-- `editor/` — CodeMirror extensions: `livePreview` (block rendering), `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block → `BaseView` from a full base config or flat `of:`/`tasks:`/`where:`/`view:` spec), `queryComplete`, `taskComplete` (task-metadata autocomplete, keywords→emoji), `embedBlock` (`![[file]]`/`![](url)` inline — images/PDF/audio/video/`.md` transclusion; resizable `|WxH`), `htmlPreview` (sanitized raw HTML), `inlineMarkdown` (markdown in table cells), `tableModel`/`tableState`/`tableWidget` (editable GFM tables — contenteditable, Shift+Enter, drag-resize), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers`, `harperSpellcheck`, `settingsComplete`/`yamlSchema`, `editorContextMenu`
+- `editor/` — CodeMirror extensions (full detail in `docs/editor/`): `livePreview`, `autocomplete` (wikilinks/tags), `queryBlock` (the one ` ```query ` block → `BaseView`), `queryComplete`, `taskComplete`, `embedBlock` (`![[file]]`/`![](url)` inline, resizable `|WxH`), `htmlPreview`, `inlineMarkdown`, `tableModel`/`tableState`/`tableWidget` (editable GFM tables), `wikilink`, `tag`, `mathBlock`, `codeHighlight`, `codeLineNumbers`, `harperSpellcheck`, `settingsComplete`/`yamlSchema`, `editorContextMenu`
 - `FileTree.tsx` — Left sidebar. Drag-drop moves, rename/move retargets active tab, undo support for deletes
 - `ContextMenu.tsx` — Right-click menu for file tree and editor
 - `GraphView.tsx` — Mounts the WebGL renderer and label layer, exposes mode/view toggles

@@ -1,0 +1,474 @@
+# Editor Live-Preview Rendering
+
+This document covers every block and inline rendering transformation that Bismuth's CodeMirror editor applies to markdown source text, including the exact trigger conditions, the block kinds supported, how math, raw HTML, and code are processed, and the sanitization pipeline. The live-preview is implemented as a set of CodeMirror extensions in `app/src/editor/livePreview.ts`, `htmlPreview.ts`, `mathBlock.ts`, `codeHighlight.ts`, and `codeLineNumbers.ts`, backed by `sanitizeHtml.ts` and `katexLoader.ts`.
+
+---
+
+## Overview
+
+The live-preview layer is NOT a markdown-to-HTML pipeline. It is a per-line CodeMirror `ViewPlugin` that applies `Decoration` objects directly to editor ranges. This means:
+
+- The markdown source is always the ground truth; decorations are overlays.
+- Most decorations **hide syntax characters** off the cursor line and **reveal** them when the cursor enters the line.
+- Block-level decorations (table widgets, HTML block widgets, multi-line math block widgets) must live in `StateField` instances, not the `ViewPlugin`, because CodeMirror prohibits `block: true` decorations from plugins.
+- The `ViewPlugin` (`buildDecorations`) runs on every cursor move, viewport change, document change, or active-block change. It is cheap because it only iterates `view.visibleRanges` and recomputes the heavier `BlockRegions` scan only when the document content actually changes.
+
+---
+
+## Cursor-Out Rule ("Render When")
+
+The core contract for every inline token is:
+
+- **Off the cursor line**: syntax delimiters (e.g. `**`, `*`, `~~`, backtick, `>`, `[[`, `]]`, `#`) are **hidden** (`cm-hidden-syntax`, `display:none`) and the inner content is styled (e.g. bold, italic, strikethrough, link color).
+- **On the cursor line** (the line the primary cursor head is on): syntax delimiters are **revealed**, rendered in dim `Monaspace Xenon` monospace via the `cm-syntax-mark` class, so the raw source is always readable while editing.
+- **Heading `#` marks** on the cursor line get `cm-heading-mark` (monospace + `--fg` + weight 500) rather than the dim `cm-syntax-mark`, to match the inline note-title `#` aesthetic.
+
+For block constructs (code fences, frontmatter, HTML blocks, math blocks, tables), the reveal condition is cursor-inside-the-block (any line within the block), not just the cursor line.
+
+---
+
+## Block Regions Pre-Scan
+
+On every document change, `computeBlockRegions(doc)` does a single full-document scan and returns:
+
+| Field | Contents |
+|---|---|
+| `fenceLines` | Set of line numbers that are ` ``` ` fence lines |
+| `codeLines` | Set of line numbers strictly inside a closed fence (not the fences themselves) |
+| `codeBlockByLine` | Map from any line number to its `CodeBlock` (open/close/lang/body) |
+| `frontmatterLines` | Set of all line numbers covered by the YAML frontmatter block |
+| `frontmatterOpen` / `frontmatterClose` | Line numbers of the opening and closing `---` delimiters |
+| `tableBlocks` / `tableBlockByLine` | GFM table blocks grouped by `tableModel.ts` |
+| `htmlBlockLines` | Set of line numbers covered by blank-line-delimited HTML blocks |
+
+Lines that belong to these regions are handled first in the per-line pass and `continue` out, so markdown interpretation never misreads raw HTML, frontmatter YAML, code content, or table pipes as headings / lists / inline tokens.
+
+---
+
+## YAML Frontmatter
+
+Frontmatter is detected by `extractFrontmatterBoundary` (in `frontmatterUtils.ts`): the document must start with `---\n` on line 1, closed by a later `---` line. The content between the fences is the YAML body.
+
+**Rendering behavior**:
+
+- **Opening and closing `---` delimiters** are collapsed to zero height (`cm-collapsed-line`) with their text hidden, unless the cursor is inside the frontmatter block. When the cursor enters the block, both delimiters are revealed in `cm-syntax-mark` (dim Monaspace), and both carry `cm-frontmatter` line styling. This ensures both delimiters look the same even though the markdown tokenizer handles them differently.
+- **Property rows** (lines between the delimiters): each gets `cm-frontmatter` (Monaspace Xenon, `--mono-scale` font-size, `--surface-2` background, 2px `--accent` left inset shadow). In-block 1-based line numbers are displayed via the `numberedLine` mechanism (see [Code Line Numbers](#code-line-numbers-in-block-line-numbers) below).
+- **`key:` portion**: The regex `/^(\s*)([A-Za-z0-9_$.-]+)\s*:/` is used to detect the key name on each property row. The key receives `cm-fm-key` (color: `--accent`), while the value portion inherits `--fg`.
+- **Wikilinks in property values** (e.g. `source: "[[Note]]"`) are styled as wikilinks via `pushWikilinks` — the only inline treatment applied inside frontmatter. Other inline markdown (bold, italic, tags) is skipped.
+- **No heading/list/tag/math treatment** on frontmatter lines — the `continue` after frontmatter handling skips the rest of the per-line pass entirely.
+
+---
+
+## Fenced Code Blocks
+
+A fenced code block is a pair of ` ``` ` lines (optionally with a language info string after the opening fence). Unclosed fences (no matching close in the document) are treated as ordinary lines.
+
+**Special case**: ` ```query ` blocks are **excluded** from code-block rendering here. They are owned by `queryBlock.ts`, which replaces the entire fence with a rendered base/task view. `computeBlockRegions` advances past query blocks without recording them, so livePreview does not double-render them.
+
+### Rendered mode (cursor outside the block)
+
+- **Opening fence line** (`codeBlock.open`): replaced by a `CodeHeaderWidget`. The widget mounts the `<CodeHeader>` Solid component, which renders a dim language label on the left (`cm-code-lang`, shows `"text"` if no info string) and a copy-to-clipboard icon button on the right (`cm-code-copy`). The line gets `cm-code-headerline`.
+- **Closing fence line** (`codeBlock.close`): collapsed via `cm-code-hidden` (`font-size:0; line-height:0`) with its text hidden. This removes the closing ` ``` ` from view entirely.
+- **Body lines**: each gets `cm-codeblock` (Monaspace Xenon, `--mono-scale` font-size, `line-height:1.5`) and a 1-based in-block line number via `numberedLine("cm-codeblock", lineNumber - openLine)`.
+- **Syntax highlighting**: `codeHighlightStyle` (see [Code Syntax Highlighting](#code-syntax-highlighting)) applies One Dark colors to the body lines via CodeMirror's `HighlightStyle`.
+
+### Edit mode (cursor inside the block)
+
+- Entered by: double-clicking inside the block (dispatches `setActiveCodeEffect`), or by typing inside the block (a `docChanged` transaction while the cursor is in the block).
+- Exited by: moving the cursor outside the block (selection-only move clears the active block).
+- In edit mode, both the opening and closing fence lines get `cm-codeblock` line styling (not hidden), and body lines get `cm-codeblock` + line numbers. The raw ` ``` ` fences are visible.
+- The active block is tracked as its opening line number (or `null`) in `activeCodeField` (a `StateField`).
+
+**Double-click detail**: `dblclick` handler calls `findCodeBlock` (a full-document scan for the enclosing fence pair) and dispatches `setActiveCodeEffect.of(block.open)`. The default word-selection behavior is preserved (`return false`).
+
+---
+
+## Code Syntax Highlighting
+
+`codeHighlightStyle` in `codeHighlight.ts` defines a `HighlightStyle` for fenced code blocks using the **One Dark palette**:
+
+| Token category | Color |
+|---|---|
+| Comments | `#7f848e`, italic |
+| Keywords, control, module, operator keywords | `#c678dd` |
+| Strings, characters | `#98c379` |
+| Numbers, integers, floats, booleans, atoms | `#d19a66` |
+| Function names (variable/property), label names | `#61afef` |
+| Type names, class names, namespaces | `#e5c07b` |
+| Property names, attribute names | `var(--accent)` — matches the frontmatter key accent |
+| Tag names (HTML/XML) | `#e06c75` |
+| Self, null, constant variables | `#d19a66` |
+| Operators, punctuation, separators, brackets | `#abb2bf` |
+| Regexps, escape sequences | `#56b6c2` |
+| Meta, annotations, processing instructions | `#7f848e` |
+| Invalid | `#e06c75` |
+
+**Note**: Markdown structural tokens (heading, emphasis, strong, link, list, quote) are explicitly NOT styled by `codeHighlightStyle`. Those are handled entirely by the `livePreview` decorations.
+
+---
+
+## Code Line Numbers (In-Block Line Numbers)
+
+`numberedLine(cls, n)` in `codeLineNumbers.ts` returns a cached `Decoration.line` that adds both the `cls` class and `cm-code-numbered`, with `data-codeline="${n}"` on the line's DOM element. The number is drawn as a CSS pseudo-element:
+
+```css
+.cm-code-numbered::before {
+  content: attr(data-codeline);
+  position: absolute;
+  left: -2.7em;
+  width: 2em;
+  text-align: right;
+  color: color-mix(in srgb, var(--fg) 28%, transparent);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  pointer-events: none;
+}
+```
+
+This gutter number sits in the editor's left padding and adds no layout shift to the code text. It is shared by:
+- Fenced code body lines (`cm-codeblock`, `numberedLine("cm-codeblock", lineNumber - openLine)`)
+- Frontmatter property rows (`cm-frontmatter`, `numberedLine("cm-frontmatter", lineNumber - frontmatterOpenLine)`)
+- The revealed ```` ```query ```` source view (in `queryBlock.ts`)
+
+The cache is keyed by `"${cls}:${n}"` so each (class, number) pair produces exactly one `Decoration` instance.
+
+---
+
+## Headings
+
+Regex: `/^(#{1,6})\s+/` on the first characters of the line.
+
+Heading level 1–6 receive line decorations `cm-h1` through `cm-h6` with the following sizes:
+
+| Level | Class | Font-size | Font-weight | Notes |
+|---|---|---|---|---|
+| H1 | `cm-h1` | 1.94em | 600 | `letter-spacing:-0.015em`, `line-height:1.1` |
+| H2 | `cm-h2` | 1.5em | 600 | `letter-spacing:-0.01em`, `line-height:1.25` |
+| H3 | `cm-h3` | 1.3em | 600 | — |
+| H4 | `cm-h4` | 1.15em | 600 | — |
+| H5 | `cm-h5` | 1.05em | 600 | — |
+| H6 | `cm-h6` | 1em | 600 | `opacity:0.85` |
+
+**Off cursor line**: the leading `#` characters + trailing space are hidden (`cm-hidden-syntax`). Only the heading text remains visible.
+
+**On cursor line**: the `#` characters get `cm-heading-mark` (Monaspace Xenon, `--fg`, weight 500). The space after the `#`s and the heading text render normally.
+
+**Tag interaction**: `pushTags` is skipped for heading lines (`if (!hm) pushTags(...)`) because a heading's `#` must never be colored as a hashtag.
+
+---
+
+## Blockquotes
+
+Regex: `/^>\s?/` on the line start.
+
+- The whole line receives `cm-quote` (left border `3px solid #555`, `padding-left:8px`, `opacity:0.85`).
+- **Off cursor line**: the `>` and optional space are hidden.
+- **On cursor line**: they get `cm-syntax-mark` (dim Monaspace).
+- Blockquotes do not nest visually (each line is treated independently). All subsequent inline markup (bold, italic, wikilinks, etc.) still applies inside a blockquote line.
+
+---
+
+## Bullet Lists
+
+Regex: `/^(\s*)([-*+])(\s+)/` — captures indent, marker, and trailing whitespace.
+
+**Thematic break detection**: lines matching `/^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*$/` (3+ of the same character optionally separated by spaces) are excluded from bullet treatment even though they match the marker regex.
+
+**Indent depth**: `indentDepth(indent)` converts the leading whitespace to a depth. Tabs are expanded as 2 spaces; depth = `floor(cols / 2)`. So 0–1 chars = depth 0, 2–3 = depth 1, 4–5 = depth 2, etc.
+
+**Bullet glyphs by depth**:
+- Depth 0: `•`
+- Depth 1: `◦`
+- Depth 2+: `▪`
+
+**Hanging indent**: `indentLine("cm-li", depth)` applies a line decoration with:
+```
+padding-left: (depth + 1) * 1.6em
+text-indent: -1.6em
+line-height: 1.55
+```
+The `LIST_STEP` is 1.6em per depth level; `LIST_GUTTER` is 1.6em (width of the bullet gutter column).
+
+**Off cursor line**:
+1. The entire prefix (indent + marker + spaces) is replaced by a `BulletWidget` (the depth-appropriate glyph, class `cm-bullet`). The bullet glyph is right-aligned in a 1.6em inline-block column with `padding-right:0.62em`.
+2. The literal leading whitespace is hidden (the indent comes from CSS, not the markdown).
+
+**On cursor line**:
+1. Leading whitespace chars are hidden; the `cm-li` line decoration drives indent from CSS.
+2. The marker (`- `, `* `, `+ `) gets `cm-list-marker` (Monaspace Xenon), so the raw dash shows in a monospace font rather than the serif body face.
+
+---
+
+## Task Lists (Checkboxes)
+
+Regex: `/^(\s*)([-*+])(\s+)\[([ xX/\\-])\](\s)/`
+
+Task lines are processed **before** bullet lines, and `isTaskLine = true` guards the bullet match so task lines never also get a bullet glyph.
+
+**Status characters and their meanings**:
+
+| Character | `TaskStatus` | Visual behavior |
+|---|---|---|
+| ` ` (space) | `"todo"` | Empty checkbox |
+| `x` or `X` | `"done"` | Checked box (accent fill + check glyph), text struck-through + dimmed |
+| `/` or `\` | `"doing"` | Purple border, slash glyph |
+| `-` | `"cancelled"` | Dim border, dash glyph, text struck-through + dimmed |
+
+**Strikethrough**: applied to task text (not the checkbox gutter) for `done` and `cancelled` via `cm-task-done` (`text-decoration:line-through; opacity:0.55`).
+
+**Off cursor line**: the entire prefix (indent + `- ` + `[ ]` + trailing space) is replaced by a `CheckboxWidget` (a Solid `<TaskCheckbox>` component). The widget uses `updateDOM()` to drive status changes through a reactive signal, so status transitions animate via CSS transitions rather than snapping on widget recreate.
+
+**On cursor line**: Same hanging-indent treatment as bullets — leading whitespace hidden, `cm-task` line decoration drives indent; the `- [ ]` marker chars get `cm-list-marker` (Monaspace).
+
+**Click behavior**: `mousedown` handler intercepts clicks on `.cm-task-checkbox` elements. It prevents the default (so the cursor stays put and the line stays in preview mode). The handler reads the line text, identifies the `[ x ]` char, and toggles: `x/X → space`, anything else → `x`. It never produces `doing` or `cancelled` via click — those are typing-only states.
+
+---
+
+## GFM Pipe Tables
+
+Table detection is done by `groupTableBlocks` from `tableModel.ts`, which finds header + separator + body row sequences. A separator row requires at least one `-` character and `|`.
+
+**Block-level widget (StateField)**: `tableWidgetField` (a `StateField`) replaces each non-active table block with a `TableWidget` spanning its entire source range (`block:true`). Block decorations cannot come from a `ViewPlugin`.
+
+**Rendered table** (cursor outside the block):
+- The table lines are replaced by the `TableWidget` (an editable `<table>` element with `contenteditable` cells). See `tableWidget.ts` (not covered in detail here).
+- The `cm-table-wrap` div has `position:relative; width:fit-content` so the hover toolbar aligns to the table's top-right corner.
+
+**Raw mode** (cursor inside the block):
+- The table's lines get `cm-table` (Monaspace Xenon, `--mono-scale` font-size) so pipe structure is readable.
+- The active block is tracked in `activeTableField` as the block's header line number.
+
+---
+
+## Inline Formatting
+
+All inline tokens use the same `pushInline(deco, text, lineFrom, onCursor, re, markLen, mark)` helper, which:
+1. Applies the styled mark to the inner content.
+2. Off cursor: hides the delimiters.
+3. On cursor: applies `cm-syntax-mark` to the delimiters (dim Monaspace reveal).
+
+| Syntax | Regex | Mark length | CSS class |
+|---|---|---|---|
+| `**bold**` | `/\*\*([^*]+)\*\*/g` | 2 | `cm-strong` (`font-weight:bold`) |
+| `__bold__` | `/__([^_]+)__/g` | 2 | `cm-strong` |
+| `*italic*` | `/(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g` | 1 | `cm-em` (`font-style:italic`) |
+| `~~strike~~` | `/~~([^~]+)~~/g` | 2 | `cm-strike` (`text-decoration:line-through; opacity:0.7`) |
+| `` `code` `` | `/\`([^\`]+)\`/g` | 1 | `cm-inline-code` |
+
+**Inline code** (`cm-inline-code`): Monaspace Xenon, `calc(1em * var(--mono-scale, 0.85))` font-size, `rgba(140,140,140,0.18)` background, `3px` border-radius, `0 3px` padding. Note: `--mono-scale` (default 0.85) is an optical correction for monospace-next-to-serif so the inline code matches the surrounding body text size visually.
+
+**Note on italic**: The italic regex uses lookbehind/lookahead `(?<![*\w])\*(?!\*)` and `\*(?![*\w])` to avoid matching `**bold**` patterns as italic. There is no `_italic_` support (only `*`).
+
+---
+
+## Markdown Links
+
+Regex: `/\[([^\]]+)\]\(([^)]+)\)/g`
+
+- The visible link text (between `[` and `]`) gets `cm-link` (accent color, accent-soft bottom border, `cursor:pointer`).
+- **Off cursor line**: the `[`, `](url)` are hidden.
+- **On cursor line**: the `[` and `](url)` portions get `cm-syntax-mark`.
+
+The URL itself is never shown off the cursor line (hidden along with the brackets).
+
+---
+
+## Bare URLs
+
+`findBareUrls(text)` in `urls.ts` finds `https?://` followed by non-space, non-delimiter characters. Trailing sentence punctuation (`.`, `,`, `;`, `:`, `!`, `?`) is trimmed. Unbalanced closing parentheses are also trimmed (e.g. `(https://x.com)` → `https://x.com`), but balanced parens inside URLs (e.g. Wikipedia's `Foo_(bar)`) are preserved.
+
+URLs inside markdown link syntax `](url)` are skipped (handled by the markdown-link path instead).
+
+The entire URL text is styled with `cm-link` (same as markdown links). Nothing is hidden — the URL is the visible text. Bare URLs are never revealed/hidden on cursor — they always render as colored links.
+
+---
+
+## Wikilinks
+
+Regex: `/(?<!!)\[\[([^\]]+?)\]\]/g` — the `(?<!!)` negative lookbehind excludes embed syntax `![[...]]` (handled by `embedBlock.ts`).
+
+The **visible range** is computed by `wikilinkVisibleRange(inner, start)`:
+1. If `|` is present in the inner text: the alias (text after `|`) is the visible range.
+2. Else: the basename of the target (text after the last `/`, up to any `#`) is the visible range.
+
+**Off cursor line**: everything outside the visible range is hidden — the `[[`, any folder path prefix, any `#heading` fragment, and the `]]`. Only the basename or alias is shown, styled `cm-wikilink` (accent color, accent-soft bottom border, `cursor:pointer`).
+
+**On cursor line**: the `[[`, folder path, `#heading`, and `]]` get `cm-syntax-mark` (dim Monaspace reveal). The visible range still gets `cm-wikilink`.
+
+**Edge case**: a degenerate token where `visTo <= visFrom` (e.g. `[[#heading]]` which has an empty basename) applies `cm-wikilink` to the entire `[[...]]` span.
+
+**Frontmatter wikilinks**: `pushWikilinks` is also called on frontmatter property rows, so `source: "[[Base]]"` in frontmatter renders as a wikilink.
+
+---
+
+## Hashtags
+
+`pushTags(deco, text, lineFrom)` applies to every non-heading, non-frontmatter, non-code, non-table, non-HTML line.
+
+Regex: `/(^|\s)(#[\p{L}\d/_-]+)/gu` — `#` followed by one or more Unicode letters/digits/`/`/`_`/`-`.
+
+The entire tag (including the `#`) gets `cm-tag` (`color: var(--teal)`). No text is hidden — the `#` is always visible and colored. This applies on both cursor and non-cursor lines (there is no reveal/hide for tags).
+
+Tags are skipped on heading lines (the `if (!hm) pushTags(...)` guard) so heading `#` characters are never colored teal.
+
+---
+
+## Math (KaTeX)
+
+Math rendering is **lazy-loaded**: KaTeX (~280KB) loads only when a note first contains math. Before the library loads, math widgets render empty and re-render once `onMathReady` fires.
+
+### Inline math: `$expr$`
+
+Regex: `/(?<!\$)\$([^$\n]+)\$(?!\$)/g`
+
+- Applied **only off the cursor line** (no math rendering on the cursor line — the `if (!onCursor)` guard is applied before math matching).
+- Negative lookbehind/ahead `(?<!\$)...\$(?!\$)` prevents matching `$$...$$` as inline math.
+- The entire `$expr$` span is replaced by a `MathWidget` with `displayMode: false`.
+- Inline math widgets must not overlap with inline HTML widget spans (the `inHtmlSpan(s, end)` guard skips them if they do).
+
+### Single-line block math: `$$expr$$`
+
+Regex: `/\$\$([^$]+)\$\$/g`
+
+- Applied **only off the cursor line**.
+- The `$$` delimiters and the expression are all on one line.
+- Replaced by a `MathWidget` with `displayMode: true`.
+- Also guarded against overlap with HTML widget spans.
+
+### Multi-line block math: `$$\n...\n$$`
+
+Handled by `mathBlock()` in `mathBlock.ts`, which is a separate `StateField`.
+
+- Detected by: a line whose entire trimmed content is `$$` (opening fence), followed by content lines, then another line whose entire trimmed content is `$$` (closing fence).
+- `$$` lines inside fenced code blocks are ignored (tracked by `CODE_FENCE` toggle).
+- When the cursor is **outside** the block: replaced by a `MathBlockWidget` (`block:true`), rendered with `displayMode: true`, styled `cm-math-block` (`display:block; text-align:left; margin:0.4em 0`).
+- When the cursor is **inside** the block (any position from the opening `$$` to the closing `$$`): raw source is shown, no replacement.
+- KaTeX is loaded lazily via `katexLoader.ts`; `onMathReady` is used to re-render the widget after the library arrives.
+
+### KaTeX rendering
+
+`renderMath(expr, displayMode)` calls `katex.renderToString(expr, { throwOnError: false, displayMode })`. `throwOnError: false` means malformed expressions render as an error message rather than throwing.
+
+Both inline and block math widgets register via `onMathReady` in their `toDOM()` if `renderMath` returned an empty string (library not yet loaded).
+
+---
+
+## Raw HTML Rendering
+
+All rendered HTML is passed through `sanitizeHtml()` before `innerHTML` injection (see [Sanitization](#sanitization) below).
+
+### Block HTML
+
+A **block HTML** block is a blank-line-delimited run of lines starting with a CommonMark type-6 HTML block tag or `<!--`. The tag set includes: `address`, `article`, `aside`, `blockquote`, `details`, `div`, `dl`, `figure`, `footer`, `form`, `header`, `hr`, `iframe`, `li`, `main`, `nav`, `ol`, `p`, `section`, `summary`, `table`, `tbody`, `td`, `tfoot`, `th`, `thead`, `tr`, `ul`, and others. Inline-only tags (`span`, `b`, `i`, `mark`, `sub`, `sup`) are **not** block tags and render inline instead.
+
+Detection is pure/synchronous (`scanHtmlBlocks` in `htmlPreview.ts`) — independent of the async Lezer parse — so block decorations never flicker on edit.
+
+**Rendered mode** (cursor outside the block):
+- The entire block is replaced by an `HtmlBlockWidget` (`block:true`), a `<div class="cm-html-block">` containing the sanitized HTML. `data-from` attribute stores the block's start offset for click-to-edit targeting.
+- Clicks on the rendered block (except on links) move the cursor to the block start, which puts the cursor inside the block and collapses the widget to show raw source.
+
+**Edit mode** (cursor inside the block):
+- Raw source is shown; the `htmlBlockField` `StateField` checks `headLine >= b.fromLine && headLine <= b.toLine` and skips the replacement.
+
+HTML block lines are registered in `htmlBlockLines` so the per-line markdown pass skips them entirely (no double-decoration of raw HTML as headings/lists/etc.).
+
+### Inline HTML
+
+Inline HTML is detected using the Lezer syntax tree (`HTMLTag` nodes via `syntaxTree(state).iterate`), which means tags inside inline code or fenced blocks are correctly excluded.
+
+**Grouping**: `groupInlineHtml(tags)` groups an outermost open…matching-close pair into one span, or a lone void/comment tag into its own span. Depth tracking is name-agnostic (any open tag increments depth, any close tag decrements it). Unmatched close tags are ignored.
+
+**Tag kinds** (`classifyTag`):
+- `"comment"`: starts with `<!--`
+- `"void"`: self-closing `/>` suffix, or a void element name (`area`, `base`, `br`, `col`, `embed`, `hr`, `img`, `input`, `link`, `meta`, `param`, `source`, `track`, `wbr`)
+- `"open"`: any other opening tag
+- `"close"`: starts with `</`
+
+**Off cursor line**: each grouped span is replaced by an `HtmlInlineWidget` (`<span class="cm-html-inline">` with sanitized `innerHTML`).
+
+**On cursor line**: each raw `HTMLTag` node gets `cm-syntax-mark` (dim Monaspace reveal). No widget replacement.
+
+`pushInlineHtml` returns the covered spans so the math handler can skip overlapping `Decoration.replace` operations (two overlapping replace decorations would throw).
+
+---
+
+## Sanitization
+
+`sanitizeHtml(dirty)` in `sanitizeHtml.ts` wraps DOMPurify with the following config:
+
+```js
+{
+  USE_PROFILES: { html: true },  // standard HTML profile, no SVG/MathML islands
+  ADD_ATTR: ["target"],           // allow <a target="_blank">
+}
+```
+
+DOMPurify strips: `<script>`, inline event handlers (`onclick=…`, `onerror=…`, etc.), `javascript:` URLs, and other XSS vectors, while **keeping** benign formatting elements: `<b>`, `<i>`, `<u>`, `<span>`, `<mark>`, `<sub>`, `<sup>`, `<div>`, `<details>`, `<img>`, `<a>`, `<table>`, etc., along with `style`, `align`, and `class` attributes.
+
+**Headless fallback**: In Bun tests / SSR (no `window`), DOMPurify cannot sanitize (no DOM). `sanitizeHtml` detects this and passes through the input unchanged — this is safe because `innerHTML` is never called in a headless context.
+
+Sanitization is applied in:
+- `HtmlBlockWidget.toDOM()` (block HTML)
+- `HtmlInlineWidget.toDOM()` (inline HTML)
+- `bases/markdown.ts` `renderMarkdown` (card faces, calendar descriptions, `.md` transclusion, export)
+
+---
+
+## Summary Table: All Block Kinds
+
+| Block kind | Trigger | Rendered off-cursor | Edit trigger | Raw appearance |
+|---|---|---|---|---|
+| YAML frontmatter | Doc starts with `---\n` | `---` delimiters collapsed; property rows shown in Monaspace + accent keys | Cursor inside block | Both `---` dim Monaspace; rows Monaspace |
+| Fenced code block | ` ``` ` pair | Opening → CodeHeader widget; body → Monaspace + line numbers; closing → hidden | Double-click or type inside | Opening/closing ` ``` ` visible, raw code |
+| GFM table | Header + sep + body rows | Replaced by editable `TableWidget` | Cursor inside block | Pipe-separated Monaspace |
+| Block HTML | Block tag or `<!--` to blank line | `HtmlBlockWidget` (sanitized `innerHTML`) | Click inside rendered block | Raw HTML tags |
+| Multi-line `$$` math | `$$` fence lines | `MathBlockWidget` (KaTeX display mode) | Cursor inside block | Raw LaTeX source |
+| Blockquote | `^>\s?` | `cm-quote` border; `>` hidden | Cursor on line | `>` in `cm-syntax-mark` |
+| Heading H1–H6 | `^#{1,6}\s+` | Sized line; `#`s hidden | Cursor on line | `#`s in `cm-heading-mark` |
+| Bullet list | `^\s*([-*+])\s+` | `BulletWidget` glyph; hanging indent | Cursor on line | `- ` in `cm-list-marker` |
+| Task list | `^\s*([-*+])\s+\[…\]\s` | `CheckboxWidget`; hanging indent | Cursor on line | `- [ ]` in `cm-list-marker` |
+
+---
+
+## Summary Table: All Inline Kinds
+
+| Syntax | Off-cursor rendering | On-cursor reveal |
+|---|---|---|
+| `**bold**` / `__bold__` | Bold text; delimiters hidden | Delimiters in `cm-syntax-mark` |
+| `*italic*` | Italic text; delimiters hidden | Delimiter `*` in `cm-syntax-mark` |
+| `~~strike~~` | Strikethrough + 0.7 opacity; delimiters hidden | Delimiters in `cm-syntax-mark` |
+| `` `code` `` | Monaspace background box; backticks hidden | Backticks in `cm-syntax-mark` |
+| `[text](url)` | Accent-colored text; `[`, `](url)` hidden | `[` and `](url)` in `cm-syntax-mark` |
+| `https://…` bare URL | Accent-colored URL text; nothing hidden | Always shown as link, no hide/reveal |
+| `[[target\|alias]]` | Alias or basename in accent; brackets/path/heading hidden | `[[`, path, `#heading`, `]]` in `cm-syntax-mark` |
+| `#hashtag` | Teal (`--teal`) text including `#`; nothing hidden | Always shown teal, no hide/reveal |
+| `$expr$` inline math | KaTeX widget (inline mode); all hidden | Raw `$expr$` source (no widget) |
+| `$$expr$$` same-line block math | KaTeX widget (display mode); all hidden | Raw `$$expr$$` source (no widget) |
+| Inline HTML span | `HtmlInlineWidget` (sanitized); all hidden | Tags in `cm-syntax-mark` |
+
+---
+
+## Extension Composition
+
+The `livePreview` export (an array) composes all pieces:
+
+```ts
+export const livePreview = [
+  activeCodeField,      // StateField: which code block is in edit mode
+  activeTableField,     // StateField: which table block is in edit mode (from tableState.ts)
+  tableWidgetField,     // StateField: block-replace widgets for non-active tables
+  htmlBlockField,       // StateField: block-replace widgets for non-active HTML blocks
+  codeLineNumberTheme,  // EditorView.theme: .cm-code-numbered::before gutter
+  // dblclick → enter code edit mode
+  // mousedown → HTML block cursor drop + checkbox toggle
+  EditorView.domEventHandlers({ dblclick, mousedown }),
+  ViewPlugin,           // per-visible-line decoration (cheap, runs on every update)
+  EditorView.theme(…),  // all livePreview CSS rules
+];
+```
+
+`mathBlock()` (from `mathBlock.ts`) is a separate export combined elsewhere in `Editor.tsx`. `codeHighlightStyle` is consumed via CodeMirror's `syntaxHighlighting()`.
+
+---
+
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`
