@@ -25,6 +25,7 @@ import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
+import { normalizeFrontmatterSpacing, minimalChange } from "./editor/normalizeFrontmatter";
 import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
@@ -311,7 +312,19 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       pendingSave = true; // local change not yet on disk → block reconcile-revert
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async () => {
-        const text = u.state.doc.toString();
+        // Auto-format on save: enforce one blank line between frontmatter and body. Apply
+        // it to the LIVE editor via a minimal diff (so the cursor stays put and the fix is
+        // visible immediately, not only after a reload). Annotated ExternalReload so this
+        // programmatic edit doesn't re-trigger autosave. Notes only — not config buffers.
+        const isMd = !path.endsWith(".yaml") && !path.endsWith(".yml");
+        if (isMd && view) {
+          const cur = view.state.doc.toString();
+          const normalized = normalizeFrontmatterSpacing(cur);
+          if (normalized !== cur) {
+            view.dispatch({ changes: minimalChange(cur, normalized), annotations: ExternalReload.of(true) });
+          }
+        }
+        const text = view ? view.state.doc.toString() : u.state.doc.toString();
         await save(path, text);
         // Clear only if nothing was typed during the write — else a newer edit is pending.
         if (view && view.state.doc.toString() === text) pendingSave = false;
@@ -342,6 +355,19 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     // markdown rendering and NO spell/grammar check. settings.yaml additionally
     // validates the whole document against the fixed app-settings schema.
     const isYaml = path.endsWith(".yaml") || path.endsWith(".yml");
+    // Auto-format on open: keep exactly one blank line between a note's frontmatter and
+    // its body. Normalize the loaded text (so the editor shows it) and, if that changed
+    // anything, write the reformat back so the file self-heals on disk. The editor doc
+    // equals what we write, so the reconcile effect sees `current === onDisk` and the SSE
+    // echo is a clean no-op. Notes only — config buffers (settings.yaml) aren't markdown.
+    if (!isYaml) {
+      const normalized = normalizeFrontmatterSpacing(text);
+      if (normalized !== text) {
+        text = normalized;
+        lastSavedText = text; // recognize the SSE echo of this write as our own
+        void api.write(path, text); // persist the reformat (best-effort; doc is the source of truth)
+      }
+    }
     // Warm the path/template completion caches on settings open (async fetch) so the
     // FIRST `path`-typed popup has data instead of an empty list while it loads.
     if (isYaml && isSettingsBuffer(path)) { void vaultPaths(); void templatePaths(); }
