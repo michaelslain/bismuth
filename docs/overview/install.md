@@ -205,7 +205,15 @@ cd app
 bun run tauri build
 ```
 
-The `tauri` script in `app/package.json` delegates to `@tauri-apps/cli`. This requires Rust and the Tauri prerequisites to be installed. The Vite build runs as part of the Tauri build pipeline.
+The `tauri` script in `app/package.json` delegates to `@tauri-apps/cli`. This requires Rust and the Tauri prerequisites to be installed. The `beforeBuildCommand` is `bun run build && bun run build:core-sidecar`, so the Vite frontend AND the core sidecar binary are built as part of the pipeline.
+
+#### Self-spawned backend (bundled app)
+
+Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundled app runs its own backend**:
+
+- `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary via `bun build --compile`, output to `app/src-tauri/binaries/bismuth-core-<target-triple>` (gitignored, ~58 MB). `tauri.conf.json` lists it under `bundle.externalBin` so it ships inside the `.app`.
+- At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port 4321` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The frontend's default backend base is `:4321`, so no wiring is needed.
+- **Vault resolution**: a Finder-launched app has no shell env, so `OA_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.michael.obsidian/config.json`); on first launch (or if the saved vault is missing) it shows a native folder picker, persists the choice, and defaults memory to `~/.claude-bot/memory`. Cancelling the picker leaves the app open with no backend.
 
 ### Preview the Vite build
 
