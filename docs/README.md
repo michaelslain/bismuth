@@ -1,8 +1,29 @@
 # Bismuth Documentation
 
-The complete reference for Bismuth — a personal knowledge-management system (an Obsidian-style "three-brain" vault) built as a Bun monorepo: a `core` backend, a Solid/Tauri `app`, the `bismuth` `cli`, and a `relay` plugin. These docs are the canonical, code-anchored source of truth and are intended to also be served to Claude Code (via MCP) as the integration surface alongside the CLI.
+Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` backend, a Solid/Tauri `app`, the `bismuth` CLI, and a `relay` plugin. This is the full reference — every page is code-anchored with copy-pasteable examples.
 
-Every page documents real, verified behavior with copy-pasteable examples and ends with a `Source:` line listing the modules it was written from.
+## Get started (macOS)
+
+Build the app into `/Applications` and run it:
+
+```bash
+git clone <repo> && cd bismuth
+bun install
+
+# point at your vault + memory dirs (both must already exist)
+export OA_VAULT="$HOME/Documents/bismuth-vault"
+export OA_MEMORY="$HOME/.claude-bot/memory"
+
+# build the native macOS app, then install it
+cd app && bun run tauri build
+cp -R src-tauri/target/release/bundle/macos/app.app /Applications/Bismuth.app
+
+# the app talks to the core backend on :4321 — start it, then open the app
+bun run ../core/src/server.ts --vault "$OA_VAULT" --memory "$OA_MEMORY" --port 4321 &
+open /Applications/Bismuth.app
+```
+
+> The bundled app doesn't launch the backend itself yet, so `core` must be running on `:4321` (the command above). To just try it without installing, run `cd app && bun run dev` — that starts the backend + a dev window together. Full detail: [install](overview/install.md).
 
 ## Start here
 
