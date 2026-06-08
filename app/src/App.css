@@ -377,7 +377,7 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .card-md li::marker { color: var(--faint); }
 .card-md h1, .card-md h2, .card-md h3 { font-family: "Lora", serif; margin: 4px 0 8px; }
 .card-md strong { font-weight: 600; color: var(--fg); }
-.card-md em { font-style: italic; color: var(--teal); }
+.card-md em { font-style: italic; }
 .card-md a { color: var(--accent); }
 .card-md img { max-width: 100%; border-radius: 6px; }
 .card-md code { font-family: "Monaspace Xenon", ui-monospace, monospace; font-size: calc(1em * var(--mono-scale, 0.85)); background: rgba(127, 127, 127, 0.16); padding: 1px 5px; border-radius: 4px; }
@@ -474,8 +474,8 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .cell:hover .cell-md { border-color: var(--border); }
 .cell-back .cell-md { color: color-mix(in srgb, var(--fg) 82%, var(--text-muted)); }
 .cell-md strong { color: var(--fg); font-weight: 600; }
-.cell-md em { font-style: italic; color: var(--teal); }
-.cell-md code { font-size: 0.9em; background: color-mix(in srgb, var(--fg) 10%, transparent); color: var(--blue); padding: 1px 5px; border-radius: 4px; }
+.cell-md em { font-style: italic; }
+.cell-md code { font-size: 0.9em; background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
 .cell-ph { color: var(--text-muted); }
 .cell textarea {
   position: absolute; inset: 0; width: 100%; height: 100%; resize: none; overflow: auto;
