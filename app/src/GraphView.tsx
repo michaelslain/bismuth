@@ -3,6 +3,7 @@ import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
+import { GraphAtmosphere } from "./graph/GraphAtmosphere";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
 import type { Org } from "./graph/agentOrg";
@@ -108,7 +109,6 @@ export function GraphView(props: {
   onDaemonChanged?: () => void;
 }) {
   let host!: HTMLDivElement;
-  let glowEl: HTMLDivElement | undefined; // the CSS atmosphere glow — slid/scaled to follow nodes
   let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
   const renderer = new WebGLRenderer();
   let mounted = false;
@@ -154,15 +154,7 @@ export function GraphView(props: {
       labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
     );
     renderer.setFpsCallback(setFps);
-    // Sit the 3 CSS atmosphere-glow lobes on the 3 biggest clusters each frame so the gradient
-    // follows the nodes (it was a static background before). Each lobe center is a screen %.
-    renderer.setGlowCallback((g) => {
-      if (!glowEl) return;
-      g.lobes.forEach((p, i) => {
-        glowEl!.style.setProperty(`--glow-x${i + 1}`, `${p.x}%`);
-        glowEl!.style.setProperty(`--glow-y${i + 1}`, `${p.y}%`);
-      });
-    });
+    // The atmosphere glow (lobes that ride the 3 biggest clusters) is wired by <GraphAtmosphere>.
     mounted = true;
     if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
   });
@@ -304,8 +296,7 @@ export function GraphView(props: {
         {/* Iridescent cluster-glow + depth vignette over the canvas (design's BigGraph
             look). Screen-blended glow tints; pure CSS, no renderer cost. Shown in every
             mode, agents included. */}
-        <div class="graph-glow" data-mode={props.mode} ref={glowEl} />
-        <div class="graph-vignette" />
+        <GraphAtmosphere renderer={renderer} mode={props.mode} />
         {/* Agents mode: the WebGL graph renders the nodes (2D pyramid / 3D molecule); this
             overlay adds the status card + organization picker on top. */}
         <Show when={props.mode === "agents"}>

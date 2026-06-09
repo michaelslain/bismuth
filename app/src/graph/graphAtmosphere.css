@@ -1,0 +1,21 @@
+/* app/src/graph/graphAtmosphere.css — shared graph atmosphere (iridescent cluster glow +
+   depth vignette). Used by GraphView and the first-run intro graph via <GraphAtmosphere>.
+   The 3 glow lobes ride the 3 biggest clusters: the renderer sets --glow-x1..3/--glow-y1..3
+   (screen %) every frame to each cluster's projected center, so the atmosphere follows the
+   nodes under orbit / idle-spin / zoom instead of sitting static. The --glow defaults
+   reproduce the original composition before the first frame. */
+.graph-glow { position: absolute; inset: 0; pointer-events: none; z-index: 1; mix-blend-mode: screen; opacity: 0.9;
+  background:
+    radial-gradient(42% 44% at var(--glow-x1, 34%) var(--glow-y1, 40%), color-mix(in srgb, var(--graph-0) 26%, transparent), transparent 70%),
+    radial-gradient(52% 56% at var(--glow-x2, 66%) var(--glow-y2, 56%), color-mix(in srgb, var(--graph-3) 26%, transparent), transparent 70%),
+    radial-gradient(34% 30% at var(--glow-x3, 52%) var(--glow-y3, 30%), color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
+.graph-glow[data-mode="2nd"] { background:
+    radial-gradient(42% 44% at var(--glow-x1, 34%) var(--glow-y1, 40%), color-mix(in srgb, var(--graph-0) 28%, transparent), transparent 70%),
+    radial-gradient(52% 56% at var(--glow-x2, 66%) var(--glow-y2, 55%), color-mix(in srgb, var(--graph-2) 24%, transparent), transparent 70%),
+    radial-gradient(34% 30% at var(--glow-x3, 50%) var(--glow-y3, 30%), color-mix(in srgb, var(--graph-1) 18%, transparent), transparent 70%); }
+.graph-glow[data-mode="3rd"] { background:
+    radial-gradient(44% 46% at var(--glow-x1, 42%) var(--glow-y1, 46%), color-mix(in srgb, var(--graph-3) 30%, transparent), transparent 70%),
+    radial-gradient(40% 34% at var(--glow-x2, 64%) var(--glow-y2, 36%), color-mix(in srgb, var(--graph-4) 22%, transparent), transparent 70%),
+    radial-gradient(36% 44% at var(--glow-x3, 34%) var(--glow-y3, 62%), color-mix(in srgb, var(--graph-2) 18%, transparent), transparent 70%); }
+.graph-vignette { position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: radial-gradient(120% 90% at 50% 30%, transparent 42%, var(--vignette-edge, color-mix(in srgb, var(--bg) 70%, #000)) 100%); }

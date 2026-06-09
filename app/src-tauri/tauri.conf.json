@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar",
+    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:claudebot && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar",
     "frontendDist": "../dist"
   },
   "app": {

@@ -10,10 +10,35 @@ This file covers every step required to install, run, and build Bismuth: prerequ
 |---|---|---|
 | **Bun** | 1.0+ | Runtime, package manager, test runner, and bundler for all workspaces |
 | **Node.js** | 20+ | Required by some native addons and Tauri toolchain |
-| **Rust + Tauri CLI** | Current stable | Only needed for `tauri build` (native binary); not needed for web-only dev |
+| **Rust** | Current stable | Only needed for `tauri build` (native binary); not needed for web-only dev |
+| **claude-bot** (sibling repo) | latest `main` | The daemon package bundled into the app — cloned next to this repo at `../claude-bot` |
 
-Install Bun: https://bun.sh/docs/installation  
-Install Tauri prerequisites: https://tauri.app/start/prerequisites/
+Install Bun: https://bun.sh/docs/installation
+
+### Install Rust (only for `tauri build`)
+
+```bash
+# 1. Install Rust (accept the default "1) Proceed with installation")
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# 2. Load cargo into your CURRENT shell (the installer only adds it to PATH for NEW shells)
+source "$HOME/.cargo/env"
+
+# 3. Verify
+cargo --version && rustc --version
+```
+
+See also the full Tauri prerequisites: https://tauri.app/start/prerequisites/
+
+### Refresh the claude-bot sibling repo
+
+The app bundles the claude-bot daemon from the sibling checkout at `../claude-bot` (resolved via
+the `file:../../claude-bot` dep in `core/package.json`). Before building, pull its latest `main` so
+the bundled daemon is current:
+
+```bash
+git -C ../claude-bot pull --ff-only origin main
+```
 
 ---
 

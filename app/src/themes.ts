@@ -55,17 +55,17 @@ export const DEFAULT_THEME: ThemeName = "oxide-duotone";
 /** Human display names (used in the schema doc string). */
 export const THEME_LABELS: Record<ThemeName, string> = {
   "oxide-duotone": "Oxide Duotone",
-  "gunmetal-teal": "Gunmetal · Teal",
-  "rose-gold": "Rose-Gold Metal",
+  "gunmetal-teal": "Gunmetal Teal",
+  "rose-gold": "Rose Gold",
   "indigo-oxide": "Indigo Oxide",
   "forest-oxide": "Forest Oxide",
-  "full-sheen": "Gunmetal · Full Sheen",
-  "oxide-duotone-light": "Oxide Duotone · Light",
-  "gunmetal-teal-light": "Gunmetal · Teal · Light",
-  "rose-gold-light": "Rose-Gold · Light",
-  "indigo-oxide-light": "Indigo Oxide · Light",
-  "forest-oxide-light": "Forest Oxide · Light",
-  "full-sheen-light": "Gunmetal · Full Sheen · Light",
+  "full-sheen": "Full Sheen",
+  "oxide-duotone-light": "Oxide Duotone Light",
+  "gunmetal-teal-light": "Gunmetal Teal Light",
+  "rose-gold-light": "Rose Gold Light",
+  "indigo-oxide-light": "Indigo Oxide Light",
+  "forest-oxide-light": "Forest Oxide Light",
+  "full-sheen-light": "Full Sheen Light",
 };
 
 const SHEEN = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];

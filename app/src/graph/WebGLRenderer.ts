@@ -154,6 +154,10 @@ export interface GraphConfig {
   daemonAccent?: number;      // the ::daemon hub anchor (accent token); cron/process fills use the per-node palette
   daemonNeutral?: number;     // base daemon-node fill (disabled), muted token
   daemonFg?: number;          // theme foreground token (--fg); carried for parity, not used by the border model
+  // OPT-IN transparent canvas. Omitted/false (the default) = opaque scene background + depth fog,
+  // byte-identical to the legacy behavior. true = fully transparent clear (no scene.background, no fog)
+  // so the page's CSS background shows through the canvas. Toggled live via setConfig.
+  transparent?: boolean;
 }
 
 const DEFAULT_CONFIG: GraphConfig = {
@@ -524,6 +528,8 @@ export class WebGLRenderer {
   // after rAF, before paint) cleared the just-rendered buffer → an empty frame flashed every tick
   // of the sidebar's 200ms collapse animation (visible flicker). Deferring into the loop fixes it.
   private pendingResize = false;
+  private frameOffsetY = 0; // vertical scene shift as a fraction of viewport height (+ = up)
+  private fitMargin = 1.25; // auto-fit padding multiplier; >1.25 zooms the whole cloud out
   private readonly ROTATION_VELOCITY_THRESHOLD = 0.02; // clicks only allowed when below this
 
   // 2D/3D view mode + the glide between them
@@ -549,10 +555,10 @@ export class WebGLRenderer {
 
     // Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(this.cfg.backgroundColor);
-    // Linear depth fog toward the background → nodes deeper in the cloud fade out (3D depth cue).
-    // near/far are recomputed each frame in updateFog (and pushed out of range in flat 2D).
-    this.scene.fog = new THREE.Fog(this.cfg.backgroundColor, 1, 1000);
+    // Background/fog/clear are set up by applyBackground() below (after the renderer exists), so the
+    // opaque-vs-transparent decision lives in one place. Linear depth fog toward the background →
+    // nodes deeper in the cloud fade out (3D depth cue); near/far recomputed each frame in updateFog
+    // (and pushed out of range in flat 2D). Transparent mode (cfg.transparent) nulls both.
 
     // Camera
     const w = el.clientWidth || 320;
@@ -561,13 +567,19 @@ export class WebGLRenderer {
     this.camera.position.set(0, 0, 180);
 
     // Renderer
+    // alpha is always enabled so transparent mode is a runtime toggle (no renderer rebuild). It is
+    // harmless when opaque: an opaque scene.background still clears the canvas opaque (see applyBackground).
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
+      alpha: true,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
     this.renderer.setSize(w, h);
     this.renderer.domElement.style.display = "block";
     el.appendChild(this.renderer.domElement);
+
+    // Background / fog / clear color — opaque (default) vs transparent, derived from this.cfg.
+    this.applyBackground();
 
     // Group to hold nodes/edges (auto-rotation applied here)
     this.group = new THREE.Group();
@@ -668,6 +680,31 @@ export class WebGLRenderer {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
+    this.applyViewOffset(); // view offset is in px, so re-apply on every size change
+  }
+
+  /**
+   * Shift the rendered scene vertically WITHOUT moving the camera or touching the auto-fit
+   * (uses the projection's view-offset). `frac` is a fraction of viewport height; positive
+   * pushes the whole graph UP (so content below it is clear). 0 = centered. Lets the intro
+   * place the graph in the upper area while the canvas stays full-bleed (no CSS scale/seam).
+   */
+  setFrameOffsetY(frac: number): void {
+    this.frameOffsetY = frac;
+    this.applyViewOffset();
+  }
+  /** Auto-fit padding (1.25 = default). Larger pulls the camera back so the whole cloud reads
+   *  smaller with more breathing room. Re-fits immediately unless the user has taken control. */
+  setFitMargin(m: number): void {
+    this.fitMargin = m;
+    this.fitCamera();
+  }
+  private applyViewOffset(): void {
+    const w = this.el.clientWidth || 320;
+    const h = this.el.clientHeight || 400;
+    if (this.frameOffsetY) this.camera.setViewOffset(w, h, 0, this.frameOffsetY * h, w, h);
+    else this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
   }
 
   /**
@@ -1471,9 +1508,13 @@ export class WebGLRenderer {
     return color.lerp(bg, 1 - vs.opacity);
   }
 
-  /** Link distance for the current view mode (2D spreads wider than 3D). */
+  /** Link distance for the current view mode (2D spreads wider than 3D), scaled UP for small
+   *  graphs so a handful of nodes spreads out instead of clustering tight, and settling toward
+   *  1× as the graph grows. ~3.2× at a few nodes → 1× by ~200 nodes. */
   private linkDist(): number {
-    return this.cfg.linkDistance * (this.viewMode === "2d" ? MODE_2D_SPACING : 1);
+    const n = this.nodes.length;
+    const smallBoost = n > 0 ? Math.min(6, Math.max(1, Math.sqrt(500 / n))) : 1;
+    return this.cfg.linkDistance * smallBoost * (this.viewMode === "2d" ? MODE_2D_SPACING : 1);
   }
 
   /** Collide radius derived from the (mode-adjusted) link distance — the uniform spacing floor. */
@@ -1522,11 +1563,11 @@ export class WebGLRenderer {
     if ((paletteChanged || daemonColorsChanged) && this.pointsMesh) this.recolorNodes();
     if ((paletteChanged || daemonColorsChanged) && this.borderMesh) this.recolorBorder();
 
-    // Background color applies instantly; edge color + node-size multipliers apply on the
-    // next graph render (re-settle below covers a size change).
-    if (cfg.backgroundColor !== prev.backgroundColor) {
-      this.scene.background = new THREE.Color(cfg.backgroundColor);
-      if (this.scene.fog) (this.scene.fog as THREE.Fog).color = new THREE.Color(cfg.backgroundColor);
+    // Background color / transparency applies instantly; edge color + node-size multipliers apply on
+    // the next graph render (re-settle below covers a size change). applyBackground() owns the
+    // opaque-vs-transparent decision (sets scene.background, fog, and the renderer clear color).
+    if (cfg.backgroundColor !== prev.backgroundColor || cfg.transparent !== prev.transparent) {
+      this.applyBackground();
     }
 
     // Edge opacity applies live (theme switch lowers it on light themes so links stay faint, not dark).
@@ -1858,7 +1899,7 @@ export class WebGLRenderer {
     // merged by node id on save, lets a graph that's ~99% the same reuse ~99% of cached positions.
     // Bump the version whenever the layout algorithm changes so stale cached positions are dropped
     // and a fresh settle runs. v5: per-node collision radius (nodes collide as circles, not points).
-    return `oa-graphpos:v5:${this.viewMode}`;
+    return `oa-graphpos:v6:${this.viewMode}`;
   }
 
   /** Load persisted positions (id → [x,y,z]) for the current view mode, or null if none. */
@@ -2525,7 +2566,7 @@ export class WebGLRenderer {
     // Compute camera distance from FOV and radius.
     // Clamp to a minimum so tiny graphs (e.g. just the "you" node) don't fill the whole screen.
     const fov = (this.camera.fov * Math.PI) / 180;
-    const distance = Math.max((radius / Math.sin(fov / 2)) * 1.25, 120);
+    const distance = Math.max((radius / Math.sin(fov / 2)) * this.fitMargin, 120);
     this.controls.target.set(cx, cy, cz);
     this.camera.position.set(cx, cy, cz + distance);
     this.camera.near = Math.max(0.1, distance / 1000);
@@ -2534,6 +2575,27 @@ export class WebGLRenderer {
     this.controls.minDistance = Math.max(0.5, distance * 0.02); // allow zooming in close
     this.controls.maxDistance = distance * 12;
     this.controls.update();
+  }
+
+  // Centralizes the opaque-vs-transparent background decision so mount() and setConfig() agree.
+  // Opaque (default): solid scene.background + depth fog + opaque clear — byte-identical to legacy.
+  // Transparent (cfg.transparent): null background + null fog + fully transparent clear, so the
+  // page's CSS background shows through. Safe to call repeatedly; recreates fog if it was nulled.
+  private applyBackground() {
+    if (this.cfg.transparent) {
+      this.scene.background = null;
+      this.scene.fog = null;
+      this.renderer.setClearColor(0x000000, 0);
+      return;
+    }
+    this.scene.background = new THREE.Color(this.cfg.backgroundColor);
+    if (this.scene.fog) {
+      (this.scene.fog as THREE.Fog).color = new THREE.Color(this.cfg.backgroundColor);
+    } else {
+      // near/far are recomputed each frame in updateFog (and pushed out of range in flat 2D).
+      this.scene.fog = new THREE.Fog(this.cfg.backgroundColor, 1, 1000);
+    }
+    this.renderer.setClearColor(this.cfg.backgroundColor, 1);
   }
 
   /**

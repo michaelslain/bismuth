@@ -94,8 +94,12 @@ export interface Settings {
     sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
   daemon: {
-    enabled: boolean; // supervise the claude-bot daemon
-    home: string;     // override claude-bot home dir ("" = ~/.claude-bot)
+    enabled: boolean;    // supervise the claude-bot daemon
+    home: string;        // override claude-bot home dir ("" = ~/.claude-bot)
+    autoUpdate: boolean; // auto-update the daemon on launch when behind
+  };
+  update: {
+    autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
   };
   terminal: {
     fontSize: number;          // px
@@ -289,9 +293,17 @@ async function hydrateFromServer(): Promise<void> {
 }
 
 if (typeof window !== "undefined") {
+  // Skip the live settings sync (EventSource + GET /settings + persist) during the
+  // first-run intro / `?intro=1` preview: there's no backend yet, so it would only spam
+  // failed fetches + a "connection lost" toast behind the takeover. The synchronous
+  // DEFAULTS seed (createStore above) is all the intro needs to render + re-theme.
+  const introMode =
+    (window as unknown as { __OA_FIRST_RUN__?: boolean }).__OA_FIRST_RUN__ === true ||
+    new URLSearchParams(window.location.search).has("intro");
   // Dynamic import so pure `bun test` runs never load serverVersion.ts, which
   // instantiates an EventSource at module scope (undefined outside the browser).
-  void import("./serverVersion").then(({ lastChange }) => {
+  if (!introMode)
+    void import("./serverVersion").then(({ lastChange }) => {
     createRoot(() => {
       // 1. Hydrate once on boot.
       void hydrateFromServer();
