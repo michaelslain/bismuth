@@ -26,3 +26,6 @@ app/src-tauri/resources/relay/
 app/src-tauri/resources/bismuth-tools/
 # Compiled core sidecar binary (built by app/scripts/build-core-sidecar.ts) — heavy + platform-specific, never committed
 app/src-tauri/binaries/
+
+# Relay shim runtime: zsh history written when a terminal tab runs (churns, never commit)
+relay/shim/zdotdir/.zsh_history
