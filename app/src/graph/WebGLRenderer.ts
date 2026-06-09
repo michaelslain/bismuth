@@ -1509,11 +1509,12 @@ export class WebGLRenderer {
   }
 
   /** Link distance for the current view mode (2D spreads wider than 3D), scaled UP for small
-   *  graphs so a handful of nodes spreads out instead of clustering tight, and settling toward
-   *  1× as the graph grows. ~3.2× at a few nodes → 1× by ~200 nodes. */
+   *  graphs so a handful of nodes spreads into an airy field instead of clustering tight (node
+   *  draw size is fixed, so more link distance = more air per node). ~36× at a handful of nodes
+   *  → 1× by ~400 nodes (big vaults unchanged). Mirrors core/src/layout.ts smallBoost. */
   private linkDist(): number {
     const n = this.nodes.length;
-    const smallBoost = n > 0 ? Math.min(6, Math.max(1, Math.sqrt(500 / n))) : 1;
+    const smallBoost = n > 0 ? Math.min(8, Math.max(1, 400 / n)) : 1;
     return this.cfg.linkDistance * smallBoost * (this.viewMode === "2d" ? MODE_2D_SPACING : 1);
   }
 
@@ -1899,7 +1900,7 @@ export class WebGLRenderer {
     // merged by node id on save, lets a graph that's ~99% the same reuse ~99% of cached positions.
     // Bump the version whenever the layout algorithm changes so stale cached positions are dropped
     // and a fresh settle runs. v5: per-node collision radius (nodes collide as circles, not points).
-    return `oa-graphpos:v6:${this.viewMode}`;
+    return `oa-graphpos:v7:${this.viewMode}`;
   }
 
   /** Load persisted positions (id → [x,y,z]) for the current view mode, or null if none. */

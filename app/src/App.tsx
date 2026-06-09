@@ -909,10 +909,14 @@ export default function App() {
     const kb = settings.keybindings;
 
     // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
-    // first-run intro (handy for re-watching the onboarding animation). Tauri-only.
+    // first-run intro (handy for re-watching the onboarding animation).
     if (e.metaKey && e.ctrlKey && e.altKey && e.shiftKey && e.code === "KeyR") {
       e.preventDefault();
-      if (isTauri()) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("reset_first_run"));
+      // In dev, app.restart() would tear down the dev backend (beforeDevCommand) and blank the
+      // window — so just reload the webview into the intro (?intro=1). In the release app, clear
+      // the marker + relaunch for the real first-run flow.
+      if (import.meta.env.DEV) location.href = "/?intro=1";
+      else if (isTauri()) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("reset_first_run"));
       return;
     }
 
