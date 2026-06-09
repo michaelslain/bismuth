@@ -159,6 +159,22 @@ async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) 
     Ok(true)
 }
 
+// Persist `vault` as the last-opened vault in config.json, so the next cold launch reopens
+// it (the main window opens config.json's vault). Called by the frontend's "open folder"
+// flow when the user opens another folder as a new brain. Preserves the existing memory dir.
+// Ignores an empty/nonexistent path so a bad value never clobbers a good saved vault.
+#[tauri::command]
+fn set_last_vault(app: tauri::AppHandle, vault: String) {
+    if vault.is_empty() || !std::path::Path::new(&vault).is_dir() {
+        return;
+    }
+    let memory = read_config(&app)
+        .map(|c| c.memory)
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(default_memory_dir);
+    write_config(&app, &AppConfig { vault, memory });
+}
+
 // The running .app bundle path (…/Bismuth.app), derived from the executable. None in dev
 // (the binary isn't inside a .app), which self-disables the git self-updater.
 fn running_app_path() -> Option<std::path::PathBuf> {
@@ -325,7 +341,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run, set_last_vault])
         .setup(|app| {
             // Bundled builds spawn their own core server on a free port; in dev
             // (`bun run dev`) the concurrently-launched core already owns :4321, so

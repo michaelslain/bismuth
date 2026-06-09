@@ -24,7 +24,7 @@ import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { DaemonSetupModal } from "./DaemonSetupModal";
 import { BismuthInstallModal } from "./BismuthInstallModal";
 import { UpdateBanner } from "./UpdateBanner";
-import { openAppWindow, pickFolder } from "./appWindow";
+import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
@@ -491,6 +491,8 @@ export default function App() {
         pushToast("Folder server started, but the window couldn't open");
         return; // keep the modal open for a retry
       }
+      // Remember this as the last-opened vault so the next cold launch reopens it.
+      void rememberLastVault(folder);
       setFolderPromptOpen(false);
     } catch (e) {
       pushToast(`Open folder failed: ${(e as Error).message}`);

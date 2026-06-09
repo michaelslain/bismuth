@@ -24,6 +24,21 @@ export async function pickFolder(): Promise<string | null> {
 }
 
 /**
+ * Persist `vault` as the last-opened vault (Tauri only) so the next cold launch of the app
+ * reopens it. No-op in the browser. Best-effort — a failure here must never block opening
+ * the folder, so errors are swallowed (logged).
+ */
+export async function rememberLastVault(vault: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_last_vault", { vault });
+  } catch (e) {
+    console.error("set_last_vault failed", e);
+  }
+}
+
+/**
  * Open an external URL in the user's default browser, in a new tab. In the browser this
  * is `window.open(_, "_blank")`; under Tauri `window.open` is swallowed by WKWebView, so
  * we hand off to the OS via the opener plugin (which launches the default browser).
