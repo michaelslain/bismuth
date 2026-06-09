@@ -14,6 +14,7 @@ import { TableWidget } from "./tableWidget";
 import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableState";
 import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
+import { isThematicBreak } from "./thematicBreak";
 
 // Indent depth from leading whitespace: tab = 2 spaces, then depth = floor(indentCols / 2).
 function indentDepth(indent: string): number {
@@ -52,6 +53,9 @@ const collapsedLine = Decoration.line({ class: "cm-collapsed-line" });
 const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
+// A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
+// dashes hide and CSS draws a horizontal rule; on it the raw markers show (mono).
+const hrLine = Decoration.line({ class: "cm-hr" });
 
 // Notion-style hanging indent for lists. Off the cursor line we replace the whole
 // list prefix (indent + marker + spaces) with a single widget and drive ALL spacing
@@ -490,6 +494,22 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         else deco.push(syntaxMark.range(line.from, line.from + qm[0].length));
       }
 
+      // ---- thematic break / horizontal rule: --- / *** / ___ / - - - on its own line ----
+      // Same marker char, 3+ times, optional spaces between. Frontmatter `---` fences are
+      // handled above (they `continue` before reaching here), so any match is a body-level
+      // HR. Off the cursor line it renders as a rule (CSS draws the line, the dashes hide);
+      // on it the raw markers show. `continue` so it never falls through to bullet/inline.
+      if (isThematicBreak(text)) {
+        if (onCursor) {
+          deco.push(syntaxMark.range(line.from, line.to));
+        } else {
+          deco.push(hrLine.range(line.from));
+          if (line.to > line.from) deco.push(hide.range(line.from, line.to));
+        }
+        pos = line.to + 1;
+        continue;
+      }
+
       // ---- task list lines (- [ ] / - [x]) ----
       // Must run BEFORE the bullet block so task lines never get a bullet glyph.
       let isTaskLine = false;
@@ -522,10 +542,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // ---- bullet list lines ----
-      // A thematic break (--- / *** / - - - / * * *) also starts with a marker+space;
-      // don't render it as a bullet. Same marker char, 3+ times, optional spaces between.
-      const isThematicBreak = /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(text);
-      const bulletMatch = (isThematicBreak || isTaskLine) ? null : text.match(/^(\s*)([-*+])(\s+)/);
+      // Thematic breaks (--- / *** / - - -) are handled + `continue`d above, so a line
+      // reaching here is never one; only task lines need guarding off the bullet path.
+      const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
         const depth = indentDepth(bulletMatch[1]);
         if (onCursor) {
@@ -796,6 +815,10 @@ export const livePreview = [
     ".cm-h5": { "font-size": "1.05em", "font-weight": "600" },
     ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
+    // Rendered horizontal rule: the line's dashes are hidden, so draw a centered rule
+    // via a pseudo-element. Theme-agnostic grey (matches inline-code's neutral tint).
+    ".cm-hr": { position: "relative", height: "1.2em" },
+    ".cm-hr::before": { content: '""', position: "absolute", left: "0", right: "0", top: "calc(50% - 1px)", "border-top": "2px solid rgba(140,140,140,0.45)" },
     ".cm-li": { "padding-left": "2px", "line-height": "1.55" },
     // Bullet glyph sits in the hanging gutter (right-aligned, with a fixed gap to the text).
     ".cm-bullet": {
