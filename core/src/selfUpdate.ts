@@ -2,7 +2,9 @@
 //
 // The bundled app was built from a local clone of the repo; the build baked a
 // build-origin.json (repoRoot + sha) into the tools resource. The sidecar uses it to:
-//   - auto-detect when the local checkout is behind origin/main (getUpdateStatus), and
+//   - auto-detect when the INSTALLED BUILD (build-origin sha) is behind origin/main
+//     (getUpdateStatus) — measured from the built sha, not the clone's live HEAD, so a
+//     developer who commits+pushes from the build-source clone still sees the update, and
 //   - on request, `git pull --ff-only` + `bun run tauri build`, then hand off to a detached
 //     script that waits for the app to quit, swaps the .app bundle, and relaunches.
 //
@@ -134,7 +136,20 @@ export async function getUpdateStatus(
 
   const localSha = (await git(repoRoot, ["rev-parse", "HEAD"])).stdout.trim() || null;
   const remoteSha = remote.stdout.trim() || null;
-  const behindOut = await git(repoRoot, ["rev-list", "--count", "HEAD..origin/main"]);
+
+  // Measure how far the INSTALLED BUILD (builtSha) is behind origin/main — NOT the clone's
+  // live HEAD. The build-source clone is often the same clone the developer commits from, so
+  // after committing+pushing locally the clone's HEAD advances to origin/main while the
+  // running .app is still at builtSha; a HEAD-based count would then report 0 (no update)
+  // even though the installed app is stale. builtSha is what the app actually contains, so
+  // it's the correct base for everyone — for a normal user whose clone == build, builtSha ==
+  // HEAD and the result is unchanged. Fall back to HEAD when builtSha is missing/unresolvable
+  // in this clone (e.g. shallow/GC'd), preserving the prior behavior.
+  const baseRev = builtSha || "HEAD";
+  let behindOut = await git(repoRoot, ["rev-list", "--count", `${baseRev}..origin/main`]);
+  if (behindOut.code !== 0 && baseRev !== "HEAD") {
+    behindOut = await git(repoRoot, ["rev-list", "--count", "HEAD..origin/main"]);
+  }
   const behind = behindOut.code === 0 ? parseInt(behindOut.stdout.trim() || "0", 10) || 0 : 0;
   const dirty = (await git(repoRoot, ["status", "--porcelain"])).stdout.trim().length > 0;
   return { available: behind > 0, behind, localSha, remoteSha, builtSha: builtSha || null, dirty };

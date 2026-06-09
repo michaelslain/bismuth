@@ -53,6 +53,55 @@ test("available when behind > 0", async () => {
   expect(s).toMatchObject({ available: true, behind: 3, localSha: "aaaa", remoteSha: "bbbb", dirty: false });
 });
 
+test("behind is measured from builtSha, not the clone's HEAD", async () => {
+  // The build-source clone has advanced its HEAD to origin/main (developer committed +
+  // pushed from it), but the installed app is still at builtSha 'aaaa'. HEAD..origin/main
+  // would be 0; builtSha..origin/main is 2 — and the latter is what must drive the banner.
+  const git: GitRunner = async (_repo, args) => {
+    if (args[0] === "rev-parse") {
+      const target = args[1];
+      if (target === "--is-inside-work-tree") return { code: 0, stdout: "true", stderr: "" };
+      if (target === "origin/main") return { code: 0, stdout: "bbbb", stderr: "" };
+      if (target === "HEAD") return { code: 0, stdout: "bbbb", stderr: "" }; // clone == origin/main
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "rev-list") {
+      const range = args[2];
+      if (range === "aaaa..origin/main") return { code: 0, stdout: "2", stderr: "" };
+      if (range === "HEAD..origin/main") return { code: 0, stdout: "0", stderr: "" };
+      return { code: 0, stdout: "0", stderr: "" };
+    }
+    if (args[0] === "status") return { code: 0, stdout: "", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  const s = await getUpdateStatus({ origin: { repoRoot: "/repo", sha: "aaaa" }, git });
+  expect(s).toMatchObject({ available: true, behind: 2, builtSha: "aaaa", localSha: "bbbb", remoteSha: "bbbb" });
+});
+
+test("falls back to HEAD-based count when builtSha is unresolvable", async () => {
+  // builtSha 'aaaa' isn't in this clone (shallow/GC'd) → its rev-list errors; we fall back
+  // to HEAD..origin/main rather than reporting 0.
+  const git: GitRunner = async (_repo, args) => {
+    if (args[0] === "rev-parse") {
+      const target = args[1];
+      if (target === "--is-inside-work-tree") return { code: 0, stdout: "true", stderr: "" };
+      if (target === "origin/main") return { code: 0, stdout: "bbbb", stderr: "" };
+      if (target === "HEAD") return { code: 0, stdout: "cccc", stderr: "" };
+      return { code: 0, stdout: "", stderr: "" };
+    }
+    if (args[0] === "rev-list") {
+      const range = args[2];
+      if (range === "aaaa..origin/main") return { code: 128, stdout: "", stderr: "bad revision" };
+      if (range === "HEAD..origin/main") return { code: 0, stdout: "5", stderr: "" };
+      return { code: 0, stdout: "0", stderr: "" };
+    }
+    if (args[0] === "status") return { code: 0, stdout: "", stderr: "" };
+    return { code: 0, stdout: "", stderr: "" };
+  };
+  const s = await getUpdateStatus({ origin: { repoRoot: "/repo", sha: "aaaa" }, git });
+  expect(s).toMatchObject({ available: true, behind: 5, builtSha: "aaaa" });
+});
+
 test("not available when up to date; dirty flag surfaces", async () => {
   const s = await getUpdateStatus({
     origin: ORIGIN,
