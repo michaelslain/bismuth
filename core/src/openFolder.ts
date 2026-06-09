@@ -10,7 +10,7 @@
 // This is the dev/desktop mechanism. In a packaged build the same spawn happens from
 // the app shell; only the folder *picker* differs (native dialog vs. typed path).
 
-import { statSync } from "node:fs";
+import { statSync, existsSync } from "node:fs";
 import { basename } from "node:path";
 import { createServer } from "node:net";
 import { createError } from "./error";
@@ -112,7 +112,13 @@ export async function spawnVaultBackend(opts: SpawnOptions): Promise<SpawnedBack
   const spawn = opts.spawn ?? defaultSpawn;
   const probe = opts.probe ?? defaultProbe;
 
-  const child = spawn(coreLaunchArgv(opts.serverEntry, vault, opts.memory, port), opts.cwd);
+  // In a `bun build --compile` binary, callers pass `import.meta.dir`, which is a virtual
+  // `/$bunfs/...` path that doesn't exist on disk. Spawning with a non-existent cwd makes
+  // posix_spawn fail with ENOENT (reported against the *executable*, e.g. "...posix_spawn
+  // 'bismuth-core'"), which looks like a missing binary but is really a bad cwd. Drop any
+  // cwd that isn't a real directory so the child just inherits the parent's valid cwd.
+  const cwd = opts.cwd && existsSync(opts.cwd) ? opts.cwd : undefined;
+  const child = spawn(coreLaunchArgv(opts.serverEntry, vault, opts.memory, port), cwd);
 
   // Watch for the child dying before it's ready (bad entry, port clash, crash on
   // boot) so we fail fast with a clear message instead of waiting out the timeout.
