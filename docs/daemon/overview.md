@@ -388,12 +388,13 @@ The install/setup path is deliberately conservative:
 - **`GET /daemon/install`** is read-only. It spawns `ensure-installed.ts --status` to probe what is already on disk. Never modifies anything.
 - **`POST /daemon/setup`** runs `ensure-installed.ts` (no flag). This is the claude-bot package's idempotent entrypoint: if the daemon is already installed and running, it reports `"adopted"` and does nothing. It never clobbers a live daemon, never repoints a running daemon at a different home, and never restarts it.
 
-The entrypoint is resolved via a three-step lookup (`resolveEntrypoint` in `core/src/claudebot.ts`):
-1. An already-installed claude-bot on this machine (parsed from the launchd plist or systemd unit — `installedEntrypoint()` matches the absolute path ending in `daemon/index.ts` and derives `../bin/ensure-installed.ts`).
-2. The Tauri-bundled copy (`$OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts`).
-3. The linked `claude-bot` dev-dep in the monorepo (resolved via `createRequire`).
+Bismuth does **not** bundle claude-bot. When `POST /daemon/setup` runs and claude-bot isn't installed/provisioned yet, `runSetup()` first calls `provisionClaudeBot()` — a `git clone` of claude-bot to `~/.bismuth/claude-bot` (override `OA_CLAUDEBOT_SRC`; remote `OA_CLAUDEBOT_REPO`) plus a `bun install` so the daemon has its `node_modules` — then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` (git pull + bun install + restart) keeps working, and claude-bot stays standalone.
 
-The entrypoint itself — its exact flags, the single-JSON-line output (`{installed,running,daemonLabel,home,plistPath}` for `--status`; `{action,status}` for the default `ensureInstalled()` path), and why it's adopt-only — is the claude-bot project's; see [claude-bot installation](../claude-bot/install.md). The relocatable `dist/claude-bot/` tree that `$OA_CLAUDEBOT_BUNDLE` points at is produced by claude-bot's `scripts/bundle.ts`.
+The entrypoint is resolved via a two-step lookup (`resolveEntrypoint` in `core/src/claudebot.ts`):
+1. An already-installed claude-bot on this machine (parsed from the launchd plist or systemd unit — `installedEntrypoint()` matches the absolute path ending in `daemon/index.ts` and derives `../bin/ensure-installed.ts`).
+2. Bismuth's provisioned clone at `~/.bismuth/claude-bot` (or `$OA_CLAUDEBOT_SRC`).
+
+The entrypoint itself — its exact flags, the single-JSON-line output (`{installed,running,daemonLabel,home,plistPath}` for `--status`; `{action,status}` for the default `ensureInstalled()` path), and why it's adopt-only — is the claude-bot project's; see [claude-bot installation](../claude-bot/install.md).
 
 ---
 

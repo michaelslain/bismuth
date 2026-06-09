@@ -13,36 +13,23 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the de
 source "$HOME/.cargo/env"                                        # load it into the current shell
 ```
 
-**1. Clone both repos** (side by side). `claude-bot` is required — its daemon is bundled into the app, and `bun install` won't resolve without it.
+Then clone, install, and build — the last command builds the app and opens the installer for you:
 
 ```bash
 git clone https://github.com/michaelslain/bismuth.git
-git clone https://github.com/michaelslain/claude-bot.git
 cd bismuth
-```
-
-**2. Install dependencies and build.**
-
-```bash
 bun install
-cd app
-bun run prebundle:claudebot   # stage the bundled daemon
-bun run tauri build           # build the app (a few minutes)
+bun run build:app     # builds the app (a few minutes), then opens the dmg
 ```
 
-**3. Install the app.** The build writes the files but does **not** open an installer. Open the dmg and drag **Bismuth → Applications**:
+When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. First run: pick your vault folder.
 
-```bash
-open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg
-```
-
-That's it — launch Bismuth from Applications and pick your vault folder on first run.
+> You don't need to clone claude-bot. The first time you opt into **Set up claude-bot daemon** (in-app), Bismuth downloads + installs the daemon for you.
 
 <details><summary>Notes</summary>
 
 - A Finder window may flash open and shut **during the build** — that's just the dmg being styled, not the installer. Ignore it.
-- Don't want the dmg? Drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications` instead.
-- Already have `claude-bot` cloned? Refresh it first so the bundled daemon is current: `git -C ../claude-bot pull --ff-only origin main`.
+- Prefer to do it by hand? `cd app && bun run tauri build`, then drag `src-tauri/target/release/bundle/macos/Bismuth.app` into `/Applications` (or open the dmg under `bundle/dmg/`).
 - Full prerequisites, env vars, and dev-server details: [Install & run](overview/install.md).
 
 </details>
