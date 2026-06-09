@@ -237,9 +237,10 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   }));
 
   // Small-graph boost: scale link distance UP as the graph shrinks so a handful of nodes spreads
-  // out instead of clustering tight, settling toward 1× as it grows (~3.2× at a few nodes → 1× by
-  // ~500 nodes). Mirrors WebGLRenderer.linkDist() so precomputed positions match the live sim.
-  const smallBoost = n > 0 ? Math.min(6, Math.max(1, Math.sqrt(500 / n))) : 1;
+  // into an airy field (like the intro's small graph) instead of clustering tight. Node draw size
+  // is FIXED in world units, so a bigger link distance = more air per node after the camera auto-fit.
+  // ~36× at a handful of nodes → 1× by ~400 nodes (big vaults stay put). Mirrors WebGLRenderer.linkDist().
+  const smallBoost = n > 0 ? Math.min(8, Math.max(1, 400 / n)) : 1;
   const linkDist = o.linkDistance * smallBoost * (dim === 2 ? MODE_2D_SPACING : 1);
   // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
   // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`

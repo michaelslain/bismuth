@@ -256,6 +256,22 @@ export default function VaultIntro() {
 
   const enterVault = async () => {
     if (busy()) return;
+    // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in
+    // debug (it would kill the tauri-dev backend → white screen). After it returns, navigate into
+    // the app ourselves (the dev vault comes from OA_VAULT env regardless of what's picked).
+    if (import.meta.env.DEV && isTauri()) {
+      setBusy(true);
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const ok = await invoke<boolean>("choose_first_vault", { theme: theme(), icon: DEFAULTS.appearance.icon });
+        if (ok) location.href = "/";
+        else setBusy(false);
+      } catch (e) {
+        console.error("enter vault failed", e);
+        setBusy(false);
+      }
+      return;
+    }
     if (isTauri()) {
       setBusy(true);
       try {

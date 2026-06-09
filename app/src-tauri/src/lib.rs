@@ -150,7 +150,13 @@ async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) 
     seed_vault_settings(&vault, &theme, &icon);
     write_config(&app, &AppConfig { vault, memory });
     mark_intro_seen(&app); // global flag: don't replay the intro on future launches
-    app.restart();
+    // In dev (tauri dev), app.restart() tears down the beforeDevCommand backend → white screen,
+    // and the vault comes from OA_VAULT env anyway. So skip the restart in debug builds; the
+    // frontend navigates into the app instead. Release does the real relaunch into the new vault.
+    if !cfg!(debug_assertions) {
+        app.restart();
+    }
+    Ok(true)
 }
 
 // The running .app bundle path (…/Bismuth.app), derived from the executable. None in dev
