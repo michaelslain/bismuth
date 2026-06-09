@@ -1,12 +1,21 @@
 import { recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
-import { Show } from 'solid-js'
+import { Show, For } from 'solid-js'
 import { Modal } from '../../ui/Modal'
+import { Icon } from '../../icons/Icon'
 import { TextButton } from '../../ui/TextButton'
 
+type Scope = 'one' | 'all' | 'following'
+
+function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export function RecurrenceDialog(props: { store: EventStore }) {
-  async function handle(scope: 'one' | 'all' | 'following'): Promise<void> {
+  async function handle(scope: Scope): Promise<void> {
     const action = recurrenceAction.value
     if (!action) return
     const { type, masterId, occurrenceDate, updates } = action
@@ -36,16 +45,52 @@ export function RecurrenceDialog(props: { store: EventStore }) {
     recurrenceAction.value = null
   }
 
+  const close = () => (recurrenceAction.value = null)
+  const isDelete = () => recurrenceAction.value!.type === 'delete'
+  const verb = () => (isDelete() ? 'Delete' : 'Edit')
+  const eventTitle = () => events.value.find(e => e.id === recurrenceAction.value!.masterId)?.title
+
+  // Each option: stored scope, icon, label, and a sub-line describing the span.
+  const options = (): { scope: Scope; icon: string; label: string; sub: string }[] => {
+    const when = prettyDate(recurrenceAction.value!.occurrenceDate)
+    return [
+      { scope: 'one', icon: 'calendar-check', label: 'This event', sub: `Only ${when}` },
+      { scope: 'following', icon: 'calendar-clock', label: 'This and following events', sub: `${when} onward` },
+      { scope: 'all', icon: 'calendar-days', label: 'All events', sub: 'The entire series' },
+    ]
+  }
+
   return (
     <Show when={recurrenceAction.value}>
-      <Modal onClose={() => (recurrenceAction.value = null)} class="recurrence-dialog">
-        <h3>{recurrenceAction.value!.type === 'delete' ? 'Delete recurring event' : 'Edit recurring event'}</h3>
-        <p>Which occurrences do you want to {recurrenceAction.value!.type}?</p>
-        <div class="recurrence-dialog-actions">
-          <TextButton onClick={() => handle('one')}>JUST THIS ONE</TextButton>
-          <TextButton onClick={() => handle('following')}>THIS AND FOLLOWING</TextButton>
-          <TextButton onClick={() => handle('all')}>ALL</TextButton>
-          <TextButton onClick={() => (recurrenceAction.value = null)}>CANCEL</TextButton>
+      <Modal onClose={close} class="evm-modal recurrence-dialog">
+        <div class="evm-head">
+          <div class="evm-mark"><Icon value={isDelete() ? 'trash-2' : 'repeat'} size={18} /></div>
+          <div class="evm-htext">
+            <div class="evm-title">{verb()} recurring event</div>
+            <div class="evm-sub">{eventTitle() ?? 'Choose which occurrences to apply this to'}</div>
+          </div>
+          <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+        </div>
+
+        <div class="evm-body">
+          <div class="rec-opts" classList={{ danger: isDelete() }}>
+            <For each={options()}>{opt => (
+              <button class="rec-opt" onClick={() => handle(opt.scope)}>
+                <span class="rec-opt-ic"><Icon value={opt.icon} size={17} /></span>
+                <span class="rec-opt-txt">
+                  <span class="rec-opt-lab">{opt.label}</span>
+                  <span class="rec-opt-sub">{opt.sub}</span>
+                </span>
+                <span class="rec-opt-chev"><Icon value="chevron-right" size={15} /></span>
+              </button>
+            )}</For>
+          </div>
+        </div>
+
+        <div class="evm-foot">
+          <span class="hintkey"><b>esc</b> to cancel</span>
+          <div class="sp" />
+          <TextButton size="sm" onClick={close}>CANCEL</TextButton>
         </div>
       </Modal>
     </Show>
