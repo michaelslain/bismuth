@@ -198,15 +198,14 @@ Relevant because Bismuth bundles claude-bot. `scripts/bundle.ts` assembles a rel
 
 **Manual install** (from the README): add the marketplace, install the plugin (`Plugin "claude-bot@claude-bot-local" is already installed (scope: user)`), restart Claude Code, then run the ensure-installed entrypoint.
 
-## How Bismuth bundles + invokes it (the integration seam)
+## How Bismuth provisions + invokes it (the integration seam)
 
-`OA_CLAUDEBOT_BUNDLE` is a **Bismuth-side** env var — it is **not referenced anywhere in the claude-bot repo**. claude-bot's only job is to produce the relocatable `dist/claude-bot/` tree via `scripts/bundle.ts`.
+Bismuth does **not** bundle claude-bot. It obtains the source at **runtime, on opt-in**: when the user runs **Set up claude-bot daemon** and no daemon is installed/provisioned yet, Bismuth's `provisionClaudeBot()` (`core/src/claudebot.ts`) `git clone`s claude-bot to `~/.bismuth/claude-bot` (override `OA_CLAUDEBOT_SRC`; remote `OA_CLAUDEBOT_REPO`) and `bun install`s it, then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` keeps working and claude-bot stays fully standalone — this is just one way to obtain its source. (claude-bot's `scripts/bundle.ts` relocatable bundle still exists for standalone use; Bismuth no longer consumes it.)
 
 Bismuth then:
 
-1. Stages that tree as a Tauri resource and points `OA_CLAUDEBOT_BUNDLE` at it.
-2. Resolves the installer entrypoint (`resolveEntrypoint`) with precedence: (1) an **already-installed** claude-bot on this machine (parsed from the launchd plist / systemd unit → its own `bin/ensure-installed.ts`); (2) the **bundled** copy `<bundle>/bin/ensure-installed.ts`; (3) the linked `file:` dev-dep.
-3. Spawns that entrypoint with `--status` (read-only probe, behind `GET /daemon/install`) or no flag (adopt-only setup, behind `POST /daemon/setup`), parsing the single JSON line.
+1. Resolves the installer entrypoint (`resolveEntrypoint`) with precedence: (1) an **already-installed** claude-bot on this machine (parsed from the launchd plist / systemd unit → its own `bin/ensure-installed.ts`); (2) the **provisioned** clone `~/.bismuth/claude-bot/bin/ensure-installed.ts` (or `$OA_CLAUDEBOT_SRC`).
+2. Spawns that entrypoint with `--status` (read-only probe, behind `GET /daemon/install`) or no flag (adopt-only setup, behind `POST /daemon/setup`), parsing the single JSON line.
 
 Because the entrypoint is **adopt-only**, it never clobbers, restarts, or repoints a live daemon. Full Bismuth-side detail is in [../daemon/overview.md](../daemon/overview.md) (the "Adopt-Only Setup" section + `resolveEntrypoint`) and [../daemon/storage.md](../daemon/storage.md); Bismuth's HTTP route docs are not duplicated here.
 

@@ -48,6 +48,7 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
   const [owner, setOwner] = createSignal<Owner | null>(null);
   const [loading, setLoading] = createSignal(true);
   const [running, setRunning] = createSignal(false);
+  const [busy, setBusy] = createSignal("");
 
   const refresh = async () => {
     // Both calls tolerate a daemon that has never run; installStatus never throws
@@ -70,6 +71,8 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
   const setup = async () => {
     if (running()) return;
     setRunning(true);
+    // First run clones claude-bot + installs deps, which takes a bit; tell the user.
+    setBusy(status()?.installed ? "Setting up…" : "Setting up — cloning + installing claude-bot, this can take a minute…");
     try {
       const result = await api.daemonSetup();
       pushToast(describeAction(result.action));
@@ -80,12 +83,14 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
       pushToast(`Daemon setup failed: ${(e as Error).message}`);
     } finally {
       setRunning(false);
+      setBusy("");
     }
   };
 
   const update = async () => {
     if (running()) return;
     setRunning(true);
+    setBusy("Updating claude-bot — pulling + reinstalling…");
     try {
       const result = await api.daemonUpdate();
       pushToast(describeUpdate(result));
@@ -95,6 +100,7 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
       pushToast(`Daemon update failed: ${(e as Error).message}`);
     } finally {
       setRunning(false);
+      setBusy("");
     }
   };
 
@@ -105,10 +111,13 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
       <div class="folder-prompt-title">Set up claude-bot daemon</div>
       <div class="folder-prompt-hint">
         The claude-bot daemon runs crons and the persistent bot session in the background.
-        <strong> Set up</strong> is idempotent — if already installed, it adopts the existing
-        install without changing anything. <strong>Update</strong> pulls the latest claude-bot,
-        reinstalls deps, and restarts the daemon.
+        <strong> Set up</strong> is idempotent — on first run it downloads claude-bot and installs
+        the daemon; if already installed, it adopts the existing install without changing anything.
+        <strong> Update</strong> pulls the latest claude-bot, reinstalls deps, and restarts the daemon.
       </div>
+      <Show when={busy()}>
+        <div class="folder-prompt-hint">{busy()}</div>
+      </Show>
       <Show
         when={!loading()}
         fallback={<div class="folder-prompt-hint">Loading daemon status…</div>}

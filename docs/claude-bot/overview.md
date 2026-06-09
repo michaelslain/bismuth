@@ -103,7 +103,7 @@ The home directory is **hard-coded** in `lib/config.ts` as `BOT_DIR`, derived fr
 claude-bot is a fully separate process and project. **Bismuth never starts, stops, or restarts it.** Bismuth integrates in exactly two narrow, file-based, **adopt-only** ways:
 
 1. **Reads (and minimally writes) shared on-disk state.** Bismuth reads claude-bot's files under `~/.claude-bot` to power Bismuth's "daemon" graph mode and the `DaemonList` sidebar. The only things Bismuth **writes** are `owner.json`, cron/process **frontmatter**, and **trigger files** (run/enable/disable). Everything else is read-only. See `../daemon/overview.md` and `../daemon/storage.md`.
-2. **Can bundle and invoke the installer.** Bismuth can ship a relocatable copy of claude-bot (via `OA_CLAUDEBOT_BUNDLE` pointing at a `dist/claude-bot/` tree) and invoke claude-bot's **adopt-only** installer entrypoint `bin/ensure-installed.ts` to install or adopt the daemon. The installer never clobbers, restarts, or repoints a live daemon. See `install.md`.
+2. **Can provision + invoke the installer.** Bismuth does not bundle claude-bot; on opt-in it `git clone`s claude-bot to `~/.bismuth/claude-bot` + `bun install`s it (`provisionClaudeBot()`), then invokes claude-bot's **adopt-only** installer entrypoint `bin/ensure-installed.ts` to install or adopt the daemon. The installer never clobbers, restarts, or repoints a live daemon. See `install.md`.
 
 ### Two different MCP servers — do not conflate
 

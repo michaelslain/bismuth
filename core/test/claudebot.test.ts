@@ -1,9 +1,16 @@
 import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { installStatus, runSetup, runUpdate, resolveEntrypoint, installedEntrypoint } from "../src/claudebot";
-import type { SpawnResult } from "../src/claudebot";
+import {
+  installStatus,
+  runSetup,
+  runUpdate,
+  resolveEntrypoint,
+  installedEntrypoint,
+  provisionClaudeBot,
+} from "../src/claudebot";
+import type { SpawnResult, ProvisionResult } from "../src/claudebot";
 
 // A fake entrypoint path so we never resolve (or spawn) the real claude-bot
 // installer. The spawn runner is injected too, so no subprocess ever runs.
@@ -18,6 +25,8 @@ function fakeSpawn(stdout: string, exitCode = 0) {
   };
   return { spawn, calls };
 }
+
+// ── installStatus ────────────────────────────────────────────────────────────
 
 test("installStatus parses the single JSON status line", async () => {
   const line = JSON.stringify({
@@ -60,13 +69,15 @@ test("installStatus returns the safe default on non-JSON output (never throws)",
   expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.claude-bot.daemon" });
 });
 
-test("installStatus returns the safe default when the entrypoint can't be resolved", async () => {
+test("installStatus returns the safe default when the entrypoint can't be resolved (no provisioning)", async () => {
   const spawn = async (): Promise<SpawnResult> => {
     throw new Error("should not be called");
   };
   const status = await installStatus({ entrypoint: null, spawn });
   expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.claude-bot.daemon" });
 });
+
+// ── runSetup ─────────────────────────────────────────────────────────────────
 
 test("runSetup reports action 'adopted' for an already-installed daemon", async () => {
   const line = JSON.stringify({
@@ -84,8 +95,31 @@ test("runSetup reports action 'adopted' for an already-installed daemon", async 
   expect(calls[0]).not.toContain("--dry-run");
 });
 
-test("runSetup throws a clear error when the entrypoint isn't resolvable", async () => {
-  await expect(runSetup({ entrypoint: null })).rejects.toThrow(/entrypoint not found/);
+test("runSetup provisions claude-bot then runs the installer from the cloned src", async () => {
+  const line = JSON.stringify({ action: "installed", status: { installed: true, running: true } });
+  const { spawn, calls } = fakeSpawn(`${line}\n`);
+  let provisioned = false;
+  const result = await runSetup({
+    entrypoint: null, // nothing resolvable yet
+    provision: async (): Promise<ProvisionResult> => {
+      provisioned = true;
+      return { ok: true, src: "/prov/claude-bot", action: "cloned" };
+    },
+    spawn,
+  });
+  expect(provisioned).toBe(true);
+  expect(result.action).toBe("installed");
+  // Ran the installer derived from the freshly provisioned src dir.
+  expect(calls[0]).toContain(join("/prov/claude-bot", "bin", "ensure-installed.ts"));
+});
+
+test("runSetup surfaces a clear error when provisioning fails", async () => {
+  await expect(
+    runSetup({
+      entrypoint: null,
+      provision: async (): Promise<ProvisionResult> => ({ ok: false, src: "", action: "failed", error: "no network" }),
+    }),
+  ).rejects.toThrow(/no network/);
 });
 
 test("runSetup surfaces a failure when output is unparseable and exit is non-zero", async () => {
@@ -93,38 +127,186 @@ test("runSetup surfaces a failure when output is unparseable and exit is non-zer
   await expect(runSetup({ entrypoint: ENTRY, spawn })).rejects.toThrow(/exit 1/);
 });
 
-test("resolveEntrypoint derives the bin path from the resolved package, no hardcoded absolute", () => {
-  // Inject a resolver that mimics the linked package: bare specifiers and the bin
-  // export aren't available yet, but claude-bot/package.json resolves.
-  const resolve = (spec: string): string => {
-    if (spec === "claude-bot/package.json") {
-      return "/some/node_modules/claude-bot/package.json";
-    }
-    throw new Error(`cannot resolve ${spec}`);
-  };
-  const entry = resolveEntrypoint({ resolve, installed: () => null });
-  expect(entry).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
+// ── provisionClaudeBot ───────────────────────────────────────────────────────
+
+const SRC = "/s";
+const ENTRY_PATH = join(SRC, "bin", "ensure-installed.ts");
+
+/** Path-aware exists: ENTRY_PATH flips to true once `git clone` runs; SRC dir absent. */
+function clonedAwareExists(state: { cloned: boolean }): (p: string) => boolean {
+  return (p) => (p === ENTRY_PATH ? state.cloned : false);
+}
+
+test("provisionClaudeBot is a no-op when the source is already present", async () => {
+  let ran = 0;
+  const r = await provisionClaudeBot({
+    src: SRC,
+    exists: () => true,
+    run: async () => {
+      ran++;
+      return { exitCode: 0, stderr: "" };
+    },
+  });
+  expect(r).toMatchObject({ ok: true, action: "present", src: SRC });
+  expect(ran).toBe(0); // never clones/installs when already present
 });
 
-test("resolveEntrypoint prefers a directly-resolvable bin export when present", () => {
-  const resolve = (spec: string): string => {
-    if (spec === "claude-bot/bin/ensure-installed.ts") {
-      return "/pkg/claude-bot/bin/ensure-installed.ts";
-    }
-    throw new Error(`cannot resolve ${spec}`);
-  };
-  expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/pkg/claude-bot/bin/ensure-installed.ts");
+test("provisionClaudeBot clones then bun-installs when the source is missing", async () => {
+  const state = { cloned: false };
+  const calls: { cmd: string[]; cwd?: string }[] = [];
+  const r = await provisionClaudeBot({
+    src: SRC,
+    repo: "REPO",
+    git: "git",
+    bun: "bun",
+    exists: clonedAwareExists(state),
+    run: async (cmd, cwd) => {
+      calls.push({ cmd, cwd });
+      if (cmd[1] === "clone") state.cloned = true;
+      return { exitCode: 0, stderr: "" };
+    },
+  });
+  expect(r).toMatchObject({ ok: true, action: "cloned", src: SRC });
+  expect(calls[0].cmd).toEqual(["git", "clone", "REPO", SRC]);
+  expect(calls[1].cmd).toEqual(["bun", "install"]);
+  expect(calls[1].cwd).toBe(SRC);
 });
 
-test("resolveEntrypoint resolves a different bin (update.ts) via the same precedence", () => {
-  const resolve = (spec: string): string => {
-    if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
-    throw new Error(`cannot resolve ${spec}`);
-  };
-  expect(resolveEntrypoint({ resolve, installed: () => null, bin: "update.ts" })).toBe(
-    "/some/node_modules/claude-bot/bin/update.ts",
-  );
+test("provisionClaudeBot clears a partial/stale clone dir before re-cloning", async () => {
+  const state = { cloned: false };
+  let removed: string | null = null;
+  await provisionClaudeBot({
+    src: SRC,
+    git: "git",
+    bun: "bun",
+    // entry missing, but the SRC dir exists (leftover from a prior failed attempt).
+    exists: (p) => (p === ENTRY_PATH ? state.cloned : p === SRC),
+    rm: (p) => {
+      removed = p;
+    },
+    run: async (cmd) => {
+      if (cmd[1] === "clone") state.cloned = true;
+      return { exitCode: 0, stderr: "" };
+    },
+  });
+  expect(removed).toBe(SRC); // the stale dir was cleared so `git clone` won't refuse it
 });
+
+test("provisionClaudeBot reports a git-clone failure", async () => {
+  const r = await provisionClaudeBot({
+    src: SRC,
+    exists: () => false,
+    run: async () => ({ exitCode: 128, stderr: "fatal: repository not found" }),
+  });
+  expect(r.ok).toBe(false);
+  expect(r.action).toBe("failed");
+  expect(r.error).toMatch(/git clone failed/);
+});
+
+test("provisionClaudeBot reports a bun-install failure", async () => {
+  let n = 0;
+  const r = await provisionClaudeBot({
+    src: SRC,
+    exists: () => false,
+    run: async () => {
+      n++;
+      return n === 1 ? { exitCode: 0, stderr: "" } : { exitCode: 1, stderr: "lockfile mismatch" };
+    },
+  });
+  expect(r.ok).toBe(false);
+  expect(r.error).toMatch(/bun install failed/);
+});
+
+test("provisionClaudeBot fails when the clone is missing the entrypoint", async () => {
+  const r = await provisionClaudeBot({
+    src: SRC,
+    exists: () => false, // never appears, even after a 'successful' clone+install
+    run: async () => ({ exitCode: 0, stderr: "" }),
+  });
+  expect(r.ok).toBe(false);
+  expect(r.error).toMatch(/missing bin\/ensure-installed\.ts/);
+});
+
+test("provisionClaudeBot de-duplicates concurrent calls (clones once)", async () => {
+  const state = { cloned: false };
+  let cloneCalls = 0;
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const exists = clonedAwareExists(state);
+  const run = async (cmd: string[]) => {
+    if (cmd[1] === "clone") {
+      cloneCalls++;
+      await gate; // hold the clone open so the second call overlaps
+      state.cloned = true;
+    }
+    return { exitCode: 0, stderr: "" };
+  };
+  const a = provisionClaudeBot({ src: SRC, git: "git", bun: "bun", exists, run });
+  const b = provisionClaudeBot({ src: SRC, git: "git", bun: "bun", exists, run });
+  release();
+  const [ra, rb] = await Promise.all([a, b]);
+  expect(ra).toBe(rb); // both share the single in-flight result
+  expect(cloneCalls).toBe(1); // only one actual clone ran
+});
+
+// ── resolveEntrypoint ────────────────────────────────────────────────────────
+
+test("resolveEntrypoint prefers an already-installed claude-bot over the provisioned clone", () => {
+  const entry = resolveEntrypoint({
+    installed: () => "/usr/local/claude-bot/bin/ensure-installed.ts",
+    env: { OA_CLAUDEBOT_SRC: "/prov" },
+    exists: () => true, // the provisioned clone would also "exist", but install wins
+  });
+  expect(entry).toBe("/usr/local/claude-bot/bin/ensure-installed.ts");
+});
+
+test("resolveEntrypoint resolves the provisioned clone (OA_CLAUDEBOT_SRC) when nothing is installed", () => {
+  const src = "/prov/claude-bot";
+  const expected = join(src, "bin", "ensure-installed.ts");
+  const seen: string[] = [];
+  const entry = resolveEntrypoint({
+    installed: () => null,
+    env: { OA_CLAUDEBOT_SRC: src },
+    exists: (p) => {
+      seen.push(p);
+      return p === expected;
+    },
+  });
+  expect(entry).toBe(expected);
+  expect(seen).toContain(expected);
+});
+
+test("resolveEntrypoint defaults the clone dir to ~/.bismuth/claude-bot when OA_CLAUDEBOT_SRC is unset", () => {
+  const expected = join(homedir(), ".bismuth", "claude-bot", "bin", "ensure-installed.ts");
+  const entry = resolveEntrypoint({ installed: () => null, env: {}, exists: (p) => p === expected });
+  expect(entry).toBe(expected);
+});
+
+test("resolveEntrypoint returns null when nothing is installed and the clone is missing", () => {
+  const entry = resolveEntrypoint({ installed: () => null, env: { OA_CLAUDEBOT_SRC: "/prov" }, exists: () => false });
+  expect(entry).toBeNull();
+});
+
+test("resolveEntrypoint resolves a different bin (update.ts) from the provisioned clone", () => {
+  const src = "/prov";
+  const expected = join(src, "bin", "update.ts");
+  expect(
+    resolveEntrypoint({ installed: () => null, env: { OA_CLAUDEBOT_SRC: src }, exists: (p) => p === expected, bin: "update.ts" }),
+  ).toBe(expected);
+});
+
+test("resolveEntrypoint never throws when the exists probe blows up", () => {
+  const entry = resolveEntrypoint({
+    installed: () => null,
+    env: { OA_CLAUDEBOT_SRC: "/whatever" },
+    exists: () => {
+      throw new Error("EACCES");
+    },
+  });
+  expect(entry).toBeNull();
+});
+
+// ── runUpdate ────────────────────────────────────────────────────────────────
 
 test("runUpdate parses the update result + runs with no flag", async () => {
   const line = JSON.stringify({ action: "updated", from: "old", to: "new", restarted: true });
@@ -141,102 +323,11 @@ test("runUpdate reports up-to-date", async () => {
   expect((await runUpdate({ entrypoint: ENTRY, spawn })).action).toBe("up-to-date");
 });
 
-test("runUpdate throws a clear error when the entrypoint isn't resolvable", async () => {
+test("runUpdate throws a clear error when the entrypoint isn't resolvable (no provisioning)", async () => {
   await expect(runUpdate({ entrypoint: null })).rejects.toThrow(/entrypoint not found/);
 });
 
-test("resolveEntrypoint returns null when the package isn't resolvable at all", () => {
-  const resolve = (): never => {
-    throw new Error("not found");
-  };
-  expect(resolveEntrypoint({ resolve, installed: () => null })).toBeNull();
-});
-
-test("resolveEntrypoint prefers $OA_CLAUDEBOT_BUNDLE/bin/ensure-installed.ts when it exists on disk", () => {
-  // A real temp dir laid out like a bundled claude-bot copy.
-  const bundle = mkdtempSync(join(tmpdir(), "oa-claudebot-bundle-"));
-  mkdirSync(join(bundle, "bin"), { recursive: true });
-  const entry = join(bundle, "bin", "ensure-installed.ts");
-  writeFileSync(entry, "// stub entrypoint\n");
-  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
-  process.env.OA_CLAUDEBOT_BUNDLE = bundle;
-  try {
-    // Even with a resolver that WOULD resolve the file: dep, the bundle wins.
-    const resolve = (spec: string): string => {
-      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
-      throw new Error(`cannot resolve ${spec}`);
-    };
-    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe(entry);
-  } finally {
-    if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
-    else process.env.OA_CLAUDEBOT_BUNDLE = prev;
-    rmSync(bundle, { recursive: true, force: true });
-  }
-});
-
-test("resolveEntrypoint falls back to the package when $OA_CLAUDEBOT_BUNDLE is set but the file is missing", () => {
-  // Point the env at a dir that has NO bin/ensure-installed.ts on disk.
-  const bundle = mkdtempSync(join(tmpdir(), "oa-claudebot-empty-"));
-  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
-  process.env.OA_CLAUDEBOT_BUNDLE = bundle;
-  try {
-    const resolve = (spec: string): string => {
-      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
-      throw new Error(`cannot resolve ${spec}`);
-    };
-    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
-  } finally {
-    if (prev === undefined) delete process.env.OA_CLAUDEBOT_BUNDLE;
-    else process.env.OA_CLAUDEBOT_BUNDLE = prev;
-    rmSync(bundle, { recursive: true, force: true });
-  }
-});
-
-test("resolveEntrypoint ignores an unset $OA_CLAUDEBOT_BUNDLE and uses the package", () => {
-  const prev = process.env.OA_CLAUDEBOT_BUNDLE;
-  delete process.env.OA_CLAUDEBOT_BUNDLE;
-  try {
-    const resolve = (spec: string): string => {
-      if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
-      throw new Error(`cannot resolve ${spec}`);
-    };
-    expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/some/node_modules/claude-bot/bin/ensure-installed.ts");
-  } finally {
-    if (prev !== undefined) process.env.OA_CLAUDEBOT_BUNDLE = prev;
-  }
-});
-
-test("resolveEntrypoint honors injected env + exists for the bundle precedence (hermetic)", () => {
-  const bundleDir = "/staged/resources/claude-bot";
-  const expected = join(bundleDir, "bin", "ensure-installed.ts");
-  const seen: string[] = [];
-  const entry = resolveEntrypoint({
-    env: { OA_CLAUDEBOT_BUNDLE: bundleDir },
-    exists: (p) => {
-      seen.push(p);
-      return p === expected;
-    },
-    resolve: () => {
-      throw new Error("should not consult the package when the bundle resolves");
-    },
-  });
-  expect(entry).toBe(expected);
-  expect(seen).toContain(expected);
-});
-
-test("resolveEntrypoint never throws when the injected exists probe blows up", () => {
-  const entry = resolveEntrypoint({
-    env: { OA_CLAUDEBOT_BUNDLE: "/whatever" },
-    exists: () => {
-      throw new Error("EACCES");
-    },
-    resolve: () => {
-      throw new Error("dep missing");
-    },
-  });
-  // Bundle probe failed and the dep doesn't resolve -> null, no throw.
-  expect(entry).toBeNull();
-});
+// ── installedEntrypoint ──────────────────────────────────────────────────────
 
 test("installedEntrypoint parses a launchd plist to the installed clone's entrypoint", () => {
   const dir = mkdtempSync(join(tmpdir(), "cb-installed-"));
@@ -274,9 +365,7 @@ test("installedEntrypoint returns null when no daemon is installed", () => {
 });
 
 test("installedEntrypoint returns null when the config has no daemon entry", () => {
-  expect(
-    installedEntrypoint({ configPath: "/p", read: () => "<plist></plist>", exists: () => true }),
-  ).toBeNull();
+  expect(installedEntrypoint({ configPath: "/p", read: () => "<plist></plist>", exists: () => true })).toBeNull();
 });
 
 test("installedEntrypoint never throws when reading the config fails", () => {
@@ -289,31 +378,4 @@ test("installedEntrypoint never throws when reading the config fails", () => {
       },
     }),
   ).toBeNull();
-});
-
-test("resolveEntrypoint prefers an already-installed claude-bot over the bundle and dep", () => {
-  const entry = resolveEntrypoint({
-    installed: () => "/usr/local/claude-bot/bin/ensure-installed.ts",
-    env: { OA_CLAUDEBOT_BUNDLE: "/bundle" },
-    exists: () => true, // bundle would also "exist", but install wins
-    resolve: () => "/dep/bin/ensure-installed.ts",
-  });
-  expect(entry).toBe("/usr/local/claude-bot/bin/ensure-installed.ts");
-});
-
-test("resolveEntrypoint falls back to the bundle when nothing is installed", () => {
-  const entry = resolveEntrypoint({
-    installed: () => null,
-    env: { OA_CLAUDEBOT_BUNDLE: "/bundle" },
-    exists: () => true,
-  });
-  expect(entry).toBe(join("/bundle", "bin", "ensure-installed.ts"));
-});
-
-test("resolveEntrypoint still accepts the back-compat function form", () => {
-  // The bare (spec) => string signature is still accepted and never throws.
-  const r = resolveEntrypoint((spec) => {
-    throw new Error(spec);
-  });
-  expect(r === null || typeof r === "string").toBe(true);
 });

@@ -4,7 +4,8 @@
   "workspaces": ["core", "cli", "app", "relay", "mcp"],
   "scripts": {
     "test": "bun test",
-    "core:serve": "bun run core/src/server.ts"
+    "core:serve": "bun run core/src/server.ts",
+    "build:app": "cd app && bun run installer"
   },
   "devDependencies": {
     "emojilib": "^4.0.3",

@@ -11,7 +11,6 @@ This file covers every step required to install, run, and build Bismuth: prerequ
 | **Bun** | 1.0+ | Runtime, package manager, test runner, and bundler for all workspaces |
 | **Node.js** | 20+ | Required by some native addons and Tauri toolchain |
 | **Rust** | Current stable | Only needed for `tauri build` (native binary); not needed for web-only dev |
-| **claude-bot** (sibling repo) | latest `main` | The daemon package bundled into the app — cloned next to this repo at `../claude-bot` |
 
 Install Bun: https://bun.sh/docs/installation
 
@@ -30,15 +29,14 @@ cargo --version && rustc --version
 
 See also the full Tauri prerequisites: https://tauri.app/start/prerequisites/
 
-### Refresh the claude-bot sibling repo
+### claude-bot is NOT a build dependency
 
-The app bundles the claude-bot daemon from the sibling checkout at `../claude-bot` (resolved via
-the `file:../../claude-bot` dep in `core/package.json`). Before building, pull its latest `main` so
-the bundled daemon is current:
-
-```bash
-git -C ../claude-bot pull --ff-only origin main
-```
+Bismuth does **not** bundle claude-bot, and you do not need to clone it to build. The first time
+you opt into **Set up claude-bot daemon** in the app, Bismuth clones claude-bot to
+`~/.bismuth/claude-bot`, `bun install`s it, and runs its in-place installer (see
+[Self-update](self-update.md) for the related app updater, and `core/src/claudebot.ts`
+`provisionClaudeBot()`). claude-bot stays fully standalone — that clone is just one way to obtain
+its source. Overrides: `OA_CLAUDEBOT_SRC` (clone location), `OA_CLAUDEBOT_REPO` (git remote).
 
 ---
 
@@ -227,11 +225,12 @@ The build uses manual chunk splitting (see `vite.config.ts`) to keep the entry b
 Produces a native desktop application (`.app` on macOS, `.exe` on Windows, etc.).
 
 ```bash
-cd app
-bun run tauri build
+bun run build:app     # from the repo root: builds, then opens the dmg installer
+# — or, lower-level —
+cd app && bun run tauri build
 ```
 
-The `tauri` script in `app/package.json` delegates to `@tauri-apps/cli`. This requires Rust and the Tauri prerequisites to be installed. The `beforeBuildCommand` is `bun run build && bun run build:core-sidecar`, so the Vite frontend AND the core sidecar binary are built as part of the pipeline.
+`build:app` (root `package.json`) runs `cd app && bun run installer`, which is `tauri build` followed by `scripts/open-installer.ts` (opens the built dmg so you can drag it in). The `tauri` script delegates to `@tauri-apps/cli` and requires Rust + the Tauri prerequisites. The `beforeBuildCommand` (`predmg:clean → prebundle:relay → build:bismuth-tools → build → build:core-sidecar`) builds the Vite frontend, the relay resource, the bismuth-tools resource, and the compiled core sidecar as part of the pipeline.
 
 **To install**: the build writes a `.dmg` and the `.app` it wraps under `src-tauri/target/release/bundle/{dmg,macos}/`. `tauri build` does **not** auto-open an installer window — open the dmg yourself (`open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg`) and drag **Bismuth → Applications**, then eject. Or skip the dmg entirely and drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications`. Re-running the build and re-dragging replaces the prior copy in place.
 

@@ -964,6 +964,11 @@ export function createServer(cfg: CoreConfig) {
   type TermWsData = { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
   return Bun.serve<TermWsData>({
     port: cfg.port ?? 4321,
+    // Bun's default idleTimeout is 10s, which would drop a connection mid-request for the
+    // few slow handlers we have (notably POST /daemon/setup, which git-clones + bun-installs
+    // claude-bot on first run — see core/src/claudebot.ts provisionClaudeBot). 255s is Bun's
+    // max; long enough for those, harmless for everything else.
+    idleTimeout: 255,
     async fetch(req, server) {
       const url = new URL(req.url);
       if (req.method === "OPTIONS") return withCors(new Response(null));
