@@ -4,17 +4,46 @@ Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` 
 
 ## Get started (macOS)
 
-From a fresh clone to the app in `/Applications`:
+From a fresh clone to the app in `/Applications`.
+
+**Prerequisites:** [Bun](https://bun.sh/docs/installation) 1.0+, Node.js 20+, and Rust (only needed for `tauri build`). Install Rust:
 
 ```bash
-git clone https://github.com/michaelslain/bismuth.git && cd bismuth
-bun install
-cd app
-bun run prebundle:claudebot                                    # stage the bundled daemon (needs sibling ../../claude-bot)
-bun run tauri build                                            # builds the app + core sidecar, then opens a .dmg installer
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the default "1) Proceed"
+source "$HOME/.cargo/env"                                        # load cargo into THIS shell (installer only adds it to new shells)
+cargo --version && rustc --version                               # verify
 ```
 
-In the `.dmg` window that opens, drag **Bismuth → Applications**, eject the volume, and launch from Applications (first launch: pick your vault folder).
+**Build & install:**
+
+```bash
+# Clone bismuth AND the claude-bot sibling next to it. claude-bot is required:
+# `bun install` resolves it via core/package.json (file:../../claude-bot), and the
+# build bundles its source into the app (the daemon ships inside the .app).
+git clone https://github.com/michaelslain/bismuth.git
+git clone https://github.com/michaelslain/claude-bot.git
+cd bismuth
+
+bun install                                                     # all workspaces, from repo root
+cd app
+bun run prebundle:claudebot                                     # stage the bundled daemon from ../../claude-bot
+bun run tauri build                                             # builds the app + core sidecar + a .dmg
+```
+
+> Already have `../claude-bot`? Refresh it before building so the bundled daemon is current:
+> `git -C ../claude-bot pull --ff-only origin main` (run from the bismuth repo root).
+
+**Install the built app.** `tauri build` does **not** pop an installer window — it just writes the artifacts. Open the dmg yourself and drag **Bismuth → Applications** (or skip the dmg and drag the `.app` straight in):
+
+```bash
+open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg          # then drag Bismuth → Applications, eject
+# or, no dmg: drag this straight into /Applications in Finder
+#   src-tauri/target/release/bundle/macos/Bismuth.app
+```
+
+> A Finder window may flash open and closed **during the build** — that's `bundle_dmg.sh` styling the dmg, not the installer. Ignore it; the dmg is still written to the path above.
+
+First launch: pick your vault folder. See [Install & run](overview/install.md) for the full prerequisites + dev-server details.
 
 ## Start here
 

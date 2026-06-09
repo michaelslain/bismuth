@@ -233,7 +233,9 @@ bun run tauri build
 
 The `tauri` script in `app/package.json` delegates to `@tauri-apps/cli`. This requires Rust and the Tauri prerequisites to be installed. The `beforeBuildCommand` is `bun run build && bun run build:core-sidecar`, so the Vite frontend AND the core sidecar binary are built as part of the pipeline.
 
-**To install**: the build emits a `.dmg` (and the `.app` it wraps, under `src-tauri/target/release/bundle/{dmg,macos}/`) and opens the `.dmg` window. Drag **Bismuth → Applications** there, then eject — that's the whole install (no manual `cp` needed). Re-running the build and re-dragging replaces the prior copy in place.
+**To install**: the build writes a `.dmg` and the `.app` it wraps under `src-tauri/target/release/bundle/{dmg,macos}/`. `tauri build` does **not** auto-open an installer window — open the dmg yourself (`open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg`) and drag **Bismuth → Applications**, then eject. Or skip the dmg entirely and drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications`. Re-running the build and re-dragging replaces the prior copy in place.
+
+> A Finder window that flashes open and closed **during the build** is `bundle_dmg.sh` running its Finder-prettifying AppleScript to style the dmg (icon layout / background) — it is **not** the installer, and it auto-closes when that step finishes. The dmg is still written to the path above. (To suppress it, build with `CI=true bun run tauri build`, which passes `--skip-jenkins` to `bundle_dmg.sh` — the dmg then has no custom styling but builds identically.)
 
 #### Self-spawned backend (bundled app)
 
