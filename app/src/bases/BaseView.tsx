@@ -6,6 +6,7 @@ import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
 import { runView } from "../../../core/src/bases/query";
 import { refToPath } from "../../../core/src/bases/sourceSpec";
+import { fileBasename as noteLabel } from "../../../core/src/pathUtils";
 import type { BaseConfig, Row, ViewResult, SourceSpec, QueryBlock, FileMeta } from "../../../core/src/bases/types";
 import { TableView } from "./TableView";
 import { CardsView } from "./CardsView";
@@ -28,8 +29,6 @@ import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { ViewBar, Crumb, ViewBarSpacer, VBtn } from "../ui/ViewBar";
 import { Loading } from "../ui/EmptyState";
 import styles from "./BaseView.module.css";
-
-function noteLabel(path: string) { return path.split("/").pop()!.replace(/\.(base|md)$/, ""); }
 
 /** A minimal FileMeta for the host note, exposed to an embedded base as `this.file`
  *  so filters like `file.hasLink(this.file)` (match notes linking back to the host)

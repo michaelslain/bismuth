@@ -107,27 +107,30 @@ export function stopSubagent(s: { agentId: string; lastMessage?: string }, now =
  * without this, closed-tab sessions and never-stopped subagents would leak forever (there
  * is no terminal-close hook; cleanup happens here at read time).
  */
-export function prune(liveTerminalIds: Set<string>, now = Date.now()): void {
-  for (const [id, s] of sessions) {
-    if (!liveTerminalIds.has(s.terminalId)) removeSessionSubtree(id);
-  }
+/** Drop finished subagents whose done-TTL has elapsed. Shared by prune() and snapshot(). */
+function sweepDoneSubagents(now: number): void {
   for (const [agentId, sub] of subagents) {
-    if (!sessions.has(sub.parentSessionId)) { subagents.delete(agentId); continue; } // orphan
     if (sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS) {
       subagents.delete(agentId);
     }
   }
 }
 
+export function prune(liveTerminalIds: Set<string>, now = Date.now()): void {
+  for (const [id, s] of sessions) {
+    if (!liveTerminalIds.has(s.terminalId)) removeSessionSubtree(id);
+  }
+  for (const [agentId, sub] of subagents) {
+    if (!sessions.has(sub.parentSessionId)) subagents.delete(agentId); // orphan
+  }
+  sweepDoneSubagents(now);
+}
+
 /** Current registry contents, with finished subagents past their TTL pruned. (Full
  *  liveness pruning is done by {@link prune}; this keeps the done-TTL sweep so a snapshot
  *  taken without a preceding prune — e.g. in tests — still sheds stale subagents.) */
 export function snapshot(now = Date.now()): RelaySnapshot {
-  for (const [agentId, sub] of subagents) {
-    if (sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_SUBAGENT_TTL_MS) {
-      subagents.delete(agentId);
-    }
-  }
+  sweepDoneSubagents(now);
   return { sessions: [...sessions.values()], subagents: [...subagents.values()] };
 }
 

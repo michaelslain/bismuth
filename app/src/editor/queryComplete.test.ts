@@ -101,7 +101,7 @@ test("source offers all view types after `view: `", () => {
   const doc = "```query\nview: \n```";
   const res = complete(doc, 15); // just after "view: "
   expect(res?.options.map((o) => o.label)).toContain("kanban");
-  expect(res?.options).toHaveLength(11);
+  expect(res?.options).toHaveLength(12);
 });
 
 test("source offers tasks DSL after `tasks: `", () => {

@@ -10,6 +10,7 @@ import { TextInput } from "../ui/TextInput";
 import { renderMarkdown } from "./markdown";
 import { EditCardsModal } from "./EditCardsModal";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
+import { fileBasename } from "../../../core/src/pathUtils";
 
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (lucide-solid icons, Solid client-only code). Import
@@ -242,7 +243,7 @@ export function FlashcardsView(props: {
         <EditCardsModal
           rows={props.rows}
           basePath={props.basePath!}
-          deckName={props.basePath!.split("/").pop()!.replace(/\.md$/, "")}
+          deckName={fileBasename(props.basePath!)}
           frontField={frontField()}
           backField={backField()}
           onClose={() => setEditing(false)}

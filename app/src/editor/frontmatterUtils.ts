@@ -3,6 +3,9 @@
 // NO CodeMirror imports, so it runs under `bun test` without a browser environment.
 // Shared by frontmatter validation/autocomplete (yamlSchema) and Harper's body-skip.
 
+/** Matches a closing `---` frontmatter fence at the start of a line (end-of-doc allowed). */
+const CLOSE_FENCE_RE = /^---[ \t]*(?:\r?\n|$)/m;
+
 export interface FrontmatterRange {
   /** Document char offset where the YAML body starts (just after the opening fence). */
   from: number;
@@ -23,9 +26,8 @@ export function extractFrontmatterBoundary(doc: string): FrontmatterRange | null
   const open = /^---\r?\n/.exec(doc);
   if (!open) return null;
   const from = open[0].length; // first char after the opening fence + newline
-  const closeRe = /^---[ \t]*(?:\r?\n|$)/m;
   const after = doc.slice(from);
-  const m = closeRe.exec(after);
+  const m = CLOSE_FENCE_RE.exec(after);
   if (!m) return null;
   let to = from + m.index; // immediate close (empty body) → to === from
   if (m.index > 0) {
@@ -49,9 +51,8 @@ export function frontmatterBodyRange(doc: string): { from: number; to: number } 
   if (!fm) return { from: 0, to: doc.length };
   // Find the closing fence: the first `---` line at or after the content end. The slice
   // from fm.to begins with the (optional) newline that precedes the closing fence.
-  const closeRe = /^---[ \t]*(?:\r?\n|$)/m;
   const after = doc.slice(fm.to);
-  const m = closeRe.exec(after);
+  const m = CLOSE_FENCE_RE.exec(after);
   if (!m) return { from: 0, to: doc.length }; // shouldn't happen (boundary already matched)
   const from = fm.to + m.index + m[0].length; // past the closing fence + its newline
   return { from, to: doc.length };
