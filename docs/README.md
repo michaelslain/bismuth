@@ -4,46 +4,48 @@ Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` 
 
 ## Get started (macOS)
 
-From a fresh clone to the app in `/Applications`.
+Build Bismuth from source and install it to `/Applications`.
 
-**Prerequisites:** [Bun](https://bun.sh/docs/installation) 1.0+, Node.js 20+, and Rust (only needed for `tauri build`). Install Rust:
+You need [Bun](https://bun.sh/docs/installation) 1.0+ and Node.js 20+. You also need Rust to build the native app — install it with:
 
 ```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the default "1) Proceed"
-source "$HOME/.cargo/env"                                        # load cargo into THIS shell (installer only adds it to new shells)
-cargo --version && rustc --version                               # verify
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the default
+source "$HOME/.cargo/env"                                        # load it into the current shell
 ```
 
-**Build & install:**
+**1. Clone both repos** (side by side). `claude-bot` is required — its daemon is bundled into the app, and `bun install` won't resolve without it.
 
 ```bash
-# Clone bismuth AND the claude-bot sibling next to it. claude-bot is required:
-# `bun install` resolves it via core/package.json (file:../../claude-bot), and the
-# build bundles its source into the app (the daemon ships inside the .app).
 git clone https://github.com/michaelslain/bismuth.git
 git clone https://github.com/michaelslain/claude-bot.git
 cd bismuth
-
-bun install                                                     # all workspaces, from repo root
-cd app
-bun run prebundle:claudebot                                     # stage the bundled daemon from ../../claude-bot
-bun run tauri build                                             # builds the app + core sidecar + a .dmg
 ```
 
-> Already have `../claude-bot`? Refresh it before building so the bundled daemon is current:
-> `git -C ../claude-bot pull --ff-only origin main` (run from the bismuth repo root).
-
-**Install the built app.** `tauri build` does **not** pop an installer window — it just writes the artifacts. Open the dmg yourself and drag **Bismuth → Applications** (or skip the dmg and drag the `.app` straight in):
+**2. Install dependencies and build.**
 
 ```bash
-open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg          # then drag Bismuth → Applications, eject
-# or, no dmg: drag this straight into /Applications in Finder
-#   src-tauri/target/release/bundle/macos/Bismuth.app
+bun install
+cd app
+bun run prebundle:claudebot   # stage the bundled daemon
+bun run tauri build           # build the app (a few minutes)
 ```
 
-> A Finder window may flash open and closed **during the build** — that's `bundle_dmg.sh` styling the dmg, not the installer. Ignore it; the dmg is still written to the path above.
+**3. Install the app.** The build writes the files but does **not** open an installer. Open the dmg and drag **Bismuth → Applications**:
 
-First launch: pick your vault folder. See [Install & run](overview/install.md) for the full prerequisites + dev-server details.
+```bash
+open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg
+```
+
+That's it — launch Bismuth from Applications and pick your vault folder on first run.
+
+<details><summary>Notes</summary>
+
+- A Finder window may flash open and shut **during the build** — that's just the dmg being styled, not the installer. Ignore it.
+- Don't want the dmg? Drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications` instead.
+- Already have `claude-bot` cloned? Refresh it first so the bundled daemon is current: `git -C ../claude-bot pull --ff-only origin main`.
+- Full prerequisites, env vars, and dev-server details: [Install & run](overview/install.md).
+
+</details>
 
 ## Start here
 
