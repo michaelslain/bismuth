@@ -93,6 +93,34 @@ describe("spawnVaultBackend", () => {
     expect(cmd[cmd.indexOf("--vault") + 1]).toBe(dir);
   });
 
+  it("drops a non-existent cwd (compiled-binary /$bunfs/... dir) so spawn inherits a valid cwd", async () => {
+    const dir = tmp();
+    let passedCwd: string | undefined = "sentinel";
+    await spawnVaultBackend({
+      folder: dir,
+      memory: dir,
+      serverEntry: "/abs/server.ts",
+      cwd: "/no/such/$bunfs/root", // virtual path that doesn't exist on disk
+      spawn: (_c, c) => { passedCwd = c; return { pid: 1, kill() {} }; },
+      probe: async () => true,
+    });
+    expect(passedCwd).toBeUndefined();
+  });
+
+  it("passes through a cwd that does exist", async () => {
+    const dir = tmp();
+    let passedCwd: string | undefined;
+    await spawnVaultBackend({
+      folder: dir,
+      memory: dir,
+      serverEntry: "/abs/server.ts",
+      cwd: dir, // a real directory
+      spawn: (_c, c) => { passedCwd = c; return { pid: 1, kill() {} }; },
+      probe: async () => true,
+    });
+    expect(passedCwd).toBe(dir);
+  });
+
   it("fails fast (before the timeout) if the child exits early", async () => {
     const dir = tmp();
     const start = Date.now();
