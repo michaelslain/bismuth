@@ -13,6 +13,7 @@ import { matchTemplateTokenPrefix } from "./templateToken";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 import { querySource } from "./queryComplete";
 import { taskSource } from "./taskComplete";
+import { slashSource } from "./slashComplete";
 
 // Shared insert for every completion source: replace [from,to) with `insert`, put the
 // cursor `cursorOffset` chars past `from`, and tag the change as a picked completion so
@@ -289,6 +290,7 @@ export function vaultCompletion(opts: {
       enumValueSource(opts.getSchema, opts.inFrontmatter),
       tagListSource(opts.getTags, opts.inFrontmatter),
       // body-position sources
+      slashSource(opts.inFrontmatter),   // `/` at line start: insert headings/tables/blocks/links
       querySource(),          // inside a ```query block: keys / view / tasks-DSL / group
       taskSource(),           // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
       templateTokenSource(),
