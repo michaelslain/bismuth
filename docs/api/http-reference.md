@@ -227,6 +227,7 @@ Posted by the relay plugin's hooks loaded per-session inside app terminals. They
 These mutate the claude-bot daemon's shared on-disk files (NOT the vault), so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/graph`).
 
 - **`POST /daemon/setup`** — body none. `runSetup()` (idempotent, adopt-only). Response `SetupResult` = `{ action, status: InstallStatus }` (`action` is a string like `"adopted"`). Surfaces a real error (500) if the entrypoint can't be resolved or the subprocess fails — but it must NOT 404 and must NOT bump the vault version.
+- **`POST /daemon/update`** — body none. `runUpdate()` spawns claude-bot's `bin/update.ts` (no flag): `git pull --ff-only` + `bun install` + restart the daemon (claude-bot's own `restartDaemon` — Bismuth never calls launchctl). Idempotent — `"up-to-date"` when already at `origin/main`. Response `UpdateResult` = `{ action: "updated"|"up-to-date"|"would-update"|"no-remote", from?, to?, restarted?, warnings? }`. System action, not a vault mutation. See [claude-bot install](../claude-bot/install.md).
 - **`POST /daemon/cron/toggle`** — body `{ name?, enabled? }`. `setCronEnabled(name, enabled)` (rewrites the `enabled` frontmatter in `<home>/crons/<name>.md`). Response `{ ok: true }`. `400 "missing name/enabled"` if `name` absent or `enabled` not a boolean. Unknown name → `setCronEnabled` throws `AppError("ENOENT")` → `404` via the dispatch catch.
 - **`POST /daemon/cron/run`** — body `{ name? }`. `runCron(name)` (drops a trigger file the daemon polls). Response `{ ok: true }`. `400 "missing name"` if absent. Unknown name → `404`.
 - **`POST /daemon/process/toggle`** — body `{ name?, enabled? }`. `setProcessEnabled(name, enabled)`. Response `{ ok: true }`. `400 "missing name/enabled"` on bad input; unknown name → `404`.
@@ -424,6 +425,7 @@ On `close`, the PTY data/exit listeners are disposed immediately (so no `ws.send
 | GET | `/daemon/graph` | read | no |
 | GET | `/daemon/install` | read | no |
 | POST | `/daemon/setup` | read | no |
+| POST | `/daemon/update` | read | no |
 | POST | `/daemon/cron/toggle` | read | no |
 | POST | `/daemon/cron/run` | read | no |
 | POST | `/daemon/process/toggle` | read | no |

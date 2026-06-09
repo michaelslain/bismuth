@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installStatus, runSetup, resolveEntrypoint, installedEntrypoint } from "../src/claudebot";
+import { installStatus, runSetup, runUpdate, resolveEntrypoint, installedEntrypoint } from "../src/claudebot";
 import type { SpawnResult } from "../src/claudebot";
 
 // A fake entrypoint path so we never resolve (or spawn) the real claude-bot
@@ -114,6 +114,35 @@ test("resolveEntrypoint prefers a directly-resolvable bin export when present", 
     throw new Error(`cannot resolve ${spec}`);
   };
   expect(resolveEntrypoint({ resolve, installed: () => null })).toBe("/pkg/claude-bot/bin/ensure-installed.ts");
+});
+
+test("resolveEntrypoint resolves a different bin (update.ts) via the same precedence", () => {
+  const resolve = (spec: string): string => {
+    if (spec === "claude-bot/package.json") return "/some/node_modules/claude-bot/package.json";
+    throw new Error(`cannot resolve ${spec}`);
+  };
+  expect(resolveEntrypoint({ resolve, installed: () => null, bin: "update.ts" })).toBe(
+    "/some/node_modules/claude-bot/bin/update.ts",
+  );
+});
+
+test("runUpdate parses the update result + runs with no flag", async () => {
+  const line = JSON.stringify({ action: "updated", from: "old", to: "new", restarted: true });
+  const { spawn, calls } = fakeSpawn(`${line}\n`);
+  const result = await runUpdate({ entrypoint: ENTRY, spawn });
+  expect(result).toMatchObject({ action: "updated", from: "old", to: "new", restarted: true });
+  expect(calls[0]).toContain(ENTRY);
+  expect(calls[0]).not.toContain("--status");
+  expect(calls[0]).not.toContain("--dry-run");
+});
+
+test("runUpdate reports up-to-date", async () => {
+  const { spawn } = fakeSpawn(JSON.stringify({ action: "up-to-date", from: "x", to: "x" }) + "\n");
+  expect((await runUpdate({ entrypoint: ENTRY, spawn })).action).toBe("up-to-date");
+});
+
+test("runUpdate throws a clear error when the entrypoint isn't resolvable", async () => {
+  await expect(runUpdate({ entrypoint: null })).rejects.toThrow(/entrypoint not found/);
 });
 
 test("resolveEntrypoint returns null when the package isn't resolvable at all", () => {

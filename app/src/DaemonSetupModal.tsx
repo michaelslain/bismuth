@@ -11,7 +11,7 @@ import { Modal } from "./ui/Modal";
 import { TextButton } from "./ui/TextButton";
 import { api } from "./api";
 import { pushToast } from "./Toast";
-import type { InstallStatus } from "../../core/src/claudebot";
+import type { InstallStatus, UpdateResult } from "../../core/src/claudebot";
 import type { Owner } from "../../core/src/daemon";
 import "./FolderPrompt.css";
 
@@ -26,6 +26,20 @@ function describeAction(action: string): string {
       return "claude-bot daemon would be installed (dry run)";
     default:
       return `claude-bot setup: ${action}`;
+  }
+}
+
+/** Human-friendly summary of an update result for the toast. */
+function describeUpdate(r: UpdateResult): string {
+  switch (r.action) {
+    case "updated":
+      return r.restarted ? "claude-bot updated + daemon restarted" : "claude-bot updated (restart it to apply)";
+    case "up-to-date":
+      return "claude-bot already up to date";
+    case "no-remote":
+      return "claude-bot update: no git remote configured";
+    default:
+      return `claude-bot update: ${r.action}`;
   }
 }
 
@@ -69,6 +83,21 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
     }
   };
 
+  const update = async () => {
+    if (running()) return;
+    setRunning(true);
+    try {
+      const result = await api.daemonUpdate();
+      pushToast(describeUpdate(result));
+      for (const w of result.warnings ?? []) pushToast(`claude-bot update: ${w}`);
+      await refresh();
+    } catch (e) {
+      pushToast(`Daemon update failed: ${(e as Error).message}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const yn = (b: boolean | undefined) => (b ? "yes" : "no");
 
   return (
@@ -76,8 +105,9 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
       <div class="folder-prompt-title">Set up claude-bot daemon</div>
       <div class="folder-prompt-hint">
         The claude-bot daemon runs crons and the persistent bot session in the background.
-        Setup is idempotent — if it's already installed, this adopts the existing install
-        without restarting or changing anything.
+        <strong> Set up</strong> is idempotent — if already installed, it adopts the existing
+        install without changing anything. <strong>Update</strong> pulls the latest claude-bot,
+        reinstalls deps, and restarts the daemon.
       </div>
       <Show
         when={!loading()}
@@ -97,6 +127,9 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
       </Show>
       <div class="folder-prompt-actions">
         <TextButton onClick={props.onClose}>CLOSE</TextButton>
+        <TextButton onClick={update} disabled={loading() || running()}>
+          {running() ? "WORKING…" : "UPDATE"}
+        </TextButton>
         <TextButton variant="selected" onClick={setup} disabled={loading() || running()}>
           {running() ? "WORKING…" : "SET UP / REPAIR"}
         </TextButton>

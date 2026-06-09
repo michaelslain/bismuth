@@ -210,6 +210,18 @@ Bismuth then:
 
 Because the entrypoint is **adopt-only**, it never clobbers, restarts, or repoints a live daemon. Full Bismuth-side detail is in [../daemon/overview.md](../daemon/overview.md) (the "Adopt-Only Setup" section + `resolveEntrypoint`) and [../daemon/storage.md](../daemon/storage.md); Bismuth's HTTP route docs are not duplicated here.
 
+## Self-update: `bin/update.ts`
+
+Separate from the adopt-only installer, claude-bot ships a self-update entrypoint that prints one JSON line (mirroring `ensure-installed.ts`):
+
+- `bin/update.ts` (default) → `lib/update.ts` `runUpdate()`: `git pull --ff-only origin main` in the claude-bot clone, then `bun install`, then **restart the daemon in place** via `lib/platform.ts` `restartDaemon()` (`launchctl kickstart -k gui/<uid>/com.claude-bot.daemon` on macOS, `systemctl --user restart` on Linux — it does **not** rewrite the plist). **Idempotent**: when already at `origin/main` it returns `{ action: "up-to-date" }` and skips install + restart.
+- `--check` → `getUpdateStatus()`: `{ available, behind, local, remote }` (fetch + compare, no side effects).
+- `--dry-run` → `{ action: "would-update" }` without applying.
+
+Restarting (not just re-reading) is required because the **daemon supervisor + MCP server code** only reload on a process restart — cron *prompt* edits take effect per-run, but code changes don't. (All of git/install/restart is injectable, so the decision logic is unit-tested in `lib/update.test.ts`.)
+
+Bismuth drives this with the same `resolveEntrypoint` precedence (resolving `bin/update.ts` instead of `bin/ensure-installed.ts`) behind `POST /daemon/update`, the `bismuth daemon update` CLI, and the in-app "Update claude-bot daemon…" command — the user triggers it; Bismuth itself never calls launchctl.
+
 ## See also
 
 - [daemon.md](daemon.md) — launchd/systemd service + boot
@@ -217,4 +229,4 @@ Because the entrypoint is **adopt-only**, it never clobbers, restarts, or repoin
 - [communication.md](communication.md) — owner gating
 - [../daemon/overview.md](../daemon/overview.md), [../daemon/storage.md](../daemon/storage.md) — Bismuth's adopt-only bridge + `OA_CLAUDEBOT_HOME`
 
-Source: bin/ensure-installed.ts, lib/install.ts, lib/platform.ts, lib/device.ts, lib/owner.ts, lib/config.ts, scripts/bundle.ts, package.json
+Source: bin/ensure-installed.ts, bin/update.ts, lib/install.ts, lib/update.ts, lib/platform.ts, lib/device.ts, lib/owner.ts, lib/config.ts, scripts/bundle.ts, package.json

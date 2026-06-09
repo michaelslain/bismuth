@@ -77,6 +77,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "toggle-sidebar": h.toggleSidebar,
     "daemon-owner": h.openDaemonOwner,
     "daemon-setup": h.openDaemonSetup,
+    "daemon-update": h.openDaemonSetup,
     "bismuth-install": h.openBismuthInstall,
   };
   const map = new Map<string, BoundCommand>();
