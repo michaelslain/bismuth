@@ -8,6 +8,7 @@
 import { parseBaseFile } from "../../../core/src/bases/parse";
 import { runView, resolveProperty } from "../../../core/src/bases/query";
 import { isLink, type Link } from "../../../core/src/bases/values";
+import { fileBasename } from "../../../core/src/pathUtils";
 import { columnLabel } from "../bases/columnLabel";
 import type { ExportDeps } from "./types";
 import type { Row, BaseConfig, ViewResult } from "../../../core/src/bases/types";
@@ -39,7 +40,7 @@ export function viewResultToTable(config: BaseConfig, vr: ViewResult): TableData
 // a base with an inline table renders its own rows; a query base (filters:/views:,
 // no source:) defaults to all notes (kind: "notes"), which runView then narrows.
 export async function baseToTable(path: string, deps: ExportDeps): Promise<TableData> {
-  const name = path.split("/").pop()!.replace(/\.md$/, "");
+  const name = fileBasename(path);
   const { config, rows } = parseBaseFile(await deps.read(path), { name, path });
   const spec = config.source ?? (rows.length ? { kind: "base" as const } : { kind: "notes" as const });
   const allRows = spec.kind === "base" && rows.length ? rows : await deps.resolveRows(spec);

@@ -1,6 +1,7 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
 import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
+import { fileBasename as noteLabel } from "../../../core/src/pathUtils";
 import { capitalize, columnLabel } from "./renderValue";
 import { Modal } from "../ui/Modal";
 import { Icon } from "../icons/Icon";
@@ -56,10 +57,6 @@ function columnsOf(rows: Row[]): string[] {
   }
   const cols = [...set];
   return hasName ? ["file.name", ...cols] : cols;
-}
-
-function noteLabel(path: string) {
-  return path.split("/").pop()!.replace(/\.(base|md)$/, "");
 }
 
 const AGG_OPTS = [
