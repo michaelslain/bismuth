@@ -10,6 +10,11 @@ import { parseCalendarFile, serializeCalendarFile, categoriesOf } from "./calend
 export class BaseBackend implements CalendarStorage {
   private snapshot: EventsFile | null = null;
   private frontmatter: Record<string, unknown> = { type: "base", view: "calendar" };
+  // Serialize writes: a single recurrence op (e.g. deleteOccurrence) issues 2–3 saves
+  // back-to-back. Each serializes the FULL snapshot, so the last-issued write is the
+  // authoritative one — but only if writes land in order. Chaining them guarantees that
+  // (no out-of-order disk state), without blocking the caller (each save() returns sync).
+  private writeChain: Promise<void> = Promise.resolve();
   constructor(private readonly path: string) {}
 
   async init(): Promise<void> {
@@ -33,7 +38,11 @@ export class BaseBackend implements CalendarStorage {
     const fm = { ...this.frontmatter };
     if (data.categories.length) fm.categories = data.categories;
     else delete fm.categories;
-    // Fire-and-forget; the editor/version poll reflects disk truth on next read.
-    void api.write(this.path, serializeCalendarFile(fm, data.events));
+    // Snapshot the text NOW (synchronously) so the queued write persists this exact
+    // state even if `data` mutates before the chain reaches it.
+    const text = serializeCalendarFile(fm, data.events);
+    // Fire-and-forget for the caller, but chained so writes hit disk in call order; the
+    // editor/version poll reflects disk truth on next read.
+    this.writeChain = this.writeChain.then(() => api.write(this.path, text)).catch(() => {});
   }
 }

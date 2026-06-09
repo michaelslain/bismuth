@@ -158,10 +158,36 @@
 .event-detail-header h3 { margin: 0; }
 .event-detail-category { font-size: 0.8em; color: var(--text-muted); }
 .event-detail-description { font-size: 0.9em; white-space: pre-wrap; }
-.recurrence-dialog { background: var(--background-primary); border-radius: 8px; padding: 20px; min-width: 280px; display: flex; flex-direction: column; gap: 12px; }
-.recurrence-dialog-actions { display: flex; flex-direction: column; gap: 8px; }
-/* recurrence choices inherit the shared button style; just widen + left-align. */
-.recurrence-dialog-actions button { padding: 8px 10px; text-align: left; }
+/* ============================================================
+   Recurrence dialog — redesign on the shared `.evm-modal` chrome
+   (header/body/footer + tokens defined in the New Event modal block below).
+   The body is a stack of selectable option rows: This event / This and
+   following / All — same surface language as the categories/settings rows.
+   ============================================================ */
+.evm-modal.recurrence-dialog { width: 420px; }
+.evm-modal.recurrence-dialog .evm-head { align-items: center; }
+.evm-modal.recurrence-dialog .evm-mark { height: 24px; }
+
+.evm-modal .rec-opts { display: flex; flex-direction: column; gap: 8px; }
+.evm-modal .rec-opt {
+  display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+  padding: 11px 13px; background: var(--surface2); border: 1px solid var(--border2);
+  border-radius: 10px; color: var(--hi); cursor: pointer;
+  transition: border-color .14s, background .14s, transform .04s;
+}
+.evm-modal .rec-opt:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--surface2)); }
+.evm-modal .rec-opt:active { transform: translateY(1px); }
+.evm-modal .rec-opt-ic { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--accent); background: var(--accent-soft); }
+.evm-modal .rec-opt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.evm-modal .rec-opt-lab { font-family: var(--serif); font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; color: var(--hi); }
+.evm-modal .rec-opt-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .02em; color: var(--faint); }
+.evm-modal .rec-opt-chev { flex: 0 0 auto; color: var(--faint); display: inline-flex; transition: transform .14s, color .14s; }
+.evm-modal .rec-opt:hover .rec-opt-chev { color: var(--accent); transform: translateX(2px); }
+
+/* delete variant — the destructive accent (rose) replaces the blue on the icon + hover */
+.evm-modal .rec-opts.danger .rec-opt-ic { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
+.evm-modal .rec-opts.danger .rec-opt:hover { border-color: var(--rose); background: color-mix(in srgb, var(--rose) 9%, var(--surface2)); }
+.evm-modal .rec-opts.danger .rec-opt:hover .rec-opt-chev { color: var(--rose); }
 /* ============================================================
    Categories modal — redesign (see ~/Downloads/claude-design-categories).
    Shares the `.evm-modal` chrome (header/body/footer/inputs/buttons);

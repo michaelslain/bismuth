@@ -1,4 +1,4 @@
-import { createSignal, createResource, createMemo, createEffect, onMount, Show, Switch, Match, Index } from "solid-js";
+import { createSignal, createResource, createMemo, createEffect, onMount, on, useTransition, Show, Switch, Match, Index } from "solid-js";
 import { api } from "../api";
 import { serverVersion } from "../serverVersion";
 import { RowCache } from "./rowCache";
@@ -18,6 +18,7 @@ import { BarView } from "./BarView";
 import { LineView } from "./LineView";
 import { StatView } from "./StatView";
 import { CalendarView } from "./CalendarView";
+import { showCalendarSettings } from "../calendar/state";
 import { FlashcardsView } from "./FlashcardsView";
 import { BaseSettings } from "./BaseSettings";
 import { capitalize } from "./renderValue";
@@ -169,13 +170,17 @@ export function BaseView(props: {
   // the next resolve revalidates. The cached values stay around for an instant paint.
   createEffect(() => rowCache.invalidate(serverVersion()));
 
-  // Re-run the resource on either a view change OR a server version bump. The version
-  // is part of the source so an SSE event (a note feeding this base changed, even in
-  // another pane) revalidates the rows instead of showing them indefinitely stale; the
-  // cache + in-flight dedup keep the extra resolves cheap, and Solid keeps the previous
-  // value painted while the new one loads (stale-while-revalidate).
-  const source = createMemo(() => ({ key: sig(), version: serverVersion() }));
-  const [fetched, { refetch }] = createResource(source, async ({ key, version }) => {
+  // The resource source is the *identity* key only (path/source/view) — NOT the server
+  // version. A key change is a genuinely different base, so it's fine to suspend (show a
+  // skeleton). A version bump is a background revalidation of the SAME base: we drive it
+  // through a transition (below) so the current tree keeps rendering while the new rows
+  // load, instead of suspending to the <Suspense> fallback. That fallback swap would
+  // unmount + remount full-pane views like the calendar on their own writes — resetting
+  // scroll, flickering, and re-running their onMount (which re-reads the file from disk
+  // and could race a not-yet-landed write). The cache + in-flight dedup keep resolves cheap.
+  const [, startRevalidate] = useTransition();
+  const [fetched, { refetch }] = createResource(sig, async (key) => {
+    const version = serverVersion();
     // Fresh cache hit (same version, not invalidated): skip the /rows round-trip.
     if (rowCache.isFresh(key, version)) return rowCache.peek(key)!;
     const loaded = await loadConfig();
@@ -187,6 +192,12 @@ export function BaseView(props: {
     rowCache.set(key, result, version);
     return result;
   });
+
+  // Revalidate on every server version bump (an SSE event — a note feeding this base
+  // changed, even in another pane, or this view's own write). Wrapped in a transition so
+  // it's a true stale-while-revalidate: the previous rows stay painted (no Suspense flash,
+  // no full-pane remount) until the fresh resolve lands.
+  createEffect(on(serverVersion, () => { void startRevalidate(() => refetch()); }, { defer: true }));
 
   // Effective data: the freshly fetched result when available, else the last cached
   // resolution for this view (stale-while-revalidate) so a reopen/split paints instantly
@@ -232,15 +243,19 @@ export function BaseView(props: {
             />
           </Show>
           <ViewBarSpacer />
-          {/* SETTINGS opens a modal overlay (same chrome as the calendar's own settings).
-              Calendar has its own settings in its toolbar. SOURCE also shows for an
+          {/* SETTINGS gear sits next to SOURCE for every base type, including the
+              calendar — which routes to its own settings modal (showCalendarSettings)
+              instead of the generic BaseSettings overlay. SOURCE also shows for an
               embedded query (edits the fence body). */}
-          <Show when={editPath() && activeType() !== "calendar"}>
+          <Show when={editPath()}>
             <VBtn
               icon="Settings"
               title="Settings"
-              active={settingsMode()}
-              onClick={() => { setSettingsMode(true); setSourceMode(false); }}
+              active={activeType() === "calendar" ? showCalendarSettings.value : settingsMode()}
+              onClick={() => {
+                if (activeType() === "calendar") showCalendarSettings.value = !showCalendarSettings.value;
+                else { setSettingsMode(true); setSourceMode(false); }
+              }}
             />
           </Show>
           <Show when={editPath() || props.embeddedSource}>
