@@ -1079,4 +1079,26 @@ if (import.meta.main) {
       })
       .catch((e) => console.warn(`bismuth tools install failed: ${e?.message ?? e}`));
   }
+
+  // Bundled app launch (OA_APP_PATH is set only by the Tauri shell): if the claude-bot
+  // daemon is installed and daemon.autoUpdate is on, update it in the background. Gated to
+  // the bundled app so dev/standalone/tests never touch a live daemon. claude-bot's
+  // runUpdate is idempotent + fetch-gated — it only pulls/restarts when actually behind, so
+  // an up-to-date daemon is a no-op. Best-effort; never crashes the server.
+  if (process.env.OA_APP_PATH) {
+    void (async () => {
+      try {
+        const cfg = await loadAppConfig(vault);
+        if (cfg.daemon?.autoUpdate === false) return;
+        const status = await installStatus();
+        if (!status.installed) return;
+        const r = await runUpdate();
+        if (r.action === "updated") {
+          console.log(`claude-bot: auto-updated ${r.from?.slice(0, 7)} → ${r.to?.slice(0, 7)}${r.restarted ? " (restarted)" : ""}`);
+        }
+      } catch (e) {
+        console.warn(`claude-bot auto-update skipped: ${(e as Error)?.message ?? e}`);
+      }
+    })();
+  }
 }

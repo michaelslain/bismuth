@@ -147,6 +147,12 @@ export const SETTINGS_SCHEMA: Schema = {
   daemon: object({
     enabled: { type: "boolean", default: false, doc: "Supervise the claude-bot daemon." },
     home: { type: "string", default: "", doc: "Override claude-bot home dir; empty = ~/.claude-bot." },
+    autoUpdate: { type: "boolean", default: true, doc: "When the daemon is installed, auto-update it on app launch (git pull + bun install + restart) if it's behind — in the background." },
+  }),
+  // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
+  // (see core/src/selfUpdate.ts); by default that's manual via the update banner.
+  update: object({
+    autoUpdate: { type: "boolean", default: false, doc: "Auto-apply Bismuth app updates on launch in the background, then relaunch when the rebuild is ready (off = manual via the update banner)." },
   }),
   terminal: object({
     fontSize: { type: "number", default: 13, min: 9, max: 20, doc: "Terminal font size (px)." },

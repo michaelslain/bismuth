@@ -134,7 +134,10 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: 1.6; }
 /* Select: a .ui-input styled as a clickable trigger with a trailing caret. The open
    list is a portaled <PopoverList> above the modal overlay; a transparent backdrop
    between the overlay and the list catches outside clicks. */
-.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; }
+/* A select trigger shows a CHOSEN label (UI chrome), not a typed value — so use the UI
+   monospace font, not the prose font .ui-input gives text inputs. Matches the dropdown list
+   (which is already Monaspace). */
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .ui-select-trigger:focus { border-color: var(--accent); }
 .ui-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-select-placeholder { color: var(--text-muted); }

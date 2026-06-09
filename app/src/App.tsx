@@ -867,6 +867,39 @@ export default function App() {
   };
 
   onMount(registerFileEvents);
+
+  // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
+  // since the intro has no backend). Fires once after the vault opens, then clears the flag.
+  // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
+  onMount(() => {
+    let chosen: string[] = [];
+    try {
+      chosen = JSON.parse(localStorage.getItem("oa-first-run-powerups") || "[]");
+      localStorage.removeItem("oa-first-run-powerups");
+    } catch {
+      return;
+    }
+    if (!Array.isArray(chosen) || chosen.length === 0) return;
+    // Each runner returns its installer result; `action` tells us whether it was a fresh
+    // install or a no-op because it's already there ("adopted"/"up-to-date") — so we can
+    // say "already installed" instead of falsely claiming a setup or showing an error.
+    const ALREADY = new Set(["adopted", "up-to-date", "skipped-no-src"]);
+    const runners: Record<string, { label: string; run: () => Promise<{ action?: string }> }> = {
+      "daemon-setup": { label: "claude-bot daemon", run: () => api.daemonSetup() },
+      "bismuth-install": { label: "Bismuth CLI + MCP", run: () => api.bismuthInstall() },
+    };
+    setTimeout(() => {
+      for (const id of chosen) {
+        const r = runners[id];
+        if (!r) continue;
+        r.run()
+          .then((res) =>
+            pushToast(ALREADY.has(res?.action ?? "") ? `${r.label} already installed` : `Set up ${r.label}`),
+          )
+          .catch((e) => pushToast(`${r.label} setup failed: ${(e as Error).message}`));
+      }
+    }, 2500);
+  });
   // Global keyboard shortcuts. Every combo is read from settings.keybindings
   // (defaults in core/src/keybindings.ts), matched via matchesKeybinding — none
   // are hardcoded here. These fire even while the editor is focused (CodeMirror
@@ -874,6 +907,14 @@ export default function App() {
   const handleGlobalKeydown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     const kb = settings.keybindings;
+
+    // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
+    // first-run intro (handy for re-watching the onboarding animation). Tauri-only.
+    if (e.metaKey && e.ctrlKey && e.altKey && e.shiftKey && e.code === "KeyR") {
+      e.preventDefault();
+      if (isTauri()) void import("@tauri-apps/api/core").then(({ invoke }) => invoke("reset_first_run"));
+      return;
+    }
 
     // Insert template (default Alt+T): don't hijack while typing in a form field
     // (palette search, calendar title, etc.). The note editor is contentEditable,
