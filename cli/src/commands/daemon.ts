@@ -18,7 +18,7 @@ import {
   runCron,
 } from "../../../core/src/daemon";
 import { daemonGraph } from "../../../core/src/daemonGraph";
-import { installStatus, runSetup } from "../../../core/src/claudebot";
+import { installStatus, runSetup, runUpdate } from "../../../core/src/claudebot";
 
 export const commands: CommandMap = {
   "daemon status": {
@@ -59,6 +59,13 @@ export const commands: CommandMap = {
     usage: "[--pretty]",
     run: async (args) => {
       out(await runSetup(), args);
+    },
+  },
+  "daemon update": {
+    summary: "Update claude-bot: git pull + bun install + restart the daemon (idempotent)",
+    usage: "[--pretty]",
+    run: async (args) => {
+      out(await runUpdate(), args);
     },
   },
   "daemon graph": {

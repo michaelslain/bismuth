@@ -33,7 +33,7 @@ import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
 import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
-import { installStatus, runSetup } from "./claudebot";
+import { installStatus, runSetup, runUpdate } from "./claudebot";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
 
@@ -605,6 +605,13 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /daemon/setup": async (_, __) => {
       return ok(await runSetup());
+    },
+
+    // Update the claude-bot daemon: spawns its bin/update.ts (git pull --ff-only + bun
+    // install + restart). System action, not a vault mutation → READ routes. Idempotent
+    // (no-op when already current). The restart is claude-bot's own (we never launchctl).
+    "POST /daemon/update": async (_, __) => {
+      return ok(await runUpdate());
     },
 
     // Machine-wide bismuth CLI + MCP install (core/src/bismuthInstall.ts). Like the daemon

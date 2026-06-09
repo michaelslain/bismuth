@@ -398,6 +398,12 @@ Run the idempotent, **adopt-only** claude-bot setup and print the result (`runSe
 bismuth daemon setup --pretty
 ```
 
+### `daemon update`
+Update claude-bot end-to-end (`runUpdate()` → claude-bot's `bin/update.ts`): `git pull --ff-only` + `bun install` + **restart the daemon**. Idempotent — `"up-to-date"` when already at `origin/main`. Result: `{ action, from?, to?, restarted?, warnings? }`. (Also surfaced in-app as the "Update claude-bot daemon…" command.)
+```bash
+bismuth daemon update --pretty
+```
+
 ### `daemon graph`
 Build the daemon-mode graph (daemon hub → crons + processes, `supervises` edges) and print it as JSON (`daemonGraph()`).
 ```bash
@@ -548,7 +554,7 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
-| `daemon status/devices/owner/install/setup/graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **no** (uses `~/.claude-bot`) | JSON / `ok` |
+| `daemon status/devices/owner/install/setup/update/graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **no** (uses `~/.claude-bot`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |

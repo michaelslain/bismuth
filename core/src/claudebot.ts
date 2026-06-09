@@ -38,6 +38,15 @@ export interface SetupResult {
   status: InstallStatus;
 }
 
+/** runUpdate() shape printed by claude-bot's bin/update.ts with no flag. */
+export interface UpdateResult {
+  action: "updated" | "up-to-date" | "would-update" | "no-remote";
+  from?: string;
+  to?: string;
+  restarted?: boolean;
+  warnings?: string[];
+}
+
 /** Safe default returned whenever we can't talk to the installer entrypoint. */
 const UNKNOWN_STATUS: InstallStatus = { installed: false, running: false, daemonLabel: DAEMON_LABEL };
 
@@ -67,6 +76,8 @@ export interface InstalledLookup {
   read?: (path: string) => string;
   /** On-disk existence check (defaults to `node:fs` existsSync). */
   exists?: (path: string) => boolean;
+  /** Which `bin/<file>` to resolve (defaults to the installer; "update.ts" for self-update). */
+  bin?: string;
 }
 
 /**
@@ -80,12 +91,13 @@ export function installedEntrypoint(opts: InstalledLookup = {}): string | null {
   const exists = opts.exists ?? existsSync;
   const read = opts.read ?? ((p: string) => readFileSync(p, "utf8"));
   const configPath = opts.configPath ?? defaultDaemonConfigPath();
+  const bin = opts.bin ?? "ensure-installed.ts";
   try {
     if (!exists(configPath)) return null;
     const entry = extractDaemonEntry(read(configPath));
     if (!entry) return null;
-    // <root>/daemon/index.ts -> <root>/bin/ensure-installed.ts
-    const ep = join(dirname(dirname(entry)), "bin", "ensure-installed.ts");
+    // <root>/daemon/index.ts -> <root>/bin/<bin>
+    const ep = join(dirname(dirname(entry)), "bin", bin);
     return exists(ep) ? ep : null;
   } catch {
     return null;
@@ -102,6 +114,8 @@ export interface ResolveOptions {
   exists?: (path: string) => boolean;
   /** Detector for an already-installed claude-bot (defaults to {@link installedEntrypoint}). */
   installed?: () => string | null;
+  /** Which `bin/<file>` to resolve (defaults to the installer; "update.ts" for self-update). */
+  bin?: string;
 }
 
 /**
@@ -128,15 +142,16 @@ export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => str
   const options: ResolveOptions = typeof opts === "function" ? { resolve: opts } : (opts ?? {});
   const env = options.env ?? process.env;
   const exists = options.exists ?? existsSync;
+  const bin = options.bin ?? "ensure-installed.ts";
 
   // (1) Highest precedence: a claude-bot already installed on this machine.
-  const installed = (options.installed ?? (() => installedEntrypoint({ exists })))();
+  const installed = (options.installed ?? (() => installedEntrypoint({ exists, bin })))();
   if (installed) return installed;
 
   // (2) The Tauri-bundled, relocatable claude-bot copy.
   const bundle = env.OA_CLAUDEBOT_BUNDLE;
   if (bundle) {
-    const bundled = join(bundle, "bin", "ensure-installed.ts");
+    const bundled = join(bundle, "bin", bin);
     try {
       if (exists(bundled)) return bundled;
     } catch {
@@ -148,7 +163,7 @@ export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => str
   const req = createRequire(import.meta.url);
   const tryResolve = options.resolve ?? ((spec: string) => req.resolve(spec));
   // Preferred: the package declares a bin/exports entry we can resolve directly.
-  for (const spec of ["claude-bot/bin/ensure-installed.ts", "claude-bot/bin/ensure-installed"]) {
+  for (const spec of [`claude-bot/bin/${bin}`, `claude-bot/bin/${bin.replace(/\.ts$/, "")}`]) {
     try {
       return tryResolve(spec);
     } catch {
@@ -159,7 +174,7 @@ export function resolveEntrypoint(opts?: ResolveOptions | ((spec: string) => str
   // and join the known entrypoint relative to it.
   try {
     const pkgJson = tryResolve("claude-bot/package.json");
-    return join(dirname(pkgJson), "bin", "ensure-installed.ts");
+    return join(dirname(pkgJson), "bin", bin);
   } catch {
     return null;
   }
@@ -265,5 +280,32 @@ export async function runSetup(deps: ClaudeBotDeps = {}): Promise<SetupResult> {
       ...(typeof status.home === "string" ? { home: status.home } : {}),
       ...(typeof status.plistPath === "string" ? { plistPath: status.plistPath } : {}),
     },
+  };
+}
+
+/**
+ * Run the claude-bot self-update: spawns its `bin/update.ts` (no flag), which does
+ * `git pull --ff-only` + `bun install` + restarts the daemon, then prints one JSON line.
+ * Idempotent — "up-to-date" when already at origin/main. Surfaces a real error if the
+ * entrypoint can't be resolved or the subprocess fails.
+ */
+export async function runUpdate(deps: ClaudeBotDeps = {}): Promise<UpdateResult> {
+  const entry = deps.entrypoint !== undefined ? deps.entrypoint : resolveEntrypoint({ bin: "update.ts" });
+  if (!entry) {
+    throw new Error("claude-bot update entrypoint not found (is the claude-bot package installed?)");
+  }
+  const run = deps.spawn ?? defaultSpawn;
+  const { exitCode, stdout } = await run([process.execPath, "run", entry]);
+  const parsed = parseJsonLine(stdout) as Partial<UpdateResult> | null;
+  if (!parsed || typeof parsed !== "object" || typeof parsed.action !== "string") {
+    if (exitCode !== 0) throw new Error(`claude-bot update failed (exit ${exitCode})`);
+    throw new Error("claude-bot update returned no parseable result");
+  }
+  return {
+    action: parsed.action as UpdateResult["action"],
+    ...(typeof parsed.from === "string" ? { from: parsed.from } : {}),
+    ...(typeof parsed.to === "string" ? { to: parsed.to } : {}),
+    ...(typeof parsed.restarted === "boolean" ? { restarted: parsed.restarted } : {}),
+    ...(Array.isArray(parsed.warnings) ? { warnings: parsed.warnings.map(String) } : {}),
   };
 }
