@@ -6,12 +6,7 @@ Bismuth is an Obsidian-style knowledge vault, built as a Bun monorepo: a `core` 
 
 Build Bismuth from source and install it to `/Applications`.
 
-You need [Bun](https://bun.sh/docs/installation) 1.0+ and Node.js 20+. You also need Rust to build the native app — install it with:
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # accept the default
-source "$HOME/.cargo/env"                                        # load it into the current shell
-```
+You need [Bun](https://bun.sh/docs/installation) 1.0+, Node.js 20+, and Rust (for the native build) installed.
 
 Then clone, install, and build — the last command builds the app and opens the installer for you:
 
@@ -23,8 +18,6 @@ bun run build:app     # builds the app (a few minutes), then opens the dmg
 ```
 
 When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. First run: pick your vault folder.
-
-> You don't need to clone claude-bot. The first time you opt into **Set up claude-bot daemon** (in-app), Bismuth downloads + installs the daemon for you.
 
 <details><summary>Notes</summary>
 
