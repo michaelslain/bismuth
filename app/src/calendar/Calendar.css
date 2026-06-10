@@ -122,7 +122,10 @@
 .time-grid-day-col { flex: 1; position: relative; border-left: 1px solid var(--border-soft); height: 1200px; user-select: none; }
 .time-grid-day-col.today { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .time-grid-hour-block { height: calc(1200px / 24); display: flex; flex-direction: column; }
-.time-grid-hour-cell { flex: 1; border-bottom: 1px solid var(--border-soft); box-sizing: border-box; cursor: pointer; }
+/* Hour line on the TOP of the hour-cell (the :00 mark) so it lines up with the gutter
+   hour label, which sits at the top of its block. (border-bottom drew it at :30, half a
+   block below the label.) box-sizing keeps the 1px inside the 50px block — no drift. */
+.time-grid-hour-cell { flex: 1; border-top: 1px solid var(--border-soft); box-sizing: border-box; cursor: pointer; }
 .time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
 .time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
