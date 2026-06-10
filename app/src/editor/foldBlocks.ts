@@ -18,7 +18,7 @@
 // are skipped so two replace decorations never overlap. The scroll position is held
 // fixed across every toggle so collapsing never makes the view jump.
 
-import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { type Extension, Prec, type Range, StateEffect, StateField, type Text } from "@codemirror/state";
 import { isThematicBreak } from "./thematicBreak";
 // One nesting level of list indent, in em — shared with livePreview (via the
@@ -236,7 +236,7 @@ interface FoldState {
 
 const foldableLine = Decoration.line({ class: "cm-foldable-line" });
 
-function buildDeco(doc: Text, mode: FoldMode, folded: Set<string>, locked: Set<string>): DecorationSet {
+function buildDeco(doc: Text, mode: FoldMode, folded: Set<string>, locked: Set<string>, hasGutter: boolean): DecorationSet {
   const ranges: Range<Decoration>[] = [];
   let coveredUntil = -1; // skip blocks whose anchor falls inside an already-folded region
   for (const b of scanFoldables(doc, mode)) {
@@ -246,7 +246,14 @@ function buildDeco(doc: Text, mode: FoldMode, folded: Set<string>, locked: Set<s
     // consistent small distance from the text; indented blocks use an em offset so it
     // tracks the bullet/key glyph at each depth. This positions the (wide, transparent)
     // hit-box; the triangle itself is centered inside it.
-    const left = b.kind === "h" ? "-24px" : `${(b.depth * LIST_STEP - 1.45).toFixed(2)}em`;
+    const base = b.kind === "h" ? "-24px" : `${(b.depth * LIST_STEP - 1.45).toFixed(2)}em`;
+    // When the editor shows a native line-number gutter (yaml/config files, or notes with
+    // line numbers on), a depth-0 anchor's triangle would otherwise land on top of — and,
+    // since the gutter sits at z-index 200 above the content, *behind* — the line numbers,
+    // hiding it and stealing the click. Pull those past the gutter (measured width, so it's
+    // robust to digit count) so the collapser sits clearly to the LEFT of the numbers and
+    // stays clickable. Deeper (indented) anchors already clear the gutter, so leave them put.
+    const left = hasGutter && b.depth === 0 ? `calc(-1 * var(--oa-fold-gutter-w, 0px) - 18px)` : base;
     ranges.push(foldableLine.range(b.anchorFrom));
     ranges.push(
       Decoration.widget({
@@ -342,7 +349,7 @@ function clearFoldStyles(el: HTMLElement): void {
  * animate those stable elements up from 0. Falls back to an immediate `done()` when
  * nothing is on-screen or motion is reduced.
  */
-function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", done: () => void): void {
+function animateFold(view: EditorView, getEls: () => HTMLElement[], dir: "collapse" | "expand", done: () => void): void {
   if (reducedMotion()) {
     done();
     return;
@@ -353,6 +360,23 @@ function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", do
       done();
       return;
     }
+    // The native line-number gutter (if any) can't be slid in lock-step with the content
+    // rows — CodeMirror renders the numbers at their final layout positions and re-measures
+    // them on its own schedule, so any per-row tween we apply ends up fighting CM and leaves
+    // numbers misaligned. Instead hide the whole gutter for the brief slide and fade it back
+    // in once the fold has committed (CM re-lays it out). Opacity never touches CM's height
+    // bookkeeping, so the numbers can't get stuck — they just reappear correctly placed.
+    const gutter = view.dom.querySelector<HTMLElement>(".cm-gutters");
+    if (gutter) {
+      gutter.style.transition = "none";
+      gutter.style.opacity = "0";
+    }
+    const restoreGutter = () => {
+      if (gutter) {
+        gutter.style.transition = "opacity 140ms ease";
+        gutter.style.opacity = "1";
+      }
+    };
     const heights = els.map((el) => el.getBoundingClientRect().height); // current = full height
     let pending = els.length;
     let settled = false;
@@ -362,6 +386,7 @@ function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", do
       settled = true;
       els.forEach(clearFoldStyles);
       done();
+      restoreGutter();
     };
     els.forEach((el, i) => {
       el.style.overflow = "hidden";
@@ -381,6 +406,7 @@ function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", do
       settled = true;
       els.forEach(clearFoldStyles);
       done();
+      restoreGutter();
     }, ANIM_MS + 200);
   };
   // Expand: wait one frame so CM has finished re-rendering the just-revealed lines.
@@ -393,13 +419,18 @@ function animateFold(getEls: () => HTMLElement[], dir: "collapse" | "expand", do
  * supplies the current note path (stable for the lifetime of this editor view),
  * used as the persistence key for locked folds.
  */
-export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): Extension {
+export function foldBlocks(
+  getPath: () => string,
+  mode: FoldMode = "markdown",
+  opts: { hasGutter?: boolean } = {},
+): Extension {
   const path = getPath();
+  const hasGutter = opts.hasGutter ?? false;
 
   const field = StateField.define<FoldState>({
     create(state) {
       const locked = loadLocked(path);
-      return { locked, ephemeral: new Set(), deco: buildDeco(state.doc, mode, locked, locked) };
+      return { locked, ephemeral: new Set(), deco: buildDeco(state.doc, mode, locked, locked, hasGutter) };
     },
     update(value, tr) {
       let { locked, ephemeral } = value;
@@ -437,7 +468,7 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
       if (!changed) return value;
 
       const folded = new Set<string>([...locked, ...ephemeral]);
-      return { locked, ephemeral, deco: buildDeco(tr.state.doc, mode, folded, locked) };
+      return { locked, ephemeral, deco: buildDeco(tr.state.doc, mode, folded, locked, hasGutter) };
     },
     provide: (f) => EditorView.decorations.from(f, (v) => v.deco),
   });
@@ -476,18 +507,52 @@ export function foldBlocks(getPath: () => string, mode: FoldMode = "markdown"): 
       // commit until the slide finishes — otherwise the triangle visibly lags the content).
       const escId = id.replace(/(["\\])/g, "\\$1");
       view.dom.querySelector<HTMLElement>(`.cm-fold-arrow[data-fold-id="${escId}"]`)?.classList.add("is-collapsed");
-      animateFold(getEls, "collapse", () => {
+      animateFold(view, getEls, "collapse", () => {
         commit();
         release();
       });
     } else {
       commit(); // un-fold so the region's lines render again…
-      animateFold(getEls, "expand", release); // …then slide them open
+      animateFold(view, getEls, "expand", release); // …then slide them open
     }
   };
 
+  // Keep `--oa-fold-gutter-w` (read by the depth-0 triangle's `left` calc above) in sync
+  // with the live line-number gutter width, so the collapser always parks just left of the
+  // numbers regardless of how many digits they grow to. Only needed when a gutter exists.
+  const gutterWidthSync = ViewPlugin.fromClass(
+    class {
+      lastWidth = -1; // skip the style write (and any reflow) when the width hasn't changed
+      constructor(view: EditorView) {
+        this.measure(view);
+      }
+      update(u: ViewUpdate) {
+        if (u.geometryChanged || u.docChanged || u.viewportChanged) this.measure(u.view);
+      }
+      measure(view: EditorView): void {
+        view.requestMeasure({
+          key: "oa-fold-gutter-w",
+          read: (v) => (v.dom.querySelector(".cm-gutters") as HTMLElement | null)?.offsetWidth ?? 0,
+          write: (w, v) => {
+            if (w === this.lastWidth) return;
+            this.lastWidth = w;
+            v.dom.style.setProperty("--oa-fold-gutter-w", `${w}px`);
+          },
+        });
+      }
+    },
+  );
+
+  // Scoped to gutter editors only (so it can never make a gutter-less note's hypothetical
+  // future gutter unclickable): the line-number gutter sits at z-index 200 above the content
+  // layer that hosts the fold triangles. The triangles now park to its left, but make the
+  // gutter ignore pointer events too — these line numbers aren't interactive, so this just
+  // guarantees a click always reaches the collapser even if the two ever overlap (narrow pane).
+  const gutterClickThrough = EditorView.theme({ ".cm-gutters": { "pointer-events": "none" } });
+
   return [
     field,
+    ...(hasGutter ? [gutterWidthSync, gutterClickThrough] : []),
     // Highest precedence so a click/right-click on the chevron is handled here FIRST —
     // before editorContextMenu (which would otherwise open the spell/grammar menu for a
     // squiggle under the heading, since the chevron's margin position maps to that text).

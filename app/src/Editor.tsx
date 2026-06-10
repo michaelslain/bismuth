@@ -399,7 +399,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           yaml(),
           syntaxHighlighting(yamlHighlight),
           codeFontTheme,
-          foldBlocks(() => path, "yaml"),
+          foldBlocks(() => path, "yaml", { hasGutter: true }),
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
@@ -432,7 +432,9 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
           notePathFacet.of(path),
-          ...(ed.livePreview ? [livePreview, foldBlocks(() => path), mathBlock()] : []),
+          // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
+          // safe to read here since this effect rebuilds the whole view when settings.editor changes.
+          ...(ed.livePreview ? [livePreview, foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock()] : []),
           // Harper spell + grammar check, toggled by editor.spellcheck (default true).
           ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
         ];
