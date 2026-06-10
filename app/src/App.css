@@ -62,6 +62,13 @@ button { outline: none; font: inherit; }
 body, html, #root { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--fg); }
 
+/* Text selection ("highlighting" a drag-range) tints with the accent palette color
+   everywhere. Without this the whole app — and rendered/live-preview "formatter"
+   content — falls back to the browser's harsh bright-blue default. The CodeMirror
+   editor sets its own matching tint in Editor.tsx (.cm-selectionBackground). */
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
 /* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
    invisible; the thumb is a faint inset pill that only firms up on hover. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 16%, transparent) transparent; }

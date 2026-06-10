@@ -54,15 +54,25 @@ const editorTheme = EditorView.theme({
   // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
   // than centering .cm-content alone — otherwise the line-number gutter stays pinned to
   // the far left while the text floats to the middle, leaving a huge empty indent.
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", justifyContent: "center" },
-  ".cm-content": { caretColor: "var(--fg)", padding: "8px 40px 80px", maxWidth: "760px", width: "100%", boxSizing: "border-box" },
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", justifyContent: "center", padding: "0 40px" },
+  // The horizontal reading-column inset lives on the SCROLLER (padding), NOT on
+  // .cm-content. If it were content padding, CodeMirror's drawSelection would paint
+  // multi-line selection across that padding too — a "phantom indent" left of the
+  // text. Keeping .cm-content flush to the text column means the selection box IS the
+  // text column. (Don't set position:relative here — it corrupts CM's selection-rect
+  // geometry.) Code line numbers hang at -2.7em into the scroller padding.
+  ".cm-content": { caretColor: "var(--fg)", padding: "8px 0 80px", maxWidth: "680px", width: "100%", boxSizing: "border-box" },
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--fg)",
     borderLeftWidth: "2px",
     transition: "left 70ms ease-out, top 70ms ease-out", // smooth glide
   },
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
-  "&.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
+  // CodeMirror's baseTheme paints the FOCUSED selection with a high-specificity
+  // selector (.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
+  // a pale-lavender default). A plain "&.cm-focused .cm-selectionBackground" loses to
+  // it — so match that exact selector here to keep the accent tint while focused.
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
   // Match .oa-popover exactly: same radius, padding, shadow, and UI font tokens —
   // CodeMirror owns this <ul><li> DOM, so we can't share the component, only the tokens.
