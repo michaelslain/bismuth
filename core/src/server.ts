@@ -21,7 +21,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
-import { createTerminalSession, killSession, resizeSession, getSession, listSessionIds } from "./terminal";
+import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds } from "./terminal";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
@@ -41,6 +41,14 @@ export interface CoreConfig { vault: string; memory?: string; port?: number }
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+
+// How long a terminal PTY survives an ABNORMAL websocket close (reload, network
+// drop) before being killed — the window in which a reconnecting client can
+// reattach by termId and keep its running shell. Clean closes (code 1000) kill
+// immediately, so this never delays teardown of a deliberately-closed tab.
+// Overridable via OA_TERMINAL_GRACE_MS (tests use a short window).
+const reattachGraceMs = (): number =>
+  Number(process.env.OA_TERMINAL_GRACE_MS) || 30_000;
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
@@ -994,12 +1002,30 @@ export function createServer(cfg: CoreConfig) {
         if (!allowed) {
           return withCors(error("forbidden origin", 403));
         }
-        // Tabs report to THIS server's port so the in-tab Claude sessions' relay
-        // hooks reach the right core (multiple windows = multiple backends).
-        const session = createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port });
+        // Reattach: a reconnecting/reloading client passes its stable term id. If
+        // its PTY is still alive (within the post-disconnect grace window), pipe to
+        // the SAME shell — preserving the running process, cwd, and env — instead of
+        // silently spawning a fresh one. Otherwise create a new session keyed by it.
+        const termId = url.searchParams.get("termId") ?? undefined;
+        const existing = termId ? getSessionByTermId(termId) : undefined;
+        let createdNew = false;
+        let session;
+        if (existing) {
+          cancelSessionKill(existing.id); // we're reattaching — don't kill it
+          resizeSession(existing.id, cols, rows);
+          session = existing;
+        } else {
+          // Tabs report to THIS server's port so the in-tab Claude sessions' relay
+          // hooks reach the right core (multiple windows = multiple backends).
+          session = createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId });
+          createdNew = true;
+        }
         const upgraded = server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
         if (!upgraded) {
-          killSession(session.id);
+          // Never hard-kill a reattached live shell on a failed upgrade; just let its
+          // grace timer reclaim it if no socket reconnects.
+          if (createdNew) killSession(session.id);
+          else scheduleSessionKill(session.id, reattachGraceMs());
           return withCors(error("upgrade failed", 400));
         }
         return new Response(null, { status: 101 }); // upgrade response is sent by Bun
@@ -1028,7 +1054,9 @@ export function createServer(cfg: CoreConfig) {
         if (!s) { ws.close(); return; }
         // Pipe PTY -> ws. Store disposables so we can clean them up on close.
         data.dataSub = s.pty.onData((d: string) => { ws.send(enc.encode(d)); });
-        data.exitSub = s.pty.onExit(() => { try { ws.close(); } catch { /* */ } });
+        // Shell exited: close with code 1000 so the client treats it as a real exit
+        // (close the tab) rather than a dropped connection to reconnect/reattach.
+        data.exitSub = s.pty.onExit(() => { try { ws.close(1000, "exited"); } catch { /* */ } });
       },
       message(ws, msg) {
         const { sessionId } = ws.data as { sessionId: string };
@@ -1050,13 +1078,18 @@ export function createServer(cfg: CoreConfig) {
           resizeSession(sessionId, cols, rows);
         }
       },
-      close(ws) {
+      close(ws, code) {
         const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
         // Dispose PTY listeners immediately so no ws.send is called on the closed socket.
         data.dataSub?.dispose();
         data.exitSub?.dispose();
-        // Grace period to absorb kernel/network races. No resume in v1.
-        setTimeout(() => killSession(data.sessionId), 3000);
+        // A CLEAN close (code 1000) means either the shell process exited (server-side
+        // ws.close after pty.onExit) or the client intentionally disposed the tab
+        // (ws.close(1000)). Kill the PTY now. An ABNORMAL close (reload → 1001, network
+        // drop → 1006, etc.) keeps the PTY alive for a grace window so the reconnecting
+        // client can reattach by termId and keep its running process.
+        if (code === 1000) killSession(data.sessionId);
+        else scheduleSessionKill(data.sessionId, reattachGraceMs());
       },
     },
   });

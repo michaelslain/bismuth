@@ -72,17 +72,21 @@ server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
 ```
 
 The `websocket` handler on the server:
-- **`open`**: subscribes to `pty.onData` (pipes PTY output → `ws.send`) and `pty.onExit` (closes the socket when the shell exits).
+- **`open`**: subscribes to `pty.onData` (pipes PTY output → `ws.send`) and `pty.onExit` (closes the socket with code **1000** when the shell exits, so the client knows it was a real exit rather than a dropped connection).
 - **`message`**: routes tag `0x00` (stdin) or `0x01` (resize) to the PTY.
-- **`close`**: disposes listeners, then kills the session after a 3-second grace period to absorb kernel/network races.
+- **`close`**: disposes listeners, then decides by close code. A **clean close (1000)** — the shell exited, or the client deliberately disposed the tab via `ws.close(1000)` — kills the session immediately. An **abnormal close** (reload `1001`, network drop `1006`, …) keeps the PTY alive for a grace window (`OA_TERMINAL_GRACE_MS`, default 30 s) so a reconnecting client can **reattach by `termId`** and keep its running shell.
+
+**Session reattach.** Each client passes a stable `termId` (its `::term:<uuid>` content id) as `/terminal?…&termId=…`. On connect the server looks it up via `getSessionByTermId`: if a live session exists (within the grace window) it cancels the pending kill and pipes to that **same PTY** — preserving the running process, cwd, and env across a reconnect or a webview reload. Otherwise it creates a fresh session keyed by that `termId`.
 
 Other session management functions:
 
 | Function | Purpose |
 |----------|---------|
-| `killSession(id)` | Kill the PTY and remove from registry |
+| `killSession(id)` | Kill the PTY and remove from registry (+ its `termId` index entry and grace timer) |
 | `resizeSession(id, cols, rows)` | Update stored size and call `pty.resize` |
 | `getSession(id)` | Look up a session by id |
+| `getSessionByTermId(termId)` | Look up a live session by its stable client term id (reattach) |
+| `scheduleSessionKill(id, ms)` / `cancelSessionKill(id)` | Arm / disarm the post-disconnect grace kill |
 | `listSessionIds()` | Return all live ids (used by relay pruning) |
 | `sessionCount()` | Count of open sessions |
 
@@ -491,10 +495,10 @@ The `TerminalTab` Solid component mounts an xterm.js emulator and bridges it to 
 
 - **Font loading**: waits for `Monaspace Xenon` via `document.fonts.load(...)` before constructing xterm, so the grid is sized with the correct font metrics from the start. If the font fails to load, rendering falls back gracefully.
 - **Color theming**: reads `--term-bg`/`--term-fg` CSS variables (falling back to `--bg`/`--fg`), then builds a 16-color ANSI palette from the active accent palette via `buildAnsiPalette`. The 240-entry extended ANSI palette (slots 16–255) is tinted toward the accent palette via `buildExtendedAnsi`, with the result memoized per palette key.
-- **Custom cursor**: xterm's native cursor is made invisible (`cursor: "rgba(0,0,0,0)"`); a custom `.xterm-custom-cursor` overlay div is positioned using `transform: translate(...)` and updated on `onRender`/`onCursorMove` events. This enables CSS transitions.
-- **Click-to-position**: a mousedown/mouseup tracker allows single-point clicks (not drags) on the current prompt row to jump the cursor left or right using `\x1b[C`/`\x1b[D` sequences.
+- **Custom cursor**: xterm's native cursor is made invisible (`cursor: "rgba(0,0,0,0)"`); a custom `.xterm-custom-cursor` overlay div is positioned using `transform: translate(...)` and updated on `onRender`/`onCursorMove` events. This enables CSS transitions. The `.xterm-rows` reference is re-queried lazily if xterm swaps it out, the overlay hides while scrolled into the scrollback (`viewportY !== baseY`), and CSS hides it entirely while the terminal is unfocused.
+- **Click-to-position**: a mousedown/mouseup tracker allows single-point clicks (not drags) on the current prompt row to jump the cursor left or right using `\x1b[C`/`\x1b[D` sequences. It is **disabled on the alternate screen buffer** (`buffer.active.type !== "normal"`) so clicks inside a full-screen TUI (vim, htop, `less`, the Claude TUI) don't inject stray arrow keys.
 - **Resize**: a `ResizeObserver` on the container div, rAF-debounced to collapse resize bursts (e.g. divider drag). Zero-size containers are ignored.
-- **Reconnection**: exponential backoff on WebSocket close (`500ms * 2^attempt`, max 8s). Each reconnection starts a **fresh PTY session** (no session resume). The terminal prints `[reconnecting…]` on disconnect and `[backend unavailable]` on error.
+- **Reconnection & exit**: the client passes its stable `termId` so a reconnect **reattaches to the same backend PTY** within the grace window (a reload or transient drop keeps the running shell — see _Session reattach_ above). It distinguishes by close code: an **abnormal close** reconnects with exponential backoff (`500ms * 2^attempt`, max 8s), printing `[reconnecting…]`; a **clean close (1000)** means the shell exited — the tab **closes itself** (via the `onExit` prop) instead of respawning a shell, unless the shell died within 750 ms of connecting (likely a startup failure), in which case the tab stays open showing `[process exited]` so the error remains readable. `[backend unavailable]` prints on socket error.
 - **Cleanup safety**: `onCleanup` is registered synchronously inside `onMount` before the `document.fonts.load` await, so teardown fires even if the tab is closed while the font is still loading.
 
 ### Font stack
