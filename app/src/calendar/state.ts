@@ -35,6 +35,12 @@ export const settings = {
 // async settings hydration lands. The box value itself is seeded from the
 // synchronous DEFAULTS; the saved defaultView is reconciled in CalendarView.
 export let userSwitchedView = false
+
+// Reset the manual-switch flag. `userSwitchedView` is module-level and persists
+// across CalendarView remounts, so without this a single manual view switch would
+// make every later remount ignore the saved defaultView for the rest of the
+// session. CalendarView calls this at the start of onMount, before reconciling.
+export function resetUserSwitchedView(): void { userSwitchedView = false }
 let setCurrentViewRaw: (v: ViewType) => void
 function createViewBox(initial: ViewType) {
   const [get, set] = createSignal<ViewType>(initial)

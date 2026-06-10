@@ -59,6 +59,9 @@ export function NoteTitle(props: { path: string }) {
     try {
       await api.move(from, to);
     } catch (e) {
+      // Reverse the optimistic retarget so panes pointing at the now-nonexistent
+      // `to` path are rewritten back to `from` (App.tsx's renamePath).
+      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from: to, to: from } }));
       revert();
       pushToast(`Rename failed: ${(e as Error).message}`);
     }

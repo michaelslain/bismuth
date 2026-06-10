@@ -1,18 +1,13 @@
 import { recurrenceAction, events } from '../state'
 import { EventStore } from '../EventStore'
 import { refreshEvents } from '../refresh'
+import { prettyDate } from '../dates'
 import { Show, For } from 'solid-js'
 import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
 import { TextButton } from '../../ui/TextButton'
 
 type Scope = 'one' | 'all' | 'following'
-
-function prettyDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export function RecurrenceDialog(props: { store: EventStore }) {
   async function handle(scope: Scope): Promise<void> {
@@ -69,7 +64,7 @@ export function RecurrenceDialog(props: { store: EventStore }) {
             <div class="evm-title">{verb()} recurring event</div>
             <div class="evm-sub">{eventTitle() ?? 'Choose which occurrences to apply this to'}</div>
           </div>
-          <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+          <button type="button" class="evm-x" aria-label="Close" onClick={close}><Icon value="x" size={16} /></button>
         </div>
 
         <div class="evm-body">

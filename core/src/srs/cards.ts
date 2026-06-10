@@ -130,13 +130,17 @@ export async function applyReview(
   expectedQuestion?: string,
   cfg: SrsConfig = DEFAULT_SRS,
 ): Promise<void> {
-  const parts = cardId.split("::");
-  if (parts.length !== 3) {
+  // Parse from the RIGHT: the notePath may itself contain "::" (legal on macOS).
+  // The last two "::"-delimited segments are subIndex then cardIndex; everything
+  // before them is the notePath.
+  const subSep = cardId.lastIndexOf("::");
+  const cardSep = subSep < 0 ? -1 : cardId.lastIndexOf("::", subSep - 1);
+  if (subSep < 0 || cardSep < 0) {
     throw createError("CARD_FORMAT_ERROR", `invalid cardId format: ${cardId}`);
   }
-  const [notePath, cardIdxStr, subIdxStr] = parts;
-  const cardIndex = Number(cardIdxStr);
-  const subIndex = Number(subIdxStr);
+  const notePath = cardId.slice(0, cardSep);
+  const cardIndex = Number(cardId.slice(cardSep + 2, subSep));
+  const subIndex = Number(cardId.slice(subSep + 2));
   if (!Number.isFinite(cardIndex) || !Number.isFinite(subIndex)) {
     throw createError("CARD_FORMAT_ERROR", `invalid cardId indices: ${cardId}`);
   }
@@ -148,6 +152,9 @@ export async function applyReview(
 
   const pc = parseCards(body)[cardIndex];
   if (!pc) throw createError("CARD_NOT_FOUND", `card not found: ${cardId}`, 404);
+  if (subIndex < 0 || subIndex >= pc.subCount) {
+    throw createError("CARD_NOT_FOUND", `sub-card not found: ${cardId}`, 404);
+  }
 
   if (expectedQuestion !== undefined && subQuestion(pc, subIndex) !== expectedQuestion) {
     throw createError(

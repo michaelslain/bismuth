@@ -11,21 +11,8 @@ import { TextButton } from "./ui/TextButton";
 import { api } from "./api";
 import { pushToast } from "./Toast";
 import type { DeviceEntry } from "../../core/src/daemon";
+import { relTimeISO } from "./relTime";
 import "./FolderPrompt.css";
-
-/** Compact, human-friendly "last seen" from an ISO string (best-effort). */
-function lastSeen(iso: string): string {
-  if (!iso) return "never seen";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  const secs = Math.max(0, Math.round((Date.now() - t) / 1000));
-  if (secs < 60) return `${secs}s ago`;
-  const mins = Math.round(secs / 60);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
 
 export function DaemonOwnerModal(props: { onClose: () => void }) {
   const [devices, setDevices] = createSignal<DeviceEntry[]>([]);
@@ -58,7 +45,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
   const options = () =>
     devices().map((d) => ({
       value: d.deviceId,
-      label: `${d.label || d.deviceId}${tagFor(d)} · ${lastSeen(d.lastSeenISO)}`,
+      label: `${d.label || d.deviceId}${tagFor(d)} · ${relTimeISO(d.lastSeenISO)}`,
     }));
 
   const submit = async () => {

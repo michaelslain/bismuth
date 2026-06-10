@@ -13,14 +13,7 @@ import { openContextMenu } from "./nativeMenu";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { api } from "./api";
 import { pushToast } from "./Toast";
-
-function relTime(ms: number): string {
-  const diff = Date.now() - ms;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
-}
+import { relTimeMs } from "./relTime";
 
 /** Convert a 5-part cron expression to a short human-readable frequency string. */
 function cronFrequency(expr: string): string {
@@ -49,7 +42,15 @@ function cronFrequency(expr: string): string {
     return n === 1 ? "daily" : `every ${n}d`;
   }
   // Daily: 0 H * * *  or  H H * * *
-  if (dom === "*" && dow === "*" && !hour.includes("*") && !hour.includes("/")) return "daily";
+  if (
+    dom === "*" &&
+    dow === "*" &&
+    !hour.includes("*") &&
+    !hour.includes("/") &&
+    !min.includes("*") &&
+    !min.includes("/")
+  )
+    return "daily";
   // Weekly: specific day of week
   if (dow !== "*" && !dow.includes("*") && !dow.includes("/")) return "weekly";
   // Monthly: specific day of month
@@ -78,7 +79,7 @@ function statusLabel(node: GraphNode): string {
   const d = node.daemon;
   if (!d || !d.enabled) return "off";
   if (d.running) return "running";
-  if (d.lastFiredMs !== null) return relTime(d.lastFiredMs);
+  if (d.lastFiredMs !== null) return relTimeMs(d.lastFiredMs);
   return "never";
 }
 
@@ -94,18 +95,11 @@ function CronRow(props: {
   };
   return (
     <div
+      class="daemon-row"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => props.onFocus([props.node.id])}
       onContextMenu={(e) => props.onMenu(props.node, e)}
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "7px",
-        padding: "3px 6px",
-        "border-radius": "3px",
-        cursor: "pointer",
-        opacity: status() === "disabled" ? 0.45 : 1,
-      }}
+      style={{ opacity: status() === "disabled" ? 0.45 : 1 }}
     >
       <span
         style={{
@@ -117,16 +111,7 @@ function CronRow(props: {
           "box-shadow": status() === "running" ? "0 0 4px var(--accent)" : "none",
         }}
       />
-      <span
-        style={{
-          flex: 1,
-          "min-width": 0,
-          overflow: "hidden",
-          "text-overflow": "ellipsis",
-          "white-space": "nowrap",
-          color: "var(--fg)",
-        }}
-      >
+      <span class="daemon-row-label">
         {props.node.label}
       </span>
       <Show when={freq()}>
@@ -169,18 +154,11 @@ function ProcessRow(props: {
   const enabled = () => props.node.daemon?.enabled !== false;
   return (
     <div
+      class="daemon-row"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={() => props.onFocus([props.node.id])}
       onContextMenu={(e) => props.onMenu(props.node, e)}
-      style={{
-        display: "flex",
-        "align-items": "center",
-        gap: "7px",
-        padding: "3px 6px",
-        "border-radius": "3px",
-        cursor: "pointer",
-        opacity: enabled() ? 1 : 0.45,
-      }}
+      style={{ opacity: enabled() ? 1 : 0.45 }}
     >
       <span
         style={{
@@ -191,16 +169,7 @@ function ProcessRow(props: {
           "flex-shrink": 0,
         }}
       />
-      <span
-        style={{
-          flex: 1,
-          "min-width": 0,
-          overflow: "hidden",
-          "text-overflow": "ellipsis",
-          "white-space": "nowrap",
-          color: "var(--fg)",
-        }}
-      >
+      <span class="daemon-row-label">
         {props.node.label}
       </span>
       <span
@@ -284,50 +253,22 @@ export function DaemonList(props: {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        "flex-direction": "column",
-        gap: "1px",
-        width: "100%",
-        height: "100%",
-        "overflow-y": "auto",
-        "pointer-events": "auto",
-        "font-family": "inherit",
-        "font-size": "11px",
-      }}
-    >
+    <div class="daemon-list">
       <Show when={empty()}>
         <div style={{ padding: "8px 6px", color: "var(--text-muted)", "font-size": "11px" }}>
           No daemons configured
         </div>
       </Show>
       <Show when={crons().length > 0}>
-        <div
-          style={{
-            padding: "4px 6px 2px",
-            "font-size": "10px",
-            color: "var(--text-muted)",
-            "text-transform": "uppercase",
-            "letter-spacing": "0.06em",
-            "font-weight": "600",
-          }}
-        >
+        <div class="daemon-section-head">
           Crons <span style={{ opacity: 0.6 }}>{crons().length}</span>
         </div>
         <For each={crons()}>{(node) => <CronRow node={node} onFocus={props.onFocus} onMenu={openMenu} />}</For>
       </Show>
       <Show when={processes().length > 0}>
         <div
-          style={{
-            padding: "4px 6px 2px",
-            "font-size": "10px",
-            color: "var(--text-muted)",
-            "text-transform": "uppercase",
-            "letter-spacing": "0.06em",
-            "font-weight": "600",
-            "margin-top": crons().length > 0 ? "4px" : "0",
-          }}
+          class="daemon-section-head"
+          style={{ "margin-top": crons().length > 0 ? "4px" : "0" }}
         >
           Processes <span style={{ opacity: 0.6 }}>{processes().length}</span>
         </div>

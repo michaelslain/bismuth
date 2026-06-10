@@ -46,9 +46,7 @@ export function EditDictionaryModal(props: { onClose: () => void }) {
             Words you've added are never flagged as misspelled. Remove one to spellcheck it again.
           </div>
         </div>
-        <div class="dict-x" role="button" aria-label="Close" onClick={props.onClose}>
-          <Icon value="x" size={16} />
-        </div>
+        <IconButton class="dict-x" icon="X" label="Close" size="sm" onClick={props.onClose} />
       </div>
 
       <div class="dict-body">

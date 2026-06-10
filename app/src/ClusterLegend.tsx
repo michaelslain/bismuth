@@ -5,6 +5,7 @@
 // Styled to match the GraphView overlay chrome via theme tokens (--surface-2 / --fg /
 // --text-muted), so it tracks light and dark themes instead of baking in dark greys.
 import { For, createMemo } from "solid-js";
+import "./ClusterLegend.css";
 
 export interface ClusterRow {
   community: number;
@@ -25,25 +26,11 @@ export function ClusterLegend(props: {
   );
 
   return (
-    <div
-      style={{
-        display: "flex",
-        "flex-direction": "column",
-        gap: "1px",
-        background: "transparent",
-        "border-radius": "4px",
-        padding: "0",
-        "font-family": "inherit",
-        "font-size": "11px",
-        width: "100%",
-        height: "100%",
-        "overflow-y": "auto",
-        "pointer-events": "auto",
-      }}
-    >
+    <div class="cluster-legend">
       <For each={sorted()}>
         {(row) => (
           <div
+            class="cluster-row"
             // Stop mousedown from bubbling to the enclosing pane-leaf, whose focus handler
             // (PaneTree's onMouseDown) re-renders the pane and recreates these rows mid-click —
             // detaching the mousedown target before mouseup, so the browser never fires the click
@@ -52,45 +39,13 @@ export function ClusterLegend(props: {
             onClick={() => props.onFocus(row.ids)}
             onMouseEnter={() => props.onHover?.(row.community)}
             onMouseLeave={() => props.onHover?.(null)}
-            style={{
-              display: "flex",
-              "align-items": "center",
-              gap: "7px",
-              padding: "3px 6px",
-              "border-radius": "3px",
-              cursor: "pointer",
-              "white-space": "nowrap",
-            }}
             title={row.label}
           >
-            <span
-              style={{
-                width: "9px",
-                height: "9px",
-                "border-radius": "2px",
-                background: row.color,
-                "flex-shrink": 0,
-              }}
-            />
-            <span
-              style={{
-                flex: 1,
-                "min-width": 0,
-                overflow: "hidden",
-                "text-overflow": "ellipsis",
-                color: "var(--fg)",
-              }}
-            >
+            <span class="cluster-swatch" style={{ background: row.color }} />
+            <span class="cluster-label">
               {row.label}
             </span>
-            <span
-              style={{
-                "margin-left": "auto",
-                "padding-left": "8px",
-                color: "var(--text-muted)",
-                "font-variant-numeric": "tabular-nums",
-              }}
-            >
+            <span class="cluster-count">
               {row.count}
             </span>
           </div>

@@ -1,7 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
+
+/**
+ * Build a throwaway vault from a `{ relativePath: content }` map in a fresh
+ * tmpdir (parent dirs created as needed). Returns the vault root. Shared by the
+ * search/replace tests so the fixture lives in one place.
+ */
+export function makeVault(files: Record<string, string>, prefix = "oa-vault-"): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(dir, rel);
+    mkdirSync(join(abs, ".."), { recursive: true });
+    writeFileSync(abs, content);
+  }
+  return dir;
+}
 
 /**
  * Build a throwaway sample vault + memory in tmpdirs, mirroring the notes the

@@ -10,7 +10,7 @@ const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.Gra
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands } from "./commands";
+import { bindCommands, resolveButtonCommands } from "./commands";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { resolveAppearance } from "./themes";
@@ -127,13 +127,14 @@ export default function App() {
     return leaves(t.root).find((l) => l.id === t.focusId)?.content ?? null;
   });
 
-  // Basename (no folder, no .md) of the focused note — used as {{title}} when
+  // Basename (no folder, no extension) of the focused note — used as {{title}} when
   // expanding a template. Empty string when the focused pane isn't a real note
-  // (sentinel like ::settings/::graph/terminal, or nothing focused).
+  // (a sentinel like ::graph/::search/terminal, or nothing focused). Note: settings
+  // opens by file path (settings.yaml), not a sentinel — there is no ::settings.
   const activeNoteTitle = createMemo<string>(() => {
     const c = focusedContent();
     if (!c || isSentinel(c)) return "";
-    return c.split("/").pop()!.replace(/\.md$/, "");
+    return c.split("/").pop()!.replace(/\.(md|ya?ml)$/, "");
   });
 
   // Every unique terminal content id open across all tabs/panes — each gets one
@@ -568,9 +569,7 @@ export default function App() {
   // The macOS dock icon is set natively at startup from settings.yaml's
   // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
   // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
-  createEffect(() => {
-    document.title = "Bismuth";
-  });
+  document.title = "Bismuth";
   // Persist tab/pane layout whenever it changes.
   createEffect(() => {
     localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
@@ -707,7 +706,7 @@ export default function App() {
     const srcLeaf = src.root.kind === "leaf" ? src.root : null;
     const target = leaves(at.root).find((l) => l.id === targetLeafId);
     const fillsInPlace = zone === "center" || target?.content === EMPTY_PANE;
-    const subtreeFocus = leaves(src.root)[0].id; // first leaf of the moved view
+    const subtreeFocus = src.focusId; // keep the source tab's focused leaf after grafting
     setTabs((ts) =>
       ts
         .filter((t) => t.id !== srcTabId)
@@ -1139,7 +1138,10 @@ export default function App() {
         <div class="sidebar-icons">
           <For each={settings.toolbar}>
             {(btn) => {
-              const cmd = () => commands().get(btn.command);
+              // Resolve the button to its command(s): a `commands: [...]` list wins, else the
+              // single `command`. The button runs the FIRST resolvable command; it's disabled
+              // only when none resolve (see resolveButtonCommands).
+              const cmd = () => resolveButtonCommands(btn, commands())[0];
               return (
                 <Show
                   when={cmd()}
@@ -1222,7 +1224,7 @@ export default function App() {
             <IconButton icon="SquareTerminal" label="Open Terminal" iconSize={18} onClick={() => openTerminal()} />
           </div>
         </div>
-        <div class="editor-body" ref={editorBodyEl} style={{ position: "relative" }}>
+        <div class="editor-body" ref={editorBodyEl}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(t) => (
               <PaneTree
@@ -1295,7 +1297,7 @@ export default function App() {
           the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() }} ref={floater}>
-        <Suspense fallback={<div class="graph-root" style={{ width: "100%", height: "100%" }} />}>
+        <Suspense fallback={<div class="graph-root" />}>
           <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} />
         </Suspense>
       </div>

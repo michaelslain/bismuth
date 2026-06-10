@@ -17,8 +17,8 @@ export type ServerChange = {
 /**
  * Connection state for error recovery tracking.
  * - 'connected': EventSource is open and receiving messages
- * - 'disconnected': EventSource closed or errored; polling with reduced interval
- * - 'reconnecting': Attempting to re-establish connection via exponential backoff
+ * - 'disconnected': EventSource closed or errored; polling at the faster interval
+ * - 'reconnecting': Attempting to re-establish the EventSource connection
  */
 export type ConnectionState = "connected" | "disconnected" | "reconnecting";
 
@@ -53,9 +53,9 @@ function fireChange(c: ServerChange): void {
 /** Last version observed specifically via SSE (not bumped by the poll). */
 let lastSseVersion = 0;
 
-// Connection error tracking for toast deduplication and exponential backoff
+// Tracks the active "connection lost" toast so we show it only once per
+// disconnect session (deduplication).
 let connectionErrorToastId: number | null = null;
-let consecutiveErrors = 0;
 
 const NORMAL_POLL_INTERVAL = 5000; // 5 seconds
 const DISCONNECTED_POLL_INTERVAL = 1000; // 1 second when disconnected
@@ -80,8 +80,11 @@ function startPolling(): void {
         fireChange({ version: v, paths: [] });
       }
 
-      // Poll succeeded; if we were disconnected, try reconnecting EventSource
-      if (connectionState() !== "connected" && !esClosed) {
+      // Poll succeeded; if we were disconnected, try reconnecting EventSource.
+      // Guard on `es === null` so we don't tear down an EventSource that's
+      // still mid-handshake — otherwise a handshake slower than the poll
+      // interval would be killed every tick and never reach `onopen`.
+      if (connectionState() !== "connected" && !esClosed && es === null) {
         setConnectionState("reconnecting");
         attemptReconnect();
       }
@@ -95,8 +98,6 @@ function startPolling(): void {
 }
 
 function handleConnectionError(): void {
-  consecutiveErrors++;
-
   if (connectionState() !== "disconnected") {
     setConnectionState("disconnected");
     currentPollInterval = DISCONNECTED_POLL_INTERVAL;
@@ -126,7 +127,6 @@ function handleConnectionError(): void {
 
   console.warn("[sse] connection lost; switching to aggressive polling", {
     at: new Date().toISOString(),
-    consecutiveErrors,
   });
 }
 
@@ -149,7 +149,6 @@ function createEventSource(): void {
       if (connectionState() === "disconnected" || connectionState() === "reconnecting") {
         setConnectionState("connected");
         currentPollInterval = NORMAL_POLL_INTERVAL;
-        consecutiveErrors = 0;
 
         // Dismiss error toast if one was showing
         if (connectionErrorToastId !== null) {

@@ -1,5 +1,5 @@
 /* app/src/drawing/Drawing.css */
-.draw-canvas { background: transparent; border-radius: 2px; touch-action: none; }
+.draw-canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: transparent; border-radius: 2px; touch-action: none; }
 /* The page keeps the letter aspect ratio; the canvases inside fill it via inset:0 +
    100%. The width cap + centering live on the .draw-page-zoom wrapper (which the zoom
    control scales), so the shadow simply fills its wrapper. */
@@ -53,4 +53,3 @@
 }
 /* The page wrappers stretch to fill width; the "Add page" button stays its natural size. */
 .draw-stage > button { align-self: center; }
-.draw-loading { padding: 24px; opacity: 0.6; }

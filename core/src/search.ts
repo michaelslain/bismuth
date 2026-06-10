@@ -76,9 +76,15 @@ function extractHeadings(body: string): string {
     .join(" ");
 }
 
+// Mirror tags.ts INLINE_TAG_REGEX exactly so search tag tokens match the graph's tag
+// set (first char must be alnum/underscore). Kept as a literal rather than imported
+// because tags.ts does not export it.
+const INLINE_TAG_REGEX = /(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g;
+
 /** Extract #tags from the body for index weighting. */
 function extractBodyTags(body: string): string {
-  return (body.match(/(?:^|\s)#([A-Za-z0-9_/-]+)/g) || []).map((t) => t.trim().slice(1)).join(" ");
+  // matchAll over a fresh regex avoids shared /g lastIndex state across calls.
+  return [...body.matchAll(INLINE_TAG_REGEX)].map((m) => m[1]).join(" ");
 }
 
 interface IndexDoc {
@@ -103,15 +109,21 @@ interface SearchIndex {
 const indexCache = new Map<string, SearchIndex>();
 // Dedupe concurrent cold builds for the same vault (mirrors AsyncCache's in-flight guard).
 const indexInFlight = new Map<string, Promise<SearchIndex>>();
+// Per-root generation counter (mirrors AsyncCache's generation guard): captured when a
+// build starts and re-checked when it settles, so an invalidateSearchIndex() during the
+// build drops the now-stale result instead of repopulating the cache with it.
+const indexGeneration = new Map<string, number>();
 
 /** Drop the cached search index for a vault (or all vaults). Called on file-watch invalidation. */
 export function invalidateSearchIndex(root?: string): void {
   if (root === undefined) {
     indexCache.clear();
     indexInFlight.clear();
+    indexGeneration.clear();
   } else {
     indexCache.delete(root);
     indexInFlight.delete(root);
+    indexGeneration.set(root, (indexGeneration.get(root) ?? 0) + 1);
   }
 }
 
@@ -143,10 +155,12 @@ async function getSearchIndex(root: string): Promise<SearchIndex> {
   if (cached) return cached;
   const pending = indexInFlight.get(root);
   if (pending) return pending;
+  const gen = indexGeneration.get(root) ?? 0;
   const build = buildSearchIndex(root).then(
     (idx) => {
       indexInFlight.delete(root);
-      indexCache.set(root, idx);
+      // Adopt the result only if no invalidation bumped the generation mid-build.
+      if ((indexGeneration.get(root) ?? 0) === gen) indexCache.set(root, idx);
       return idx;
     },
     (err) => {

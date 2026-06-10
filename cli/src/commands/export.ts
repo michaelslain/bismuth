@@ -5,19 +5,13 @@
 // with a clear message. Drawings go straight through the headless core renderer.
 import { readFileSync, writeFileSync } from "node:fs";
 import type { CommandMap } from "../types";
-import { flag, requireVault, fail } from "../args";
+import { flag, requireVault, fail, today } from "../args";
 import { readNote } from "../../../core/src/files";
 import { resolveSource } from "../../../core/src/bases/source";
 import { parseDoc } from "../../../core/src/drawing/model";
 import { renderDocToPng, renderDocToPdf } from "../../../core/src/drawing/export";
 import { renderExport } from "../../../app/src/export/exporters";
 import type { ExportFormat, ExportDeps } from "../../../app/src/export/types";
-
-function todayISO(): string {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
 
 async function run(args: string[]): Promise<void> {
   const file = args.find((a) => !a.startsWith("--"));
@@ -39,7 +33,7 @@ async function run(args: string[]): Promise<void> {
   const vault = requireVault(args);
   const deps: ExportDeps = {
     read: (p) => readNote(vault, p),
-    resolveRows: (spec) => resolveSource(spec, { root: vault, today: todayISO() }),
+    resolveRows: (spec) => resolveSource(spec, { root: vault, today: today() }),
     htmlToPdf: () => {
       throw new Error(
         "pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",

@@ -50,7 +50,7 @@ export function MonthView(props: { store: EventStore }) {
               class={`month-cell${isToday() ? ' today' : ''}${inMonth() ? '' : ' out'}`}
               onClick={() => (showEventModal.value = { date: dateStr() })}
             >
-              <div class={`month-cell-number${inMonth() ? '' : ' dim'}`}>{dayNum()}</div>
+              <div class={`month-cell-number${inMonth() ? '' : ' dim'}${isToday() ? ' cal-today-circle' : ''}`}>{dayNum()}</div>
               <div class="month-cell-events">
                 <For each={dayEvents()}>{e => (
                   <EventChip

@@ -1,8 +1,8 @@
 import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js'
 import { CalendarEvent, RecurrenceType } from '../types'
 import { categories, showEventModal, recurrenceAction, events } from '../state'
-import { EventStore } from '../EventStore'
-import { toDateStr } from '../dates'
+import { EventStore, uuid } from '../EventStore'
+import { toDateStr, prettyDate } from '../dates'
 import { refreshEvents } from '../refresh'
 import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
@@ -12,18 +12,11 @@ import { IconTextButton } from '../../ui/IconTextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { renderMarkdown } from '../../bases/markdown'
 
-const uuid = () => crypto.randomUUID()
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [
   ['None', ''], ['Daily', 'daily'], ['Weekly', 'weekly'], ['Biweekly', 'biweekly'], ['Monthly', 'monthly'],
 ]
 const DOW: [string, number][] = [['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]]
-
-function prettyDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  if (!y || !m || !d) return iso
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 export function EventModal(props: { store: EventStore }) {
   const modal = showEventModal.value
@@ -123,7 +116,7 @@ export function EventModal(props: { store: EventStore }) {
           <div class="evm-title">{editing ? 'Edit Event' : 'New Event'}</div>
           <div class="evm-sub">{prettyDate(date())}</div>
         </div>
-        <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+        <button type="button" class="evm-x" aria-label="Close" onClick={close}><Icon value="x" size={16} /></button>
       </div>
 
       <div class="evm-body">
@@ -141,7 +134,7 @@ export function EventModal(props: { store: EventStore }) {
               <TextInput type="date" value={date()} onInput={setDate} />
             </div>
             <div>
-              <div class="evm-lab" style={{ visibility: 'hidden' }}>x</div>
+              <div class="evm-lab evm-lab-spacer">x</div>
               <div class="evm-allday" role="button" onClick={() => setAllDay(v => !v)}>
                 <span class={'evm-toggle' + (allDay() ? ' on' : '')}><i /></span>
                 All day
@@ -149,7 +142,7 @@ export function EventModal(props: { store: EventStore }) {
             </div>
           </div>
           <Show when={!allDay()}>
-            <div class="evm-times" style={{ 'margin-top': '12px' }}>
+            <div class="evm-times">
               <TextInput type="time" value={startTime()} onInput={setStartTime} />
               <span class="dash">→</span>
               <TextInput type="time" value={endTime()} onInput={setEndTime} />

@@ -195,7 +195,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
             >
               <div class={styles.kanbanColHeader} style={{ color: groupColor(group.key) }}>
                 <span class={styles.dot} />
-                <span class={styles.kanbanColTitle} style={{ color: "var(--fg)" }}>
+                <span class={styles.kanbanColTitle}>
                   {group.key === "" ? "(empty)" : group.key}
                 </span>
                 <span class={styles.kanbanCount}>{group.rows.length}</span>

@@ -2,11 +2,11 @@ import type { ReviewResponse, SchedulingInfo } from "./types";
 import { addDaysISO } from "../dates";
 
 export const BASE_EASE = 250;
-export const EASY_BONUS = 1.3;
-export const LAPSES_INTERVAL_CHANGE = 0.5;
-export const MAX_INTERVAL = 36525;
-export const MIN_EASE = 130;
-export const EASE_STEP = 20;
+const EASY_BONUS = 1.3;
+const LAPSES_INTERVAL_CHANGE = 0.5;
+const MAX_INTERVAL = 36525;
+const MIN_EASE = 130;
+const EASE_STEP = 20;
 
 /** Tunable SM-2 parameters (settings.srs). Field names match the schema so the
  *  backend's appConfig.srs is itself a valid SrsConfig (identity mapping). */

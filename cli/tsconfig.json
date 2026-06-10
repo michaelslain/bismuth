@@ -12,5 +12,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "../core/src/d3-force-3d.d.ts"]
+  "include": ["src", "test", "../core/src/d3-force-3d.d.ts"]
 }

@@ -391,11 +391,10 @@ export class LabelLayer {
       // Depth fade for 3D, multiplied by the zoom-out fade.
       let opacity = 1;
       if (args.cloudRadius > 0) {
-        const dFromCenter = v.distanceTo(args.cloudCenter);
-        const depthFromCam = camToCenter + dFromCenter;
-        const fadeStart = args.cloudRadius * 0.3;
-        const fadeEnd = args.cloudRadius * 1.0;
-        const t = (depthFromCam - (camToCenter + fadeStart)) / (fadeEnd - fadeStart);
+        const depthFromCam = cam.distanceTo(v);
+        const fadeStart = camToCenter - args.cloudRadius * 0.3;
+        const fadeEnd = camToCenter + args.cloudRadius * 1.0;
+        const t = (depthFromCam - fadeStart) / (fadeEnd - fadeStart);
         opacity = Math.max(0.15, Math.min(1, 1 - t));
       }
       opacity *= zoomFade;

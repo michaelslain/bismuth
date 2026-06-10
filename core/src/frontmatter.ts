@@ -70,7 +70,9 @@ export function setFrontmatterKey(md: string, key: string, value: unknown): stri
     return `---\n${stringify({ [key]: value })}---\n${md}`;
   }
   return mutateFrontmatter(md, (doc, data) => {
-    doc.set?.(key, value) ?? (data[key] = value);
+    // Document.set() returns void, so branch explicitly rather than via ??.
+    if (doc.set) doc.set(key, value);
+    else data[key] = value;
     return { keep: true, result: "" };
   });
 }

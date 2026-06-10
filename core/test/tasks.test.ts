@@ -124,7 +124,9 @@ test("toggleTaskLine preserves a trailing CR", () => {
 });
 
 test("todayISO formats a Date as YYYY-MM-DD", () => {
-  expect(todayISO(new Date("2026-05-27T15:00:00Z"))).toBe("2026-05-27");
+  // Construct from LOCAL y/m/d components (month is 0-based) so this isn't
+  // timezone-fragile — todayISO formats local components, not the UTC slice.
+  expect(todayISO(new Date(2026, 4, 27, 15, 0, 0))).toBe("2026-05-27");
 });
 
 // --- Recurring-task completion (B16): completing spawns the next occurrence ---

@@ -1,4 +1,4 @@
-import { splitProps, createMemo, type JSX } from "solid-js";
+import { splitProps, createEffect, type JSX } from "solid-js";
 import { Button } from "./Button";
 import { Icon } from "../icons/Icon";
 import { isIconName } from "../icons/registry";
@@ -33,7 +33,7 @@ export function IconTextButton(props: IconTextButtonProps) {
     warnBadIcon("IconTextButton", local.icon);
   }
   if (import.meta.env?.DEV) {
-    createMemo(() => warnNonUppercase("IconTextButton", local.children));
+    createEffect(() => warnNonUppercase("IconTextButton", local.children));
   }
   return (
     <Button kind="text" state={local.variant ?? "normal"} {...rest}>

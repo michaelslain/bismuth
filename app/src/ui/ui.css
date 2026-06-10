@@ -4,13 +4,22 @@
    under names like .card-btn, .empty-pane-btn, .icon-btn, .srs-icon-btn,
    .cram-toggle, .srcBtn, .modal-overlay, .srs-field, .deck-empty, .loading. */
 
+/* ── Tokens ──────────────────────────────────────────────────────────────── */
+:root {
+  /* The UI monospace font stack (Monaspace Xenon) shared by buttons, modal text,
+     and select triggers — defined once so the stack can't drift between them. */
+  --ui-font-stack: "Monaspace Xenon", ui-monospace, monospace;
+  /* Backdrop scrim behind modals/overlays. */
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+}
+
 /* ── Button ──────────────────────────────────────────────────────────────── */
 /* Every button is one of two KINDS (text | icon) in one of three STATES
    (normal | selected | unselected). normal = standalone; unselected/selected =
    a member of a toggle/series that is off/on. `danger` is an orthogonal tone. */
 .btn {
   font: inherit;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -95,11 +104,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--overlay-bg, rgba(0, 0, 0, 0.5));
   /* Modals are portaled to <body>, outside .layout — so re-establish the app's
      Monaspace UI font + color here, or modal text falls back to the browser default
      (Times serif). Explicit serif elements (titles) still override. */
-  font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace;
+  font: var(--ui-font-size, 13px)/1.5 var(--ui-font-stack);
   color: var(--fg);
 }
 
@@ -137,12 +146,15 @@ textarea.ui-input { resize: none; min-height: 62px; line-height: 1.6; }
 /* A select trigger shows a CHOSEN label (UI chrome), not a typed value — so use the UI
    monospace font, not the prose font .ui-input gives text inputs. Matches the dropdown list
    (which is already Monaspace). */
-.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; text-align: left; font-family: var(--ui-font-stack); }
 .ui-select-trigger:focus { border-color: var(--accent); }
 .ui-select-value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ui-select-placeholder { color: var(--text-muted); }
 .ui-select-caret { flex: none; opacity: 0.55; }
 .ui-select-backdrop { position: fixed; inset: 0; z-index: 1090; }
+/* The open Select list: fixed-positioned above the modal overlay. The dynamic
+   top/left/min-width stay inline (computed from the trigger's rect). */
+.ui-select-list { position: fixed; z-index: 1100; }
 
 /* ── EmptyState / Loading ────────────────────────────────────────────────── */
 .ui-empty { color: var(--text-muted); }

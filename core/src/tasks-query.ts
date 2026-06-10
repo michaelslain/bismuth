@@ -1,7 +1,7 @@
 // A small evaluator for the Obsidian Tasks plugin query language (a bounded subset).
 // Pure + synchronous: given all tasks, a query string, and today's date, return the
 // filtered/sorted tasks plus any human-readable errors for unrecognized filter lines.
-import type { Task, Priority } from "./tasks";
+import { DATE_FIELD_NAMES, type Task, type Priority, type DateField } from "./tasks";
 import { addDaysISO } from "./dates";
 
 export interface QueryOutcome {
@@ -15,9 +15,7 @@ const PRIORITY_RANK: Record<Priority, number> = {
   highest: 1, high: 2, medium: 3, none: 4, low: 5, lowest: 6,
 };
 
-const DATE_FIELDS = ["due", "scheduled", "start", "done", "created", "cancelled"] as const;
-type DateField = (typeof DATE_FIELDS)[number];
-const DATE_ALT = DATE_FIELDS.join("|");
+const DATE_ALT = DATE_FIELD_NAMES.join("|");
 
 function resolveDateExpr(expr: string, today: string): string | null {
   const e = expr.trim().toLowerCase();

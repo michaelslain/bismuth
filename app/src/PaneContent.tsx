@@ -29,7 +29,7 @@ export function PaneContent(props: {
       fallback={
         // FileView is lazy; the fallback keeps the pane's full box during the brief
         // chunk load so a split/tab doesn't flash a collapsed pane.
-        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+        <Suspense fallback={<div class="full" />}>
           <FileView
             path={props.path}
             onSaved={props.onSaved}
@@ -56,17 +56,17 @@ export function PaneContent(props: {
             this host so its Three.js renderer + camera survive a split/tab switch
             instead of being torn down and rebuilt (which reset the view). Same pattern
             as the terminal overlay above. */}
-        <div data-graph-host style={{ width: "100%", height: "100%" }} />
+        <div data-graph-host class="full" />
       </Match>
       <Match when={props.path.endsWith(".sheet")}>
-        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+        <Suspense fallback={<div class="full" />}>
           <SheetView path={props.path} onSaved={props.onSaved} />
         </Suspense>
       </Match>
       {/* A base is a `type: base` md file — routed by FileView (the fallback), which
           reads its frontmatter and renders BaseView. There is no `.base` extension. */}
       <Match when={props.path.endsWith(".draw")}>
-        <Suspense fallback={<div style={{ width: "100%", height: "100%" }} />}>
+        <Suspense fallback={<div class="full" />}>
           <DrawingPage path={props.path} />
         </Suspense>
       </Match>
@@ -75,7 +75,7 @@ export function PaneContent(props: {
             lives in the always-mounted overlay in App.tsx so its WebSocket and
             scrollback survive tab/pane switches. App.tsx measures this host's
             bounding rect to position the overlay over this exact pane body. */}
-        <div data-terminal-host={props.path} style={{ width: "100%", height: "100%" }} />
+        <div data-terminal-host={props.path} class="full" />
       </Match>
       {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
           Tasks page was removed) falls back to an empty pane rather than trying

@@ -5,7 +5,7 @@ import { tableToMarkdown } from "./mdTable";
 import { tableToHtml } from "./rowsHtml";
 import { baseToTable } from "./baseTable";
 import { snapshotToHtmlTable } from "./sheetHtml";
-import { formatsFor } from "./formats";
+import { formatsFor, ext } from "./formats";
 import { parseFrontmatter } from "../../../core/src/frontmatter";
 import type { ExportFormat, ExportResult, ExportPreview, ExportDeps, ExportTheme } from "./types";
 
@@ -20,11 +20,6 @@ function baseName(path: string): string {
   const file = path.split("/").pop() ?? path;
   const dot = file.lastIndexOf(".");
   return dot === -1 ? file : file.slice(0, dot);
-}
-
-export function ext(path: string): string {
-  const dot = path.lastIndexOf(".");
-  return dot === -1 ? "" : path.slice(dot + 1).toLowerCase();
 }
 
 // The canonical rendered-HTML body for a text-ish file (drives html + pdf). Drawings

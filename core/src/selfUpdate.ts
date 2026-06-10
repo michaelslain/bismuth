@@ -167,6 +167,10 @@ export function getUpdateProgress(): UpdateProgress {
  */
 export async function startUpdate(): Promise<UpdateProgress> {
   if (state.phase === "pulling" || state.phase === "building") return state;
+  // Claim the slot synchronously, BEFORE the first await, so a second concurrent caller
+  // sees phase==="pulling" at the guard above and returns early (the guard ran before any
+  // await gap, so two callers could otherwise both pass it).
+  state = { phase: "pulling", message: "checking for update…" };
   const origin = readBuildOrigin();
   const appPath = process.env.OA_APP_PATH;
   if (!origin?.repoRoot || !appPath) {
@@ -222,9 +226,13 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
 function spawnRelauncher(repoRoot: string, appPath: string): void {
   const builtApp = join(repoRoot, "app", "src-tauri", "target", "release", "bundle", "macos", "Bismuth.app");
   const appPid = process.env.OA_APP_PID ?? "";
+  const logPath = join(tmpdir(), "bismuth-update.log");
+  // Self-deleting + atomic swap: move DEST aside to a backup first, then ditto into place;
+  // restore the backup if ditto fails so a failed copy never leaves the user with no app.
   const script = `#!/bin/bash
 # Bismuth self-update relauncher (generated). Wait for the app to quit, swap, relaunch.
 set -e
+trap 'rm -f "$0"' EXIT
 NEW=${JSON.stringify(builtApp)}
 DEST=${JSON.stringify(appPath)}
 APP_PID=${JSON.stringify(appPid)}
@@ -233,14 +241,21 @@ if [[ -n "$APP_PID" ]]; then
   for _ in $(seq 1 240); do kill -0 "$APP_PID" 2>/dev/null || break; sleep 0.5; done
 fi
 sleep 1
-rm -rf "$DEST"
-/usr/bin/ditto "$NEW" "$DEST"
+BACKUP="$DEST.bak-$$"
+if [[ -e "$DEST" ]]; then mv "$DEST" "$BACKUP"; fi
+if /usr/bin/ditto "$NEW" "$DEST"; then
+  rm -rf "$BACKUP"
+else
+  rm -rf "$DEST"
+  if [[ -e "$BACKUP" ]]; then mv "$BACKUP" "$DEST"; fi
+  exit 1
+fi
 /usr/bin/open "$DEST"
 `;
   const scriptPath = join(tmpdir(), `bismuth-update-${process.pid}-${performance.now().toFixed(0)}.sh`);
   writeFileSync(scriptPath, script, { mode: 0o755 });
   // nohup + & so the job reparents to launchd and outlives this sidecar.
-  Bun.spawn(["/bin/bash", "-c", `nohup bash ${JSON.stringify(scriptPath)} >/tmp/bismuth-update.log 2>&1 &`], {
+  Bun.spawn(["/bin/bash", "-c", `nohup bash ${JSON.stringify(scriptPath)} >${JSON.stringify(logPath)} 2>&1 &`], {
     stdin: "ignore",
     stdout: "ignore",
     stderr: "ignore",

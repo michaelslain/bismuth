@@ -1,6 +1,6 @@
 # Testing
 
-This document is the canonical reference for how tests work in Bismuth, covering the test runner, file conventions, the 902-test suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the TypeScript type-check gate, and a tour of every key test file and the patterns they establish.
+This document is the canonical reference for how tests work in Bismuth, covering the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the TypeScript type-check gate, and a tour of every key test file and the patterns they establish.
 
 ---
 
@@ -12,7 +12,7 @@ Bismuth uses **Bun's built-in test runner** (`bun:test`) for all tests — both 
 import { test, expect, describe, it, beforeEach, afterEach } from "bun:test";
 ```
 
-All 902 tests across 81 files run in roughly 10 seconds on a modern laptop.
+The full suite (~930 tests across the `core/` and `app/` workspaces) runs in roughly 10 seconds on a modern laptop.
 
 ---
 
@@ -26,15 +26,15 @@ From the repo root:
 bun test core
 ```
 
-This discovers every `*.test.ts` file under `core/` **and** `app/src/` (Bun resolves both workspaces). Output:
+This discovers every `*.test.ts` file under `core/` **and** `app/src/` (Bun resolves both workspaces). Output (counts are illustrative and grow per commit — expect a green `0 fail`):
 
 ```
 bun test v1.3.9 (cf6cdbbb)
 
- 902 pass
+ 930 pass
  0 fail
- 2525 expect() calls
-Ran 902 tests across 81 files. [10.24s]
+ 2600 expect() calls
+Ran 930 tests across 80+ files. [10.24s]
 ```
 
 ### Run a single workspace or directory

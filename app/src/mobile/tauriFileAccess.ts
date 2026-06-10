@@ -64,7 +64,7 @@ export function tauriFileAccess(): FileAccess {
         const st = await stat(join(root, rel));
         const mtimeMs = st.mtime ? st.mtime.getTime() : 0;
         const birthtimeMs = st.birthtime ? st.birthtime.getTime() : 0;
-        return { size: st.size, mtimeMs, ctimeMs: mtimeMs, birthtimeMs };
+        return { size: st.size, mtimeMs, ctimeMs: birthtimeMs, birthtimeMs };
       } catch {
         return null;
       }

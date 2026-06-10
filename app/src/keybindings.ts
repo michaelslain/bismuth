@@ -118,11 +118,9 @@ export const KEYBIND_MODIFIERS = ["Mod", "Alt", "Shift", "Cmd", "Ctrl", "Meta"];
 
 // Which family a modifier token belongs to, so the completion can hide a family
 // that's already present in the combo (e.g. once "Mod" is typed, drop Cmd/Ctrl too).
-const MODIFIER_FAMILY: Record<string, string> = {
-  mod: "mod", cmd: "mod", command: "mod", ctrl: "mod", control: "mod", meta: "mod", super: "mod",
-  alt: "alt", option: "alt", opt: "alt",
-  shift: "shift",
-};
+// Identical to the matcher's MODIFIER_TOKENS map — derived from it so the two can't
+// drift; the family name is exactly the flag a token sets.
+const MODIFIER_FAMILY: Record<string, string> = MODIFIER_TOKENS;
 
 /** The modifier family of a token, or null if the token is a plain key. */
 export function modifierFamily(token: string): string | null {

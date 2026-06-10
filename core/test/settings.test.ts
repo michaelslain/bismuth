@@ -159,6 +159,19 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   expect((data.graph as any).nodeSize).toBe(9);                  // valid number, applied
 });
 
+test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums to defaults", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    "settings.yaml",
+    // editorFontSize max is 28, theme is an enum — both stored values are invalid.
+    "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
+  );
+  const data = await serializeSettingsForFrontend(vault);
+  expect((data.appearance as any).editorFontSize).toBe(16);       // above max → default
+  expect((data.appearance as any).theme).toBe("oxide-duotone");   // invalid enum → default
+});
+
 test("serializeSettingsForFrontend omits the properties registry section", async () => {
   const vault = await emptyVault();
   await writeNote(vault, "settings.yaml", "properties:\n  due: date\n");
@@ -241,6 +254,22 @@ test("setSettingInFile ignores an empty path", async () => {
   await setSettingInFile(vault, [], "x");
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).theme).toBe("oxide-duotone");
+});
+
+test("setSettingInFile leaves a corrupt file's bytes unchanged", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await setSettingInFile(vault, ["appearance", "theme"], "light");
+  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
+});
+
+test("setFolderIcon leaves a corrupt file's bytes unchanged (never clobbers content)", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await setFolderIcon(vault, "projects", "Folder");
+  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
 });
 
 import { loadAppConfig } from "../src/settings";

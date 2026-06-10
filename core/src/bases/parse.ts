@@ -220,7 +220,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
   // persist them with a flat `setProperty`, no nested `views:` editing needed).
   if (raw && config.views[0]) {
     const FIELD_KEYS = [
-      "frontField", "backField", "dueField",
+      "frontField", "backField", "dueField", "easeField", "intervalField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
       "x", "y", "image",
     ] as const;

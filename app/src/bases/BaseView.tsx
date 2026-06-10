@@ -347,6 +347,7 @@ export function BaseView(props: {
         <BaseSettings
           type={activeType()}
           config={data()!.config}
+          viewIdx={Math.min(activeView(), Math.max(0, data()!.config.views.length - 1))}
           basePath={data()!.basePath}
           rows={data()!.rows}
           onClose={() => setSettingsMode(false)}

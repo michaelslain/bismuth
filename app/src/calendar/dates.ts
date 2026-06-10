@@ -15,6 +15,13 @@ export function formatGutterHour(h: number, military: boolean): string {
   return `${h12} ${period}`
 }
 
+/** Format an ISO `YYYY-MM-DD` as a localized "Mon D, YYYY"; passes invalid input through. */
+export function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  if (!y || !m || !d) return iso
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 export function toDateStr(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -67,6 +74,7 @@ function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
   if (r.type === 'weekly') return r.daysOfWeek?.includes(dow) ?? dow === start.getDay()
   if (r.type === 'biweekly') {
     const diffDays = Math.round((d.getTime() - start.getTime()) / 86400000)
+    if (diffDays < 0) return false
     const matchesDow = r.daysOfWeek?.includes(dow) ?? dow === start.getDay()
     return matchesDow && Math.floor(diffDays / 7) % 2 === 0
   }

@@ -17,7 +17,7 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
   const nodeBuilder = (rel: string): GraphNode => {
     const rid = noteId(rel);
     const base = basename(rid);
-    return { id: MEM(base), label: base, kind: "memory" };
+    return { id: MEM(rid), label: base, kind: "memory" };
   };
 
   const edgeExtractor = (
@@ -29,8 +29,8 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
     const edges: GraphEdge[] = [];
     const targets = extractWikilinks(content);
 
-    // Extract basename from the memory node id (format: "mem:<base>")
-    const base = nodeId.slice("mem:".length);
+    // Derive basename from the memory node id (format: "mem:<relative-path>")
+    const base = basename(nodeId.slice("mem:".length));
     links.set(base, targets);
 
     // Create edges to other memory notes. Resolve path-qualified links by full

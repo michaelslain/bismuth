@@ -124,6 +124,24 @@ test("applyReview succeeds when the expected question matches", async () => {
   expect(text).toContain("<!--SR:!2026-05-28,1,250-->");
 });
 
+test("applyReview throws CARD_NOT_FOUND for an out-of-range subIndex", async () => {
+  const vault = await vaultWith({ "a.md": "#flashcards\n\n2+2::4" });
+  const cards = await collectCards(vault);
+  // Single (non-reversed) card has subCount 1, so subIndex 1 is out of range.
+  const badId = cards[0].id.replace(/::0$/, "::1");
+  await expect(applyReview(vault, badId, "good", TODAY)).rejects.toThrow(/sub-card not found/);
+});
+
+test("applyReview round-trips a notePath containing '::'", async () => {
+  const vault = await vaultWith({ "a::b.md": "#flashcards\n\n2+2::4" });
+  const cards = await collectCards(vault);
+  expect(cards[0].notePath).toBe("a::b.md");
+  // Should not throw CARD_FORMAT_ERROR despite the "::" in the path.
+  await applyReview(vault, cards[0].id, "good", TODAY);
+  const text = await readNote(vault, "a::b.md");
+  expect(text).toContain("2+2::4 <!--SR:!2026-05-28,1,250-->");
+});
+
 test("noteCards returns all cards in a note regardless of tag or due date", async () => {
   const vault = await vaultWith({
     "untagged.md": "Capital::Paris\n\ndone::card <!--SR:!2099-01-01,5,250-->",

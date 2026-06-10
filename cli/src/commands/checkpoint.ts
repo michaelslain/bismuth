@@ -20,13 +20,13 @@ import {
 function repoDir(args: string[]): string {
   const d = flag(args, "dir") ?? flag(args, "vault") ?? process.env.OA_VAULT;
   if (!d) fail("no dir — pass --dir <path> (the vault or memory repo)");
-  return d as string;
+  return d;
 }
 
 function refName(args: string[], cmd: string): string {
   const ref = positionals(args)[0];
   if (!ref) fail(`usage: checkpoint ${cmd} <ref> --dir <path>`);
-  return ref as string;
+  return ref;
 }
 
 // Commit pending changes before the op unless --no-commit (so the delta/advance reflects

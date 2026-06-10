@@ -72,6 +72,8 @@ function slugify(heading: string): string {
 interface Section {
   /** Heading text. For the intro (text before the first heading) this is the doc title. */
   heading: string;
+  /** Heading depth (number of leading `#`). 1 for the top/intro section. */
+  level: number;
   /** Slug anchor, or "" for the top/intro section. */
   anchor: string;
   /** Section body text (excludes the heading line itself). */
@@ -87,7 +89,7 @@ interface Section {
 function splitSections(text: string, title: string): Section[] {
   const lines = text.split(/\r?\n/);
   const sections: Section[] = [];
-  let cur: Section = { heading: title, anchor: "", text: "" };
+  let cur: Section = { heading: title, level: 1, anchor: "", text: "" };
   const buf: string[] = [];
 
   const flush = () => {
@@ -101,7 +103,7 @@ function splitSections(text: string, title: string): Section[] {
     if (h) {
       flush();
       const heading = h[2].trim();
-      cur = { heading, anchor: slugify(heading), text: "" };
+      cur = { heading, level: h[1].length, anchor: slugify(heading), text: "" };
       continue;
     }
     // Drop the top-level "# Title" line from the intro body.
@@ -248,7 +250,7 @@ export function readDoc(docsRoot: string, relPath: string, section?: string): st
   const title = docTitle(text, target);
   for (const sec of splitSections(text, title)) {
     if (sec.heading.toLowerCase().trim() === wanted) {
-      const prefix = sec.anchor ? `## ${sec.heading}\n\n` : `# ${sec.heading}\n\n`;
+      const prefix = `${"#".repeat(sec.level)} ${sec.heading}\n\n`;
       return (prefix + sec.text).trim();
     }
   }

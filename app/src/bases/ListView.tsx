@@ -144,16 +144,16 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
                 const title = resolveProperty(firstCol(), row);
                 const author = authorCol() ? resolveProperty(authorCol()!, row) : null;
                 return (
-                  <div class={styles.lrow} onClick={() => open(row)} style={{ cursor: "pointer" }}>
+                  <div class={styles.lrow} onClick={() => open(row)}>
                     <Icon value="Book" size={15} />
                     <span class={styles.ltext}>
                       {title == null ? row.file.name : String(title)}
                       <Show when={author != null && typeof author !== "object"}>
-                        <span style={{ color: "var(--faint)" }}> — {String(author)}</span>
+                        <span class={styles.lrowAuthor}> — {String(author)}</span>
                       </Show>
                     </span>
                     <Show when={rightCol()}>
-                      <span style={{ color: "var(--text-muted)", "font-size": "11px", "flex": "0 0 auto" }}>
+                      <span class={styles.lrowRight}>
                         {renderValue(rightCol()!, row)}
                       </span>
                     </Show>

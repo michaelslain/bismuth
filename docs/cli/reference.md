@@ -16,7 +16,7 @@ Once installed/linked, it is the `bismuth` binary:
 bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]
 ```
 
-> Note on naming: the project CLAUDE.md calls the binary `oa` historically, and the lone CLI test (`cli/test/cli.test.ts`) refers to `oa graph` in its description while actually spawning `bun run cli/src/index.ts`. The `package.json` `bin` name today is **`bismuth`**. Examples below use `bismuth`.
+> Note on naming: the `package.json` `bin` name is **`bismuth`** (the `@oa/` namespace and `OA_*` env vars are legacy prefixes, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
 
 ### Help
 

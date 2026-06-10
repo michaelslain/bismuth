@@ -162,6 +162,7 @@ export async function setSettingInFile(vault: string, path: string[], value: unk
     await reconcileSettings(vault); // ensure the file exists + is shaped
     const raw = await readNote(vault, SETTINGS_FILE);
     const doc = parseDocument(raw);
+    if (doc.errors.length) return; // corrupt — never clobber existing content
     doc.setIn(path, value);
     await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
   });
@@ -194,14 +195,22 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
     const stored = data[section];
     if (!stored || typeof stored !== "object") continue;
     const target = out[section];
-    const sectionSchema = SETTINGS_SCHEMA[section as keyof typeof SETTINGS_SCHEMA];
+    // Each top-level section is an object-typed SchemaEntry; its leaf fields live
+    // under `type.fields`, so resolve the per-key schema from there (not off the
+    // section entry directly) for the min/max/enum clamps to fire.
+    const sectionEntry = SETTINGS_SCHEMA[section as keyof typeof SETTINGS_SCHEMA] as SchemaEntry | undefined;
+    const sectionType = sectionEntry?.type;
+    const fields = sectionType && typeof sectionType === "object" && sectionType.kind === "object"
+      ? sectionType.fields
+      : undefined;
     for (const key of Object.keys(target)) {
       const v = (stored as Record<string, unknown>)[key];
       if (typeof v !== typeof target[key]) continue;
-      const keySchema = sectionSchema?.[key as keyof typeof sectionSchema] as any;
+      const keySchema = fields?.[key];
       if (keySchema?.min !== undefined && typeof v === "number" && v < keySchema.min) continue;
       if (keySchema?.max !== undefined && typeof v === "number" && v > keySchema.max) continue;
-      if (keySchema?.enum !== undefined && !keySchema.enum.includes(v)) continue;
+      const keyType = keySchema?.type;
+      if (keyType && typeof keyType === "object" && keyType.kind === "enum" && !keyType.values.includes(v as string)) continue;
       target[key] = v;
     }
   }
@@ -305,12 +314,13 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
   await withSettingsMutex(vault, async () => {
     await initializeSettings(vault); // no-op if present; guarantees a file to edit
     const raw = await readNote(vault, SETTINGS_FILE);
-    let doc;
+    let doc: Document;
     try {
       doc = parseDocument(raw);
     } catch {
-      doc = new Document();
+      return; // unparseable — never clobber existing content
     }
+    if (doc.errors.length) return; // corrupt — leave the file for the user to fix
     if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
       doc.contents = new YAMLMap();
     }

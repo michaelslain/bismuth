@@ -89,7 +89,9 @@ export function diagnosticsForFrontmatter(
     }
     if (idx === -1) idx = 0; // fall back to the first body line
     const from = lineOffsets[idx];
-    const to = from + bodyLines[idx].length;
+    // trimEnd drops a trailing CR (CRLF input) so the mark/fix range doesn't include it;
+    // the offset-accumulation loop above keeps the full \r-inclusive length on purpose.
+    const to = from + bodyLines[idx].trimEnd().length;
     out.push({ from, to, severity: d.severity, message: d.message, suggestions: d.suggestions });
   }
   return out;
@@ -109,6 +111,9 @@ export function isInFrontmatter(ctx: CompletionContext): boolean {
 function schemaLinter(opts: YamlSchemaOpts) {
   return linter((view: EditorView): CmDiagnostic[] => {
     const doc = view.state.doc.toString();
+    // No hover boxes — fixes live in the shared right-click menu (editorContextMenu).
+    // needsRefresh: lets requestRelint() re-run validation when the property registry
+    // changes (Editor.tsx) even though the document itself hasn't been edited.
     return diagnosticsForFrontmatter(doc, opts.getSchema(), opts.resolveLink, opts.mode).map((d) => {
       const diag: CmDiagnostic = {
         from: d.from,
@@ -136,9 +141,6 @@ function schemaLinter(opts: YamlSchemaOpts) {
       }
       return diag;
     });
-    // No hover boxes — fixes live in the shared right-click menu (editorContextMenu).
-    // needsRefresh: lets requestRelint() re-run validation when the property registry
-    // changes (Editor.tsx) even though the document itself hasn't been edited.
   }, { delay: 350, needsRefresh: relintNeedsRefresh, tooltipFilter: () => [] });
 }
 

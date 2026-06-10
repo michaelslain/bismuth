@@ -25,9 +25,11 @@ export function PopoverList(props: {
   onHover?: (index: number) => void;
   /** Inline style for the container (ContextMenu passes fixed x/y/z-index). */
   style?: JSX.CSSProperties;
+  /** Extra class on the container (additive; e.g. Select's `.ui-select-list`). */
+  class?: string;
 }) {
   return (
-    <div class="oa-popover" style={props.style} onClick={(e) => e.stopPropagation()}>
+    <div class={`oa-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
       <For each={props.items}>
         {(item, i) => (
           <>

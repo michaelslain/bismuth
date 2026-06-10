@@ -85,12 +85,14 @@ const DIR_OPTS = [
 export function BaseSettings(props: {
   type: ViewType;
   config: BaseConfig;
+  /** Index of the view these settings edit — the active view, not always the first. */
+  viewIdx: number;
   basePath?: string;
   rows: Row[];
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const view = () => props.config.views[0];
+  const view = () => props.config.views[props.viewIdx];
   const isRecord = () => RECORD_TYPES.includes(props.type);
   const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];

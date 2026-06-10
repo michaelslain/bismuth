@@ -2,6 +2,7 @@
 import { type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
+import { ZOOM_MIN, ZOOM_MAX } from "./DrawingPage";
 import { Button } from "../ui/Button";
 import { SegmentedToggle } from "../ui/SegmentedToggle";
 import { Icon } from "../icons/Icon";
@@ -110,14 +111,14 @@ export function Toolbar(props: {
             </div>
             <div class="segmented">
               <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom out" aria-label="Zoom out"
-                disabled={props.zoom() <= 0.25} onClick={() => props.onZoomOut()}>
+                disabled={props.zoom() <= ZOOM_MIN} onClick={() => props.onZoomOut()}>
                 <Icon value="ZoomOut" size={17} />
               </Button>
               <Button kind="text" state="unselected" class="draw-iconseg draw-zoompct" title="Reset zoom" aria-label="Reset zoom" onClick={() => props.onResetZoom()}>
                 {zoomPct()}%
               </Button>
               <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom in" aria-label="Zoom in"
-                disabled={props.zoom() >= 4} onClick={() => props.onZoomIn()}>
+                disabled={props.zoom() >= ZOOM_MAX} onClick={() => props.onZoomIn()}>
                 <Icon value="ZoomIn" size={17} />
               </Button>
             </div>

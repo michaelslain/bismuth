@@ -1,6 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { buildChartData, buildHeatmapWeeks } from "../../../core/src/bases/chart";
+import { todayISO, addDaysISO } from "../../../core/src/dates";
 import styles from "./Charts.module.css";
 
 // Five teal intensity levels from the design (low → high), built from the --teal
@@ -62,6 +63,11 @@ export function HeatmapView(props: { result: ViewResult; config: BaseConfig }) {
       if (current > longest) longest = current;
       prev = d;
     }
+    // `current` is the run ending at the most recent entry — that's only a live
+    // streak if the last entry is today (or yesterday, with today still open). If
+    // the chain already lapsed, the current streak is 0.
+    const today = todayISO();
+    if (prev !== null && prev !== today && prev !== addDaysISO(today, -1)) current = 0;
     return { entries, current, longest };
   });
 

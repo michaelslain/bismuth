@@ -68,7 +68,10 @@ export const THEME_LABELS: Record<ThemeName, string> = {
   "full-sheen-light": "Full Sheen Light",
 };
 
-const SHEEN = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
+/** The full-sheen accent ramp (six hues). Also the app-wide fallback accent
+ *  palette (`DEFAULT_ACCENT_PALETTE` in settings.ts re-exports this) so there is
+ *  one source for the values. */
+export const SHEEN = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
 
 /** Theme name → full color tokens. Values are the mockup's palette fields:
  *  background=bg, foreground=textHi, neutral=textLo, surface=surface,

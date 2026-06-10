@@ -218,6 +218,15 @@ test("setFrontmatterKey preserves flow-style arrays on untouched keys", () => {
   expect(out).toContain("# Gamma");
 });
 
+test("setFrontmatterKey preserves YAML comments on an untouched block", () => {
+  const md = `---\n# leading comment\ntitle: Gamma # trailing comment\nstatus: todo\n---\n# Gamma`;
+  const out = setFrontmatterKey(md, "status", "done");
+  expect(out).toContain("# leading comment");
+  expect(out).toContain("# trailing comment");
+  expect(out).toContain("status: done");
+  expect(out).toContain("# Gamma");
+});
+
 test("setFrontmatterKey preserves the existing key order on update", () => {
   const md = `---\ntitle: Gamma\nstatus: todo\nrating: 3\n---\nbody`;
   const out = setFrontmatterKey(md, "status", "done");

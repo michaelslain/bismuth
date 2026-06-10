@@ -13,12 +13,7 @@
   min-height: 0;
   color: var(--fg);
 }
-.bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); }
-.barRight { margin-left: auto; display: flex; gap: 6px; }
 .body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.srcBtn:global(.btn) {
-  margin-left: auto;
-}
 
 /* Raw source editor (Source toggle). */
 .source { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -38,8 +33,6 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5;
 }
 .sourceBar { display: flex; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--border); }
-.sourceBar button { padding: 4px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
-.sourceBar button:hover { border-color: var(--accent); }
 
 /* Table-family container (table/cards/list/kanban/map). */
 .base {
@@ -54,7 +47,6 @@
    keep their own internal padding (re-applied per view since the host pad is removed). */
 
 .tabs { display: flex; gap: 4px; }
-.loading { padding: 24px; color: var(--text-muted); }
 
 /* ---------- table view ---------- */
 .table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
@@ -288,10 +280,15 @@
   border-bottom: 1px solid var(--border-soft, var(--border));
   font-size: 13px;
   color: var(--fg);
+  cursor: pointer;
 }
 .lrow:hover { background: color-mix(in srgb, var(--fg) 2%, transparent); }
 .lrow :global(svg) { color: var(--accent); flex: 0 0 auto; }
 .ltext { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Faint author suffix after a list row's title. */
+.lrowAuthor { color: var(--faint); }
+/* The optional right-aligned third column (dates / counts). */
+.lrowRight { color: var(--text-muted); font-size: 11px; flex: 0 0 auto; }
 
 /* Generic (non-status-grouped) group header fallback used by Cards/List with a groupBy. */
 .groupHeader { font-weight: 500; margin: 8px 18px 4px; font-size: 11px; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted); }
@@ -568,7 +565,7 @@
 }
 .kanbanColHeader { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 11.5px; color: var(--fg); padding: 11px 13px; }
 .kanbanColHeader .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
-.kanbanColTitle { text-transform: capitalize; }
+.kanbanColTitle { text-transform: capitalize; color: var(--fg); }
 .kanbanCount { margin-left: auto; font-size: 11px; color: var(--faint); }
 
 .kanbanCards { display: flex; flex-direction: column; padding: 0 10px 12px; gap: 9px; }
@@ -583,7 +580,6 @@
 .kanbanCards .card .cardBodyInner { padding: 11px 12px; gap: 8px; }
 .kanbanCards .card:hover { background: var(--surface-2); transform: translateY(-1px); box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28); }
 .kanbanCards .card:active { cursor: grabbing; }
-.cardDragging { opacity: 0.35; box-shadow: none !important; transform: scale(0.98) !important; }
 
 /* Drop placeholder — collapsed by default, expands smoothly when a card hovers this column */
 .kanbanPlaceholder {

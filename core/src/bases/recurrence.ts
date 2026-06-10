@@ -39,6 +39,9 @@ export function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
   if (r.type === "weekly") return r.daysOfWeek?.includes(dow) ?? dow === start.getDay();
   if (r.type === "biweekly") {
     const diffDays = Math.round((d.getTime() - start.getTime()) / 86400000);
+    // Dates before the series start never match (a negative diff would otherwise
+    // pass the parity check, e.g. -0 % 2 === 0).
+    if (diffDays < 0) return false;
     const matchesDow = r.daysOfWeek?.includes(dow) ?? dow === start.getDay();
     return matchesDow && Math.floor(diffDays / 7) % 2 === 0;
   }

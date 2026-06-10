@@ -185,8 +185,8 @@ export async function resolveAsset(root: string, target: string): Promise<string
   }
   // 2. filename-first: the first file in the vault whose basename equals the target's
   const base = clean.split("/").pop()!;
-  const matches = await walkDir(root, (d) => !d.isDirectory() && d.name === base);
-  const hit = matches.find((m) => !m.isDir);
+  // walkDir's filter already excludes directories, so the first match is the file we want.
+  const hit = (await walkDir(root, (d) => !d.isDirectory() && d.name === base))[0];
   return hit ? join(root, hit.rel) : null;
 }
 
@@ -267,12 +267,10 @@ export async function listTemplates(
     return d.name.endsWith(".md");
   });
 
-  const out: Array<{ name: string; path: string }> = entries
-    .filter((e) => e.name.endsWith(".md"))
-    .map((e) => ({
-      name: e.name.slice(0, -3), // Remove .md extension
-      path: folder ? `${folder}/${e.rel}` : e.rel,
-    }));
+  const out: Array<{ name: string; path: string }> = entries.map((e) => ({
+    name: e.name.slice(0, -3), // Remove .md extension
+    path: folder ? `${folder}/${e.rel}` : e.rel,
+  }));
 
   out.sort((a, b) => a.path.localeCompare(b.path));
   return out;

@@ -55,6 +55,19 @@ test("two clusters joined by a bridge separate spatially", () => {
   expect(dist(cA, cB)).toBeGreaterThan(spread);
 });
 
+test("warm-start nodes missing from the seed are deterministic across runs", () => {
+  const g = ring(40);
+  // A warm-start seed that OMITS one node id ("n7") — it must fall back to a deterministic,
+  // hash-seeded position, NOT Math.random(), so both runs place the missing node identically.
+  const full = computeLayout(g, { refineTicks: 30 });
+  const seed = { ...full };
+  delete seed.n7;
+
+  const a = computeLayout(g, { refineTicks: 30, initialPositions: seed });
+  const b = computeLayout(g, { refineTicks: 30, initialPositions: seed });
+  expect(a.n7).toEqual(b.n7);
+});
+
 test("pivotMDS is deterministic", () => {
   const g = ring(40);
   const index = new Map(g.nodes.map((n, i) => [n.id, i] as const));

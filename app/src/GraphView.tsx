@@ -1,6 +1,5 @@
 // app/src/GraphView.tsx
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
-import type { JSX } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
 import { WebGLRenderer, type HoverNode } from "./graph/WebGLRenderer";
 import { GraphAtmosphere } from "./graph/GraphAtmosphere";
@@ -28,14 +27,6 @@ function mixHex(a: number, b: number, t: number): number {
   };
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
-
-/** Shared pill recipe for the hover/fps HUD readouts (theme-aware for light/dark). */
-const hudPill: JSX.CSSProperties = {
-  background: "var(--pop-bg)",
-  border: "1px solid var(--border-soft)",
-  "font-family": "inherit",
-  "border-radius": "5px",
-};
 
 /** Text shown in the bottom hover readout — note id is its vault-relative path (minus ".md"). */
 function hoverLabel(node: HoverNode): string {
@@ -254,7 +245,7 @@ export function GraphView(props: {
   const edgeCount = () => props.graph?.edges?.length ?? 0;
 
   return (
-    <div class="graph-root" style={{ display: "flex", "flex-direction": "column", height: props.fill ? "100%" : undefined }}>
+    <div class="graph-root" style={{ height: props.fill ? "100%" : undefined }}>
       <ViewBar class="graph-viewbar">
         <span class="graph-vb-wide"><Crumb icon="Share2">Knowledge Graph</Crumb></span>
         <SegmentedToggle
@@ -288,8 +279,8 @@ export function GraphView(props: {
           </Show>
         </span>
       </ViewBar>
-      <div class="graph-area" style={{ position: "relative", width: "100%", ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
-        <div ref={host} style={{ width: "100%", height: "100%" }} />
+      <div class="graph-area" style={{ ...(props.fill ? { flex: 1, "min-height": 0 } : { "aspect-ratio": "1" }) }}>
+        <div class="graph-canvas-host" ref={host} />
         {/* Native-text label overlay: the renderer projects each visible node to screen px and
             places a crisp <div> here (replaces low-res in-canvas sprites). Layered above the glow. */}
         <div class="graph-labels" ref={labelsEl} />
@@ -304,7 +295,7 @@ export function GraphView(props: {
         </Show>
         {/* Floating cluster-legend card (non-agents, non-daemon) — hidden in the cramped sidebar via container query. */}
         <Show when={props.mode !== "agents" && props.mode !== "daemon"}>
-          <div class="graph-legend-card graph-wide">
+          <div class="graph-legend-card">
             <div class="graph-card-h">{modeLabel()} · clusters</div>
             <div class="graph-legend-rows">
               <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
@@ -313,7 +304,7 @@ export function GraphView(props: {
         </Show>
         {/* Daemon-mode list: crons and processes with live status. */}
         <Show when={props.mode === "daemon"}>
-          <div class="graph-legend-card graph-wide daemon-legend">
+          <div class="graph-legend-card daemon-legend">
             <div class="graph-card-h">daemon · services</div>
             <div class="graph-legend-rows">
               <DaemonList
@@ -326,7 +317,7 @@ export function GraphView(props: {
         </Show>
         {/* Floating stats footer (non-agents). */}
         <Show when={props.mode !== "agents"}>
-          <div class="graph-stats graph-wide">
+          <div class="graph-stats">
             <span>{nodeCount()} nodes · {edgeCount()} edges · {modeLabel()}</span>
             <Show when={settings.graph.showFps && fps() !== null}><span style={{ color: fpsColor(fps()!) }}>{fps()} fps</span></Show>
           </div>
@@ -334,7 +325,7 @@ export function GraphView(props: {
         {/* Find panel: search only. Clusters live in the floating legend card; there's no
             reset-view button here (Escape / toggling Find closes it). */}
         <Show when={props.fill && menuOpen()}>
-          <div class="graph-find-panel" style={{ position: "absolute", top: "8px", right: "8px", width: "260px", "max-height": "calc(100% - 16px)", display: "flex", "flex-direction": "column", "pointer-events": "auto" }}>
+          <div class="graph-find-panel">
             <GraphSearch
               items={searchItems()}
               onPreview={(id) => renderer.setSearchMatches(new Set([id]))}
@@ -343,8 +334,8 @@ export function GraphView(props: {
             />
           </div>
         </Show>
-        <div style={{ position: "absolute", left: "6px", right: "6px", bottom: "6px", "z-index": 4, display: "flex", "align-items": "center", gap: "8px", "pointer-events": "none" }}>
-          <div class="graph-bottom-narrow" style={{ gap: "2px", "align-items": "stretch", "background": "var(--pop-bg)", "border-radius": "4px", padding: "1px", "pointer-events": "auto", "flex-shrink": 0 }}>
+        <div class="graph-bottom-bar">
+          <div class="graph-bottom-narrow">
             <SegmentedToggle
               value={graphViewMode()}
               onChange={setViewMode}
@@ -365,13 +356,13 @@ export function GraphView(props: {
           </div>
           <Show when={hovered()}>
             {(node) => (
-              <span style={{ ...hudPill, "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "var(--fg)", "font-size": "11px", padding: "2px 8px" }}>
+              <span class="graph-hud-pill" style={{ "min-width": 0, "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", color: "var(--fg)", "font-size": "11px", padding: "2px 8px" }}>
                 {hoverLabel(node())}
               </span>
             )}
           </Show>
           <Show when={settings.graph.showFps && fps() !== null}>
-            <span class="graph-bottom-fps" style={{ ...hudPill, "margin-left": "auto", "white-space": "nowrap", "font-variant-numeric": "tabular-nums", background: "var(--pop-bg)", color: fpsColor(fps()!), "font-size": "10px", padding: "2px 7px" }}>
+            <span class="graph-hud-pill graph-bottom-fps" style={{ color: fpsColor(fps()!) }}>
               {fps()} fps
             </span>
           </Show>

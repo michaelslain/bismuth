@@ -6,8 +6,8 @@ import { emptyDoc, parseDoc, type DrawingDoc, type PaperBg } from "../../../core
 import { createDrawingStore } from "./store";
 import { DrawingCanvas, type ToolState } from "./DrawingCanvas";
 import { Toolbar } from "./Toolbar";
-import { TextButton } from "../ui/TextButton";
-import { Icon } from "../icons/Icon";
+import { IconTextButton } from "../ui/IconTextButton";
+import { Loading } from "../ui/EmptyState";
 import "./Drawing.css";
 
 // size defaults to one of the 5 discrete toolbar levels so a button reads as active;
@@ -16,12 +16,16 @@ const DEFAULT_TOOLS: ToolState = {
   tool: "pen", color: "fg", size: 5, smoothMode: "smooth", holdToStraighten: true, holdDelayMs: 900,
 };
 
+// Transient zoom bounds (NOT persisted). Shared with the Toolbar so its disabled
+// guards can't drift from the clamp here.
+export const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+
 export function DrawingPage(props: { path: string }) {
   const [loaded] = createResource(() => props.path, async (p): Promise<DrawingDoc> => {
     try { return parseDoc(await api.read(p)); } catch { return emptyDoc(); }
   });
   return (
-    <Show when={loaded()} keyed fallback={<div class="draw-loading">Loading drawing…</div>}>
+    <Show when={loaded()} keyed fallback={<Loading>Loading drawing…</Loading>}>
       {(initial) => <DrawingEditor path={props.path} initial={initial} />}
     </Show>
   );
@@ -36,7 +40,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
   // Transient zoom (NOT persisted). Applied as a CSS WIDTH multiplier on a wrapper
   // around each page — DrawingCanvas.toLocal divides by getBoundingClientRect().width,
   // so pointer mapping stays correct at any zoom without touching the canvas code.
-  const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
+  // ZOOM_MIN/ZOOM_MAX are module-level (shared with the Toolbar's disabled guards).
   const [zoom, setZoom] = createSignal(1);
   const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
   const zoomBy = (factor: number) => setZoom((z) => clampZoom(z * factor));
@@ -88,7 +92,7 @@ function DrawingEditor(props: { path: string; initial: DrawingDoc }) {
             </div>
           )}
         </Index>
-        <TextButton onClick={() => store.addPage()}><Icon value="Plus" size={14} />ADD PAGE</TextButton>
+        <IconTextButton icon="Plus" iconSize={14} onClick={() => store.addPage()}>ADD PAGE</IconTextButton>
       </div>
     </div>
   );
