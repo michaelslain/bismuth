@@ -131,6 +131,12 @@
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
 .time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 6px 9px; font-size: 11px; }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
+/* Short events: time + title on one line so the title stays visible in the
+   limited height (a back-to-back 30-min slot is only ~22px tall). */
+.time-grid-event .event-chip.compact { flex-direction: row; align-items: center; gap: 5px; padding: 0 9px; }
+.time-grid-event .event-chip.compact .event-chip-title { flex: 1; min-width: 0; font-size: 1em; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.time-grid-event .event-chip.compact .event-chip-time { line-height: 1.25; }
+.time-grid-event .event-chip.compact .event-chip-meta { display: none; }
 .event-chip-title p, .event-chip-location p { margin: 0; }
 .event-chip-title *, .event-chip-location * { color: inherit; }
 /* Calendar event-create drag preview. NOT `.drag-ghost` — that class belongs to the
