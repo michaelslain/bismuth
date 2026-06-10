@@ -36,6 +36,7 @@ import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
 import { pushToast } from "./Toast";
 import { registerEditor, unregisterEditor } from "./editorRegistry";
+import { saveScroll, loadScroll } from "./scrollMemory";
 import { NoteTitle } from "./NoteTitle";
 import "./Editor.css";
 
@@ -285,7 +286,15 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     activePath = path;
     // Flush a pending save, then destroy the previous view when this effect re-runs
     // (path changed or cleanup) — so switching files can't drop an unsaved edit.
-    onCleanup(() => { flushSave(false); if (view) unregisterEditor(view); view?.destroy(); });
+    // Snapshot scrollTop first so a tab switch (which destroys this view) can restore
+    // the reader's position when the buffer's editor is recreated. `path` is this run's
+    // buffer; during cleanup it still names the view being torn down.
+    onCleanup(() => {
+      if (view && path) saveScroll(path, view.scrollDOM.scrollTop);
+      flushSave(false);
+      if (view) unregisterEditor(view);
+      view?.destroy();
+    });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
     pendingSave = false;
     if (!path) return;
@@ -510,6 +519,31 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
         ],
       }),
     });
+
+    // Restore the reader's scroll position for this buffer (saved when its previous
+    // view was torn down on a tab switch). A plain scrollTop set right after creation
+    // doesn't stick: CodeMirror measures line heights asynchronously (line wrapping +
+    // live-preview block widgets), and that pass resets scrollTop to 0. Re-assert inside
+    // requestMeasure across a few cycles so it survives the layout — same approach the
+    // external-reload reconcile above uses.
+    const restore = loadScroll(path);
+    if (restore != null && restore > 0) {
+      const v = view;
+      v.scrollDOM.scrollTop = restore;
+      let cycles = 0;
+      const repin = () => {
+        if (view !== v) return; // buffer switched / view destroyed
+        v.requestMeasure({
+          read: () => null,
+          write: () => {
+            if (view !== v) return;
+            if (Math.abs(v.scrollDOM.scrollTop - restore) > 1) v.scrollDOM.scrollTop = restore;
+            if (++cycles < 6) repin();
+          },
+        });
+      };
+      repin();
+    }
   });
 
   // Skip the SSE echo of versions we already reconciled (typically: our own
