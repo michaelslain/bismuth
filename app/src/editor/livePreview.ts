@@ -374,7 +374,13 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine, htmlBlockLines } = regions;
   const deco: Range<Decoration>[] = [];
   const doc = view.state.doc;
-  const cursorLine = doc.lineAt(view.state.selection.main.head).number;
+  // Lines touched by any selection range. A line "reveals" its raw markdown (instead
+  // of the rendered live-preview) when the cursor is on it OR when it falls inside a
+  // selection — so highlighting text exposes its markdown across the whole range, not
+  // just the caret line. Spans are precomputed per range (cheap) to avoid a doc.lineAt
+  // per visible line.
+  const selSpans = view.state.selection.ranges.map((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number] as const);
+  const isRevealed = (n: number) => selSpans.some(([a, b]) => n >= a && n <= b);
   // The table block (by header line) currently shown as raw source, if any. The
   // rendered <table> block widgets themselves come from tableWidgetField (a StateField)
   // — block decorations may not be provided by a ViewPlugin. Here we only need the
@@ -383,7 +389,8 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   // The frontmatter `---` fences stay collapsed until the cursor is inside the
   // block (i.e. you start editing it) — mirroring how code fences hide off-block.
   const editingFrontmatter =
-    frontmatterOpen != null && frontmatterClose != null && cursorLine >= frontmatterOpen && cursorLine <= frontmatterClose;
+    frontmatterOpen != null && frontmatterClose != null &&
+    selSpans.some(([a, b]) => a <= frontmatterClose && b >= frontmatterOpen);
   // The code block (by opening-fence line) currently in edit mode, if any.
   const activeCodeOpen = view.state.field(activeCodeField, false) ?? null;
 
@@ -391,7 +398,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
     let pos = from;
     while (pos <= to) {
       const line = view.state.doc.lineAt(pos);
-      const onCursor = line.number === cursorLine;
+      const onCursor = isRevealed(line.number);
       const text = line.text;
 
       // frontmatter: dim lines and skip inline markdown — but still highlight any
@@ -847,7 +854,10 @@ export const livePreview = [
     ".cm-frontmatter": {
       "font-family": "'Monaspace Xenon', ui-monospace, monospace",
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      background: "var(--surface-2)",
+      // No surface fill — just the accent left rule + monospace, matching fenced code
+      // blocks. A line background sits ABOVE CodeMirror's selection layer, so any fill
+      // (even translucent) hides the selection where it starts in the frontmatter,
+      // making a code-block→body drag look only half-highlighted.
       "box-shadow": "inset 2px 0 0 var(--accent)",
     },
     ".cm-fm-key": { color: "var(--accent)" },
