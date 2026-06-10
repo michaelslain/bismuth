@@ -4,7 +4,6 @@ import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
-import { forceLinting } from "@codemirror/lint";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
@@ -13,6 +12,7 @@ import { tags as t } from "@lezer/highlight";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
 import { livePreview } from "./editor/livePreview";
+import { requestRelint } from "./editor/relint";
 import { notePathFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
@@ -35,7 +35,7 @@ import { findBareUrls } from "./editor/urls";
 import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
 import { pushToast } from "./Toast";
-import { registerEditor, unregisterEditor } from "./editorRegistry";
+import { registerEditor, trackEditor, unregisterEditor } from "./editorRegistry";
 import { NoteTitle } from "./NoteTitle";
 import "./Editor.css";
 
@@ -277,7 +277,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   // note would keep showing stale "unknown property" marks.
   createEffect(() => {
     propertyRegistry(); // track: re-run whenever the registry signal updates
-    if (view) forceLinting(view);
+    if (view) requestRelint(view); // forceLinting alone no-ops on a settled linter
   });
 
   createEffect(async () => {
@@ -510,6 +510,10 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
         ],
       }),
     });
+    // Track every mounted editor (not just the focused one), so a custom-dictionary
+    // edit can re-lint all open notes — without touching the last-focused view that
+    // the template picker targets. unregisterEditor runs in the onCleanup above.
+    trackEditor(view);
   });
 
   // Skip the SSE echo of versions we already reconciled (typically: our own
