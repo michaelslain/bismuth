@@ -7,12 +7,22 @@ import { whichClaude } from "./claudeWhich";
 
 export interface Session {
   id: string;
+  /**
+   * Stable client-side terminal id (the `::term:<uuid>` content id). Lets a
+   * reconnecting/reloading client REATTACH to the same live PTY instead of
+   * silently spawning a fresh shell — see getSessionByTermId + the grace timer.
+   */
+  termId?: string;
   pty: IPty;
   cols: number;
   rows: number;
+  /** Pending delayed-kill after a non-clean disconnect; cancelled on reattach. */
+  graceTimer?: ReturnType<typeof setTimeout>;
 }
 
 const sessions = new Map<string, Session>();
+// termId → session id, so a reconnect with the same client term id finds its PTY.
+const byTermId = new Map<string, string>();
 
 // The relay plugin dir (relay/) and its PATH shim. In dev it's resolved relative to this
 // source file (core/src/terminal.ts → ../../relay); in the bundled app the compiled
@@ -95,6 +105,8 @@ export function createTerminalSession(opts: {
   rows: number;
   /** Core server port the in-tab Claude sessions report to (defaults to 4321). */
   relayPort?: number;
+  /** Stable client term id to key this session under, enabling reattach. */
+  termId?: string;
 }): Session {
   const shell = opts.shell ?? process.env.SHELL ?? "/bin/sh";
   const id = randomUUID();
@@ -118,14 +130,43 @@ export function createTerminalSession(opts: {
     env,
   });
 
-  const session: Session = { id, pty, cols: opts.cols, rows: opts.rows };
+  const session: Session = { id, termId: opts.termId, pty, cols: opts.cols, rows: opts.rows };
   sessions.set(id, session);
+  if (opts.termId) byTermId.set(opts.termId, id);
   return session;
+}
+
+/** Find a live session by its stable client term id (for reattach on reconnect). */
+export function getSessionByTermId(termId: string): Session | undefined {
+  const id = byTermId.get(termId);
+  return id ? sessions.get(id) : undefined;
+}
+
+/**
+ * Schedule a delayed kill (the post-disconnect grace window). A reconnecting
+ * client that reattaches via getSessionByTermId calls cancelSessionKill to keep
+ * its PTY alive. Replaces any pending timer.
+ */
+export function scheduleSessionKill(id: string, ms: number): void {
+  const s = sessions.get(id);
+  if (!s) return;
+  clearTimeout(s.graceTimer);
+  s.graceTimer = setTimeout(() => killSession(id), ms);
+}
+
+/** Cancel a pending delayed kill — the client reattached within the grace window. */
+export function cancelSessionKill(id: string): void {
+  const s = sessions.get(id);
+  if (!s) return;
+  clearTimeout(s.graceTimer);
+  s.graceTimer = undefined;
 }
 
 export function killSession(id: string): void {
   const s = sessions.get(id);
   if (!s) return;
+  clearTimeout(s.graceTimer);
+  if (s.termId && byTermId.get(s.termId) === id) byTermId.delete(s.termId);
   try {
     s.pty.kill();
   } catch {

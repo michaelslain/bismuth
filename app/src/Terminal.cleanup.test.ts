@@ -58,7 +58,9 @@ describe("TerminalTab font-load cleanup (B8/B20)", () => {
     const cleanupStart = tt.indexOf("onCleanup(", onMountIdx);
     const cleanupBody = tt.slice(cleanupStart, tt.indexOf("});", cleanupStart));
     expect(cleanupBody).toContain("ro?.disconnect()");
-    expect(cleanupBody).toContain("ws?.close()");
+    // Closes with code 1000 so the backend treats it as an intentional teardown
+    // (kill the PTY now) rather than a drop to keep alive for reattach.
+    expect(cleanupBody).toContain('ws?.close(1000, "dispose")');
     expect(cleanupBody).toContain("term?.dispose()");
     expect(cleanupBody).toContain("cursorEl?.remove()");
     expect(cleanupBody).toContain('removeEventListener("mousedown"');

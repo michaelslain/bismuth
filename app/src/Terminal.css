@@ -56,3 +56,11 @@
     opacity: 0;
   }
 }
+
+/* Hide the custom cursor while the terminal is unfocused (xterm toggles `.focus` on
+   the .xterm root). A blinking accent block in a background pane reads as "active"
+   and competes with the focused pane's cursor; native terminals dim/hollow theirs. */
+.term-host:has(.xterm:not(.focus)) .xterm-custom-cursor {
+  opacity: 0;
+  animation: none;
+}
