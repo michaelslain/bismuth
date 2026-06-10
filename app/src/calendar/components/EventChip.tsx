@@ -8,7 +8,7 @@ import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
 
-interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[]; store: EventStore }
+interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: string; categories: Category[]; store: EventStore; compact?: boolean }
 
 export function EventChip(props: Props) {
   // The chip is tinted by its category's colour (a theme token → var(--token), or a
@@ -64,7 +64,7 @@ export function EventChip(props: Props) {
   return (
     <div
       ref={chipRef}
-      class={`event-chip ev ${category() ? '' : 'ghost'}`}
+      class={`event-chip ev ${category() ? '' : 'ghost'}${props.compact ? ' compact' : ''}`}
       style={chipBg() ? { background: chipBg() } : undefined}
       onClick={e => {
         e.stopPropagation()
@@ -79,7 +79,8 @@ export function EventChip(props: Props) {
       <Show when={props.event.startTime}>
         <span class="event-chip-time">
           {formatTime(props.event.startTime!, military())}
-          {props.event.endTime ? ` — ${formatTime(props.event.endTime, military())}` : ''}
+          {/* Compact (short) events show only the start time so the title gets the room. */}
+          {!props.compact && props.event.endTime ? ` — ${formatTime(props.event.endTime, military())}` : ''}
         </span>
       </Show>
       <span class="event-chip-title">{props.event.title}</span>

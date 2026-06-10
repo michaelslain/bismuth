@@ -1,4 +1,4 @@
-import { For, Index } from 'solid-js'
+import { For, Index, createMemo } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { toDateStr, formatGutterHour, formatTime } from '../../dates'
@@ -215,6 +215,10 @@ export function TimeGrid(props: Props) {
             </div>
             <For each={props.dates}>{d => {
               const ds = toDateStr(d)
+              // Start minutes of every timed event in this column, kept reactive so
+              // the per-event padding cap below tracks adds/moves/deletes.
+              const dayStartMins = createMemo(() =>
+                props.events.filter(e => e.date === ds && e.startTime).map(e => eventMinutes(e).startMin))
               return (
                 <div
                   class={`time-grid-day-col${ds === today ? ' today' : ''}`}
@@ -228,14 +232,24 @@ export function TimeGrid(props: Props) {
                     const { startMin, endMin: evEndMin } = eventMinutes(e)
                     const top = (startMin / (24 * 60)) * GRID_PX
                     const duration = evEndMin - startMin
-                    const visualDuration = duration <= 30 ? duration + 15 : duration
+                    // Short events get +15min of visual height so the title stays
+                    // readable, but cap it at the next event's start so the padding
+                    // never spills into a back-to-back event below (e.g. 8:00–8:30
+                    // followed by 8:30–10:00).
+                    const nextStart = Math.min(...dayStartMins().filter(s => s > startMin), Infinity)
+                    const visualDuration = duration <= 30
+                      ? Math.min(duration + 15, Math.max(duration, nextStart - startMin))
+                      : duration
                     const height = Math.max((visualDuration / (24 * 60)) * GRID_PX - 3, 8)
+                    // Too short to stack time-over-title (needs ~42px) → lay the chip
+                    // out on a single line so the title stays visible.
+                    const compact = height < 42
                     const drag = dragState.value
                     const isBeingMoved = drag?.type === 'move' && drag.event.id === e.id
                     return (
                       <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, opacity: isBeingMoved ? 0.3 : 1 }}
                         onMouseDown={ev => onChipMouseDown(ev, e, ds, e.recurrence ? e.id : undefined)}>
-                        <EventChip event={e} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
+                        <EventChip event={e} compact={compact} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                       </div>
                     )
                   }}</For>
