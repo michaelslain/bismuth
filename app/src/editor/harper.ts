@@ -16,7 +16,9 @@ import { WorkerLinter, Dialect, type Lint } from "harper.js";
 // path resolves correctly at runtime).
 import { binary } from "harper.js/binary";
 import { scalarToUtf16 } from "./harperOffsets";
-import { loadHarperState, addWord, addIgnoredLint } from "./harperStore";
+import { loadHarperState, addWord, removeWord, addIgnoredLint, normalizeDictWord } from "./harperStore";
+import { relintNeedsRefresh } from "./relint";
+import { relintAllEditors } from "../editorRegistry";
 
 // markClass per Harper diagnostic, chosen by lint kind: spelling vs grammar. Drives
 // the squiggle color (red vs blue, styled in livePreview's theme).
@@ -51,7 +53,10 @@ function ensureSetup(): Promise<void> {
     setupPromise = (async () => {
       await inst.setup();
       const { words, ignoredLints } = loadHarperState();
-      if (words.length) await inst.importWords(words);
+      // Normalize on import too, so words saved before this fix (possibly stored
+      // capitalized, hence case-sensitive) become effective for every casing.
+      const dictWords = [...new Set(words.map(normalizeDictWord).filter(Boolean))];
+      if (dictWords.length) await inst.importWords(dictWords);
       for (const blob of ignoredLints) {
         try {
           await inst.importIgnoredLints(blob);
@@ -72,6 +77,36 @@ function prewarmOnIdle(): void {
     .requestIdleCallback;
   if (ric) ric(start);
   else setTimeout(start, 600);
+}
+
+/** Add a word to the personal dictionary and apply it everywhere: persist it, import
+ *  it into the live linter, and re-lint every open editor so its squiggles clear at
+ *  once. The single entry point for both the right-click action and the dictionary
+ *  editor — keeps persistence and the live linter in lockstep on the canonical form. */
+export async function addDictionaryWord(word: string): Promise<void> {
+  const w = normalizeDictWord(word);
+  if (!w) return;
+  addWord(w);
+  await ensureSetup();
+  await getLinter().importWords([w]);
+  relintAllEditors();
+}
+
+/** Remove a user-added word from the personal dictionary and apply it everywhere:
+ *  persist the removal, re-sync the live linter, and re-lint every open editor so the
+ *  word is flagged again. harper.js 2.x has no remove-single API, so the live sync is
+ *  clearWords() + re-import of the survivors. Never touches the curated dictionary. */
+export async function removeDictionaryWord(word: string): Promise<void> {
+  removeWord(normalizeDictWord(word));
+  // Normalize + dedupe the survivors the same way ensureSetup does, so re-importing
+  // them can't regress a legacy capitalized entry from case-insensitive back to
+  // case-sensitive (clearWords wiped the normalized form ensureSetup had loaded).
+  const remaining = [...new Set(loadHarperState().words.map(normalizeDictWord).filter(Boolean))];
+  await ensureSetup();
+  const inst = getLinter();
+  await inst.clearWords();
+  if (remaining.length) await inst.importWords(remaining);
+  relintAllEditors();
 }
 
 // Minimal slice of EditorView we need to re-validate a span at apply time.
@@ -138,8 +173,9 @@ function lintToDiagnostic(
     actions.push({
       name: "Add to dictionary",
       apply() {
-        addWord(flagged);
-        void getLinter().importWords([flagged]);
+        // Persist + import into the live linter + re-lint all open editors via the
+        // shared entry point (normalizes to the canonical lowercase form internally).
+        void addDictionaryWord(flagged);
       },
     });
   }
@@ -180,6 +216,10 @@ export function harperSpellcheck(opts: HarperOpts): Extension {
     },
     {
       delay: 400,
+      // "Add to dictionary" / "Ignore" mutate linter state without editing the doc,
+      // so a doc-change can't trigger the re-lint that clears the mark. requestRelint
+      // dispatches relintEffect; this predicate makes the lint plugin re-run on it.
+      needsRefresh: relintNeedsRefresh,
       // No hover boxes anywhere — fixes are surfaced via the shared right-click
       // menu (editorContextMenu), so every diagnostic behaves the same way.
       tooltipFilter: () => [],

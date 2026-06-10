@@ -23,6 +23,7 @@ import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { DaemonSetupModal } from "./DaemonSetupModal";
 import { BismuthInstallModal } from "./BismuthInstallModal";
+import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { installAppMenu } from "./nativeAppMenu";
@@ -509,6 +510,9 @@ export default function App() {
   // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
   const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false);
   const openBismuthInstall = () => setBismuthInstallOpen(true);
+  // Custom spellcheck dictionary editor — view/remove the user's added words.
+  const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false);
+  const openEditDictionary = () => setEditDictionaryOpen(true);
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -534,7 +538,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1299,6 +1303,9 @@ export default function App() {
       </Show>
       <Show when={bismuthInstallOpen()}>
         <BismuthInstallModal onClose={() => setBismuthInstallOpen(false)} />
+      </Show>
+      <Show when={editDictionaryOpen()}>
+        <EditDictionaryModal onClose={() => setEditDictionaryOpen(false)} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (

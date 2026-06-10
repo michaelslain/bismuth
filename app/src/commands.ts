@@ -39,6 +39,8 @@ export interface CommandHandlers {
   openDaemonSetup: () => void;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;
+  // Open the modal to view/remove the user's custom spellcheck dictionary words.
+  openEditDictionary: () => void;
 }
 
 export interface BoundCommand {
@@ -79,6 +81,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "daemon-setup": h.openDaemonSetup,
     "daemon-update": h.openDaemonSetup,
     "bismuth-install": h.openBismuthInstall,
+    "edit-dictionary": h.openEditDictionary,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {

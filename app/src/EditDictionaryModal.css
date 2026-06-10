@@ -1,0 +1,54 @@
+/* app/src/EditDictionaryModal.css
+   The Edit-Dictionary modal. Mirrors the app's modal chrome (the calendar's
+   `.evm-modal` card: header mark + serif title + scrollable body + footer) using the
+   real theme vars directly, so it stays self-contained (no calendar coupling) and
+   re-themes automatically, incl. light mode. Controls are the shared ui/ primitives. */
+.dict-modal {
+  --serif: var(--editor-font, "Lora", Georgia, serif);
+  --mono: "Monaspace Xenon", ui-monospace, monospace;
+
+  position: relative;
+  width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  font-family: var(--mono);
+  font-size: 13px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: var(--shadow-modal, 0 40px 110px rgba(0, 0, 0, 0.6)), 0 8px 24px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+/* header: accent icon mark + serif title + subtitle + close X */
+.dict-modal .dict-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px 12px; }
+.dict-modal .dict-mark { width: 24px; height: 30px; flex: 0 0 auto; display: grid; place-items: center; color: var(--accent); }
+.dict-modal .dict-htext { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dict-modal .dict-title { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; color: var(--fg); line-height: 1.1; }
+.dict-modal .dict-sub { font-size: 11px; color: var(--faint); letter-spacing: 0.02em; line-height: 1.45; }
+.dict-modal .dict-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo, var(--faint)); cursor: pointer; transition: background 0.14s, color 0.14s; }
+.dict-modal .dict-x:hover { background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--fg); }
+
+/* body scrolls when the word list is tall */
+.dict-modal .dict-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+
+/* word list — one grouped surface, a row per word */
+.dict-modal .dict-list { background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 12px; overflow: hidden; }
+.dict-modal .dict-row { display: flex; align-items: center; gap: 12px; padding: 7px 8px 7px 14px; }
+.dict-modal .dict-row + .dict-row { border-top: 1px solid var(--border-soft); }
+.dict-modal .dict-word { flex: 1; min-width: 0; font-family: var(--serif); font-size: 15.5px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* empty state — a small, quiet hint, not a heading */
+.dict-modal .dict-empty { padding: 16px 6px 6px; text-align: center; font-size: 12px; font-style: italic; color: var(--faint); line-height: 1.5; }
+
+/* add-a-word — distinct dashed card (same affordance as the categories modal) */
+.dict-modal .dict-add { margin-top: 4px; border: 1px dashed var(--border); border-radius: 12px; padding: 12px 13px; background: color-mix(in srgb, var(--surface-2) 40%, transparent); display: flex; gap: 10px; align-items: center; }
+.dict-modal .dict-add .ui-input { flex: 1; }
+
+/* footer: esc hint + DONE */
+.dict-modal .dict-foot { display: flex; align-items: center; gap: 10px; padding: 13px 20px 15px; border-top: 1px solid var(--border-soft); }
+.dict-modal .dict-hint { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em; color: var(--faint); }
+.dict-modal .dict-hint b { color: var(--lo, var(--faint)); font-weight: 600; }
+.dict-modal .dict-sp { flex: 1; }

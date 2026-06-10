@@ -4,6 +4,7 @@
 // is exported separately so it runs under `bun test` without a browser.
 import { linter, type Diagnostic as CmDiagnostic, type Action } from "@codemirror/lint";
 import { yamlFixHover, YAML_DIAGNOSTIC_SOURCE } from "./yamlFixHover";
+import { relintNeedsRefresh } from "./relint";
 import type { CompletionContext } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -136,7 +137,9 @@ function schemaLinter(opts: YamlSchemaOpts) {
       return diag;
     });
     // No hover boxes — fixes live in the shared right-click menu (editorContextMenu).
-  }, { delay: 350, tooltipFilter: () => [] });
+    // needsRefresh: lets requestRelint() re-run validation when the property registry
+    // changes (Editor.tsx) even though the document itself hasn't been edited.
+  }, { delay: 350, needsRefresh: relintNeedsRefresh, tooltipFilter: () => [] });
 }
 
 /** The CM6 extension: just the linter. Autocomplete sources are merged into the single
