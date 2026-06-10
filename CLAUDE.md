@@ -29,7 +29,7 @@ The system treats knowledge as a "three-brain" model:
 
 ## Environment Setup
 
-`bun run dev` requires two env vars (errors if unset; both dirs must exist): `OA_VAULT` (2nd-brain markdown vault) and `OA_MEMORY` (3rd-brain Claude-bot notes). First-time with no vault: `mkdir -p /tmp/test-vault /tmp/test-memory && echo "# Hello" > /tmp/test-vault/example.md`, export both, then `cd app && bun run dev`. These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
+`bun run dev` requires two env vars (errors if unset; both dirs must already exist): `OA_VAULT` (2nd-brain markdown vault) and `OA_MEMORY` (3rd-brain Claude-bot notes). These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
 
 ## Documentation
 
@@ -53,7 +53,7 @@ The system treats knowledge as a "three-brain" model:
 
 ### Infrastructure
 - `bun install` — Install dependencies for all workspaces
-- `bun run core:serve` — Standalone server startup (shorthand for core server)
+- `bun run core:serve` — Standalone core server (pass `--vault`/`--memory` or set `OA_VAULT`/`OA_MEMORY`)
 
 ### Running Multiple Agents Concurrently
 
@@ -383,6 +383,6 @@ Each module has a colocated `*.test.ts`. Notable: `core/test/{vault,engine,serve
 
 ## Gotchas & Edge Cases
 
-- **Layouts come from the backend, not the browser**: `position2d`/`position3d` are computed in `core/src/layout.ts`, attached via `layout-cache.ts`; the renderer only morphs. If positions look wrong, suspect the backend layout.
+- **Layouts come from the backend, not the browser**: `position2d`/`position3d` are computed in `core/src/layout.ts`, attached via `layout-cache.ts`; the renderer only morphs.
 - **Wikilink matching is filename-based, not path-based**: `[[Another Note]]` matches `Another Note.md` anywhere; ambiguous matches are undefined.
 - **File-watch debounce**: two edits within 250ms → only the second rebuilds. **SSE can silently die** (proxy/OS-sleep) — the `/version` poll recovers it. **Concurrent instances**: 4321/1420 serve one; override ports for more.
