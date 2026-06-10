@@ -640,6 +640,22 @@ export default function App() {
     const at = activeTab();
     if (at) closePane(at.focusId);
   };
+  // Close whichever tab/pane holds a given terminal content id. Used when a terminal's
+  // shell exits (its PTY closed cleanly): the tab goes away instead of respawning a
+  // shell. Searches ALL tabs — unlike closePane, the exiting terminal may sit in a
+  // background tab — and is a no-op if the id is no longer open.
+  const closeTerminalContent = (content: string) => {
+    for (const t of tabs()) {
+      const leaf = leaves(t.root).find((l) => l.content === content);
+      if (!leaf) continue;
+      const nextRoot = closeLeaf(t.root, leaf.id);
+      if (nextRoot === null) { closeTabById(t.id); return; }
+      setTabs((ts) => ts.map((x) => x.id === t.id
+        ? { ...x, root: nextRoot, focusId: resolveFocus(nextRoot, x.focusId) }
+        : x));
+      return;
+    }
+  };
 
   // Split a given pane; focus the new pane. The new pane starts empty; the user
   // fills it by dragging a file/pane onto it or opening something while focused.
@@ -1260,7 +1276,7 @@ export default function App() {
                   display: rect() ? "block" : "none",
                 }}>
                   <Suspense fallback={<div class="term-host" />}>
-                    <TerminalTab id={id} active={() => focusedContent() === id} />
+                    <TerminalTab id={id} active={() => focusedContent() === id} onExit={() => closeTerminalContent(id)} />
                   </Suspense>
                 </div>
               );

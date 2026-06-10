@@ -129,3 +129,101 @@ test("closing the websocket kills the session after the grace period", async () 
     server.stop(true);
   }
 }, 10000);
+
+// Open a ws carrying a stable termId (the reattach key).
+async function openWsTerm(base: string, termId: string): Promise<WebSocket> {
+  const ws = new WebSocket(`${base}/terminal?cols=80&rows=24&termId=${encodeURIComponent(termId)}`);
+  ws.binaryType = "arraybuffer";
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = (e) => reject(e);
+  });
+  return ws;
+}
+
+test("reconnecting with the same termId reattaches to the live shell", async () => {
+  // A grace window long enough that the abnormal-close path keeps the PTY alive to reattach.
+  process.env.OA_TERMINAL_GRACE_MS = "8000";
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `ws://localhost:${server.port}`;
+  try {
+    const termId = "::term:reattach-probe";
+    const before = listSessionIds().length;
+    const ws1 = await openWsTerm(base, termId);
+    await waitForShellReady(ws1);
+    // Mark the shell's state, then drop the connection ABNORMALLY (custom code != 1000)
+    // so the backend keeps the PTY for the grace window instead of killing it.
+    sendStdin(ws1, "REATTACH_MARKER=alive\n");
+    await new Promise((r) => setTimeout(r, 200));
+    ws1.close(4001, "simulated drop");
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Reconnect with the SAME termId. A reattached shell emits nothing until prompted
+    // (no fresh prompt), so accumulate all output and poll by re-sending the probe —
+    // a fresh shell would echo an EMPTY value, the same PTY echoes [alive].
+    const ws2 = await openWsTerm(base, termId);
+    let acc = "";
+    ws2.onmessage = (ev) => { acc += new TextDecoder().decode(new Uint8Array(ev.data as ArrayBuffer)); };
+    let ok = false;
+    for (let i = 0; i < 16 && !ok; i++) {
+      sendStdin(ws2, 'echo "RM[$REATTACH_MARKER]"\n');
+      await new Promise((r) => setTimeout(r, 400));
+      if (/RM\[alive\]/.test(acc)) ok = true;
+    }
+    expect(ok).toBe(true);
+    // Reattach reused the session — it didn't spawn a second one.
+    expect(listSessionIds().length).toBe(before + 1);
+    ws2.close(1000);
+  } finally {
+    server.stop(true);
+    delete process.env.OA_TERMINAL_GRACE_MS;
+  }
+}, 15000);
+
+test("a clean close (1000) kills immediately; an abnormal close waits the grace window", async () => {
+  process.env.OA_TERMINAL_GRACE_MS = "600";
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `ws://localhost:${server.port}`;
+  try {
+    // Clean close → gone promptly (no grace).
+    let before = new Set(listSessionIds());
+    const wsClean = await openWsTerm(base, "::term:clean");
+    const cleanId = listSessionIds().filter((id) => !before.has(id))[0];
+    wsClean.close(1000, "dispose");
+    await new Promise((r) => setTimeout(r, 250));
+    expect(listSessionIds()).not.toContain(cleanId);
+
+    // Abnormal close → still alive right after, reaped only once the grace elapses.
+    before = new Set(listSessionIds());
+    const wsDrop = await openWsTerm(base, "::term:drop");
+    const dropId = listSessionIds().filter((id) => !before.has(id))[0];
+    wsDrop.close(4002, "drop");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(listSessionIds()).toContain(dropId); // within grace
+    await new Promise((r) => setTimeout(r, 700));
+    expect(listSessionIds()).not.toContain(dropId); // past grace
+  } finally {
+    server.stop(true);
+    delete process.env.OA_TERMINAL_GRACE_MS;
+  }
+}, 10000);
+
+test("shell exit closes the websocket with code 1000 (so the client closes the tab, not respawns)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `ws://localhost:${server.port}`;
+  try {
+    const ws = await openWs(base);
+    await waitForShellReady(ws);
+    const code = await new Promise<number>((resolve, reject) => {
+      const t = setTimeout(() => reject(new Error("shell did not exit")), 5000);
+      ws.onclose = (e) => { clearTimeout(t); resolve(e.code); };
+      sendStdin(ws, "exit\n");
+    });
+    expect(code).toBe(1000);
+  } finally {
+    server.stop(true);
+  }
+}, 8000);

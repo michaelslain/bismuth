@@ -135,13 +135,17 @@ function cachedExtendedAnsi(paletteInts: number[]): string[] {
   return _extendedAnsiResult;
 }
 
-export function TerminalTab(props: { id: string; active: () => boolean }) {
+export function TerminalTab(props: { id: string; active: () => boolean; onExit?: () => void }) {
   let container!: HTMLDivElement;
   // Fix 1: Declare mutable refs at component scope so the top-level createEffect
   // can close over them without being nested inside onMount.
   let fit: FitAddon | undefined;
   let ws: WebSocket | undefined;
   let term: Xterm | undefined;
+  // Timestamp (performance.now) of the most recent successful ws open — used to tell
+  // a real "shell exited after use" (close the tab) from a shell that died instantly
+  // on spawn (keep the tab so the startup error stays readable).
+  let lastOpenAt = 0;
   // B8/B20: Hoist the remaining post-await resources to component scope so the
   // synchronous onCleanup (registered before the font-load await) can tear them
   // down even if the tab is closed mid-await.
@@ -203,7 +207,9 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
       try { cursorEl?.remove(); } catch {}
       if (downHandler) try { container.removeEventListener("mousedown", downHandler); } catch {}
       if (upHandler) try { container.removeEventListener("mouseup", upHandler); } catch {}
-      try { ws?.close(); } catch {}
+      // Close with code 1000 so the backend treats this as an intentional teardown
+      // and kills the PTY immediately (vs. keeping it alive for reattach on a drop).
+      try { ws?.close(1000, "dispose"); } catch {}
       try { term?.dispose(); } catch {}
     });
 
@@ -262,8 +268,14 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     fit.fit();
     term.focus();
 
-    // Cache the rows element once — avoids a querySelector on every render/cursorMove event.
-    const rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+    // Cache the rows element to avoid a querySelector on every render/cursorMove event,
+    // but re-query lazily if xterm ever swaps it out (reflow / addon reset) so the cursor
+    // overlay and click-to-position keep aligning to the live grid instead of a dead node.
+    let rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+    const getRowsEl = (): HTMLElement | null => {
+      if (!rowsEl || !rowsEl.isConnected) rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
+      return rowsEl;
+    };
 
     // Custom cursor overlay that glides smoothly between positions — xterm's native
     // cursor is a class transferred between inline spans, so CSS transitions don't
@@ -273,20 +285,27 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     container.appendChild(cursorEl);
 
     const updateCursor = () => {
-      if (!term || !cursorEl || !rowsEl) return;
-      const cellW = rowsEl.clientWidth / term.cols;
-      const cellH = rowsEl.clientHeight / term.rows;
+      const rows = getRowsEl();
+      if (!term || !cursorEl || !rows) return;
+      // Hide the overlay while the user is scrolled up into the scrollback — the real
+      // cursor sits on the (now off-screen) prompt line, so a floating block would be
+      // misleading. onRender fires on scroll, so this toggles promptly.
+      const buf = term.buffer.active;
+      if (buf.viewportY !== buf.baseY) { cursorEl.style.opacity = "0"; return; }
+      cursorEl.style.opacity = "";
+      const cellW = rows.clientWidth / term.cols;
+      const cellH = rows.clientHeight / term.rows;
       // The host container is padded (16px 18px) so the rows element no longer
       // shares the container's origin. Offset the overlay (anchored at the
       // container's top-left) by the rows element's position within it so the
       // cursor stays aligned with the text.
       const cRect = container.getBoundingClientRect();
-      const rRect = rowsEl.getBoundingClientRect();
+      const rRect = rows.getBoundingClientRect();
       const offsetX = rRect.left - cRect.left;
       const offsetY = rRect.top - cRect.top;
       // cursorX/Y are in cell units relative to the visible viewport.
-      const x = offsetX + term.buffer.active.cursorX * cellW;
-      const y = offsetY + term.buffer.active.cursorY * cellH;
+      const x = offsetX + buf.cursorX * cellW;
+      const y = offsetY + buf.cursorY * cellH;
       cursorEl.style.transform = `translate(${x}px, ${y}px)`;
       cursorEl.style.height = `${cellH}px`;
     };
@@ -302,8 +321,14 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     downHandler = (e: MouseEvent) => { mdX = e.clientX; mdY = e.clientY; };
     upHandler = (e: MouseEvent) => {
       if (Math.abs(e.clientX - mdX) > 3 || Math.abs(e.clientY - mdY) > 3) return; // dragged → ignore
-      if (!ws || ws.readyState !== WebSocket.OPEN || !term || !rowsEl) return;
-      const rect = rowsEl.getBoundingClientRect();
+      const rows = getRowsEl();
+      if (!ws || ws.readyState !== WebSocket.OPEN || !term || !rows) return;
+      // Only do click-to-position on the NORMAL screen buffer (a shell prompt). In a
+      // full-screen TUI (vim, htop, less, the Claude TUI) the app owns the alternate
+      // buffer and interprets arrow keys itself — synthesizing \x1b[C/\x1b[D there would
+      // scrub through history, move a vim cursor, etc. Bail so clicks stay harmless.
+      if (term.buffer.active.type !== "normal") return;
+      const rect = rows.getBoundingClientRect();
       const cellW = rect.width / term.cols;
       const cellH = rect.height / term.rows;
       const targetCol = Math.floor((e.clientX - rect.left) / cellW);
@@ -318,15 +343,20 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
     container.addEventListener("mousedown", downHandler);
     container.addEventListener("mouseup", upHandler);
 
-    // Wire up WebSocket to the backend PTY endpoint with exponential-backoff reconnection.
-    // Each reconnection creates a fresh PTY shell (the backend's grace period expires before
-    // the first retry fires), so reconnection starts a new session rather than resuming.
+    // Wire up the WebSocket to the backend PTY. We pass our stable term id so that on
+    // an ABNORMAL close (reload / network drop) the reconnect REATTACHES to the same
+    // live shell instead of spawning a fresh one — the backend keeps the PTY alive for
+    // a grace window keyed by this id. A CLEAN close (code 1000) means the shell process
+    // exited (the user typed `exit`, Claude quit, etc.): we do NOT reconnect — we close
+    // the tab, so a terminal you exit actually goes away instead of respawning.
+    const termIdParam = encodeURIComponent(props.id);
     const connectWs = () => {
-      ws = new WebSocket(`${wsBase()}/terminal?cols=${term!.cols}&rows=${term!.rows}`);
+      ws = new WebSocket(`${wsBase()}/terminal?cols=${term!.cols}&rows=${term!.rows}&termId=${termIdParam}`);
       ws.binaryType = "arraybuffer";
 
       ws.onopen = () => {
         reconnectAttempt = 0;
+        lastOpenAt = performance.now();
         sendResize();
       };
 
@@ -335,8 +365,23 @@ export function TerminalTab(props: { id: string; active: () => boolean }) {
         term!.write(new Uint8Array(ev.data as ArrayBuffer));
       };
 
-      ws.onclose = () => {
+      ws.onclose = (ev) => {
         if (disposed) return;
+        // Clean exit (code 1000): the shell process ended. Don't respawn.
+        if (ev.code === 1000) {
+          // If the shell died almost immediately after connecting, it likely failed to
+          // start (bad shell/rc) — keep the tab so the error stays visible. Otherwise
+          // the user deliberately exited a working shell: close the tab.
+          const livedMs = lastOpenAt ? performance.now() - lastOpenAt : Infinity;
+          if (livedMs < 750) {
+            try { term?.write("\r\n\x1b[2m[process exited]\x1b[0m\r\n"); } catch {}
+          } else {
+            props.onExit?.();
+          }
+          return;
+        }
+        // Abnormal close: connection dropped but the shell may still be alive on the
+        // backend. Reconnect with exponential backoff; the reattach restores it.
         try { term?.write("\r\n\x1b[2m[reconnecting…]\x1b[0m\r\n"); } catch {}
         const delay = Math.min(500 * 2 ** reconnectAttempt, 8000);
         reconnectAttempt++;
