@@ -52,6 +52,30 @@ fn config_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     Some(dir.join("config.json"))
 }
 
+// One-time migration for the bundle-identifier rename (com.michael.obsidian → com.bismuth.app).
+// The app-config dir is keyed off the identifier, so a rename would orphan an existing user's
+// saved vault (config.json). app_config_dir() now resolves to the NEW id's dir; its parent is
+// the per-identifier root (e.g. ~/Library/Application Support). If the OLD dir exists and the
+// NEW one doesn't yet, move it across so the saved config carries over. Best-effort; logs on
+// failure. Must run BEFORE any config read.
+fn migrate_legacy_config_dir(app: &tauri::AppHandle) {
+    const OLD_ID: &str = "com.michael.obsidian";
+    const NEW_ID: &str = "com.bismuth.app";
+    let Ok(new_dir) = app.path().app_config_dir() else {
+        return;
+    };
+    let Some(root) = new_dir.parent() else {
+        return;
+    };
+    let old_dir = root.join(OLD_ID);
+    let new_dir = root.join(NEW_ID);
+    if old_dir.exists() && !new_dir.exists() {
+        if let Err(e) = std::fs::rename(&old_dir, &new_dir) {
+            eprintln!("bismuth: legacy config-dir migration failed: {e}");
+        }
+    }
+}
+
 fn read_config(app: &tauri::AppHandle) -> Option<AppConfig> {
     let text = std::fs::read_to_string(config_path(app)?).ok()?;
     serde_json::from_str(&text).ok()
@@ -184,13 +208,18 @@ fn running_app_path() -> Option<std::path::PathBuf> {
         .map(|p| p.to_path_buf())
 }
 
-// Find a free TCP port by binding :0 and reading the assigned port.
-fn pick_free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
-        .ok()
-        .and_then(|l| l.local_addr().ok())
-        .map(|a| a.port())
-        .unwrap_or(4321)
+// Find a free TCP port by binding :0 and reading the assigned port. Returns the bound
+// listener alongside the port so the caller can keep it open (reserving the port) until
+// the moment the sidecar spawns, shrinking the TOCTOU window where another process could
+// grab it. Falls back to 4321 (with no held listener) when binding fails.
+fn pick_free_port() -> (Option<std::net::TcpListener>, u16) {
+    match std::net::TcpListener::bind("127.0.0.1:0").ok().and_then(|l| {
+        let port = l.local_addr().ok()?.port();
+        Some((l, port))
+    }) {
+        Some((listener, port)) => (Some(listener), port),
+        None => (None, 4321),
+    }
 }
 
 // Spawn the bundled `bismuth-core` sidecar on a free port for the given vault + memory.
@@ -198,7 +227,9 @@ fn pick_free_port() -> u16 {
 // window.__OA_API__). Stores the child so it's killed on exit. Best-effort: returns None
 // if the spawn fails (the app still opens, against the frontend's default / "disconnected").
 fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u16> {
-    let port = pick_free_port();
+    // Hold the bound listener through all the setup below so the port stays reserved; it's
+    // released (dropped) right before spawn so the sidecar can claim it (see B53).
+    let (listener, port) = pick_free_port();
     let sidecar = match app.shell().sidecar("bismuth-core") {
         Ok(c) => c,
         Err(e) => { eprintln!("bismuth: sidecar resolve failed: {e}"); return None; }
@@ -222,6 +253,8 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
             .env("OA_APP_PATH", &app_path)
             .env("OA_APP_PID", std::process::id().to_string());
     }
+    // Release the reserved port immediately before spawning so the sidecar can bind it.
+    drop(listener);
     match cmd.spawn() {
         Ok((mut rx, child)) => {
             app.state::<Backend>().0.lock().unwrap().replace(child);
@@ -343,6 +376,9 @@ pub fn run() {
         .manage(Backend(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run, set_last_vault])
         .setup(|app| {
+            // One-time: carry an existing user's saved vault config across the bundle-id
+            // rename. Must run before any config read below (the config dir is id-keyed).
+            migrate_legacy_config_dir(&app.handle());
             // Bundled builds spawn their own core server on a free port; in dev
             // (`bun run dev`) the concurrently-launched core already owns :4321, so
             // don't double-spawn. The window is created here (not in tauri.conf.json)

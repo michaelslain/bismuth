@@ -498,7 +498,9 @@ Saves are triggered immediately on every mutation (no debounce), since `DrawingC
 
 ## Edge Cases and Gotchas
 
-- **`pts` with fewer than 3 elements**: `eachPoint` has a guard (`i + 2 < a.length + 1`), so a single point (3 elements) works. `smoothStrokePoints` returns the buffer unchanged for < 3 points.
+- **Two separate "fewer than 3" guards (don't conflate them)**: these count different things.
+  - *Flat-array element count (`eachPoint`)*: `pts` is a flat `number[]` of `(x, y, pressure)` triples. `eachPoint` iterates in steps of 3 with the guard `i + 2 < a.length + 1`, emitting one point per **complete** triple — so an array with fewer than 3 elements yields zero points, and exactly 3 elements yields one valid point.
+  - *Point count (`smoothStrokePoints`)*: after `toPts`/`dedupe`, smoothing operates on **points**. `smoothStrokePoints` returns the buffer unchanged when there are `< 3` points (a single dot or a 2-point line has nothing to smooth) — this is a point-count threshold, not the element-count one above.
 - **Pressure out of [0, 255]**: `roundDoc` clamps via `clampByte`; values like 300 or -5 become 255/0 on disk. The live buffer may temporarily hold out-of-range values before serialization.
 - **`"fg"` stored literally**: color `"fg"` is written to disk as the string `"fg"`, not the resolved hex. Theme changes after the fact automatically produce the correct color.
 - **Coincident points crash prevention**: `dedupe` drops near-coincident points (< 0.6 px apart) before the spline stage. Without this, zero-length segments cause division-by-zero in the Catmull-Rom knot computation.

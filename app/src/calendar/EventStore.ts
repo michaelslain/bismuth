@@ -1,7 +1,7 @@
 import { CalendarEvent, Category, EventsFile } from './types'
 import { expandRecurrence, toDateStr, addDays } from './dates'
 
-const uuid = () => crypto.randomUUID()
+export const uuid = () => crypto.randomUUID()
 
 function dayBefore(isoDate: string): string {
   return toDateStr(addDays(new Date(isoDate + 'T00:00:00'), -1))
@@ -68,7 +68,13 @@ export class EventStore {
     if (!master?.recurrence) return
     const { seriesId, endDate: originalEndDate } = master.recurrence
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
+    // Editing the FIRST occurrence: there's no head segment to keep, so drop the
+    // master entirely rather than leaving a zombie with endDate < startDate.
+    if (occurrenceDate === master.recurrence.startDate) {
+      await this.deleteEvent(masterId)
+    } else {
+      await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
+    }
     if (!originalEndDate || originalEndDate > occurrenceDate) {
       const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })
@@ -101,7 +107,13 @@ export class EventStore {
     if (!master?.recurrence) return
     const { seriesId, endDate: originalEndDate } = master.recurrence
     const dayAfter = toDateStr(addDays(new Date(occurrenceDate + 'T00:00:00'), 1))
-    await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
+    // Deleting the FIRST occurrence: drop the master entirely (no head segment to
+    // keep) instead of leaving a zombie with endDate < startDate.
+    if (occurrenceDate === master.recurrence.startDate) {
+      await this.deleteEvent(masterId)
+    } else {
+      await this.updateEvent(masterId, { recurrence: { ...master.recurrence, endDate: dayBefore(occurrenceDate) } })
+    }
     if (!originalEndDate || originalEndDate > occurrenceDate) {
       const { id, ...masterRest } = master
       await this.addEvent({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter, endDate: originalEndDate, seriesId } })

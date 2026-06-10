@@ -16,6 +16,10 @@ describe("tableToMarkdown", () => {
     expect(out.split("\n")[0]).toBe("| name | note | tags |");
     expect(out).toContain("| a\\|b |  | x, y |");
   });
+  test("escapes pipes in column labels so the header stays a valid GFM row", () => {
+    const t: TableData = { columns: ["a|b", "c"], rows: [] };
+    expect(tableToMarkdown(t).split("\n")[0]).toBe("| a\\|b | c |");
+  });
   test("empty columns fall back to a name header", () => {
     expect(tableToMarkdown({ columns: [], rows: [] })).toBe("| name |\n| --- |\n");
   });

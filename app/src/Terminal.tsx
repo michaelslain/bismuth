@@ -237,7 +237,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     const fg =
       style.getPropertyValue("--term-fg").trim() ||
       style.getPropertyValue("--fg").trim() ||
-      "#cdd6f4";
+      "#C7CCE0"; // exact --term-fg token value (App.css); this last-resort fallback is reachable-never
 
     const pal = activePaletteInts();
     const ansi = buildAnsiPalette(pal, fg, bg);

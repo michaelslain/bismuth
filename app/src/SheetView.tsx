@@ -43,7 +43,7 @@ export function SheetView(props: { path: string; onSaved?: () => void }) {
       container,
       data,
       onChange: () => { dirty = true; save(); },
-      dark: true,
+      dark: !resolveAppearance(settings.appearance).isLight,
     });
     lastWrittenText = serializeSnapshot(handle.getSnapshot());
   }

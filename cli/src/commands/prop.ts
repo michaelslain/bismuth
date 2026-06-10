@@ -3,19 +3,9 @@
 // single frontmatter key (preserving YAML formatting), write it back. Mutating
 // commands call core directly — the app's file watcher picks up the writes live.
 import type { CommandMap } from "../types";
-import { out, positionals, requireVault } from "../args";
+import { out, fail, parseValue, positionals, requireVault } from "../args";
 import { setFrontmatterKey, deleteFrontmatterKey } from "../../../core/src/frontmatter";
 import { readNote, writeNote } from "../../../core/src/files";
-
-/** Coerce a CLI string value: try JSON.parse (numbers, booleans, arrays, objects,
- *  quoted strings), fall back to the raw string when it isn't valid JSON. */
-function parseValue(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
 
 export const commands: CommandMap = {
   "prop set": {
@@ -24,6 +14,8 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [file, key, value] = positionals(args);
+      if (!file || !key) fail("usage: prop set <file> <key> <value>");
+      if (value === undefined) fail("usage: prop set <file> <key> <value>");
       const md = await readNote(vault, file);
       const next = setFrontmatterKey(md, key, parseValue(value));
       await writeNote(vault, file, next);
@@ -36,6 +28,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [file, key] = positionals(args);
+      if (!file || !key) fail("usage: prop delete <file> <key>");
       const md = await readNote(vault, file);
       const next = deleteFrontmatterKey(md, key);
       await writeNote(vault, file, next);

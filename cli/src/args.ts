@@ -56,8 +56,18 @@ export function today(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+/** Coerce a CLI string value: try JSON.parse (numbers, booleans, arrays, objects,
+ *  quoted strings), fall back to the raw string when it isn't valid JSON. */
+export function parseValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
 /**
- * Print a result. Objects/arrays → JSON (pretty when `--pretty` or a TTY),
+ * Print a result. Objects/arrays → JSON (pretty only when `--pretty` is passed),
  * strings → as-is, undefined/null → nothing. Use for every command's output so
  * the CLI is uniformly machine-parseable.
  */

@@ -100,17 +100,7 @@ export function GraphSearch(props: {
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        "flex-direction": "column",
-        "font-family": "inherit",
-        width: "100%",
-        "min-height": 0,
-        overflow: "hidden",
-        "pointer-events": "auto",
-      }}
-    >
+    <div class="graph-search">
       <SearchBar
         leadingIcon="Search"
         placeholder="Search graph..."
@@ -128,12 +118,12 @@ export function GraphSearch(props: {
       <div
         ref={listRef}
         class="graph-search-list"
-        style={{ "overflow-y": "auto", padding: "4px" }}
       >
         <For each={results()}>
           {(item, i) => (
             <div
               data-row
+              class="graph-search-row"
               classList={{ selected: selected() === i() }}
               onMouseEnter={() => { setSelected(i()); props.onPreview?.(item.id); }}
               // Commit on mousedown, not click: hovering a row runs a scrollIntoView effect, and if
@@ -141,44 +131,12 @@ export function GraphSearch(props: {
               // was intermittent). mousedown fires at press time regardless. preventDefault keeps the
               // search input focused and avoids text-selection.
               onMouseDown={(e) => { e.preventDefault(); props.onFly(item.id); }}
-              style={{
-                display: "flex",
-                "align-items": "center",
-                gap: "8px",
-                padding: "4px 6px",
-                "border-radius": "3px",
-                cursor: "pointer",
-                "white-space": "nowrap",
-                background:
-                  selected() === i() ? "var(--accent-soft)" : "transparent",
-              }}
             >
-              <span
-                style={{
-                  flex: 1,
-                  "min-width": 0,
-                  overflow: "hidden",
-                  "text-overflow": "ellipsis",
-                  color: "var(--fg)",
-                }}
-              >
+              <span class="graph-search-label">
                 {item.label}
               </span>
               <Show when={item.sub}>
-                <span
-                  style={{
-                    "margin-left": "auto",
-                    "padding-left": "10px",
-                    "max-width": "42%",
-                    "flex-shrink": 0,
-                    "white-space": "nowrap",
-                    overflow: "hidden",
-                    "text-overflow": "ellipsis",
-                    "text-align": "right",
-                    color: "var(--faint)",
-                    "font-size": "10px",
-                  }}
-                >
+                <span class="graph-search-sub">
                   {item.sub}
                 </span>
               </Show>
@@ -186,7 +144,7 @@ export function GraphSearch(props: {
           )}
         </For>
         <Show when={query().trim() && results().length === 0}>
-          <div style={{ padding: "8px 9px", color: "var(--faint)", "font-size": "10px" }}>
+          <div class="graph-search-empty">
             No matches
           </div>
         </Show>

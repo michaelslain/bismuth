@@ -11,6 +11,7 @@ import { parseWikilink, resolveNotePath, type NoteCandidate } from "./wikilink";
 import { stripCode } from "../../../core/src/wikilinks";
 import { api } from "../api";
 import { renderMarkdown } from "../bases/markdown";
+import { MONO_FONT } from "./livePreview";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
 const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac", "opus"]);
@@ -329,22 +330,22 @@ const embedTheme = EditorView.theme({
   ".cm-embed-img": { "max-width": "100%", "border-radius": "6px", display: "block" },
   ".cm-embed-inline .cm-embed-img": { display: "inline-block", "vertical-align": "middle" },
   ".cm-embed-pdf": {
-    width: "100%", height: "520px", border: "1px solid var(--border, #2a2a2a)",
-    "border-radius": "8px", background: "var(--surface-2, #111)",
+    width: "100%", height: "520px", border: "1px solid var(--border)",
+    "border-radius": "8px", background: "var(--surface-2)",
   },
   ".cm-embed-audio": { width: "min(420px, 100%)", display: "block" },
   ".cm-embed-video": { "max-width": "100%", "border-radius": "8px", display: "block" },
   ".cm-embed-note": {
-    border: "1px solid var(--border, #2a2a2a)", "border-left": "3px solid var(--accent)",
-    "border-radius": "8px", padding: "2px 16px", background: "var(--surface-2, rgba(255,255,255,0.02))",
+    border: "1px solid var(--border)", "border-left": "3px solid var(--accent)",
+    "border-radius": "8px", padding: "2px 16px", background: "var(--surface-2)",
   },
   ".cm-embed-note-title": {
-    "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.72em",
+    "font-family": MONO_FONT, "font-size": "0.72em",
     "letter-spacing": "0.04em", "text-transform": "uppercase",
     color: "color-mix(in srgb, var(--fg) 45%, transparent)", margin: "0.4em 0 0",
   },
   ".cm-embed-error": {
-    "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "0.85em",
+    "font-family": MONO_FONT, "font-size": "0.85em",
     color: "#e5847d", opacity: "0.85",
   },
   // PDF/video: free resize via the native bottom-right corner (no visible grip — see below).

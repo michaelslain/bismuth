@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { toDateStr, addDays, expandRecurrence, splitRecurrence } from "../../src/bases/recurrence";
+import { toDateStr, addDays, expandRecurrence, splitRecurrence, matchesRecurrence } from "../../src/bases/recurrence";
 
 test("toDateStr / addDays", () => {
   expect(toDateStr(new Date("2026-05-27T00:00:00"))).toBe("2026-05-27");
@@ -41,6 +41,16 @@ test("monthly on the 29th matches Feb's last day in a non-leap year", () => {
 test("monthly on the 29th matches Feb 29 in a leap year", () => {
   const r = { type: "monthly" as const, startDate: "2024-01-29", seriesId: "s" };
   expect(expandRecurrence(r, "2024-02-01", "2024-02-29")).toEqual(["2024-02-29"]);
+});
+
+test("biweekly does not match dates before the series start", () => {
+  const r = { type: "biweekly" as const, startDate: "2026-06-15", seriesId: "s" };
+  // 14 days (2 weeks) before startDate: an even-week diff that previously matched
+  // via -0 % 2 === 0. It must not match — the series hasn't begun yet.
+  expect(matchesRecurrence(r, "2026-06-01")).toBe(false);
+  // Sanity: the start date itself and 14 days after both match.
+  expect(matchesRecurrence(r, "2026-06-15")).toBe(true);
+  expect(matchesRecurrence(r, "2026-06-29")).toBe(true);
 });
 
 test("splitRecurrence truncates before split date and returns the tail", () => {

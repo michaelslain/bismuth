@@ -209,7 +209,7 @@ A `.draw` file is a versioned JSON `DrawingDoc` (pages, strokes, paper backgroun
 
 ### Panes / Tabs
 
-A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::settings`, `::graph`, `::terminal`, `::flashcards`, `::calendar`, plus per-base sentinels). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
+A tab's content is a binary tree of Leaves and Splits (`app/src/panes.ts` — pure model, unit-tested). Each Leaf holds a content id: either a note path or a sentinel from `tabIds.ts` (`::graph`, `::search`, `::empty`, plus the prefixed `::flashcards:`/`::term:`/`::export:` ids). Notes, bases, sheets, drawings, and settings all route by file path — there is no `::settings`/`::terminal`/`::calendar` sentinel (calendar is a Bases view). `PaneTree.tsx` walks the tree; `PaneContent.tsx` routes a leaf id to the right view.
 
 **The Knowledge Graph is the home tab.** `::graph` (`GRAPH_TAB`) is first-class tab content — `PaneContent` routes it to a `GraphView` via `App`'s `renderGraph()` prop. `App` seeds a `::graph` tab when nothing is restored and reopens one if all tabs close (tabs are never empty). When a pane shows the graph, the sidebar mini-graph (`.graph-floater`) hides so it never renders twice.
 

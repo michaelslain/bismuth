@@ -3,23 +3,13 @@
 // and the per-folder icon map in place via core (preserving comments/key order).
 // Mutating commands call core directly — the app's file watcher picks up writes live.
 import type { CommandMap } from "../types";
-import { out, flag, bool, positionals, requireVault } from "../args";
+import { out, flag, bool, fail, parseValue, positionals, requireVault } from "../args";
 import {
   serializeSettingsForFrontend,
   setSettingInFile,
   getVaultSchema,
   setFolderIcon,
 } from "../../../core/src/settings";
-
-/** Coerce a CLI string value: try JSON.parse (numbers, booleans, arrays, objects,
- *  quoted strings), fall back to the raw string when it isn't valid JSON. */
-function parseValue(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return raw;
-  }
-}
 
 /** Walk a dotted path into a value; returns undefined if any segment is missing. */
 function walkPath(obj: unknown, path: string): unknown {
@@ -48,6 +38,8 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [keyPath, value] = positionals(args);
+      if (!keyPath) fail("usage: settings set <key.path> <value>");
+      if (value === undefined) fail("usage: settings set <key.path> <value>");
       await setSettingInFile(vault, keyPath.split("."), parseValue(value));
       out({ ok: true }, args);
     },

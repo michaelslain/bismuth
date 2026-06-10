@@ -1,9 +1,6 @@
 // app/src/export/download.ts
 // Save bytes to the user's Downloads folder. Tauri: write via fs plugin. Browser: anchor download.
-
-function isTauri(): boolean {
-  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-}
+import { isTauri } from "../nativeMenu";
 
 export async function downloadFile(filename: string, bytes: Uint8Array, mime: string): Promise<void> {
   if (isTauri()) {

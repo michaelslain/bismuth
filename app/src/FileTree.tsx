@@ -294,7 +294,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
 
   return (
     <div
-      style={{ "font-size": "13px", "min-height": "100%" }}
+      class="ft-root"
       onDragOver={(e) => { e.preventDefault(); setDropTarget(""); }}
       onDrop={(e) => { e.preventDefault(); moveInto(""); }}
     >
@@ -389,21 +389,13 @@ function EditableLabel(props: {
         });
       }}
       value={initial}
+      class="ft-edit-input"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit();
         else if (e.key === "Escape") cancel();
       }}
       onBlur={commit}
-      style={{
-        font: "inherit",
-        background: "var(--bg)",
-        color: "var(--fg)",
-        border: "1px solid var(--accent)",
-        "border-radius": "3px",
-        padding: "0 2px",
-        width: "70%",
-      }}
     />
   );
 }

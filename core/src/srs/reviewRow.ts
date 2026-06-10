@@ -1,4 +1,4 @@
-import { schedule, DEFAULT_SRS, type SrsConfig } from "./scheduler";
+import { schedule, DEFAULT_SRS, BASE_EASE, type SrsConfig } from "./scheduler";
 import type { ReviewResponse } from "./types";
 import { toNumber } from "../bases/values";
 
@@ -34,7 +34,7 @@ export function applyReviewToRow(
     prev = {
       due: dueVal as string,
       interval: Number.isFinite(intervalN) ? intervalN : 0,
-      ease: Number.isFinite(easeN) ? easeN : 250,
+      ease: Number.isFinite(easeN) ? easeN : (cfg.baseEase ?? BASE_EASE),
     };
   }
   const next = schedule(prev, response, today, cfg);

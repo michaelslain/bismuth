@@ -7,7 +7,7 @@ function escapeCell(s: string): string {
 
 export function tableToMarkdown(t: TableData): string {
   const cols = t.columns.length ? t.columns : ["name"];
-  const header = `| ${cols.join(" | ")} |`;
+  const header = `| ${cols.map(escapeCell).join(" | ")} |`;
   const sep = `| ${cols.map(() => "---").join(" | ")} |`;
   const body = t.rows.map((cells) => `| ${cells.map(escapeCell).join(" | ")} |`);
   return [header, sep, ...body].join("\n") + "\n";

@@ -187,6 +187,7 @@ function lintToDiagnostic(
       void (async () => {
         await inst.ignoreLint(bodyText, lint);
         addIgnoredLint(await inst.exportIgnoredLints());
+        relintAllEditors();
       })();
     },
   });

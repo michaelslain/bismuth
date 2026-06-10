@@ -25,7 +25,7 @@
 }
 
 .folder-prompt-input {
-  font-family: var(--mono-font, ui-monospace, monospace);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 13px;
   color: var(--fg);
   background: var(--surface-1);

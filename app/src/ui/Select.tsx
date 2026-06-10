@@ -98,7 +98,8 @@ export function Select(props: {
             active={nav.active()}
             onActivate={choose}
             onHover={nav.setActive}
-            style={{ position: "fixed", top: `${pos().y}px`, left: `${pos().x}px`, "min-width": `${pos().w}px`, "z-index": 1100 }}
+            class="ui-select-list"
+            style={{ top: `${pos().y}px`, left: `${pos().x}px`, "min-width": `${pos().w}px` }}
           />
         </Portal>
       </Show>

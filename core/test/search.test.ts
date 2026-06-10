@@ -1,18 +1,6 @@
 import { test, expect, describe } from "bun:test";
 import { findMatches, buildMatcher, searchVault } from "../src/search";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-function makeVault(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "search-test-"));
-  for (const [rel, content] of Object.entries(files)) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, content);
-  }
-  return dir;
-}
+import { makeVault } from "./helpers";
 
 describe("findMatches", () => {
   test("finds a literal match with line number and split context", () => {

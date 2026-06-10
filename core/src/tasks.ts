@@ -38,7 +38,12 @@ const PRIORITY_EMOJI: Array<[string, Priority]> = [
   ["⏬", "lowest"],
 ];
 
-const DATE_FIELDS: Array<[string, "due" | "scheduled" | "start" | "done" | "created" | "cancelled"]> = [
+// Canonical list of date-field names, single-sourced here so tasks-query.ts can import
+// it instead of re-declaring the same strings. The emoji↔field mapping lives in DATE_FIELDS.
+export const DATE_FIELD_NAMES = ["due", "scheduled", "start", "done", "created", "cancelled"] as const;
+export type DateField = (typeof DATE_FIELD_NAMES)[number];
+
+const DATE_FIELDS: Array<[string, DateField]> = [
   ["📅", "due"],
   ["⏳", "scheduled"],
   ["🛫", "start"],

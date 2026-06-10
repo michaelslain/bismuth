@@ -44,7 +44,14 @@ export const commands: CommandMap = {
       const [method, path] = positionals(args);
       if (!method || !path) fail("usage: bismuth api <GET|POST|PUT> <path> [--json '<body>']");
       const raw = flag(args, "json");
-      const body = raw !== undefined ? JSON.parse(raw) : undefined;
+      let body: unknown;
+      if (raw !== undefined) {
+        try {
+          body = JSON.parse(raw);
+        } catch {
+          fail(`--json is not valid JSON: ${raw}`);
+        }
+      }
       out(await call(apiBase(args), method.toUpperCase(), path, body), args);
     },
   },

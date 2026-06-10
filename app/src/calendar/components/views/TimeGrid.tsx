@@ -3,7 +3,7 @@ import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { toDateStr, formatGutterHour, formatTime } from '../../dates'
 import { resolveCategoryColor } from '../../categoryColor'
-import { showEventModal, dragState, settings } from '../../state'
+import { showEventModal, dragState, settings, recurrenceAction } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
 
@@ -29,7 +29,9 @@ function clamp(m: number): number {
 function eventMinutes(e: { startTime?: string; endTime?: string }): { startMin: number; endMin: number } {
   const [sh, sm] = (e.startTime ?? '00:00').split(':').map(Number)
   const startMin = sh * 60 + sm
-  const [eh, em] = (e.endTime || `${Math.min(sh + 1, 23)}:00`).split(':').map(Number)
+  // Default to start+1h, clamped to 23:59 so a late start (e.g. 23:30) never
+  // yields an earlier end (negative duration).
+  const [eh, em] = (e.endTime || minutesToStr(Math.min(startMin + 60, 23 * 60 + 59))).split(':').map(Number)
   const endMin = eh * 60 + em
   return { startMin, endMin }
 }
@@ -119,8 +121,15 @@ export function TimeGrid(props: Props) {
       if (state?.type === 'move') {
         const newStart = state.startMinutes
         const newEnd = clamp(newStart + durationMinutes)
-        await props.store.updateEvent(event.id, { startTime: minutesToStr(newStart), endTime: minutesToStr(newEnd) })
-        await refreshEvents(props.store)
+        const updates = { startTime: minutesToStr(newStart), endTime: minutesToStr(newEnd) }
+        if (state.masterId) {
+          // Recurring: route through the recurrence dialog so the user picks the
+          // scope (this/following/all) instead of silently mutating every occurrence.
+          recurrenceAction.value = { type: 'edit', masterId: state.masterId, occurrenceDate: state.date, updates }
+        } else {
+          await props.store.updateEvent(event.id, updates)
+          await refreshEvents(props.store)
+        }
       }
       dragState.value = null
     }
@@ -176,7 +185,7 @@ export function TimeGrid(props: Props) {
                 return (
                   <div class={`time-grid-day-header${ds === today ? ' today' : ''}`}>
                     <span class="time-grid-day-weekday">{weekday}</span>{' '}
-                    <span class="time-grid-day-date">{month}/<b>{dayNum}</b></span>
+                    <span class="time-grid-day-date">{month}/<b class={ds === today ? 'cal-today-circle' : undefined}>{dayNum}</b></span>
                   </div>
                 )
               }}</For>
@@ -211,7 +220,6 @@ export function TimeGrid(props: Props) {
                   class={`time-grid-day-col${ds === today ? ' today' : ''}`}
                   ref={el => (colRefs[ds] = el)}
                   onMouseDown={e => onColMouseDown(e, ds)}
-                  style={{ 'user-select': 'none' }}
                 >
                   <Index each={HOURS}>{() => (
                     <div class="time-grid-hour-block"><div class="time-grid-hour-cell" /><div class="time-grid-half-cell" /></div>

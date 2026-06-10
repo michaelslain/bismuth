@@ -117,8 +117,6 @@ const SPECIAL_CHARS: { char: string; name: string; keywords: string[] }[] = [
   { char: "∪", name: "union", keywords: ["union", "or", "cup", "set"] },
   { char: "⊂", name: "subset", keywords: ["subset", "set", "contained"] },
   { char: "⊃", name: "superset", keywords: ["superset", "set", "contains"] },
-  { char: "←", name: "leftarrow", keywords: ["arrow", "left"] },
-  { char: "→", name: "rightarrow", keywords: ["arrow", "right"] },
   // checks / marks
   { char: "✓", name: "check", keywords: ["check", "tick", "yes", "done", "correct"] },
   { char: "✔", name: "heavy_check", keywords: ["check", "tick", "yes", "done", "bold"] },

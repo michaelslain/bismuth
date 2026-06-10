@@ -7,7 +7,7 @@
 //      run /update-docs. Never blocks — docs regen is a deliberate step, not automatic.
 //
 // Usage: `bun run scripts/check-docs.ts` (links only) | `... --pre-push` (links + staleness).
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, existsSync, statSync, readdirSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { execSync } from "node:child_process";
 
@@ -16,7 +16,7 @@ const DOCS = join(ROOT, "docs");
 
 function walk(dir: string): string[] {
   const out: string[] = [];
-  for (const name of (existsSync(dir) ? require("node:fs").readdirSync(dir) : [])) {
+  for (const name of (existsSync(dir) ? readdirSync(dir) : [])) {
     const p = join(dir, name);
     const s = statSync(p);
     if (s.isDirectory()) out.push(...walk(p));
@@ -70,10 +70,11 @@ function staleness(): string | null {
   }
   const changed = changedFiles(range);
   if (changed.length === 0) return null;
-  const touchedSource = changed.some((f) => /^(core|app|cli)\/src\//.test(f));
+  const SOURCE = /^((core|app|cli|mcp)\/src\/|relay\/)/;
+  const touchedSource = changed.some((f) => SOURCE.test(f));
   const touchedDocs = changed.some((f) => f.startsWith("docs/") || f === "CLAUDE.md");
   if (touchedSource && !touchedDocs) {
-    const src = changed.filter((f) => /^(core|app|cli)\/src\//.test(f));
+    const src = changed.filter((f) => SOURCE.test(f));
     return `source changed in ${src.length} file(s) but no docs/ or CLAUDE.md updated — consider /update-docs\n  ${src.slice(0, 8).join("\n  ")}${src.length > 8 ? "\n  …" : ""}`;
   }
   return null;

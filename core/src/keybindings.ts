@@ -61,6 +61,3 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
   { id: "toggle-sidebar", label: "Toggle sidebar", default: "Alt+S",
     doc: "Show/hide the left sidebar (ignored while typing in a form field)." },
 ];
-
-/** All keybinding ids, in catalog order. */
-export const KEYBINDING_IDS: string[] = KEYBINDING_CATALOG.map((k) => k.id);

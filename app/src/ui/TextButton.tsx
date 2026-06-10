@@ -1,4 +1,4 @@
-import { splitProps, createMemo, type JSX } from "solid-js";
+import { splitProps, createEffect, type JSX } from "solid-js";
 import { Button } from "./Button";
 import type { ButtonState, ButtonSize } from "./buttonClass";
 import { warnNonUppercase } from "./devWarn";
@@ -26,7 +26,7 @@ export type TextButtonProps = {
 export function TextButton(props: TextButtonProps) {
   const [local, rest] = splitProps(props, ["variant"]);
   if (import.meta.env?.DEV) {
-    createMemo(() => warnNonUppercase("TextButton", rest.children));
+    createEffect(() => warnNonUppercase("TextButton", rest.children));
   }
   return <Button kind="text" state={local.variant ?? "normal"} {...rest} />;
 }

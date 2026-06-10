@@ -15,8 +15,8 @@ export function truthy(v: unknown): boolean {
 export function looseEquals(a: unknown, b: unknown): boolean {
   if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
   if (isLink(a) && isLink(b)) return a.path === b.path;
-  if (isLink(a)) return a.path === b || a.display === b;
-  if (isLink(b)) return b.path === a || b.display === a;
+  if (isLink(a)) return a.path === b || (a.display !== undefined && a.display === b);
+  if (isLink(b)) return b.path === a || (b.display !== undefined && b.display === a);
   return a === b;
 }
 

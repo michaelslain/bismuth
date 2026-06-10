@@ -46,9 +46,21 @@ export function renderMath(expr: string, displayMode: boolean): string {
   return "";
 }
 
-/** Run `cb` once KaTeX has loaded (immediately if already loaded). */
-export function onMathReady(cb: () => void): void {
-  if (katex) { cb(); return; }
+/**
+ * Run `cb` once KaTeX has loaded (immediately if already loaded). Returns an
+ * unsubscribe function: call it (e.g. from a widget's `destroy()`) to drop a still-
+ * pending callback so it can't fire on a node that's already been torn down. When
+ * KaTeX is already loaded the callback runs synchronously and the returned function
+ * is a no-op.
+ */
+export function onMathReady(cb: () => void): () => void {
+  if (katex) {
+    cb();
+    return () => {};
+  }
   ensureLoaded();
   readyCbs.add(cb);
+  return () => {
+    readyCbs.delete(cb);
+  };
 }

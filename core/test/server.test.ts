@@ -1085,6 +1085,83 @@ test("POST /daily-note creates today's note from the template, then reopens it w
   }
 });
 
+test("POST /daily-note bumps version only on create (SSE carries the new path), not on the no-op reopen", async () => {
+  const vault = mkdtempSync(join(tmpdir(), "oa-daily-version-"));
+  await writeNote(vault, "settings.yaml", [
+    "dailyNotes:",
+    "  - id: journal",
+    "    label: Journal",
+    "    folder: Journal",
+    '    fileName: "{{date}} journal"',
+  ].join("\n"));
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const call = () => fetch(`${base}/daily-note`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: "journal" }),
+  });
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+
+    // Open the SSE stream so we can capture the frame emitted by the create.
+    const res = await fetch(`${base}/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // First call CREATES the note → it broadcasts an SSE frame naming the new path and
+    // bumps the version. We don't assert an exact delta: writing the note also triggers
+    // the vault file-watcher, which invalidates again shortly after — B3's guarantee is
+    // about the NO-OP reopen below, not the precise create delta.
+    const r1 = await (await call()).json();
+    expect(r1.created).toBe(true);
+
+    let sawPath = false;
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const frames = buf.split("\n\n");
+      buf = frames.pop() ?? "";
+      for (const f of frames) {
+        if (!f.startsWith("data: ")) continue;
+        const payload = JSON.parse(f.slice(6));
+        if (Array.isArray(payload.paths) && payload.paths.includes(r1.path)) {
+          sawPath = true;
+          break;
+        }
+      }
+      if (sawPath) break;
+    }
+    await reader.cancel();
+    expect(sawPath).toBe(true);
+
+    // Let any debounced file-watch invalidation from the create settle: wait until the
+    // version is unchanged for 500ms straight, then take that as the stable baseline.
+    const readVersion = async () => (await (await fetch(`${base}/version`)).json()).version;
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let settled = await readVersion();
+    let stableSince = Date.now();
+    const settleStart = Date.now();
+    while (Date.now() - settleStart < 3000) {
+      await sleep(100);
+      const next = await readVersion();
+      if (next !== settled) { settled = next; stableSince = Date.now(); }
+      else if (Date.now() - stableSince >= 500) break;
+    }
+    expect(settled).toBeGreaterThan(v0); // the create bumped the version
+
+    // Second call is a no-op (note already exists) → it writes nothing, so it must NOT
+    // invalidate / bump the version (the core of bugfix B3).
+    const r2 = await (await call()).json();
+    expect(r2.created).toBe(false);
+    await sleep(400); // longer than the file-watch debounce — confirm no late bump
+    expect(await readVersion()).toBe(settled);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /graph/views returns 2nd/3rd-brain view layouts", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

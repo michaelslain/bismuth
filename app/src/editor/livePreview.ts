@@ -8,6 +8,7 @@ import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
+import { LIST_STEP } from "./listLayout";
 import { CodeHeader } from "./CodeHeader";
 import { type TableBlock, groupTableBlocks } from "./tableModel";
 import { TableWidget } from "./tableWidget";
@@ -15,6 +16,10 @@ import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableSt
 import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 import { isThematicBreak } from "./thematicBreak";
+
+// The editor's mono face: Monaspace Xenon, falling back to the platform ui-monospace.
+// Shared across every mono region in the live-preview theme (and reused by embedBlock).
+export const MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace";
 
 // Indent depth from leading whitespace: tab = 2 spaces, then depth = floor(indentCols / 2).
 function indentDepth(indent: string): number {
@@ -63,7 +68,7 @@ const hrLine = Decoration.line({ class: "cm-hr" });
 // from the margin and the bullet/checkbox hangs in a GUTTER-wide column to its left.
 // This keeps the marker→text gap and per-level indent consistent regardless of how the
 // source happens to be spaced.
-const LIST_STEP = 1.6; // em added to the text indent per nesting level
+// em added to the text indent per nesting level (shared leaf — see ./listLayout).
 const LIST_GUTTER = 1.6; // em — width of the marker gutter (== one step, so text aligns)
 const LIST_LINE_HEIGHT = "1.55"; // tighter than prose (1.65) for a cleaner list rhythm
 const indentLineCache = new Map<string, Decoration>();
@@ -187,6 +192,7 @@ class CodeHeaderWidget extends WidgetType {
 class MathWidget extends WidgetType {
   private readonly expr: string;
   private readonly displayMode: boolean;
+  private _unsub?: () => void;
 
   constructor(expr: string, displayMode: boolean) {
     super();
@@ -202,9 +208,14 @@ class MathWidget extends WidgetType {
     const span = document.createElement("span");
     span.className = "cm-math";
     span.innerHTML = renderMath(this.expr, this.displayMode);
-    // KaTeX not loaded yet → fill in once the lazy chunk lands (same output).
-    if (!span.innerHTML) onMathReady(() => { span.innerHTML = renderMath(this.expr, this.displayMode); });
+    // KaTeX not loaded yet → fill in once the lazy chunk lands (same output). Keep the
+    // unsubscribe so a widget destroyed before KaTeX loads drops its pending callback.
+    if (!span.innerHTML) this._unsub = onMathReady(() => { span.innerHTML = renderMath(this.expr, this.displayMode); });
     return span;
+  }
+
+  destroy(): void {
+    this._unsub?.();
   }
 
   ignoreEvent(): boolean {
@@ -797,7 +808,9 @@ export const livePreview = [
     // serif, so it lives only where mono sits inside prose (code regions here + the
     // flashcard .card-md code in App.css) — NOT on the all-mono UI chrome, which has no
     // serif to match. Keep all mono regions (inline code, blocks, frontmatter, tables) on it.
-    ".cm-inline-code": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
+    // Inline code + the same inline-code marks rendered inside a table cell (inlineMarkdown.ts
+    // emits a native <code>): byte-identical styling, so they share one rule.
+    ".cm-inline-code, .cm-table-rendered code": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", background: "rgba(140,140,140,0.18)", padding: "0 3px", "border-radius": "3px" },
     // Links + wikilinks: accent with a SOFT underline (a faint accent rule that
     // sits below the text) rather than a hard text-decoration line.
     ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
@@ -812,8 +825,8 @@ export const livePreview = [
     // The `> span` rules also style the inner markdown-highlighter token span
     // (e.g. `<span class="cm-heading-mark"><span class="ͼ…">#</span></span>`),
     // which would otherwise override the color/font with its own token color.
-    ".cm-heading-mark, .cm-heading-mark > span": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", color: "var(--fg)", "font-weight": "500" },
-    ".cm-syntax-mark, .cm-syntax-mark > span": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", color: "var(--fg)" },
+    ".cm-heading-mark, .cm-heading-mark > span": { "font-family": MONO_FONT, color: "var(--fg)", "font-weight": "500" },
+    ".cm-syntax-mark, .cm-syntax-mark > span": { "font-family": MONO_FONT, color: "var(--fg)" },
     // Serif headings (design: title 600 with tight tracking; h2 ≈ 20px/1.5em serif).
     ".cm-h1": { "font-size": "1.94em", "font-weight": "600", "line-height": "1.1", "letter-spacing": "-0.015em" },
     ".cm-h2": { "font-size": "1.5em", "font-weight": "600", "line-height": "1.25", "letter-spacing": "-0.01em" },
@@ -838,10 +851,10 @@ export const livePreview = [
     },
     // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
     // are hidden off-cursor (replaced by a header + collapsed close line).
-    ".cm-codeblock": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
+    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view.
-    ".cm-code-headerline": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
+    ".cm-code-headerline": { "font-family": MONO_FONT },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
     ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
@@ -853,19 +866,19 @@ export const livePreview = [
       "font-size": "0.78em",
     },
     ".cm-code-lang": {
-      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-family": MONO_FONT,
       color: "color-mix(in srgb, var(--fg) 42%, transparent)",
       "letter-spacing": "0.04em",
     },
+    // The copy button is an <IconButton> (.btn.btn--icon), which already supplies the
+    // browser-reset chrome (background:transparent, border:none, cursor:pointer); only the
+    // genuinely-overriding props live here.
     ".cm-code-copy": {
       display: "inline-flex",
       "align-items": "center",
       "justify-content": "center",
       color: "color-mix(in srgb, var(--fg) 45%, transparent)",
-      background: "none",
-      border: "none",
       padding: "2px",
-      cursor: "pointer",
       opacity: "0.8",
       transition: "color 120ms, opacity 120ms",
     },
@@ -875,7 +888,7 @@ export const livePreview = [
     // validation squiggles at full strength. Keys render in --accent, values in
     // --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
     ".cm-frontmatter": {
-      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
       // No surface fill — just the accent left rule + monospace, matching fenced code
       // blocks. A line background sits ABOVE CodeMirror's selection layer, so any fill
@@ -885,7 +898,7 @@ export const livePreview = [
     },
     ".cm-fm-key": { color: "var(--accent)" },
     // Raw (active) table source — monospace pipes for structural / power edits.
-    ".cm-table": { "font-family": "'Monaspace Xenon', ui-monospace, monospace", "font-size": "calc(1em * var(--mono-scale, 0.85))" },
+    ".cm-table": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))" },
     // Rendered editable table (the block-replace widget). Cells are contenteditable.
     // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
     // table's top-right corner instead of floating off in the full-width line box.
@@ -904,13 +917,7 @@ export const livePreview = [
     // `marked` emits native <code>/<a>/<del>; mirror the prose inline-mark styling so a
     // cell looks the same as the same marks elsewhere in the editor. <strong>/<em> use
     // the browser defaults (bold / italic), and wikilinks reuse the `.cm-wikilink` rule.
-    ".cm-table-rendered code": {
-      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
-      "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      background: "rgba(140,140,140,0.18)",
-      padding: "0 3px",
-      "border-radius": "3px",
-    },
+    // The cell <code> shares the `.cm-inline-code` rule above (identical styling).
     ".cm-table-rendered a": { color: "var(--accent)", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     ".cm-table-rendered del": { opacity: "0.7" },
     ".cm-td:focus": { outline: "none", "box-shadow": "inset 0 0 0 2px var(--accent)", "border-radius": "2px" },
@@ -926,7 +933,7 @@ export const livePreview = [
       background: "color-mix(in srgb, var(--fg) 6%, transparent)",
       border: "1px solid color-mix(in srgb, var(--fg) 12%, transparent)",
       cursor: "pointer",
-      "font-family": "'Monaspace Xenon', ui-monospace, monospace",
+      "font-family": MONO_FONT,
       "font-size": "0.85em",
       "line-height": "1",
       opacity: "0",
@@ -1008,7 +1015,7 @@ export const livePreview = [
     },
     ".cm-task-done": { "text-decoration": "line-through", opacity: "0.55", color: "color-mix(in srgb, var(--fg) 52%, transparent)" },
     // Raw "- " / "- [ ]" marker on the cursor line, shown in the mono font.
-    ".cm-list-marker": { "font-family": "'Monaspace Xenon', ui-monospace, monospace" },
+    ".cm-list-marker": { "font-family": MONO_FONT },
     ".cm-math": { display: "inline-block", "vertical-align": "middle" },
     ".cm-math .katex-display": { "text-align": "left", margin: "0.4em 0" },
     // Rendered raw HTML. Inline spans flow with the prose; block elements get a

@@ -34,7 +34,8 @@ export interface LayoutOptions {
   /**
    * Optional id → [x,y,z] starting coordinates used INSTEAD of PivotMDS. Seeding the 2D layout from
    * the (flattened) 3D layout keeps the two aligned, so a 2D↔3D morph flattens in place rather than
-   * scrambling — and it converges faster than a cold PivotMDS start. Missing ids fall back to random.
+   * scrambling — and it converges faster than a cold PivotMDS start. Missing ids (e.g. newly-added
+   * nodes) get a deterministic position seeded from a hash of the id, so the layout stays reproducible.
    */
   initialPositions?: Positions;
 }
@@ -75,6 +76,16 @@ const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_
 function lcg(seed: number): () => number {
   let s = seed >>> 0;
   return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+}
+
+/** FNV-1a hash of a string → 32-bit seed, so a node id maps to a reproducible LCG stream. */
+function fnv1a(str: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 /** Unweighted BFS shortest-path distances from `src`; unreachable nodes stay Infinity. */
@@ -221,10 +232,13 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
         if (p) {
           return [p[0], p[1], dim === 3 ? p[2] : 0];
         } else {
+          // Missing id (e.g. a newly-added node): pick a deterministic position seeded from a hash
+          // of the id, so the warm-start layout stays reproducible instead of using Math.random().
+          const rand = lcg(fnv1a(id));
           return [
-            (Math.random() - 0.5) * RANDOM_COORD_RADIUS,
-            (Math.random() - 0.5) * RANDOM_COORD_RADIUS,
-            dim === 3 ? (Math.random() - 0.5) * RANDOM_COORD_RADIUS : 0
+            (rand() - 0.5) * RANDOM_COORD_RADIUS,
+            (rand() - 0.5) * RANDOM_COORD_RADIUS,
+            dim === 3 ? (rand() - 0.5) * RANDOM_COORD_RADIUS : 0
           ];
         }
       })

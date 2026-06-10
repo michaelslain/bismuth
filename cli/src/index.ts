@@ -1,8 +1,9 @@
 // `bismuth` CLI entry point. Merges every command group (cli/src/commands/*.ts)
-// into one registry and dispatches by longest-match: it tries a two-word command
-// phrase ("task toggle") first, then a one-word command ("graph"). Each group is a
-// thin wrapper over `@oa/core` functions — no running server required for the
-// file-based commands (the app's vault watcher picks up writes live).
+// into one registry and dispatches by longest-match: it tries a three-word command
+// phrase ("daemon cron toggle") first, then a two-word phrase ("task toggle"), then
+// a one-word command ("graph"). Each group is a thin wrapper over `@oa/core`
+// functions — no running server required for the file-based commands (the app's
+// vault watcher picks up writes live).
 import type { CommandMap } from "./types";
 import { commands as fileCmds } from "./commands/file";
 import { commands as noteCmds } from "./commands/note";
@@ -47,11 +48,15 @@ if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h" || argv[0] ===
   process.exit(0);
 }
 
-// Longest-match dispatch: prefer a two-word phrase, then a single word.
+// Longest-match dispatch: prefer a three-word phrase, then two-word, then a single word.
+const three = argv.length >= 3 ? `${argv[0]} ${argv[1]} ${argv[2]}` : null;
 const two = argv.length >= 2 ? `${argv[0]} ${argv[1]}` : null;
 let cmdKey: string | null = null;
 let rest: string[] = [];
-if (two && registry[two]) {
+if (three && registry[three]) {
+  cmdKey = three;
+  rest = argv.slice(3);
+} else if (two && registry[two]) {
   cmdKey = two;
   rest = argv.slice(2);
 } else if (registry[argv[0]]) {
@@ -60,7 +65,7 @@ if (two && registry[two]) {
 }
 
 if (!cmdKey) {
-  console.error(`unknown command: ${argv.slice(0, 2).join(" ")}\n`);
+  console.error(`unknown command: ${argv.slice(0, 3).join(" ")}\n`);
   printHelp();
   process.exit(1);
 }

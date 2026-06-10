@@ -66,7 +66,7 @@ export function CalendarSettings(props: { basePath: string; onChange?: () => voi
         <div class="evm-htext">
           <div class="evm-title">Calendar settings</div>
         </div>
-        <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+        <button type="button" class="evm-x" aria-label="Close" onClick={close}><Icon value="x" size={16} /></button>
       </div>
 
       <div class="evm-body">
@@ -92,7 +92,7 @@ export function CalendarSettings(props: { basePath: string; onChange?: () => voi
 
       <div class="evm-foot">
         <span class="hintkey"><b>esc</b> to close</span>
-        <IconTextButton icon="RotateCcw" size="sm" iconSize={13} onClick={reset} style={{ 'margin-left': '14px' }}>RESET</IconTextButton>
+        <IconTextButton icon="RotateCcw" size="sm" iconSize={13} onClick={reset} class="set-reset-btn">RESET</IconTextButton>
         <div class="sp" />
         <TextButton size="sm" onClick={close}>CANCEL</TextButton>
         <IconTextButton icon="Check" size="sm" variant="selected" onClick={save}>SAVE</IconTextButton>

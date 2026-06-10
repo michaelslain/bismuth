@@ -23,7 +23,7 @@
    header's muted color; when focused the whole header goes to --fg (App.css),
    so the title rides along and reads brighter than its surroundings. */
 .pane-header .pane-header-label {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  /* Inherits the Monaspace stack from .pane-header above. */
   font-weight: 500;
 }
 

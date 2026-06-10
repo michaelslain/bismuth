@@ -19,3 +19,15 @@ test("memory nodes are kind=memory with mem: ids; internal links resolved", asyn
     { from: "mem:michael-profile", to: "mem:michael-preferences", kind: "link" },
   ]);
 });
+
+test("same-basename notes in different subdirs get distinct ids", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oa-mem-"));
+  await writeNote(dir, "subdir-a/note.md", "# A");
+  await writeNote(dir, "subdir-b/note.md", "# B");
+  const g = await buildMemoryGraph(dir);
+  expect(g.nodes.map((n) => n.id).sort()).toEqual([
+    "mem:subdir-a/note",
+    "mem:subdir-b/note",
+  ]);
+  expect(g.nodes.every((n) => n.label === "note")).toBe(true);
+});

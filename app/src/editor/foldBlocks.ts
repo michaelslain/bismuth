@@ -20,10 +20,11 @@
 
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { type Extension, Prec, type Range, StateEffect, StateField, type Text } from "@codemirror/state";
-
-// One nesting level of list indent, in em — mirrors LIST_STEP in livePreview.ts so
-// the triangle lands just to the left of the bullet glyph at every depth.
-const LIST_STEP = 1.6;
+import { isThematicBreak } from "./thematicBreak";
+// One nesting level of list indent, in em — shared with livePreview (via the
+// dependency-free ./listLayout leaf) so the triangle lands just to the left of the
+// bullet glyph at every depth.
+import { LIST_STEP } from "./listLayout";
 
 export type FoldMode = "markdown" | "yaml";
 
@@ -56,8 +57,6 @@ function indentCols(s: string): number {
 }
 
 const isBlank = (s: string): boolean => s.trim() === "";
-// A thematic break (--- / *** / ___) also starts with a marker; never treat it as a bullet.
-const isThematicBreak = (s: string): boolean => /^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(s);
 
 /** Collect the run of more-indented lines beneath line `i` (blank lines extend the
  *  region only when a deeper line follows). Returns the last region line, or `i`. */

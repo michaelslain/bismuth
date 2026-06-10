@@ -1,5 +1,5 @@
 import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
-import { Plus, Minus, Compass, LocateFixed, WifiOff } from "lucide-solid";
+import { Plus, Minus, Globe, LocateFixed, WifiOff } from "lucide-solid";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue } from "./renderValue";
@@ -266,11 +266,10 @@ export function MapView(props: {
     zoomBy(-Math.sign(e.deltaY), { x: e.clientX - rect.left, y: e.clientY - rect.top });
   }
 
-  // Compass: reset to a north-up world view.
-  function resetNorth(): void {
-    const iv = initialView();
-    setCenter(iv.center);
-    setZoom(iv.zoom);
+  // Reset view: zoom out to a neutral, whole-world framing.
+  function resetView(): void {
+    setCenter({ lat: 20, lng: 0 });
+    setZoom(settings.graph.mapDefaultZoom);
   }
 
   // Locate: recenter (and fit) on the markers we have.
@@ -360,10 +359,10 @@ export function MapView(props: {
           <button
             type="button"
             class={`${styles.mapCtrlBtn} ${styles.mapCtrlSolo}`}
-            title="Reset north"
-            onClick={resetNorth}
+            title="Reset view"
+            onClick={resetView}
           >
-            <Compass size={16} />
+            <Globe size={16} />
           </button>
           <button
             type="button"

@@ -114,7 +114,7 @@ export function CategoryPanel(props: { store: EventStore }) {
           <div class="evm-htext">
             <div class="evm-title">Categories</div>
           </div>
-          <div class="evm-x" role="button" aria-label="Close" onClick={close}><Icon value="x" size={16} /></div>
+          <button type="button" class="evm-x" aria-label="Close" onClick={close}><Icon value="x" size={16} /></button>
         </div>
 
         <div class="evm-body">

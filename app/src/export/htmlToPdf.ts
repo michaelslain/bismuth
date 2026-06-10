@@ -41,6 +41,7 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
       windowWidth: PAGE_W_PX,
       useCORS: true,
     });
+    if (canvas.height === 0) throw new Error("htmlToPdf: nothing to render");
 
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
     const scale = PAGE_W_PT / canvas.width; // canvas px -> pt

@@ -125,7 +125,13 @@ export function DrawingCanvas(props: {
     live.addEventListener("pointerup", onUp);
     live.addEventListener("pointercancel", onUp);
   });
-  onCleanup(() => clearTimeout(holdTimer));
+  onCleanup(() => {
+    clearTimeout(holdTimer);
+    live.removeEventListener("pointerdown", onDown);
+    live.removeEventListener("pointermove", onMove);
+    live.removeEventListener("pointerup", onUp);
+    live.removeEventListener("pointercancel", onUp);
+  });
 
   // Repaint the committed layer whenever the document or theme changes.
   createEffect(() => { props.doc(); props.theme(); if (base) repaintBase(); });
@@ -133,8 +139,8 @@ export function DrawingCanvas(props: {
   return (
     <div class="draw-page-shadow">
       <div class="draw-page">
-        <canvas ref={base} class="draw-canvas" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }} />
-        <canvas ref={live} class="draw-canvas draw-live" style={{ position: "absolute", inset: "0", width: "100%", height: "100%" }} />
+        <canvas ref={base} class="draw-canvas" />
+        <canvas ref={live} class="draw-canvas draw-live" />
       </div>
     </div>
   );

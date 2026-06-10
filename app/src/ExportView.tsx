@@ -3,6 +3,7 @@ import { createSignal, createResource, For, Show, createEffect } from "solid-js"
 import { api } from "./api";
 import { Icon } from "./icons/Icon";
 import { Chip } from "./ui/Chip";
+import { IconTextButton } from "./ui/IconTextButton";
 import { pushToast } from "./Toast";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
@@ -39,7 +40,6 @@ export function ExportView(props: { path: string }) {
   const formats = () => formatsFor(props.path);
   const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
-  const [pageSize, setPageSize] = createSignal("A4");
   const [busy, setBusy] = createSignal(false);
 
   // Preview only — cheap, no byte/PDF generation, so switching format or theme is instant.
@@ -113,15 +113,6 @@ export function ExportView(props: { path: string }) {
         </div>
 
         <div class="field">
-          <span class="flab">Page size</span>
-          <div class="fopts">
-            <Chip selected={pageSize() === "A4"} onClick={() => setPageSize("A4")}>A4</Chip>
-            <Chip selected={pageSize() === "Letter"} onClick={() => setPageSize("Letter")}>Letter</Chip>
-            <Chip selected={pageSize() === "Fit content"} onClick={() => setPageSize("Fit content")}>Fit content</Chip>
-          </div>
-        </div>
-
-        <div class="field">
           <span class="flab">Theme</span>
           <div class="fopts">
             <For each={THEMES}>
@@ -135,36 +126,12 @@ export function ExportView(props: { path: string }) {
           </div>
         </div>
 
-        <div class="field">
-          <span class="flab">Include</span>
-          <div class="exp-toggles">
-            <For
-              each={[
-                ["Properties", false],
-                ["Wikilinks as footnotes", true],
-                ["Backlinks section", true],
-                ["Tags", false],
-              ] as const}
-            >
-              {([label, on]) => (
-                <div class="exp-toggle" classList={{ on }}>
-                  <span class="exp-switch" classList={{ on }}>
-                    <span class="exp-knob" />
-                  </span>
-                  {label}
-                </div>
-              )}
-            </For>
-          </div>
-        </div>
-
         <div class="exp-spacer" />
 
         <div class="exp-footer">
-          <button class="btn ghost" type="button">Preview</button>
-          <button class="btn ghost" disabled={busy()} onClick={doExport}>
-            <Icon value="Download" size={14} /> Export {LABEL[format()]}
-          </button>
+          <IconTextButton icon="Download" iconSize={14} disabled={busy()} onClick={doExport}>
+            EXPORT {LABEL[format()].toUpperCase()}
+          </IconTextButton>
         </div>
       </div>
     </div>

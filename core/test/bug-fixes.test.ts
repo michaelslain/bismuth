@@ -2,20 +2,35 @@ import { describe, it, expect, beforeEach } from "bun:test";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, symlinkSync, rmSync } from "node:fs";
 import {
   setFrontmatterKey,
   deleteFrontmatterKey,
   parseFrontmatter,
 } from "../src/frontmatter";
-import { resolveBaseRows, resolveSource } from "../src/bases/source";
+import { resolveBaseRows } from "../src/bases/source";
 import { applyReview } from "../src/srs/cards";
 import { upsertRow, deleteRow } from "../src/bases/rowOps";
 import { createError } from "../src/error";
 import type { ReviewResponse } from "../src/srs/types";
 
+// Probe once whether this platform/filesystem actually supports symlinks, so the
+// symlink-cycle test can be *explicitly* skipped where it can't run rather than
+// silently passing with zero assertions.
+const symlinksSupported = (() => {
+  const probe = mkdtempSync(join(tmpdir(), "symlink-probe-"));
+  try {
+    symlinkSync(join(probe, "target"), join(probe, "link"));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
+
 describe("Bug Fix Tests", () => {
-  describe("Task 7: YAML Frontmatter Preservation", () => {
+  describe("YAML Frontmatter Preservation", () => {
     it("preserves frontmatter formatting on setFrontmatterKey", () => {
       const md = `---
 tags: [book, fiction]
@@ -79,7 +94,7 @@ Content`;
     });
   });
 
-  describe("Task 8: Cycle Detection with Symlinks", () => {
+  describe("Base Composition Cycle Detection", () => {
     let testDir: string;
 
     beforeEach(async () => {
@@ -139,7 +154,9 @@ source:
       }
     });
 
-    it("detects cycles through symlinks", async () => {
+    // Skipped (not silently passed) where symlinks aren't supported, so the
+    // assertion below always runs when the test is reported as passing.
+    it.skipIf(!symlinksSupported)("detects cycles through symlinks", async () => {
       try {
         const baseFile = `---
 source:
@@ -158,18 +175,13 @@ source:
         // This should detect the cycle even through symlink
         const result = await resolveBaseRows(baseFilePath, { root: testDir });
         expect(result).toEqual([]); // Should return empty on cycle
-      } catch (e) {
-        // Symlinks might not be supported on all platforms; that's okay
-        if (!String(e).includes("symlink")) {
-          throw e;
-        }
       } finally {
         await cleanup();
       }
     });
   });
 
-  describe("Task 9: SRS Error Context", () => {
+  describe("SRS Error Context", () => {
     it("throws CARD_FORMAT_ERROR for invalid cardId", async () => {
       const vault = tmpdir();
       const cardId = "invalid-format";
@@ -186,17 +198,19 @@ source:
       }
     });
 
-    it("throws CARD_FORMAT_ERROR for non-existent note (wrapped by readNote)", async () => {
+    it("throws an ENOENT error naming the missing note", async () => {
       const vault = tmpdir();
       const cardId = "nonexistent.md::0::0";
       try {
         await applyReview(vault, cardId, "good", "2024-01-01");
         expect.unreachable("Should have thrown");
       } catch (e) {
-        // readNote throws a native error, which is okay for this scenario
-        if (e instanceof Error) {
-          expect(e.message).toBeDefined();
-        }
+        // readNote reads a missing file → a native ENOENT Error whose message
+        // names the absolute path (which ends in the missing note's filename).
+        expect(e).toBeInstanceOf(Error);
+        const err = e as Error & { code?: string };
+        expect(err.code).toBe("ENOENT");
+        expect(err.message).toContain("nonexistent.md");
       }
     });
 
@@ -221,7 +235,7 @@ source:
     });
   });
 
-  describe("Task 10: Table Column Order Preservation", () => {
+  describe("Table Column Order Preservation", () => {
     it("preserves column order in upsertRow", () => {
       const text = `---
 columns: [name, age, city]

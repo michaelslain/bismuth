@@ -20,6 +20,7 @@ import { nodeVisualState } from "../../../core/src/daemonViz";
 import { nodeCollideRadius, drawnNodeRadius } from "./collide";
 import { LabelLayer } from "./LabelLayer";
 import { computeAlwaysOnSet } from "./labelSelection";
+import { hashKey } from "../themeColors";
 
 // Default node palette = the 6 Oxide accent colors — overridden via setConfig from
 // settings.appearance.accentPalette (the centralized theme tokens).
@@ -268,12 +269,6 @@ function eigenSym3(m: number[][]): { value: number; vector: THREE.Vector3 }[] {
   return [0, 1, 2]
     .map((i) => ({ value: a[i][i], vector: new THREE.Vector3(v[0][i], v[1][i], v[2][i]).normalize() }))
     .sort((x, y) => x.value - y.value);
-}
-
-function hashInt(s: string): number {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
-  return h;
 }
 
 /** A white disc texture so points render as circles (alphaTest clips the square corners). */
@@ -1331,7 +1326,10 @@ export class WebGLRenderer {
       // culling DOES ease with zoom: keep more non-focused edges as you zoom in (effPeak = peak/zoom)
       const effPeak = peak / zoom;
       const keepFrac = effPeak <= EDGE_CROWD_FULL ? 1 : EDGE_CULL_KEEP / effPeak;
-      this.keepE[i] = (hashInt("" + i) % 1024) / 1024 < keepFrac ? 1 : 0;
+      // Stable per-edge keep/cull decision: hash the resolved endpoint ids (NOT the array index,
+      // which reshuffles every graph reload → keep/cull flicker on otherwise-unchanged edges).
+      const { s, t } = this.resolvedLinks[i];
+      this.keepE[i] = (hashKey(s.id + "\0" + t.id) % 1024) / 1024 < keepFrac ? 1 : 0;
     }
   }
 
@@ -1455,7 +1453,7 @@ export class WebGLRenderer {
   }
 
   private paletteColor(key: string): THREE.Color {
-    return new THREE.Color(this.palette[hashInt(key) % this.palette.length]);
+    return new THREE.Color(this.palette[hashKey(key) % this.palette.length]);
   }
 
   /** Determine node color from kind (notes by folder, tags/memory/agents by label). */
@@ -2009,12 +2007,13 @@ export class WebGLRenderer {
         const c = cachedPos.get(n.id);
         if (c) { cachedCount++; return { ...base, x: c[0], y: c[1], z: c[2] }; }
       }
-      // 2nd priority: in-memory positions from previous render (same session, graph changed)
+      // 2nd priority: in-memory positions from previous render (same session, graph changed) — a
+      // warm position too, so it counts as cached and skips the re-settle (an edge-only update keeps
+      // every node's spot). Only genuinely-new nodes fall through to the random seed below.
       const p = prevPos.get(n.id);
+      if (p) { cachedCount++; return { ...base, x: p.x, y: p.y, z: p.z }; }
       const r = 80;
-      const node: N3 = p
-        ? { ...base, x: p.x, y: p.y, z: p.z }
-        : { ...base, x: (Math.random() - 0.5) * r, y: (Math.random() - 0.5) * r, z: (Math.random() - 0.5) * r };
+      const node: N3 = { ...base, x: (Math.random() - 0.5) * r, y: (Math.random() - 0.5) * r, z: (Math.random() - 0.5) * r };
       uncached.push(node); // had no persisted position — new, or first session
       return node;
     });

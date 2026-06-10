@@ -1,6 +1,6 @@
 import { onMount, createEffect, Show, Switch, Match } from "solid-js";
 import { EventStore, MemoryBackend } from "../calendar/EventStore";
-import { currentView, currentDate, settings, showEventModal, showCalendarSettings, applyDefaultView, userSwitchedView, reconcileDefaultView } from "../calendar/state";
+import { currentView, currentDate, settings, showEventModal, showCalendarSettings, applyDefaultView, userSwitchedView, reconcileDefaultView, resetUserSwitchedView } from "../calendar/state";
 import { refreshEvents } from "../calendar/refresh";
 import { Toolbar } from "../calendar/components/Toolbar";
 import { MonthView } from "../calendar/components/views/MonthView";
@@ -26,6 +26,9 @@ export function CalendarView(props: { basePath?: string; onChange?: () => void }
   const store = new EventStore(backend ?? new MemoryBackend());
 
   onMount(async () => {
+    // Clear any prior manual-switch flag so this fresh mount honors the saved
+    // defaultView (the flag is module-level and survives remounts otherwise).
+    resetUserSwitchedView();
     if (backend) await backend.init();
     await store.load();
     await refreshEvents(store);

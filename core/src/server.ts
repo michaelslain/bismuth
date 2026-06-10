@@ -251,6 +251,17 @@ export function createServer(cfg: CoreConfig) {
     return exists ? await readNote(vault, path) : "";
   }
 
+  // Like readNote, but returns null for a missing file instead of throwing.
+  // Distinguishes missing (null) from empty-but-present ("") in a single read,
+  // avoiding the TOCTOU of a separate existence check.
+  async function readNoteOrNull(vault: string, path: string): Promise<string | null> {
+    try {
+      return await readNote(vault, path);
+    } catch {
+      return null;
+    }
+  }
+
   try {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
       // Ignore churn in .git (backup commits) and .trash — neither feeds the
@@ -336,7 +347,7 @@ export function createServer(cfg: CoreConfig) {
       return ok(views);
     },
 
-    "GET /templates": async () => {
+    "GET /templates": async (_, __) => {
       const folder = appConfig.templates?.folder ?? "Templates";
       return ok(await listTemplates(cfg.vault, folder));
     },
@@ -525,6 +536,27 @@ export function createServer(cfg: CoreConfig) {
     "POST /backup": async (_, __) => {
       const committed = await commitVault(cfg.vault, snapshotMessage());
       return ok({ committed });
+    },
+
+    // Open (or create) today's daily note. Lives in routes — NOT mutatingRoutes —
+    // so the no-op case (note already exists) doesn't bump version / broadcast SSE.
+    // When we DO create the note, invalidate ONLY its path (not the whole vault).
+    "POST /daily-note": async (req) => {
+      const { id } = (await req.json()) as { id: string };
+      const config = (await readDailyNotes(cfg.vault)).find((c) => c.id === id);
+      if (!config) return error(`unknown daily note: ${id}`, 400);
+      const now = new Date();
+      const path = dailyNotePath(config, now);
+      if (await Bun.file(join(cfg.vault, path)).exists()) {
+        return ok({ path, created: false });
+      }
+      let templateRaw: string | null = null;
+      if (config.template && (await Bun.file(join(cfg.vault, config.template)).exists())) {
+        templateRaw = await readNote(cfg.vault, config.template);
+      }
+      await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
+      await invalidate(path);
+      return ok({ path, created: true });
     },
 
     // Open a folder as its own brain in a new window: spawn a sibling core server
@@ -781,8 +813,8 @@ export function createServer(cfg: CoreConfig) {
         const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
         // Refuse to write to a path that doesn't exist — silently creating notes
         // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
-        const raw = await readNoteOrEmpty(cfg.vault, path);
-        if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+        const raw = await readNoteOrNull(cfg.vault, path);
+        if (raw === null) {
           return error("note not found", 404);
         }
         const next = setFrontmatterKey(raw, key, value);
@@ -796,8 +828,8 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         // Remove a single frontmatter key (e.g. resetting a note's icon to default).
         const { path, key } = (await req.json()) as { path: string; key: string };
-        const raw = await readNoteOrEmpty(cfg.vault, path);
-        if (raw === "" && !(await Bun.file(join(cfg.vault, path)).exists())) {
+        const raw = await readNoteOrNull(cfg.vault, path);
+        if (raw === null) {
           return error("note not found", 404);
         }
         const next = deleteFrontmatterKey(raw, key);
@@ -866,7 +898,7 @@ export function createServer(cfg: CoreConfig) {
       },
       // settings.yaml change → invalidate broadly; pass its path so classifyVault
       // marks both graph & tree dirty (isSettingsPath), refreshing /tree.
-      () => "settings.yaml",
+      () => SETTINGS_FILE,
     ),
 
     "POST /tasks/toggle": mutatingHandler(
@@ -924,23 +956,6 @@ export function createServer(cfg: CoreConfig) {
       },
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
-
-    "POST /daily-note": mutatingHandler(async (req) => {
-      const { id } = (await req.json()) as { id: string };
-      const config = (await readDailyNotes(cfg.vault)).find((c) => c.id === id);
-      if (!config) return error(`unknown daily note: ${id}`, 400);
-      const now = new Date();
-      const path = dailyNotePath(config, now);
-      if (await Bun.file(join(cfg.vault, path)).exists()) {
-        return ok({ path, created: false });
-      }
-      let templateRaw: string | null = null;
-      if (config.template && (await Bun.file(join(cfg.vault, config.template)).exists())) {
-        templateRaw = await readNote(cfg.vault, config.template);
-      }
-      await writeNote(cfg.vault, path, dailyNoteContent(config, now, templateRaw));
-      return ok({ path, created: true });
-    }),
 
     // Claim a device as the claude-bot daemon owner: write owner.json (byte-compatible
     // with what the daemon reads). owner.json lives outside the vault, so there's
@@ -1066,7 +1081,7 @@ export function createServer(cfg: CoreConfig) {
           ? new Uint8Array(msg)
           : msg instanceof Uint8Array
             ? msg
-            : new TextEncoder().encode(msg as string);
+            : enc.encode(msg as string);
         if (bytes.length === 0) return;
         const tag = bytes[0];
         if (tag === 0x00) {
@@ -1096,8 +1111,8 @@ export function createServer(cfg: CoreConfig) {
 }
 
 if (import.meta.main) {
-  const vault = cliArg("vault");
-  const memory = cliArg("memory");
+  const vault = cliArg("vault") ?? process.env.OA_VAULT;
+  const memory = cliArg("memory") ?? process.env.OA_MEMORY;
   if (!vault || !memory) {
     console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
     process.exit(1);

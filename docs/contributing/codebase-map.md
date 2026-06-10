@@ -149,7 +149,7 @@ Vault file I/O with path-traversal protection. Key exports:
 Settings.yaml lifecycle. Key exports:
 - `readSettings(vault)` — reads and parses `settings.yaml`; tolerant of malformed YAML.
 - `reconcileSettings(vault)` — called on boot; writes a fresh defaults file if absent, or merges in any new keys since the file was written (preserving user values, comments, unknown keys).
-- `setSettingInFile(vault, section, key, value)` — per-vault mutex-guarded atomic write of one key; called by `POST /set-setting`. The mutex (a promise chain keyed by vault path) prevents TOCTOU races.
+- `setSettingInFile(vault, path: string[], value)` — per-vault mutex-guarded atomic write of one key, addressed by a dot-path **array** (e.g. `["appearance", "theme"]`), not separate section/key args; called by `POST /set-setting`. The mutex (a promise chain keyed by vault path) prevents TOCTOU races.
 - `getVaultSchema(vault)` — parses `properties:` section into a `Schema`, merged over built-in properties.
 - `serializeSettingsForFrontend(vault)` — returns the settings data as a nested plain object for `GET /settings`.
 - `loadAppConfig(vault)` — reads and coerces settings into `AppConfig` (backend runtime use).
@@ -459,7 +459,7 @@ Key logic: `applyView(graph, view)` overwrites node positions with a brain-view'
 Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts`.
 
 #### `tabIds.ts`
-Sentinel content ids (all start with `::`): `SEARCH_TAB = "::search"`, `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`. `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids.
+Sentinel content ids (all start with `::`): `SEARCH_TAB = "::search"`, `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids.
 
 #### `PaneTree.tsx`
 Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions.
@@ -983,43 +983,49 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 `list`, `read`, `write`, `move`, `delete`, `restore` — vault file operations.
 
 ### `commands/note.ts`
-`note new` (create note, optionally from template), `daily note` — daily note open/create.
+`note new` (create note, optionally from template), `templates` (list templates), `daily` — open/create today's daily note.
 
 ### `commands/search.ts`
-`search` — full-text search using `searchVault`.
+`search`, `replace` — full-text search (`searchVault`) and vault-wide find-and-replace (`replaceInVault`); both take `--regex`/`--case`/`--word`.
 
 ### `commands/graph.ts`
-`graph` — dump the knowledge graph as JSON.
+`graph` — dump the full knowledge graph (vault + optional memory) as JSON.
 
 ### `commands/task.ts`
-`task list`, `task toggle` — list and toggle tasks.
+`task list` (optional `--query <dsl>`), `task toggle` — list and toggle tasks.
 
 ### `commands/base.ts`
-`base query`, `base rows` — query a base or dump its rows.
+`base read`, `rows`, `row add`, `row update`, `row delete`, `row reorder` — read a base, resolve a `SourceSpec` to `Row[]`, and mutate a base's table rows.
 
 ### `commands/card.ts`
-`card list`, `card due`, `card review` — SRS card management.
+`card decks`, `card all`, `card due`, `card note`, `card review` — SRS card management (`review` is dual-mode: markdown card vs. flashcard-base row).
 
 ### `commands/prop.ts`
-`prop get`, `prop set`, `prop delete` — frontmatter property manipulation.
+`prop set`, `prop delete` — frontmatter property manipulation (there is no `prop get`).
 
 ### `commands/settings.ts`
-`settings get`, `settings set` — read/write settings.yaml keys.
+`settings get`, `settings set`, `settings schema`, `folder-icon` — read/write settings.yaml keys + the per-folder icon map.
 
 ### `commands/daemon.ts`
-`daemon status`, `daemon devices`, `daemon owner` — daemon status queries.
+`daemon status`, `daemon devices`, `daemon owner`, `daemon install`, `daemon setup`, `daemon update`, `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — read/write the claude-bot daemon's `~/.claude-bot` state (no `--vault`).
 
 ### `commands/draw.ts`
-`draw export` — export a `.draw` file to PNG/PDF.
+`render` — render a `.draw` file to PNG (or `--pdf`) headless (filesystem path, no `--vault`).
 
 ### `commands/serve.ts`
-`serve` — start the backend server (`createServer`).
+`serve` (start the backend server, `createServer`), `backup` (git-snapshot the vault).
 
 ### `commands/export.ts`
-`export` — export a note or base to HTML/PDF/Markdown.
+`export` — export a note/base/sheet/drawing to `md|html|png|pdf` (pdf of notes/bases/sheets is browser-only).
 
 ### `commands/api.ts`
-`api` — raw HTTP call to any core API endpoint (for scripting).
+`agent-graph` (fetch the live agents graph from a running server), `api <GET|POST|PUT> <path>` — raw HTTP call to any core API endpoint (for in-memory things like the relay registry).
+
+### `commands/install.ts`
+`install` (machine-wide CLI + MCP install, idempotent + version-gated), `uninstall` — remove the symlink, global MCP registration, and `~/.bismuth`.
+
+### `commands/checkpoint.ts`
+`checkpoint diff`, `checkpoint advance`, `checkpoint ref` — per-consumer git bookmarks (`refs/bismuth/<name>`) over any git dir via `--dir`, for "what changed since I last ran" jobs.
 
 ---
 

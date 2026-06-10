@@ -15,6 +15,7 @@ import { api } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { diffLeaves } from "./settingsDiff";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
+import { SHEEN } from "./themes";
 
 // The structural shape the frontend store consumes. Mirrors the spine's
 // SETTINGS_SCHEMA leaf-by-leaf (the spine's derived AppSettings is loosely typed
@@ -143,7 +144,7 @@ export interface Settings {
     "insert-template": string;
     "toggle-sidebar": string;
   };
-  toolbar: Array<{ command: string; icon: string; tooltip?: string }>;
+  toolbar: Array<{ command?: string; commands?: string[]; icon: string; tooltip?: string }>;
   dailyNotes: Array<{ id: string; label: string; icon: string; folder: string; fileName: string; template: string }>;
 }
 
@@ -168,10 +169,11 @@ export const FONT_STACKS: Record<string, string> = {
   "system-ui": "system-ui, -apple-system, sans-serif",
 };
 
-// The default Oxide accent palette (mirrors OXIDE_PALETTE in the spine schema).
-// Categories (graph nodes/clusters/tags, drawing ink swatches, terminal ANSI) all
-// derive from settings.appearance.accentPalette; this is just the fallback.
-export const DEFAULT_ACCENT_PALETTE = ["#F0509B", "#9B53E8", "#3F6BF0", "#27C7D9", "#43D49A", "#F2C53D"];
+// The fallback accent palette. Categories (graph nodes/clusters/tags, drawing ink
+// swatches, terminal ANSI) normally derive from the selected theme's accentPalette
+// (resolveTheme in themes.ts); this is only used when that ramp is absent/empty.
+// Single-sourced from themes.ts's SHEEN so the values can't drift.
+export const DEFAULT_ACCENT_PALETTE = SHEEN;
 
 /**
  * Merge an already-parsed object over DEFAULTS using a per-key `typeof`-checked

@@ -45,6 +45,10 @@ The relay plugin reports terminal-tab sessions to the in-process registry.
 ## Hooks
 
 SessionStart and UserPromptSubmit register and heartbeat each session.
+
+### Deep Detail
+
+A nested h3 heading whose depth must round-trip through readDoc unchanged.
 `;
 
 beforeAll(() => {
@@ -59,8 +63,8 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("listDocs returns every doc with relative paths and # titles", async () => {
-  const docs = await listDocs(root);
+test("listDocs returns every doc with relative paths and # titles", () => {
+  const docs = listDocs(root);
   expect(Array.isArray(docs)).toBe(true);
   expect(docs.length).toBe(3);
 
@@ -81,8 +85,8 @@ test("listDocs returns every doc with relative paths and # titles", async () => 
   expect(byPath.get(nestedKey)!.title).toBe("Relay Notes");
 });
 
-test("searchDocs finds a section by a known term with path, snippet, and score", async () => {
-  const hits = await searchDocs(root, "flux-capacitor");
+test("searchDocs finds a section by a known term with path, snippet, and score", () => {
+  const hits = searchDocs(root, "flux-capacitor");
   expect(Array.isArray(hits)).toBe(true);
   expect(hits.length).toBeGreaterThan(0);
 
@@ -97,36 +101,36 @@ test("searchDocs finds a section by a known term with path, snippet, and score",
   expect(hit.score).toBeGreaterThan(0);
 });
 
-test("searchDocs ranks the most relevant doc first for a shared term", async () => {
+test("searchDocs ranks the most relevant doc first for a shared term", () => {
   // "registry" lives only in relay.md's intro section (before any ## heading),
   // so the top hit's path is the bare relative path with no #anchor.
-  const hits = await searchDocs(root, "registry");
+  const hits = searchDocs(root, "registry");
   expect(hits.length).toBeGreaterThan(0);
   expect(hits[0].path).toBe("internals/relay.md");
   expect(hits[0].path).not.toContain("#");
   expect(hits[0].score).toBeGreaterThan(0);
 });
 
-test("searchDocs respects the limit", async () => {
+test("searchDocs respects the limit", () => {
   // "the" appears across all three docs; without a cap we'd get multiple hits.
-  const uncapped = await searchDocs(root, "the");
+  const uncapped = searchDocs(root, "the");
   expect(uncapped.length).toBeGreaterThan(1);
 
-  const capped = await searchDocs(root, "the", 1);
+  const capped = searchDocs(root, "the", 1);
   expect(capped.length).toBe(1);
   expect(capped.length).toBeLessThanOrEqual(uncapped.length);
 });
 
-test("readDoc returns the full document content", async () => {
-  const content = await readDoc(root, "getting-started.md");
+test("readDoc returns the full document content", () => {
+  const content = readDoc(root, "getting-started.md");
   expect(content).toBe(GETTING_STARTED);
   expect(content).toContain("# Getting Started");
   expect(content).toContain("## Installation");
   expect(content).toContain("## Configuration");
 });
 
-test("readDoc with a section returns only that section", async () => {
-  const section = await readDoc(root, "getting-started.md", "Configuration");
+test("readDoc with a section returns only that section", () => {
+  const section = readDoc(root, "getting-started.md", "Configuration");
   expect(section).toContain("OA_VAULT");
   expect(section).toContain("flux-capacitor");
   // Scoped to the requested section — earlier sections are excluded.
@@ -134,6 +138,14 @@ test("readDoc with a section returns only that section", async () => {
   expect(section).not.toContain("Welcome to Bismuth");
   // And shorter than the full doc.
   expect(section.length).toBeLessThan(GETTING_STARTED.length);
+});
+
+test("readDoc preserves the source heading depth (### stays ###)", () => {
+  const section = readDoc(root, "internals/relay.md", "Deep Detail");
+  // The h3's depth must round-trip — not be flattened to "## ".
+  expect(section.startsWith("### Deep Detail")).toBe(true);
+  expect(section.startsWith("## Deep Detail")).toBe(false);
+  expect(section).toContain("must round-trip");
 });
 
 test("readDoc rejects a path-traversal attempt", () => {

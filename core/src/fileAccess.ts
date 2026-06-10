@@ -48,8 +48,7 @@ export function setFileAccess(a: FileAccess): void {
 export async function getFileAccess(): Promise<FileAccess> {
   if (access) return access;
   const files = await import("./files");
-  const { stat } = await import("node:fs/promises");
-  const { realpath } = await import("node:fs/promises");
+  const { stat, realpath } = await import("node:fs/promises");
   const { join } = await import("node:path");
   access = {
     listMarkdown: files.listMarkdown,

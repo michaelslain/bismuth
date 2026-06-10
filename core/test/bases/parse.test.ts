@@ -132,6 +132,20 @@ test("parses chart fields at top level of a type:base note (flat persistence)", 
   expect(v.bin).toBe("month");
 });
 
+test("promotes top-level flashcards field bindings into the default view (flat persistence)", () => {
+  const { config } = parseBaseFile(
+    `---\ntype: base\nview: flashcards\nfrontField: term\nbackField: definition\ndueField: due\neaseField: ease\nintervalField: interval\n---\n`,
+    { name: "T", path: "T.md" },
+  );
+  const v = config.views[0];
+  expect(v.type).toBe("flashcards");
+  expect(v.frontField).toBe("term");
+  expect(v.backField).toBe("definition");
+  expect(v.dueField).toBe("due");
+  expect(v.easeField).toBe("ease");
+  expect(v.intervalField).toBe("interval");
+});
+
 test("rejects invalid chart enum values", () => {
   const cfg = parseBase(`views:\n  - type: bar\n    name: B\n    aggregate: median\n    bin: quarter\n`);
   expect(cfg.views[0].aggregate).toBeUndefined();

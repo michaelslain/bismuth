@@ -60,3 +60,21 @@ export function runHook(fn: () => Promise<void>): void {
     .catch(() => {})
     .finally(() => process.exit(0));
 }
+
+/**
+ * Register this terminal-tab session as a root node in the agents graph by posting
+ * to /relay/session. Shared by the SessionStart and UserPromptSubmit hooks (both do
+ * the same gate→read→guard→post a full register). No-ops when not launched from a
+ * Bismuth terminal tab or when the payload carries no session id.
+ */
+export async function reportSession(): Promise<void> {
+  const tid = terminalId();
+  if (!tid) return; // not launched from a Bismuth terminal tab
+  const input = await readHookInput();
+  if (!input.session_id) return;
+  await postRelay("/relay/session", {
+    sessionId: input.session_id,
+    terminalId: tid,
+    cwd: input.cwd ?? "",
+  });
+}

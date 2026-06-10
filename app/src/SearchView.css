@@ -26,26 +26,6 @@
 .search-row .search-bar-lead { opacity: 1; color: var(--accent); }
 .search-row .search-bar-input { font-size: 15px; }
 
-/* .srtoggle — case / whole-word / regex pills (28px, radius 7). The shared
-   IconButton renders these (icon-only); we restyle the wrapper to match the
-   design's labeled-toggle look and give the active state its TEAL tint. */
-.search-tg.btn {
-  flex: none;
-  height: 28px;
-  width: 28px;
-  border-radius: 7px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-}
-.search-tg.btn:hover { background: var(--surface-3); color: var(--fg); }
-.search-tg.btn--selected,
-.search-tg.btn--selected:hover {
-  color: var(--teal);
-  background: color-mix(in srgb, var(--teal) 14%, transparent);
-  border-color: color-mix(in srgb, var(--teal) 35%, transparent);
-}
-
 /* Action button label follows the app's control-button convention. */
 .search-replace-all.btn { flex: none; }
 
@@ -90,7 +70,7 @@
 }
 .sresult-path {
   font-size: 10.5px;
-  color: color-mix(in srgb, var(--fg) 42%, transparent);
+  color: var(--faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -118,7 +98,7 @@
   flex: none;
   min-width: 28px;
   text-align: right;
-  color: color-mix(in srgb, var(--fg) 42%, transparent);
+  color: var(--faint);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 11px;
   align-self: center;

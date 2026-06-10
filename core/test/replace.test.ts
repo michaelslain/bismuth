@@ -1,18 +1,8 @@
 import { test, expect, describe } from "bun:test";
 import { replaceInText, replaceInVault } from "../src/replace";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-
-function makeVault(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "replace-test-"));
-  for (const [rel, content] of Object.entries(files)) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, content);
-  }
-  return dir;
-}
+import { makeVault } from "./helpers";
 
 describe("replaceInText", () => {
   test("replaces all literal occurrences and counts them", () => {

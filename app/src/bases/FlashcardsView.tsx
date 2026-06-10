@@ -11,6 +11,7 @@ import { renderMarkdown } from "./markdown";
 import { EditCardsModal } from "./EditCardsModal";
 import type { BaseConfig, Row } from "../../../core/src/bases/types";
 import { fileBasename } from "../../../core/src/pathUtils";
+import { todayISO } from "../../../core/src/dates";
 
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (lucide-solid icons, Solid client-only code). Import
@@ -53,13 +54,14 @@ export function FlashcardsView(props: {
   const easeField = () => view().easeField ?? "ease";
   const intervalField = () => view().intervalField ?? "interval";
   const bidirectional = () => !!view().bidirectional;
-  const today = new Date().toISOString().slice(0, 10);
 
   const [cram, setCram] = createSignal(false);
 
   // The review queue: due cards normally; ALL cards in cram mode (order preserved).
   // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
-  const queue = createMemo(() => buildQueue(props.rows, dueField(), today, cram(), bidirectional()));
+  // `today` is derived inside the memo via todayISO() so it's the LOCAL date and is
+  // re-evaluated on every recompute (not captured once at mount, in UTC).
+  const queue = createMemo(() => buildQueue(props.rows, dueField(), todayISO(), cram(), bidirectional()));
 
   const [pos, setPos] = createSignal(0);
   const [revealed, setRevealed] = createSignal(false);

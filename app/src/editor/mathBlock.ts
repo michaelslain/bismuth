@@ -16,6 +16,7 @@ const CODE_FENCE = /^\s*```/;
 
 class MathBlockWidget extends WidgetType {
   private readonly expr: string;
+  private _unsub?: () => void;
 
   constructor(expr: string) {
     super();
@@ -31,9 +32,14 @@ class MathBlockWidget extends WidgetType {
     div.className = "cm-math-block";
     div.innerHTML = renderMath(this.expr, true);
     // If KaTeX wasn't loaded yet, renderMath returned "" and kicked off the lazy
-    // load — fill the node in once the library is ready (same final output).
-    if (!div.innerHTML) onMathReady(() => { div.innerHTML = renderMath(this.expr, true); });
+    // load — fill the node in once the library is ready (same final output). Keep the
+    // unsubscribe so a widget destroyed before KaTeX loads drops its pending callback.
+    if (!div.innerHTML) this._unsub = onMathReady(() => { div.innerHTML = renderMath(this.expr, true); });
     return div;
+  }
+
+  destroy(): void {
+    this._unsub?.();
   }
 
   ignoreEvent(): boolean {

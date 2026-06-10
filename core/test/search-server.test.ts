@@ -1,18 +1,9 @@
 import { test, expect, describe } from "bun:test";
 import { createServer } from "../src/server";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-function makeVault(files: Record<string, string>): string {
-  const dir = mkdtempSync(join(tmpdir(), "search-srv-"));
-  for (const [rel, content] of Object.entries(files)) {
-    const abs = join(dir, rel);
-    mkdirSync(join(abs, ".."), { recursive: true });
-    writeFileSync(abs, content);
-  }
-  return dir;
-}
+import { makeVault } from "./helpers";
 
 describe("search + replace endpoints", () => {
   test("POST /search returns ranked grouped results", async () => {

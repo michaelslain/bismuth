@@ -3,7 +3,7 @@
 // find-and-replace (per-file and vault-wide). Opened via the `search` command
 // or the default toolbar button (routed from PaneContent on the ::search id).
 // Uses the shared Button/Icon primitives so its chrome matches the rest of the app.
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, onCleanup, For, Show } from "solid-js";
 import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
 import { TextButton } from "./ui/TextButton";
@@ -52,6 +52,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(runSearch, 150);
   };
+  onCleanup(() => clearTimeout(debounceTimer));
 
   const totalMatches = () => results().reduce((n, r) => n + r.matchCount, 0);
 

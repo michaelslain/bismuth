@@ -16,8 +16,9 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
 2. The hooks (`hooks/hooks.json`) fire and POST to core's `/relay/*` routes:
    - `SessionStart` → `bin/session-start-hook.ts` → `POST /relay/session` (register this
      terminal-tab session as a root node).
-   - `UserPromptSubmit` → `bin/recall-hook.ts` → `POST /relay/session/heartbeat` (keep it
-     awake; self-registers if SessionStart was missed, e.g. a resumed session).
+   - `UserPromptSubmit` → `bin/recall-hook.ts` → `POST /relay/session` (re-posting the same
+     endpoint acts as a heartbeat; self-registers if SessionStart was missed, e.g. a resumed
+     session — there is no separate `/relay/session/heartbeat` route).
    - `SubagentStart` → `bin/subagent-start-hook.ts` → `POST /relay/subagent/start` (add a
      child node under the spawning session).
    - `SubagentStop` → `bin/subagent-stop-hook.ts` → `POST /relay/subagent/stop`.

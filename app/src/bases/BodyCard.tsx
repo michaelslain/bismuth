@@ -19,7 +19,10 @@ const HEADING_RE = /^#{1,6}\s/;
 // Lines that GFM renders as an actual checkbox, in document order — used to map a
 // clicked checkbox back to its source line for the toggle.
 const OPEN_BOX_RE = /^\s*- \[ \]/;
-const DONE_BOX_RE = /^\s*- \[[xX]\]/;
+// Mirror DONE_TASK_RE: any non-empty box (`[x]`, `[-]`, `[/]`, `[>]`, …) is a done
+// task. Keeping these in sync is what lets doneLines index the same lines BodyCard
+// renders in the completed section, so a click toggles the right source line.
+const DONE_BOX_RE = /^\s*- \[[^ \]]\]/;
 
 // Drop headings with no remaining content beneath them (their tasks all moved to the
 // completed section) so an all-done card collapses to title + "N completed".

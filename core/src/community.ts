@@ -102,9 +102,10 @@ export function detectCommunities(
       continue;
     }
     const curDeg = neighbors.get(current)!.size;
-    // Higher degree wins; tie → lexicographically smallest id (sortedIds is already sorted, so the
-    // first-seen id at equal degree is the smallest, but compare explicitly for clarity).
-    if (deg > curDeg || (deg === curDeg && id < current)) {
+    // Higher degree wins. Ties resolve to the lexicographically smallest id for free: ids are
+    // visited in ascending order, so the first-seen id at a given degree is already the smallest
+    // and a later equal-degree id never displaces it.
+    if (deg > curDeg) {
       exemplarByCommunity.set(c, id);
     }
   }

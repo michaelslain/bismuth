@@ -17,7 +17,7 @@ export const commands: CommandMap = {
       const vault = requireVault(args);
       const [path] = positionals(args);
       if (!path) fail("read: <path> required");
-      out(await readNote(vault, path));
+      out(await readNote(vault, path), args);
     },
   },
 
@@ -30,6 +30,7 @@ export const commands: CommandMap = {
       if (!path) fail("write: <path> required");
       const content = flag(args, "content") ?? (await Bun.stdin.text());
       await writeNote(vault, path, content);
+      out({ ok: true }, args);
     },
   },
 
@@ -41,6 +42,7 @@ export const commands: CommandMap = {
       const [from, to] = positionals(args);
       if (!from || !to) fail("move: <from> <to> required");
       moveEntry(vault, from, to);
+      out({ ok: true }, args);
     },
   },
 
@@ -63,6 +65,7 @@ export const commands: CommandMap = {
       const [trashPath, to] = positionals(args);
       if (!trashPath || !to) fail("restore: <trashPath> <to> required");
       moveEntry(vault, trashPath, to);
+      out({ ok: true }, args);
     },
   },
 
@@ -74,6 +77,7 @@ export const commands: CommandMap = {
       const [path] = positionals(args);
       if (!path) fail("mkdir: <path> required");
       createEntry(vault, path, "dir");
+      out({ ok: true }, args);
     },
   },
 
