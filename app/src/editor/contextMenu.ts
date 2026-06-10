@@ -4,9 +4,10 @@
 // `oa-context-menu` event that App renders with the shared <ContextMenu>
 // component, so all menus look and behave identically. Right-clicking off a mark
 // returns false, so the normal pane context menu opens instead.
-import { forEachDiagnostic, forceLinting, type Action } from "@codemirror/lint";
+import { forEachDiagnostic, type Action } from "@codemirror/lint";
 import { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
+import { requestRelint } from "./relint";
 
 export type EditorMenuItem = { label: string; onSelect: () => void; disabled?: boolean; icon?: string };
 export type EditorMenuEvent = { x: number; y: number; items: EditorMenuItem[] };
@@ -32,8 +33,12 @@ export function editorContextMenu(): Extension {
         icon: "Wrench",
         onSelect: () => {
           a.apply(view, hit.from, hit.to);
-          // dict/ignore don't change the doc, so nudge a re-lint to clear the mark.
-          setTimeout(() => forceLinting(view), 50);
+          // dict/ignore change linter state, not the doc, so a doc-change can't drive
+          // the re-lint; requestRelint forces the sources to re-run. Ordering is safe
+          // regardless of the delay: Harper's WorkerLinter serializes worker messages
+          // FIFO, so the dictionary/ignore mutation enqueued inside apply() is processed
+          // before this re-lint's lint() call. The small delay is just margin.
+          setTimeout(() => requestRelint(view), 50);
           view.focus();
         },
       }));
