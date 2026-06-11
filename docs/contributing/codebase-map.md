@@ -321,7 +321,7 @@ In-process registry of Claude Code sessions running in Bismuth terminal tabs. Po
 #### `terminal.ts`
 PTY session manager. `createTerminalSession(cols, rows, relayUrl, cfg)` — spawns a PTY via `bun-pty`, builds its env via `buildPtyEnv`, returns a `Session { id, pty, cols, rows }`. `buildPtyEnv(p: PtyEnvParams)` — pure function that constructs the child env: strips undefined values, sets `TERM=xterm-256color`, suppresses oh-my-zsh update prompts, injects `CLAUDE_RELAY_URL`/`CLAUDE_TERMINAL_ID`, and if `claude` is resolvable: sets `BISMUTH_REAL_CLAUDE`/`BISMUTH_RELAY_PLUGIN`, sets `ZDOTDIR` for zsh (defines a `claude` function immune to PATH reordering), and prepends the shim dir to `PATH` for non-zsh shells. `killSession(id)`, `resizeSession(id, cols, rows)`, `getSession(id)`, `listSessionIds()`.
 
-`REAL_CLAUDE` is resolved once at module load using an augmented PATH (adds Homebrew, ~/.bun/bin, ~/.local/bin) to handle GUI apps launched with minimal PATH.
+`REAL_CLAUDE` is resolved once at module load using an augmented PATH (adds Homebrew, ~/.bun/bin, ~/.local/bin, and nvm node bins) to handle GUI apps launched with minimal PATH and `claude` installed via Homebrew or nvm.
 
 ---
 
