@@ -28,6 +28,7 @@ import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsF
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex } from "./search";
+import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
@@ -591,6 +592,14 @@ export function createServer(cfg: CoreConfig) {
         // Invalid regex etc. — surface as a 400 so the UI shows it inline.
         return new Response((e as Error).message, { status: 400 });
       }
+    },
+
+    // List filesystem directory entries matching a partial path — backs autocomplete
+    // for `scope:"fs"` settings (e.g. daemon.home), which name a path OUTSIDE the vault.
+    // Read-only despite POST (the body carries the partial path), so it lives here.
+    "POST /list-dir": async (req, __) => {
+      const { path, only } = (await req.json()) as { path?: string; only?: "dir" | "file" };
+      return ok({ entries: await listFsPaths(path ?? "", only) });
     },
 
     "GET /cards/decks": async (_, __) => {

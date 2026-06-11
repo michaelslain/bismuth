@@ -10,10 +10,12 @@ export type PropertyType =
   | "file"
   | "icon"
   | "keybind"
-  // A vault path. `only` narrows completion to directories or files; omit for both.
-  // `scope: "templates"` restricts to the configured templates folder (files only).
+  // A path. `only` narrows completion to directories or files; omit for both.
+  // `scope` selects the completion root: omitted = the vault tree; "templates" = the
+  // configured templates folder (files only); "fs" = the real filesystem (absolute or
+  // "~"-relative), for paths OUTSIDE the vault (e.g. daemon.home).
   // Validated leniently (any string) — the value may name a path that doesn't exist yet.
-  | { kind: "path"; only?: "dir" | "file"; scope?: "templates" }
+  | { kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }
   | { kind: "enum"; values: string[]; caseInsensitive?: boolean; allowPrefixes?: string[] }
   | { kind: "list"; item?: PropertyType }
   | { kind: "object"; fields: Schema };
