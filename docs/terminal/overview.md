@@ -157,7 +157,7 @@ The decoupling matters in the bundled app: the sidecar's minimal launchd `PATH` 
 
 `RELAY_PLUGIN_DIR` is `process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay")` — the Tauri-staged relay resource in the bundle (where `import.meta.dir` is a virtual path), the source `relay/` in dev. `SHIM_AVAILABLE = existsSync(<zdotdir>)`.
 
-`REAL_CLAUDE` is resolved **once at module load** via `whichClaude()` (`core/src/claudeWhich.ts`) — `Bun.which("claude", …)` against a `PATH` augmented with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin` (so it works from a packaged GUI app's minimal `PATH`). Resolved before the shim dir is on `PATH`, so the shim's `exec` never recurses. Null when not found — see the zdotdir fallback above.
+`REAL_CLAUDE` is resolved **once at module load** via `whichClaude()` (`core/src/claudeWhich.ts`) — `Bun.which("claude", …)` against a `PATH` augmented with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, and the nvm node bins (`$NVM_DIR/versions/node/<version>/bin`, default-alias version first then the rest newest-first — `nvmBinPaths()`), so it resolves a `claude` installed via Homebrew *or* nvm even from a packaged GUI app's minimal `PATH`. Resolved before the shim dir is on `PATH`, so the shim's `exec` never recurses. Null when not found — see the zdotdir fallback above.
 
 ### Gotchas
 
