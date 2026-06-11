@@ -2,7 +2,7 @@
 import { createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -363,11 +363,13 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
       history(),
       drawSelection(),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
-      // Tab accepts the active completion (like Enter); acceptCompletion returns false
-      // when no popup is open, so Tab falls through to its normal behavior otherwise.
+      // Tab accepts the active completion (acceptCompletion returns false when no popup is
+      // open, so it falls through); otherwise Tab/Shift-Tab indent/dedent the selected
+      // lines — which is how list items nest/un-nest (e.g. `- foo` → `  - foo`).
       keymap.of([
         { key: "Ctrl-Space", run: startCompletion },
         { key: "Tab", run: acceptCompletion },
+        { key: "Tab", run: indentMore, shift: indentLess },
         ...defaultKeymap,
         ...historyKeymap,
       ]),
