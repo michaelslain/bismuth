@@ -380,13 +380,22 @@ function animateFold(view: EditorView, getEls: () => HTMLElement[], dir: "collap
     const heights = els.map((el) => el.getBoundingClientRect().height); // current = full height
     let pending = els.length;
     let settled = false;
+    // After the per-line height tween finishes we strip the inline heights, but CodeMirror's
+    // height map may have sampled the transient (0…full) heights mid-animation and cached them.
+    // Its line-number gutter is positioned from that map, so the numbers stay misaligned until
+    // some later interaction (a click) forces a re-measure. Force one ourselves once the lines
+    // are back to their natural height so the gutter realigns immediately.
+    const settle = () => {
+      els.forEach(clearFoldStyles);
+      done();
+      restoreGutter();
+      view.requestMeasure();
+    };
     const finish = () => {
       if (settled) return;
       if (--pending > 0) return;
       settled = true;
-      els.forEach(clearFoldStyles);
-      done();
-      restoreGutter();
+      settle();
     };
     els.forEach((el, i) => {
       el.style.overflow = "hidden";
@@ -404,9 +413,7 @@ function animateFold(view: EditorView, getEls: () => HTMLElement[], dir: "collap
     setTimeout(() => {
       if (settled) return;
       settled = true;
-      els.forEach(clearFoldStyles);
-      done();
-      restoreGutter();
+      settle();
     }, ANIM_MS + 200);
   };
   // Expand: wait one frame so CM has finished re-rendering the just-revealed lines.
