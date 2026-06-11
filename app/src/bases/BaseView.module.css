@@ -89,7 +89,7 @@
 .cellMuted { color: var(--text-muted); }
 .cellNum { font-variant-numeric: tabular-nums; }
 /* Plain mono #tag list in teal — no chips. */
-.tagRow { display: inline-flex; gap: 10px; flex-wrap: wrap; color: var(--teal); }
+.tagRow { display: inline-flex; gap: 10px; flex-wrap: wrap; color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* Colored-dot status text (no pill). */
 .statusText { display: inline-flex; align-items: center; gap: 7px; }
 .statusText .dot { width: 6px; height: 6px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
@@ -370,7 +370,7 @@
 .taskBody { flex: 1; min-width: 0; word-break: break-word; }
 .taskBody.done { text-decoration: line-through; opacity: 0.55; color: color-mix(in srgb, var(--fg) 52%, transparent); }
 .taskLink { color: var(--accent); cursor: pointer; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-.taskTag { color: var(--teal); }
+.taskTag { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .taskMeta { margin-left: 0.5em; font-size: 0.84em; color: var(--text-muted); white-space: nowrap; }
 .taskMeta.overdue { color: var(--accent); }
 .taskPrio { margin-left: 0.4em; font-size: 0.9em; }

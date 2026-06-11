@@ -816,7 +816,7 @@ export const livePreview = [
     ".cm-link": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     ".cm-wikilink": { color: "var(--accent)", cursor: "pointer", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     // Body #hashtags read teal (design §1: prose tags use --teal).
-    ".cm-tag": { color: "var(--teal)" },
+    ".cm-tag": { color: "var(--teal)", "font-family": MONO_FONT },
     // Revealed heading `#`s: mono accent (matches the inline note-title hash),
     // weight 500, so the syntax never renders in the serif heading face.
     // Revealed markdown delimiters (heading `#`, `**`, `*`, `` ` ``, `>`, link/
