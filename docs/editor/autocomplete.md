@@ -384,15 +384,24 @@ Modifier families: `mod` covers `Mod`/`Cmd`/`Ctrl`/`Meta`; `alt` covers `Alt`/`O
 
 ### Path-Typed Field Completion
 
-**Trigger:** The key resolves to `{ kind: "path", only?: "dir" | "file", scope?: "templates" }`. Handled in the `fullVal` branch (not `val`) so paths with spaces work correctly.
+**Trigger:** The key resolves to `{ kind: "path", only?: "dir" | "file", scope?: "templates" | "fs" }`. Handled in the `fullVal` branch (not `val`) so paths with spaces work correctly.
 
 **Behavior:**
 - `scope: "templates"` sources from `getTemplatePaths()` (template files only).
+- `scope: "fs"` sources from the **real filesystem** (for paths OUTSIDE the vault, e.g. `daemon.home`). See "Filesystem-Path Completion" below.
 - Otherwise sources from `getVaultPaths()` filtered by `only` (dirs, files, or both).
 - `rankPaths(candidates, query)` does case-insensitive ranking: full-path prefix matches first, then basename-prefix matches, then substring. Owns filtering (`filter: false`) so `"templates/"` finds `"Templates/"` folder.
 - Each option shows a `Folder` or `File` Lucide icon.
 - Capped at 50 results. No `validFor` — re-queries every keystroke.
 - Does not fire on an empty value unless `context.explicit`.
+
+### Filesystem-Path Completion (`scope: "fs"`)
+
+The filesystem-rooted counterpart of vault-path completion, for settings naming a path outside the vault (e.g. `daemon.home`, default `~/.claude-bot`). Because the candidate set lives on disk, this is the one **async** settings completion: `fsPathCompletions` calls the injected `fsPaths(value, only)` (→ `api.listDir` → `POST /list-dir`) and returns a Promise the engine awaits.
+
+- The backend helper `core/src/fsPaths.ts` `listFsPaths(value, only, home?)` splits the typed value into a `<dir>/` + basename, `readdir`s the parent, and returns matching children whose display path preserves the user's `~`/`/` form. No slash yet → interprets the text as a name under home and suggests absolute `~/<name>` rows. Tolerant: a missing/unreadable/non-dir parent or a dangling symlink yields `[]` (never throws). Dirs sort before files. Pure over an injectable `home` (tested with `mkdtemp`, never the real home).
+- Relative paths (no leading `~` or `/` and a slash present) are unsupported — there's no working dir to resolve them against — so they return `[]`.
+- `POST /list-dir` is a read route (no cache-invalidate/SSE despite POST), beside `/search`.
 
 ### Template Token Completion in `dailyNotes.fileName`
 

@@ -146,7 +146,7 @@ export const SETTINGS_SCHEMA: Schema = {
   // device is the single source of truth in owner.json — NOT a setting here.
   daemon: object({
     enabled: { type: "boolean", default: false, doc: "Supervise the claude-bot daemon." },
-    home: { type: "string", default: "", doc: "Override claude-bot home dir; empty = ~/.claude-bot." },
+    home: { type: { kind: "path", only: "dir", scope: "fs" }, default: "", doc: "Override claude-bot home dir; empty = ~/.claude-bot." },
     autoUpdate: { type: "boolean", default: true, doc: "When the daemon is installed, auto-update it on app launch (git pull + bun install + restart) if it's behind — in the background." },
   }),
   // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself

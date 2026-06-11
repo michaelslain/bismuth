@@ -165,6 +165,14 @@ function vaultPaths(): VaultPath[] {
   return cachedVaultPaths;
 }
 
+// Filesystem paths for `scope:"fs"` value autocomplete (e.g. daemon `home:`). Unlike
+// the vault tree, the candidate set depends on the partial path being typed, so this
+// queries the backend per keystroke (it must readdir the real filesystem) rather than
+// caching a fixed list. The completion source awaits the returned promise.
+function fsPaths(value: string, only?: "dir" | "file"): Promise<VaultPath[]> {
+  return api.listDir(value, only).catch(() => []);
+}
+
 // --- Attachment intake (paste / drag-drop) ----------------------------------
 // Pasted clipboard images and dropped media files are COPIED into the vault's
 // attachment folder (the default; ⌥-drop or attachments.onDrop:"reference" inserts a
@@ -403,7 +411,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
           ...(isSettingsBuffer(path)
             ? [
                 yamlSchema({ getSchema: () => SETTINGS_SCHEMA, mode: "settings" as const, resolveLink: () => true }),
-                settingsCompletion(() => SETTINGS_SCHEMA, iconNames, templatePaths, vaultPaths),
+                settingsCompletion(() => SETTINGS_SCHEMA, iconNames, templatePaths, vaultPaths, fsPaths),
               ]
             : []),
         ]
