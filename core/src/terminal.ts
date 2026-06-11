@@ -98,6 +98,21 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   return env;
 }
 
+/**
+ * Args to launch the shell as a LOGIN shell (`-l`). A login shell runs the full startup
+ * chain a normal terminal does — `/etc/zprofile` (→ macOS `path_helper`) and the user's
+ * `~/.zprofile`/`~/.zlogin`, where Homebrew (`brew shellenv`), bun, and nvm typically put
+ * their PATH entries. Without `-l` the embedded terminal is a NON-login shell that only
+ * sees `~/.zshrc`, so those tools resolve in a normal terminal but not here — especially
+ * under the bundled app's minimal launchd PATH, which provides no fallback. `-l` is the
+ * login flag across zsh/bash/sh/fish; interactivity is auto-detected from the PTY's tty.
+ * (zsh additionally needs the shim `.zprofile` to re-source the user's, since ZDOTDIR is
+ * redirected — see relay/shim/zdotdir/.zprofile.)
+ */
+export function loginShellArgs(): string[] {
+  return ["-l"];
+}
+
 export function createTerminalSession(opts: {
   cwd: string;
   shell?: string;
@@ -122,7 +137,7 @@ export function createTerminalSession(opts: {
     zdotDir: ZDOTDIR_DIR,
   });
 
-  const pty = spawnPty(shell, [], {
+  const pty = spawnPty(shell, loginShellArgs(), {
     name: "xterm-256color",
     cols: opts.cols,
     rows: opts.rows,
