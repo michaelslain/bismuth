@@ -5,6 +5,7 @@
 // ?api= that pins the new window to its backend).
 import { isTauri } from "./nativeMenu";
 import { pushToast } from "./Toast";
+import { withWindowId } from "./windowId";
 
 /**
  * Native OS folder picker (Tauri only). Returns the chosen absolute path, or null if
@@ -60,6 +61,10 @@ export async function openExternalUrl(url: string): Promise<void> {
 
 /** Returns true if a window was opened (or creation was kicked off in Tauri). */
 export async function openAppWindow(url: string, title = "Bismuth"): Promise<boolean> {
+  // Stamp a fresh per-window id so the new window persists its tabs independently. Without
+  // it every window shares the one origin-wide localStorage tab blob and they mirror/clobber
+  // each other (see windowId.ts). Only added if the URL doesn't already carry a `?w=`.
+  url = withWindowId(url, crypto.randomUUID());
   if (isTauri()) {
     try {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");

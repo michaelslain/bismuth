@@ -26,6 +26,7 @@ import { BismuthInstallModal } from "./BismuthInstallModal";
 import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
+import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
@@ -73,7 +74,12 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
   };
 }
 
-const TABS_STORAGE_KEY = "oa-tabs-v1";
+// Tabs persist per-window. localStorage is shared across all same-origin windows (browser
+// windows and the desktop app's WebviewWindows alike), so a single global key made every
+// window mirror — and then clobber — the others' tabs. Key the layout by this window's id
+// instead: the primary window ("main") keeps the historical key, so an existing saved
+// layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
+const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
 const SIDEBAR_STORAGE_KEY = "oa-sidebar-visible-v1";
 const GRAPH_CACHE_KEY = "oa-graph-cache-v1";
 // Mirrors the key the inline <head> script in index.html reads to apply the theme before
