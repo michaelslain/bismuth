@@ -38,6 +38,17 @@ export interface LayoutOptions {
    * nodes) get a deterministic position seeded from a hash of the id, so the layout stays reproducible.
    */
   initialPositions?: Positions;
+  /**
+   * Tuning for the disconnected-component "reel-in" (see prepareLayout). A note with no in-view links is
+   * its own connected component; without this it gets flung into an empty direction at the cloud edge.
+   * Each node of a SMALL non-main component gets `virtualAnchors` layout-only virtual links to the main
+   * mass — springs of rest length `linkDistance·virtualDistMult` and strength `virtualLinkStrength` —
+   * so the force solve pulls it into the cloud (the existing collide force keeps it overlap-free).
+   * Defaults reel orphan memory notes into the 3rd-brain cloud; set virtualAnchors to 0 to disable.
+   */
+  virtualLinkStrength?: number;
+  virtualAnchors?: number;
+  virtualDistMult?: number;
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -48,7 +59,12 @@ export type Positions = Record<string, [number, number, number]>;
 // the cold path and visually indistinguishable (PivotMDS only seeds the force refine, which sets the
 // final shape). Warm rebuilds skip PivotMDS entirely (initialPositions), so this only bites first-ever
 // builds. NOTE: changing this changes cold-layout output — keep CACHE_VERSION in layout-cache.ts in sync.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13 };
+// virtualLinkStrength/Anchors/DistMult: tuned against the live 156-node 3rd-brain graph (8 components)
+// so orphan notes (degree-0 singletons) reel from ~1.5× the cloud radius to ~1× (at the rim, integrated)
+// without overlaps, while small multi-node clusters stay recognizable lobes. Short (0.8× linkDist) +
+// strong (1.2) + 4 anchors: short/strong beats the long-range repulsion; the extra anchors distribute
+// each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
+const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8 };
 const LINK_STRENGTH = 0.18;
 const COLLIDE_RATIO = 1.25;
 // 6 (was 3): more solver passes per tick so overlaps actually resolve within the refine budget —
@@ -100,6 +116,26 @@ function bfs(src: number, adj: number[][], n: number): Float64Array {
     for (const v of adj[u]) if (dist[v] === Infinity) { dist[v] = du + 1; queue.push(v); }
   }
   return dist;
+}
+
+/** Connected-component id per node (0-based, in node-index discovery order). Deterministic BFS over the
+ *  undirected adjacency — used to find the main mass so small disconnected components can be tethered to it. */
+function connectedComponents(adj: number[][], n: number): Int32Array {
+  const comp = new Int32Array(n).fill(-1);
+  let next = 0;
+  const queue: number[] = [];
+  for (let s = 0; s < n; s++) {
+    if (comp[s] !== -1) continue;
+    comp[s] = next;
+    queue.length = 0; queue.push(s);
+    let head = 0;
+    while (head < queue.length) {
+      const u = queue[head++];
+      for (const v of adj[u]) if (comp[v] === -1) { comp[v] = next; queue.push(v); }
+    }
+    next++;
+  }
+  return comp;
 }
 
 /**
@@ -204,11 +240,14 @@ export function pivotMDS(adj: number[][], n: number, dim: number, numPivots: num
 
 type RN = SimNode & { id: string };
 type RL = SimLink<RN>;
+/** A force-link, with an optional flag marking a layout-only "tether" link that reels a disconnected
+ *  component into the main mass (stronger + shorter than a real link; see prepareLayout's reel-in). */
+type VL = RL & { virtual?: boolean };
 
 /** All layout setup short of running the tick loop: build the adjacency, seed coordinates
  *  (PivotMDS or `initialPositions`), and construct the stopped d3-force simulation. Shared by the
  *  sync `computeLayout` and the async, event-loop-yielding `computeLayoutAsync`. */
-function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): { sim: ReturnType<typeof forceSimulation<RN>>; nodes: RN[]; dim: 2 | 3 } {
+function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): { sim: ReturnType<typeof forceSimulation<RN>>; nodes: RN[]; dim: 2 | 3; mainIdx: number[] } {
   const dim = o.dimensions;
   const RANDOM_COORD_RADIUS = 160;
   const ids = input.nodes.map((nd) => nd.id);
@@ -217,13 +256,68 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   const index = new Map<string, number>();
   ids.forEach((id, i) => index.set(id, i));
   const adj: number[][] = Array.from({ length: n }, () => []);
-  const links: RL[] = [];
+  const links: VL[] = [];
   for (const e of input.edges) {
     const a = index.get(e.from), b = index.get(e.to);
     if (a === undefined || b === undefined || a === b) continue;
     adj[a].push(b); adj[b].push(a);
     links.push({ source: e.from, target: e.to });
   }
+
+  // Node spacing (mirrors the renderer): scale link distance UP as the graph shrinks so a handful of
+  // nodes spreads into an airy field instead of a tight knot (~8× at a few nodes → 1× by ~400 nodes).
+  // Needed up here so the collide floor + the virtual-link rest length below share one spacing budget.
+  const smallBoost = n > 0 ? Math.min(8, Math.max(1, 400 / n)) : 1;
+  const linkDist = o.linkDistance * smallBoost * (dim === 2 ? MODE_2D_SPACING : 1);
+  const collideFloor = linkDist * COLLIDE_RATIO;
+
+  // Real-edge degree per node, captured BEFORE the virtual tether links below — collide sizing reflects
+  // the node as DRAWN (the renderer sizes by real degree), and the layout-only tethers must not inflate it.
+  const realDeg = adj.map((a) => a.length);
+
+  // --- Reel in disconnected components --------------------------------------------------------------
+  // A note with no in-view links is its own connected component; many-body repulsion flings it into an
+  // empty angular direction at the cloud's edge (reads as a lone node "off to the side", and the recoil
+  // shoves the main mass off-center so the pinned "You" hub drifts away from it). Fix: tie every node of
+  // a SMALL non-main component to a few deterministically-chosen anchors in the main mass via virtual
+  // links fed to the SAME force sim. Because the strays settle through the existing forceCollide (no
+  // teleport), the emitted layout never has overlaps the warm renderer can't fix. The links are
+  // layout-only (never shown as graph edges). Genuinely large separate islands (>= the gate) are left
+  // alone so a legitimately multi-topic vault keeps its distinct clusters. The tether links go into the
+  // SAME `links` array as real edges (flagged `virtual`) so forceLink's degree-bias is computed over the
+  // combined set — the heavily-real-linked anchor stays put and the (real-edge-less) stray moves IN.
+  const mainIdx: number[] = [];
+  if (n > 0 && o.virtualAnchors > 0) {
+    const comp = connectedComponents(adj, n);
+    const compSize: number[] = [];
+    const compMin: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const c = comp[i];
+      compSize[c] = (compSize[c] ?? 0) + 1;
+      if (compMin[c] === undefined) compMin[c] = i;
+    }
+    let main = 0; // largest component; ties broken by the lowest member index for determinism
+    for (let c = 1; c < compSize.length; c++) {
+      if (compSize[c] > compSize[main] || (compSize[c] === compSize[main] && compMin[c] < compMin[main])) main = c;
+    }
+    for (let i = 0; i < n; i++) if (comp[i] === main) mainIdx.push(i);
+    const mainSize = mainIdx.length;
+    if (mainSize > 0 && mainSize < n) {
+      const gate = Math.max(4, mainSize * 0.25); // components at/above this are genuine islands — leave them
+      for (let i = 0; i < n; i++) {
+        if (comp[i] === main || compSize[comp[i]] >= gate) continue;
+        const picked = new Set<number>();
+        for (let a = 0; a < o.virtualAnchors; a++) {
+          const anchor = mainIdx[fnv1a(`${ids[i]}:${a}`) % mainSize];
+          if (anchor === i || picked.has(anchor)) continue;
+          picked.add(anchor);
+          adj[i].push(anchor); adj[anchor].push(i); // connect for the PivotMDS seed too (no cap-distance fling)
+          links.push({ source: ids[i], target: ids[anchor], virtual: true });
+        }
+      }
+    }
+  }
+  // -------------------------------------------------------------------------------------------------
 
   const seed = o.initialPositions;
   const X = seed
@@ -250,28 +344,28 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     z: dim === 3 ? (X[i][2] ?? 0) : 0,
   }));
 
-  // Small-graph boost: scale link distance UP as the graph shrinks so a handful of nodes spreads
-  // into an airy field (like the intro's small graph) instead of clustering tight. Node draw size
-  // is FIXED in world units, so a bigger link distance = more air per node after the camera auto-fit.
-  // ~36× at a handful of nodes → 1× by ~400 nodes (big vaults stay put). Mirrors WebGLRenderer.linkDist().
-  const smallBoost = n > 0 ? Math.min(8, Math.max(1, 400 / n)) : 1;
-  const linkDist = o.linkDistance * smallBoost * (dim === 2 ? MODE_2D_SPACING : 1);
   // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
   // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
-  // indexes `nodes`, the same order as `adj` (degree = adj[i].length) and the sim's node array.
-  const collideFloor = linkDist * COLLIDE_RATIO;
+  // indexes `nodes`, the same order as `adj` and the sim's node array. Degree uses realDeg (real edges
+  // only) so layout-only tether links above don't inflate an orphan's drawn-size collision radius.
   const collideRadiusFor = (_n: RN, i: number) =>
-    Math.max(collideFloor, drawnNodeRadius(degreeScale(adj[i].length)) * COLLIDE_SIZE_PADDING);
+    Math.max(collideFloor, drawnNodeRadius(degreeScale(realDeg[i])) * COLLIDE_SIZE_PADDING);
+  // One link force over real + tether links. Tethers (virtual) are shorter and stronger so a stray is
+  // held inside the cloud against the long-range many-body repulsion; real edges keep their own spacing.
+  const linkForce = forceLink<RN, VL>(links)
+    .id((d: RN) => d.id)
+    .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDist))
+    .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : LINK_STRENGTH));
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
     .force("charge", forceManyBody<RN>().strength(o.repulsion).theta(MANYBODY_THETA))
-    .force("link", forceLink<RN, RL>(links).id((d: RN) => d.id).distance(linkDist).strength(LINK_STRENGTH))
+    .force("link", linkForce)
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
     .force("x", forceX<RN>(0).strength(o.centering))
     .force("y", forceY<RN>(0).strength(o.centering));
   if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
   sim.stop();
-  return { sim, nodes, dim };
+  return { sim, nodes, dim, mainIdx };
 }
 
 /** Round out the settled simulation into the id → [x,y,z] integer-coordinate map (z=0 in 2D). */
