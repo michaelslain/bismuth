@@ -218,11 +218,17 @@ A plain `exec` — no logic, no recursion risk (the real binary path was resolve
 
 ### The zsh init files (`relay/shim/zdotdir/`)
 
-**`.zshenv`** — sourced first by zsh (before `.zshrc`):
+**`.zshenv`** — sourced first by zsh (before `.zprofile`/`.zshrc`):
 ```bash
 [[ -f "$HOME/.zshenv" ]] && source "$HOME/.zshenv"
 ```
 Loads the user's real `.zshenv` so nothing in their environment is lost.
+
+**`.zprofile`** — sourced for **login** shells (after `.zshenv`, before `.zshrc`):
+```bash
+[[ -f "$HOME/.zprofile" ]] && source "$HOME/.zprofile"
+```
+The terminal spawns its shell as a **login** shell (`loginShellArgs()` → `-l`), so it runs the full startup chain a normal terminal does — `/etc/zprofile` (macOS `path_helper`) and the user's `~/.zprofile`. Because `ZDOTDIR` is redirected here, zsh would otherwise read this dir's `.zprofile` and **skip** the user's, losing PATH set up there (Homebrew `brew shellenv`, bun, nvm). Re-sourcing it makes the embedded terminal's `PATH` match a normal login terminal — without it those tools resolve in a normal terminal but not in the app (especially under the bundled app's minimal launchd `PATH`, which provides no fallback).
 
 **`.zshrc`** — sourced for interactive zsh shells:
 ```bash
@@ -234,7 +240,7 @@ fi
 ```
 
 Key points:
-- `ZDOTDIR` is restored to `$HOME` before sourcing the user's config, so nested shells and any code that checks `ZDOTDIR` behave normally.
+- `ZDOTDIR` is restored to `$HOME` before sourcing the user's config (read **after** `.zprofile`), so `~/.zlogin`, nested shells, and any code that checks `ZDOTDIR` behave normally.
 - The `claude` shell function is defined **after** the user's `.zshrc` runs, so it wins even if `.zshrc` re-prepends `/usr/local/bin` or similar directories to `PATH`.
 
 ### Hook configuration (`relay/hooks/hooks.json`)
@@ -551,4 +557,4 @@ The "you" hub and `you → session` edges are injected on the frontend. The `Age
 - **Multiple windows**: each Bismuth window runs its own backend (different port). In-tab `claude` sessions report to that window's backend only, because `CLAUDE_RELAY_URL` is set to `http://localhost:<server.port>` at session creation time.
 - **Sessions without `CLAUDE_TERMINAL_ID`**: if `claude` is run outside a Bismuth terminal (e.g. in a standalone shell), the relay hook is not loaded at all (requires `--plugin-dir`). Even if somehow loaded, the `CLAUDE_TERMINAL_ID` gate in `lib/report.ts` makes every hook a no-op.
 
-Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zshenv`, `core/src/relay.ts`, `core/src/agents.ts`, `core/src/server.ts`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/AgentsGraph.tsx`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `core/test/agents.test.ts`
+Source: `core/src/terminal.ts`, `app/src/Terminal.tsx`, `relay/hooks/hooks.json`, `relay/bin/session-start-hook.ts`, `relay/bin/recall-hook.ts`, `relay/bin/subagent-start-hook.ts`, `relay/bin/subagent-stop-hook.ts`, `relay/lib/report.ts`, `relay/shim/claude`, `relay/shim/zdotdir/.zshrc`, `relay/shim/zdotdir/.zprofile`, `relay/shim/zdotdir/.zshenv`, `core/src/relay.ts`, `core/src/agents.ts`, `core/src/server.ts`, `app/src/graph/agentGraphSig.ts`, `app/src/graph/AgentsGraph.tsx`, `core/test/terminal.test.ts`, `core/test/relay.test.ts`, `core/test/agents.test.ts`

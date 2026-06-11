@@ -1,8 +1,8 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createTerminalSession, killSession, sessionCount, resizeSession, buildPtyEnv } from "../src/terminal";
+import { createTerminalSession, killSession, sessionCount, resizeSession, buildPtyEnv, loginShellArgs } from "../src/terminal";
 
 function tmp() {
   return mkdtempSync(join(tmpdir(), "oa-term-"));
@@ -108,3 +108,29 @@ test("killSession removes the session from the registry", () => {
   }
   expect(sessionCount()).toBe(before);
 });
+
+test("loginShellArgs launches a login shell", () => {
+  expect(loginShellArgs()).toEqual(["-l"]);
+});
+
+// The embedded terminal must see the same PATH a normal login terminal does — including
+// entries set in ~/.zprofile (Homebrew/bun/nvm). This exercises the REAL shipped shim
+// files (relay/shim/zdotdir/{.zshenv,.zprofile,.zshrc}) with a login zsh and a temp HOME
+// whose only PATH entry lives in .zprofile, proving the shim re-sources it.
+const SHIM_ZDOTDIR = join(import.meta.dir, "..", "..", "relay", "shim", "zdotdir");
+const HAS_ZSH = existsSync("/bin/zsh");
+test.if(HAS_ZSH && existsSync(SHIM_ZDOTDIR))(
+  "login shell + shim .zprofile loads PATH set in the user's ~/.zprofile",
+  async () => {
+    const home = tmp();
+    writeFileSync(join(home, ".zprofile"), 'export PATH="/MARKER_ZPROFILE_BIN:$PATH"\n');
+    const proc = Bun.spawn(["/bin/zsh", ...loginShellArgs(), "-i", "-c", "echo $PATH"], {
+      env: { HOME: home, ZDOTDIR: SHIM_ZDOTDIR, PATH: "/usr/bin:/bin", TERM: "dumb" },
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const out = await new Response(proc.stdout).text();
+    await proc.exited;
+    expect(out).toContain("/MARKER_ZPROFILE_BIN");
+  },
+);
