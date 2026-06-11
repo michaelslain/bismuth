@@ -23,7 +23,7 @@ Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts
 - `"file"` — a file reference.
 - `"icon"` — a Lucide icon name (e.g. `"FilePlus"`) **or** an emoji.
 - `"keybind"` — a keyboard combo string (drives order-free shortcut autocomplete + a "record shortcut" option).
-- `{ kind: "path"; only?: "dir" | "file"; scope?: "templates" }` — a vault path. `only` narrows completion to directories or files; `scope: "templates"` restricts to the configured templates folder (files only). Validated leniently (any string) — the path need not exist yet.
+- `{ kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }` — a path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (e.g. `daemon.home`). Validated leniently (any string) — the path need not exist yet.
 - `{ kind: "enum"; values: string[]; caseInsensitive?; allowPrefixes? }` — one of a fixed value list. `allowPrefixes` lets values beginning with a listed prefix (e.g. `daily-note:`) also pass.
 - `{ kind: "list"; item?: PropertyType }` — an array of items.
 - `{ kind: "object"; fields: Schema }` — a nested object (a section, or a free-form map when `fields` is empty `{}`).
@@ -242,7 +242,7 @@ claude-bot daemon supervision. Bismuth reads/writes the daemon's shared state fi
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
 | `enabled` | boolean | `false` | Supervise the claude-bot daemon. |
-| `home` | string | `""` (empty) | Override claude-bot home dir; empty = `~/.claude-bot`. |
+| `home` | path (`scope: "fs"`) | `""` (empty) | Override claude-bot home dir; empty = `~/.claude-bot`. Filesystem autocompletes (absolute or `~`-relative). |
 
 Example:
 

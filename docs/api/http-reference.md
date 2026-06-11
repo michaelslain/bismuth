@@ -202,6 +202,12 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 - **Errors:** an invalid regex (etc.) is caught and returned as `400` with the error message (so the UI shows it inline) — NOT a 500.
 - **Cache/SSE:** none.
 
+### `POST /list-dir`
+- **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
+- **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (e.g. `daemon.home`).
+- **Response:** `{ entries: { path: string, kind: "file" | "dir" }[] }` (dirs first, then alpha; capped client-side at 50). A missing/unreadable parent or relative `path` → `{ entries: [] }`.
+- **Cache/SSE:** none (read-only despite POST).
+
 ### `POST /backup`
 - **Body:** none.
 - **Action:** `commitVault(vault, snapshotMessage())` — a git snapshot of the vault.

@@ -291,7 +291,7 @@ export function rankPaths(candidates: VaultPath[], query: string): VaultPath[] {
 function pathCompletions(
   ctx: CompletionContext,
   rawValue: string,
-  type: { kind: "path"; only?: "dir" | "file"; scope?: "templates" },
+  type: { kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" },
   getTemplatePaths: () => string[],
   getVaultPaths: () => VaultPath[],
 ): CompletionResult | null {
@@ -315,13 +315,42 @@ function pathCompletions(
   return { from, to: ctx.pos, options, filter: false };
 }
 
+/**
+ * Completion for a `scope:"fs"` path value — the filesystem-rooted counterpart of
+ * pathCompletions. The candidate listing lives on the backend (it must readdir the
+ * real filesystem), so this is ASYNC: it returns a Promise the autocomplete engine
+ * awaits. The server already filters by the typed basename and returns full display
+ * paths, so we pass them straight through (`filter:false`) and anchor `from` at the
+ * value start, replacing the whole token on accept. No `validFor`, so each keystroke
+ * re-queries (re-listing the parent dir as the user drills down).
+ */
+function fsPathCompletions(
+  ctx: CompletionContext,
+  rawValue: string,
+  only: "dir" | "file" | undefined,
+  listFsPaths: (value: string, only?: "dir" | "file") => Promise<VaultPath[]>,
+): Promise<CompletionResult | null> {
+  const from = ctx.pos - rawValue.length;
+  const q = rawValue.replace(/^["']/, "").replace(/["']$/, "");
+  return listFsPaths(q, only).then((entries): CompletionResult | null => {
+    if (!entries.length) return null;
+    const options: IconedCompletion[] = entries.slice(0, 50).map((e) => ({
+      label: e.path,
+      type: "path",
+      lucideIcon: e.kind === "dir" ? "Folder" : "File",
+    }));
+    return { from, to: ctx.pos, options, filter: false };
+  });
+}
+
 export function settingsCompletionSource(
   getSchema: () => Schema,
   getIconNames: () => string[],
   getTemplatePaths: () => string[],
   getVaultPaths: () => VaultPath[],
+  listFsPaths: (value: string, only?: "dir" | "file") => Promise<VaultPath[]>,
 ): CompletionSource {
-  return (ctx: CompletionContext): CompletionResult | null => {
+  return (ctx: CompletionContext): CompletionResult | Promise<CompletionResult | null> | null => {
     const root = getSchema();
     const line = ctx.state.doc.lineAt(ctx.pos);
     const before = line.text.slice(0, ctx.pos - line.from);
@@ -357,6 +386,7 @@ export function settingsCompletionSource(
       if (ft === "keybind") return keybindCompletions(ctx, fullVal[2]);
       if (typeof ft === "object" && ft.kind === "path") {
         if (!ctx.explicit && fullVal[2].length === 0) return null;
+        if (ft.scope === "fs") return fsPathCompletions(ctx, fullVal[2], ft.only, listFsPaths);
         return pathCompletions(ctx, fullVal[2], ft, getTemplatePaths, getVaultPaths);
       }
     }
@@ -462,9 +492,10 @@ export function settingsCompletion(
   getIconNames: () => string[],
   getTemplatePaths: () => string[],
   getVaultPaths: () => VaultPath[],
+  listFsPaths: (value: string, only?: "dir" | "file") => Promise<VaultPath[]>,
 ): Extension {
   return autocompletion({
     ...completionDisplayConfig,
-    override: [settingsCompletionSource(getSchema, getIconNames, getTemplatePaths, getVaultPaths)],
+    override: [settingsCompletionSource(getSchema, getIconNames, getTemplatePaths, getVaultPaths, listFsPaths)],
   });
 }
