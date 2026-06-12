@@ -7,7 +7,7 @@ import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
-import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
@@ -362,6 +362,13 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     const base = [
       history(),
       drawSelection(),
+      // Pin indentation to 2 spaces everywhere so Tab/Shift-Tab (indentMore/indentLess),
+      // pasted code, and the list-nesting depth math all agree. The depth calc in
+      // foldBlocks/livePreview treats one level as 2 columns (and a literal tab as 2),
+      // so tabSize must be 2 too — CodeMirror's default tabSize of 4 would render real
+      // tab chars twice as wide as the depth they count for.
+      indentUnit.of("  "),
+      EditorState.tabSize.of(2),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
       // Tab accepts the active completion (acceptCompletion returns false when no popup is
       // open, so it falls through); otherwise Tab/Shift-Tab indent/dedent the selected
