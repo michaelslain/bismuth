@@ -11,6 +11,7 @@ import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/lang
 import { tags as t } from "@lezer/highlight";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
+import { primeNoteCache } from "./noteCache";
 import { livePreview } from "./editor/livePreview";
 import { requestRelint } from "./editor/relint";
 import { notePathFacet } from "./editor/tableState";
@@ -228,7 +229,7 @@ async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, n
   }
 }
 
-export function Editor(props: { path: string | null; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
+export function Editor(props: { path: string | null; initialText?: string; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -252,6 +253,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
   const save = async (path: string, text: string) => {
     lastSavedText = text; // record before the await so a fast echo still matches
     await api.write(path, text);
+    primeNoteCache(path, text); // keep the body cache warm so a reopen is instant
     props.onSaved();
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
   };
@@ -317,12 +319,18 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     pendingSave = false;
     if (!path) return;
 
-    // Treat a missing file as an empty note (new, not yet written).
+    // Prefer the body FileView already fetched (no second HTTP round-trip on open).
+    // Fall back to reading when the Editor is used without it. Treat a missing file
+    // as an empty note (new, not yet written).
     let text = "";
-    try {
-      text = await api.read(path);
-    } catch {
-      text = "";
+    if (props.initialText !== undefined) {
+      text = props.initialText;
+    } else {
+      try {
+        text = await api.read(path);
+      } catch {
+        text = "";
+      }
     }
     // Guard: if the path changed while we were awaiting, discard this run.
     if (path !== currentPath()) return;
@@ -605,6 +613,7 @@ export function Editor(props: { path: string | null; onSaved: () => void; noteNa
     } catch {
       return; // file may have been deleted; another flow handles tab cleanup
     }
+    primeNoteCache(path, onDisk); // freshest on-disk truth — keep the body cache warm
     // Guard: path may have changed while awaiting.
     if (path !== props.path) return;
     if (!view) return; // view destroyed while we were awaiting

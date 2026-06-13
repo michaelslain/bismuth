@@ -286,6 +286,16 @@ export default function App() {
     onCleanup(() => window.removeEventListener("oa-context-menu", onCtx));
   });
 
+  // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
+  // ~117 KB gz) during idle while the graph home tab is showing, so the FIRST note
+  // open doesn't pay the download+parse on the critical path. Fire-and-forget.
+  onMount(() => {
+    const warm = () => void import("./FileView");
+    const ric = (globalThis as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
+    if (ric) ric(warm);
+    else setTimeout(warm, 800);
+  });
+
   // The graph is a single persistent element that morphs between two slots: the
   // sidebar square (when a file/settings tab is active) and the full main pane
   // (when on an empty/new tab). One WebGL context stays alive; we just animate
