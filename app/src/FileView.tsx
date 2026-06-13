@@ -1,5 +1,5 @@
 import { createResource, Show, Switch, Match } from "solid-js";
-import { api } from "./api";
+import { readNoteCached } from "./noteCache";
 import { parseFrontmatter } from "../../core/src/frontmatter";
 import { Editor } from "./Editor";
 import { BaseView } from "./bases/BaseView";
@@ -23,9 +23,14 @@ export function FileView(props: {
 }) {
   const [body] = createResource(
     () => props.path,
-    // A missing/unreadable file is treated as an empty note (a new, not-yet-written
-    // file routes to the Editor), matching how the Editor handles a failed read.
-    (p) => api.read(p).catch(() => ""),
+    // Read through the note-body cache: a reopen of an unchanged note resolves
+    // synchronously (no spinner). A missing/unreadable file is treated as an empty
+    // note (a new, not-yet-written file routes to the Editor), matching how the
+    // Editor handles a failed read.
+    (p) => {
+      const r = readNoteCached(p);
+      return typeof r === "string" ? r : r.catch(() => "");
+    },
   );
   const isBase = () => {
     const text = body();
@@ -38,7 +43,10 @@ export function FileView(props: {
           <BaseView path={props.path} body={body()} onOpen={props.onOpen} />
         </Match>
         <Match when={!isBase()}>
-          <Editor path={props.path} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+          {/* Hand the already-fetched body to the Editor so it doesn't re-read the
+              same file over HTTP — FileView's read above is the single round-trip.
+              External edits still reload via the Editor's SSE reconcile effect. */}
+          <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
         </Match>
       </Switch>
     </Show>
