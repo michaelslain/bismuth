@@ -1,6 +1,8 @@
 # Cards View
 
-The Cards view renders each row in a base as a visual card, either as a book-cover style grid (`cardContent: properties`, the default) or as a Google-Keep-style markdown note preview (`cardContent: body`). Both modes are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the body variant to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
+The Cards view renders each row in a base as a visual card: a book-cover style grid (`cardContent: properties`, the default), a Google-Keep-style markdown note preview (`cardContent: body`), or a checklist-only preview (`cardContent: tasks`). All three are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the `body`/`tasks` variants to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
+
+The `body`/`tasks` markdown is rendered to match the note editor (`renderNoteBody` + the `.cardMd` rules mirror live-preview): task checkboxes use the editor's glyph (bordered box → accent fill + white check) rather than a raw browser checkbox, `#tags` render as teal mono chips, wikilinks/links get the soft underline, headings use the graduated `.cm-h1`..`.cm-h6` scale, and plain lists get markers. (Known gap: `[/]`/`[-]` render as raw text since marked only treats `[ ]`/`[x]` as task checkboxes.)
 
 ---
 
@@ -27,6 +29,10 @@ The grid is a CSS `display: grid; grid-template-columns: repeat(5, 1fr)` — alw
 
 Body cards take their natural height; the CSS masonry keeps short notes short rather than stretching them to fill rows.
 
+### Tasks mode
+
+`cardContent: tasks` renders the same masonry as body mode and through the same renderer, but the note body is first **filtered to only its checklist lines** (`/^\s*- \[.\]/`) — as if the file contained only its todo list. Headings, prose, and non-task bullets are dropped. The open/completed split is identical to body mode: incomplete tasks (`- [ ]`) show up top, completed ones (`- [x]`, etc.) collapse behind the "N completed" expander. There is no task-signifier reformatting — a task line renders as raw markdown (its priority/date emoji stay inline), just with the editor-consistent checkbox. Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
+
 ---
 
 ## Config Fields
@@ -48,6 +54,7 @@ Required. Selects the cards renderer.
 ```yaml
 cardContent: properties   # (default) book-cover grid
 cardContent: body         # Google-Keep masonry with markdown body
+cardContent: tasks        # like body, but filtered to the note's checklist lines only
 ```
 
 Optional. Defaults to `"properties"` when omitted.
