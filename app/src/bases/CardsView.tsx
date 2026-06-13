@@ -13,7 +13,10 @@ function isDirectUrl(s: string): boolean {
 
 export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
   const cols = () => props.result.columns;
-  const isBody = () => props.result.view.cardContent === "body";
+  // "body" (full markdown) and "tasks" (checklist-only) both render via BodyCard's masonry;
+  // "tasks" just passes a mode that filters the body to its todo lines.
+  const cardMode = () => props.result.view.cardContent;
+  const isBody = () => cardMode() === "body" || cardMode() === "tasks";
   // Title = first column; author = second column (used for the generated text cover).
   const titleCol = (): string => cols()[0] ?? "file.name";
   const authorCol = (): string | undefined => cols()[1];
@@ -108,7 +111,7 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
                       </div>
                     }
                   >
-                    <BodyCard row={row} result={props.result} config={props.config} />
+                    <BodyCard row={row} result={props.result} config={props.config} mode={cardMode() === "tasks" ? "tasks" : "body"} />
                   </Show>
                 )}
               </For>

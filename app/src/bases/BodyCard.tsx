@@ -23,6 +23,8 @@ const OPEN_BOX_RE = /^\s*- \[ \]/;
 // task. Keeping these in sync is what lets doneLines index the same lines BodyCard
 // renders in the completed section, so a click toggles the right source line.
 const DONE_BOX_RE = /^\s*- \[[^ \]]\]/;
+// Any checklist line (open OR done) — used by tasks-only mode to keep just the todo list.
+const TASK_LINE_RE = /^\s*- \[.\]/;
 
 // Drop headings with no remaining content beneath them (their tasks all moved to the
 // completed section) so an all-done card collapses to title + "N completed".
@@ -53,7 +55,7 @@ function enableCheckboxes(html: string): string {
  * task (`api.toggleTask`); links open the note. Cards take their natural height; the
  * grid (`.bodyGrid`) lays them out as a masonry so a short note stays short.
  */
-export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConfig }) {
+export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConfig; mode?: "body" | "tasks" }) {
   const [content, setContent] = createSignal<string>("");
   const [loaded, setLoaded] = createSignal(false);
   const [showDone, setShowDone] = createSignal(false);
@@ -75,7 +77,11 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
   // checkbox so a click maps back to the source line.
   const parts = createMemo(() => {
     const raw = content();
-    const body = stripFrontmatter(raw).split("\n");
+    const all = stripFrontmatter(raw).split("\n");
+    // tasks-only mode: keep just the checklist lines, as if the file contained only its
+    // todo list. The SAME renderer + collapse-completed behavior below then applies — no
+    // separate task component, no signifier reformatting.
+    const body = props.mode === "tasks" ? all.filter((l) => TASK_LINE_RE.test(l)) : all;
     const open: string[] = [];
     const done: string[] = [];
     for (const line of body) (DONE_TASK_RE.test(line) ? done : open).push(line);

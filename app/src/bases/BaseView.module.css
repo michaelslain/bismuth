@@ -231,19 +231,66 @@
    into a label-free Keep-style checklist; the checkbox stays inline so a task's text
    (with its links and trailing signifiers) wraps naturally instead of column-splitting. */
 .cardMd { font-family: var(--editor-font); font-size: 14px; line-height: 1.55; color: var(--fg); margin-top: 6px; overflow-wrap: anywhere; }
-.cardMd :global(ul), .cardMd :global(ol) { list-style: none; margin: 4px 0; padding-left: 0; }
+/* Lists: plain bullet/ordered lists get markers + a hanging indent like a note; GFM task
+   lists (ul.contains-task-list) stay flush + label-free (the checkbox is the marker). */
+.cardMd :global(ul), .cardMd :global(ol) { margin: 4px 0; padding-left: 1.5em; }
+.cardMd :global(ul) { list-style: disc; }
+.cardMd :global(ol) { list-style: decimal; }
+.cardMd :global(li::marker) { color: var(--text-muted); }
+.cardMd :global(ul.contains-task-list) { list-style: none; padding-left: 0; }
+.cardMd :global(li.task-list-item) { padding-left: 0; list-style: none; }
 .cardMd :global(li) { padding: 1px 0; }
-.cardMd :global(li input[type="checkbox"]) { margin: 0 7px 0 0; vertical-align: -2px; accent-color: var(--accent); cursor: pointer; }
 .cardMd :global(li p) { display: inline; margin: 0; }
 .cardMd :global(p) { margin: 4px 0; }
-.cardMd :global(a) { color: var(--accent); text-decoration: none; cursor: pointer; }
-.cardMd :global(a:hover) { text-decoration: underline; }
-.cardMd :global(pre) { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2, var(--bg)); font-size: 12px; }
-.cardMd :global(code), .cardMd :global(pre) { font-family: "Monaspace Xenon", ui-monospace, monospace; }
-.cardMd :global(h1), .cardMd :global(h2), .cardMd :global(h3), .cardMd :global(h4) {
-  font-family: var(--editor-font); font-weight: 600; font-size: 1em;
-  color: var(--fg); margin: 10px 0 4px;
+/* Task checkbox: mirror the editor's `.cm-task-checkbox` glyph (bordered box → accent fill
+   + white check when done) instead of a raw browser checkbox, so a card task looks like a
+   note task. Native `<input>` can't show the doing/cancelled glyphs, but `[ ]`/`[x]` match. */
+.cardMd :global(li input[type="checkbox"]) {
+  appearance: none; -webkit-appearance: none;
+  display: inline-block;
+  width: 1.05em; height: 1.05em;
+  margin: 0 0.45em 0 0;
+  vertical-align: -0.16em;
+  box-sizing: border-box;
+  border: 1.5px solid color-mix(in srgb, var(--fg) 34%, transparent);
+  border-radius: 0.32em;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
 }
+.cardMd :global(li input[type="checkbox"]:hover) { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.cardMd :global(li input[type="checkbox"]:checked) {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: center; background-size: 0.78em;
+}
+/* Links + wikilinks: accent with the editor's soft underline (border-bottom), not the
+   default text-decoration, so they read identically to a note. */
+.cardMd :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); cursor: pointer; }
+/* #tags styled like the editor's `.cm-tag` (teal, mono). */
+.cardMd :global(.oa-tag) { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+/* Inline code gets the editor's faint pill; fenced code blocks stay plain. */
+.cardMd :global(code) { font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.cardMd :global(:not(pre) > code) {
+  font-size: calc(1em * var(--mono-scale, 0.85));
+  background: color-mix(in srgb, var(--fg) 11%, transparent);
+  padding: 0 3px; border-radius: 3px;
+}
+.cardMd :global(pre) { white-space: pre-wrap; overflow-wrap: anywhere; margin: 4px 0; padding: 6px 8px; border-radius: 6px; background: var(--surface-2, var(--bg)); font-size: 12px; font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.cardMd :global(blockquote) { border-left: 3px solid #555; padding-left: 8px; margin: 4px 0; opacity: 0.85; }
+.cardMd :global(hr) { border: none; border-top: 2px solid rgba(140,140,140,0.45); margin: 10px 0; }
+/* Headings mirror the editor's graduated scale (`.cm-h1`..`.cm-h6`). */
+.cardMd :global(h1), .cardMd :global(h2), .cardMd :global(h3),
+.cardMd :global(h4), .cardMd :global(h5), .cardMd :global(h6) {
+  font-family: var(--editor-font); font-weight: 600; color: var(--fg); margin: 10px 0 4px; line-height: 1.25;
+}
+.cardMd :global(h1) { font-size: 1.94em; line-height: 1.1; letter-spacing: -0.015em; }
+.cardMd :global(h2) { font-size: 1.5em; letter-spacing: -0.01em; }
+.cardMd :global(h3) { font-size: 1.3em; }
+.cardMd :global(h4) { font-size: 1.15em; }
+.cardMd :global(h5) { font-size: 1.05em; }
+.cardMd :global(h6) { font-size: 1em; opacity: 0.85; }
 .cardMd :global(h1:first-child), .cardMd :global(h2:first-child), .cardMd :global(h3:first-child) { margin-top: 0; }
 .cardMd :global(img) { max-width: 100%; border-radius: 6px; }
 

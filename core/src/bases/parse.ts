@@ -90,7 +90,7 @@ function normalizeView(raw: unknown): ViewConfig {
   const summaries = o.summaries && typeof o.summaries === "object"
     ? Object.fromEntries(Object.entries(o.summaries as Record<string, unknown>).map(([k, v]) => [k, String(v)]))
     : undefined;
-  const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "properties" ? "properties" : undefined;
+  const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "tasks" ? "tasks" : o.cardContent === "properties" ? "properties" : undefined;
   const imageFit = o.imageFit === "contain" ? "contain" : o.imageFit === "cover" ? "cover" : undefined;
   const columns = strArr(o.columns);
   const columnWidths = normalizeColumnWidths(o.columnWidths);
@@ -239,7 +239,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // cards view: `cardContent: body` renders each note's body as an interactive todo
     // list (BodyCard); `properties` shows its fields. Top-level so a cards base needs no
     // nested `views:` block.
-    if (raw.cardContent === "body" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
+    if (raw.cardContent === "body" || raw.cardContent === "tasks" || raw.cardContent === "properties") config.views[0].cardContent = raw.cardContent;
     // cards view: image-cover keys (flat persistence — `image` is a string in FIELD_KEYS above).
     if (raw.imageFit === "cover" || raw.imageFit === "contain") config.views[0].imageFit = raw.imageFit;
     const ar = numOrUndef(raw.imageAspectRatio);

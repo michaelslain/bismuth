@@ -28,7 +28,7 @@ export interface ViewConfig {
   sort?: SortSpec[];                       // sort keys, applied in order
   groupBy?: { property: string; direction?: "ASC" | "DESC" };
   summaries?: Record<string, string>;     // propertyId -> summary name (e.g. "Average")
-  cardContent?: "properties" | "body";   // cards view: what to render inside each card
+  cardContent?: "properties" | "body" | "tasks";   // cards view: what to render inside each card ("tasks" = body filtered to checklist lines)
   // Cards view: render an image cover from this property instead of the generated
   // text cover. The value may be a full URL (http/https/data/blob) or a vault image
   // path/filename (served via the asset endpoint). When unset, the text cover is used.
