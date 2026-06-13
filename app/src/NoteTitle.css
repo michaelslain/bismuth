@@ -52,7 +52,11 @@
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.015em;
-  padding: 0 2px;
+  /* Bottom padding gives Lora's descenders (g/p/y) room inside the clip box.
+     `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
+     than Lora's glyph box, so without this the tails get cut off. Top padding
+     stays 0 so the `#` glyph (flex-start) still aligns to the first line. */
+  padding: 0 2px 0.22em;
   border-radius: 3px;
   /* textarea-specific: wrap freely, no manual resize handle, no scrollbar
      (height is driven from scrollHeight), render as a block heading. */
