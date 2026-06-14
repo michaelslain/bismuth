@@ -2,6 +2,7 @@ import { createSignal, createResource, createMemo, createEffect, onMount, on, us
 import { api } from "../api";
 import { serverVersion, lastChange } from "../serverVersion";
 import { changeAffectsView, type ViewDeps } from "./changeRelevance";
+import { reconcileViewResult } from "./reconcileRows";
 import { RowCache } from "./rowCache";
 import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
@@ -236,12 +237,18 @@ export function BaseView(props: {
   });
   const fullPane = () => activeType() === "calendar" || activeType() === "flashcards";
 
-  const result = createMemo<ViewResult | null>(() => {
+  // Reconcile each freshly-computed result against the PREVIOUS one (createMemo hands us its
+  // prior return value) so groups/rows that didn't change keep their object identity. Solid's
+  // `<For>` keys by identity, so this is what stops a revalidation (e.g. the SSE bump after a
+  // task status toggle) from unmounting+remounting every card and flickering the whole grid —
+  // only the row that actually changed repaints. See reconcileRows.ts.
+  const result = createMemo<ViewResult | null>((prev) => {
     const d = data();
     if (!d || fullPane()) return null;
     const idx = Math.min(activeView(), d.config.views.length - 1);
-    return runView(d.config, d.rows, idx, hostMeta());
-  });
+    const next = runView(d.config, d.rows, idx, hostMeta());
+    return reconcileViewResult(prev ?? undefined, next);
+  }, null);
 
   const editPath = () => data()?.basePath;
   const baseName = createMemo(() => {
