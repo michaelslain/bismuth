@@ -8,7 +8,7 @@ import "./Terminal.css";
 import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts } from "./themeColors";
 import { resolveAppearance } from "./themes";
-import { apiBase } from "./api";
+import { api, apiBase } from "./api";
 
 // The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
 function activePaletteInts(): number[] {
@@ -105,6 +105,55 @@ const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
 const enc = new TextEncoder();
 
+// --- Drag-and-drop file paths into the terminal -----------------------------------
+// The absolute vault path is the terminal's cwd; we fetch it once (cached across all
+// terminal tabs) to turn a file dragged from the tree (a vault-relative path) into an
+// absolute path to insert at the prompt.
+let _vaultRoot: Promise<string> | undefined;
+function vaultRoot(): Promise<string> {
+  if (!_vaultRoot) _vaultRoot = api.terminalInfo().then((i) => i.vault).catch(() => "");
+  return _vaultRoot;
+}
+
+// POSIX shell-quote a path: paths made only of safe characters paste as-is (readable);
+// anything with a space/special is single-quoted (embedded quotes escaped) so it stays
+// a single shell argument.
+function shellQuote(p: string): string {
+  if (/^[A-Za-z0-9_@%+=:,./-]+$/.test(p)) return p;
+  return "'" + p.replace(/'/g, "'\\''") + "'";
+}
+
+// True if a drag carries something we can turn into a path. Read from `types` (the only
+// dataTransfer field readable during dragover; getData is blocked there).
+function dragHasPath(e: DragEvent): boolean {
+  const t = e.dataTransfer?.types;
+  return !!t && (t.includes("application/x-oa-path") || t.includes("Files") || t.includes("text/uri-list"));
+}
+
+// Extract droppable paths. Reads dataTransfer SYNCHRONOUSLY (valid only during the event)
+// before any await. Sources, in priority order: an in-app tree drag (vault-relative →
+// absolute), OS file: URIs, then a browser file drop (name only — no real path exposed).
+async function pathsFromDrop(e: DragEvent): Promise<string[]> {
+  const dt = e.dataTransfer;
+  if (!dt) return [];
+  const rel = dt.getData("application/x-oa-path");
+  if (rel) {
+    const root = (await vaultRoot()).replace(/\/+$/, "");
+    return [root ? `${root}/${rel}` : rel];
+  }
+  const uriList = dt.getData("text/uri-list");
+  if (uriList) {
+    const paths = uriList
+      .split(/\r?\n/)
+      .filter((l) => l && !l.startsWith("#") && l.startsWith("file:"))
+      .map((u) => { try { return decodeURIComponent(new URL(u).pathname); } catch { return ""; } })
+      .filter(Boolean);
+    if (paths.length) return paths;
+  }
+  if (dt.files?.length) return [...dt.files].map((f) => f.name);
+  return [];
+}
+
 // WebSocket frame builders for the PTY protocol.
 // stdin frame: 0x00 prefix + raw bytes.
 function stdinFrame(bytes: Uint8Array): Uint8Array {
@@ -153,6 +202,10 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
   let cursorEl: HTMLDivElement | undefined;
   let downHandler: ((e: MouseEvent) => void) | undefined;
   let upHandler: ((e: MouseEvent) => void) | undefined;
+  // Drag-and-drop file handlers (added in onMount, removed on cleanup).
+  let dragOverHandler: ((e: DragEvent) => void) | undefined;
+  let dragLeaveHandler: ((e: DragEvent) => void) | undefined;
+  let dropHandler: ((e: DragEvent) => void) | undefined;
   // Reconnection state — exponential backoff, cleared on successful open.
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectAttempt = 0;
@@ -207,6 +260,9 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       try { cursorEl?.remove(); } catch {}
       if (downHandler) try { container.removeEventListener("mousedown", downHandler); } catch {}
       if (upHandler) try { container.removeEventListener("mouseup", upHandler); } catch {}
+      if (dragOverHandler) try { container.removeEventListener("dragover", dragOverHandler); } catch {}
+      if (dragLeaveHandler) try { container.removeEventListener("dragleave", dragLeaveHandler); } catch {}
+      if (dropHandler) try { container.removeEventListener("drop", dropHandler); } catch {}
       // Close with code 1000 so the backend treats this as an intentional teardown
       // and kills the PTY immediately (vs. keeping it alive for reattach on a drop).
       try { ws?.close(1000, "dispose"); } catch {}
@@ -342,6 +398,36 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     };
     container.addEventListener("mousedown", downHandler);
     container.addEventListener("mouseup", upHandler);
+
+    // Drag a file (from the file tree, or the OS) onto the terminal → insert its path at
+    // the prompt. stopPropagation so the host pane doesn't also treat it as a drop-to-split.
+    dragOverHandler = (e: DragEvent) => {
+      if (!dragHasPath(e)) return;
+      e.preventDefault(); // allow the drop
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      container.classList.add("term-drop-active");
+    };
+    dragLeaveHandler = (e: DragEvent) => {
+      // Ignore leaves into a child element — only clear when the cursor exits the host.
+      if (e.relatedTarget && container.contains(e.relatedTarget as Node)) return;
+      container.classList.remove("term-drop-active");
+    };
+    dropHandler = (e: DragEvent) => {
+      if (!dragHasPath(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      container.classList.remove("term-drop-active");
+      void pathsFromDrop(e).then((paths) => {
+        if (!paths.length || !ws || ws.readyState !== WebSocket.OPEN) return;
+        // Trailing space so the next path/arg (or a command typed after) stays separated.
+        ws.send(stdinFrame(enc.encode(paths.map(shellQuote).join(" ") + " ")));
+        term?.focus();
+      });
+    };
+    container.addEventListener("dragover", dragOverHandler);
+    container.addEventListener("dragleave", dragLeaveHandler);
+    container.addEventListener("drop", dropHandler);
 
     // Wire up the WebSocket to the backend PTY. We pass our stable term id so that on
     // an ABNORMAL close (reload / network drop) the reconnect REATTACHES to the same

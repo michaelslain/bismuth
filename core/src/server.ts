@@ -21,7 +21,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
-import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds } from "./terminal";
+import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool } from "./terminal";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
@@ -288,6 +288,13 @@ export function createServer(cfg: CoreConfig) {
   const routes: Record<string, Handler> = {
     "GET /version": async (_, __) => {
       return ok({ version });
+    },
+
+    // Absolute vault path — the terminal's cwd. The frontend uses it to turn a
+    // file dragged from the tree (a vault-relative path) into an absolute path to
+    // insert at the shell prompt.
+    "GET /terminal/info": async (_, __) => {
+      return ok({ vault: cfg.vault });
     },
 
     "GET /events": (_, __) => {
@@ -994,7 +1001,7 @@ export function createServer(cfg: CoreConfig) {
   treeCache.warm();
 
   type TermWsData = { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
-  return Bun.serve<TermWsData>({
+  const server = Bun.serve<TermWsData>({
     port: cfg.port ?? 4321,
     // Bun's default idleTimeout is 10s, which would drop a connection mid-request for the
     // few slow handlers we have (notably POST /daemon/setup, which git-clones + bun-installs
@@ -1039,9 +1046,14 @@ export function createServer(cfg: CoreConfig) {
           resizeSession(existing.id, cols, rows);
           session = existing;
         } else {
-          // Tabs report to THIS server's port so the in-tab Claude sessions' relay
-          // hooks reach the right core (multiple windows = multiple backends).
-          session = createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId });
+          // Prefer a pre-warmed shell from the pool: its prompt is already rendered, so
+          // the tab paints instantly instead of waiting on a cold login-shell rc load.
+          // Falls back to a fresh spawn when the pool is empty. Tabs report to THIS
+          // server's port so the in-tab Claude sessions' relay hooks reach the right
+          // core (multiple windows = multiple backends).
+          session =
+            claimPooledSession({ termId, cols, rows }) ??
+            createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId });
           createdNew = true;
         }
         const upgraded = server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
@@ -1076,8 +1088,10 @@ export function createServer(cfg: CoreConfig) {
         const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
         const s = getSession(data.sessionId);
         if (!s) { ws.close(); return; }
-        // Pipe PTY -> ws. Store disposables so we can clean them up on close.
-        data.dataSub = s.pty.onData((d: string) => { ws.send(enc.encode(d)); });
+        // Pipe PTY -> ws via the session's switchable sink. attachSink first flushes any
+        // buffered output (a pre-warmed pool prompt, or output produced during a brief
+        // disconnect) so the prompt shows immediately, then streams live bytes.
+        attachSink(s.id, (d: string) => { ws.send(enc.encode(d)); });
         // Shell exited: close with code 1000 so the client treats it as a real exit
         // (close the tab) rather than a dropped connection to reconnect/reattach.
         data.exitSub = s.pty.onExit(() => { try { ws.close(1000, "exited"); } catch { /* */ } });
@@ -1104,8 +1118,9 @@ export function createServer(cfg: CoreConfig) {
       },
       close(ws, code) {
         const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
-        // Dispose PTY listeners immediately so no ws.send is called on the closed socket.
-        data.dataSub?.dispose();
+        // Detach the live sink (no ws.send on a closed socket) — output resumes buffering
+        // for a possible reattach — and drop the exit listener.
+        detachSink(data.sessionId);
         data.exitSub?.dispose();
         // A CLEAN close (code 1000) means either the shell process exited (server-side
         // ws.close after pty.onExit) or the client intentionally disposed the tab
@@ -1117,6 +1132,17 @@ export function createServer(cfg: CoreConfig) {
       },
     },
   });
+
+  // Pre-warm one login shell so the first terminal tab paints its prompt instantly
+  // (cwd = vault, reporting to this server's port). Guarded so a spawn failure here can
+  // never take the server down — terminals still cold-spawn on demand.
+  try {
+    prewarmPool(cfg.vault, server.port);
+  } catch {
+    /* pre-warm is best-effort */
+  }
+
+  return server;
 }
 
 if (import.meta.main) {
