@@ -15,7 +15,7 @@ import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
-import { collectVaultTasks, toggleTaskLine } from "./tasks";
+import { collectVaultTasks, toggleTaskLine, setTaskLineStatus } from "./tasks";
 import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
@@ -929,16 +929,21 @@ export function createServer(cfg: CoreConfig) {
 
     "POST /tasks/toggle": mutatingHandler(
       async (req) => {
-        const { path, line } = (await req.json()) as { path: string; line: number };
+        const { path, line, status } = (await req.json()) as { path: string; line: number; status?: string };
         const content = await readNote(cfg.vault, path);
         const lines = content.split("\n");
         if (line < 0 || line >= lines.length) {
           throw new AppError("EINVAL", "line out of range", 400);
         }
-        // toggleTaskLine may return TWO lines (recurrence: the next occurrence is
-        // inserted above the completed one, separated by "\n"). Splicing the result
-        // back as a single array slot keeps that ordering after join("\n").
-        lines[line] = toggleTaskLine(lines[line], todayISO());
+        // toggleTaskLine / setTaskLineStatus may return TWO lines (recurrence: the next
+        // occurrence is inserted above the completed one, separated by "\n"). Splicing the
+        // result back as a single array slot keeps that ordering after join("\n").
+        // An explicit `status` (the right-click status menu) sets that exact box char;
+        // otherwise it's the plain binary toggle (checkbox click).
+        lines[line] =
+          status != null
+            ? setTaskLineStatus(lines[line], status, todayISO())
+            : toggleTaskLine(lines[line], todayISO());
         await writeNote(cfg.vault, path, lines.join("\n"));
         return ok();
       },

@@ -223,7 +223,7 @@ The schema is read both from `parseBaseObject` (`o.schema`) and re-applied at th
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `cardContent` | `"properties" \| "body"` | What to render inside each card. `body` renders the note's markdown body (interactive todo list — `BodyCard`); `properties` shows fields. Any other value → undefined. |
+| `cardContent` | `"properties" \| "body" \| "tasks"` | What to render inside each card. `body` renders the note's markdown body; `tasks` filters it to just its checklist lines; both use `BodyCard` (task markers: left-click toggles, right-click sets status). `properties` shows fields. Any other value → undefined. |
 | `image` | `string` | Property id holding a cover URL/path (e.g. `"cover"`). A full URL (http/https/data/blob) or a vault image path/filename (served via the asset endpoint). Unset → generated text cover. |
 | `imageFit` | `"cover" \| "contain"` | `object-fit` for the cover image. Default `"cover"`. |
 | `imageAspectRatio` | `number` | Cover width÷height (CSS aspect-ratio). Default `0.667` (2:3 portrait). Tolerates a YAML-stringified number. |
