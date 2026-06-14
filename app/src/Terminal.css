@@ -18,6 +18,19 @@
   overflow: hidden;
 }
 
+/* Dragging a file over the terminal — inset accent ring + faint wash to signal the
+   drop inserts the file's path at the prompt. inset so it reads inside the padding. */
+.term-host.term-drop-active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 6;
+}
+
 /* Let xterm's own viewport sit transparently on the host bg so the padding
    shows the deep terminal surface, not xterm's default fill. */
 .term-host .xterm,

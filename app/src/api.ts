@@ -164,6 +164,9 @@ export const api = {
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
   version: () =>
     getJson<{ version: number }>("/version"),
+  // Absolute vault path (the terminal's cwd) — used to absolutize a tree-dragged file
+  // path before inserting it at the terminal prompt.
+  terminalInfo: () => getJson<{ vault: string }>("/terminal/info"),
   schema: () => getJson<Schema>("/schema"),
   settings: () => getJson<Record<string, unknown>>("/settings"),
   base: (file: string) => getJson<ParsedBase>(`/base?file=${encodeURIComponent(file)}`),

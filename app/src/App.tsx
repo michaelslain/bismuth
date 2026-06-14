@@ -287,10 +287,11 @@ export default function App() {
   });
 
   // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
-  // ~117 KB gz) during idle while the graph home tab is showing, so the FIRST note
-  // open doesn't pay the download+parse on the critical path. Fire-and-forget.
+  // ~117 KB gz) and the terminal chunk (Terminal → @xterm/*) during idle while the
+  // graph home tab is showing, so the FIRST note/terminal open doesn't pay the
+  // download+parse on the critical path. Fire-and-forget.
   onMount(() => {
-    const warm = () => void import("./FileView");
+    const warm = () => { void import("./FileView"); void import("./Terminal"); };
     const ric = (globalThis as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
     if (ric) ric(warm);
     else setTimeout(warm, 800);
