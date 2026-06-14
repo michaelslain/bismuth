@@ -143,6 +143,15 @@ export function createServer(cfg: CoreConfig) {
   // couple of seconds.
   const tracker = createChangeTracker();
   const isHidden = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
+  // The claude-bot daemon rewrites its status file (DAEMON.md) into the vault root every
+  // ~2s (daemon-status-updater). It's a status artifact, not knowledge — reacting to its
+  // churn (version bump → cache invalidation → every content-dependent base re-resolving
+  // over the whole vault) needlessly pegs CPU. Drop its changes in the watcher so they never
+  // bump the version. The file still lists + renders; only its 2s heartbeat rewrites are
+  // ignored (you don't want live graph/row/editor refreshes for a status heartbeat anyway).
+  const DAEMON_STATUS_FILE = "DAEMON.md";
+  const isWatchIgnored = (p: string) =>
+    isHidden(p) || p === DAEMON_STATUS_FILE || p.endsWith("/" + DAEMON_STATUS_FILE);
 
   // Clear only the caches a change touched, bump version, and tell subscribers
   // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -172,7 +181,7 @@ export function createServer(cfg: CoreConfig) {
     let tree = false;
     const notePaths: string[] = [];
     for (const p of paths) {
-      if (isHidden(p)) continue;
+      if (isWatchIgnored(p)) continue;
       if (isSettingsPath(p)) {
         // settings.yaml drives the property registry + appearance — both graph
         // and tree consumers should refetch; /schema reads it fresh on demand.
@@ -265,9 +274,10 @@ export function createServer(cfg: CoreConfig) {
 
   try {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
-      // Ignore churn in .git (backup commits) and .trash — neither feeds the
-      // graph or tree. A null filename means "something changed, extent unknown".
-      if (filename && isHidden(filename)) return;
+      // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
+      // heartbeat — none feed the graph or tree. A null filename means "something changed,
+      // extent unknown".
+      if (filename && isWatchIgnored(filename)) return;
       scheduleVault(filename ?? undefined);
     });
   } catch {
