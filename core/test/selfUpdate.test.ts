@@ -3,11 +3,11 @@ import { getUpdateStatus, type GitRunner } from "../src/selfUpdate";
 
 // A fake git runner: maps a subcommand key → canned {code, stdout}. rev-parse is keyed by
 // its target ("rev-parse HEAD" / "rev-parse origin/main" / "rev-parse --is-inside-work-tree").
-function fakeGit(map: Record<string, { code?: number; stdout?: string }>): GitRunner {
+function fakeGit(map: Record<string, { code?: number; stdout?: string; stderr?: string }>): GitRunner {
   return async (_repo, args) => {
     const key = args[0] === "rev-parse" ? `rev-parse ${args[1]}` : args[0];
     const r = map[key] ?? { code: 0, stdout: "" };
-    return { code: r.code ?? 0, stdout: r.stdout ?? "", stderr: "" };
+    return { code: r.code ?? 0, stdout: r.stdout ?? "", stderr: r.stderr ?? "" };
   };
 }
 
@@ -26,6 +26,35 @@ test("not-a-git-repo when the repo isn't a work tree", async () => {
   });
   expect(s.reason).toBe("not-a-git-repo");
   expect(s.builtSha).toBe("aaaa");
+});
+
+test("access-denied when git can't read the build-source repo (macOS TCC)", async () => {
+  const s = await getUpdateStatus({
+    origin: ORIGIN,
+    git: fakeGit({
+      "rev-parse --is-inside-work-tree": { code: 128, stderr: "fatal: cannot change to '/repo': Operation not permitted" },
+    }),
+  });
+  expect(s.available).toBe(false);
+  expect(s.reason).toBe("access-denied");
+});
+
+test("repo-missing when the build-source repo no longer exists", async () => {
+  const s = await getUpdateStatus({
+    origin: ORIGIN,
+    git: fakeGit({
+      "rev-parse --is-inside-work-tree": { code: 128, stderr: "fatal: cannot change to '/repo': No such file or directory" },
+    }),
+  });
+  expect(s.reason).toBe("repo-missing");
+});
+
+test("git-not-found when the git binary can't be spawned", async () => {
+  const s = await getUpdateStatus({
+    origin: ORIGIN,
+    git: fakeGit({ "rev-parse --is-inside-work-tree": { code: -1, stderr: "spawn git ENOENT" } }),
+  });
+  expect(s.reason).toBe("git-not-found");
 });
 
 test("no-upstream when origin/main is missing", async () => {

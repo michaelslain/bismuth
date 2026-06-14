@@ -21,7 +21,10 @@ export interface UpdateStatus {
   remoteSha: string | null;
   builtSha: string | null;
   dirty: boolean;
-  /** When unavailable: why (e.g. "not-a-source-build", "not-a-git-repo", "no-upstream"). */
+  /** When unavailable: why — "not-a-source-build" | "not-a-git-repo" | "access-denied"
+   *  (the app can't read the build-source repo, typically macOS TCC: a Finder-launched app
+   *  only has access to the vault folder it was granted, not the dev clone under ~/Documents)
+   *  | "repo-missing" | "git-not-found" | "no-upstream". */
   reason?: string;
 }
 
@@ -108,6 +111,19 @@ export function readBuildOrigin(): BuildOrigin | null {
   }
 }
 
+/** Classify why a git probe against the build-source repo failed, so the status reports the
+ *  REAL reason instead of a blanket "not-a-git-repo". The common surprise is macOS TCC: a
+ *  Finder-launched app only has access to the vault folder it was granted (via the picker), not
+ *  the build-source clone — so when that clone is under ~/Documents, git can't chdir into it and
+ *  fails with "Operation not permitted", which is access-denied, NOT a missing repo. */
+function classifyGitFailure(r: { code: number; stderr: string }): string {
+  if (r.code === -1) return "git-not-found"; // spawn itself failed → no git on PATH
+  const e = (r.stderr || "").toLowerCase();
+  if (e.includes("operation not permitted") || e.includes("permission denied")) return "access-denied";
+  if (e.includes("no such file or directory")) return "repo-missing";
+  return "not-a-git-repo";
+}
+
 /** Read-only update status. Auto-fetches origin/main. Never throws. Deps injectable for tests. */
 export async function getUpdateStatus(
   deps: { git?: GitRunner; origin?: BuildOrigin | null } = {},
@@ -126,8 +142,9 @@ export async function getUpdateStatus(
   const { repoRoot, sha: builtSha } = origin;
   base.builtSha = builtSha || null;
 
-  if ((await git(repoRoot, ["rev-parse", "--is-inside-work-tree"])).code !== 0) {
-    return { ...base, reason: "not-a-git-repo" };
+  const probe = await git(repoRoot, ["rev-parse", "--is-inside-work-tree"]);
+  if (probe.code !== 0) {
+    return { ...base, reason: classifyGitFailure(probe) };
   }
   // Best-effort fetch; if offline we still report against the last-known remote.
   await git(repoRoot, ["fetch", "--quiet", "origin", "main"], 20_000);
