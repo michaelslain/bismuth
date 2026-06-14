@@ -56,6 +56,11 @@ function enableCheckboxes(html: string): string {
  * task (`api.toggleTask`); links open the note. Cards take their natural height; the
  * grid (`.bodyGrid`) lays them out as a masonry so a short note stays short.
  */
+// "N completed" expanded-state per note path, kept at module scope so it survives a BodyCard
+// re-mount (BaseView re-resolving rows recreates the cards) — otherwise the section silently
+// collapses whenever the view revalidates.
+const doneExpanded = new Map<string, boolean>();
+
 export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConfig; mode?: "body" | "tasks" }) {
   // Seed from the note-body cache so a re-mount (e.g. BaseView re-resolving rows after an
   // unrelated vault write) paints instantly from cache instead of flashing "Loading…" —
@@ -63,7 +68,12 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
   const cached = peekNoteCache(props.row.file.path);
   const [content, setContent] = createSignal<string>(cached ?? "");
   const [loaded, setLoaded] = createSignal(cached !== undefined);
-  const [showDone, setShowDone] = createSignal(false);
+  const [showDone, setShowDone] = createSignal(doneExpanded.get(props.row.file.path) ?? false);
+  const toggleDone = () => {
+    const v = !showDone();
+    setShowDone(v);
+    doneExpanded.set(props.row.file.path, v);
+  };
 
   onMount(async () => {
     try {
@@ -148,7 +158,7 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
       <Show when={loaded()} fallback={<div class={styles.cardKey}>Loading…</div>}>
         <div class={styles.cardMd} onClick={(e) => void onCardClick(e, parts().openLines)} innerHTML={parts().openHtml} />
         <Show when={parts().doneCount > 0}>
-          <button class={styles.doneToggle} onClick={() => setShowDone(!showDone())}>
+          <button class={styles.doneToggle} onClick={toggleDone}>
             {showDone() ? "▾" : "▸"} {parts().doneCount} completed
           </button>
           <Show when={showDone()}>
