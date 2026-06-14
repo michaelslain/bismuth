@@ -1130,6 +1130,24 @@ if (import.meta.main) {
   const s = createServer({ vault, memory, port: portArg ? Number(portArg) : 4321 });
   console.log(`core listening on http://localhost:${s.port}`);
 
+  // Self-terminate when the owning desktop app process is gone, so we never leave an
+  // orphaned core behind a crashed / force-quit app (Tauri's RunEvent::Exit doesn't fire
+  // then) or after the window owning an open-folder sibling backend closes. The Tauri shell
+  // passes OA_APP_PID; open-folder siblings inherit it via Bun.spawn's env. Absent in dev
+  // (`bun run dev`) → no-op. signal 0 only probes liveness; the timer is unref'd so it never
+  // keeps the process alive on its own.
+  const ownerPid = Number(process.env.OA_APP_PID);
+  if (Number.isInteger(ownerPid) && ownerPid > 0) {
+    setInterval(() => {
+      try {
+        process.kill(ownerPid, 0);
+      } catch {
+        console.log(`core exiting: owner app pid ${ownerPid} is gone`);
+        process.exit(0);
+      }
+    }, 5000).unref();
+  }
+
   // Bundled app: ensure the machine-wide bismuth CLI + MCP are installed/current from the
   // staged tools resource (OA_BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
   // Best-effort + non-blocking; never crashes the server.
