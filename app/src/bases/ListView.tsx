@@ -6,6 +6,7 @@ import { Icon } from "../icons/Icon";
 import { groupColor } from "../ui/StatusDot";
 import { todayISO } from "../../../core/src/dates";
 import { api } from "../api";
+import { openTaskStatusMenu } from "../taskStatusMenu";
 import styles from "./BaseView.module.css";
 
 // Task status (todo/done/in-progress/cancelled/other) -> the native checkbox's
@@ -71,7 +72,7 @@ function renderTaskText(text: string): JSX.Element[] {
 
 /** One task line, rendered like the editor's native `- [ ]` items: the same checkbox
  *  glyph, a markdown description, and the parsed signifiers (priority + dates + recurrence). */
-function TaskRow(props: { row: Row; onToggle: (row: Row, e: Event) => void }) {
+function TaskRow(props: { row: Row; onToggle: (row: Row, e: Event) => void; onSetStatus: (row: Row, e: MouseEvent) => void }) {
   const n = () => props.row.note;
   const status = () => checkStatus(n().status);
   const done = () => n().status === "done";
@@ -88,8 +89,9 @@ function TaskRow(props: { row: Row; onToggle: (row: Row, e: Event) => void }) {
       <span
         class={styles.taskCheck}
         data-status={status()}
-        title="Toggle task"
+        title="Toggle task — right-click to set status"
         onClick={(e) => props.onToggle(props.row, e)}
+        onContextMenu={(e) => props.onSetStatus(props.row, e)}
       >
         <span class={`${styles.ckGlyph} ${styles.ckCheck}`}><Icon value="Check" size={11} strokeWidth={3} /></span>
         <span class={`${styles.ckGlyph} ${styles.ckSlash}`} />
@@ -124,6 +126,18 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
     void api.toggleTask(row.file.path, row.note.line as number).finally(() => props.onChange?.());
   };
 
+  // Right-click a checkbox → the shared status menu (To do / In progress / Done / Cancelled,
+  // current omitted), same as the cards view + editor. Writes the chosen box char to the source
+  // line so every status round-trips — unlike the left-click toggle, which only flips done⇄todo.
+  const setStatus = (row: Row, e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation(); // don't also open the pane's context menu underneath
+    const cur = String(row.note.statusChar ?? " ") || " ";
+    openTaskStatusMenu(e.clientX, e.clientY, cur, (char) => {
+      void api.toggleTask(row.file.path, row.note.line as number, char).finally(() => props.onChange?.());
+    });
+  };
+
   return (
     <div class={styles.list}>
       <For each={props.result.groups}>
@@ -139,7 +153,7 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
             <For each={group.rows}>
               {(row) => {
                 // Task rows render as a native checkbox line (see TaskRow).
-                if (isTaskRow(row)) return <TaskRow row={row} onToggle={toggle} />;
+                if (isTaskRow(row)) return <TaskRow row={row} onToggle={toggle} onSetStatus={setStatus} />;
 
                 const title = resolveProperty(firstCol(), row);
                 const author = authorCol() ? resolveProperty(authorCol()!, row) : null;
