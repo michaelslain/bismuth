@@ -1,6 +1,7 @@
 import { createSignal, createResource, createMemo, createEffect, onMount, on, useTransition, Show, Switch, Match, Index } from "solid-js";
 import { api } from "../api";
-import { serverVersion, lastChange, type ServerChange } from "../serverVersion";
+import { serverVersion, lastChange } from "../serverVersion";
+import { changeAffectsView, type ViewDeps } from "./changeRelevance";
 import { RowCache } from "./rowCache";
 import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
@@ -204,18 +205,19 @@ export function BaseView(props: {
   //   - paths empty + !tree → memory-only (3rd brain); never affects vault rows → skip
   //   - dirty.graph (a vault tag/link edit may change filter membership) → refetch
   //   - else content-only vault edit → refetch only if it touched our own rows / base / host note
-  const affectsView = (c: ServerChange): boolean => {
-    if (!c.dirty) return true;
-    if (c.dirty.tree) return true;
-    if (c.paths.length === 0) return false;
-    if (c.dirty.graph) return true;
-    const d = data();
-    if (!d) return true;
-    const own = new Set(d.rows.map((r) => r.file.path));
-    return c.paths.some((p) => own.has(p) || p === d.basePath || p === props.path || p === props.hostPath);
-  };
   createEffect(on(serverVersion, () => {
-    if (affectsView(lastChange())) void startRevalidate(() => refetch());
+    const d = data();
+    const deps: ViewDeps | null = d
+      ? {
+          baseFilters: d.config.filters,
+          viewFilters: d.config.views.map((v) => v.filters),
+          spec: d.spec,
+          relevantPaths: new Set(
+            [...d.rows.map((r) => r.file.path), d.basePath, props.path, props.hostPath].filter(Boolean) as string[],
+          ),
+        }
+      : null;
+    if (changeAffectsView(lastChange(), deps)) void startRevalidate(() => refetch());
   }, { defer: true }));
 
   // Effective data: the freshly fetched result when available, else the last cached
