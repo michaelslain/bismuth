@@ -1,6 +1,6 @@
 import { createSignal, createResource, createMemo, createEffect, onMount, on, useTransition, Show, Switch, Match, Index } from "solid-js";
 import { api } from "../api";
-import { serverVersion, lastChange } from "../serverVersion";
+import { serverVersion, lastChange, type ServerChange } from "../serverVersion";
 import { RowCache } from "./rowCache";
 import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
@@ -192,21 +192,30 @@ export function BaseView(props: {
     return result;
   });
 
-  // Revalidate on every server version bump (an SSE event — a note feeding this base
-  // changed, even in another pane, or this view's own write). Wrapped in a transition so
-  // it's a true stale-while-revalidate: the previous rows stay painted (no Suspense flash,
-  // no full-pane remount) until the fresh resolve lands.
+  // Revalidate on a server version bump, but ONLY when the change can actually affect this
+  // view's rows. Otherwise a busy vault re-resolves + re-renders every open base continuously
+  // and pegs CPU — e.g. the claude-bot daemon rewrites DAEMON.md every ~2s, which bumps the
+  // version with { paths:[DAEMON.md], dirty:{graph:false,tree:false} } even though no base
+  // cares about it. Safe-by-default: anything we can't rule out triggers a refetch. Accepted
+  // revalidations run in a transition (stale-while-revalidate: prior rows stay painted, no
+  // Suspense flash / full-pane remount) until the fresh resolve lands.
+  //   - no dirty (poll catch-up, unknown extent) → refetch
+  //   - dirty.tree (new/renamed/removed/icon note may newly match the filter) → refetch
+  //   - paths empty + !tree → memory-only (3rd brain); never affects vault rows → skip
+  //   - dirty.graph (a vault tag/link edit may change filter membership) → refetch
+  //   - else content-only vault edit → refetch only if it touched our own rows / base / host note
+  const affectsView = (c: ServerChange): boolean => {
+    if (!c.dirty) return true;
+    if (c.dirty.tree) return true;
+    if (c.paths.length === 0) return false;
+    if (c.dirty.graph) return true;
+    const d = data();
+    if (!d) return true;
+    const own = new Set(d.rows.map((r) => r.file.path));
+    return c.paths.some((p) => own.has(p) || p === d.basePath || p === props.path || p === props.hostPath);
+  };
   createEffect(on(serverVersion, () => {
-    // Skip memory-only (3rd-brain) changes: they can't affect vault-derived base rows.
-    // The server emits them uniquely as { paths: [], dirty: { graph: true, tree: false } } —
-    // a vault change always carries paths, or sets tree:true when the extent is unknown
-    // (see server.ts arm/applyDirty). Without this, frequent claude-bot memory writes
-    // reload every open base over and over. Vault edits, structural changes, and poll
-    // catch-ups (dirty undefined) still revalidate.
-    const c = lastChange();
-    const memoryOnly = c.paths.length === 0 && c.dirty?.graph === true && c.dirty.tree === false;
-    if (memoryOnly) return;
-    void startRevalidate(() => refetch());
+    if (affectsView(lastChange())) void startRevalidate(() => refetch());
   }, { defer: true }));
 
   // Effective data: the freshly fetched result when available, else the last cached
