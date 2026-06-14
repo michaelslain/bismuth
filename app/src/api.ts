@@ -201,7 +201,10 @@ export const api = {
   dailyNote: (id: string) => postJson<{ path: string; created: boolean }>("/daily-note", { id }),
   tasks: () => getJson<Task[]>("/tasks"),
   // /tasks/toggle returns plain "ok" (a mutation), not JSON — use post(), like move/create.
-  toggleTask: (path: string, line: number) => post("/tasks/toggle", { path, line }),
+  // Omit `status` for the plain binary flip; pass a box char (" ","x","/","-") to set
+  // that exact status (the right-click status menu).
+  toggleTask: (path: string, line: number, status?: string) =>
+    post("/tasks/toggle", status != null ? { path, line, status } : { path, line }),
 
   noteCards: (path: string) =>
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),

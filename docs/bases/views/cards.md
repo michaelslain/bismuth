@@ -2,7 +2,9 @@
 
 The Cards view renders each row in a base as a visual card: a book-cover style grid (`cardContent: properties`, the default), a Google-Keep-style markdown note preview (`cardContent: body`), or a checklist-only preview (`cardContent: tasks`). All three are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the `body`/`tasks` variants to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
 
-The `body`/`tasks` markdown is rendered to match the note editor (`renderNoteBody` + the `.cardMd` rules mirror live-preview): task checkboxes use the editor's glyph (bordered box → accent fill + white check) rather than a raw browser checkbox, `#tags` render as teal mono chips, wikilinks/links get the soft underline, headings use the graduated `.cm-h1`..`.cm-h6` scale, and plain lists get markers. (Known gap: `[/]`/`[-]` render as raw text since marked only treats `[ ]`/`[x]` as task checkboxes.)
+The `body`/`tasks` markdown is rendered to match the note editor (`renderNoteBody` + the `.cardMd` rules mirror live-preview): `#tags` render as teal mono chips, wikilinks/links get the soft underline, headings use the graduated `.cm-h1`..`.cm-h6` scale, and plain lists get markers. Task lines do **not** use marked's GFM checkbox (which only recognizes `[ ]`/`[x]`); instead `taskCardMarkup.ts` emits a uniform `<span class="oa-task-box" data-status data-line>` marker for **every** task line, so all four Obsidian statuses get an editor-style glyph: empty box `[ ]`, accent fill + white check `[x]`, diagonal half-fill `[/]` (in progress), barred muted box `[-]` (cancelled). Each marker carries its absolute source line, so a click maps straight back without positional counting.
+
+**Interacting with a task marker:** left-click toggles it (`api.toggleTask`, the binary `[ ]`↔`[x]` flip); **right-click opens a status menu** to set it to any of the other three states (To do / In progress / Done / Cancelled — the current one is omitted). The menu calls `api.toggleTask(path, line, status)`, which rewrites the box char via `setTaskLineStatus` (done appends `✅ <date>` + rolls a 🔁 recurrence; the others strip the done-date). Works the same in both `body` and `tasks` mode.
 
 ---
 
@@ -23,15 +25,15 @@ The grid is a CSS `display: grid; grid-template-columns: repeat(5, 1fr)` — alw
 
 - The first column value as the card title.
 - The full note body read live from the vault, rendered as sanitized GFM markdown with Obsidian `[[wikilinks]]` resolved to clickable anchors.
-- Completed tasks (any checkbox line where the box is not `[ ]`, e.g. `[x]`, `[-]`, `[/]`) hidden behind a collapsible "N completed" expander. Uncompleted tasks and all other content appear immediately.
-- Interactive checkboxes that toggle the underlying task via `api.toggleTask` and reload the card.
+- **Resolved** tasks — done (`[x]`) and cancelled (`[-]`) — hidden behind a collapsible "N completed" expander. **Active** tasks (`[ ]` todo and `[/]` in-progress) and all other content appear immediately, so marking a task in-progress doesn't make it vanish.
+- Status-bearing task markers (see above): left-click toggles; right-click sets an explicit status.
 - Clickable wikilinks that open the linked note via the `oa-open` event.
 
 Body cards take their natural height; the CSS masonry keeps short notes short rather than stretching them to fill rows.
 
 ### Tasks mode
 
-`cardContent: tasks` renders the same masonry as body mode and through the same renderer, but the note body is first **filtered to only its checklist lines** (`/^\s*- \[.\]/`) — as if the file contained only its todo list. Headings, prose, and non-task bullets are dropped. The open/completed split is identical to body mode: incomplete tasks (`- [ ]`) show up top, completed ones (`- [x]`, etc.) collapse behind the "N completed" expander. There is no task-signifier reformatting — a task line renders as raw markdown (its priority/date emoji stay inline), just with the editor-consistent checkbox. Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
+`cardContent: tasks` renders the same masonry as body mode and through the same renderer, but the note body is first **filtered to only its checklist lines** — as if the file contained only its todo list. Headings, prose, and non-task bullets are dropped. The active/resolved split is identical to body mode: active tasks (`[ ]`, `[/]`) show up top, resolved ones (`[x]`, `[-]`) collapse behind the "N completed" expander. There is no task-signifier reformatting — a task line renders as raw markdown (its priority/date emoji stay inline), just with the editor-consistent status marker (left-click toggle, right-click status menu). Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
 
 ---
 
