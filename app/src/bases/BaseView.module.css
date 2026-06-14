@@ -237,8 +237,12 @@
 .cardMd :global(ul) { list-style: disc; }
 .cardMd :global(ol) { list-style: decimal; }
 .cardMd :global(li::marker) { color: var(--text-muted); }
-.cardMd :global(ul.contains-task-list) { list-style: none; padding-left: 0; }
-.cardMd :global(li.task-list-item) { padding-left: 0; list-style: none; }
+/* marked doesn't tag task lists with a class, so detect them via :has(checkbox): a task
+   line shows no bullet (the checkbox IS the marker) and is pulled flush by cancelling the
+   <ul>'s 1.5em padding — so it sits like the editor's `- [ ]` lines. The negative margin
+   (not zeroing the <ul> padding) keeps plain bullets in a mixed list correctly indented,
+   and avoids nesting :has() inside :has() (invalid CSS — silently dropped by the browser). */
+.cardMd :global(li:has(> input[type="checkbox"])) { list-style: none; margin-left: -1.5em; }
 .cardMd :global(li) { padding: 1px 0; }
 .cardMd :global(li p) { display: inline; margin: 0; }
 .cardMd :global(p) { margin: 4px 0; }

@@ -60,6 +60,12 @@ export function readNoteCached(path: string): string | Promise<string> {
   });
 }
 
+/** Synchronous peek at the cached body without fetching — undefined if absent. Lets a
+ *  component paint instantly from cache on (re)mount instead of flashing a spinner. */
+export function peekNoteCache(path: string): string | undefined {
+  return cache.get(path);
+}
+
 /**
  * Seed the cache with known-current content so the next reopen is an instant hit.
  * Called by the Editor after it reads fresh on an external change (SSE reconcile)
