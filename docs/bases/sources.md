@@ -567,8 +567,18 @@ The handler (`core/src/server.ts`):
 
    Both are **nulled on any vault change** (in `applyDirty`, after the 250ms
    file-watch debounce) and rebuilt lazily on the next read. Because the resolver
-   reads the live frontmatter/body, content-only edits still re-resolve correctly
-   on the next `/rows`.
+   reads the live frontmatter/body, content-only edits re-resolve correctly **when
+   a `/rows` is actually requested**.
+
+   On the client, `BaseView` does **not** re-request `/rows` on every SSE version
+   bump — it calls `changeAffectsView` (`app/src/bases/changeRelevance.ts`) and skips
+   changes that provably can't affect the view: memory-only (3rd-brain) changes, and
+   content-only vault edits to notes the view doesn't depend on **when its filters are
+   purely `file.*` (tag/folder/name) over an unscoped source**. This stops a busy vault
+   (e.g. the claude-bot daemon rewriting `DAEMON.md` every ~2s) from re-resolving every
+   open base continuously. Property-value filters (`note.status`, `due < today()`),
+   `where` exprs, scoped `from:`, and composed `ref:` sources always re-resolve on a
+   content edit (their membership is content-dependent and can't be skipped safely).
 
 3. **Client SWR row cache (`bases/rowCache.ts`).** See below.
 
