@@ -1,6 +1,6 @@
 import { createSignal, createResource, createMemo, createEffect, onMount, on, useTransition, Show, Switch, Match, Index } from "solid-js";
 import { api } from "../api";
-import { serverVersion } from "../serverVersion";
+import { serverVersion, lastChange } from "../serverVersion";
 import { RowCache } from "./rowCache";
 import { BaseSkeleton } from "./BaseSkeleton";
 import { parseBase, parseBaseFile } from "../../../core/src/bases/parse";
@@ -196,7 +196,18 @@ export function BaseView(props: {
   // changed, even in another pane, or this view's own write). Wrapped in a transition so
   // it's a true stale-while-revalidate: the previous rows stay painted (no Suspense flash,
   // no full-pane remount) until the fresh resolve lands.
-  createEffect(on(serverVersion, () => { void startRevalidate(() => refetch()); }, { defer: true }));
+  createEffect(on(serverVersion, () => {
+    // Skip memory-only (3rd-brain) changes: they can't affect vault-derived base rows.
+    // The server emits them uniquely as { paths: [], dirty: { graph: true, tree: false } } —
+    // a vault change always carries paths, or sets tree:true when the extent is unknown
+    // (see server.ts arm/applyDirty). Without this, frequent claude-bot memory writes
+    // reload every open base over and over. Vault edits, structural changes, and poll
+    // catch-ups (dirty undefined) still revalidate.
+    const c = lastChange();
+    const memoryOnly = c.paths.length === 0 && c.dirty?.graph === true && c.dirty.tree === false;
+    if (memoryOnly) return;
+    void startRevalidate(() => refetch());
+  }, { defer: true }));
 
   // Effective data: the freshly fetched result when available, else the last cached
   // resolution for this view (stale-while-revalidate) so a reopen/split paints instantly

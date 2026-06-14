@@ -3,6 +3,7 @@ import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types"
 import { api } from "../api";
 import { renderValue } from "./renderValue";
 import { renderNoteBody } from "./markdown";
+import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
 import styles from "./BaseView.module.css";
 
 // Strip a leading YAML frontmatter block so the card shows just the note body —
@@ -56,15 +57,20 @@ function enableCheckboxes(html: string): string {
  * grid (`.bodyGrid`) lays them out as a masonry so a short note stays short.
  */
 export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConfig; mode?: "body" | "tasks" }) {
-  const [content, setContent] = createSignal<string>("");
-  const [loaded, setLoaded] = createSignal(false);
+  // Seed from the note-body cache so a re-mount (e.g. BaseView re-resolving rows after an
+  // unrelated vault write) paints instantly from cache instead of flashing "Loading…" —
+  // that flash is what reads as the card "reloading over and over" under daemon churn.
+  const cached = peekNoteCache(props.row.file.path);
+  const [content, setContent] = createSignal<string>(cached ?? "");
+  const [loaded, setLoaded] = createSignal(cached !== undefined);
   const [showDone, setShowDone] = createSignal(false);
 
   onMount(async () => {
     try {
-      setContent(await api.read(props.row.file.path));
+      const r = readNoteCached(props.row.file.path);
+      setContent(typeof r === "string" ? r : await r);
     } catch {
-      setContent("");
+      if (!loaded()) setContent("");
     } finally {
       setLoaded(true);
     }
@@ -115,7 +121,9 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
       if (idx == null) return;
       try {
         await api.toggleTask(props.row.file.path, idx);
-        setContent(await api.read(props.row.file.path));
+        const t = await api.read(props.row.file.path);
+        primeNoteCache(props.row.file.path, t); // keep cache current so a re-mount paints the toggled state
+        setContent(t);
       } catch { /* best-effort: leave the card as-is on failure */ }
       return;
     }
