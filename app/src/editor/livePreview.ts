@@ -8,6 +8,7 @@ import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
+import { openTaskStatusMenu } from "../taskStatusMenu";
 import { LIST_STEP } from "./listLayout";
 import { CodeHeader } from "./CodeHeader";
 import { type TableBlock, groupTableBlocks } from "./tableModel";
@@ -740,6 +741,15 @@ export const livePreview = [
     },
     mousedown: (e, view) => {
       const target = e.target as HTMLElement;
+      // Left-click only for the toggle. A right-click also fires mousedown (button 2) — without
+      // this guard it would toggle the task BEFORE the contextmenu handler reads its status.
+      // When that right-click lands on a checkbox, also preventDefault so the browser doesn't
+      // place the caret on that line (which would move the cursor + reveal the raw source);
+      // the status menu then opens without disturbing the cursor.
+      if ((e as MouseEvent).button !== 0) {
+        if (target.closest(".cm-task-checkbox")) e.preventDefault();
+        return false;
+      }
       // Click a rendered HTML block → drop the cursor into it so it reveals raw
       // source for editing (the field collapses the widget while the cursor is
       // inside). Ignore clicks on links inside it (let them navigate).
@@ -763,9 +773,28 @@ export const livePreview = [
       if (!m) return false;
       const innerPos = line.from + m[1].length;
       // Clicking only toggles done ⇄ not-done. In-progress ([/]) and cancelled ([-])
-      // are display-only states set by typing — a click never produces them.
+      // are set via the right-click status menu (contextmenu handler below).
       const next = (m[2] === "x" || m[2] === "X") ? " " : "x";
       view.dispatch({ changes: { from: innerPos, to: innerPos + 1, insert: next } });
+      return true;
+    },
+    // Right-click a checkbox → status menu (To do / In progress / Done / Cancelled, current
+    // omitted). Edits the box char in-buffer (the editor persists it), so it round-trips every
+    // status — unlike the click toggle, which only flips done ⇄ todo.
+    contextmenu: (e, view) => {
+      const target = e.target as HTMLElement;
+      const box = target.closest(".cm-task-checkbox");
+      if (!box) return false; // not a checkbox — let the normal (pane) context menu handle it
+      const pos = view.posAtDOM(box as HTMLElement);
+      const line = view.state.doc.lineAt(pos);
+      const m = line.text.match(/^(\s*[-*+]\s+\[)([ xX/\\-])(\])/);
+      if (!m) return false;
+      const innerPos = line.from + m[1].length;
+      e.preventDefault();
+      e.stopPropagation(); // don't also open the pane's context menu
+      openTaskStatusMenu((e as MouseEvent).clientX, (e as MouseEvent).clientY, m[2], (char) => {
+        view.dispatch({ changes: { from: innerPos, to: innerPos + 1, insert: char } });
+      });
       return true;
     },
   }),

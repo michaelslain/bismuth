@@ -235,6 +235,41 @@ export function toggleTaskLine(line: string, today: string): string {
   return `${completed}${cr}`;
 }
 
+/**
+ * Set a task line's checkbox to a SPECIFIC status char (`" "`, `"x"`, `"/"`, `"-"`, …),
+ * rather than the binary flip `toggleTaskLine` does.
+ * - Target `x`/`X` (done): same as completing in `toggleTaskLine` — append `✅ <today>`
+ *   (unless present) and spawn the next occurrence of a 🔁 recurring task above it.
+ * - Any other target (todo/in-progress/cancelled/…): set the box and strip any
+ *   `✅ <date>` done-signifier (it's no longer done).
+ * The bullet is normalized to `-`. Throws if the line is not a task.
+ */
+export function setTaskLineStatus(line: string, status: string, today: string): string {
+  const cr = line.endsWith("\r") ? "\r" : "";
+  const bare = cr ? line.slice(0, -1) : line;
+  const m = TASK_LINE.exec(bare);
+  if (!m) throw new Error("not a task line");
+  const [, indent, , body] = m;
+  const isDone = status === "x" || status === "X";
+  if (!isDone) {
+    const cleaned = body.replace(/\s*✅\s*\d{4}-\d{2}-\d{2}/, "").trimEnd();
+    return `${indent}- [${status}] ${cleaned}${cr}`;
+  }
+  const hasDoneDate = /✅\s*\d{4}-\d{2}-\d{2}/.test(body);
+  const withDate = hasDoneDate ? body.trimEnd() : `${body.trimEnd()} ✅ ${today}`;
+  const completed = `${indent}- [${status}] ${withDate}`;
+
+  const task = parseTaskLine(bare, "", 0);
+  if (task?.recurrence) {
+    const { body: nextBody, advanced } = advanceRecurringBody(body.trimEnd(), task.recurrence);
+    if (advanced) {
+      const nextOccurrence = `${indent}- [ ] ${nextBody}`;
+      return `${nextOccurrence}${cr}\n${completed}${cr}`;
+    }
+  }
+  return `${completed}${cr}`;
+}
+
 /** Read every markdown file in the vault and return all checkbox tasks across them. */
 export async function collectVaultTasks(root: string): Promise<Task[]> {
   const { listMarkdown, readNote } = await getFileAccess();

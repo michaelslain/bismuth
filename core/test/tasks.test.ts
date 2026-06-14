@@ -93,8 +93,33 @@ test("dedupes repeated tags", () => {
   expect(t.tags).toEqual(["work"]);
 });
 
-import { toggleTaskLine } from "../src/tasks";
+import { toggleTaskLine, setTaskLineStatus } from "../src/tasks";
 import { todayISO } from "../src/dates";
+
+test("setTaskLineStatus sets in-progress", () => {
+  expect(setTaskLineStatus("- [ ] buy milk", "/", "2026-05-27")).toBe("- [/] buy milk");
+});
+
+test("setTaskLineStatus sets cancelled", () => {
+  expect(setTaskLineStatus("- [/] buy milk", "-", "2026-05-27")).toBe("- [-] buy milk");
+});
+
+test("setTaskLineStatus completing appends today's done date", () => {
+  expect(setTaskLineStatus("- [/] buy milk", "x", "2026-05-27")).toBe("- [x] buy milk ✅ 2026-05-27");
+});
+
+test("setTaskLineStatus to a non-done status strips the done date", () => {
+  expect(setTaskLineStatus("- [x] thing ✅ 2026-05-27", " ", "2026-06-01")).toBe("- [ ] thing");
+  expect(setTaskLineStatus("- [x] thing ✅ 2026-05-27", "-", "2026-06-01")).toBe("- [-] thing");
+});
+
+test("setTaskLineStatus preserves indentation and trailing CR", () => {
+  expect(setTaskLineStatus("    - [ ] nested\r", "/", "2026-05-27")).toBe("    - [/] nested\r");
+});
+
+test("setTaskLineStatus throws on a non-task line", () => {
+  expect(() => setTaskLineStatus("not a task", "x", "2026-05-27")).toThrow();
+});
 
 test("toggleTaskLine completes a todo and appends today's done date", () => {
   const out = toggleTaskLine("- [ ] buy milk", "2026-05-27");

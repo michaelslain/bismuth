@@ -1,60 +1,21 @@
 import { createSignal, createMemo, Show, onMount } from "solid-js";
+import { Portal } from "solid-js/web";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { renderValue } from "./renderValue";
-import { renderNoteBody } from "./markdown";
 import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
+import { ContextMenu, type MenuItem } from "../ContextMenu";
+import { buildTaskCardParts } from "./taskCardMarkup";
+import { taskStatusItems } from "../taskStatusMenu";
 import styles from "./BaseView.module.css";
-
-// Strip a leading YAML frontmatter block so the card shows just the note body —
-// same as `.md` transclusion (embedBlock).
-function stripFrontmatter(text: string): string {
-  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-}
-
-// A checklist line whose box is anything other than empty (`[x]`, `[-]`, `[/]`, …)
-// is treated as completed and tucked into the collapsible section at the bottom,
-// Google-Keep style. `[ ]` (and every non-task line) stays in the open section.
-const DONE_TASK_RE = /^\s*- \[[^ \]]\]/;
-const HEADING_RE = /^#{1,6}\s/;
-// Lines that GFM renders as an actual checkbox, in document order — used to map a
-// clicked checkbox back to its source line for the toggle.
-const OPEN_BOX_RE = /^\s*- \[ \]/;
-// Mirror DONE_TASK_RE: any non-empty box (`[x]`, `[-]`, `[/]`, `[>]`, …) is a done
-// task. Keeping these in sync is what lets doneLines index the same lines BodyCard
-// renders in the completed section, so a click toggles the right source line.
-const DONE_BOX_RE = /^\s*- \[[^ \]]\]/;
-// Any checklist line (open OR done) — used by tasks-only mode to keep just the todo list.
-const TASK_LINE_RE = /^\s*- \[.\]/;
-
-// Drop headings with no remaining content beneath them (their tasks all moved to the
-// completed section) so an all-done card collapses to title + "N completed".
-function pruneEmptyHeadings(lines: string[]): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (HEADING_RE.test(lines[i])) {
-      let hasContent = false;
-      for (let j = i + 1; j < lines.length && !HEADING_RE.test(lines[j]); j++) {
-        if (lines[j].trim() !== "") { hasContent = true; break; }
-      }
-      if (!hasContent) continue;
-    }
-    out.push(lines[i]);
-  }
-  return out;
-}
-
-// marked renders task checkboxes `disabled`; un-disable them so they're clickable.
-function enableCheckboxes(html: string): string {
-  return html.replace(/\sdisabled(="")?/g, "");
-}
 
 /**
  * A Google-Keep-style preview card: the note's body rendered as real markdown
- * (`renderNoteBody` — standard renderer + Obsidian `[[wikilinks]]`), with completed
- * tasks hidden behind a "N completed" expander. Checkboxes toggle the underlying
- * task (`api.toggleTask`); links open the note. Cards take their natural height; the
- * grid (`.bodyGrid`) lays them out as a masonry so a short note stays short.
+ * (`renderNoteBody` — standard renderer + Obsidian `[[wikilinks]]`), with resolved tasks
+ * (done/cancelled) hidden behind a "N completed" expander. Every checkbox task line renders a
+ * status-bearing `.oa-task-box` marker (`taskCardMarkup.ts`): left-click toggles it, right-click
+ * opens a status menu. Links open the note. Cards take their natural height; the grid
+ * (`.bodyGrid`) lays them out as a masonry so a short note stays short.
  */
 // "N completed" expanded-state per note path, kept at module scope so it survives a BodyCard
 // re-mount (BaseView re-resolving rows recreates the cards) — otherwise the section silently
@@ -74,6 +35,15 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
     setShowDone(v);
     doneExpanded.set(props.row.file.path, v);
   };
+  const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+
+  // Re-read the note after a write so the card repaints the new status; keep the cache current
+  // so a re-mount paints the toggled state.
+  async function refreshFromDisk() {
+    const t = await api.read(props.row.file.path);
+    primeNoteCache(props.row.file.path, t);
+    setContent(t);
+  }
 
   onMount(async () => {
     try {
@@ -88,55 +58,34 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
 
   const firstCol = () => props.result.columns[0] ?? "file.name";
 
-  // Partition the body into open lines (rendered up top) and completed task lines
-  // (inside the expander), plus the absolute file-line index of every rendered
-  // checkbox so a click maps back to the source line.
-  const parts = createMemo(() => {
-    const raw = content();
-    const all = stripFrontmatter(raw).split("\n");
-    // tasks-only mode: keep just the checklist lines, as if the file contained only its
-    // todo list. The SAME renderer + collapse-completed behavior below then applies — no
-    // separate task component, no signifier reformatting.
-    const body = props.mode === "tasks" ? all.filter((l) => TASK_LINE_RE.test(l)) : all;
-    const open: string[] = [];
-    const done: string[] = [];
-    for (const line of body) (DONE_TASK_RE.test(line) ? done : open).push(line);
+  const parts = createMemo(() => buildTaskCardParts(content(), props.mode));
 
-    const openLines: number[] = [];
-    const doneLines: number[] = [];
-    raw.split("\n").forEach((l, i) => {
-      if (OPEN_BOX_RE.test(l)) openLines.push(i);
-      else if (DONE_BOX_RE.test(l)) doneLines.push(i);
-    });
+  // The clicked task marker, or null when the event didn't land on one. The todo box char is
+  // a space, but DOMPurify strips whitespace-only attribute values (`data-status=" "` → `""`),
+  // so normalize an empty/blank status back to " " (todo) — otherwise "To do" never matches the
+  // current status and so isn't filtered out of the menu.
+  const markerAt = (e: MouseEvent): { line: number; status: string } | null => {
+    const box = (e.target as HTMLElement).closest(".oa-task-box") as HTMLElement | null;
+    if (!box) return null;
+    const line = Number(box.dataset.line);
+    if (!Number.isInteger(line)) return null;
+    const raw = box.dataset.status ?? "";
+    return { line, status: raw.trim() === "" ? " " : raw };
+  };
 
-    return {
-      openHtml: enableCheckboxes(renderNoteBody(pruneEmptyHeadings(open).join("\n"))),
-      doneHtml: enableCheckboxes(renderNoteBody(done.join("\n"))),
-      doneCount: done.length,
-      openLines,
-      doneLines,
-    };
-  });
-
-  // One delegated handler per section: checkbox click -> toggle the mapped source
-  // line; link click -> open the note (the standard `oa-open` nav) or external URL.
-  async function onCardClick(e: MouseEvent, lineIdx: number[]) {
-    const container = e.currentTarget as HTMLElement;
-    const target = e.target as HTMLElement;
-    const box = target.closest('input[type="checkbox"]') as HTMLInputElement | null;
-    if (box) {
+  // Delegated click: a task marker toggles its source line; a link opens the note (the
+  // standard `oa-open` nav) or external URL.
+  async function onCardClick(e: MouseEvent) {
+    const marker = markerAt(e);
+    if (marker) {
       e.preventDefault();
-      const k = [...container.querySelectorAll('input[type="checkbox"]')].indexOf(box);
-      const idx = lineIdx[k];
-      if (idx == null) return;
       try {
-        await api.toggleTask(props.row.file.path, idx);
-        const t = await api.read(props.row.file.path);
-        primeNoteCache(props.row.file.path, t); // keep cache current so a re-mount paints the toggled state
-        setContent(t);
+        await api.toggleTask(props.row.file.path, marker.line);
+        await refreshFromDisk();
       } catch { /* best-effort: leave the card as-is on failure */ }
       return;
     }
+    const target = e.target as HTMLElement;
     const a = target.closest("a") as HTMLAnchorElement | null;
     if (!a) return;
     const wl = a.getAttribute("data-href");
@@ -152,19 +101,58 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
     else window.dispatchEvent(new CustomEvent("oa-open", { detail: href.endsWith(".md") ? href : `${href}.md` }));
   }
 
+  // Right-click a task marker -> offer every status EXCEPT the current one (a no-current-mode
+  // menu, per the spec). Reads the source line + current status straight off the marker, so it
+  // works for any status ([ ]/[x]/[/]/[-]) in both body and tasks card modes.
+  function onCardContextMenu(e: MouseEvent) {
+    const marker = markerAt(e);
+    if (!marker) return; // not a task marker — let the pane's own context menu handle it
+    e.preventDefault();
+    e.stopPropagation(); // don't also open the pane's "close pane" context menu underneath
+    const items: MenuItem[] = taskStatusItems(marker.status, (char) => {
+      void (async () => {
+        try {
+          await api.toggleTask(props.row.file.path, marker.line, char);
+          await refreshFromDisk();
+        } catch { /* best-effort */ }
+      })();
+    });
+    setMenu({ x: e.clientX, y: e.clientY, items });
+  }
+
   return (
     <div class={styles.bodyCard}>
       <div class={styles.cardTitle}>{renderValue(firstCol(), props.row)}</div>
       <Show when={loaded()} fallback={<div class={styles.cardKey}>Loading…</div>}>
-        <div class={styles.cardMd} onClick={(e) => void onCardClick(e, parts().openLines)} innerHTML={parts().openHtml} />
+        <div
+          class={styles.cardMd}
+          onClick={(e) => void onCardClick(e)}
+          onContextMenu={(e) => onCardContextMenu(e)}
+          innerHTML={parts().openHtml}
+        />
         <Show when={parts().doneCount > 0}>
           <button class={styles.doneToggle} onClick={toggleDone}>
             {showDone() ? "▾" : "▸"} {parts().doneCount} completed
           </button>
           <Show when={showDone()}>
-            <div class={`${styles.cardMd} ${styles.cardMdDone}`} onClick={(e) => void onCardClick(e, parts().doneLines)} innerHTML={parts().doneHtml} />
+            <div
+              class={`${styles.cardMd} ${styles.cardMdDone}`}
+              onClick={(e) => void onCardClick(e)}
+              onContextMenu={(e) => onCardContextMenu(e)}
+              innerHTML={parts().doneHtml}
+            />
           </Show>
         </Show>
+      </Show>
+      <Show when={menu()}>
+        {(m) => (
+          // Portal to <body> so the fixed-position menu escapes the card's masonry
+          // (`.bodyGrid { column-count }`) + overflow — otherwise it's clipped/mis-placed,
+          // the same reason EventChip portals its ContextMenu.
+          <Portal>
+            <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />
+          </Portal>
+        )}
       </Show>
     </div>
   );
