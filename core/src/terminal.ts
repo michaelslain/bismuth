@@ -18,11 +18,42 @@ export interface Session {
   rows: number;
   /** Pending delayed-kill after a non-clean disconnect; cancelled on reattach. */
   graceTimer?: ReturnType<typeof setTimeout>;
+  /**
+   * Output routing. A single permanent `pty.onData` (stored as `dataSub`) feeds
+   * every chunk to `sink` when a live socket is attached, otherwise into the capped
+   * `buffer` for replay on (re)attach. This buys two things:
+   *   1. A pre-warmed POOL shell renders its prompt before any client connects — the
+   *      buffer holds it, and `attachSink` replays it the instant a tab attaches, so
+   *      the prompt appears immediately instead of after a fresh login-shell rc load.
+   *   2. Output produced while a tab is briefly disconnected (reload / network blip,
+   *      during the reattach grace window) is buffered and replayed, not lost.
+   */
+  buffer: string[];
+  bufferedBytes: number;
+  sink: ((d: string) => void) | null;
+  dataSub?: { dispose(): void };
+  /** Pool-only: fires if a still-unclaimed warm shell dies (e.g. rc error) so we drop it. */
+  poolExitSub?: { dispose(): void };
+  /** True while this session is an unclaimed member of the warm pool (not a real tab). */
+  pooled?: boolean;
 }
 
 const sessions = new Map<string, Session>();
 // termId → session id, so a reconnect with the same client term id finds its PTY.
 const byTermId = new Map<string, string>();
+
+// Cap the replay buffer so a runaway process producing output while detached (e.g. a
+// `yes` loop during a reconnect) can't grow it without bound. We keep the most RECENT
+// output (trim from the front) since that's the live tail a reattaching client needs.
+const MAX_BUFFER_BYTES = 256 * 1024;
+
+function pushBuffer(s: Session, d: string): void {
+  s.buffer.push(d);
+  s.bufferedBytes += d.length;
+  while (s.bufferedBytes > MAX_BUFFER_BYTES && s.buffer.length > 1) {
+    s.bufferedBytes -= s.buffer.shift()!.length;
+  }
+}
 
 // The relay plugin dir (relay/) and its PATH shim. In dev it's resolved relative to this
 // source file (core/src/terminal.ts → ../../relay); in the bundled app the compiled
@@ -113,7 +144,7 @@ export function loginShellArgs(): string[] {
   return ["-l"];
 }
 
-export function createTerminalSession(opts: {
+interface SpawnOpts {
   cwd: string;
   shell?: string;
   cols: number;
@@ -122,7 +153,10 @@ export function createTerminalSession(opts: {
   relayPort?: number;
   /** Stable client term id to key this session under, enabling reattach. */
   termId?: string;
-}): Session {
+}
+
+/** Spawn a login shell and register it as a buffering Session (no live socket yet). */
+function spawnSession(opts: SpawnOpts): Session {
   const shell = opts.shell ?? process.env.SHELL ?? "/bin/sh";
   const id = randomUUID();
 
@@ -145,10 +179,108 @@ export function createTerminalSession(opts: {
     env,
   });
 
-  const session: Session = { id, termId: opts.termId, pty, cols: opts.cols, rows: opts.rows };
+  const session: Session = {
+    id,
+    termId: opts.termId,
+    pty,
+    cols: opts.cols,
+    rows: opts.rows,
+    buffer: [],
+    bufferedBytes: 0,
+    sink: null,
+  };
+  // One permanent reader for the PTY's whole life: route to the live socket sink when
+  // attached, else accumulate (capped) for replay. Disposed in killSession.
+  session.dataSub = pty.onData((d: string) => {
+    if (session.sink) session.sink(d);
+    else pushBuffer(session, d);
+  });
   sessions.set(id, session);
   if (opts.termId) byTermId.set(opts.termId, id);
   return session;
+}
+
+export function createTerminalSession(opts: SpawnOpts): Session {
+  return spawnSession(opts);
+}
+
+/**
+ * Attach a live socket sink, draining any buffered output FIRST so the client sees the
+ * pre-warmed prompt (or output produced while it was disconnected) before live bytes —
+ * order preserved because buffered bytes are flushed before `sink` goes live.
+ */
+export function attachSink(id: string, send: (d: string) => void): void {
+  const s = sessions.get(id);
+  if (!s) return;
+  if (s.buffer.length) {
+    send(s.buffer.join(""));
+    s.buffer = [];
+    s.bufferedBytes = 0;
+  }
+  s.sink = send;
+}
+
+/** Detach the live socket; output resumes buffering (capped) for a later reattach. */
+export function detachSink(id: string): void {
+  const s = sessions.get(id);
+  if (s) s.sink = null;
+}
+
+// --- Warm pool ---------------------------------------------------------------------
+// Keep one login shell spawned-and-rc-loaded ahead of demand so opening a terminal tab
+// shows its prompt instantly instead of waiting on the (often 100s-of-ms) shell startup
+// chain. A claimed shell is replaced asynchronously, so a warm one is always ready.
+const POOL_SIZE = 1;
+const pool: Session[] = [];
+let poolCwd: string | undefined;
+let poolRelayPort: number | undefined;
+
+function ensurePool(): void {
+  if (poolCwd === undefined) return; // not initialized — no pre-warming
+  while (pool.length < POOL_SIZE) {
+    let s: Session;
+    try {
+      // 80×24 is provisional; the claiming client resizes on attach and the shell reflows.
+      s = spawnSession({ cwd: poolCwd, cols: 80, rows: 24, relayPort: poolRelayPort });
+    } catch {
+      return; // spawn failed (e.g. no shell) — cold spawn on demand still works; don't loop
+    }
+    s.pooled = true;
+    s.poolExitSub = s.pty.onExit(() => {
+      const i = pool.indexOf(s);
+      if (i >= 0) pool.splice(i, 1);
+      killSession(s.id);
+      ensurePool(); // a warm shell died before use (bad rc?) — try to replace it
+    });
+    pool.push(s);
+  }
+}
+
+/** Start (and keep) the warm pool. Idempotent; safe to call once at server start. */
+export function prewarmPool(cwd: string, relayPort?: number): void {
+  poolCwd = cwd;
+  poolRelayPort = relayPort;
+  ensurePool();
+}
+
+/**
+ * Hand out a pre-warmed session (or undefined if the pool is empty), keying it to the
+ * client's term id and resizing it to the real viewport, then refill the pool. Its
+ * already-rendered prompt sits in the buffer and is replayed by attachSink on ws open.
+ */
+export function claimPooledSession(opts: { termId?: string; cols: number; rows: number }): Session | undefined {
+  const s = pool.shift();
+  if (!s) return undefined;
+  s.pooled = false;
+  s.poolExitSub?.dispose();
+  s.poolExitSub = undefined;
+  if (opts.termId) {
+    s.termId = opts.termId;
+    byTermId.set(opts.termId, s.id);
+  }
+  resizeSession(s.id, opts.cols, opts.rows);
+  ensurePool(); // spawn a replacement so the next tab is also instant
+  return s;
 }
 
 /** Find a live session by its stable client term id (for reattach on reconnect). */
@@ -181,6 +313,10 @@ export function killSession(id: string): void {
   const s = sessions.get(id);
   if (!s) return;
   clearTimeout(s.graceTimer);
+  s.dataSub?.dispose();
+  s.poolExitSub?.dispose();
+  const pi = pool.indexOf(s);
+  if (pi >= 0) pool.splice(pi, 1);
   if (s.termId && byTermId.get(s.termId) === id) byTermId.delete(s.termId);
   try {
     s.pty.kill();
@@ -194,8 +330,12 @@ export function sessionCount(): number {
   return sessions.size;
 }
 
+// Only sessions that back a real terminal tab — unclaimed warm-pool shells are not tabs,
+// so they must not appear in the live-pty set that prunes the "agents" relay registry.
 export function listSessionIds(): string[] {
-  return Array.from(sessions.keys());
+  const ids: string[] = [];
+  for (const [id, s] of sessions) if (!s.pooled) ids.push(id);
+  return ids;
 }
 
 export function resizeSession(id: string, cols: number, rows: number): void {
@@ -215,9 +355,11 @@ export function getSession(id: string): Session | undefined {
 }
 
 // Kill all PTY children synchronously on process exit so orphaned shells don't
-// outlive backend restarts (covers SIGTERM from the dev runner and hot-reload).
+// outlive backend restarts (covers SIGTERM from the dev runner and hot-reload). Uses
+// the full sessions map — not listSessionIds, which omits unclaimed warm-pool shells
+// that still need killing here.
 process.on("exit", () => {
-  for (const id of listSessionIds()) {
+  for (const id of Array.from(sessions.keys())) {
     killSession(id);
   }
 });
