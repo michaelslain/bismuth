@@ -1,7 +1,8 @@
-import { createSignal, createMemo, Show, onMount } from "solid-js";
+import { createSignal, createMemo, Show, onMount, onCleanup } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { api } from "../api";
+import { onServerChange } from "../serverVersion";
 import { renderValue } from "./renderValue";
 import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
 import { ContextMenu, type MenuItem } from "../ContextMenu";
@@ -55,6 +56,18 @@ export function BodyCard(props: { row: Row; result: ViewResult; config: BaseConf
       setLoaded(true);
     }
   });
+
+  // Keep the card's body fresh when its note changes on disk from ANYWHERE — edited in another
+  // pane, a task toggled in a different view, an external sync — by re-reading in place. With
+  // the row-identity reconcile (reconcileRows.ts), a body-only edit no longer remounts the card
+  // (its row keeps identity), so without this the card would show a stale body. Re-reading here
+  // also primes the note cache, so any remount that DOES happen paints instantly instead of
+  // flashing "Loading…". Mirrors noteCache's eviction rule: targeted paths, or all on an
+  // unknown-extent change (empty paths = a dropped-SSE poll catch-up).
+  const off = onServerChange((c) => {
+    if (c.paths.length === 0 || c.paths.includes(props.row.file.path)) void refreshFromDisk();
+  });
+  onCleanup(off);
 
   const firstCol = () => props.result.columns[0] ?? "file.name";
 

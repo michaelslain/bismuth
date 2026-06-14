@@ -15,6 +15,15 @@ export type EditorMenuEvent = { x: number; y: number; items: EditorMenuItem[] };
 export function editorContextMenu(): Extension {
   return EditorView.domEventHandlers({
     contextmenu(event, view) {
+      // A task checkbox owns its own right-click (the status menu in livePreview's
+      // contextmenu handler). This diagnostic handler has higher precedence, and
+      // posAtCoords on the checkbox replace-widget resolves to the start of the task
+      // TEXT — which falls inside the first word's spelling/grammar squiggle when that
+      // word is misspelled. Without this guard the spelling menu would intercept (and
+      // stopPropagation) the right-click, so the checkbox status menu never opens. Bail
+      // so the checkbox handler downstream gets the event.
+      if ((event.target as HTMLElement).closest(".cm-task-checkbox")) return false;
+
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
       if (pos == null) return false;
 
