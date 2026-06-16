@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { EditorView, keymap, drawSelection, Decoration, WidgetType } from "@codemirror/view";
-import type { DecorationSet } from "@codemirror/view";
+import { EditorView, keymap, drawSelection, Decoration, WidgetType, ViewPlugin } from "@codemirror/view";
+import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, Facet, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
@@ -60,7 +60,12 @@ function lineIndentWidth(text: string): number {
 const hideNonTaskTheme = EditorView.theme({
   ".cm-line.oa-card-hidden": { display: "none" },
 });
-function hiddenLineDecorations(state: EditorState): DecorationSet {
+// `focused` gates the caret-line exception: only protect the line the caret sits on while the
+// editor is FOCUSED (so editing a heading/prose doesn't make it vanish mid-edit). An UNFOCUSED
+// card editor parks its caret at offset 0 — which is usually the first heading — so without this
+// gate that leading `## heading` would flash visible until the next re-render. Mirrors the
+// focus gate in editor/livePreview.ts.
+function hiddenLineDecorations(state: EditorState, focused: boolean): DecorationSet {
   const doc = state.doc;
   const head = state.selection.main.head;
   const ranges: { from: number; deco: Decoration }[] = [];
@@ -74,14 +79,28 @@ function hiddenLineDecorations(state: EditorState): DecorationSet {
     if (isTask) prevTaskIndent = indent;
     else if (!isContinuation) prevTaskIndent = -1;
     const show = isTask || isContinuation;
-    const caretHere = head >= line.from && head <= line.to;
+    const caretHere = focused && head >= line.from && head <= line.to;
     if (!show && !caretHere) ranges.push({ from: line.from, deco: hiddenLineClass });
   }
   return Decoration.set(ranges.map((r) => r.deco.range(r.from, r.from)));
 }
 const hiddenLineClass = Decoration.line({ class: "oa-card-hidden" });
+// A ViewPlugin (not decorations.compute) so we can read view.hasFocus + recompute on focus change.
 const hideNonTaskLines = [
-  EditorView.decorations.compute(["doc", "selection"], hiddenLineDecorations),
+  ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = hiddenLineDecorations(view.state, view.hasFocus);
+      }
+      update(u: ViewUpdate) {
+        if (u.docChanged || u.selectionSet || u.focusChanged) {
+          this.decorations = hiddenLineDecorations(u.view.state, u.view.hasFocus);
+        }
+      }
+    },
+    { decorations: (v) => v.decorations },
+  ),
   hideNonTaskTheme,
 ];
 
