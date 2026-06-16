@@ -8,9 +8,11 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [solid()],
 
-  // Harper ships a large WASM blob it loads itself; let Vite serve it as-is
-  // rather than attempting to pre-bundle it through esbuild (which mangles the
-  // inlined worker + WASM path resolution).
+  // Harper ships a large WASM blob it loads itself; let Vite serve it as-is rather than
+  // pre-bundling through esbuild (which mangles the inlined worker + WASM path resolution).
+  // NOTE: transformers.js must NOT be excluded — unlike Harper it relies on Vite's normal
+  // dep pre-bundling, and excluding it makes the dev server hang serving its unbundled
+  // module graph (the onnxruntime-web import never resolves).
   optimizeDeps: { exclude: ["harper.js"] },
 
   // Peel heavy, non-boot vendors into their own named chunks so the entry stays
@@ -28,6 +30,9 @@ export default defineConfig(async () => ({
           if (id.includes("vite/preload-helper") || id.includes("vite/modulepreload"))
             return "vite";
           if (id.includes("jspdf") || id.includes("html2canvas")) return "exportpdf";
+          // AI-text detector (transformers.js + onnxruntime-web): heavy + only used when the
+          // "Detect AI" command runs, so keep it in its own lazy chunk out of the boot path.
+          if (id.includes("@huggingface/transformers") || id.includes("onnxruntime")) return "transformers";
           if (id.includes("/three/") || id.includes("d3-force-3d")) return "three";
           if (id.includes("@xterm/")) return "xterm";
           if (id.includes("/katex/")) return "katex";

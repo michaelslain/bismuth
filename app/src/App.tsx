@@ -17,7 +17,7 @@ import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
-import { ToastHost, pushToast } from "./Toast";
+import { ToastHost, pushToast, dismissToast } from "./Toast";
 import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
@@ -475,6 +475,33 @@ export default function App() {
     }
     pushToast("Open a note, base, or sheet to export it");
   };
+  // Estimate how AI-generated the active page reads — fully local + offline (transformers.js
+  // in the webview; see ai/aiDetect.ts). The detector + its model are dynamically imported so
+  // they stay out of the boot bundle and the ~34MB model only downloads on first use. NOTE:
+  // the score is a rough hint, not proof, and the model is unvalidated on Claude-class text —
+  // the toast intentionally shows just the number (per product choice).
+  const detectAiActive = async () => {
+    const at = activeTab();
+    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
+    const c = focusedContent() ?? fallback;
+    if (!c || isSentinel(c) || !c.endsWith(".md")) {
+      pushToast("Open a note to check it for AI-generated text");
+      return;
+    }
+    const progress = pushToast("Analyzing for AI-generated text…", undefined, 0);
+    try {
+      const text = await api.read(c);
+      const { detectAiScore } = await import("./ai/aiDetect");
+      const { score, peak, chunks } = await detectAiScore(text);
+      dismissToast(progress);
+      const pct = Math.round(score * 100);
+      const detail = chunks > 1 ? ` (peak ${Math.round(peak * 100)}% across ${chunks} sections)` : "";
+      pushToast(`AI-likelihood ≈ ${pct}%${detail}`);
+    } catch (e) {
+      dismissToast(progress);
+      pushToast((e as Error)?.name === "TooShortError" ? "Not enough text on this page to analyze" : `AI detection failed: ${(e as Error).message}`);
+    }
+  };
   // New window: reopen the CURRENT folder/backend in a new window, pinned to this
   // window's backend via ?api= (so it survives even if this window later opens a
   // different folder). A clean URL (only ?api=) — no other query state carries over.
@@ -556,7 +583,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
