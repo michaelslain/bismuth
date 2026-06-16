@@ -4,18 +4,37 @@
 // section — the property type names). Nested-schema aware. Triggered while typing
 // or on demand via Ctrl-Space (bound in Editor.tsx). The file ships comment-free,
 // so this is the discovery mechanism.
-import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, snippetCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { completionDisplayConfig, type IconedCompletion } from "./completionDisplay";
 import type { Schema, SchemaEntry, PropertyType } from "../../../core/src/schema/types";
+import { SCALAR_PROPERTY_TYPES } from "../../../core/src/schema/registry";
 import { commandLabel } from "../../../core/src/commands";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 import { matchTemplateTokenPrefix } from "./templateToken";
 import { KEYBIND_MODIFIERS, KEYBIND_KEYS, modifierFamily, eventToCombo } from "../keybindings";
 
-// Property types a user can assign in the `properties:` registry section.
-const PROPERTY_TYPES = ["string", "number", "boolean", "date", "datetime", "file", "list"];
+/**
+ * Completions for a value inside the `properties:` registry — the full type vocabulary
+ * accepted by core's `registry.parseType`: the scalar names (sourced from
+ * SCALAR_PROPERTY_TYPES so they can't drift from the parser) plus snippet forms for the
+ * composite types (enum/list/object). The composites insert inline YAML flow objects so
+ * they parse on the same line, e.g. `status: { enum: [todo, done] }`.
+ */
+function propertyTypeCompletions(ctx: CompletionContext, typed: string): CompletionResult | null {
+  const from = ctx.pos - typed.length;
+  const scalars: Completion[] = SCALAR_PROPERTY_TYPES.map((label) => ({ label, type: "enum", detail: "type" }));
+  const composites: Completion[] = [
+    snippetCompletion("{ enum: [${values}] }", { label: "enum", type: "enum", detail: "one of a fixed set", info: "Restrict the value to a fixed set of options." }),
+    snippetCompletion("{ list: ${string} }", { label: "list", type: "enum", detail: "array of items", info: "An array; the placeholder is the item type (e.g. string)." }),
+    snippetCompletion("{ fields: { ${name}: ${string} } }", { label: "object", type: "enum", detail: "nested fields", info: "A nested object with typed sub-fields." }),
+  ];
+  const p = typed.toLowerCase();
+  const options = [...scalars, ...composites].filter((o) => o.label.toLowerCase().startsWith(p));
+  if (!options.length) return null;
+  return { from, options, validFor: /^[\w-]*$/ };
+}
 
 /** Extract the document's `dailyNotes:` ids + labels (for completing daily-note:<id>
  *  references in the toolbar `command` value). A tolerant line-scan of the dailyNotes
@@ -397,7 +416,10 @@ export function settingsCompletionSource(
       const [, key, typed] = val;
       if (!ctx.explicit && typed.length === 0) return null;
       const { schema, sectionKey } = scopeAt(root, ctx, line.number, indent);
-      const fieldType = sectionKey === "properties" ? "string" : (schema[key]?.type ?? "string");
+      // Inside `properties:`, a value is a TYPE name (scalar or composite snippet),
+      // not a typed field — handle it before the icon/enum/path branches below.
+      if (sectionKey === "properties") return propertyTypeCompletions(ctx, typed);
+      const fieldType = schema[key]?.type ?? "string";
 
       // icon-typed field -> a "open icon gallery" action (always first) + Lucide icon
       // names, EACH row showing its own icon (lucideIcon override). filter:false so the
@@ -428,9 +450,7 @@ export function settingsCompletionSource(
       const dailyIds = isCommand ? dailyNoteIdsFromDoc(ctx.state.doc.toString()) : [];
       const dailyLabels = new Map<string, string>(dailyIds.map((d) => [`daily-note:${d.id}`, d.label || d.id]));
 
-      const raw = sectionKey === "properties"
-        ? PROPERTY_TYPES
-        : [...valueOptions(fieldType), ...dailyIds.map((d) => `daily-note:${d.id}`)];
+      const raw = [...valueOptions(fieldType), ...dailyIds.map((d) => `daily-note:${d.id}`)];
       if (!raw.length) return null;
       const p = typed.toLowerCase();
       const options = raw

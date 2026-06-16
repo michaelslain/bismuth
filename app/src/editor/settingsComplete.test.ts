@@ -205,3 +205,33 @@ describe("path-typed value completion", () => {
     expect(fileOpt?.lucideIcon).toBe("FilePlus"); // each row shows its own icon
   });
 });
+
+describe("property-type completion inside `properties:`", () => {
+  it("offers every scalar type — including icon — for a property value", () => {
+    const res = complete("properties:\n  cover: ");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    for (const t of ["string", "number", "boolean", "date", "datetime", "file", "icon"]) {
+      expect(labels).toContain(t);
+    }
+  });
+
+  it("offers the composite types (enum/list/object)", () => {
+    const res = complete("properties:\n  status: ");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("enum");
+    expect(labels).toContain("list");
+    expect(labels).toContain("object");
+  });
+
+  it("narrows to icon when the user types a prefix", () => {
+    const res = complete("properties:\n  cover: ic");
+    const labels = res?.options.map((o) => o.label) ?? [];
+    expect(labels).toEqual(["icon"]);
+  });
+
+  it("does not offer top-level setting keys as property names (names are user-invented)", () => {
+    // KEY position inside properties: must stay silent.
+    const res = complete("properties:\n  ");
+    expect(res).toBeNull();
+  });
+});

@@ -11,7 +11,11 @@ export const BUILTIN_PROPERTIES: Schema = {
   icon: { type: "icon", doc: 'Icon for this note (a Lucide icon name like "House" or an emoji).' },
 };
 
-const SCALAR_TYPES = new Set([
+/** Scalar property types a user may declare for a frontmatter property, in display
+ *  order. Single source of truth for both `parseType` (validation) and the editor's
+ *  `properties:` autocomplete (`app/src/editor/settingsComplete.ts`) — keep them from
+ *  drifting by importing this rather than re-listing the names. */
+export const SCALAR_PROPERTY_TYPES = [
   "string",
   "number",
   "boolean",
@@ -19,7 +23,9 @@ const SCALAR_TYPES = new Set([
   "datetime",
   "file",
   "icon",
-]);
+] as const;
+
+const SCALAR_TYPES = new Set<string>(SCALAR_PROPERTY_TYPES);
 
 /** Parse a single type token (string or object form) into a PropertyType. */
 function parseType(raw: unknown): PropertyType {
