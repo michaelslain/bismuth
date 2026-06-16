@@ -418,7 +418,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   // not merely because the caret is somewhere on the same line. Touching the boundary
   // counts (caret right before/after the markers), matching Obsidian's live preview.
   // Line-level structure (headings, lists, blockquotes, …) still keys on `isRevealed`.
-  const selRanges = view.state.selection.ranges;
+  // Gate per-token reveal by focus too (like the line-level `selSpans` above): an unfocused
+  // editor reveals nothing and renders fully. Without this, a card editor whose default caret
+  // sits at offset 0 reveals line 1's task prefix → the first `- [ ]` shows raw instead of a
+  // checkbox. update() re-runs on focusChanged, so reveal flips correctly on focus enter/leave.
+  const selRanges = view.hasFocus ? view.state.selection.ranges : [];
   const revealsRange = (from: number, to: number) => selRanges.some((r) => r.from <= to && r.to >= from);
   // A line-prefix marker (list bullet / task checkbox) reveals its raw `- ` / `- [ ]`
   // ONLY when the caret sits within the marker itself — not when it's anywhere on the

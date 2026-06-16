@@ -121,6 +121,20 @@ describe("splitCard (tasks mode)", () => {
     expect(suffix).toBe("\n");
   });
 
+  test("## headings between task blocks stay in the editable region (lossless round-trip)", () => {
+    // The card hides these heading/blank lines via a CodeMirror decoration (see CardEditor's
+    // tasks-mode hide extension); the SPLIT keeps them in the body so prefix+body+suffix is the
+    // exact original note — saving edited tasks never drops the underlying `## headings`.
+    const raw =
+      "---\na: 1\n---\n# T\n\nIntro prose.\n\n## Today\n\n- [ ] a\n- [x] b\n\n## Later\n\n- [ ] c\n\nClosing.\n";
+    const { prefix, body, suffix } = tasksSplit(raw, "T");
+    // Body spans first task → last task, INCLUDING the `## Later` heading + blanks between blocks.
+    expect(body).toBe("- [ ] a\n- [x] b\n\n## Later\n\n- [ ] c");
+    // The `## Today` heading + intro stay in the prefix; the closing prose stays in the suffix.
+    expect(prefix.endsWith("## Today\n\n")).toBe(true);
+    expect(suffix).toBe("\n\nClosing.\n");
+  });
+
   test("indented sub-tasks are recognized as task lines", () => {
     const raw = "- [ ] parent\n  - [ ] child\n";
     const { body } = tasksSplit(raw);
