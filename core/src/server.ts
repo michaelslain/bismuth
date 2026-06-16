@@ -1210,6 +1210,7 @@ if (import.meta.main) {
     void (async () => {
       try {
         const cfg = await loadAppConfig(vault);
+        if (!cfg.daemon?.enabled) return; // master switch off → don't touch the daemon
         if (cfg.daemon?.autoUpdate === false) return;
         const status = await installStatus();
         if (!status.installed) return;

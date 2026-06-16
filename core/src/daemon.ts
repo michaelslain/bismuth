@@ -30,9 +30,17 @@ export function setClaudeBotHomeOverride(home: string | null | undefined): void 
   homeOverride = (home ?? "").trim();
 }
 
+/** Expand a leading `~` / `~/` to the home dir, so settings can hold the portable
+ *  `~/.claude-bot` (the default) instead of a machine-specific absolute path. */
+function expandTilde(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/") || p.startsWith("~\\")) return join(homedir(), p.slice(2));
+  return p;
+}
+
 /** Resolved claude-bot home dir: OA_CLAUDEBOT_HOME env, else the settings override, else ~/.claude-bot. */
 export function claudeBotHome(): string {
-  return process.env.OA_CLAUDEBOT_HOME || homeOverride || join(homedir(), ".claude-bot");
+  return expandTilde(process.env.OA_CLAUDEBOT_HOME || homeOverride || join(homedir(), ".claude-bot"));
 }
 
 export interface Owner {

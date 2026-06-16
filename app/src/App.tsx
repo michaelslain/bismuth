@@ -903,7 +903,7 @@ export default function App() {
   // Likewise, only poll the daemon graph while in daemon mode (~4s — cron/process state changes
   // are coarse-grained). Mirrors the agents-mode poll above.
   createEffect(() => {
-    if (mode() !== "daemon") return;
+    if (mode() !== "daemon" || !settings.daemon.enabled) return;
     void refreshDaemon();
     const t = setInterval(refreshDaemon, 4000);
     onCleanup(() => clearInterval(t));
@@ -937,14 +937,23 @@ export default function App() {
   // since the intro has no backend). Fires once after the vault opens, then clears the flag.
   // Uses the SAME api the command-palette commands use. Delayed so the sidecar is listening.
   onMount(() => {
-    let chosen: string[] = [];
+    // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
+    // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
+    const raw = localStorage.getItem("oa-first-run-powerups");
+    if (raw === null) return;
+    localStorage.removeItem("oa-first-run-powerups");
+    let chosen: string[];
     try {
-      chosen = JSON.parse(localStorage.getItem("oa-first-run-powerups") || "[]");
-      localStorage.removeItem("oa-first-run-powerups");
+      chosen = JSON.parse(raw);
     } catch {
       return;
     }
-    if (!Array.isArray(chosen) || chosen.length === 0) return;
+    if (!Array.isArray(chosen)) return;
+    // The daemon power-up doubles as the master-switch opt-in: enable the daemon
+    // integration iff the user picked the daemon on the intro, disable it otherwise. Only
+    // fires on the post-intro launch (key present), so it never overrides a later toggle.
+    void api.setSetting(["daemon", "enabled"], chosen.includes("daemon-setup"));
+    if (chosen.length === 0) return;
     // Each runner returns its installer result; `action` tells us whether it was a fresh
     // install or a no-op because it's already there ("adopted"/"up-to-date") — so we can
     // say "already installed" instead of falsely claiming a setup or showing an error.
