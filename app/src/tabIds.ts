@@ -9,13 +9,22 @@ export const TERMINAL_PREFIX = "::term:";
 // Export options screen for a file: EXPORT_PREFIX + "<file path>".
 export const EXPORT_PREFIX = "::export:";
 
+// The app's "settings page" is settings.yaml opened as an ordinary file tab (there is no
+// ::settings sentinel). We treat it as a first-class app: shown as "settings" with a gear
+// icon rather than a raw "settings.yaml" filename.
+export const SETTINGS_FILE = "settings.yaml";
+export function isSettingsFile(content: string): boolean {
+  return content === SETTINGS_FILE || content.endsWith("/" + SETTINGS_FILE);
+}
+
 export function isSentinel(content: string): boolean {
   return content.startsWith("::");
 }
 
-// Bare note name from a vault path ("a/b/c.md" -> "c").
+// Bare note name from a vault path ("a/b/c.md" -> "c"). Config buffers (.yaml/.yml) and
+// app docs (.draw/.sheet) drop their extension too, so a tab reads as a name, not a file.
 function noteName(path: string): string {
-  return path.split("/").pop()!.replace(/\.(md|draw|sheet)$/, "");
+  return path.split("/").pop()!.replace(/\.(md|draw|sheet|ya?ml)$/, "");
 }
 
 // Human label for a pane/tab content id — used by both the tab bar and pane headers.
@@ -27,7 +36,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
-  if (content.endsWith(".sheet")) return content.split("/").pop()!.replace(/\.sheet$/, "");
+  if (isSettingsFile(content)) return "settings";
   return noteName(content);
 }
 
@@ -38,6 +47,7 @@ export function contentIcon(content: string): string | undefined {
   if (content === GRAPH_TAB) return "Share2";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
+  if (isSettingsFile(content)) return "Settings";
   if (content.endsWith(".sheet")) return "Table";
   if (content.endsWith(".draw")) return "PenTool";
   return undefined;
