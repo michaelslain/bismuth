@@ -1,5 +1,10 @@
 import { Recurrence } from './types'
 
+/** Parse an ISO `YYYY-MM-DD` as local midnight, the one date-string convention for this module. */
+function parseLocalDate(iso: string): Date {
+  return new Date(iso + 'T00:00:00')
+}
+
 export function formatTime(time: string, military: boolean): string {
   if (military) return time
   const [h, m] = time.split(':').map(Number)
@@ -19,7 +24,7 @@ export function formatGutterHour(h: number, military: boolean): string {
 export function prettyDate(iso: string): string {
   const [y, m, d] = iso.split('-').map(Number)
   if (!y || !m || !d) return iso
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  return parseLocalDate(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 export function toDateStr(d: Date): string {
@@ -49,10 +54,10 @@ export function weekRange(d: Date, mondayFirst: boolean): [string, string] {
 
 export function expandRecurrence(recurrence: Recurrence, rangeStart: string, rangeEnd: string): string[] {
   const dates: string[] = []
-  const start = new Date(recurrence.startDate + 'T00:00:00')
-  const end = recurrence.endDate ? new Date(recurrence.endDate + 'T00:00:00') : new Date('2100-01-01')
-  const rStart = new Date(rangeStart + 'T00:00:00')
-  const rEnd = new Date(rangeEnd + 'T00:00:00')
+  const start = parseLocalDate(recurrence.startDate)
+  const end = recurrence.endDate ? parseLocalDate(recurrence.endDate) : new Date('2100-01-01')
+  const rStart = parseLocalDate(rangeStart)
+  const rEnd = parseLocalDate(rangeEnd)
   let cursor = new Date(start)
   while (cursor <= end && cursor <= rEnd) {
     if (cursor >= rStart && matchesRecurrence(recurrence, toDateStr(cursor))) dates.push(toDateStr(cursor))
@@ -67,8 +72,8 @@ function daysInMonth(d: Date): number {
 }
 
 function matchesRecurrence(r: Recurrence, dateStr: string): boolean {
-  const d = new Date(dateStr + 'T00:00:00')
-  const start = new Date(r.startDate + 'T00:00:00')
+  const d = parseLocalDate(dateStr)
+  const start = parseLocalDate(r.startDate)
   const dow = d.getDay()
   if (r.type === 'daily') return true
   if (r.type === 'weekly') return r.daysOfWeek?.includes(dow) ?? dow === start.getDay()

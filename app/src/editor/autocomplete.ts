@@ -1,5 +1,5 @@
 // app/src/editor/autocomplete.ts
-import { autocompletion, pickedCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import { completionDisplayConfig, type IconedCompletion } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
@@ -14,24 +14,7 @@ import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 import { querySource } from "./queryComplete";
 import { taskSource } from "./taskComplete";
 import { slashSource } from "./slashComplete";
-
-// Shared insert for every completion source: replace [from,to) with `insert`, put the
-// cursor `cursorOffset` chars past `from`, and tag the change as a picked completion so
-// CM's bookkeeping (closing the popup, etc.) stays correct. One place, not copy-pasted.
-function applyInsert(
-  view: EditorView,
-  completion: Completion,
-  from: number,
-  to: number,
-  insert: string,
-  cursorOffset: number,
-) {
-  view.dispatch({
-    changes: { from, to, insert },
-    selection: { anchor: from + cursorOffset },
-    annotations: pickedCompletion.of(completion),
-  });
-}
+import { applyCompletion as applyInsert } from "./applyCompletion";
 
 // Shared shape for the prefix-triggered body sources (wikilink, tag): extract the
 // text before the caret, match a trigger prefix, map items to options, and return a

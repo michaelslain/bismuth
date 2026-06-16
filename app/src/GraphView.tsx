@@ -17,6 +17,7 @@ import { IconButton } from "./ui/IconButton";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { IconTextButton } from "./ui/IconTextButton";
 import { Icon } from "./icons/Icon";
+import type { GraphMode } from "./commands";
 
 /** Lerp two 0xRRGGBB colors per-channel (t=0 → a, t=1 → b). */
 function mixHex(a: number, b: number, t: number): number {
@@ -61,8 +62,6 @@ const setViewModePersisted = (m: "2d" | "3d") => {
   setGraphViewMode(m);
   try { localStorage.setItem(VIEW_MODE_KEY, m); } catch { /* private mode / quota — in-memory only */ }
 };
-
-type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 // One icon per control, SHARED by the two toolbars: the cramped sidebar mini-graph
 // shows the icon alone, the full-pane graph pairs it with the same text label it has

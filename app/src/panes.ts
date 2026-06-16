@@ -226,7 +226,8 @@ export function detachLeafToTab(
   return { tabs: next, newTabId: newTab.id };
 }
 
-export type Rect = { x: number; y: number; w: number; h: number };
+import type { Rect } from "./dnd/geometry";
+export type { Rect };
 export type Dir = "left" | "right" | "up" | "down";
 
 // Normalized layout rectangles (0..1) for every leaf, derived from split ratios.

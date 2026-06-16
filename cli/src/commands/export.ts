@@ -39,6 +39,11 @@ async function run(args: string[]): Promise<void> {
         "pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",
       );
     },
+    htmlToPng: () => {
+      throw new Error(
+        "png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",
+      );
+    },
     drawingToPng: async (docText, theme) => {
       const bytes = await renderDocToPng(parseDoc(docText), theme);
       return { bytes, dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}` };

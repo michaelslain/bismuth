@@ -61,6 +61,23 @@ test("upsertRow into a body-less base creates the YAML rows", () => {
   expect(rows(out)[0].note.title).toBe("A");
 });
 
+test("grouped view with groupOrder (no order) serializes real row properties, not empty rows", () => {
+  // Regression: a grouped view's `columns:` (group-key order, e.g. ["todo","done"])
+  // must NOT be treated as display-column property ids. Doing so made serializeRows
+  // emit empty rows (data loss). With no explicit `order:`, rows keep their own keys.
+  const grouped = [
+    "---", "type: base", "view: kanban",
+    "groupBy: { property: status }",
+    "columns: [todo, done]",
+    "---", "",
+    "- id: 1", "  title: A", "  status: todo",
+  ].join("\n");
+  const out = upsertRow(grouped, META, null, { id: 2, title: "B", status: "done" });
+  const rs = rows(out);
+  expect(rs.map((r) => r.note.title)).toEqual(["A", "B"]);
+  expect(rs.map((r) => r.note.status)).toEqual(["todo", "done"]);
+});
+
 test("rowOps migrates a legacy markdown-table base to YAML on write", () => {
   const legacy = ["---", "type: base", "---", "", "| id | title |", "| --- | --- |", "| 1 | A |"].join("\n");
   const out = upsertRow(legacy, META, null, { id: 2, title: "B" });

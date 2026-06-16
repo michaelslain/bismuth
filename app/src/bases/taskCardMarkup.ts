@@ -7,18 +7,13 @@
 // `data-line` (the ABSOLUTE source-file line, frontmatter included) maps a click straight back
 // to the line to rewrite — no index counting.
 import { renderNoteBody } from "./markdown";
+import { stripFrontmatter } from "./cardBodySplit";
 import { escapeAttr } from "../htmlEscape";
 
 // `- [<one char>] body` — the bullet is normalized to `-` by the writers (toggleTaskLine /
 // setTaskLineStatus), so a single `-` bullet is all the card needs to recognize.
 const TASK_LINE_CAP = /^(\s*)- \[(.)\] (.*)$/;
 const HEADING_RE = /^#{1,6}\s/;
-
-// Strip a leading YAML frontmatter block so the card shows just the note body — same as
-// `.md` transclusion (embedBlock).
-function stripFrontmatter(text: string): string {
-  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
-}
 
 // Drop headings with no remaining content beneath them (their tasks all moved to the
 // completed section) so an all-done card collapses to title + "N completed".

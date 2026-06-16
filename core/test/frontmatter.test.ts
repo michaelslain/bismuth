@@ -66,7 +66,7 @@ test("frontmatter with special characters in values", () => {
 
 test("missing closing --- falls back to no frontmatter", () => {
   const md = `---\nstatus: incomplete\nBody content here`;
-  const { data, body } = parseFrontmatter(md);
+  const { data } = parseFrontmatter(md);
   // Should handle gracefully
   expect(typeof data).toBe("object");
 });

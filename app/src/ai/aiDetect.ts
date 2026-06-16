@@ -12,6 +12,8 @@
 // validated on Claude-class text and is unreliable on edited/paraphrased prose. This is a
 // rough hint, never proof. The UI must say so. See the research notes from 2026-06-15.
 
+import { stripFrontmatter } from "../bases/cardBodySplit";
+
 // The int8 quantized variant (model_quantized.onnx, ~34MB).
 const MODEL_ID = "onnx-community/e5-small-lora-ai-generated-detector-ONNX";
 // e5-small max sequence length is 512 tokens; keep each window well under that (~1.3
@@ -71,11 +73,6 @@ async function getPipeline(onDownload?: (pct: number) => void): Promise<Classify
     })();
   }
   return pipePromise;
-}
-
-/** Strip a leading YAML frontmatter block so we score prose, not metadata. */
-function stripFrontmatter(text: string): string {
-  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
 /** Split prose into ~WORDS_PER_CHUNK windows, then evenly sample at most MAX_CHUNKS of them. */

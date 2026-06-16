@@ -179,7 +179,6 @@ test("serializeSettingsForFrontend omits the properties registry section", async
   expect(data.properties).toBeUndefined();
 });
 
-import { reconcileSettings } from "../src/settings";
 import { readFileSync } from "node:fs";
 
 test("reconcile fills a missing top-level section with its defaults", async () => {

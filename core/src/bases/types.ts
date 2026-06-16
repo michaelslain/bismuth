@@ -41,7 +41,7 @@ export interface ViewConfig {
   // last card is dragged out); other view types only show declared groups that have
   // rows. Without this, groups are ordered by the group value (type-aware), not the
   // declared list.
-  columns?: string[];
+  groupOrder?: string[];
   // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
   columnWidths?: Record<string, number>;
   // Map view: which property ids carry geo coords. Defaults to bare "lat" / "lng"

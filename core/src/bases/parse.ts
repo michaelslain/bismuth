@@ -92,7 +92,7 @@ function normalizeView(raw: unknown): ViewConfig {
     : undefined;
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "tasks" ? "tasks" : o.cardContent === "properties" ? "properties" : undefined;
   const imageFit = o.imageFit === "contain" ? "contain" : o.imageFit === "cover" ? "cover" : undefined;
-  const columns = strArr(o.columns);
+  const groupOrder = strArr(o.columns);
   const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
   const lng = typeof o.lng === "string" ? o.lng : undefined;
@@ -116,7 +116,7 @@ function normalizeView(raw: unknown): ViewConfig {
     image: strOrUndef(o.image),
     imageFit,
     imageAspectRatio: numOrUndef(o.imageAspectRatio),
-    columns,
+    groupOrder,
     columnWidths,
     lat,
     lng,
@@ -229,7 +229,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     }
     // Top-level view shaping (visible columns / sort / group / group-order) configures the default view too.
     if (Array.isArray(raw.order)) config.views[0].order = (raw.order as unknown[]).map(String);
-    if (Array.isArray(raw.columns)) config.views[0].columns = (raw.columns as unknown[]).map(String);
+    if (Array.isArray(raw.columns)) config.views[0].groupOrder = (raw.columns as unknown[]).map(String);
     const s = normalizeSort(raw.sort);
     if (s) config.views[0].sort = s;
     const g = normalizeGroupBy(raw.groupBy);

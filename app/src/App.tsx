@@ -10,7 +10,7 @@ const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.Gra
 import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
-import { bindCommands, resolveButtonCommands } from "./commands";
+import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
 import { BASE_VIEW_KINDS } from "./baseViews";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
@@ -53,10 +53,6 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
 import "./ui/popover/popover.css";
-
-/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
- *  daemon=claude-bot cron/process supervision graph */
-type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 /**
  * Apply brain-view layout to a subgraph. Overwrites node positions with the view's
@@ -654,6 +650,7 @@ export default function App() {
   };
   // Archive (permanently delete) completed/cancelled tasks. "archiveTasks" targets the
   // active note; "archiveAllTasks" sweeps the whole vault. Git retains the history.
+  const archiveError = (e: unknown) => pushToast(`Archive failed: ${(e as Error).message}`);
   const archiveTasks = async () => {
     const at = activeTab();
     const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
@@ -666,7 +663,7 @@ export default function App() {
       const { removed } = await api.archiveTasks(c);
       pushToast(removed > 0 ? `Archived ${removed} completed task${removed === 1 ? "" : "s"}` : "No completed tasks to archive");
     } catch (e) {
-      pushToast(`Archive failed: ${(e as Error).message}`);
+      archiveError(e);
     }
   };
   const archiveAllTasks = async () => {
@@ -674,7 +671,7 @@ export default function App() {
       const { removed, files } = await api.archiveTasks();
       pushToast(removed > 0 ? `Archived ${removed} task${removed === 1 ? "" : "s"} across ${files} note${files === 1 ? "" : "s"}` : "No completed tasks to archive");
     } catch (e) {
-      pushToast(`Archive failed: ${(e as Error).message}`);
+      archiveError(e);
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.

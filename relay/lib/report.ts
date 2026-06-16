@@ -22,7 +22,7 @@ export interface HookInput {
 
 /** The app terminal-tab id, or undefined when not launched from a Bismuth terminal. */
 export function terminalId(): string | undefined {
-  return process.env.CLAUDE_TERMINAL_ID || undefined;
+  return process.env.CLAUDE_TERMINAL_ID;
 }
 
 /** Base URL of this app's core server (set in the pty env by terminal.ts). */

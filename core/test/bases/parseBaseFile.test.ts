@@ -61,5 +61,5 @@ test("top-level columns folds into the default view (explicit group order)", () 
     "---\ntype: base\nview: list\ngroupBy: { property: formula.urgency }\ncolumns: [Overdue, This week, Later]\n---\n",
     { name: "DoNow", path: "DoNow.md" },
   );
-  expect(config.views[0].columns).toEqual(["Overdue", "This week", "Later"]);
+  expect(config.views[0].groupOrder).toEqual(["Overdue", "This week", "Later"]);
 });

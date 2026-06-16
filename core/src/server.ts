@@ -937,7 +937,8 @@ export function createServer(cfg: CoreConfig) {
       async (req) => {
         const { path, line, status } = (await req.json()) as { path: string; line: number; status?: string };
         const content = await readNote(cfg.vault, path);
-        const lines = content.split("\n");
+        const eol = content.includes("\r\n") ? "\r\n" : "\n";
+        const lines = content.split(/\r?\n/);
         if (line < 0 || line >= lines.length) {
           throw new AppError("EINVAL", "line out of range", 400);
         }
@@ -952,7 +953,7 @@ export function createServer(cfg: CoreConfig) {
             : toggleTaskLine(lines[line], todayISO());
         // Resolved (done/cancelled) tasks sink to the bottom of their list so a checked-off
         // todo drops below the still-open ones, matching the card view's grouping.
-        await writeNote(cfg.vault, path, reorderTaskBlocks(lines.join("\n")));
+        await writeNote(cfg.vault, path, reorderTaskBlocks(lines.join(eol)));
         return ok();
       },
       (b) => b.path,

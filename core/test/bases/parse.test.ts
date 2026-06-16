@@ -92,7 +92,7 @@ test("cards view with unknown cardContent value leaves it undefined", () => {
 
 test("kanban view: columns: [...] parses into a string array", () => {
   const base = parseBase(`views:\n  - type: kanban\n    name: Board\n    groupBy: status\n    columns: [todo, reading, done]\n`);
-  expect(base.views[0].columns).toEqual(["todo", "reading", "done"]);
+  expect(base.views[0].groupOrder).toEqual(["todo", "reading", "done"]);
 });
 
 test("properties.hidden parses to a boolean flag", () => {
