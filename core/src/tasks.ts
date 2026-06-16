@@ -4,6 +4,7 @@
 
 import { getFileAccess } from "./fileAccess";
 import { addDaysISO } from "./dates";
+import { reorderTaskBlocks, isResolvedStatus, collectBlock } from "./taskReorder";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
@@ -268,6 +269,38 @@ export function setTaskLineStatus(line: string, status: string, today: string): 
     }
   }
   return `${completed}${cr}`;
+}
+
+// The pure block-reorder primitives live in ./taskReorder (imported above) so the frontend
+// (taskFold.ts) can import reorderTaskBlocks without pulling this module's fileAccess → files.ts
+// (node) deps. Re-exported so existing `from "./tasks"` importers (server.ts) keep working.
+export { reorderTaskBlocks, isResolvedStatus };
+
+/**
+ * Permanently remove every resolved (done/cancelled) task item — head line plus its
+ * indented children — from the content. Returns the rewritten content and the number of
+ * task items removed. Pure; git keeps the history. Backs the "Archive tasks" commands.
+ */
+export function archiveResolvedTasks(content: string): { content: string; removed: number } {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.split(/\r?\n/);
+  const out: string[] = [];
+  let removed = 0;
+  let i = 0;
+  while (i < lines.length) {
+    if (!parseTaskLine(lines[i], "", i)) {
+      out.push(lines[i]);
+      i++;
+      continue;
+    }
+    const { items, end } = collectBlock(lines, i);
+    for (const it of items) {
+      if (isResolvedStatus(it.status)) removed++;
+      else out.push(...it.lines);
+    }
+    i = end;
+  }
+  return { content: out.join(eol), removed };
 }
 
 /** Read every markdown file in the vault and return all checkbox tasks across them. */

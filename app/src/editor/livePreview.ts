@@ -9,6 +9,7 @@ import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
+import { reorderAroundLine } from "./taskFold";
 import { openTaskStatusMenu } from "../taskStatusMenu";
 import { LIST_STEP } from "./listLayout";
 import { CodeHeader } from "./CodeHeader";
@@ -816,6 +817,10 @@ export const livePreview = [
       // are set via the right-click status menu (contextmenu handler below).
       const next = (m[2] === "x" || m[2] === "X") ? " " : "x";
       view.dispatch({ changes: { from: innerPos, to: innerPos + 1, insert: next } });
+      // Newly-completed tasks sink to the bottom of their list (mirrors the server's
+      // /tasks/toggle reorder, which the in-editor checkbox bypasses).
+      const reorder = reorderAroundLine(view.state, view.state.doc.lineAt(innerPos).number);
+      if (reorder) view.dispatch(reorder);
       return true;
     },
     // Right-click a checkbox → status menu (To do / In progress / Done / Cancelled, current
@@ -834,6 +839,8 @@ export const livePreview = [
       e.stopPropagation(); // don't also open the pane's context menu
       openTaskStatusMenu((e as MouseEvent).clientX, (e as MouseEvent).clientY, m[2], (char) => {
         view.dispatch({ changes: { from: innerPos, to: innerPos + 1, insert: char } });
+        const reorder = reorderAroundLine(view.state, view.state.doc.lineAt(innerPos).number);
+        if (reorder) view.dispatch(reorder);
       });
       return true;
     },

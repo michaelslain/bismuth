@@ -1366,3 +1366,61 @@ test("POST /daemon/setup is a read-table system action (no vault mutation)", asy
     server.stop(true);
   }
 });
+
+test("POST /tasks/toggle sinks the completed task to the bottom of its block", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "todo.md", ["- [ ] a", "- [ ] b", "- [ ] c"].join("\n"));
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Complete the middle task (line 1) — it should drop below the still-open ones.
+    await fetch(`${base}/tasks/toggle`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "todo.md", line: 1 }),
+    });
+    const after = await readNote(vault, "todo.md");
+    expect(after.split("\n")).toEqual(["- [ ] a", "- [ ] c", "- [x] b ✅ " + after.match(/✅ (\d{4}-\d{2}-\d{2})/)![1]]);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /tasks/archive removes resolved tasks from a single note", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "todo.md", ["- [ ] keep", "- [x] done", "- [-] cancelled"].join("\n"));
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await (await fetch(`${base}/tasks/archive`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "todo.md" }),
+    })).json();
+    expect(res).toEqual({ removed: 2, files: 1 });
+    expect(await readNote(vault, "todo.md")).toBe("- [ ] keep");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /tasks/archive with no path sweeps the whole vault", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(vault, "one.md", ["- [ ] keep", "- [x] done"].join("\n"));
+  await writeNote(vault, "two.md", ["- [-] gone", "- [/] doing"].join("\n"));
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await (await fetch(`${base}/tasks/archive`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })).json();
+    expect(res.removed).toBe(2);
+    expect(res.files).toBe(2);
+    expect(await readNote(vault, "one.md")).toBe("- [ ] keep");
+    expect(await readNote(vault, "two.md")).toBe("- [/] doing");
+  } finally {
+    server.stop(true);
+  }
+});

@@ -43,6 +43,9 @@ export interface CommandHandlers {
   openBismuthInstall: () => void;
   // Open the modal to view/remove the user's custom spellcheck dictionary words.
   openEditDictionary: () => void;
+  // Permanently remove completed/cancelled tasks — from the active note, or all notes.
+  archiveTasks: () => void | Promise<void>;
+  archiveAllTasks: () => void | Promise<void>;
 }
 
 export interface BoundCommand {
@@ -70,6 +73,8 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
     "export": h.exportActive,
+    "archive-tasks": h.archiveTasks,
+    "archive-all-tasks": h.archiveAllTasks,
     "detect-ai": h.detectAiActive,
     "terminal": h.openTerminal,
     "search": h.openSearch,
