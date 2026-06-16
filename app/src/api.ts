@@ -209,6 +209,13 @@ export const api = {
   toggleTask: (path: string, line: number, status?: string) =>
     post("/tasks/toggle", status != null ? { path, line, status } : { path, line }),
 
+  // Permanently remove completed/cancelled tasks. Pass a path to archive that note only;
+  // omit it to sweep the whole vault. Returns how many tasks (and files) were affected.
+  archiveTasks: (path?: string) =>
+    post("/tasks/archive", path ? { path } : {}).then(
+      (r) => r.json() as Promise<{ removed: number; files: number }>,
+    ),
+
   noteCards: (path: string) =>
     getJson<Card[]>(`/cards/note?path=${encodeURIComponent(path)}`),
   dueCards: () => getJson<Card[]>(`/cards/due`),

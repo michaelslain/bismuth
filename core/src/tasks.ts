@@ -270,6 +270,102 @@ export function setTaskLineStatus(line: string, status: string, today: string): 
   return `${completed}${cr}`;
 }
 
+/** A done ([x]/[X]) or cancelled ([-]) task is "resolved" — eligible to sink/archive. */
+export function isResolvedStatus(status: TaskStatus): boolean {
+  return status === "done" || status === "cancelled";
+}
+
+// A task "item" is a head task line plus any following lines indented deeper than it
+// (sub-tasks / wrapped continuation). Grouping by item keeps a parent and its children
+// together when we reorder or archive a block.
+interface TaskBlockItem {
+  status: TaskStatus;
+  lines: string[];
+}
+
+function leadingWidth(line: string): number {
+  const m = /^[ \t]*/.exec(line);
+  return m ? m[0].length : 0;
+}
+
+// Split a contiguous run of task lines (starting at `lines[start]`, whose heads share the
+// same base indent) into items. Returns the items and the index just past the block. A
+// line joins the current item if it's deeper-indented than the head; a task line at the
+// base indent starts a new item; anything else ends the block.
+function collectBlock(lines: string[], start: number): { items: TaskBlockItem[]; end: number } {
+  const baseIndent = leadingWidth(lines[start]);
+  const items: TaskBlockItem[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i];
+    const task = parseTaskLine(line, "", i);
+    const indent = leadingWidth(line);
+    if (task && indent === baseIndent) {
+      items.push({ status: task.status, lines: [line] });
+      i++;
+    } else if (items.length > 0 && indent > baseIndent && line.trim() !== "") {
+      items[items.length - 1].lines.push(line);
+      i++;
+    } else {
+      break;
+    }
+  }
+  return { items, end: i };
+}
+
+/**
+ * Sink resolved (done/cancelled) task items to the bottom of each contiguous task block,
+ * preserving the relative order within the open and resolved groups (stable). Non-task
+ * regions pass through untouched. Pure and idempotent once sorted — keeps completed and
+ * cancelled todos pinned to the bottom of their list automatically.
+ */
+export function reorderTaskBlocks(content: string): string {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.split(/\r?\n/);
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    if (!parseTaskLine(lines[i], "", i)) {
+      out.push(lines[i]);
+      i++;
+      continue;
+    }
+    const { items, end } = collectBlock(lines, i);
+    const open = items.filter((it) => !isResolvedStatus(it.status));
+    const done = items.filter((it) => isResolvedStatus(it.status));
+    for (const it of [...open, ...done]) out.push(...it.lines);
+    i = end;
+  }
+  return out.join(eol);
+}
+
+/**
+ * Permanently remove every resolved (done/cancelled) task item — head line plus its
+ * indented children — from the content. Returns the rewritten content and the number of
+ * task items removed. Pure; git keeps the history. Backs the "Archive tasks" commands.
+ */
+export function archiveResolvedTasks(content: string): { content: string; removed: number } {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.split(/\r?\n/);
+  const out: string[] = [];
+  let removed = 0;
+  let i = 0;
+  while (i < lines.length) {
+    if (!parseTaskLine(lines[i], "", i)) {
+      out.push(lines[i]);
+      i++;
+      continue;
+    }
+    const { items, end } = collectBlock(lines, i);
+    for (const it of items) {
+      if (isResolvedStatus(it.status)) removed++;
+      else out.push(...it.lines);
+    }
+    i = end;
+  }
+  return { content: out.join(eol), removed };
+}
+
 /** Read every markdown file in the vault and return all checkbox tasks across them. */
 export async function collectVaultTasks(root: string): Promise<Task[]> {
   const { listMarkdown, readNote } = await getFileAccess();

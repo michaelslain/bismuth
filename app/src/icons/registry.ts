@@ -23,6 +23,8 @@ import { assertSeedMatchesNames } from "./seedNames";
 
 // --- Static boot core (per-icon subpath imports → tree-shaken into the entry) ---
 import AppWindow from "lucide-solid/icons/app-window";
+import Archive from "lucide-solid/icons/archive";
+import ArchiveX from "lucide-solid/icons/archive-x";
 import ArrowDown from "lucide-solid/icons/arrow-down";
 import ArrowLeft from "lucide-solid/icons/arrow-left";
 import ArrowRight from "lucide-solid/icons/arrow-right";
@@ -112,7 +114,7 @@ import ZoomOut from "lucide-solid/icons/zoom-out";
 // tests): the assertion below throws on boot if they ever drift, and
 // registry-seed.test.ts asserts every command-catalog icon is covered.
 const SEED: Record<string, LucideIcon> = {
-  AppWindow, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
+  AppWindow, Archive, ArchiveX, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
   Bot, Box, Brain, BrainCircuit, Calendar, CaseSensitive, Check, ChevronDown,
   ChevronLeft, ChevronRight,
   ChevronUp, Clock, Code, Columns3, Copy, Crown, Download, Eraser, Eye, File,
