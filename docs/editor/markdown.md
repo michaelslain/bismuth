@@ -9,21 +9,29 @@ This document covers every block and inline rendering transformation that Bismut
 The live-preview layer is NOT a markdown-to-HTML pipeline. It is a per-line CodeMirror `ViewPlugin` that applies `Decoration` objects directly to editor ranges. This means:
 
 - The markdown source is always the ground truth; decorations are overlays.
-- Most decorations **hide syntax characters** off the cursor line and **reveal** them when the cursor enters the line.
+- Most decorations **hide syntax characters** and **reveal** them only when a selection range touches that specific token (per-token, not per-line — see [Reveal Rule](#reveal-rule-render-when)). An unfocused editor reveals nothing.
 - Block-level decorations (table widgets, HTML block widgets, multi-line math block widgets) must live in `StateField` instances, not the `ViewPlugin`, because CodeMirror prohibits `block: true` decorations from plugins.
 - The `ViewPlugin` (`buildDecorations`) runs on every cursor move, viewport change, document change, or active-block change. It is cheap because it only iterates `view.visibleRanges` and recomputes the heavier `BlockRegions` scan only when the document content actually changes.
 
 ---
 
-## Cursor-Out Rule ("Render When")
+## Reveal Rule ("Render When")
 
-The core contract for every inline token is:
+Reveal is **per-token, not per-line**, and gated on editor focus. There are three reveal predicates in `buildDecorations`, all built from `view.state.selection.ranges`:
 
-- **Off the cursor line**: syntax delimiters (e.g. `**`, `*`, `~~`, backtick, `>`, `[[`, `]]`, `#`) are **hidden** (`cm-hidden-syntax`, `display:none`) and the inner content is styled (e.g. bold, italic, strikethrough, link color).
-- **On the cursor line** (the line the primary cursor head is on): syntax delimiters are **revealed**, rendered in dim `Monaspace Xenon` monospace via the `cm-syntax-mark` class, so the raw source is always readable while editing.
-- **Heading `#` marks** on the cursor line get `cm-heading-mark` (monospace + `--fg` + weight 500) rather than the dim `cm-syntax-mark`, to match the inline note-title `#` aesthetic.
+- **`revealsRange(from, to)`** — `selRanges.some((r) => r.from <= to && r.to >= from)`. An **inline** token (bold/italic/strike/code/link/wikilink/math) reveals its raw syntax only when a selection range actually **touches that token's character span** — not merely because the caret is somewhere on the same line. Touching the boundary counts (caret right before/after the markers), matching Obsidian's live preview. So in `**bold** *italic*`, putting the caret inside `**bold**` reveals only `**bold**`; `*italic*` stays rendered.
+- **`revealsPrefix(from, to)`** — `selRanges.some((r) => r.from < to && r.to >= from)`. A line-prefix marker (list bullet / task checkbox) reveals its raw `- ` / `- [ ]` **only when the caret sits within the marker itself**. The half-open `[from, to)` interval means Home (caret just past the marker, at the start of the text) keeps the bullet/checkbox rendered — you must click onto the marker to edit it raw.
+- **`isRevealed(lineNumber)`** — line-level structure (headings, blockquotes, thematic breaks) still keys on whether the **line** is touched by a selection (`selSpans.some(([a, b]) => n >= a && n <= b)`, where each `selSpans` entry is `[doc.lineAt(r.from).number, doc.lineAt(r.to).number]`). Selecting across multiple lines reveals each line's structural syntax.
 
-For block constructs (code fences, frontmatter, HTML blocks, math blocks, tables), the reveal condition is cursor-inside-the-block (any line within the block), not just the cursor line.
+In every case:
+
+- **Hidden** (not revealed): syntax delimiters (e.g. `**`, `*`, `~~`, backtick, `>`, `[[`, `]]`, `#`) get `cm-hidden-syntax` (`display:none`) and the inner content is styled (bold, italic, strikethrough, link color).
+- **Revealed**: delimiters are rendered in dim `Monaspace Xenon` monospace via the `cm-syntax-mark` class, so the raw source is always readable while editing.
+- **Heading `#` marks** when revealed get `cm-heading-mark` (monospace + `--fg` + weight 500) rather than the dim `cm-syntax-mark`, to match the inline note-title `#` aesthetic.
+
+**Focus gate**: an **unfocused** editor (`!view.hasFocus`) reveals **nothing** — `selSpans` is `[]`, so every line renders as live-preview. This matters for multi-editor surfaces like the Bases cards grid: each card's editor keeps its caret at offset 0, so without the focus gate every unfocused card would expose its first line as raw markdown. The `ViewPlugin.update` re-runs the pass on `u.focusChanged`, so the reveal flips in/out as focus moves.
+
+For block constructs (code fences, frontmatter, HTML blocks, math blocks, tables), the reveal condition is cursor-inside-the-block (any line within the block), not a per-token test.
 
 ---
 
@@ -189,11 +197,13 @@ line-height: 1.55
 ```
 The `LIST_STEP` is 1.6em per depth level; `LIST_GUTTER` is 1.6em (width of the bullet gutter column).
 
-**Off cursor line**:
+The reveal here is keyed on `revealsPrefix(line.from, line.from + bulletMatch[0].length)` — the caret must sit **within the `- ` marker itself** (half-open `[from, to)`, so a caret at the start of the text just past the marker keeps the bullet rendered).
+
+**Marker not revealed** (caret not on the marker):
 1. The entire prefix (indent + marker + spaces) is replaced by a `BulletWidget` (the depth-appropriate glyph, class `cm-bullet`). The bullet glyph is right-aligned in a 1.6em inline-block column with `padding-right:0.62em`.
 2. The literal leading whitespace is hidden (the indent comes from CSS, not the markdown).
 
-**On cursor line**:
+**Marker revealed** (caret within the marker):
 1. Leading whitespace chars are hidden; the `cm-li` line decoration drives indent from CSS.
 2. The marker (`- `, `* `, `+ `) gets `cm-list-marker` (Monaspace Xenon), so the raw dash shows in a monospace font rather than the serif body face.
 
@@ -216,9 +226,11 @@ Task lines are processed **before** bullet lines, and `isTaskLine = true` guards
 
 **Strikethrough**: applied to task text (not the checkbox gutter) for `done` and `cancelled` via `cm-task-done` (`text-decoration:line-through; opacity:0.55`).
 
-**Off cursor line**: the entire prefix (indent + `- ` + `[ ]` + trailing space) is replaced by a `CheckboxWidget` (a Solid `<TaskCheckbox>` component). The widget uses `updateDOM()` to drive status changes through a reactive signal, so status transitions animate via CSS transitions rather than snapping on widget recreate.
+Reveal is keyed on `revealsPrefix` over the prefix span (same as bullets): the caret must sit within the marker to edit it raw.
 
-**On cursor line**: Same hanging-indent treatment as bullets — leading whitespace hidden, `cm-task` line decoration drives indent; the `- [ ]` marker chars get `cm-list-marker` (Monaspace).
+**Marker not revealed**: the entire prefix (indent + `- ` + `[ ]` + trailing space) is replaced by a `CheckboxWidget` (a Solid `<TaskCheckbox>` component). The widget uses `updateDOM()` to drive status changes through a reactive signal, so status transitions animate via CSS transitions rather than snapping on widget recreate.
+
+**Marker revealed**: Same hanging-indent treatment as bullets — leading whitespace hidden, `cm-task` line decoration drives indent; the `- [ ]` marker chars get `cm-list-marker` (Monaspace).
 
 **Click behavior**: `mousedown` handler intercepts clicks on `.cm-task-checkbox` elements. It prevents the default (so the cursor stays put and the line stays in preview mode). The handler reads the line text, identifies the `[ x ]` char, and toggles: `x/X → space`, anything else → `x`. It never produces `doing` or `cancelled` via click — those are typing-only states.
 
@@ -242,10 +254,10 @@ Table detection is done by `groupTableBlocks` from `tableModel.ts`, which finds 
 
 ## Inline Formatting
 
-All inline tokens use the same `pushInline(deco, text, lineFrom, onCursor, re, markLen, mark)` helper, which:
+All inline tokens use the same `pushInline(deco, text, lineFrom, reveals, re, markLen, mark)` helper. For each match it computes `onCursor = reveals(s, end)` — the per-token `revealsRange` predicate, so reveal is decided per match, not per line — and then:
 1. Applies the styled mark to the inner content.
-2. Off cursor: hides the delimiters.
-3. On cursor: applies `cm-syntax-mark` to the delimiters (dim Monaspace reveal).
+2. Not revealed: hides the delimiters (`cm-hidden-syntax`).
+3. Revealed: applies `cm-syntax-mark` to the delimiters (dim Monaspace reveal).
 
 | Syntax | Regex | Mark length | CSS class |
 |---|---|---|---|
@@ -266,10 +278,11 @@ All inline tokens use the same `pushInline(deco, text, lineFrom, onCursor, re, m
 Regex: `/\[([^\]]+)\]\(([^)]+)\)/g`
 
 - The visible link text (between `[` and `]`) gets `cm-link` (accent color, accent-soft bottom border, `cursor:pointer`).
-- **Off cursor line**: the `[`, `](url)` are hidden.
-- **On cursor line**: the `[` and `](url)` portions get `cm-syntax-mark`.
+- Reveal is per-token (`onCursor = revealsRange(s, end)`): only the link the caret/selection touches shows its syntax.
+- **Not revealed**: the `[`, `](url)` are hidden.
+- **Revealed**: the `[` and `](url)` portions get `cm-syntax-mark`.
 
-The URL itself is never shown off the cursor line (hidden along with the brackets).
+The URL itself is never shown unless that specific link is revealed (hidden along with the brackets).
 
 ---
 
@@ -291,9 +304,11 @@ The **visible range** is computed by `wikilinkVisibleRange(inner, start)`:
 1. If `|` is present in the inner text: the alias (text after `|`) is the visible range.
 2. Else: the basename of the target (text after the last `/`, up to any `#`) is the visible range.
 
-**Off cursor line**: everything outside the visible range is hidden — the `[[`, any folder path prefix, any `#heading` fragment, and the `]]`. Only the basename or alias is shown, styled `cm-wikilink` (accent color, accent-soft bottom border, `cursor:pointer`).
+Reveal is per-token (`pushWikilinks` calls `onCursor = reveals(s, end)` per match, with `reveals = revealsRange`):
 
-**On cursor line**: the `[[`, folder path, `#heading`, and `]]` get `cm-syntax-mark` (dim Monaspace reveal). The visible range still gets `cm-wikilink`.
+**Not revealed**: everything outside the visible range is hidden — the `[[`, any folder path prefix, any `#heading` fragment, and the `]]`. Only the basename or alias is shown, styled `cm-wikilink` (accent color, accent-soft bottom border, `cursor:pointer`).
+
+**Revealed** (a selection touches this wikilink): the `[[`, folder path, `#heading`, and `]]` get `cm-syntax-mark` (dim Monaspace reveal). The visible range still gets `cm-wikilink`.
 
 **Edge case**: a degenerate token where `visTo <= visFrom` (e.g. `[[#heading]]` which has an empty basename) applies `cm-wikilink` to the entire `[[...]]` span.
 
@@ -317,22 +332,24 @@ Tags are skipped on heading lines (the `if (!hm) pushTags(...)` guard) so headin
 
 Math rendering is **lazy-loaded**: KaTeX (~280KB) loads only when a note first contains math. Before the library loads, math widgets render empty and re-render once `onMathReady` fires.
 
+Both inline and single-line block math reveal **per token** (`revealsRange(s, end)`), not per line: only the `$…$` / `$$…$$` the caret/selection touches shows its raw source. Block math (`$$…$$`) is processed **before** inline math (`$…$`) so the `$$` form wins.
+
 ### Inline math: `$expr$`
 
 Regex: `/(?<!\$)\$([^$\n]+)\$(?!\$)/g`
 
-- Applied **only off the cursor line** (no math rendering on the cursor line — the `if (!onCursor)` guard is applied before math matching).
 - Negative lookbehind/ahead `(?<!\$)...\$(?!\$)` prevents matching `$$...$$` as inline math.
-- The entire `$expr$` span is replaced by a `MathWidget` with `displayMode: false`.
+- **Not revealed**: the entire `$expr$` span is replaced by a `MathWidget`. The expression is wrapped as `` `\displaystyle ${expr}` `` and rendered with **`displayMode: false`**. This is deliberate: `\displaystyle` makes fractions/sums/limits render at **full display size** (the same typography as a `$$` block), while `displayMode: false` keeps the math **inline** (it flows in the sentence rather than breaking onto its own centered line). So `$\frac{a}{b}$` looks like the block form instead of the cramped default inline style. `\displaystyle` is a valid KaTeX switch; `throwOnError: false` shrugs off anything malformed.
+- **Revealed**: the two `$` delimiters get `cm-syntax-mark` (`syntaxMark.range(s, s + 1)` / `syntaxMark.range(end - 1, end)`), and the inner LaTeX is syntax-highlighted by `latexTokenDecorations(s + 1, expr)` (see [LaTeX Source Highlighting](#latex-source-highlighting)).
 - Inline math widgets must not overlap with inline HTML widget spans (the `inHtmlSpan(s, end)` guard skips them if they do).
 
 ### Single-line block math: `$$expr$$`
 
 Regex: `/\$\$([^$]+)\$\$/g`
 
-- Applied **only off the cursor line**.
 - The `$$` delimiters and the expression are all on one line.
-- Replaced by a `MathWidget` with `displayMode: true`.
+- **Not revealed**: replaced by a `MathWidget` with `displayMode: true`. The widget's `<span>` gets `cm-math cm-math-display` (a full-width block wrapper so KaTeX equation tags / auto-numbers — `\tag`, numbered `align`/`equation` — sit flush at the right margin rather than overlapping the equation).
+- **Revealed**: the two `$$` delimiters get `cm-syntax-mark` and the inner LaTeX is highlighted via `latexTokenDecorations(s + 2, expr)`.
 - Also guarded against overlap with HTML widget spans.
 
 ### Multi-line block math: `$$\n...\n$$`
@@ -349,7 +366,39 @@ Handled by `mathBlock()` in `mathBlock.ts`, which is a separate `StateField`.
 
 `renderMath(expr, displayMode)` calls `katex.renderToString(expr, { throwOnError: false, displayMode })`. `throwOnError: false` means malformed expressions render as an error message rather than throwing.
 
-Both inline and block math widgets register via `onMathReady` in their `toDOM()` if `renderMath` returned an empty string (library not yet loaded).
+Both inline and block math widgets register via `onMathReady` in their `toDOM()` if `renderMath` returned an empty string (library not yet loaded). A widget destroyed before KaTeX loads drops its pending `onMathReady` callback via the stored unsubscribe.
+
+### LaTeX Source Highlighting
+
+When a math token **is** revealed (the caret/selection touches it), the raw LaTeX source is shown — and `app/src/editor/latexHighlight.ts` colors it so editing math reads like code instead of flat prose, rather than just dumping plain text. `latexTokenDecorations(offset, src)` runs the pure, DOM-free `tokenizeLatex(src)` and maps each token to a cached `Decoration.mark`. Both reveal sites push these alongside the `cm-syntax-mark` delimiters (`latexTokenDecorations(s + 1, expr)` for inline, `s + 2` for `$$`).
+
+`tokenizeLatex` recognizes a small lexical grammar (offsets relative to `src`):
+
+| Token | Match | Class | Color (One Dark) |
+|---|---|---|---|
+| Control sequence | `\` + letters (`\frac`, `\alpha`) **or** `\` + one non-letter (`\{`, `\\`, `\,`, `\%`) | `cm-tex-command` | `#c678dd` (keyword purple) |
+| Grouping / optional-arg brackets | `{` `}` `[` `]` | `cm-tex-bracket` | `#abb2bf` (punctuation grey) |
+| Sub/superscript markers | `^` `_` | `cm-tex-script` | `#56b6c2` (escape cyan) |
+| Numbers | digit run with interior dots (`3`, `3.14`) | `cm-tex-number` | `#d19a66` (number orange) |
+| `%` line comment | `%` to end of line | `cm-tex-comment` | `#7f848e` italic |
+| `$` / `$$` delimiters | (via `texDelim`) | `cm-tex-delim` | `#7f848e` (dim, recedes) |
+
+Everything else (letters, operators) inherits the editor foreground. Colors live in `latexHighlightTheme`, matching `codeHighlight.ts`'s One Dark palette so math source and fenced code read consistently. `tokenizeLatex` is unit-tested in `latexHighlight.test.ts`.
+
+### Math Macros & mhchem (preamble)
+
+`app/src/editor/mathMacros.ts` parses a LaTeX math preamble (Obsidian `preamble.sty` style) into a KaTeX `macros` object (`{ "\\name": "body" }`). The preamble text comes from the `editor.mathMacros` setting; `katexLoader.ts` parses it (caching on the trimmed raw string so a whitespace-only edit doesn't bust the cache) and passes the result as KaTeX's `macros` option, merged over a set of no-op MathJax-ism macros (`{ ...NOOP_MACROS, ...userMacros() }`). So a note can define reusable commands (e.g. `\R`, `\norm`). User definitions silently **override** builtins (no redefinition error — matching MathJax/Obsidian, unlike KaTeX's `\newcommand`, which throws on redefining `\R`). KaTeX re-infers each macro's argument count from the highest `#n` in its body, so the parser drops any `[argc]` count.
+
+`parseMathMacros(preamble)` supports:
+
+- `\newcommand{\name}{body}` / `\newcommand\name{body}`
+- `\newcommand{\name}[2]{body}` (and an optional `[default]`)
+- `\renewcommand{...}{...}` / `\providecommand{...}{...}`
+- `\def\name{body}` / `\def\name#1#2{body}`
+
+Bodies may contain balanced nested braces and `\{` / `\}` escapes (`readGroup` tracks brace depth and skips the char after a `\`). A braced name (`{\name}`) is validated as a real control-sequence name via `isValidCsName` (a control **word** of ≥1 letters, or a single-char control **symbol**) — `\1st` / `\123` are rejected rather than registered as dead macros (`\(` is accepted as a single-char symbol). Unparseable fragments are **skipped** rather than aborting the whole preamble, so one bad macro can't disable the rest. `%` comments are NOT stripped (KaTeX has no comment syntax either). `parseMathMacros` is unit-tested in `mathMacros.test.ts`.
+
+**mhchem**: `katexLoader.ts` side-effect-imports `katex/contrib/mhchem` (it mutates the KaTeX singleton), so `\ce{...}` / `\pu{...}` chemistry notation renders alongside ordinary math — matching Obsidian's MathJax + mhchem stack.
 
 ---
 
@@ -414,6 +463,19 @@ Sanitization is applied in:
 
 ---
 
+## In-Note Find Bar
+
+`app/src/editor/findPanel.ts` provides an in-editor "Find" bar (default `Cmd`/`Ctrl+F`; the keybinding is owned by `Editor.tsx`, reading `settings.keybindings.find`, so it is user-rebindable). It is a custom CodeMirror search **panel** (`createFindPanel`) wired through `@codemirror/search` via `findExtension()` (`search({ top: true, literal: true, createPanel })`), so match **highlighting** and next/prev navigation come for free while the bar's DOM is fully app-styled (`.oa-find`). A custom panel — not a Solid overlay — is required because `@codemirror/search`'s highlighter returns `Decoration.none` whenever `state.panel` is null; registering `createPanel` keeps highlighting alive.
+
+- **Live highlight**: every keystroke fires `runQuery`, which dispatches a `setSearchQuery` (`{ search, caseSensitive, literal: true }`) so all matches highlight as you type, then reveals the nearest match at/after the current selection (`revealFrom`, wrapping to doc start). It deliberately does **not** call CM's `findNext` on the typing path, because `findNext` select-all's the search field on every call (the "one character at a time" bug); the input is intentionally **not** tagged `main-field` for the same reason.
+- **Match count**: `matchStats(view, query)` walks the query cursor to compute `{ total, current }` — `total` matches and the 1-based index of the one currently selected (0 when the selection isn't on a match). The count renders as `current/total` (`–/total` when off a match), `"No results"` when none, blank when the query is empty. The scan is capped at `MAX_COUNT = 10000` so a 1-char query in a huge doc can't stall the UI.
+- **Case toggle**: the `Aa` button (`.oa-find-case`) flips `caseSensitive` and re-runs the query; the active state shows `.oa-find-active`.
+- **Navigation**: `Enter` → `findNext`, `Shift+Enter` → `findPrevious` (also the prev/next icon buttons); `Esc` (or the close button) calls `closeSearchPanel` and refocuses the editor.
+- **Key isolation**: the bar `stopPropagation`s its own `keydown`/`mousedown` so typed keys don't bubble to the editor keymap or `App.tsx`'s global shortcut handler.
+- **Lifecycle/sync**: `mount()` seeds the input + count from the active query (which `openSearchPanel` itself seeds from a single-line `<100`-char selection) and focuses/selects the input; `update()` refreshes the count on doc/selection/query change and syncs an external query change into the field **only when the input isn't focused**, so it never clobbers what the user is typing.
+
+---
+
 ## Summary Table: All Block Kinds
 
 | Block kind | Trigger | Rendered off-cursor | Edit trigger | Raw appearance |
@@ -425,14 +487,16 @@ Sanitization is applied in:
 | Multi-line `$$` math | `$$` fence lines | `MathBlockWidget` (KaTeX display mode) | Cursor inside block | Raw LaTeX source |
 | Blockquote | `^>\s?` | `cm-quote` border; `>` hidden | Cursor on line | `>` in `cm-syntax-mark` |
 | Heading H1–H6 | `^#{1,6}\s+` | Sized line; `#`s hidden | Cursor on line | `#`s in `cm-heading-mark` |
-| Bullet list | `^\s*([-*+])\s+` | `BulletWidget` glyph; hanging indent | Cursor on line | `- ` in `cm-list-marker` |
-| Task list | `^\s*([-*+])\s+\[…\]\s` | `CheckboxWidget`; hanging indent | Cursor on line | `- [ ]` in `cm-list-marker` |
+| Bullet list | `^\s*([-*+])\s+` | `BulletWidget` glyph; hanging indent | Caret **within the marker** (`revealsPrefix`) | `- ` in `cm-list-marker` |
+| Task list | `^\s*([-*+])\s+\[…\]\s` | `CheckboxWidget`; hanging indent | Caret **within the marker** (`revealsPrefix`) | `- [ ]` in `cm-list-marker` |
 
 ---
 
 ## Summary Table: All Inline Kinds
 
-| Syntax | Off-cursor rendering | On-cursor reveal |
+Reveal is **per token** (`revealsRange`): only the token a selection range touches shows its raw syntax, and an unfocused editor reveals none.
+
+| Syntax | Rendering (not revealed) | Per-token reveal |
 |---|---|---|
 | `**bold**` / `__bold__` | Bold text; delimiters hidden | Delimiters in `cm-syntax-mark` |
 | `*italic*` | Italic text; delimiters hidden | Delimiter `*` in `cm-syntax-mark` |
@@ -442,8 +506,8 @@ Sanitization is applied in:
 | `https://…` bare URL | Accent-colored URL text; nothing hidden | Always shown as link, no hide/reveal |
 | `[[target\|alias]]` | Alias or basename in accent; brackets/path/heading hidden | `[[`, path, `#heading`, `]]` in `cm-syntax-mark` |
 | `#hashtag` | Teal (`--teal`) text including `#`; nothing hidden | Always shown teal, no hide/reveal |
-| `$expr$` inline math | KaTeX widget (inline mode); all hidden | Raw `$expr$` source (no widget) |
-| `$$expr$$` same-line block math | KaTeX widget (display mode); all hidden | Raw `$$expr$$` source (no widget) |
+| `$expr$` inline math | KaTeX widget — `\displaystyle` + `displayMode:false` (display-size math, inline flow); all hidden | Raw `$expr$` source, `$` dim + LaTeX-highlighted (no widget) |
+| `$$expr$$` same-line block math | KaTeX widget (`displayMode:true`, full-width block); all hidden | Raw `$$expr$$` source, `$$` dim + LaTeX-highlighted (no widget) |
 | Inline HTML span | `HtmlInlineWidget` (sanitized); all hidden | Tags in `cm-syntax-mark` |
 
 ---
@@ -471,4 +535,4 @@ export const livePreview = [
 
 ---
 
-Source: `app/src/editor/livePreview.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`

@@ -271,16 +271,46 @@ Two stages:
 
 2. **d3-force-3d refinement** — short force simulation seeded from PivotMDS output (or `initialPositions` for warm starts), same constants as the WebGL renderer.
 
-Default constants:
+Default constants (the `DEFAULTS` object in `layout.ts`):
 ```
 numPivots:    50   (PivotMDS pivot count; O(k²·n) so halved from 100 for speed)
-refineTicks:  150  (force ticks after PivotMDS seed; 120 in the cache path)
+refineTicks:  150  (force ticks after PivotMDS seed; 120 in the cache path — REFINE_TICKS)
 repulsion:    -10  (forceManyBody strength)
-linkDistance: 5    (forceLink distance; ×1.8 in 2D mode)
+linkDistance: 5    (forceLink base distance; see small-graph boost + ×1.8 in 2D mode below)
 centering:    0.13 (forceX/Y/Z strength toward origin)
-linkStrength: 0.18
-collideIterations: 6  (must match renderer)
+linkStrength: 0.18 (LINK_STRENGTH; real edges only)
+collideIterations: 6  (COLLIDE_ITERATIONS — must match renderer)
+manybodyTheta:     1.5 (MANYBODY_THETA — Barnes-Hut approximation)
 ```
+
+Plus the disconnected-component reel-in tuning (also in `DEFAULTS`):
+```
+virtualLinkStrength: 1.2  (tether-link strength; > LINK_STRENGTH so a stray is held in)
+virtualAnchors:      4    (tether links per stray node; 0 disables the reel-in)
+virtualDistMult:     0.8  (tether rest length = linkDist × this; short so it wins over repulsion)
+```
+
+#### Small-graph link-distance boost
+
+The effective link distance is scaled **up** as the graph shrinks, so a handful of nodes (e.g. the daemon graph, or a fresh vault) spreads into an airy field instead of collapsing into a tight knot:
+
+```ts
+const smallBoost = n > 0 ? Math.min(8, Math.max(1, 400 / n)) : 1;
+const linkDist   = o.linkDistance * smallBoost * (dim === 2 ? MODE_2D_SPACING : 1);
+const collideFloor = linkDist * COLLIDE_RATIO;
+```
+
+The boost is ~8× at a few nodes and decays to 1× by ~400 nodes (large vaults unchanged). It is computed once in `prepareLayout` so the collide floor **and** the virtual-tether rest length share one spacing budget. This same formula is mirrored verbatim in the renderer's `WebGLRenderer.linkDist()` — both the precomputed layout and any live re-settle agree on spacing, so the renderer's warm-skip doesn't re-scramble the backend layout.
+
+#### Reeling in disconnected components
+
+A note with no in-view links is its own connected component; left alone, many-body repulsion flings it into an empty angular direction at the cloud's edge (and the recoil shoves the main mass off-center, so the pinned "you" hub drifts away). `prepareLayout` fixes this by tethering every node of a **small, non-main** component to a few anchors in the main mass via layout-only **virtual links** fed to the same force sim:
+
+- `connectedComponents()` finds the components; the largest (ties → lowest member index) is the main mass.
+- A component at or above the gate `max(4, mainSize × 0.25)` is a genuine island and is left alone — a legitimately multi-topic vault keeps its distinct clusters.
+- For each small-component node, `virtualAnchors` (4) anchors are chosen deterministically via `fnv1a("<id>:<a>") % mainSize`. Each adds a `{ source, target, virtual: true }` link (rest length `linkDist × virtualDistMult`, strength `virtualLinkStrength`) and an entry in the BFS adjacency (so the PivotMDS seed places it near the mass too, not at a cap-distance fling).
+- Virtual links are **layout-only** — never emitted as graph edges. The collide force resolves overlaps as the stray settles in (no teleport), so the emitted layout has no overlaps the warm renderer can't fix.
+- Collide-radius degree uses `realDeg` (real edges only, captured before the tethers) so a tethered orphan isn't drawn/spaced as a hub.
 
 Per-node collision radius is degree-scaled (hub nodes repel as the circles they are drawn as, not as points):
 ```ts
@@ -294,7 +324,9 @@ collideRadius(node, i) = max(linkDistance * 1.25, drawnNodeRadius(degreeScale(ad
 Two-tier:
 
 1. **In-memory**: `Map<sig, Layout>` within a server run.
-2. **On-disk**: JSON files in `os.tmpdir()/oa-layout/<sig>.json`, versioned by `CACHE_VERSION` (currently `"v5"`).
+2. **On-disk**: JSON files in `os.tmpdir()/oa-layout/<sig>.json`, versioned by `CACHE_VERSION` (currently `"v8"`).
+
+`CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the history: `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links.
 
 Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|kind" edges`. Retargeting a wikilink (same node set, same edge count, different endpoint) still busts the cache.
 
@@ -309,6 +341,20 @@ Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|k
 ### Attaching Positions
 
 `attachLayout(graph, vaultKey)` mutates each node to add `position: [x,y,z]` and `position2d: [x,y]`. The `position2d` field is always two elements (the trailing `z=0` is stripped). Nodes not in the layout (e.g. the `"self"` node added client-side) keep no position fields and are pinned at `[0,0,0]` by the renderer.
+
+---
+
+## Graph Atmosphere (`GraphAtmosphere.tsx`)
+
+`GraphAtmosphere` is the shared CSS overlay that gives every graph its iridescent cluster-glow + depth vignette. It is extracted into one component so the main `GraphView` and the first-run intro graph render the same atmosphere instead of duplicating the divs + glow wiring.
+
+```tsx
+export function GraphAtmosphere(props: { renderer: WebGLRenderer; mode?: string }): JSX.Element
+```
+
+- Render it as a **sibling after** the renderer's `<canvas>` inside a positioned container; it fills that container (`inset: 0`). Styling lives in `graphAtmosphere.css`.
+- It emits two divs: `.graph-glow` (carries the `data-mode` attribute, so a mode can theme its glow) and `.graph-vignette`.
+- On mount it calls `renderer.setGlowCallback(...)`. Each frame the renderer projects the centroids of the **3 largest clusters** to screen percentages and pushes them as `{ lobes }`; the callback writes them onto the glow element as `--glow-x{1..3}` / `--glow-y{1..3}` CSS variables. The glow lobes thus ride the clusters as they orbit, idle-spin, and zoom. The renderer pads the lobe list to 3 entries so all three CSS variables always have a target.
 
 ---
 
@@ -410,7 +456,7 @@ Returns `{ nodes: [], edges: [] }`.
 
 ### `graphSig(graph, vaultKey)` (`layout-cache.ts`)
 
-Returns a string cache key `"v5-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
+Returns a string cache key `"v8-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
 
 ---
 
@@ -476,9 +522,9 @@ terminal tab (PTY) → relay plugin hooks
 - **`mergeGraphs` keeps duplicate edges.** Two memory notes can both reference the same vault note and both produce `"about"` edges to it — this is by design.
 - **Agent graph drops closed-tab sessions.** A session whose terminal tab is closed is dropped at `GET /agent-graph` read time (prune against live PTY ids). There is no terminal-close hook in Claude Code; cleanup happens lazily.
 - **Wikilink resolution is basename-first.** `[[My Note]]` matches `My Note.md` anywhere in the vault. `[[reading/My Note]]` matches by full path first, then falls back to basename. Ambiguous basename matches are undefined.
-- **`CACHE_VERSION` must be bumped when layout constants change.** The current version is `"v5"`. A stale cached layout with different constants would mismatch the renderer's forces.
+- **`CACHE_VERSION` must be bumped when layout output changes** — not just force constants, but the small-graph boost and the disconnected-component reel-in too. The current version is `"v8"`. A stale cached layout computed under different rules would mismatch the renderer's forces.
 - **`now` in `nodeVisualState` is a no-op.** `lastResult` and `lastFiredMs` do not drive the visual encoding — only `enabled` and `running` matter.
 
 ---
 
-Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `core/src/agents.ts`, `app/src/graph/youNode.ts`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/agents.test.ts`, `core/test/engine.test.ts`
+Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `core/src/agents.ts`, `app/src/graph/youNode.ts`, `app/src/graph/WebGLRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/agents.test.ts`, `core/test/engine.test.ts`

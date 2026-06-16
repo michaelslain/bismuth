@@ -337,11 +337,17 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **`pathOf`:** constant `"settings.yaml"` → `classifyVault` marks both graph & tree dirty (so the sidebar refetches).
 
 ### `POST /tasks/toggle`
-- **Body:** `{ path: string, line: number }` (`line` is 0-based).
-- **Action:** rewrites the markdown task line via `toggleTaskLine(line, today)`. For a recurring task, the toggle returns TWO lines (the next occurrence inserted above the completed one, separated by `\n`), spliced back as a single array slot so order is preserved after `join("\n")`.
+- **Body:** `{ path: string, line: number, status?: string }` (`line` is 0-based). With an explicit `status` (the right-click status menu) the line's box char is set to exactly that value (`setTaskLineStatus(line, status, today)`); without it, it's the plain binary toggle (checkbox click — `toggleTaskLine(line, today)`).
+- **Action:** rewrites the markdown task line. For a recurring task, the rewrite returns TWO lines (the next occurrence inserted above the completed one, separated by `\n`), spliced back as a single array slot so order is preserved after `join(eol)` (`\r\n`/`\n` matched to the file's existing line endings). The whole file is then passed through `reorderTaskBlocks` so resolved (done/cancelled) tasks sink to the bottom of their list.
 - **Response:** `"ok"`.
 - **Errors:** `AppError("EINVAL", "line out of range", 400)` if `line < 0 || line >= lines.length`.
 - **`pathOf`:** `path`.
+
+### `POST /tasks/archive`
+- **Body:** `{ path?: string }` (a missing/non-JSON body is tolerated → treated as `{}`). With a `path`, only that note is archived; without one, the whole vault (`listMarkdown`, every `.md`).
+- **Action:** `archiveResolvedTasks(...)` strips completed/cancelled tasks from the note text, rewriting only files that actually changed (`removed > 0`). Removal is permanent (git history retains the prior state via the autosave snapshots).
+- **Response:** `{ removed: number, files: number }` — total tasks removed and the number of files touched. Single-`path` form returns `files: removed > 0 ? 1 : 0`.
+- **`pathOf`:** the body's `path` (single-note archive invalidates just that note; a vault-wide archive passes `undefined` → full invalidation).
 
 ### `POST /cards/review`
 Dual-mode SRS review.
@@ -374,9 +380,13 @@ A special-cased upgrade handled before the route tables. Backs the in-app termin
 
 ### Upgrade request
 - **Method/path:** `GET /terminal`.
-- **Query params (required):** `?cols=<int>&rows=<int>`. Both must be integers in `1..500`; otherwise `400 "bad cols/rows"`.
+- **Query params:** `?cols=<int>&rows=<int>` (required; both must be integers in `1..500`, otherwise `400 "bad cols/rows"`), plus an optional `?termId=<stable id>` used for reattach (see below).
 - **Origin policy:** allowed when there is **no** `Origin` header (same-origin / Tauri webview), or the origin matches `http(s)://localhost|127.0.0.1[:port]`, `tauri://...`, or `http(s)://10.x.x.x[:port]`. Otherwise `403 "forbidden origin"`.
-- On upgrade, `createTerminalSession({ cwd: vault, cols, rows, relayPort: server.port })` is created (the session reports relay provenance to THIS server's port so in-tab Claude sessions reach the right core). If the upgrade fails, the session is killed and `400 "upgrade failed"` is returned. Success returns the Bun-managed `101`.
+- **Session resolution (reattach / pool / spawn):**
+  - **Reattach** — if `termId` names a still-alive PTY (`getSessionByTermId`, within the post-disconnect grace window), the upgrade pipes to the SAME shell — preserving the running process, cwd, and env. Its pending kill timer is cancelled (`cancelSessionKill`) and it's resized to the new `cols`/`rows`.
+  - **Pooled** — otherwise a pre-warmed shell is claimed from the pool (`claimPooledSession`) so the tab paints its already-rendered prompt instantly.
+  - **Fresh** — falling back to `createTerminalSession({ cwd: vault, cols, rows, relayPort: server.port, termId })` (the session reports relay provenance to THIS server's port so in-tab Claude sessions reach the right core).
+- On a failed `server.upgrade`, a freshly-created session is killed immediately; a reattached live shell is never hard-killed (its grace timer reclaims it if no socket reconnects) — either way `400 "upgrade failed"` is returned. Success returns the Bun-managed `101`.
 
 ### Message protocol (client → server)
 Binary/text frames where the **first byte is a tag**:
@@ -385,10 +395,17 @@ Binary/text frames where the **first byte is a tag**:
 - Zero-length frames are ignored.
 
 ### Server → client
-On `open`, the server pipes `pty.onData(d)` → `ws.send(encode(d))` (raw terminal output bytes). On `pty.onExit`, the socket is closed.
+On `open`, the server attaches a switchable sink (`attachSink`) that first flushes any buffered output (a pre-warmed pool prompt, or bytes produced during a brief disconnect) so the prompt shows immediately, then streams live PTY bytes via `ws.send(encode(d))`. On `pty.onExit`, the socket is closed with code `1000` (`"exited"`) so the client treats it as a real exit (close the tab), not a dropped connection to reconnect.
 
 ### Lifecycle
-On `close`, the PTY data/exit listeners are disposed immediately (so no `ws.send` hits a closed socket), then `killSession` is scheduled after a **3000ms** grace period (absorbs kernel/network races; there is no resume in v1).
+On `close`, the live sink is detached (`detachSink` — output resumes buffering for a possible reattach) and the exit listener disposed. Then:
+- **Clean close** (code `1000`) — the shell process exited (server-side close after `pty.onExit`) or the client intentionally disposed the tab. The PTY is killed now (`killSession`).
+- **Abnormal close** (reload → `1001`, network drop → `1006`, etc.) — the PTY is kept alive for a grace window (`scheduleSessionKill(sessionId, reattachGraceMs())`, default **30000ms**, overridable via `OA_TERMINAL_GRACE_MS`) so a reconnecting client can reattach by `termId` and keep its running process.
+
+The server also pre-warms one login shell on boot (`prewarmPool(vault, server.port)`, cwd = vault) so the first tab paints instantly; best-effort (a spawn failure never takes the server down).
+
+### `idleTimeout`
+`Bun.serve` is configured with `idleTimeout: 255` (Bun's max). Bun's default 10s would drop a connection mid-request for the few slow handlers (notably `POST /daemon/setup`, which git-clones + bun-installs claude-bot on first run).
 
 ---
 
@@ -453,9 +470,10 @@ On `close`, the PTY data/exit listeners are disposed immediately (so no `ws.send
 | POST | `/row/reorder` | mutating | yes |
 | POST | `/folder-icon` | mutating | yes (settings.yaml) |
 | POST | `/tasks/toggle` | mutating | yes |
+| POST | `/tasks/archive` | mutating | yes |
 | POST | `/cards/review` | mutating | yes |
 | POST | `/daily-note` | mutating | yes (full) |
 | POST | `/daemon/owner` | mutating | yes (no-op scope) |
 | GET | `/terminal` | (WS upgrade) | n/a |
 
-Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/search.ts, core/src/claudebot.ts, core/src/files.ts
+Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/search.ts, core/src/claudebot.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts

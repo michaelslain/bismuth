@@ -55,10 +55,12 @@ views:
 ### `columns` (column order and empty column pinning)
 
 ```typescript
-columns?: string[]
+groupOrder?: string[]
 ```
 
-Declares the display order of group keys. This field has special behavior in kanban vs other view types:
+Authors write this in YAML as `columns:`. During parsing (`core/src/bases/parse.ts`) the YAML `columns:` key is mapped onto the `ViewConfig.groupOrder` field (`strArr(o.columns)` → `groupOrder`; the top-level `columns:` shorthand likewise sets `config.views[0].groupOrder`). The query engine (`core/src/bases/query.ts`) then reads `view.groupOrder` — there is no `columns` field on `ViewConfig`. Keep using `columns:` in your YAML; just be aware the parsed field is named `groupOrder`.
+
+`columns:` declares the display order of group keys. This field has special behavior in kanban vs other view types:
 
 - Groups are rendered in the order listed in `columns`. Data-only keys (groups that exist in the data but are not listed) are appended after the declared list in data order.
 - **Empty columns are pinned**: every key in `columns` is shown as a column even when no cards have that value. Without `columns`, a column disappears when its last card is dragged out.
@@ -302,6 +304,6 @@ This board will:
 - **`order` column hidden by default**: the `order` frontmatter key is an internal persistence detail. Unless the view config explicitly lists `order` or `note.order` in `order:`, it is filtered out of the card body display.
 - **FLIP animation requires the DOM**: the FLIP rect-snapshot + playback runs synchronously in `onColumnDragOver`/`requestAnimationFrame`. If the drag moves very fast (multiple columns per frame), only the last stable state is animated.
 - **Drag cleanup on unmount**: a `window` `dragend` listener cleans up drag state if the card's DOM node unmounts mid-drag (e.g. a vault SSE refetch during a drag). This prevents phantom drag state.
-- **`columns` empty vs absent**: an explicit empty list (`columns: []`) is treated the same as absent — the `hasExplicitOrder` check in `KanbanView` reads `props.result.view.order` (the card-body property list), not `columns`. Columns ordering and card-body property visibility are separate config fields.
+- **`columns` empty vs absent**: an explicit empty list (`columns: []` → `groupOrder: []`) is treated the same as absent — `query.ts` gates on `view.groupOrder && view.groupOrder.length`, so an empty list falls through to value-ordered groups. Note also that the `hasExplicitOrder` check in `KanbanView` reads `props.result.view.order` (the card-body property list), not `groupOrder` — column ordering (`columns:` → `groupOrder`) and card-body property visibility (`order:` → `order`) are separate config fields.
 
-Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/KanbanView.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardBody.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/ui/StatusDot.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts
+Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/KanbanView.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/parse.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/query.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardBody.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/ui/StatusDot.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts

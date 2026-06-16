@@ -7,8 +7,10 @@ file and 0-indexed line number so the line can be toggled back in place. This
 document is the canonical reference for the exact task line shape, checkbox
 status characters, the full date/priority/recurrence signifier set (both the
 emoji form the parser reads and the keyword form the editor autocompletes),
-recurrence rules, tag handling, and the completion/toggle behaviors — all drawn
-directly from `core/src/tasks.ts` and `app/src/editor/taskComplete.ts`.
+recurrence rules, tag handling, the completion/toggle behaviors, and how
+resolved tasks sink/fold/archive within a block — all drawn directly from
+`core/src/tasks.ts`, `core/src/taskReorder.ts`, `app/src/editor/taskFold.ts`,
+and `app/src/editor/taskComplete.ts`.
 
 Related docs: [tasks query DSL](./query-dsl.md), [bases overview](../bases/overview.md)
 (tasks are a base source — `source: tasks`).
@@ -398,6 +400,175 @@ Note: only `x`/`X` count as "done" for un-completing. A task in `[/]`
 (in-progress) or `[-]` (cancelled) state is treated by `toggleTaskLine` as
 not-done, so toggling it **completes** it (box → `x`, ✅ appended).
 
+## Task blocks: sinking, folding, archiving
+
+These three behaviors operate on a **task block** — a *contiguous run* of
+checkbox lines. The pure block logic lives in `core/src/taskReorder.ts`
+(re-exported by `core/src/tasks.ts` so existing `from "./tasks"` importers keep
+working), shared by the backend and the editor so both agree on what a block is.
+
+### Resolved vs. open items
+
+An item is **resolved** when its status is `done` (`[x]`/`[X]`) or `cancelled`
+(`[-]`) — `isResolvedStatus(status)` is `true` only for those two. `todo`,
+`in-progress` (`[/]`), and `other` are **open** (`isResolvedStatus` is false):
+
+```ts
+isResolvedStatus("done")        // true
+isResolvedStatus("cancelled")   // true
+isResolvedStatus("todo")        // false
+isResolvedStatus("in-progress") // false
+```
+
+### What is a "block" and a "block item"
+
+`collectBlock(lines, start)` reads a contiguous run starting at `lines[start]`,
+whose head task lines share the **same base indent**, and splits it into
+`TaskBlockItem`s (`{ status, lines }`). A line joins the run as follows:
+
+- A **task line at the base indent** starts a new item.
+- A **deeper-indented, non-blank** line (sub-task or wrapped continuation) is
+  appended to the **current** item's `lines` — so a parent and its children
+  stay glued together.
+- Anything else (a blank line, prose, a heading, or a task at a *different* base
+  indent) **ends the block**.
+
+This is why blocks separated by prose or a blank line are treated independently,
+and why reordering/archiving a parent carries its indented children with it.
+
+### Sinking resolved tasks to the bottom
+
+`reorderTaskBlocks(content)` rewrites the content so that within **each** task
+block the resolved items sink below the open ones, **stable** (relative order
+within the open group and within the resolved group is preserved). Non-task
+regions pass through untouched, and it is **idempotent** (re-running on a sorted
+block is a no-op). EOL style (`\n` vs `\r\n`) and a trailing newline are
+preserved.
+
+```markdown
+- [ ] a
+- [x] b
+- [ ] c
+- [-] d
+- [ ] e
+```
+
+becomes (open `a, c, e` first, then resolved `b, d` in their original order):
+
+```markdown
+- [ ] a
+- [ ] c
+- [ ] e
+- [x] b
+- [-] d
+```
+
+A resolved parent sinks together with its (still-open) children:
+
+```markdown
+- [x] parent
+  - [ ] child
+- [ ] open
+```
+
+→
+
+```markdown
+- [ ] open
+- [x] parent
+  - [ ] child
+```
+
+Blocks split by prose are reordered independently:
+`- [x] a / - [ ] b / (blank) / text / (blank) / - [x] c / - [ ] d`
+→ `- [ ] b / - [x] a / (blank) / text / (blank) / - [ ] d / - [x] c`.
+
+**Where it runs:**
+
+- **`POST /tasks/toggle`** (`core/src/server.ts`) — after flipping the box (via
+  `toggleTaskLine`, or `setTaskLineStatus` when an explicit `status` is sent
+  from the right-click status menu), the whole note is written back through
+  `reorderTaskBlocks(...)`. So checking off a task in any tasks view drops it
+  below the still-open ones.
+- **In-editor checkbox** (`app/src/editor/livePreview.ts`) — clicking a checkbox
+  (or picking a status from its right-click menu) edits the box char *directly
+  in the buffer* and **bypasses** `/tasks/toggle`, so the editor mirrors the
+  reorder itself via `reorderAroundLine(state, lineNo)` (`taskFold.ts`). That
+  helper finds the block containing the just-edited line, runs
+  `reorderTaskBlocks` over just that block's text, and dispatches a single
+  `ChangeSpec` replacing it (or `null` if already sorted).
+
+### The "▾ N completed" fold (editor)
+
+`app/src/editor/taskFold.ts` adds a collapsible "completed" section to markdown
+todo lists in the live-preview editor, the same affordance the Cards/tasks view
+has. After resolved tasks have sunk to the bottom of a block, the editor renders
+a clickable **`▾ N completed`** toggle above that trailing run; collapsing it
+replaces the run with a **`▸ N completed`** widget that hides those lines.
+
+Rules:
+
+- A block is **only foldable when it has both open and resolved items** — a
+  block that is all-open or all-resolved shows no toggle (nothing to hide / no
+  list context).
+- Only a **contiguous trailing run** of resolved items folds (counted from the
+  block's last item backward until the first open item). A manually-interleaved
+  list — a resolved item with open items below it — keeps that run unfolded so
+  it stays intact.
+- `N` is the count of resolved items in that trailing run.
+- The collapsed set is a **position-mapped `Set`** of anchor positions (the
+  start of the first resolved line in the run), surviving edits by mapping each
+  position through each transaction.
+- The run is **never hidden while the caret is inside it** (`cursorInside`) — the
+  user is editing those lines — even if that anchor is marked collapsed.
+
+The fold is purely a display affordance; it does not modify the file. `taskFold()`
+is wired into the editor's live-preview extension stack in `Editor.tsx`
+(`...(ed.livePreview ? [livePreview, taskFold(), …] : [])`).
+
+### Archiving resolved tasks (permanent removal)
+
+`archiveResolvedTasks(content)` permanently **removes** every resolved item —
+head line plus its indented children — from the content, returning
+`{ content, removed }` where `removed` is the count of task items deleted. It is
+pure; git retains the history. Open items (incl. `in-progress` `[/]`) and all
+non-task regions are kept.
+
+```markdown
+# Todo
+- [ ] keep
+- [x] done
+- [-] cancelled
+- [/] doing
+```
+
+→ `removed: 2`, leaving:
+
+```markdown
+# Todo
+- [ ] keep
+- [/] doing
+```
+
+A resolved parent is removed together with its children
+(`- [x] parent / "  - [ ] child" / - [ ] keep` → `removed: 1`, content
+`- [ ] keep`); with nothing resolved it is a no-op (`removed: 0`, content
+unchanged).
+
+**Commands & endpoint:** two commands in `COMMAND_CATALOG` (`core/src/commands.ts`)
+drive it, bound in `app/src/commands.ts`/`App.tsx`:
+
+| Command id          | Label                                | Scope            |
+| ------------------- | ------------------------------------ | ---------------- |
+| `archive-tasks`     | Archive completed tasks (this note)  | active note only |
+| `archive-all-tasks` | Archive completed tasks (all notes)  | whole vault      |
+
+Both call `POST /tasks/archive` (`api.archiveTasks(path?)`): with a `path` it
+archives that one note (returns `{ removed, files }`, `files` being `0` or `1`);
+with no body it sweeps every markdown file in the vault, summing `removed` and
+counting the `files` touched. The active-note command no-ops with a toast when
+no note is open or nothing is resolved.
+
 ## The `Task` object shape
 
 `parseTaskLine` returns `null` for non-tasks, otherwise a `Task`:
@@ -464,4 +635,4 @@ three schedulable dates advanced to the next weekday plus the completed line:
 - [x] submit report #work #q3 🔺 🔁 every weekday 📅 2026-06-10 ⏳ 2026-06-08 🛫 2026-06-05 ✅ 2026-06-10
 ```
 
-Source: core/src/tasks.ts, app/src/editor/taskComplete.ts, core/test/tasks.test.ts, app/src/editor/taskComplete.test.ts, core/src/dates.ts
+Source: core/src/tasks.ts, core/src/taskReorder.ts, app/src/editor/taskFold.ts, app/src/editor/livePreview.ts, app/src/editor/taskComplete.ts, core/src/commands.ts, app/src/commands.ts, app/src/api.ts, core/test/tasks.test.ts, app/src/editor/taskComplete.test.ts, core/src/dates.ts

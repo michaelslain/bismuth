@@ -1,10 +1,8 @@
 # Cards View
 
-The Cards view renders each row in a base as a visual card: a book-cover style grid (`cardContent: properties`, the default), a Google-Keep-style markdown note preview (`cardContent: body`), or a checklist-only preview (`cardContent: tasks`). All three are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the `body`/`tasks` variants to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
+The Cards view renders each row in a base as a visual card: a book-cover style grid (`cardContent: properties`, the default), a Google-Keep-style **inline-editable** markdown note (`cardContent: body`), or a checklist-only editor (`cardContent: tasks`). All three are driven by `CardsView.tsx`, which inspects `view.cardContent` and delegates the `body`/`tasks` variants to `BodyCard.tsx`. Cards is a record-type view (alongside table, list, kanban, map) and shares the same column-visibility / sort / group-by settings panel as those view types.
 
-The `body`/`tasks` markdown is rendered to match the note editor (`renderNoteBody` + the `.cardMd` rules mirror live-preview): `#tags` render as teal mono chips, wikilinks/links get the soft underline, headings use the graduated `.cm-h1`..`.cm-h6` scale, and plain lists get markers. Task lines do **not** use marked's GFM checkbox (which only recognizes `[ ]`/`[x]`); instead `taskCardMarkup.ts` emits a uniform `<span class="oa-task-box" data-status data-line>` marker for **every** task line, so all four Obsidian statuses get an editor-style glyph: empty box `[ ]`, accent fill + white check `[x]`, diagonal half-fill `[/]` (in progress), barred muted box `[-]` (cancelled). Each marker carries its absolute source line, so a click maps straight back without positional counting.
-
-**Interacting with a task marker:** left-click toggles it (`api.toggleTask`, the binary `[ ]`↔`[x]` flip); **right-click opens a status menu** to set it to any of the other three states (To do / In progress / Done / Cancelled — the current one is omitted). The menu calls `api.toggleTask(path, line, status)`, which rewrites the box char via `setTaskLineStatus` (done appends `✅ <date>` + rolls a 🔁 recurrence; the others strip the done-date). Works the same in both `body` and `tasks` mode.
+In `body`/`tasks` mode the card body is **not a rendered preview — it is a live, always-editable CodeMirror editor** (`CardEditor.tsx`) over the note's actual markdown. It reuses the note editor's `livePreview` extension, so the same in-place markdown rendering, `#tag`/wikilink/link styling, checkbox glyphs (empty `[ ]`, checked `[x]`, in-progress `[/]`, cancelled `[-]`), and right-click task-status menu all apply — but here a click also places the cursor, a drag selects, and typing edits the note. Edits autosave (see "Inline Editing" below). Clicking a `[[wikilink]]`, `[text](url)`, or bare URL navigates instead of placing the cursor (`navigateOnLinkClick` in `CardEditor.tsx`, mirroring `Editor.tsx`'s filename-based wikilink open).
 
 ---
 
@@ -21,19 +19,18 @@ The grid is a CSS `display: grid; grid-template-columns: repeat(5, 1fr)` — alw
 
 ### Body mode
 
-`cardContent: body` renders a **3-column CSS masonry** (using `column-count: 3; column-gap: 14px`). Each card shows:
+`cardContent: body` renders a **3-column CSS masonry** (using `column-count: 3; column-gap: 14px`). Each card (`BodyCard.tsx`) shows:
 
-- The first column value as the card title.
-- The full note body read live from the vault, rendered as sanitized GFM markdown with Obsidian `[[wikilinks]]` resolved to clickable anchors.
-- **Resolved** tasks — done (`[x]`) and cancelled (`[-]`) — hidden behind a collapsible "N completed" expander. **Active** tasks (`[ ]` todo and `[/]` in-progress) and all other content appear immediately, so marking a task in-progress doesn't make it vanish.
-- Status-bearing task markers (see above): left-click toggles; right-click sets an explicit status.
-- Clickable wikilinks that open the linked note via the `oa-open` event.
+- The first column value as the card title chip (`renderValue(firstCol, row)`).
+- The **whole note body**, opened in a live `CardEditor` you can edit directly. The frontmatter and a leading `# Title` heading that merely repeats the card title are sliced off (`splitCard`, see "Inline Editing") so the title isn't shown twice and the YAML never appears in the card.
+- Editor-style task glyphs via `livePreview`: left-click toggles, right-click sets an explicit status — but here the line is also fully editable as text.
+- Clickable wikilinks/links that navigate (`oa-open` / external open).
 
 Body cards take their natural height; the CSS masonry keeps short notes short rather than stretching them to fill rows.
 
 ### Tasks mode
 
-`cardContent: tasks` renders the same masonry as body mode and through the same renderer, but the note body is first **filtered to only its checklist lines** — as if the file contained only its todo list. Headings, prose, and non-task bullets are dropped. The active/resolved split is identical to body mode: active tasks (`[ ]`, `[/]`) show up top, resolved ones (`[x]`, `[-]`) collapse behind the "N completed" expander. There is no task-signifier reformatting — a task line renders as raw markdown (its priority/date emoji stay inline), just with the editor-consistent status marker (left-click toggle, right-click status menu). Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
+`cardContent: tasks` renders the same masonry as body mode and through the same `CardEditor`, but the editable region is **narrowed to the note's checklist** — from its first task line to its last (`mode: "tasks"`, via `splitCard`/`taskRegion`). Prose, headings, and bullets before the first task join the hidden prefix; anything after the last task joins the hidden suffix; both are preserved verbatim and re-prepended/appended on save. The card thus stays a focused but fully-editable checklist — you can add, delete, or retype task lines as normal markdown — while the surrounding note content is left untouched. A note with **no** task lines falls back to editing the whole body, so the first task can still be typed. Use it for a task-board over notes whose bodies mix prose and checklists (e.g. a `#tasks`-tagged folder).
 
 ---
 
@@ -133,26 +130,40 @@ The generated text cover has a 4px colored spine bar on the left edge and a grad
 
 In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in a **new tab**. The card dispatches `new CustomEvent("oa-open", { detail: { path, newTab: true } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
 
-In **body mode**, the card itself is not a click target. Instead:
-- Clicking a `[[wikilink]]` dispatches `oa-open` with the resolved path (no `newTab: true` — opens in the current tab or default behavior).
-- Clicking an external `https://` link opens it in a new tab via `window.open(..., "_blank", "noopener")`.
-- Clicking a relative link (not a wikilink, not https) dispatches `oa-open` appending `.md` if not already present.
-- Clicking a checkbox toggles the task at that line in the note and re-reads the file.
+In **body/tasks mode**, the card body is an editor, not a click-to-open target — a click places the cursor. Navigation happens only through inline links (`navigateOnLinkClick`):
+- Clicking a `[[wikilink]]` dispatches `oa-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).
+- Clicking a `[text](url)` markdown link or a bare URL opens it externally (`openExternalUrl`).
+- Any other click falls through to `livePreview`, which places the cursor or toggles a task box.
 
 ---
 
-## Collapse-Completed in Body Mode
+## Inline Editing (Body / Tasks Mode)
 
-`BodyCard.tsx` partitions the note body line-by-line:
+Body and tasks cards are fully editable in place, with autosave and external-change reconciliation — there is no "edit mode" toggle and no rendered-then-replaced preview. This is `CardEditor.tsx`, a CodeMirror 6 editor configured to read like the note editor's live-preview (transparent, gutterless, auto-height, prose font, `livePreview` + markdown + code highlighting), not a boxed code block.
 
-- Lines matching `/^\s*- \[[^ \]]\]/` (any non-space, non-`]` character in the box) are "done" tasks.
-- All other lines remain in the open section.
+### Splitting prefix / body / suffix (`cardBodySplit.ts`)
 
-After splitting, headings that have no remaining content lines beneath them (because all their tasks moved to done) are pruned from the open section so an all-done card collapses cleanly to just its title and the "N completed" badge.
+To edit a card without ever corrupting the file, `splitCard(raw, title, mode)` slices the note into `{ prefix, body, suffix }` such that `prefix + body + suffix === raw` exactly:
 
-The completed section is hidden by default. A `▸ N completed` button appears at the bottom of the card whenever there is at least one done task; clicking it expands to show those lines at 62% opacity with strikethrough text. Clicking it again collapses.
+- **`prefix`** (kept out of the editor, re-prepended on save): always the YAML frontmatter (`FRONTMATTER_RE`, BOM-tolerant), plus a leading `# Title` ATX heading whose text equals the card's own title (`splitCardBody` — `H1_LINE_RE` + the surrounding blank lines), so the title isn't shown twice. In **tasks** mode the prefix also absorbs everything before the first checklist line.
+- **`body`**: the editable region. In **body** mode it's the whole note body after the prefix. In **tasks** mode it's narrowed to the checklist region — first task line to last (`taskRegion`, recognizing `- [.] ` lines via `TASK_LINE`).
+- **`suffix`** (re-appended on save, empty in body mode): in tasks mode, the note content after the last task line.
 
-Frontmatter (`---\n...\n---`) is stripped before rendering — the card shows only the note body.
+Because the frontmatter and stripped surroundings live in `prefix`/`suffix` (literal substrings of the input) and are stitched back on every write, editing the card body can never reorder or drop YAML keys, and a tasks card can't clobber the prose around its checklist. `splitCardBody`/`splitCard`/`taskRegion` are pure and unit-tested in `cardBodySplit.test.ts`.
+
+### Autosave + echo suppression
+
+A CodeMirror `updateListener` flags `pendingSave` on any document change and debounces a save by `settings.editor.autoSaveDelay`. `save()` writes `prefix + body + suffix` via `api.write`, primes the shared note cache (`primeNoteCache`) so sibling cards / a reopened note paint warm, and records `lastSavedFull` **before** the `await` so a fast SSE echo of our own write is recognized. A failed write leaves `pendingSave` set so the next edit / flush retries. On teardown a still-pending edit is flushed before the view is destroyed.
+
+### External-change reconciliation
+
+`CardEditor` subscribes to `onServerChange`; when this note changes on disk (edited in a pane, a daemon write, an external sync), `reconcile()` re-reads it and:
+
+- Re-derives `prefix`/`suffix` from disk **even mid-edit** (that text isn't shown, so refreshing it means our next `prefix + body + suffix` save merges in the new surroundings instead of overwriting them).
+- No-ops if the on-disk text equals `lastSavedFull` (our own echo) or if `pendingSave` is set (our queued save wins) or if the body is already identical.
+- Otherwise replaces the document, preserving the caret/selection by clamped character offset, and annotates the transaction with `ExternalReload` so the autosave listener skips it (avoids writing the reload back to itself).
+
+If the very first read fails on mount, the card stays in "Loading…" rather than building an empty editor whose autosave would overwrite the note's frontmatter; a later `onServerChange` retries via `reconcile()` (which calls `buildView` on the first successful read).
 
 ---
 
@@ -228,9 +239,9 @@ views:
 ---
 ```
 
-- Each card renders the full note body as markdown.
-- `- [x]` and `- [-]` lines are hidden behind the "N completed" expander.
-- `- [ ]` lines are interactive checkboxes.
+- Each card is a live editor over the full note body — click to edit, autosaves.
+- Frontmatter and a duplicate `# Title` heading are kept out of the editor (re-prepended on save).
+- Task lines get editor-style glyphs: left-click toggles, right-click sets a status.
 - `[[wikilinks]]` in the body are clickable in-app navigation links.
 
 ---
@@ -240,11 +251,11 @@ views:
 - **`image` accepts a property id, not a URL directly.** Setting `image: "https://example.com/cover.jpg"` would try to look up a property named `https://example.com/cover.jpg` on each row, which will always be null. Store the URL in a frontmatter property (e.g. `cover:`) and set `image: cover`.
 - **Object-valued image properties are skipped.** If the property resolves to a non-string value (e.g. an array or a Link object), the card silently falls back to the text cover.
 - **The 5-column grid is fixed.** There is no responsive column count and no config to change it. The grid always uses `repeat(5, 1fr)`.
-- **Body mode reads files on mount.** Each `BodyCard` fetches its note via `api.read` when it first mounts. Until the read completes, it shows "Loading…". If the read fails, the card shows no body content.
-- **Body mode task toggle is best-effort.** If `api.toggleTask` fails, the checkbox reverts visually (the card is not updated). No error is surfaced to the user.
-- **Completed-task detection is line-based regex, not a full markdown parser.** A task inside a blockquote or code block could match `DONE_TASK_RE` and get incorrectly moved to the completed section.
-- **The `authorCol` logic differs between the cover and the body.** The cover uses the raw second column (index 1 from `cols()`). The `CardBody` component uses the first column that is not the title and is not a status/rating/pages column. These may produce different results if the columns are reordered.
+- **Body/tasks cards read files on mount.** `CardEditor` reads the note (via the shared `noteCache` — `peekNoteCache`/`readNoteCached`) when it mounts. Until a successful read it shows "Loading…". A read **failure** keeps it in "Loading…" deliberately — building an empty editor whose autosave fired would overwrite the note's frontmatter — and `onServerChange` retries via `reconcile()`.
+- **Editing the prefix/suffix externally is safe mid-edit.** Because `reconcile()` re-derives the hidden `prefix`/`suffix` from disk on every server change (even while you're typing in the body), an external edit to the frontmatter or the prose around a tasks checklist is merged into your next save rather than clobbered.
+- **A tasks card with no task lines edits the whole body.** `splitCard`'s `taskRegion` returns null, so the editor falls back to the full note body — letting you type the first task line.
+- **The `authorCol` logic differs between the cover and the body.** The cover uses the raw second column (index 1 from `cols()`). The `CardBody` component (properties mode) uses the first column that is not the title and is not a status/rating/pages column. These may produce different results if the columns are reordered.
 - **Empty `cardBodyInner` is hidden via CSS.** If `CardBody` renders no content at all (no meta, title suppressed by `titleAsField`, no author), the `.cardBodyInner` div is hidden by `display: none` rather than showing as an empty padded block.
-- **Wikilink alias syntax is supported in body mode.** `[[Note|Display text]]` renders as "Display text" linking to `Note.md`. The `#heading` anchor fragment in a target (`[[Note#Section]]`) is stripped — only the file name is used for navigation.
+- **Wikilink alias syntax is supported in body/tasks mode.** Clicking `[[Note|Display text]]` navigates to `Note.md`; the `#heading` anchor fragment in a target (`[[Note#Section]]`) is stripped — only the file name is used for navigation.
 
-Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardsView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardBody.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BodyCard.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseSettings.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/renderValue.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/markdown.ts
+Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardsView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardBody.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BodyCard.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/CardEditor.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/cardBodySplit.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseSettings.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/renderValue.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/markdown.ts

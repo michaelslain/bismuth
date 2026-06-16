@@ -1,6 +1,6 @@
 # Testing
 
-This document is the canonical reference for how tests work in Bismuth, covering the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the TypeScript type-check gate, and a tour of every key test file and the patterns they establish.
+This document is the canonical reference for how tests work in Bismuth, covering the test runner, file conventions, the full suite across `core/` and `app/`, how to run and filter tests, how to add new tests, the `bun run typecheck` TypeScript gate, and a tour of every key test file and the patterns they establish.
 
 ---
 
@@ -79,21 +79,36 @@ Reruns affected tests on file save. Useful when writing new tests interactively.
 
 ## TypeScript type-check gate
 
-The test runner does not run `tsc` — type errors only surface as a separate gate. To type-check the full app (which also checks `core/src/` because `app/tsconfig.json` includes it):
+**Neither the test runner nor the build/test gate runs `tsc`.** `bun test` only executes test files; `bun run build:app` bundles without type-checking. Type errors are a *separate* gate you must run explicitly to catch type regressions — they will not show up in a green test run or a successful build.
+
+The canonical command is the root `typecheck` script:
 
 ```bash
-app/node_modules/.bin/tsc --project app/tsconfig.json --noEmit
+bun run typecheck
 ```
 
-`app/tsconfig.json` is configured with `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`. Test files (`*.test.ts`) are excluded from the app type-check via `"exclude": ["src/**/*.test.ts"]` so test-only stubs do not pollute the production types.
+From `package.json` this expands to a `tsc --noEmit` pass per workspace, each run from its own directory:
 
-To type-check core alone:
+```json
+"typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit)"
+```
+
+Four workspaces are checked in order — `core`, `app`, `mcp`, `relay` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript (`app/package.json` and `relay/package.json` pin `typescript: ~5.6.2`), so a compiler version in one workspace never bleeds into another. (`cli` imports `@oa/core` and rides along via the `core`/`app` passes; it has no separate step.)
+
+All four `tsconfig.json` files now carry the same strict lint flags — `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`. In particular `core/tsconfig.json` was brought up to match the others (it previously lacked the three `noUnused*`/`noFallthrough*` flags), so an unused local or a missing `break` now fails the gate in `core/` just as it does in `app/`, `mcp/`, and `relay/`.
+
+The `app` pass is the broadest: because `app/` imports core source directly (`../../core/src/*.ts`), `app/tsconfig.json` sets `"types": ["bun", "node"]` and the app program type-checks `core/src/` too. Test files (`*.test.ts`) are excluded from the app pass via `"exclude": ["src/**/*.test.ts"]` so test-only stubs do not pollute the production types.
+
+To type-check a single workspace, run its step directly:
 
 ```bash
-app/node_modules/.bin/tsc --project core/tsconfig.json --noEmit
+(cd core && bunx tsc --noEmit)     # core only
+(cd app && bunx tsc --noEmit)      # app + core/src
+(cd mcp && bunx tsc --noEmit)      # mcp only
+(cd relay && bunx tsc --noEmit)    # relay plugin hooks
 ```
 
-Both `app/tsconfig.json` and `core/tsconfig.json` use `"noEmit": true` — they only check, never compile.
+Every workspace `tsconfig.json` uses `"noEmit": true` — these passes only check, never compile.
 
 ---
 
@@ -476,4 +491,4 @@ After adding a section to `core/src/schema/settingsSchema.ts`:
 
 ---
 
-Source: `/Users/michaelslain/Documents/dev/bismuth/CLAUDE.md`, `/Users/michaelslain/Documents/dev/bismuth/core/test/helpers.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/vault.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/engine.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/server.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/relay.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/terminal.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/daemonViz.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/daemon.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/changeClassifier.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/agents.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/layout.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/layout-cache.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/sse.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/settings.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/asyncCache.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/schema/settingsSchema.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/schema/integration.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/bases/query.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/srs/scheduler.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/drawing/model.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/bug-fixes.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/panes.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/settings.parity.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/graph/labelSelection.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/graph/collide.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/flashcardsQueue.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/editor/tableModel.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/calendar/EventStore.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/package.json`, `/Users/michaelslain/Documents/dev/bismuth/core/package.json`, `/Users/michaelslain/Documents/dev/bismuth/package.json`, `/Users/michaelslain/Documents/dev/bismuth/app/tsconfig.json`, `/Users/michaelslain/Documents/dev/bismuth/core/tsconfig.json`
+Source: `/Users/michaelslain/Documents/dev/bismuth/CLAUDE.md`, `/Users/michaelslain/Documents/dev/bismuth/core/test/helpers.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/vault.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/engine.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/server.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/relay.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/terminal.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/daemonViz.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/daemon.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/changeClassifier.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/agents.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/layout.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/layout-cache.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/sse.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/settings.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/asyncCache.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/schema/settingsSchema.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/schema/integration.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/bases/query.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/srs/scheduler.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/drawing/model.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/core/test/bug-fixes.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/panes.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/settings.parity.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/graph/labelSelection.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/graph/collide.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/bases/flashcardsQueue.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/editor/tableModel.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/src/calendar/EventStore.test.ts`, `/Users/michaelslain/Documents/dev/bismuth/app/package.json`, `/Users/michaelslain/Documents/dev/bismuth/core/package.json`, `/Users/michaelslain/Documents/dev/bismuth/package.json`, `/Users/michaelslain/Documents/dev/bismuth/app/tsconfig.json`, `/Users/michaelslain/Documents/dev/bismuth/core/tsconfig.json`, `/Users/michaelslain/Documents/dev/bismuth/mcp/tsconfig.json`, `/Users/michaelslain/Documents/dev/bismuth/relay/tsconfig.json`, `/Users/michaelslain/Documents/dev/bismuth/relay/package.json`

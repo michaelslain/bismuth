@@ -38,6 +38,8 @@ Install all workspaces at once with `bun install` from the repo root. To add a p
 
 A Tauri app wrapping a Vite + Solid.js SPA. Launched with `cd app && bun run dev`, which runs both `bun run ../core/src/server.ts` and `vite` concurrently via `concurrently`. The app talks to the core server at a URL resolved at runtime from (in priority order): `?api=<url>` query param → `VITE_API_BASE` build env → default `http://localhost:4321`. This resolution is in `app/src/api.ts`.
 
+The entry point `app/src/index.tsx` code-splits two roots. On **first run** the bundled app's `lib.rs` injects `window.__OA_FIRST_RUN__` (and does **not** start a backend); `index.tsx` then renders the full-window **Vault Intro** takeover (`app/src/intro/VaultIntro.tsx`) instead of `App` — a short slideshow ending in a native folder picker that creates the vault, with `?intro=1` forcing it in dev/browser for preview. A normal launch never loads the intro, and first-run never loads `App` (which would fire API calls against a backend that isn't there). Full detail in [install](./install.md).
+
 ### `cli/` — the `bismuth` binary
 
 A thin dispatcher over `@oa/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `OA_VAULT` env var.
@@ -125,6 +127,8 @@ interface GraphData {
 ```
 
 Layout positions (`position3d`, `position2d`) are attached by `attachLayout()` in `core/src/layout-cache.ts` before the graph is stored in the server's `graphCache`. The frontend receives nodes already stamped with positions and morphs between them in the Three.js renderer — it does not run any force simulation.
+
+Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src/graph/GraphAtmosphere.tsx`): the iridescent cluster-glow lobes (driven by the renderer's per-frame `setGlowCallback`, which projects the biggest clusters to screen space) plus a depth vignette. It is rendered as a sibling after the canvas by both `GraphView` and the first-run intro graph, so the two share one source instead of duplicating the glow-wiring.
 
 ---
 
@@ -342,4 +346,4 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/GraphAtmosphere.tsx
