@@ -44,6 +44,11 @@ async function run(args: string[]): Promise<void> {
         "png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",
       );
     },
+    // No inline KaTeX CSS from the headless cli: the app's katexCss module is Vite-only
+    // (`?inline` fonts), unresolvable in a bun-compiled binary. cli html exports of math
+    // still carry the math markup, just without embedded fonts — export from the app for
+    // full-fidelity math. (Returning "" keeps the build self-contained.)
+    katexCss: async () => "",
     drawingToPng: async (docText, theme) => {
       const bytes = await renderDocToPng(parseDoc(docText), theme);
       return { bytes, dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}` };

@@ -28,4 +28,9 @@ export interface ExportDeps {
   htmlToPdf: (html: string) => Promise<Uint8Array>;
   htmlToPng: (html: string) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
   drawingToPng: (docText: string, theme: ExportTheme) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
+  // Inline KaTeX stylesheet (CSS + base64 woff2 fonts) for exports that contain rendered math.
+  // Injected because the impl is environment-specific: the app supplies the Vite `?inline`-bundled
+  // module (./katexCss), while headless/bun consumers (cli) can't resolve those Vite imports — so
+  // routing it through deps keeps katexCss.ts OUT of any bun-compiled bundle (e.g. the cli binary).
+  katexCss: () => Promise<string>;
 }
