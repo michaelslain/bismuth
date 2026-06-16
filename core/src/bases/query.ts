@@ -140,13 +140,13 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
     // dates chronologically), honoring groupBy.direction — NOT string-alphabetical.
     const byValue = (a: string, b: string) => compare(rawByKey.get(a), rawByKey.get(b)) * dir;
 
-    if (view.columns && view.columns.length) {
-      // Explicit group order via `columns: [...]`, for ANY grouped view (generalized
+    if (view.groupOrder && view.groupOrder.length) {
+      // Explicit group order via `groupOrder: [...]`, for ANY grouped view (generalized
       // from kanban). Declared keys come first in the given order; kanban keeps empty
       // declared groups as drop targets, other views show a declared group only when it
       // has rows. Data-only keys not in the list are appended, ordered by value.
-      const declaredSet = new Set(view.columns);
-      const declared = view.columns.filter((key) => view.type === "kanban" || map.has(key)).map(groupOf);
+      const declaredSet = new Set(view.groupOrder);
+      const declared = view.groupOrder.filter((key) => view.type === "kanban" || map.has(key)).map(groupOf);
       const extras = [...map.keys()].filter((key) => !declaredSet.has(key)).sort(byValue).map(groupOf);
       groups = [...declared, ...extras];
     } else {

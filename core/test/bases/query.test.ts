@@ -90,7 +90,7 @@ test("kanban with fixed columns keeps empty columns in declared order", () => {
       type: "kanban",
       name: "Board",
       groupBy: { property: "note.status" },
-      columns: ["todo", "open", "done", "archived"],
+      groupOrder: ["todo", "open", "done", "archived"],
     }],
   };
   const res = runView(b, rows, 0);
@@ -106,7 +106,7 @@ test("kanban with fixed columns surfaces unexpected data keys as extras", () => 
       type: "kanban",
       name: "Board",
       groupBy: { property: "note.status" },
-      columns: ["todo"],
+      groupOrder: ["todo"],
     }],
   };
   const res = runView(b, rows, 0);
@@ -242,7 +242,7 @@ test("explicit columns order groups in a non-kanban (list) view", () => {
     row("d", { bucket: "Mystery" }), // not declared -> appended
   ];
   const cfg: BaseConfig = {
-    views: [{ type: "list", name: "V", groupBy: { property: "note.bucket" }, columns: ["Overdue", "This week", "Later"] }],
+    views: [{ type: "list", name: "V", groupBy: { property: "note.bucket" }, groupOrder: ["Overdue", "This week", "Later"] }],
   };
   const res = runView(cfg, rows2, 0);
   expect(res.groups.map((g) => g.key)).toEqual(["Overdue", "This week", "Later", "Mystery"]);
@@ -251,11 +251,11 @@ test("explicit columns order groups in a non-kanban (list) view", () => {
 test("non-kanban omits an empty declared group; kanban keeps it", () => {
   const rows3: Row[] = [row("a", { s: "todo" })];
   const listCfg: BaseConfig = {
-    views: [{ type: "list", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+    views: [{ type: "list", name: "V", groupBy: { property: "note.s" }, groupOrder: ["todo", "done"] }],
   };
   expect(runView(listCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo"]); // "done" empty -> omitted
   const kanbanCfg: BaseConfig = {
-    views: [{ type: "kanban", name: "V", groupBy: { property: "note.s" }, columns: ["todo", "done"] }],
+    views: [{ type: "kanban", name: "V", groupBy: { property: "note.s" }, groupOrder: ["todo", "done"] }],
   };
   expect(runView(kanbanCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo", "done"]); // "done" kept as drop target
 });

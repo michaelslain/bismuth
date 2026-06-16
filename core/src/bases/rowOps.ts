@@ -20,8 +20,11 @@ function reassemble(text: string, rows: Row[], config?: BaseConfig): string {
   const fm = m ? m[1].replace(/\n*$/, "\n") : "";
 
   // Extract column order from the base config's first view (if present).
-  // This respects user-configured visible columns or natural document order.
-  const columnOrder = config?.views?.[0]?.order ?? config?.views?.[0]?.columns;
+  // Only the view's explicit display `order` is a list of property ids; serializeRows
+  // handles `undefined` by falling back to natural row key order. (We must NOT fall back
+  // to `groupOrder` — that's a list of GROUP keys for a grouped view, not column ids,
+  // and using it as columns would emit empty rows.)
+  const columnOrder = config?.views?.[0]?.order;
 
   const body = serializeRows(rows, columnOrder);
   return body ? `${fm}\n${body}\n` : fm;

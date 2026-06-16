@@ -34,7 +34,7 @@ const purify: { sanitize: (s: string, c?: unknown) => unknown } | null =
 /** Sanitize an HTML fragment for safe innerHTML injection. Sanitization needs a
  *  DOM; with none (headless tests/SSR, where nothing is injected) the input is
  *  passed through unchanged — every real innerHTML surface runs in the browser. */
-export function sanitizeHtml(dirty: string): string {
+export function sanitizeHtml(dirty: string | null | undefined): string {
   if (!purify) return dirty ?? "";
   return purify.sanitize(dirty ?? "", CONFIG) as string;
 }

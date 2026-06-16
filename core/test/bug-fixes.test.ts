@@ -1,18 +1,16 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { mkdir, writeFile, rm, symlink } from "node:fs/promises";
 import { existsSync, mkdtempSync, symlinkSync, rmSync } from "node:fs";
 import {
   setFrontmatterKey,
   deleteFrontmatterKey,
-  parseFrontmatter,
 } from "../src/frontmatter";
 import { resolveBaseRows } from "../src/bases/source";
 import { applyReview } from "../src/srs/cards";
 import { upsertRow, deleteRow } from "../src/bases/rowOps";
 import { createError } from "../src/error";
-import type { ReviewResponse } from "../src/srs/types";
 
 // Probe once whether this platform/filesystem actually supports symlinks, so the
 // symlink-cycle test can be *explicitly* skipped where it can't run rather than

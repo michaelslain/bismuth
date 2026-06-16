@@ -336,9 +336,8 @@ if (typeof window !== "undefined") {
       //    since lastSnapshot. Skip until the first hydrate completes so we don't
       //    persist the synchronous defaults seed over the user's file.
       createEffect(() => {
-        const snapshot = JSON.stringify(settings); // track all fields
+        JSON.stringify(settings); // track all fields
         if (!hydrated) return;
-        void snapshot;
         clearTimeout(persistTimer);
         persistTimer = setTimeout(() => {
           const current = JSON.parse(JSON.stringify(settings)) as Record<string, unknown>;

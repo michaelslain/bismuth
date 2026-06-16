@@ -6,7 +6,9 @@
 import { COMMAND_CATALOG } from "../../core/src/commands";
 import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
-type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
+/** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
+ *  daemon=claude-bot cron/process supervision graph */
+export type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 export interface CommandHandlers {
   openSettings: () => void;

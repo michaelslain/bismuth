@@ -174,7 +174,7 @@ test("provisionClaudeBot clones then bun-installs when the source is missing", a
 
 test("provisionClaudeBot clears a partial/stale clone dir before re-cloning", async () => {
   const state = { cloned: false };
-  let removed: string | null = null;
+  const removedHolder: { path: string | null } = { path: null };
   await provisionClaudeBot({
     src: SRC,
     git: "git",
@@ -182,14 +182,14 @@ test("provisionClaudeBot clears a partial/stale clone dir before re-cloning", as
     // entry missing, but the SRC dir exists (leftover from a prior failed attempt).
     exists: (p) => (p === ENTRY_PATH ? state.cloned : p === SRC),
     rm: (p) => {
-      removed = p;
+      removedHolder.path = p;
     },
     run: async (cmd) => {
       if (cmd[1] === "clone") state.cloned = true;
       return { exitCode: 0, stderr: "" };
     },
   });
-  expect(removed).toBe(SRC); // the stale dir was cleared so `git clone` won't refuse it
+  expect(removedHolder.path).toBe(SRC); // the stale dir was cleared so `git clone` won't refuse it
 });
 
 test("provisionClaudeBot reports a git-clone failure", async () => {

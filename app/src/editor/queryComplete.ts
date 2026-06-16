@@ -8,9 +8,9 @@
 //
 // All matching is split into pure, unit-tested helpers (lineInQueryBlock, classifyQueryLine)
 // so the source itself is thin wiring, mirroring wikilink.ts/tag.ts.
-import { pickedCompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
-import type { EditorView } from "@codemirror/view";
+import { type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import { VIEW_TYPES } from "../../../core/src/bases/types";
+import { makeApply } from "./applyCompletion";
 
 /** Is line `index` (0-based) inside a ```query fence body? Pure over the doc's lines up to
  *  and including that line. A fenced-code state machine: each ``` toggles in/out, and the
@@ -115,19 +115,6 @@ const GROUP_FIELDS: Array<{ name: string; doc: string }> = [
   { name: "file.name", doc: "Note name." },
 ];
 
-// Replace [from,to] with `insert`, drop the caret at `from+cursor`, and (optionally) re-open
-// the popup so the value list appears right after a key is chosen.
-function applyTemplate(insert: string, cursor: number, trigger: boolean) {
-  return (view: EditorView, completion: Completion, from: number, to: number) => {
-    view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + cursor },
-      annotations: pickedCompletion.of(completion),
-    });
-    if (trigger) startCompletion(view);
-  };
-}
-
 export function querySource(): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
@@ -144,7 +131,7 @@ export function querySource(): CompletionSource {
     if (cls.kind === "key") {
       const options: Completion[] = KEY_SPECS.map((k) => ({
         label: k.name, type: "property", info: k.doc,
-        apply: applyTemplate(k.insert, k.cursor, k.trigger),
+        apply: makeApply(k.insert, k.cursor, k.trigger),
       }));
       return { from, options, validFor: /^[\w-]*$/ };
     }
@@ -163,7 +150,7 @@ export function querySource(): CompletionSource {
     // ref: empty of:/from: value — offer the [[…]] skeleton, then hand off to wikilink.
     const options: Completion[] = [{
       label: "[[ … ]]", type: "note", info: "Pick a base or note",
-      apply: applyTemplate("[[]]", "[[".length, true),
+      apply: makeApply("[[]]", "[[".length, true),
     }];
     return { from, options };
   };

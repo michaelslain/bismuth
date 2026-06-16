@@ -252,8 +252,6 @@ export default function VaultIntro() {
   // and relaunch into it. The Rust command does the work + app.restart().
   // Replay (secret keybind) launches the intro with a vault ALREADY configured — the CTA then
   // continues into it instead of forcing a re-pick.
-  const hasVault = () => (window as unknown as { __OA_HAS_VAULT__?: boolean }).__OA_HAS_VAULT__ === true;
-
   const enterVault = async () => {
     if (busy()) return;
     // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in

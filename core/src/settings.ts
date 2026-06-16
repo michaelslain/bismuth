@@ -364,7 +364,7 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
 // section is an identity match for SrsConfig (see scheduler.ts).
 export interface AppConfig {
   server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean; home: string };
+  daemon: { enabled: boolean; home: string; autoUpdate: boolean };
   templates?: { folder: string };
   srs: SrsConfig;
   // Other schema sections (graph, appearance, ui, …) are present at runtime but

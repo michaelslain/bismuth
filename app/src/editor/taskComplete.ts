@@ -9,9 +9,9 @@
 //
 // Pure, unit-tested helpers (taskDescStart, classifyTaskContext, relativeDateOptions) do
 // the matching; the source is thin wiring, mirroring wikilink.ts/tag.ts/queryComplete.ts.
-import { pickedCompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
-import type { EditorView } from "@codemirror/view";
+import { type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import { todayISO, addDaysISO } from "../../../core/src/dates";
+import { makeApply } from "./applyCompletion";
 
 /** Column where a task's description begins (just past `- [ ] `), or null if the line is
  *  not a checkbox task. Mirrors the TASK_LINE shape in core/src/tasks.ts. */
@@ -86,17 +86,6 @@ export function matchTaskFields(query: string): TaskField[] {
   return TASK_FIELDS.filter((f) => f.keywords.some((k) => k.startsWith(q)));
 }
 
-function replaceWith(insert: string, cursorOffset: number, trigger: boolean) {
-  return (view: EditorView, completion: Completion, from: number, to: number) => {
-    view.dispatch({
-      changes: { from, to, insert },
-      selection: { anchor: from + cursorOffset },
-      annotations: pickedCompletion.of(completion),
-    });
-    if (trigger) startCompletion(view);
-  };
-}
-
 export function taskSource(): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
@@ -112,14 +101,14 @@ export function taskSource(): CompletionSource {
     if (cls.kind === "date") {
       const options: Completion[] = relativeDateOptions().map((d) => ({
         label: d.label, detail: d.date, type: "enum",
-        apply: replaceWith(d.date, d.date.length, false),
+        apply: makeApply(d.date, d.date.length, false),
       }));
       return { from, options, validFor: /^[\w-]*$/ };
     }
     if (cls.kind === "recurrence") {
       const options: Completion[] = RECUR_RULES.map((r) => ({
         label: r, type: "enum",
-        apply: replaceWith(r, r.length, false),
+        apply: makeApply(r, r.length, false),
       }));
       return { from, options, validFor: /^[\w ]*$/ };
     }
@@ -129,7 +118,7 @@ export function taskSource(): CompletionSource {
     if (fields.length === 0) return null;
     const options: Completion[] = fields.map((f) => ({
       label: f.label, type: "enum",
-      apply: replaceWith(f.insert, f.insert.length, f.follow != null),
+      apply: makeApply(f.insert, f.insert.length, f.follow != null),
     }));
     return { from, options, filter: false, validFor: /^[\p{L}]*$/u };
   };

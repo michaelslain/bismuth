@@ -6,7 +6,12 @@
 // sliced off the front and kept verbatim in `prefix`. The card editor saves `prefix + body`, so
 // the stripped parts round-trip losslessly (prefix is always a literal substring of the input).
 
-const FRONTMATTER_RE = /^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+export const FRONTMATTER_RE = /^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+
+/** Strip a leading YAML frontmatter block (incl. an optional BOM). Pure. */
+export function stripFrontmatter(text: string): string {
+  return text.replace(FRONTMATTER_RE, "");
+}
 // Run of blank lines (each a possibly-indented empty line). Absorbs the spacing around a
 // stripped title heading so the editable body starts at real content.
 const BLANK_LINES_RE = /^(?:[ \t]*\r?\n)*/;

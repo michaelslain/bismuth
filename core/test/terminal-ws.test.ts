@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { createServer } from "../src/server";
 import { makeSampleVault } from "./helpers";
-import { sessionCount, listSessionIds } from "../src/terminal";
+import { listSessionIds } from "../src/terminal";
 
 // Connect a binary WebSocket to /terminal and wait for the first server-pushed bytes.
 async function openWs(base: string): Promise<WebSocket> {

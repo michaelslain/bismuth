@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
@@ -26,7 +25,7 @@ export default defineConfig(async () => ({
         // chunk it lands in (it ended up in `exportpdf`), and because the entry needs
         // the helper it then statically imports that whole chunk — dragging
         // jspdf+html2canvas (~175 KB gz) into boot even though ExportView is lazy.
-        manualChunks(id) {
+        manualChunks(id: string) {
           if (id.includes("vite/preload-helper") || id.includes("vite/modulepreload"))
             return "vite";
           if (id.includes("jspdf") || id.includes("html2canvas")) return "exportpdf";

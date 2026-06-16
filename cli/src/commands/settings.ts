@@ -57,7 +57,10 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [folder, icon] = positionals(args);
-      await setFolderIcon(vault, folder, bool(args, "clear") ? null : icon);
+      const clear = bool(args, "clear");
+      if (!folder) fail("usage: folder-icon <folder> <icon> [--clear]");
+      if (!clear && !icon) fail("usage: folder-icon <folder> <icon> [--clear]");
+      await setFolderIcon(vault, folder, clear ? null : icon);
       out({ ok: true }, args);
     },
   },

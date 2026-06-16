@@ -11,6 +11,7 @@ import { parseWikilink, resolveNotePath, type NoteCandidate } from "./wikilink";
 import { stripCode } from "../../../core/src/wikilinks";
 import { api } from "../api";
 import { renderMarkdown } from "../bases/markdown";
+import { stripFrontmatter } from "../bases/cardBodySplit";
 import { MONO_FONT } from "./livePreview";
 
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
@@ -59,11 +60,6 @@ function specForWikiEmbed(inner: string): EmbedSpec | null {
   if (kind === "image") return { kind, src, alt: target, ...parseSize(alias) };
   if (kind === "pdf") return { kind, src, page: heading };
   return { kind, src };
-}
-
-/** Strip a leading YAML frontmatter block so a transcluded note shows just its body. */
-function stripFrontmatter(text: string): string {
-  return text.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 }
 
 // Kinds whose box can be drag-resized (and the new size persisted as `|WxH`).
