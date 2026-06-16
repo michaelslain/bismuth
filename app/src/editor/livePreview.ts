@@ -401,7 +401,13 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   // selection — so highlighting text exposes its markdown across the whole range, not
   // just the caret line. Spans are precomputed per range (cheap) to avoid a doc.lineAt
   // per visible line.
-  const selSpans = view.state.selection.ranges.map((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number] as const);
+  // An UNFOCUSED editor reveals nothing — every line renders as live-preview. This matters for
+  // multi-editor surfaces like the Bases cards grid: each card's editor keeps its caret at offset
+  // 0, so without the focus gate every unfocused card would expose its first line as raw markdown.
+  // (The update() trigger below re-runs this pass on focus change so the reveal flips in/out.)
+  const selSpans = view.hasFocus
+    ? view.state.selection.ranges.map((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number] as const)
+    : [];
   const isRevealed = (n: number) => selSpans.some(([a, b]) => n >= a && n <= b);
   // Per-token reveal: an INLINE token (bold/italic/code/link/wikilink/math) shows its raw
   // markdown only when a selection range touches that specific token's character span —
@@ -847,7 +853,7 @@ export const livePreview = [
         const activeChanged =
           u.startState.field(activeCodeField, false) !== u.state.field(activeCodeField, false) ||
           u.startState.field(activeTableField, false) !== u.state.field(activeTableField, false);
-        if (u.docChanged || u.viewportChanged || u.selectionSet || activeChanged) {
+        if (u.docChanged || u.viewportChanged || u.selectionSet || u.focusChanged || activeChanged) {
           // Refresh the block-region cache only when document content changes.
           // On selectionSet / viewportChanged alone, reuse the cached sets —
           // the per-line decoration pass (which handles cursor-line reveal) still runs every time.
