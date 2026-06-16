@@ -222,10 +222,21 @@
   background: var(--surface-1, var(--panel));
 }
 
-/* Google-Keep masonry: cards keep their natural height and pack into columns, so
-   a short note stays short instead of stretching to match the tallest in its row. */
-.bodyGrid { column-count: 3; column-gap: 14px; }
-.bodyGrid > .bodyCard { break-inside: avoid; margin: 0 0 14px; }
+/* A responsive card grid: each card is its own grid item (NOT a CSS multicol column), so an
+   embedded CodeMirror editor can't be fragmented across a column boundary — which would wreck
+   caret placement and drag-selection. `align-items: start` keeps each card its natural height
+   instead of stretching to the tallest in its row. */
+.bodyGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+.bodyGrid > .bodyCard { margin: 0; }
+
+/* The seamless inline editor inside a body card (CardEditor + livePreview). Transparent,
+   gutterless, auto-height so it reads exactly like the card's old read-only preview — but a
+   click places the cursor and a drag selects. The heading/task/link styling comes from
+   livePreview's own theme, so it matches the note editor. */
+.cardEditor { margin-top: 6px; }
+.cardEditor :global(.cm-editor) { background: transparent; }
+.cardEditor :global(.cm-editor.cm-focused) { outline: none; }
+.cardEditor :global(.cm-scroller) { font-family: var(--editor-font); }
 
 /* The note body rendered as real markdown (renderNoteBody). Task lists are tightened
    into a label-free Keep-style checklist; the checkbox stays inline so a task's text
