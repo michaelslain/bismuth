@@ -272,7 +272,10 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .palette-row .palette-icon { color: var(--text-muted); }
 .palette-row.selected { background: var(--popover-selected-bg); }
 .palette-row.selected .palette-icon { color: var(--accent); }
-.palette-icon { opacity: 1; width: 1.2em; text-align: center; flex-shrink: 0; }
+/* Flex-center the glyph so an inline Lucide SVG (baseline-aligned by default, which
+   leaves it sitting a few px high against the label) is vertically centered in the
+   row; works for emoji text fallbacks too. */
+.palette-icon { opacity: 1; width: 1.2em; height: 1.2em; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .palette-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .palette-sub { color: var(--faint); font-size: 10.5px; margin-left: auto; padding-left: 12px; overflow: hidden; text-overflow: ellipsis; }
 .palette-match { color: var(--accent); font-weight: 600; }
