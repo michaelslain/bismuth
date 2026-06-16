@@ -99,6 +99,9 @@ export default function App() {
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [mode, setMode] = createSignal<GraphMode>("both");
+  // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
+  // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
+  const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
 
   // Restore persisted tab/pane layout at setup (before any persist effect runs, so we
   // never clobber storage with the initial empty state). The graph/vault list isn't
@@ -329,6 +332,19 @@ export default function App() {
         : g;
     setGraph(next);
     writeCache(GRAPH_CACHE_KEY, { nodes: g.nodes, edges: g.edges });
+  };
+
+  // The graph doesn't carry per-note frontmatter icons; the file tree does. Build a
+  // path -> icon map from it so tab chips can mirror each note's file-tree icon.
+  const refreshFileIcons = async () => {
+    try {
+      const tree = await api.tree();
+      const m = new Map<string, string>();
+      for (const e of tree) if (e.kind !== "dir" && e.icon) m.set(e.path, e.icon);
+      setFileIcons(m);
+    } catch {
+      // Keep the last good map — a momentarily stale icon beats dropping them all.
+    }
   };
 
   // The backend computes the dedicated 2nd/3rd-brain layouts lazily (GET /graph/views),
@@ -866,6 +882,17 @@ export default function App() {
 
   onMount(() => {
     refreshGraph();
+    refreshFileIcons();
+  });
+
+  // A note's tab icon comes from its frontmatter `icon`, which lives in the file tree.
+  // Re-fetch the map whenever a change touched structure (tree/graph dirty) — that covers
+  // file add/rename/move and icon edits; pure content edits are skipped.
+  createEffect(() => {
+    const c = lastChange();
+    if (c.version === 0) return;
+    if (c.dirty?.tree === false && c.dirty?.graph === false) return;
+    void refreshFileIcons();
   });
 
   createEffect(() => {
@@ -1169,11 +1196,25 @@ export default function App() {
     return contentLabel(content);
   }
 
-  // Lucide icon name for a tab: a split-pane glyph for "omnitab"s, else the content's icon.
+  // True for a fresh, never-renamed note ("Untitled.md" / "Untitled-<uuid>.md"). These get
+  // no tab icon, so a brand-new note reads as a blank slate until it's actually named.
+  function isUnnamedNote(content: string): boolean {
+    const base = (content.split("/").pop() ?? content).replace(/\.(md|ya?ml|draw|sheet)$/, "");
+    return base === "Untitled" || base.startsWith("Untitled-");
+  }
+
+  // Lucide icon name for a tab: a split-pane glyph for "omnitab"s; else the content's app
+  // icon (search/graph/terminal/settings/spreadsheet/drawing/export); else, for a named
+  // note, its own frontmatter icon (falling back to a generic document). Unnamed notes and
+  // empty panes get none.
   function tabBarIcon(t: Tab): string | undefined {
     const ls = leaves(t.root);
     if (ls.length > 1) return "Columns2";
-    return contentIcon(ls[0].content);
+    const content = ls[0].content;
+    const appIcon = contentIcon(content);
+    if (appIcon) return appIcon;
+    if (isSentinel(content) || isUnnamedNote(content)) return undefined;
+    return fileIcons().get(content) ?? "FileText";
   }
 
   return (
