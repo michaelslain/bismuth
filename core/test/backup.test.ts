@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync, mkdirSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
@@ -107,4 +107,42 @@ test("checkpoint: rejects an unsafe ref name", async () => {
   await writeNote(dir, "a.md", "# A");
   await commitVault(dir, "init");
   await expect(checkpointDelta(dir, "../evil")).rejects.toThrow();
+});
+
+test("checkpoint: non-ASCII / emoji / space paths survive verbatim and resolve on disk", async () => {
+  // The real vault is full of these (emoji folders like "📦 projects", curly apostrophes
+  // in "America's", accents in "Çelik"). Git's default output octal-escapes + quotes such
+  // paths; the -z parser must return them verbatim so the cron can actually open the files.
+  const dir = mkdtempSync(join(tmpdir(), "oa-ckpt-utf8-"));
+  await writeNote(dir, "cs/📦 projects/idea.md", "# Idea");
+  await writeNote(dir, "reading/America’s Commute.md", "# r"); // U+2019 curly apostrophe
+  await writeNote(dir, "self/old name é.md", "# o"); // accent, to be renamed
+  await commitVault(dir, "init");
+
+  // First run (ls-tree path): every tracked file is "A", paths verbatim + on disk.
+  const first = await checkpointDelta(dir, "vault-review");
+  const firstPaths = first.files.map((f) => f.path).sort();
+  expect(firstPaths).toEqual(
+    ["cs/📦 projects/idea.md", "reading/America’s Commute.md", "self/old name é.md"].sort(),
+  );
+  for (const f of first.files) expect(existsSync(join(dir, f.path))).toBe(true);
+
+  await advanceCheckpoint(dir, "vault-review");
+
+  // Modify the emoji-path file, add an accented one, and rename another.
+  await writeNote(dir, "cs/📦 projects/idea.md", "# Idea v2");
+  await writeNote(dir, "self/café notes.md", "# café"); // é
+  renameSync(join(dir, "self/old name é.md"), join(dir, "self/renamed señor.md"));
+  await commitVault(dir, "edit");
+
+  // Delta (diff path): verbatim paths; the renamed file reports its NEW path; nothing escaped.
+  const delta = await checkpointDelta(dir, "vault-review");
+  const present = delta.files.filter((f) => f.status !== "D").map((f) => f.path);
+  for (const p of present) {
+    expect(p).not.toContain("\\"); // no octal-escape backslashes
+    expect(existsSync(join(dir, p))).toBe(true); // resolves on disk
+  }
+  expect(present).toContain("cs/📦 projects/idea.md");
+  expect(present).toContain("self/café notes.md");
+  expect(present).toContain("self/renamed señor.md");
 });
