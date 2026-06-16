@@ -8,9 +8,10 @@ function fm(path: string, extra: Record<string, unknown> = {}) {
   return { name, basename: name, path, folder: "", ext: "md", size: 0, ctime: 0, mtime: 0, tags: [], links: [], ...extra };
 }
 
-// A task row: note carries line + status + raw (what isTaskRow / taskToRow produce).
-function taskRow(path: string, line: number, status: string, statusChar = " "): Row {
-  return { file: fm(path), note: { line, status, statusChar, raw: `- [${statusChar}] x`, description: "x" }, formula: {} };
+// A task row: note carries line + status + raw (what isTaskRow / taskToRow produce). The
+// description defaults to "x"; pass one to build distinct (or deliberately colliding) tasks.
+function taskRow(path: string, line: number, status: string, statusChar = " ", description = "x"): Row {
+  return { file: fm(path), note: { line, status, statusChar, raw: `- [${statusChar}] ${description}`, description }, formula: {} };
 }
 // A note row: keyed by path.
 function noteRow(path: string, note: Record<string, unknown> = {}): Row {
@@ -25,8 +26,11 @@ function result(groups: ResultGroup[]): ViewResult {
 }
 
 describe("rowKey", () => {
-  test("task rows key by path:line, note rows by path", () => {
-    expect(rowKey(taskRow("a.md", 3, "todo"))).toBe("a.md:3");
+  test("task rows key by path+description (line-independent), note rows by path", () => {
+    // A task's line is volatile (completing one renumbers its siblings), so the key must NOT
+    // include it — same description at different lines yields the SAME key.
+    expect(rowKey(taskRow("a.md", 3, "todo", " ", "Clean fridge"))).toBe("a.md Clean fridge");
+    expect(rowKey(taskRow("a.md", 9, "todo", " ", "Clean fridge"))).toBe("a.md Clean fridge");
     expect(rowKey(noteRow("a.md"))).toBe("a.md");
   });
 });
@@ -35,6 +39,11 @@ describe("rowsEqual", () => {
   test("identical rows are equal; a flipped status char is not", () => {
     expect(rowsEqual(taskRow("a.md", 1, "todo", " "), taskRow("a.md", 1, "todo", " "))).toBe(true);
     expect(rowsEqual(taskRow("a.md", 1, "todo", " "), taskRow("a.md", 1, "done", "x"))).toBe(false);
+  });
+  test("a line-only change does NOT break equality (line is volatile — sinking a done task renumbers siblings)", () => {
+    // "Clean fridge" shifting from line 3 to line 2 (because the task above it was completed
+    // and sunk) is the SAME task — it must keep its identity, not remount.
+    expect(rowsEqual(taskRow("a.md", 3, "todo", " ", "Clean fridge"), taskRow("a.md", 2, "todo", " ", "Clean fridge"))).toBe(true);
   });
   test("an mtime-only change does NOT break equality (volatile stat; body freshness is separate)", () => {
     // A body edit bumps mtime but the card keeps identity + updates in place via BodyCard's
@@ -81,6 +90,41 @@ describe("reconcileRows", () => {
     const next = [taskRow("a.md", 1, "todo")];
     expect(reconcileRows(undefined, next)).toBe(next);
     expect(reconcileRows([], next)).toBe(next);
+  });
+
+  test("completing+sinking a task renumbers survivors but they KEEP identity (the reload-on-check bug)", () => {
+    // Before: three not-done tasks at lines 2,3,4. Checking line 2 sinks it to the bottom and
+    // renumbers the survivors up to 2,3 — and it leaves a `not done` list entirely. With a
+    // `path:line` key + line-sensitive equality the survivors would all remount (the flash);
+    // with description keys + line-independent equality they keep their references.
+    const clean = taskRow("B.md", 3, "todo", " ", "Clean fridge");
+    const santaroga = taskRow("B.md", 4, "todo", " ", "Santaroga");
+    const prev = [taskRow("B.md", 2, "todo", " ", "Time block"), clean, santaroga];
+    const next = [taskRow("B.md", 2, "todo", " ", "Clean fridge"), taskRow("B.md", 3, "todo", " ", "Santaroga")];
+    const out = reconcileRows(prev, next);
+    expect(out.length).toBe(2);
+    expect(out[0]).toBe(clean); // survived line 3→2 without remounting
+    expect(out[1]).toBe(santaroga); // survived line 4→3 without remounting
+    // …and the reused objects carry the FRESH line, so a follow-up toggle hits the right source
+    // row (reusing the reference must not leave a stale line behind).
+    expect((out[0].note as { line: number }).line).toBe(2);
+    expect((out[1].note as { line: number }).line).toBe(3);
+  });
+
+  test("duplicate descriptions in one note map to DISTINCT prior objects (no shared identity)", () => {
+    // Two tasks with the same text collide on key; bucket matching must hand each a distinct
+    // prior reference rather than collapsing both onto one (which would drop a row in <For>).
+    const a1 = taskRow("a.md", 1, "todo", " ", "dup");
+    const a2 = taskRow("a.md", 2, "todo", " ", "dup");
+    const changed = taskRow("a.md", 3, "todo", " ", "other");
+    const prev = [a1, a2, changed];
+    // `changed` edited → forces the mapped (non-fast-path) branch so we exercise bucket matching.
+    const next = [taskRow("a.md", 1, "todo", " ", "dup"), taskRow("a.md", 2, "todo", " ", "dup"), taskRow("a.md", 3, "todo", " ", "other!")];
+    const out = reconcileRows(prev, next);
+    expect(out[0]).toBe(a1);
+    expect(out[1]).toBe(a2);
+    expect(out[0]).not.toBe(out[1]); // not collapsed onto a single shared reference
+    expect(out[2]).toBe(next[2]); // genuinely changed row takes the fresh reference
   });
 });
 

@@ -53,6 +53,14 @@ function fireChange(c: ServerChange): void {
 /** Last version observed specifically via SSE (not bumped by the poll). */
 let lastSseVersion = 0;
 
+// Have we EVER reached the backend this session? On a cold launch (esp. right after a
+// self-update relaunch) the sidecar takes ~1–4s to start listening, so the first SSE connect
+// fails. That's normal boot warmup, not a dropped connection — showing "Connection lost.
+// Retrying…" then would flash a scary toast on every launch. So the disconnect toast is
+// suppressed until we've connected at least once; the GET retry in api.ts fills the UI in
+// silently meanwhile. After the first successful contact, a real drop toasts as usual.
+let everConnected = false;
+
 // Tracks the active "connection lost" toast so we show it only once per
 // disconnect session (deduplication).
 let connectionErrorToastId: number | null = null;
@@ -74,6 +82,7 @@ function startPolling(): void {
   pollIntervalHandle = setInterval(async () => {
     try {
       const { version: v } = await api.version();
+      everConnected = true; // the backend answered — we've made contact at least once
       if (v > change().version) {
         // Only log as 'SSE missed' when the version wasn't already delivered via SSE.
         if (v > lastSseVersion) recordPollCatchup(v, lastSseVersion);
@@ -110,8 +119,9 @@ function handleConnectionError(): void {
     es = null;
   }
 
-  // Show toast only once per disconnect session
-  if (connectionErrorToastId === null) {
+  // Show toast only once per disconnect session — and never during initial boot, before we've
+  // ever reached the backend (that's warmup, not a lost connection).
+  if (everConnected && connectionErrorToastId === null) {
     connectionErrorToastId = pushToast(
       "Connection lost. Retrying...",
       {
@@ -146,6 +156,7 @@ function createEventSource(): void {
 
     es.onopen = () => {
       // Connection established
+      everConnected = true;
       if (connectionState() === "disconnected" || connectionState() === "reconnecting") {
         setConnectionState("connected");
         currentPollInterval = NORMAL_POLL_INTERVAL;
@@ -164,6 +175,7 @@ function createEventSource(): void {
     };
 
     es.onmessage = (e) => {
+      everConnected = true;
       try {
         const raw = JSON.parse(e.data) as Partial<ServerChange>;
         if (typeof raw.version !== "number") return;
