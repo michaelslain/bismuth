@@ -226,12 +226,15 @@ class MathWidget extends WidgetType {
 
 /** Hide the delimiters of an inline token (off the cursor line) and style the inner text. */
 function pushInline(
-  deco: Range<Decoration>[], text: string, lineFrom: number, onCursor: boolean,
+  deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean,
   re: RegExp, markLen: number, mark: Decoration,
 ) {
   for (const m of text.matchAll(re)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
+    // Reveal raw syntax only when the caret/selection touches THIS token — not the
+    // whole line. So `**bold** *italic*` reveals only the span the cursor is inside.
+    const onCursor = reveals(s, end);
     const innerStart = s + markLen, innerEnd = end - markLen;
     if (innerEnd <= innerStart) continue;
     deco.push(mark.range(innerStart, innerEnd));
@@ -249,12 +252,14 @@ function pushInline(
 /** Style each `[[wikilink]]` on a line — revealing only the basename/alias and hiding
  *  the brackets + folder path off the cursor line. Used for both body and frontmatter
  *  lines so links in properties get the same treatment. Click handling lives in Editor.tsx. */
-function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number, onCursor: boolean) {
+function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean) {
   // `(?<!!)` skips EMBEDS (`![[...]]`) — they're rendered by embedBlock, not styled as
   // links here (mirrors the graph's extractWikilinks exclusion in core/src/wikilinks.ts).
   for (const m of text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
+    // Per-token reveal: only the wikilink the caret touches shows its brackets/path.
+    const onCursor = reveals(s, end);
     const { from: visFrom, to: visTo } = wikilinkVisibleRange(m[1], s);
     if (visTo <= visFrom) {
       // Degenerate token (e.g. empty basename like "[[#heading]]"): underline the whole thing.
@@ -397,6 +402,18 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   // per visible line.
   const selSpans = view.state.selection.ranges.map((r) => [doc.lineAt(r.from).number, doc.lineAt(r.to).number] as const);
   const isRevealed = (n: number) => selSpans.some(([a, b]) => n >= a && n <= b);
+  // Per-token reveal: an INLINE token (bold/italic/code/link/wikilink/math) shows its raw
+  // markdown only when a selection range touches that specific token's character span —
+  // not merely because the caret is somewhere on the same line. Touching the boundary
+  // counts (caret right before/after the markers), matching Obsidian's live preview.
+  // Line-level structure (headings, lists, blockquotes, …) still keys on `isRevealed`.
+  const selRanges = view.state.selection.ranges;
+  const revealsRange = (from: number, to: number) => selRanges.some((r) => r.from <= to && r.to >= from);
+  // A line-prefix marker (list bullet / task checkbox) reveals its raw `- ` / `- [ ]`
+  // ONLY when the caret sits within the marker itself — not when it's anywhere on the
+  // line. Half-open `[from, to)` so Home (start of the text, just past the marker) keeps
+  // the bullet/checkbox rendered; you must click onto the marker to edit it raw.
+  const revealsPrefix = (from: number, to: number) => selRanges.some((r) => r.from < to && r.to >= from);
   // The table block (by header line) currently shown as raw source, if any. The
   // rendered <table> block widgets themselves come from tableWidgetField (a StateField)
   // — block decorations may not be provided by a ViewPlugin. Here we only need the
@@ -447,7 +464,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const start = line.from + km[1].length;
           deco.push(fmKeyMark.range(start, start + km[2].length));
         }
-        pushWikilinks(deco, text, line.from, onCursor);
+        pushWikilinks(deco, text, line.from, revealsRange);
         pos = line.to + 1;
         continue;
       }
@@ -544,7 +561,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const textStart = line.from + taskMatch[0].length;
           if (line.to > textStart) deco.push(taskDoneMark.range(textStart, line.to));
         }
-        if (onCursor) {
+        if (revealsPrefix(line.from, line.from + taskMatch[0].length)) {
           // Raw, but indent like the rendered view (hide the literal leading
           // whitespace, drive indent from the same hanging-indent decoration) and
           // show the "- [ ]" marker in the mono font.
@@ -566,7 +583,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
         const depth = indentDepth(bulletMatch[1]);
-        if (onCursor) {
+        if (revealsPrefix(line.from, line.from + bulletMatch[0].length)) {
           // Raw, but indent like the rendered view and show the "- " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
           const indentLen = bulletMatch[1].length;
@@ -587,14 +604,15 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const htmlSpans = pushInlineHtml(deco, view.state, line.from, line.to, onCursor);
       const inHtmlSpan = (s: number, e: number) => htmlSpans.some((h) => s < h.to && e > h.from);
 
-      // math: process $$...$$ (block) before $...$ (inline) — skip if cursor is on this line
-      if (!onCursor) {
+      // math: process $$...$$ (block) before $...$ (inline). Each token renders unless
+      // the caret/selection touches it — then that one shows raw (per-token, not line-wide).
+      {
         // block math: $$...$$  (single-line, non-empty inner)
         const blockMathRe = /\$\$([^$]+)\$\$/g;
         for (const m of text.matchAll(blockMathRe)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
-          if (inHtmlSpan(s, end)) continue;
+          if (inHtmlSpan(s, end) || revealsRange(s, end)) continue;
           const expr = m[1];
           deco.push(Decoration.replace({ widget: new MathWidget(expr, true) }).range(s, end));
         }
@@ -605,23 +623,25 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         for (const m of text.matchAll(inlineMathRe)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
-          if (inHtmlSpan(s, end)) continue;
+          if (inHtmlSpan(s, end) || revealsRange(s, end)) continue;
           const expr = m[1];
           deco.push(Decoration.replace({ widget: new MathWidget(expr, false) }).range(s, end));
         }
       }
 
       // inline tokens
-      pushInline(deco, text, line.from, onCursor, /\*\*([^*]+)\*\*/g, 2, strong);
-      pushInline(deco, text, line.from, onCursor, /__([^_]+)__/g, 2, strong);
-      pushInline(deco, text, line.from, onCursor, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em);
-      pushInline(deco, text, line.from, onCursor, /~~([^~]+)~~/g, 2, strike);
-      pushInline(deco, text, line.from, onCursor, /`([^`]+)`/g, 1, code);
+      pushInline(deco, text, line.from, revealsRange, /\*\*([^*]+)\*\*/g, 2, strong);
+      pushInline(deco, text, line.from, revealsRange, /__([^_]+)__/g, 2, strong);
+      pushInline(deco, text, line.from, revealsRange, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em);
+      pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike);
+      pushInline(deco, text, line.from, revealsRange, /`([^`]+)`/g, 1, code);
 
-      // markdown links [text](url): show text as a link, hide the brackets/url off the cursor line
+      // markdown links [text](url): show text as a link, hide the brackets/url unless the
+      // caret touches THIS link (per-token reveal, not the whole line)
       for (const m of text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
         const s = line.from + (m.index ?? 0);
         const end = s + m[0].length;
+        const onCursor = revealsRange(s, end);
         const textStart = s + 1, textEnd = s + 1 + m[1].length;
         deco.push(link.range(textStart, textEnd));
         if (!onCursor) {
@@ -641,7 +661,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
-      pushWikilinks(deco, text, line.from, onCursor);
+      pushWikilinks(deco, text, line.from, revealsRange);
 
       // body #hashtags — tint TEAL. Skipped on heading lines so heading "#"s
       // are never tinted (frontmatter/code/table lines already `continue` above).
