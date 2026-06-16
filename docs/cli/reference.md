@@ -355,7 +355,7 @@ bismuth settings schema --vault ~/vault --pretty
 ```
 
 ### `folder-icon <folder> <icon> [--clear]`
-Set (or, with `--clear`, clear) a folder's icon in `settings.yaml` (`setFolderIcon(vault, folder, clear ? null : icon)`). Prints `{ ok: true }`.
+Set (or, with `--clear`, clear) a folder's icon in `settings.yaml` (`setFolderIcon(vault, folder, clear ? null : icon)`). Prints `{ ok: true }`. The args are validated: a missing `<folder>` always fails (`usage: folder-icon <folder> <icon> [--clear]`), and a missing `<icon>` fails the same way **unless** `--clear` is passed (clearing needs no icon).
 ```bash
 bismuth folder-icon "Projects" Folder --vault ~/vault
 bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ignored when --clear
@@ -469,17 +469,19 @@ Export a note / base / sheet / drawing to `md | html | png | pdf`, reusing the a
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
 
 Two paths:
-- **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, `"dark"` theme). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`).
-- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, "dark")` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer. `md`/`html`/`png` are fully headless. **`pdf` of notes/bases/sheets is browser-only** (html2canvas/jsPDF) and throws: *"pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*.
+- **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, `"dark"` theme). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
+- **Notes / bases / sheets** — `requireVault`, then `renderExport(file, fmt, deps, "dark")` with deps wiring `read` → `readNote`, `resolveRows` → `resolveSource`, and `drawingToPng` → the core renderer (so an embedded `.draw` inside a note still rasterizes). Only `md`/`html` are headless. **Both `png` AND `pdf` of notes/bases/sheets are browser-only** (the `htmlToPng`/`htmlToPdf` deps both `throw`, since both rely on `html2canvas`/`jsPDF` which need a DOM). The CLI raises a clear "open in the app" error:
+  - `pdf` → *"pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
+  - `png` → *"png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md"*
 
 Output path defaults to the exporter's chosen filename (or `<file>.<fmt>` for drawings); override with `--out`. Prints `wrote <outPath>`.
 ```bash
 bismuth export "Notes/Essay.md" --format html --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --out essay.md --vault ~/vault
-bismuth export "Bases/Reading.md" --format png --vault ~/vault
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
-bismuth export "Notes/Essay.md" --format pdf --vault ~/vault   # ERRORS — use the app
+bismuth export "Bases/Reading.md" --format png --vault ~/vault   # ERRORS — png is app-only
+bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pdf is app-only
 ```
 
 ---

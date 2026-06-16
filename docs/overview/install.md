@@ -242,7 +242,62 @@ Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundl
 
 - `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary via `bun build --compile`, output to `app/src-tauri/binaries/bismuth-core-<target-triple>` (gitignored, ~58 MB). `tauri.conf.json` lists it under `bundle.externalBin` so it ships inside the `.app`.
 - At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__OA_API__ = "http://localhost:<free>"` before any app JS runs; `api.ts` `resolveBase` reads it (precedence: `?api=` > `__OA_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
-- **Vault resolution**: a Finder-launched app has no shell env, so `OA_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.bismuth.app/config.json`); on first launch (or if the saved vault is missing) it shows a native folder picker, persists the choice, and defaults memory to `~/.claude-bot/memory`. Cancelling the picker leaves the app open with no backend. A one-time startup migration renames the legacy config dir (`…/com.michael.obsidian` → `…/com.bismuth.app`) when it exists, so users upgrading across the bundle-id rename keep their saved vault.
+- **Vault resolution**: a Finder-launched app has no shell env, so `OA_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.bismuth.app/config.json`); when a valid saved vault exists (`read_valid_config` — the path is set and is a real directory), it spawns the backend against it, defaulting memory to `~/.claude-bot/memory` when unset. A one-time startup migration (`migrate_legacy_config_dir`, run before any config read) renames the legacy config dir (`…/com.michael.obsidian` → `…/com.bismuth.app`) when it exists, so users upgrading across the bundle-id rename keep their saved vault.
+- **No vault yet → the intro, not a bare picker**: when there is no usable vault, `lib.rs` does **not** jump straight to a folder picker. Instead it builds the window with **no backend** and renders a full-window onboarding takeover (see [First-run intro](#first-run-intro-the-vault-takeover) below). The native folder picker is only opened later, by the intro's final CTA.
+
+#### First-run intro (the vault takeover)
+
+The very first time a bundled app is launched — or any time the global *intro-seen* marker is absent — the user does not land in a folder picker. They land in a **full-window slideshow** that introduces Bismuth and then opens their vault. This replaces the old "first launch → native folder picker" path.
+
+**Gating (Rust → JS):** In `lib.rs`'s `setup` (release only, `!cfg!(debug_assertions)`):
+
+```rust
+let valid = if !cfg!(debug_assertions) { read_valid_config(&app.handle()) } else { None };
+let has_vault = valid.is_some();
+let first_run = !cfg!(debug_assertions) && (!has_seen_intro(&app.handle()) || !has_vault);
+```
+
+So the intro shows when **either** the user has never finished it (`intro-seen` marker absent) **or** there is no usable vault. When `first_run`, `injected` is `None` (no backend is spawned — the intro is backend-free), and `build_main_window` writes an init script setting `window.__OA_FIRST_RUN__ = true` (plus `window.__OA_HAS_VAULT__ = true` when a vault is already configured, i.e. a replay). `app/src/index.tsx` reads that flag and code-splits the root so first-run loads `intro/VaultIntro` instead of `App`:
+
+```ts
+const firstRun =
+  (isTauri() && window.__OA_FIRST_RUN__ === true) ||
+  new URLSearchParams(window.location.search).has("intro");
+const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));
+```
+
+`?intro=1` in the URL forces the intro in dev/browser for previewing (no native picker / backend in that mode — `enterVault` just logs).
+
+**The `intro-seen` marker (separate from the vault config):** A *global*, app-level flag at `<app-config-dir>/intro-seen` — written by `mark_intro_seen`, checked by `has_seen_intro`. It is deliberately kept **separate from `config.json`**: it is one flag across all vaults (the intro is not re-shown per vault), and replaying it never touches the saved vault paths.
+
+**The slideshow** (`app/src/intro/VaultIntro.tsx`) is an arrow-key/dot-navigable sequence of slides (`SlideKey`):
+
+| Slide | What it shows |
+|---|---|
+| `welcome` | "Notes that think." — wikilinks pitch, centered crystal mark |
+| `theme` | "Pick your palette." — a `Select` dropdown over all themes; choosing one **live-recolors a real 3D knowledge graph** (the app's own `WebGLRenderer` drawing a baked-layout dummy point-cloud, `SMALL_GRAPH`) and re-themes the whole takeover |
+| `graph` | "Three brains, one mind." — the same 3D graph carries over, cross-fading to a bigger condensed cloud (`BIG_GRAPH`) |
+| `daemon` | "An agent that never sleeps." — the background claude-bot daemon |
+| `claude` | "Let Claude tend it." — MCP / Claude Code |
+| `powerups` | "Optional power-ups." — toggle which setups to run after the vault opens (see below) |
+| `begin` | "Open your vault." — the final CTA, **"Enter your vault"** |
+
+The theme picker only recolors live; it commits **nothing** until the CTA. On commit, the chosen theme name is passed to the Tauri command (below) which **seeds the new vault's `appearance.theme`** so the app paints in that theme on first boot.
+
+**The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
+1. opens the **native folder picker** ("Open or create your Bismuth vault");
+2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
+3. on a pick: `create_dir_all` the folder, default memory to `~/.claude-bot/memory` (also created), `seed_vault_settings` writes a minimal `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (the sidecar's `reconcileSettings` fills the rest on boot, preserving those keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
+
+In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `OA_VAULT` regardless) — the frontend just navigates to `/` itself.
+
+**Power-ups (queued for after the vault opens):** The `powerups` slide offers optional setups (`POWER_UPS` in `VaultIntro.tsx`), both default-on: **DAEMON** (command `daemon-setup`) and **CLI + MCP** (command `bismuth-install`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["oa-first-run-powerups"]` (and caches the theme CSS vars under `oa-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, daemon auto-updates on launch), so leaving them checked is safe even when already installed.
+
+**Replay (secret keybind):** The frontend can replay the onboarding via two Tauri commands:
+- `reset_first_run` — removes **only** the `intro-seen` marker (leaving `config.json` intact) and relaunches; with a vault still configured this re-shows the intro and then drops the user back into their current vault. Bound to a secret keybind.
+- `finish_intro` — used when replaying with a vault already configured: marks the intro seen and relaunches **into the existing vault without re-picking** (the intro's CTA continues here instead of `choose_first_vault` when `window.__OA_HAS_VAULT__` is set).
+
+`set_last_vault(vault)` is the related "open another folder as a new brain" persist — it writes the new vault into `config.json` (preserving the existing memory dir, ignoring an empty/nonexistent path) so the next cold launch reopens it.
 
 #### Bundled resources: relay + machine-wide tools
 
@@ -358,4 +413,4 @@ This allows the Vite dev server (any port) and the Tauri webview to reach the ba
 | `Port 4321 is already in use` | Another backend is running | Use `--port 4322` |
 | `ENOENT` on vault watch start | Vault directory does not exist | Create the directory before starting |
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/app/vite.config.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/app/vite.config.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx

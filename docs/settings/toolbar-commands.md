@@ -49,35 +49,92 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 6 | `open-graph` | Open graph view | `Share2` | `h.openGraph` |
 | 7 | `open-folder` | Open folder… | `FolderOpen` | `h.openFolder` |
 | 8 | `new-window` | New window | `AppWindow` | `h.newWindow` |
-| 9 | `new-note` | New note | `FilePlus` | `h.newNote` |
-| 10 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
-| 11 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
-| 12 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
-| 13 | `export` | Export current file… | `Download` | `h.exportActive` |
-| 14 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 15 | `search` | Search | `Search` | `h.openSearch` |
-| 16 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 17 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 18 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 19 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 20 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
-| 21 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 22 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 23 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 24 | `daemon-setup` | Set up claude-bot daemon… | `Download` | `h.openDaemonSetup` |
+| 9 | `create-menu` | Create new… | `Plus` | `h.openCreateMenu` |
+| 10 | `new-note` | New note | `FilePlus` | `h.newNote` |
+| 11 | `new-folder` | New folder | `FolderPlus` | `h.newFolder` |
+| 12 | `new-base` | New base | `Database` | `h.newBase` |
+| 13 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
+| 14 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
+| 15 | `export` | Export current file… | `Download` | `h.exportActive` |
+| 16 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
+| 17 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
+| 18 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
+| 19 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
+| 20 | `search` | Search | `Search` | `h.openSearch` |
+| 21 | `settings` | Open Settings | `Settings` | `h.openSettings` |
+| 22 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
+| 23 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
+| 24 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
+| 25 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
+| 26 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
+| 27 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 28 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 29 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 30 | `daemon-setup` | Set up claude-bot daemon… | `Download` | `h.openDaemonSetup` |
+| 31 | `daemon-update` | Update claude-bot daemon… | `RefreshCw` | `h.openDaemonSetup` |
+| 32 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
 
 Notes on individual commands:
 
 - **`new-tab` vs `open-graph`**: `new-tab` always spawns a fresh graph home tab; `open-graph` focuses an existing graph tab if one is open (else opens one). (Comment in `app/src/commands.ts`.)
+- **`create-menu`** is the **`+Create` chooser** — a single button that opens a context menu of all the "create" commands instead of running one. See ["The `create-menu` chooser"](#the-create-menu-chooser) below.
 - **File-menu commands** (`open-folder`, `new-window`, `export`): `open-folder` opens a chosen folder as its own brain in a new window (a sibling backend); `new-window` reopens the current folder in a new window; `export` acts on the active file.
+- **`new-base`** creates a `type: base` markdown file. As a plain command (palette / toolbar `command: new-base`) it calls `h.newBase` directly; as the `create-menu` "New base ▸" submenu it offers one entry per Bases view kind (see the chooser section).
+- **`archive-tasks` / `archive-all-tasks`**: permanently remove completed/cancelled tasks — from the **active note** (`h.archiveTasks`) or across **all notes** (`h.archiveAllTasks`).
+- **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
+- **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-agents`): each calls `h.setMode(...)` with the corresponding graph mode string.
-- **`daemon-owner` / `daemon-setup`**: open the claude-bot daemon owner-picker modal and the install/repair (adopt) panel respectively (see Daemon Integration in the project CLAUDE.md).
+- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the claude-bot daemon owner-picker modal, the install/repair (adopt) panel, and the update panel respectively. `daemon-update` is a distinct catalog id but **binds to the same handler** as `daemon-setup` (`actions["daemon-update"] = h.openDaemonSetup`) — see Daemon Integration in the project CLAUDE.md.
+- **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 
 ### Notable absences / gotchas
 
 - **There is no `graph-daemon` command** in the catalog, even though the renderer has a `"daemon"` graph mode. `setMode`'s type accepts `"2nd" | "3rd" | "both" | "agents" | "daemon"`, but only the first four have catalog commands. Daemon mode is reached via the daemon sidebar/UI, not a toolbar command.
-- The `export` command and the `daemon-setup` command **share the same default icon** (`Download`). That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
+- **Three commands share the `Download` icon** (`open-folder`'s neighbor `export`, plus `daemon-setup` and `bismuth-install`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
+- **`daemon-update` and `daemon-setup` bind to the same handler** (`h.openDaemonSetup`); they are distinct ids with distinct labels/icons but the same action.
 - Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
+
+### The `create-menu` chooser
+
+`create-menu` (`Create new…`, icon `Plus`) is a **single button that opens a `+Create` context menu** instead of running one create command. It binds to `h.openCreateMenu(e?)`, and unlike every other handler it takes the triggering `MouseEvent` so the menu can anchor under the clicked button (it falls back to a fixed spot — `x: 8, y: 48` — when invoked without an event, e.g. from the command palette). This is why `BoundCommand.action` is typed `(e?: MouseEvent) => void`.
+
+`openCreateMenu` (`App.tsx`) assembles the menu from the bound command map, in order:
+
+1. `new-note`
+2. `new-folder`
+3. **`New base ▸`** — a submenu (icon `Database`), **not** the flat `new-base` command. It maps over `BASE_VIEW_KINDS` (`app/src/baseViews.ts`), one entry per Bases view kind; each entry dispatches an `oa-new` event (`{ kind: "base", view }`) that seeds a `type: base` file with that view via the same `oa-new` → `FileTree.doCreate` path.
+4. `new-spreadsheet`
+5. `new-drawing`
+6. Then each **resolving** `daily-note:<id>` command (a config with a blank id is skipped), with a separator before the first daily-note entry when any static entry preceded it.
+
+The **12 base view kinds** in the `New base ▸` submenu (from `BASE_VIEW_KINDS`, in declared order) — `view` value, menu label, icon:
+
+| # | view | label | icon |
+|---|---|---|---|
+| 1 | `table` | Table | `Table` |
+| 2 | `cards` | Cards | `LayoutGrid` |
+| 3 | `list` | List | `List` |
+| 4 | `bullets` | Bullets | `TextQuote` |
+| 5 | `kanban` | Kanban | `SquareKanban` |
+| 6 | `calendar` | Calendar | `Calendar` |
+| 7 | `flashcards` | Flashcards | `Layers` |
+| 8 | `map` | Map | `Map` |
+| 9 | `bar` | Bar chart | `ChartColumn` |
+| 10 | `line` | Line chart | `ChartLine` |
+| 11 | `stat` | Stat | `Sigma` |
+| 12 | `heatmap` | Heatmap | `Grid3x3` |
+
+Each kind seeds a file named `Untitled <label>.md` (`baseFileName`) with starter frontmatter (`baseTemplate`): `calendar` gets `---\ntype: base\nview: calendar\n---\n` (it stores its events in the body, so no `source:`); every other view gets `---\ntype: base\nsource: notes\nview: <view>\n---\n` so it renders the vault immediately. The same list backs the folder context menu's "New base ▸" in `FileTree`, keeping the two menus in sync.
+
+### The `detect-ai` command
+
+`detect-ai` (`Detect AI text`, icon `Bot`) binds to `h.detectAiActive`. It estimates how AI-generated the **active page** reads and toasts a whole-document score. The detection runs **entirely on-device, offline** — there is no network call to any model API:
+
+- It uses **transformers.js** (`@huggingface/transformers`, onnxruntime-web WASM) in the **frontend webview**, never in the core sidecar (the same `$bunfs` WASM-path limitation that keeps Harper spellcheck frontend-only). See `app/src/ai/aiDetect.ts`.
+- The classifier (`onnx-community/e5-small-lora-ai-generated-detector-ONNX`, int8 `q8`, ~34MB) is **lazy-loaded + code-split**, so it costs nothing at boot; the model downloads on **first use** and is then cached by transformers.js, so later runs are effectively offline.
+- `detectAiScore(text, onProgress?)` strips frontmatter, splits prose into ~280-word windows, evenly samples at most 16 of them, scores each window, and returns `{ score, peak, chunks }` (mean P(AI), highest single-window P(AI), window count). `onProgress` reports a `load` phase (first-run download, 0–100) then an `analyze` phase (window-by-window) so the UI can show real progress.
+- It throws `TooShortError` when there are fewer than 40 words of prose.
+- **Accuracy caveat baked into the code**: the model is trained on the RAID corpus, which contains **no Claude**, so it is unvalidated on Claude-class text and unreliable on edited/paraphrased prose. It is a rough hint, never proof — the UI must say so.
 
 ## How Commands Bind to Actions
 
@@ -112,8 +169,13 @@ export interface CommandHandlers {
   openSearch: () => void;
   newNote: () => void;
   newFolder: () => void;
+  newBase: () => void;
   newSpreadsheet: () => void;
   newDrawing: () => void | Promise<void>;
+  // The "+" create chooser. Receives the triggering click (when run from a toolbar
+  // button) so the menu can anchor under that button; falls back to a fixed spot
+  // when invoked without an event (e.g. from the command palette).
+  openCreateMenu: (e?: MouseEvent) => void;
   openGraph: () => void;
   setMode: (mode: GraphMode) => void;        // GraphMode = "2nd"|"3rd"|"both"|"agents"|"daemon"
   openDailyNote: (id: string) => void;
@@ -127,19 +189,31 @@ export interface CommandHandlers {
   openFolder: () => void | Promise<void>;
   newWindow: () => void | Promise<void>;
   exportActive: () => void;
+  // Estimate how AI-generated the active page reads (local, offline) and toast the score.
+  detectAiActive: () => void | Promise<void>;
   openDaemonOwner: () => void;
   openDaemonSetup: () => void;
+  // Open the panel to install the bismuth CLI + MCP machine-wide.
+  openBismuthInstall: () => void;
+  // Open the modal to view/remove the user's custom spellcheck dictionary words.
+  openEditDictionary: () => void;
+  // Permanently remove completed/cancelled tasks — from the active note, or all notes.
+  archiveTasks: () => void | Promise<void>;
+  archiveAllTasks: () => void | Promise<void>;
 }
 ```
 
-`App.tsx` (around line 530) constructs the bound map reactively:
+Because actions may anchor a popover or run async, `BoundCommand.action` is `(e?: MouseEvent) => void` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button).
+
+`App.tsx` (around line 678) constructs the bound map reactively:
 
 ```ts
 const commands = () => bindCommands(
-  { openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet,
-    newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar,
-    openFolder, newWindow, exportActive, newTab, closeActiveTab, reopenClosedTab,
-    historyBack, historyForward, openDaemonOwner, openDaemonSetup },
+  { openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet,
+    newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes,
+    toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab,
+    closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner,
+    openDaemonSetup, openBismuthInstall, openEditDictionary, archiveTasks, archiveAllTasks },
   settings.dailyNotes,
 );
 ```
@@ -327,10 +401,8 @@ A toolbar mixing built-in commands, a daily-note command, an emoji icon, a custo
 
 ```yaml
 toolbar:
-  - command: new-note
-    icon: FilePlus
-  - command: new-folder
-    icon: FolderPlus
+  - command: create-menu             # the "+Create" chooser (New note/folder/base ▸/…)
+    icon: Plus
   - command: search
     icon: Search
     tooltip: Find in vault
@@ -338,6 +410,8 @@ toolbar:
     icon: SquareTerminal
   - command: graph-both
     icon: Network
+  - command: detect-ai               # local, offline "Detect AI text"
+    icon: Bot
   - command: daily-note:journal      # dynamic command from dailyNotes config
     icon: BookOpen
   - command: open-folder
@@ -353,4 +427,4 @@ toolbar:
 - [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 
-Source: core/src/commands.ts, app/src/commands.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/test/commands.test.ts, app/src/commands.test.ts, app/src/App.tsx, app/src/editor/settingsComplete.ts
+Source: core/src/commands.ts, app/src/commands.ts, app/src/baseViews.ts, app/src/ai/aiDetect.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/test/commands.test.ts, app/src/commands.test.ts, app/src/App.tsx, app/src/editor/settingsComplete.ts

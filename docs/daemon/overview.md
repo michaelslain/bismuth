@@ -25,14 +25,36 @@ The daemon's shared state lives under a configurable home directory. Resolution 
 2. `daemon.home` setting in `settings.yaml` (per-vault, user-configurable).
 3. `~/.claude-bot` (default).
 
-**`claudeBotHome()` in `core/src/daemon.ts`** implements this resolution. The settings-driven override is loaded at server startup and on each config reload via `setClaudeBotHomeOverride(home)`.
+**`claudeBotHome()` in `core/src/daemon.ts`** implements this resolution. The settings-driven override is loaded at server startup and on each config reload via `setClaudeBotHomeOverride(home)`. The resolved value is passed through `expandTilde()`, so a leading `~`/`~/` (e.g. the `~/.claude-bot` default) expands to the user's home dir before any file is read — settings can hold a portable path instead of a machine-specific absolute one.
 
 ### settings.yaml keys
 
 ```yaml
 daemon:
-  enabled: false            # Whether to supervise the daemon (show the graph mode)
-  home: ""                  # Override home dir; empty string = ~/.claude-bot
+  enabled: false            # Master switch: integrate with the daemon (graph mode + auto-update)
+  home: ~/.claude-bot        # Override home dir; `~` expands to your home folder
+  autoUpdate: true          # Auto-update an installed daemon on launch when it's behind
+```
+
+- **`daemon.enabled`** (default `false`) — the master switch. When off, Bismuth does not integrate with the daemon: the "daemon" graph mode is hidden and the boot-time daemon auto-update (below) is skipped entirely. It is set automatically from the first-run intro (on if you opt into the daemon, off otherwise), and also flipped on by the adopt-on-detect migration (below); toggle it anytime. (NOTE: the `/daemon/*` read endpoints themselves still degrade gracefully and return safe defaults regardless of this flag — the switch gates the integration surfaces, not the file readers.)
+- **`daemon.home`** (default `~/.claude-bot`) — the claude-bot home dir holding its `device-id`, crons, and memory. `~`/`~/` is tilde-expanded. The default is the portable `~/.claude-bot` string, **not** an empty string.
+- **`daemon.autoUpdate`** (default `true`) — when the daemon is enabled and installed, auto-update it on app launch (git pull + bun install + restart) if it's behind, in the background. Gated to the bundled app (`OA_APP_PATH` is set only by the Tauri shell) so dev/standalone/tests never touch a live daemon; further gated by `daemon.enabled` (master switch off → no update) and `installStatus().installed`. claude-bot's `runUpdate()` is idempotent + fetch-gated — an up-to-date daemon is a no-op. See `core/src/server.ts` (the `OA_APP_PATH` block).
+
+### Adopt-on-detect migration
+
+`migrateDaemonConfig()` in `core/src/settings.ts` is a one-time, idempotent config migration applied during settings reconciliation. The original schema shipped `daemon.home: ""` (which rendered as a broken-looking empty string) alongside a `daemon.enabled` flag that was read nowhere. The migration:
+
+1. Short-circuits unless `daemon.home` is exactly `""` — any non-empty value (including the new `~/.claude-bot` default, or a user's own choice) is left untouched, so it never overwrites configured settings.
+2. Normalizes the empty home to the portable `~/.claude-bot` default.
+3. **Adopts an already-installed daemon**: if `thisDeviceId()` returns a real device id (a `<home>/device-id` file exists → a real daemon is present on this machine), it sets `daemon.enabled: true` so the integration works out of the box.
+
+```ts
+function migrateDaemonConfig(doc: Document): boolean {
+  if (doc.getIn(["daemon", "home"]) !== "") return false; // configured already / new default
+  doc.setIn(["daemon", "home"], "~/.claude-bot");
+  if (thisDeviceId()) doc.setIn(["daemon", "enabled"], true); // a real daemon is present → adopt
+  return true;
+}
 ```
 
 ---
@@ -450,6 +472,7 @@ export function isEnabled(data: Record<string, unknown>): boolean {
 | `core/src/daemonState.ts` | Low-level shared helpers: `pidAlive`, `readJsonObj`, `readFrontmatter`, `isEnabled` |
 | `core/src/daemonGraph.ts` | `daemonSnapshot` (reads disk → `DaemonSnapshot`), `buildDaemonGraph` (snapshot → `GraphData`), `daemonGraph` (convenience) |
 | `core/src/daemonViz.ts` | Pure `nodeVisualState(state)` — enabled/running → fill/border/opacity tokens |
+| `core/src/settings.ts` | `migrateDaemonConfig` — adopt-on-detect migration (empty home → `~/.claude-bot`; real daemon present → `daemon.enabled: true`) |
 | `core/src/claudebot.ts` | Adopt-only installer bridge: `installStatus`, `runSetup`, `resolveEntrypoint` |
 | `core/src/server.ts` | `/daemon/*` route handlers |
 | `app/src/DaemonList.tsx` | Daemon-mode sidebar panel with right-click controls |
@@ -464,6 +487,6 @@ export function isEnabled(data: Record<string, unknown>): boolean {
 - [claude-bot section](../claude-bot/overview.md) — the daemon itself (producer side): [daemon supervisor](../claude-bot/daemon.md), [crons & processes](../claude-bot/crons-and-processes.md), [installation](../claude-bot/install.md), [on-disk storage](../claude-bot/storage.md)
 - [Graph types](../graph/overview.md) — `NodeKind`, `EdgeKind`, `GraphNode.daemon`, `DaemonVizState`
 - [Agents graph](../terminal/overview.md) — the "agents" graph mode (terminal-tab sessions vs daemon supervision)
-- [Settings schema](../settings/overview.md) — `daemon.enabled`, `daemon.home`
+- [Settings schema](../settings/overview.md) — `daemon.enabled`, `daemon.home`, `daemon.autoUpdate`
 
-Source: core/src/daemon.ts, core/src/daemonGraph.ts, core/src/daemonViz.ts, core/src/daemonState.ts, core/src/server.ts, core/src/claudebot.ts, core/src/graph.ts, core/src/schema/settingsSchema.ts, core/test/daemon.test.ts, core/test/daemonGraph.test.ts, core/test/daemonViz.test.ts, app/src/DaemonList.tsx
+Source: core/src/daemon.ts, core/src/daemonGraph.ts, core/src/daemonViz.ts, core/src/daemonState.ts, core/src/settings.ts, core/src/server.ts, core/src/claudebot.ts, core/src/graph.ts, core/src/schema/settingsSchema.ts, core/test/daemon.test.ts, core/test/daemonGraph.test.ts, core/test/daemonViz.test.ts, app/src/DaemonList.tsx

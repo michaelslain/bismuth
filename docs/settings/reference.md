@@ -8,9 +8,9 @@ There is **no settings GUI** in Bismuth — the "settings page" is literally `se
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `vault`.
+`appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `settings.yaml`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `ui`, `server`, `daemon`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `settings.yaml`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -111,6 +111,7 @@ CodeMirror editor behavior.
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper). Independent of spellcheck; off by default. |
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
 | `lineHeight` | number | `1.65` | min `1.3`, max `2` | Editor prose line height (multiplier). |
+| `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
 
 Example:
 
@@ -119,6 +120,7 @@ editor:
   livePreview: true
   lineNumbers: true
   autoSaveDelay: 1200
+  mathMacros: "\\newcommand{\\R}{\\mathbb{R}}"
 ```
 
 ---
@@ -236,21 +238,40 @@ server:
 
 ## `daemon`
 
-claude-bot daemon supervision. Bismuth reads/writes the daemon's shared state files (device list + owner-device selection) under its home dir.
+claude-bot daemon integration. When `enabled`, Bismuth shows the daemon graph mode, reads/writes the daemon's shared state files (device list + owner-device selection) under its home dir, and (if `autoUpdate`) updates the daemon on app launch when it's behind.
 
 > **Note** — the owner device is the single source of truth in `owner.json`, **not** a setting here. See [daemon integration](../daemon/overview.md) (if present) and the Daemon Integration section of `CLAUDE.md`.
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `enabled` | boolean | `false` | Supervise the claude-bot daemon. |
-| `home` | path (`scope: "fs"`) | `""` (empty) | Override claude-bot home dir; empty = `~/.claude-bot`. Filesystem autocompletes (absolute or `~`-relative). |
+| `enabled` | boolean | `false` | Integrate with the claude-bot daemon — show its graph mode and auto-update it. Set automatically from the first-run intro (on if you opt into the daemon, off otherwise); toggle anytime. |
+| `home` | path (`only: "dir"`, `scope: "fs"`) | `~/.claude-bot` | claude-bot home dir — holds its device-id, crons, and memory. `~` expands to your home folder. Filesystem autocompletes (absolute or `~`-relative). |
+| `autoUpdate` | boolean | `true` | When the daemon is enabled and installed, auto-update it on app launch (git pull + bun install + restart) if it's behind — in the background. |
 
 Example:
 
 ```yaml
 daemon:
   enabled: true
-  home: /Users/me/.claude-bot
+  home: ~/.claude-bot
+  autoUpdate: true
+```
+
+---
+
+## `update`
+
+Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself (see `core/src/selfUpdate.ts`); by default that is **manual** via the in-app update banner.
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `autoUpdate` | boolean | `false` | Auto-apply Bismuth app updates on launch in the background, then relaunch when the rebuild is ready (off = manual via the update banner). |
+
+Example:
+
+```yaml
+update:
+  autoUpdate: true
 ```
 
 ---

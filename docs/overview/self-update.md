@@ -2,7 +2,7 @@
 
 The bundled Bismuth app updates itself in place: it detects when the installed `/Applications/Bismuth.app` is behind `origin/main`, and on one click it pulls the latest source, rebuilds the app, and hot-swaps the `.app` bundle — no re-download, no installer, no Homebrew. The whole mechanism is git + a local rebuild, because the app was built from a local clone and the build baked in where that clone lives.
 
-This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, and the Tauri/env plumbing that lets a detached script swap the bundle after the app quits.
+This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, and the two **on-launch background auto-updates** (the bundled sidecar updating the claude-bot daemon; the app optionally updating itself).
 
 > **Self-disables outside a bundled source build.** In `bun run dev` (or any build with no `build-origin.json` / no `OA_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
 
@@ -138,6 +138,15 @@ A module-level singleton that polls `GET /update/status` into an `updateStatus` 
 
 In dev / non-source builds the backend returns `available:false`, so this is a harmless no-op.
 
+**Opt-in app auto-update (`update.autoUpdate`, default off).** Every successful `check()` also calls `maybeAutoUpdate()`. When the setting is on **and** the just-fetched status is `available`, it drives the exact same pipeline as the banner button — without any click:
+
+1. `POST /update/apply` (`api.applyUpdate()`); if it returns `phase:"error"`, bail (reset the once-guard so a later check can retry).
+2. Poll `GET /update/progress` (`api.updateProgress()`) every 2 s; transient poll failures are ignored (keep polling).
+3. On `phase:"ready"` → dynamically `import("@tauri-apps/api/core")` and `invoke("quit_app")` (the detached relauncher then swaps the `.app` + reopens). Outside Tauri the import/invoke is swallowed.
+4. On `phase:"error"` / `phase:"idle"` → stop polling and reset the once-guard so a later check retries.
+
+It runs at most once per session (a module-level `autoStarted` flag, reset only on the bail/error/idle paths). When the setting is **off** (the default) `maybeAutoUpdate()` returns immediately and the manual `UpdateBanner` path below is unchanged. It's a no-op in dev / non-source builds because the backend reports `available:false`.
+
 ### `app/src/UpdateBanner.tsx` — the slim top bar
 
 Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to render "Bismuth update available — N commit(s) behind". The **UPDATE** button's `update()` flow:
@@ -148,6 +157,48 @@ Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to
 4. On `phase:"error"` → toast `message`, re-enable. On `phase:"idle"` (already up to date) → stop + `recheckUpdate()`.
 
 `quitApp()` dynamically imports `@tauri-apps/api/core` and `invoke("quit_app")`. If that import/invoke fails (e.g. not in Tauri), it falls back to a toast: "Update built — quit and reopen Bismuth to apply it."
+
+---
+
+## On-launch background auto-updates
+
+The bundled app fires up to two **fire-and-forget** updates on launch — neither blocks the server boot, and both are gated to the bundled app so dev / standalone / tests never touch a live daemon or rebuild themselves.
+
+### 1. The claude-bot daemon — `core/src/server.ts`
+
+When the sidecar boots, `OA_APP_PATH` is set only by the Tauri shell, so its presence flags a bundled-app launch. In that case the server kicks off (without awaiting) a best-effort daemon update:
+
+```ts
+if (process.env.OA_APP_PATH) {
+  void (async () => {
+    try {
+      const cfg = await loadAppConfig(vault);
+      if (!cfg.daemon?.enabled) return;          // master switch off → don't touch the daemon
+      if (cfg.daemon?.autoUpdate === false) return;
+      const status = await installStatus();
+      if (!status.installed) return;             // nothing to update
+      const r = await runUpdate();               // claude-bot's bin/update.ts: git pull --ff-only + bun install + restart
+      if (r.action === "updated") {
+        console.log(`claude-bot: auto-updated ${r.from?.slice(0, 7)} → ${r.to?.slice(0, 7)}${r.restarted ? " (restarted)" : ""}`);
+      }
+    } catch (e) {
+      console.warn(`claude-bot auto-update skipped: ${(e as Error)?.message ?? e}`);
+    }
+  })();
+}
+```
+
+- Runs only when **both** `daemon.enabled` (the master integration switch) **and** `daemon.autoUpdate` (default `true`) are on, **and** the daemon is actually installed (`installStatus().installed`).
+- `runUpdate()` (`core/src/claudebot.ts` → claude-bot's `bin/update.ts`) is itself **idempotent + fetch-gated**: it only pulls/`bun install`/restarts when the daemon is behind `origin`, so an up-to-date daemon resolves to `action:"up-to-date"` and the log line is skipped. `UpdateResult.action` is `"updated" | "up-to-date" | "would-update" | "no-remote"` (with optional `from`/`to`/`restarted`).
+- Best-effort: any throw is caught and logged (`claude-bot auto-update skipped: …`), never crashing the server.
+
+This is the only place Bismuth proactively touches the daemon — it never starts/stops/repoints a live daemon otherwise (see [Daemon Integration](../../CLAUDE.md)). The manual equivalent is `POST /daemon/update` (also `runUpdate()`).
+
+### 2. The Bismuth app itself — `update.autoUpdate`
+
+The app's own background self-update lives on the **frontend**, driven by `maybeAutoUpdate()` in `app/src/updateCheck.ts` (detailed above). It is **opt-in via `update.autoUpdate`** (default `false`): when on and a status check reports an available update, it auto-applies the same `POST /update/apply` → poll-progress → `quit_app` pipeline and relaunches when the rebuild is ready; when off (the default), nothing happens automatically and the manual `UpdateBanner` is the only path.
+
+The two switches are independent: `daemon.autoUpdate` defaults **on** (a cheap fetch-gated daemon refresh), while `update.autoUpdate` defaults **off** (a multi-minute rebuild + relaunch you opt into).
 
 ---
 
@@ -188,4 +239,4 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 - [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
 - [Install & run](install.md) — building the bundled app from source.
 
-Source: core/src/selfUpdate.ts, app/src/updateCheck.ts, app/src/UpdateBanner.tsx, app/src-tauri/src/lib.rs, app/scripts/build-bismuth-tools.ts, core/src/server.ts, app/src/api.ts
+Source: core/src/selfUpdate.ts, app/src/updateCheck.ts, app/src/UpdateBanner.tsx, app/src-tauri/src/lib.rs, app/scripts/build-bismuth-tools.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/claudebot.ts, app/src/api.ts

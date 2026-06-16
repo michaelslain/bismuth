@@ -67,8 +67,28 @@ const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.sp
 
 - An own-rows base uses its client-parsed `inlineRows`.
 - Everything else (notes / tasks / base-ref) is resolved **server-side** via `POST /rows {spec}` (`api.resolveRows`), which follows base composition and scoped tasks. No per-kind logic is duplicated on the client.
-- Results go through a module-level `RowCache` (`bases/rowCache.ts`), keyed by the view signature `JSON.stringify({ p: path, s: source, v: view })` and invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load.
+- Results go through a module-level `RowCache` (`bases/rowCache.ts`), keyed by the view signature `JSON.stringify({ p: path, s: source, v: view })` and invalidated by the SSE server version. This gives stale-while-revalidate: reopening a base paints instantly from the last resolution while it revalidates. A `BaseSkeleton` shows only on a cold load. `invalidate(version)` marks every entry resolved *before* the new version stale (the spec resolves server-side, so it can't tell which entries are affected — over-revalidating is safe, under-revalidating is not), but keeps the cached value so reopens never blank.
 - An SSE version bump (a note feeding this base changed, even in another pane) re-runs the resource and revalidates.
+
+#### Skipping irrelevant re-resolves (`changeRelevance.ts`)
+
+Not every SSE change should re-resolve a view — a busy vault (e.g. the claude-bot daemon rewriting `DAEMON.md` every ~2s) would otherwise re-resolve *every* open base continuously and peg CPU. `changeAffectsView(c, deps)` (pure, unit-tested) decides whether a change can affect *this* view's membership, given the current resolution's `deps` (base/view filters, `spec`, and the `relevantPaths` set — its resolved row notes + base file + host note). The branch order is conservative-but-cheap:
+
+- No `dirty` (poll catch-up, unknown extent) → **affects** (be safe).
+- `dirty.tree` (a new/renamed/removed/icon note may newly match) → **affects**.
+- Empty `paths` and not tree-dirty → memory-only (3rd-brain) change, never feeds vault rows → **does not affect**.
+- `dirty.graph` (a vault tag/link edit may flip filter membership) → **affects**.
+- Otherwise a content-only vault edit → affects **only if** the view is content-dependent — a scoped/composed source (`from:` / non-structural `where:` / `ref:`), or a property-value filter — **or** a changed path is already one this view depends on (`relevantPaths`).
+
+"Content-dependent" hinges on `leafIsFileStructuralOnly(leaf)`: a filter leaf is file-structural-only when every identifier it references is `file.*` (tag/folder/name/path/link) or a literal (`true`/`false`/`null`), so its membership can change only via a graph- or tree-dirty event, never a content edit; anything else (`note.`/`formula.`/bare frontmatter props, comparisons, date fns) is content-dependent. String literals are stripped first so a quoted tag/folder name isn't mistaken for a property identifier. `hasPropertyFilters(node)` walks the `and`/`or`/`not` tree and is true if any leaf is content-dependent. Unrecognized → content-dependent (conservative).
+
+#### Stable row identity across re-resolves (`reconcileRows.ts`)
+
+Every revalidation re-runs `/rows` + `runView`, producing brand-new group and row *objects* even when the data is unchanged. Solid's `<For>` keys by object **identity**, so those fresh objects would unmount→remount every card/row — the whole grid repaints and masonry reflows (the "flickery/reloady" feel on a task-status toggle). `reconcileViewResult(prev, next)` (pure, unit-tested) diffs the fresh result against the previous one and reuses the prior object reference for any group/row that is value-identical, so `<For>` preserves their DOM; only genuinely changed/added/removed rows touch the DOM. `BaseView` feeds it the memo's previous value via `createMemo((prev) => …)`.
+
+- `rowKey(row)` keys a row across resolves: tasks by `path:line` (many per note), every other row by `path`.
+- `rowsEqual(a, b)` compares only what a view renders — a `fileIdentity` of `name`/`path`/`folder`/`ext`/`tags`/`links` plus the full `note` and `formula` objects. The volatile stat fields (`mtime`/`ctime`/`size`) are **deliberately excluded**: a body-only edit (ticking a task inside a card) bumps `mtime` but changes nothing the view shows except the body, which `BodyCard` re-reads in place — including `mtime` would remount the card on every keystroke-driven save. (Trade-off: a view surfacing `file.mtime` as a column shows a slightly stale timestamp until the row changes structurally.)
+- `reconcileRows(prev, next)` returns the previous array reference verbatim when nothing changed (same length, order, every row reused), so the enclosing group object is reused too.
 
 The active view is picked via a `SegmentedToggle` when there is more than one view; `runView(config, rows, idx, hostMeta)` (from `core/src/bases/query.ts`) computes the `ViewResult` for the active table/cards/kanban/etc. view. **Full-pane views** (`calendar`, `flashcards`) bypass `runView` and render directly from `data().rows` (`fullPane()` returns true for those two types).
 
@@ -447,4 +467,4 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - [Embedded query block](./query-block.md) — the ` ```query ` block (a view into a base inside a note).
 - [View docs](./views/) — one doc per `ViewType`.
 
-Source: core/src/bases/types.ts, core/src/bases/parse.ts, core/src/bases/sourceSpec.ts, core/src/bases/rows.ts, app/src/bases/BaseView.tsx, app/src/FileView.tsx, core/test/bases/parse.test.ts, core/test/bases/parseBaseFile.test.ts, core/test/bases/sourceSpec.test.ts, core/test/bases/queryBlock.test.ts
+Source: core/src/bases/types.ts, core/src/bases/parse.ts, core/src/bases/sourceSpec.ts, core/src/bases/rows.ts, app/src/bases/BaseView.tsx, app/src/bases/rowCache.ts, app/src/bases/changeRelevance.ts, app/src/bases/reconcileRows.ts, app/src/FileView.tsx, core/test/bases/parse.test.ts, core/test/bases/parseBaseFile.test.ts, core/test/bases/sourceSpec.test.ts, core/test/bases/queryBlock.test.ts
