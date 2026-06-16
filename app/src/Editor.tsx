@@ -3,7 +3,7 @@ import { createEffect, createMemo, onCleanup, onMount, Show } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
-import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
+import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -18,6 +18,7 @@ import { requestRelint } from "./editor/relint";
 import { notePathFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
+import { latexHighlightTheme } from "./editor/latexHighlight";
 import { queryBlock } from "./editor/queryBlock";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
@@ -403,6 +404,14 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // tab chars twice as wide as the depth they count for.
       indentUnit.of("  "),
       EditorState.tabSize.of(2),
+      // Auto-close brackets/quotes like a normal code editor: typing an opener inserts its
+      // matching closer just past the cursor; typing the closer when it's already there
+      // skips over it; Backspace on an empty pair deletes both (closeBracketsKeymap). `$`
+      // is registered as a self-closing pair (open == close) so a fresh `$` becomes `$|$`,
+      // ready to type inline math (rendered by livePreview). Same word-char heuristic that
+      // keeps `'`/`"` from pairing mid-word also keeps a `$` after a letter from pairing.
+      EditorState.languageData.of(() => [{ closeBrackets: { brackets: ["(", "[", "{", "'", "\"", "$"] } }]),
+      closeBrackets(),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
       // Tab accepts the active completion (acceptCompletion returns false when no popup is
       // open, so it falls through); otherwise Tab/Shift-Tab indent/dedent the selected
@@ -411,6 +420,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         { key: "Ctrl-Space", run: startCompletion },
         { key: "Tab", run: acceptCompletion },
         { key: "Tab", run: indentMore, shift: indentLess },
+        // Backspace deletes a bracket pair when the cursor sits between an empty one;
+        // falls through to defaultKeymap's deleteCharBackward otherwise. Must precede it.
+        ...closeBracketsKeymap,
         ...defaultKeymap,
         ...historyKeymap,
       ]),
@@ -488,7 +500,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           notePathFacet.of(path),
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
-          ...(ed.livePreview ? [livePreview, foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock()] : []),
+          ...(ed.livePreview ? [livePreview, foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock(), latexHighlightTheme] : []),
           // Harper spell + grammar check. Runs whenever either category is enabled;
           // it filters lints by kind so editor.spellcheck and editor.grammarCheck
           // toggle independently (default: spelling on, grammar off).

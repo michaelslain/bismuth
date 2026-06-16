@@ -7,6 +7,7 @@
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { renderMath, onMathReady } from "./katexLoader";
+import { latexTokenDecorations, texDelim } from "./latexHighlight";
 
 /** Matches a line whose entire trimmed content is exactly `$$`. */
 const MATH_FENCE = /^\s*\$\$\s*$/;
@@ -92,6 +93,14 @@ function build(state: EditorState): DecorationSet {
                 block: true,
               }).range(blockFrom, blockTo),
             );
+          } else {
+            // Editing the block → no widget, so highlight the LaTeX on each inner line and
+            // dim the $$ fences (mirrors livePreview's cursor-line treatment of inline math).
+            decos.push(texDelim.range(line.from, line.to), texDelim.range(jLine.from, jLine.to));
+            for (let k = i + 1; k < j; k++) {
+              const kl = doc.line(k);
+              for (const d of latexTokenDecorations(kl.from, kl.text)) decos.push(d);
+            }
           }
 
           i = j + 1;
