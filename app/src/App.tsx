@@ -17,7 +17,7 @@ import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
-import { ToastHost, pushToast, dismissToast } from "./Toast";
+import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
 import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
@@ -488,11 +488,18 @@ export default function App() {
       pushToast("Open a note to check it for AI-generated text");
       return;
     }
-    const progress = pushToast("Analyzing for AI-generated text…", undefined, 0);
+    // Persistent toast (ttl 0) updated in place as a real loading phase: the first-run model
+    // download %, then "section N/M" per window — a big essay is many windows, each a forward
+    // pass, so this can run for a while and needs visible progress.
+    const progress = pushToast("Preparing AI detector…", undefined, 0);
     try {
       const text = await api.read(c);
       const { detectAiScore } = await import("./ai/aiDetect");
-      const { score, peak, chunks } = await detectAiScore(text);
+      const { score, peak, chunks } = await detectAiScore(text, (p) => {
+        updateToast(progress, p.phase === "load"
+          ? `Downloading detector model… ${p.pct}%`
+          : `Analyzing… section ${p.done}/${p.total}`);
+      });
       dismissToast(progress);
       const pct = Math.round(score * 100);
       const detail = chunks > 1 ? ` (peak ${Math.round(peak * 100)}% across ${chunks} sections)` : "";

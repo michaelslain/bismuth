@@ -31,6 +31,12 @@ export interface AiDetectResult {
   chunks: number;
 }
 
+/** Progress for a long run so the UI can show a real loading phase: the model download
+ *  (first use only) then per-window scoring (the slow part on a big essay). */
+export type AiProgress =
+  | { phase: "load"; pct: number }                 // model download, 0–100 (first run only)
+  | { phase: "analyze"; done: number; total: number }; // window `done` of `total` being scored
+
 /** Thrown when there isn't enough prose to produce a meaningful score. */
 export class TooShortError extends Error {
   constructor() {
@@ -43,15 +49,24 @@ type Classify = (text: string, opts?: { top_k?: number | null }) => Promise<Arra
 let pipePromise: Promise<Classify> | null = null;
 
 /** Lazily build (and cache) the text-classification pipeline. The dynamic import keeps
- *  transformers.js + onnxruntime-web out of the boot bundle (its own Rollup chunk). */
-async function getPipeline(): Promise<Classify> {
+ *  transformers.js + onnxruntime-web out of the boot bundle (its own Rollup chunk).
+ *  `onDownload` fires only while the ~34MB model is first being fetched (0–100); on every
+ *  later call the cached pipeline resolves instantly and it never fires. */
+async function getPipeline(onDownload?: (pct: number) => void): Promise<Classify> {
   if (!pipePromise) {
     pipePromise = (async () => {
       const tf = await import("@huggingface/transformers");
       // Don't probe for a local model first (404-spams the console in the webview); go
       // straight to the hub, then it's cached for offline reuse.
       tf.env.allowLocalModels = false;
-      const pipe = await tf.pipeline("text-classification", MODEL_ID, { dtype: "q8" });
+      const pipe = await tf.pipeline("text-classification", MODEL_ID, {
+        dtype: "q8",
+        // transformers.js emits {status, file, progress, loaded, total} per asset as it
+        // downloads; surface the % for the model weights so the first run shows real progress.
+        progress_callback: (p: { status?: string; progress?: number }) => {
+          if (p?.status === "progress" && typeof p.progress === "number") onDownload?.(Math.round(p.progress));
+        },
+      });
       return ((text, opts) => pipe(text, opts) as Promise<Array<{ label: string; score: number }>>) as Classify;
     })();
   }
@@ -90,14 +105,17 @@ export function aiProb(results: Array<{ label: string; score: number }>): number
 /**
  * Estimate the probability that `text` is AI-generated, as a whole-document score.
  * Downloads the model on first call (cached after). Throws TooShortError for trivial input.
+ * `onProgress` reports the download (first run) then each window as it's scored, so the
+ * caller can show a real loading phase — a big essay is many windows, each a forward pass.
  */
-export async function detectAiScore(text: string): Promise<AiDetectResult> {
+export async function detectAiScore(text: string, onProgress?: (p: AiProgress) => void): Promise<AiDetectResult> {
   const chunks = chunkText(text);
   if (chunks.length === 0) throw new TooShortError();
-  const classify = await getPipeline();
+  const classify = await getPipeline((pct) => onProgress?.({ phase: "load", pct }));
   const probs: number[] = [];
-  for (const chunk of chunks) {
-    const out = await classify(chunk, { top_k: 2 });
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.({ phase: "analyze", done: i + 1, total: chunks.length });
+    const out = await classify(chunks[i], { top_k: 2 });
     probs.push(aiProb(out));
   }
   const score = probs.reduce((a, b) => a + b, 0) / probs.length;

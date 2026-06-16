@@ -23,6 +23,13 @@ export function pushToast(message: string, action?: Toast["action"], ttl = 5000)
   return id;
 }
 
+/** Replace a live toast's message in place (e.g. progress updates). No-op if it's gone.
+ *  Replaces the toast object so the keyed <For> re-renders the row; there's no enter
+ *  animation (Toast.css is static), so the text just swaps with no flicker. */
+export function updateToast(id: number, message: string) {
+  setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, message } : t)));
+}
+
 export function dismissToast(id: number) {
   const timer = timers.get(id);
   if (timer !== undefined) {
