@@ -13,8 +13,8 @@ export function ext(path: string): string {
 // A base is a `type: base` md file, so it falls under `md` (same formats) — there is
 // no separate `base` extension.
 const MATRIX: Record<string, ExportFormat[]> = {
-  md: ["html", "pdf", "md"],
-  sheet: ["html", "pdf"],
+  md: ["html", "pdf", "png", "md"],
+  sheet: ["html", "pdf", "png"],
   draw: ["pdf", "png"],
 };
 

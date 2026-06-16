@@ -1,5 +1,5 @@
 // app/src/export/sheetHtml.ts
-import { escapeHtml } from "./htmlTemplate";
+import { renderCellHtml } from "../bases/markdown";
 
 interface CellLike { v?: unknown }
 interface SheetLike { cellData?: Record<string, Record<string, CellLike>> }
@@ -25,7 +25,9 @@ export function snapshotToHtmlTable(snap: any): string {
     const cells: string[] = [];
     for (let c = 0; c <= maxCol; c++) {
       const v = cellData[r]?.[c]?.v;
-      cells.push(`<td>${v == null ? "" : escapeHtml(String(v))}</td>`);
+      // Render inline markdown + `$math$` (sanitized) so a sheet cell exports the same way
+      // it shows on screen; plain values stay escaped text.
+      cells.push(`<td>${v == null ? "" : renderCellHtml(String(v))}</td>`);
     }
     rowsHtml.push(`<tr>${cells.join("")}</tr>`);
   }

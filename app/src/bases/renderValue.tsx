@@ -3,6 +3,7 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row } from "../../../core/src/bases/types";
 import { isLink, type Link } from "../../../core/src/bases/values";
 import { columnLabel } from "./columnLabel";
+import { renderInline, hasInlineMarkup } from "./markdown";
 import { Icon } from "../icons/Icon";
 import { Stars } from "../ui/Stars";
 import { StatusText } from "../ui/StatusDot";
@@ -151,5 +152,11 @@ export function renderValue(id: string, row: Row): JSX.Element {
     return <span>{v.toISOString().slice(0, 10)}</span>;
   }
 
-  return <span>{String(v)}</span>;
+  // Plain string/number cell. If it carries inline markup (emphasis, code, a wikilink, a
+  // #tag, or `$math$`), render it through the shared inline markdown renderer so a cell
+  // shows the same formatting + math as the rest of the app; otherwise keep it literal
+  // (cheap, and avoids surprises on plain values).
+  const s = String(v);
+  if (hasInlineMarkup(s)) return <span class="oa-cell-md" innerHTML={renderInline(s)} />;
+  return <span>{s}</span>;
 }
