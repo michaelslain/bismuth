@@ -11,7 +11,7 @@
     "fs:allow-write-file",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$DOWNLOAD/*" }]
+      "allow": [{ "path": "$DOWNLOAD/*" }, { "path": "$HOME/**" }]
     },
     {
       "identifier": "shell:allow-execute",

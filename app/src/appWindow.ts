@@ -25,6 +25,34 @@ export async function pickFolder(): Promise<string | null> {
 }
 
 /**
+ * Native OS file picker (Tauri only). Returns the chosen absolute path, or null if the
+ * user cancelled / we're not in Tauri (the browser has no picker that yields a
+ * server-accessible path — callers fall back to a typed path there). `defaultPath` opens
+ * the dialog in that directory; `filters` restricts the selectable file types.
+ */
+export async function pickFile(opts?: {
+  defaultPath?: string;
+  filters?: { name: string; extensions: string[] }[];
+  title?: string;
+}): Promise<string | null> {
+  if (!isTauri()) return null;
+  try {
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const res = await open({
+      directory: false,
+      multiple: false,
+      title: opts?.title ?? "Choose file",
+      defaultPath: opts?.defaultPath,
+      filters: opts?.filters,
+    });
+    return typeof res === "string" ? res : null;
+  } catch (e) {
+    console.error("file picker failed", e);
+    return null;
+  }
+}
+
+/**
  * Persist `vault` as the last-opened vault (Tauri only) so the next cold launch of the app
  * reopens it. No-op in the browser. Best-effort — a failure here must never block opening
  * the folder, so errors are swallowed (logged).

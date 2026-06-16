@@ -4,11 +4,14 @@ import { api } from "./api";
 import { Icon } from "./icons/Icon";
 import { Chip } from "./ui/Chip";
 import { IconTextButton } from "./ui/IconTextButton";
+import { TextInput } from "./ui/TextInput";
 import { pushToast } from "./Toast";
+import { isTauri } from "./nativeMenu";
+import { pickFile, pickFolder } from "./appWindow";
 import { formatsFor } from "./export/formats";
 import { renderExport, renderPreview } from "./export/exporters";
 import { drawingToPng } from "./export/drawingRaster";
-import { downloadFile } from "./export/download";
+import { downloadFile, writeToFolder } from "./export/download";
 import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
 import "./ExportView.css";
 
@@ -21,13 +24,39 @@ const htmlToPdf = (html: string): Promise<Uint8Array> =>
 const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
 const FORMAT_ICON: Record<ExportFormat, string> = {
   pdf: "FileText",
-  html: "Code2",
+  html: "Code",
   md: "Hash",
   png: "Image",
 };
 const THEMES: ExportTheme[] = ["light", "dark"];
-const THEME_LABEL: Record<ExportTheme, string> = { dark: "Midnight", light: "Paper" };
+const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
 const THEME_SWATCH: Record<ExportTheme, string> = { light: "#f7f6f2", dark: "#0D0E16" };
+
+// The vault-relative path of `abs` if it lives under `vaultRoot`, else null (the exporter
+// reads vault-relative paths, so a file outside the vault can't be exported).
+function toVaultRelative(abs: string, vaultRoot: string): string | null {
+  const root = vaultRoot.replace(/\/+$/, "");
+  if (!root || abs === root) return null;
+  const prefix = root + "/";
+  return abs.startsWith(prefix) ? abs.slice(prefix.length) : null;
+}
+
+// Remember the last-chosen output folder across sessions (browser localStorage; no schema).
+const DEST_KEY = "oa.export.destFolder";
+const loadDest = (): string => {
+  try {
+    return localStorage.getItem(DEST_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+const saveDest = (v: string): void => {
+  try {
+    v ? localStorage.setItem(DEST_KEY, v) : localStorage.removeItem(DEST_KEY);
+  } catch {
+    /* private mode / no storage — keep it in-memory only */
+  }
+};
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),
@@ -37,14 +66,35 @@ const deps: ExportDeps = {
 };
 
 export function ExportView(props: { path: string }) {
-  const formats = () => formatsFor(props.path);
+  // The "input path" — which file to export. Defaults to the file the tab was opened for,
+  // but can be re-pointed at any other vault file via the picker / text field.
+  //
+  // `srcPath` is the COMMITTED source that drives the preview resource; `srcDraft` is the
+  // live text-field value. They're separate so typing doesn't refetch the preview on every
+  // keystroke — refetching would re-run the resource under the <Suspense> in PaneContent,
+  // detaching this subtree and dropping the input's focus mid-word. We commit the draft on
+  // blur / Enter (and immediately when chosen via the native picker).
+  const [srcPath, setSrcPath] = createSignal(props.path);
+  const [srcDraft, setSrcDraft] = createSignal(props.path);
+  const commitSrc = () => {
+    const v = srcDraft().trim();
+    if (v && v !== srcPath()) setSrcPath(v);
+  };
+  // The "output path" — destination folder. Empty = Downloads (the previous behavior).
+  const [destFolder, setDestFolder] = createSignal(loadDest());
+
+  const formats = () => formatsFor(srcPath());
   const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
   const [busy, setBusy] = createSignal(false);
 
-  // Preview only — cheap, no byte/PDF generation, so switching format or theme is instant.
+  // Absolute vault root — used to seed the file picker and map a picked absolute path back
+  // to the vault-relative path the exporter expects.
+  const [vaultRoot] = createResource(() => api.terminalInfo().then((i) => i.vault).catch(() => ""));
+
+  // Preview only — cheap, no byte/PDF generation, so switching source/format/theme is instant.
   const [result] = createResource(
-    () => [props.path, format(), theme()] as const,
+    () => [srcPath(), format(), theme()] as const,
     async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm),
   );
 
@@ -53,12 +103,54 @@ export function ExportView(props: { path: string }) {
     if (!f.includes(format())) setFormat(f[0] ?? "html");
   });
 
+  const browseSource = async () => {
+    if (!isTauri()) {
+      pushToast("Browsing for a file needs the desktop app — type a vault path here in the browser");
+      return;
+    }
+    const abs = await pickFile({
+      defaultPath: vaultRoot() || undefined,
+      title: "Choose file to export",
+      filters: [{ name: "Notes & docs", extensions: ["md", "sheet", "draw"] }],
+    });
+    if (!abs) return;
+    const rel = toVaultRelative(abs, vaultRoot() ?? "");
+    if (!rel) {
+      pushToast("Pick a file inside your vault");
+      return;
+    }
+    setSrcDraft(rel);
+    setSrcPath(rel);
+  };
+
+  const browseDest = async () => {
+    if (!isTauri()) {
+      pushToast("Choosing a folder needs the desktop app — browser exports go to Downloads");
+      return;
+    }
+    const folder = await pickFolder();
+    if (!folder) return;
+    setDestFolder(folder);
+    saveDest(folder);
+  };
+
   const doExport = async () => {
+    commitSrc(); // flush an un-blurred edit so we export exactly what's in the field
     setBusy(true);
     try {
-      const r = await renderExport(props.path, format(), deps, theme());
-      await downloadFile(r.filename, r.bytes, r.mime);
-      pushToast(`Exported ${r.filename} to Downloads`);
+      const r = await renderExport(srcPath(), format(), deps, theme());
+      const dest = destFolder().trim();
+      if (dest && isTauri()) {
+        const written = await writeToFolder(dest, r.filename, r.bytes);
+        pushToast(`Exported ${r.filename} → ${written}`);
+      } else {
+        await downloadFile(r.filename, r.bytes, r.mime);
+        pushToast(
+          dest
+            ? `Exported ${r.filename} to Downloads (folder export needs the desktop app)`
+            : `Exported ${r.filename} to Downloads`,
+        );
+      }
     } catch (e) {
       pushToast(`Export failed: ${(e as Error).message}`);
     } finally {
@@ -100,6 +192,48 @@ export function ExportView(props: { path: string }) {
         </div>
 
         <div class="field">
+          <span class="flab">Input path</span>
+          <div class="path-row">
+            <TextInput
+              class="path-input"
+              value={srcDraft()}
+              onInput={setSrcDraft}
+              onBlur={commitSrc}
+              onKeyDown={(e: KeyboardEvent) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitSrc();
+                }
+              }}
+              placeholder="vault-relative path, e.g. notes/idea.md"
+              spellcheck={false}
+            />
+            <IconTextButton icon="FolderOpen" iconSize={13} onClick={browseSource}>
+              BROWSE
+            </IconTextButton>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="flab">Output path</span>
+          <div class="path-row">
+            <TextInput
+              class="path-input"
+              value={destFolder()}
+              onInput={(v) => {
+                setDestFolder(v);
+                saveDest(v.trim());
+              }}
+              placeholder="Downloads (default)"
+              spellcheck={false}
+            />
+            <IconTextButton icon="FolderOpen" iconSize={13} onClick={browseDest}>
+              BROWSE
+            </IconTextButton>
+          </div>
+        </div>
+
+        <div class="field">
           <span class="flab">Format</span>
           <div class="fopts">
             <For each={formats()}>
@@ -130,7 +264,7 @@ export function ExportView(props: { path: string }) {
 
         <div class="exp-footer">
           <IconTextButton icon="Download" iconSize={14} disabled={busy()} onClick={doExport}>
-            EXPORT {LABEL[format()].toUpperCase()}
+            EXPORT
           </IconTextButton>
         </div>
       </div>
