@@ -109,6 +109,20 @@ export function PaletteModal(props: Props) {
   });
   const selected = nav.active;
 
+  // Hover must not steal the selection from the keyboard default until the
+  // cursor genuinely moves: the palette often opens (or scrolls during Up/Down
+  // nav) under a stationary pointer, and the browser fires mouseenter on
+  // whatever row sits beneath it. We listen on mousemove — which doesn't fire on
+  // open or on wheel-scroll under a still cursor — and ignore events whose
+  // coordinates haven't changed, so the top result lingers until the user
+  // actually moves the mouse.
+  let lastPointer: { x: number; y: number } | undefined;
+  const onRowPointerMove = (i: number, e: MouseEvent) => {
+    if (lastPointer && lastPointer.x === e.clientX && lastPointer.y === e.clientY) return;
+    lastPointer = { x: e.clientX, y: e.clientY };
+    nav.setActive(i);
+  };
+
   // Reset the highlighted row to the top whenever the query changes.
   createEffect(() => {
     query();
@@ -141,7 +155,7 @@ export function PaletteModal(props: Props) {
             <div
               class="palette-row"
               classList={{ selected: selected() === i() }}
-              onMouseEnter={() => nav.setActive(i())}
+              onMouseMove={(e) => onRowPointerMove(i(), e)}
               onClick={() => props.onSelect(r.item)}
             >
               <Show when={r.item.icon}>
