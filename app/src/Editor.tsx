@@ -460,8 +460,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
           ...(ed.livePreview ? [livePreview, foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock()] : []),
-          // Harper spell + grammar check, toggled by editor.spellcheck (default true).
-          ...(ed.spellcheck ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange })] : []),
+          // Harper spell + grammar check. Runs whenever either category is enabled;
+          // it filters lints by kind so editor.spellcheck and editor.grammarCheck
+          // toggle independently (default: spelling on, grammar off).
+          ...(ed.spellcheck || ed.grammarCheck
+            ? [harperSpellcheck({ getBodyRange: frontmatterBodyRange, spelling: ed.spellcheck, grammar: ed.grammarCheck })]
+            : []),
         ];
 
     view = new EditorView({

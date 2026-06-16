@@ -28,6 +28,17 @@ const GRAMMAR_MARK = "grammar-mark";
 export interface HarperOpts {
   // Returns the document char range of the prose body (frontmatter skipped).
   getBodyRange: (doc: string) => { from: number; to: number };
+  // Lint-category gates, toggled independently by editor.spellcheck /
+  // editor.grammarCheck. Spelling lints surface iff `spelling`; everything else
+  // Harper flags (grammar/style/agreement) surfaces iff `grammar`.
+  spelling: boolean;
+  grammar: boolean;
+}
+
+/** Spelling lints (vs grammar/style/agreement). Drives both the squiggle color
+ *  and the independent spelling/grammar enable gates. */
+function isSpellingLint(lint: Lint): boolean {
+  return /spell/i.test(lint.lint_kind());
 }
 
 // Module-level singleton: one WorkerLinter for the whole app. Created lazily and
@@ -146,9 +157,9 @@ function lintToDiagnostic(
   const from = bodyFrom + scalarToUtf16(bodyText, span.start);
   const to = bodyFrom + scalarToUtf16(bodyText, span.end);
   const flagged = view.state.doc.sliceString(from, to);
-  // Spelling vs grammar/style/agreement — computed once and reused for both the
-  // squiggle color (markClass) and the "Add to dictionary" gate.
-  const isSpelling = /spell/i.test(lint.lint_kind());
+  // Spelling vs grammar/style/agreement — reused for both the squiggle color
+  // (markClass) and the "Add to dictionary" gate.
+  const isSpelling = isSpellingLint(lint);
 
   const actions: Action[] = [];
   for (const sug of lint.suggestions()) {
@@ -213,7 +224,10 @@ export function harperSpellcheck(opts: HarperOpts): Extension {
       if (to <= from) return [];
       const bodyText = doc.slice(from, to);
       const lints = await getLinter().lint(bodyText, { language: "markdown" });
-      return lints.map((l) => lintToDiagnostic(view, bodyText, from, l));
+      // Surface only the categories the user enabled — spelling and grammar
+      // toggle independently (editor.spellcheck / editor.grammarCheck).
+      const visible = lints.filter((l) => (isSpellingLint(l) ? opts.spelling : opts.grammar));
+      return visible.map((l) => lintToDiagnostic(view, bodyText, from, l));
     },
     {
       delay: 400,

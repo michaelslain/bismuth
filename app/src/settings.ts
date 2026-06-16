@@ -61,7 +61,9 @@ export interface Settings {
     livePreview: boolean;
     lineNumbers: boolean;
     lineWrapping: boolean;
-    spellcheck: boolean; // spell + grammar check the note body (Harper)
+    spellcheck: boolean; // spell check the note body (Harper)
+    grammarCheck: boolean; // grammar + style check the note body (Harper); off by default
+
     autoSaveDelay: number; // ms of idle before save
     lineHeight: number;    // editor prose line height (multiplier)
   };
