@@ -26,6 +26,8 @@ export interface KeybindingSpec {
 }
 
 export const KEYBINDING_CATALOG: KeybindingSpec[] = [
+  { id: "find", label: "Find in note", default: "Mod+F",
+    doc: "Open the in-note find bar in the focused editor (searches the current note)." },
   { id: "command-palette", label: "Toggle command palette", default: "Mod+P",
     doc: "Open/close the command palette." },
   { id: "quick-switcher", label: "Toggle quick switcher", default: "Mod+O",
