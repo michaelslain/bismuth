@@ -14,8 +14,13 @@ export interface CommandHandlers {
   openSearch: () => void;
   newNote: () => void;
   newFolder: () => void;
+  newBase: () => void;
   newSpreadsheet: () => void;
   newDrawing: () => void | Promise<void>;
+  // The "+" create chooser. Receives the triggering click (when run from a toolbar
+  // button) so the menu can anchor under that button; falls back to a fixed spot
+  // when invoked without an event (e.g. from the command palette).
+  openCreateMenu: (e?: MouseEvent) => void;
   openGraph: () => void;
   setMode: (mode: GraphMode) => void;
   openDailyNote: (id: string) => void;
@@ -52,12 +57,14 @@ export interface BoundCommand {
   id: string;
   label: string;
   icon: string;
-  action: () => void;
+  // Most actions ignore the event; the create-menu command uses it to anchor its
+  // chooser to the button that was clicked (see CommandHandlers.openCreateMenu).
+  action: (e?: MouseEvent) => void;
 }
 
 /** Map each catalog command id to a runnable {id,label,icon,action}. */
 export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] = []): Map<string, BoundCommand> {
-  const actions: Record<string, () => void | Promise<void>> = {
+  const actions: Record<string, (e?: MouseEvent) => void | Promise<void>> = {
     // "New tab" always spawns a fresh graph home tab; "Open graph view" focuses an
     // existing graph tab if one is open (else opens one).
     "new-tab": h.newTab,
@@ -68,8 +75,10 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "open-graph": h.openGraph,
     "open-folder": h.openFolder,
     "new-window": h.newWindow,
+    "create-menu": h.openCreateMenu,
     "new-note": h.newNote,
     "new-folder": h.newFolder,
+    "new-base": h.newBase,
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
     "export": h.exportActive,

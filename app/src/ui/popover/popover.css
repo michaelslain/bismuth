@@ -56,6 +56,8 @@
 .oa-popover-icon { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
 .oa-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 .oa-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
+/* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
+.oa-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: 4px; }
 
 .oa-popover-sep {
   height: 1px;

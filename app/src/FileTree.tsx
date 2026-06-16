@@ -10,8 +10,14 @@ import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
 import { Icon } from "./icons/Icon";
 import { IconPicker } from "./icons/IconPicker";
+import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
+
+// Every artifact the file tree can create in place. "base" is a `.md` seeded with
+// BASE_TEMPLATE; the rest map onto the backend's blank file/dir create. Shared with
+// the toolbar "+" chooser via the `oa-new` event (see App.tsx).
+export type CreateKind = "file" | "dir" | "base" | "sheet" | "draw";
 
 // Extensions hidden in the tree's display labels (and re-applied on rename),
 // just like Obsidian hides `.md`. Markdown notes and YAML configs alike.
@@ -189,8 +195,10 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
 
   // Header "New note" / "New folder" buttons (in App.tsx) create at the vault root.
   const onNew = (e: Event) => {
-    const kind = (e as CustomEvent).detail?.kind as "file" | "dir" | "sheet" | "draw";
-    if (kind === "file" || kind === "dir" || kind === "sheet" || kind === "draw") doCreate("", kind);
+    const detail = (e as CustomEvent).detail ?? {};
+    const kind = detail.kind as CreateKind;
+    if (kind === "file" || kind === "dir" || kind === "base" || kind === "sheet" || kind === "draw")
+      doCreate("", kind, detail.view);
   };
   window.addEventListener("oa-new", onNew);
   onCleanup(() => window.removeEventListener("oa-new", onNew));
@@ -210,13 +218,37 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     }
   }
 
-  async function doCreate(parentDir: string, kind: "file" | "dir" | "sheet" | "draw") {
+  async function doCreate(parentDir: string, kind: CreateKind, view?: string) {
     const fsKind: "file" | "dir" = kind === "dir" ? "dir" : "file"; // backend only knows file|dir
+    // For a base, the chosen view (table/calendar/kanban/…) drives both the default
+    // name and the seeded template; absent a view it falls back to a plain table base.
+    const viewKind = view ? BASE_VIEW_KINDS.find((v) => v.view === view) : undefined;
     const defaultName =
-      kind === "dir" ? "New Folder" : kind === "sheet" ? "Untitled.sheet" : kind === "draw" ? "Untitled.draw" : "Untitled.md";
+      kind === "dir" ? "New Folder"
+      : kind === "base" ? baseFileName(viewKind?.label ?? "Base")
+      : kind === "sheet" ? "Untitled.sheet"
+      : kind === "draw" ? "Untitled.draw"
+      : "Untitled.md";
     const path = joinPath(parentDir, defaultName);
     optimisticAdd(path, fsKind); // instant; reverted via refresh() on failure
     if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
+    // A base must carry `type: base` frontmatter to render as a base, so create the
+    // file (api.create is collision-safe — it errors instead of clobbering an existing
+    // file, unlike api.write/PUT) then seed the view's template. Open it in a new tab so
+    // the view shows immediately (like New spreadsheet/drawing) rather than sitting in
+    // tree-rename — a base in rename mode would just look like a blank row.
+    if (kind === "base") {
+      try {
+        await trackPending(() => api.create(path, "file"));
+        await trackPending(() => api.write(path, baseTemplate(view ?? "table")));
+        window.dispatchEvent(new CustomEvent("oa-open", { detail: { path, newTab: true } }));
+      } catch (e) {
+        optimisticRemove(path);
+        await refetch();
+        pushToast(`Create failed: ${(e as Error).message}`);
+      }
+      return;
+    }
     setEditing(path);
     try {
       await trackPending(() => api.create(path, fsKind));
@@ -233,6 +265,13 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     if (isDir) {
       items.push({ label: "New File", icon: "FilePlus", onSelect: () => doCreate(node.path, "file") });
       items.push({ label: "New Folder", icon: "FolderPlus", onSelect: () => doCreate(node.path, "dir") });
+      items.push({
+        label: "New Base",
+        icon: "Database",
+        submenu: BASE_VIEW_KINDS.map((v) => ({
+          label: v.label, icon: v.icon, onSelect: () => doCreate(node.path, "base", v.view),
+        })),
+      });
       items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
       items.push({ label: "New Drawing", icon: "PenTool", onSelect: () => doCreate(node.path, "draw") });
     }

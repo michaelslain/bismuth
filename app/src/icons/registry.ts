@@ -48,6 +48,7 @@ import Code from "lucide-solid/icons/code";
 import Columns3 from "lucide-solid/icons/columns-3";
 import Copy from "lucide-solid/icons/copy";
 import Crown from "lucide-solid/icons/crown";
+import Database from "lucide-solid/icons/database";
 import Download from "lucide-solid/icons/download";
 import Eraser from "lucide-solid/icons/eraser";
 import Eye from "lucide-solid/icons/eye";
@@ -117,7 +118,7 @@ const SEED: Record<string, LucideIcon> = {
   AppWindow, Archive, ArchiveX, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
   Bot, Box, Brain, BrainCircuit, Calendar, CaseSensitive, Check, ChevronDown,
   ChevronLeft, ChevronRight,
-  ChevronUp, Clock, Code, Columns3, Copy, Crown, Download, Eraser, Eye, File,
+  ChevronUp, Clock, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
   Landmark, Link, Lock, Menu, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,

@@ -14,6 +14,7 @@ export interface AppMenuActions {
   newWindow: () => void;
   newNote: () => void;
   newFolder: () => void;
+  newBase: () => void;
   exportActive: () => void;
   openSettings: () => void;
   openSearch: () => void;
@@ -50,6 +51,7 @@ export async function installAppMenu(a: AppMenuActions): Promise<void> {
         await sep(),
         await item("New note", a.newNote),
         await item("New folder", a.newFolder),
+        await item("New base", a.newBase),
         await sep(),
         await item("Export…", a.exportActive),
       ],

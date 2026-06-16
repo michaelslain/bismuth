@@ -15,6 +15,8 @@ export type PopoverRow = {
   danger?: boolean;
   disabled?: boolean;
   separatorBefore?: boolean;
+  /** Show a right-side chevron marking this row opens a nested submenu. */
+  hasSubmenu?: boolean;
 };
 
 export function PopoverList(props: {
@@ -27,9 +29,11 @@ export function PopoverList(props: {
   style?: JSX.CSSProperties;
   /** Extra class on the container (additive; e.g. Select's `.ui-select-list`). */
   class?: string;
+  /** Ref to the container element (ContextMenu uses it to position a submenu flyout). */
+  ref?: (el: HTMLDivElement) => void;
 }) {
   return (
-    <div class={`oa-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
+    <div ref={props.ref} class={`oa-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
       <For each={props.items}>
         {(item, i) => (
           <>
@@ -40,6 +44,7 @@ export function PopoverList(props: {
               detail={item.detail}
               danger={item.danger}
               disabled={item.disabled}
+              hasSubmenu={item.hasSubmenu}
               selected={props.active === i()}
               onMouseEnter={() => !item.disabled && props.onHover?.(i())}
               onClick={() => props.onActivate(i())}

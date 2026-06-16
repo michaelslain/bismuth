@@ -295,8 +295,7 @@ describe("toolbar serialization", () => {
     await reconcileSettings(vault); // writes a fresh settings.yaml with defaults
     const out = await serializeSettingsForFrontend(vault);
     expect(out.toolbar).toEqual([
-      { command: "new-note", icon: "FilePlus" },
-      { command: "new-folder", icon: "FolderPlus" },
+      { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
     ]);
   });

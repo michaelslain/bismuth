@@ -190,8 +190,7 @@ export const SETTINGS_SCHEMA: Schema = {
       tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
     } } },
     default: [
-      { command: "new-note", icon: "FilePlus" },
-      { command: "new-folder", icon: "FolderPlus" },
+      { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",

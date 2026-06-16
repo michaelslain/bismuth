@@ -59,8 +59,7 @@ describe("toolbar setting", () => {
 
   it("seeds the default buttons", () => {
     expect(toolbar().default).toEqual([
-      { command: "new-note", icon: "FilePlus" },
-      { command: "new-folder", icon: "FolderPlus" },
+      { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
     ]);
   });
