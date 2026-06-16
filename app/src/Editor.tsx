@@ -632,26 +632,32 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       lastIgnoredVersion = change.version;
       return;
     }
-    // Replace the doc while preserving cursor/selection by character offset.
-    // Clamp to the new doc length in case the file got shorter.
-    const sel = view.state.selection.main;
-    const newLen = onDisk.length;
-    const anchor = Math.min(sel.anchor, newLen);
-    const head = Math.min(sel.head, newLen);
-    // Keep the reader where they were: capture scroll before the full-document
-    // replace and restore it after (no scrollIntoView, which would jump to the
-    // caret — typically the top — every time the file changes on disk).
+    // Reconcile to the on-disk text with the SMALLEST possible change — only the
+    // span between the common prefix and suffix — instead of replacing the whole
+    // document. A full {from:0,to:len} replace remounts every decoration in the
+    // doc: embedded query-block widgets lose their inner BaseView state, ephemeral
+    // folds drop, and the viewport jumps to the top. A minimal change lets
+    // CodeMirror map every decoration/widget/fold OUTSIDE the edit across it
+    // untouched (and map the selection through it), so a checkbox toggle or a
+    // one-line external edit no longer "reloads" the note. The dominant
+    // single-region edit becomes a tiny change; scattered edits collapse to one
+    // wider change — never worse than the old full replace. (Same pattern already
+    // used above for live frontmatter normalization.)
+    const patch = minimalChange(current, onDisk);
+    // Keep the reader where they were: capture scroll before applying the change
+    // and restore it after (no scrollIntoView, which would jump to the caret —
+    // typically the top — every time the file changes on disk).
     const scrollTop = view.scrollDOM.scrollTop;
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: onDisk },
-      selection: { anchor, head },
+      changes: patch,
       annotations: ExternalReload.of(true),
     });
     // Restore the scroll position. The synchronous set covers the simple case, but
-    // CodeMirror re-measures line heights asynchronously after a full-document replace
-    // (line wrapping + live-preview block widgets change heights), and that re-measure
-    // can clobber scrollTop back to 0 — the "scrolls to the top" glitch. Re-assert the
-    // position inside requestMeasure (after CM's own layout pass) so it sticks.
+    // CodeMirror re-measures line heights asynchronously after the reconcile when
+    // it touches block widgets (line wrapping + live-preview block widgets change
+    // heights), and that re-measure can clobber scrollTop back to 0 — the "scrolls
+    // to the top" glitch. Re-assert the position inside requestMeasure (after CM's
+    // own layout pass) so it sticks.
     view.scrollDOM.scrollTop = scrollTop;
     view.requestMeasure({
       read: () => null,
