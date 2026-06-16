@@ -197,7 +197,8 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `livePreview` | boolean | `true` | — | Render markdown inline as you type. |
 | `lineNumbers` | boolean | `false` | — | Show line numbers. |
 | `lineWrapping` | boolean | `true` | — | Wrap long lines. |
-| `spellcheck` | boolean | `true` | — | Spell and grammar check the note body (Harper). |
+| `spellcheck` | boolean | `true` | — | Spell check the note body (Harper). |
+| `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
 | `lineHeight` | number | `1.65` | 1.3–2.0 | Editor prose line height multiplier. |
 
