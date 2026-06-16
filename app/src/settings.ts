@@ -67,6 +67,8 @@ export interface Settings {
     autoSaveDelay: number; // ms of idle before save
     lineHeight: number;    // editor prose line height (multiplier)
     mathMacros: string;    // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
+    wrapSelection: boolean;       // type a wrap char around a selection to surround it
+    wrapSelectionChars: string[]; // which chars wrap the selection when typed
   };
   vault: {
     backupOnSave: boolean; // gate the git snapshot taken on every save

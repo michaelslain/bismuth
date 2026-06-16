@@ -100,6 +100,12 @@ export const SETTINGS_SCHEMA: Schema = {
       default: "",
       doc: 'LaTeX preamble of \\newcommand / \\def definitions applied to ALL math (KaTeX), mirroring Obsidian\'s preamble.sty. Example: "\\newcommand{\\R}{\\mathbb{R}} \\newcommand{\\norm}[1]{\\left\\lVert #1 \\right\\rVert}". Definitions are available in every $...$ and $$...$$ across the vault.',
     },
+    wrapSelection: { type: "boolean", default: true, doc: "With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press * → *word*)." },
+    wrapSelectionChars: {
+      type: { kind: "list", item: "string" },
+      default: ["*", "_", "~", "`"],
+      doc: 'Characters that wrap the current selection when typed (each surrounds it with itself; ( [ { < pair to ) ] } >). Brackets and quotes ( [ { \' " $ already wrap via auto-close, so they\'re omitted here by default.',
+    },
   }),
   vault: object({
     backupOnSave: { type: "boolean", default: true, doc: "Take a git snapshot after every save." },

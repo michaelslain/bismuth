@@ -271,6 +271,8 @@ All inline tokens use the same `pushInline(deco, text, lineFrom, reveals, re, ma
 
 **Note on italic**: The italic regex uses lookbehind/lookahead `(?<![*\w])\*(?!\*)` and `\*(?![*\w])` to avoid matching `**bold**` patterns as italic. There is no `_italic_` support (only `*`).
 
+**Wrap-on-selection** (input, not rendering): with text selected, typing one of `editor.wrapSelectionChars` (default `* _ ~ `` ` ``) surrounds the selection instead of replacing it — select a word and press `*` to get `*word*`, press again for `**word**`. The selection stays on the inner text so wraps nest. Brackets and quotes `( [ { ' " $` already do this via auto-close, so they're excluded from the default set; the feature is the `wrapSelection` extension (`app/src/editor/wrapSelection.ts`), gated by the `editor.wrapSelection` setting.
+
 ---
 
 ## Markdown Links
