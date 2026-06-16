@@ -33,6 +33,8 @@ export interface CommandHandlers {
   openFolder: () => void | Promise<void>;
   newWindow: () => void | Promise<void>;
   exportActive: () => void;
+  // Estimate how AI-generated the active page reads (local, offline) and toast the score.
+  detectAiActive: () => void | Promise<void>;
   // Open the modal to pick which device owns the claude-bot daemon.
   openDaemonOwner: () => void;
   // Open the panel to install/repair (adopt) the claude-bot daemon.
@@ -68,6 +70,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
     "export": h.exportActive,
+    "detect-ai": h.detectAiActive,
     "terminal": h.openTerminal,
     "search": h.openSearch,
     "settings": h.openSettings,

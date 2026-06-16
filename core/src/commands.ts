@@ -27,6 +27,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "new-spreadsheet", label: "New spreadsheet",           icon: "Table" },
   { id: "new-drawing",     label: "New drawing",               icon: "PenTool" },
   { id: "export",          label: "Export current file…",      icon: "Download" },
+  { id: "detect-ai",       label: "Detect AI text",            icon: "Bot" },
   { id: "terminal",        label: "Open Terminal",             icon: "SquareTerminal" },
   { id: "search",          label: "Search",                    icon: "Search" },
   { id: "settings",        label: "Open Settings",             icon: "Settings" },
