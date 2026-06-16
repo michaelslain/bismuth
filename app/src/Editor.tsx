@@ -40,6 +40,7 @@ import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
 import { matchesKeybinding } from "./keybindings";
 import { findExtension } from "./editor/findPanel";
+import { wrapSelection } from "./editor/wrapSelection";
 import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor } from "./editorRegistry";
 import { saveScroll, loadScroll } from "./scrollMemory";
@@ -413,6 +414,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // keeps `'`/`"` from pairing mid-word also keeps a `$` after a letter from pairing.
       EditorState.languageData.of(() => [{ closeBrackets: { brackets: ["(", "[", "{", "'", "\"", "$"] } }]),
       closeBrackets(),
+      // Wrap a selection in a formatting char (`*text*`, etc.) instead of replacing
+      // it. Disjoint from the closeBrackets set above so the two never fight; read
+      // lazily so the live `settings.editor.wrapSelectionChars` set always applies.
+      ...(ed.wrapSelection ? [wrapSelection(() => ed.wrapSelectionChars)] : []),
       // Ctrl-Space manually opens the autocomplete menu (Mod-Space is Spotlight on Mac).
       // Tab accepts the active completion (acceptCompletion returns false when no popup is
       // open, so it falls through); otherwise Tab/Shift-Tab indent/dedent the selected

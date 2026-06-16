@@ -112,6 +112,8 @@ CodeMirror editor behavior.
 | `autoSaveDelay` | number | `800` | min `200`, max `3000` | Milliseconds of idle before saving. |
 | `lineHeight` | number | `1.65` | min `1.3`, max `2` | Editor prose line height (multiplier). |
 | `mathMacros` | string | `""` (empty) | — | LaTeX preamble of `\newcommand` / `\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. e.g. `\newcommand{\R}{\mathbb{R}}`. Available in every `$...$` and `$$...$$` across the vault. |
+| `wrapSelection` | boolean | `true` | — | With text selected, type a wrapping character to surround the selection instead of replacing it (e.g. select a word, press `*` → `*word*`; press again → `**word**`). |
+| `wrapSelectionChars` | list&lt;string&gt; | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes `( [ { ' " $` already wrap via auto-close, so they're omitted by default. |
 
 Example:
 
@@ -121,6 +123,8 @@ editor:
   lineNumbers: true
   autoSaveDelay: 1200
   mathMacros: "\\newcommand{\\R}{\\mathbb{R}}"
+  wrapSelection: true
+  wrapSelectionChars: ["*", "_", "~", "`"]
 ```
 
 ---
