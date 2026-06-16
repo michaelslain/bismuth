@@ -13,6 +13,8 @@ export function MenuRow(props: {
   danger?: boolean;
   disabled?: boolean;
   selected?: boolean;
+  /** Render a right-side chevron marking a nested submenu. */
+  hasSubmenu?: boolean;
   onClick?: (e: MouseEvent) => void;
   onMouseEnter?: () => void;
 }): JSX.Element {
@@ -33,6 +35,9 @@ export function MenuRow(props: {
       <span class="oa-popover-label">{props.label}</span>
       <Show when={props.detail}>
         <span class="oa-popover-detail">{props.detail}</span>
+      </Show>
+      <Show when={props.hasSubmenu}>
+        <span class="oa-popover-chev"><Icon value="ChevronRight" size={13} /></span>
       </Show>
     </div>
   );

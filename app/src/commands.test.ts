@@ -8,6 +8,8 @@ function noopHandlers(): { handlers: CommandHandlers; calls: string[] } {
     openTerminal: () => calls.push("terminal"),
     newNote: () => calls.push("new-note"),
     newFolder: () => calls.push("new-folder"),
+    newBase: () => calls.push("new-base"),
+    openCreateMenu: () => calls.push("create-menu"),
     setMode: (m) => calls.push(`mode:${m}`),
     openDailyNote: (id) => calls.push(`daily:${id}`),
     openFolder: () => calls.push("open-folder"),
@@ -33,6 +35,17 @@ describe("bindCommands", () => {
     map.get("graph-2nd")!.action();
     map.get("settings")!.action();
     expect(calls).toEqual(["new-note", "mode:2nd", "settings"]);
+  });
+
+  it("binds the create commands (new-base + create-menu '+')", () => {
+    const { handlers, calls } = noopHandlers();
+    const map = bindCommands(handlers);
+    expect(map.get("new-base")?.label).toBe("New base");
+    expect(map.get("new-base")?.icon).toBe("Database");
+    expect(map.get("create-menu")?.icon).toBe("Plus");
+    map.get("new-base")!.action();
+    map.get("create-menu")!.action();
+    expect(calls).toEqual(["new-base", "create-menu"]);
   });
 
   it("binds the file-menu commands (open-folder / new-window / export)", () => {

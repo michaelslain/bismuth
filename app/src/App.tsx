@@ -11,6 +11,7 @@ import { CommandPalette } from "./palette/CommandPalette";
 import { QuickSwitcher } from "./palette/QuickSwitcher";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands, resolveButtonCommands } from "./commands";
+import { BASE_VIEW_KINDS } from "./baseViews";
 import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { resolveAppearance } from "./themes";
@@ -280,6 +281,8 @@ export default function App() {
   // emitted by editor/contextMenu.ts as an 'oa-context-menu' event. Rendered with the
   // SAME <ContextMenu> component as the pane menu — one menu style across the app.
   const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  // The "+" toolbar create-chooser menu (same <ContextMenu> surface as the others).
+  const [createMenu, setCreateMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   onMount(() => {
     const onCtx = (e: Event) => {
       const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail;
@@ -477,6 +480,9 @@ export default function App() {
   const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  // A base is a `.md` seeded with `type: base` frontmatter — FileTree.doCreate handles
+  // the template + inline rename, same path as New note (just a different `kind`).
+  const newBase = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "base" } }));
   // Export the current tab: open the export tab for the focused file. Falls back to the
   // active tab's content for single-pane tabs, so "export" acts on whatever you're on.
   // Only real, exportable documents (note/base/sheet/drawing) qualify — sentinels like the
@@ -590,6 +596,47 @@ export default function App() {
   };
   const newSpreadsheet = () => void newDoc("Spreadsheet", "sheet");
   const newDrawing = () => void newDoc("Drawing", "draw");
+  // The "+" create chooser: one menu listing every creatable artifact (note, folder,
+  // base, spreadsheet, drawing) plus each configured daily-note type. Items reuse the
+  // bound create commands so there's a single source of truth for labels/icons/actions.
+  // Anchored under the toolbar button it was launched from; a fixed top-left fallback
+  // covers palette/no-event invocations.
+  const openCreateMenu = (e?: MouseEvent) => {
+    const map = commands();
+    const items: MenuItem[] = [];
+    const pushCmd = (id: string) => {
+      const c = map.get(id);
+      if (c) items.push({ label: c.label, icon: c.icon, onSelect: () => c.action() });
+    };
+    pushCmd("new-note");
+    pushCmd("new-folder");
+    // "New base" expands to a submenu — one entry per Bases view kind — each seeding a
+    // base with that view via the same oa-new → FileTree.doCreate path.
+    items.push({
+      label: "New base",
+      icon: "Database",
+      submenu: BASE_VIEW_KINDS.map((v) => ({
+        label: v.label, icon: v.icon,
+        onSelect: () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "base", view: v.view } })),
+      })),
+    });
+    pushCmd("new-spreadsheet");
+    pushCmd("new-drawing");
+    const hadStatic = items.length > 0;
+    // Separator before the FIRST daily note that actually resolves (not the first
+    // config — some may not bind, e.g. a config with a blank id is skipped).
+    let hadDaily = false;
+    for (const dn of settings.dailyNotes ?? []) {
+      const c = map.get(`daily-note:${dn.id}`);
+      if (!c) continue;
+      items.push({ label: c.label, icon: c.icon, separatorBefore: hadStatic && !hadDaily, onSelect: () => c.action() });
+      hadDaily = true;
+    }
+    const rect = (e?.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+    const x = rect ? rect.left : 8;
+    const y = rect ? rect.bottom + 4 : 48;
+    openContextMenu(x, y, items, setCreateMenu);
+  };
   // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
   const openGraph = () => openInNewTab(GRAPH_TAB);
   // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
@@ -606,12 +653,12 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
   onMount(() => {
-    void installAppMenu({ openFolder, newWindow, newNote, newFolder, exportActive, openSettings, openSearch });
+    void installAppMenu({ openFolder, newWindow, newNote, newFolder, newBase, exportActive, openSettings, openSearch });
   });
 
   // Apply settings to the document as CSS custom properties (theme, accent, fonts,
@@ -1242,7 +1289,7 @@ export default function App() {
                   }
                 >
                   {(c) => (
-                    <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={() => c().action()} />
+                    <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
                   )}
                 </Show>
               );
@@ -1429,6 +1476,9 @@ export default function App() {
       </Show>
       <Show when={editorMenu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setEditorMenu(null)} />}
+      </Show>
+      <Show when={createMenu()}>
+        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setCreateMenu(null)} />}
       </Show>
       {/* Floating ghost that follows the cursor during a tab/pane drag. pointer-events:none
           so elementFromPoint resolves the drop target beneath it. Width is capped to a
