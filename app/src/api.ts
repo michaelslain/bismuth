@@ -63,7 +63,22 @@ export interface Transport {
   base(): string;
 }
 
-/** HTTP transport: the original fetch-against-`base` behavior, unchanged. */
+// During app boot the bundled Tauri shell spawns the core sidecar on a free port and points
+// the webview at it immediately — but Bun.serve isn't listening yet (it warms the graph/tree
+// caches first), so the first reads can hit a not-yet-bound port and `fetch` REJECTS with a
+// network error. Without a retry those boot reads (tree / file / graph / quick-switcher) fail
+// once and stay failed: the server's version sits at 0, so the SSE + /version-poll fallback
+// never fires a refetch, and the app looks broken (blank file tree, cmd+O "no files", pages
+// don't render, new tabs empty) until some incidental change finally bumps the version. We
+// instead retry GETs through a connection failure for a bounded window, riding out the ~1–4s
+// warmup transparently. Once the backend is up these errors don't occur, so steady-state is
+// untouched. Mutations are NEVER retried (a repeated POST/PUT could double-write); a non-2xx
+// RESPONSE is a real error, not a connect failure, so it isn't retried either — only an
+// outright `fetch` rejection (the port isn't accepting connections) is.
+const BOOT_RETRY_BUDGET_MS = 20_000;
+const BOOT_RETRY_STEP_MS = 250;
+
+/** HTTP transport: the original fetch-against-`base` behavior, plus boot-time connect retry on GETs. */
 export function httpTransport(base: string): Transport {
   /** Generic fetch wrapper: throw server error text on non-2xx, optionally parse JSON/text. */
   async function request<T>(
@@ -72,13 +87,27 @@ export function httpTransport(base: string): Transport {
     body?: unknown,
     responseType?: "json" | "text",
   ): Promise<T | Response | string> {
-    const r = await fetch(`${base}${path}`, {
+    const init: RequestInit = {
       method,
       ...(body !== undefined && {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       }),
-    });
+    };
+    // Only GETs ride out a not-yet-listening backend; mutations must not auto-retry.
+    const deadline = method === "GET" ? Date.now() + BOOT_RETRY_BUDGET_MS : 0;
+    let r: Response;
+    for (;;) {
+      try {
+        r = await fetch(`${base}${path}`, init);
+        break;
+      } catch (e) {
+        // `fetch` rejects only on a network/connection failure (never on HTTP status). Retry a
+        // GET while the backend is still coming up; otherwise surface the error as before.
+        if (Date.now() >= deadline) throw e;
+        await new Promise((resolve) => setTimeout(resolve, BOOT_RETRY_STEP_MS));
+      }
+    }
     if (!r.ok) throw new Error(await r.text());
     if (responseType === "json") return r.json() as Promise<T>;
     if (responseType === "text") return r.text() as Promise<string>;
