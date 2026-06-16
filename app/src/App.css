@@ -726,3 +726,9 @@ html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Serif crumb title (standalone calendar month, etc.). */
 .viewbar .crumb b.crumb-serif { font-family: var(--editor-font); font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+
+/* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
+   export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
+   equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
+.oa-math-display { display: block; }
+.oa-math-display .katex-display { margin: 0.4em 0; }

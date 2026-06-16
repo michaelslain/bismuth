@@ -3,17 +3,17 @@ import { test, expect, describe } from "bun:test";
 import { formatsFor, isExportable } from "./formats";
 
 describe("formatsFor", () => {
-  test("note offers html, pdf, md", () => {
-    expect(formatsFor("a/b/note.md")).toEqual(["html", "pdf", "md"]);
+  test("note offers html, pdf, png, md", () => {
+    expect(formatsFor("a/b/note.md")).toEqual(["html", "pdf", "png", "md"]);
   });
   test("a base is a type:base md file, so it uses the md formats", () => {
-    expect(formatsFor("Reading.md")).toEqual(["html", "pdf", "md"]);
+    expect(formatsFor("Reading.md")).toEqual(["html", "pdf", "png", "md"]);
   });
   test("the legacy .base extension is no longer exportable", () => {
     expect(formatsFor("Reading.base")).toEqual([]);
   });
-  test("sheet offers html, pdf", () => {
-    expect(formatsFor("budget.sheet")).toEqual(["html", "pdf"]);
+  test("sheet offers html, pdf, png", () => {
+    expect(formatsFor("budget.sheet")).toEqual(["html", "pdf", "png"]);
   });
   test("drawing offers pdf, png", () => {
     expect(formatsFor("sketch.draw")).toEqual(["pdf", "png"]);

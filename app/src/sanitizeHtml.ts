@@ -10,8 +10,12 @@ import DOMPurify from "dompurify";
 // sub/sup/div/details/img/a/table/…) and the `style`/`align`/`class` attributes
 // people actually use in notes.
 const CONFIG = {
-  // Standard HTML profile (no SVG/MathML islands — math is handled by KaTeX).
-  USE_PROFILES: { html: true },
+  // HTML + MathML profiles. HTML covers prose + KaTeX's visual output (plain styled
+  // <span>s). MathML lets KaTeX's accessibility island — the hidden <math> tree it
+  // emits alongside the visual HTML — survive for screen readers + correct copy/paste
+  // on reading surfaces (cards, transclusion, export). Without it the math still LOOKS
+  // right (the .katex-html part is kept) but the a11y/copy island is stripped.
+  USE_PROFILES: { html: true, mathMl: true },
   // Allow `<a target="_blank">` (DOMPurify drops unknown attrs otherwise).
   ADD_ATTR: ["target"],
 };

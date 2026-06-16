@@ -1,12 +1,13 @@
 // app/src/export/htmlToPdf.ts
-// Renders an HTML *document* string to PDF bytes — always Letter-size pages.
+// Renders an HTML *document* string to PDF or PNG bytes.
 //
-// Fidelity strategy: the PDF must look like the in-app preview, which is just the browser
+// Fidelity strategy: the output must look like the in-app preview, which is just the browser
 // rendering the HTML. jsPDF's own pdf.html() reflows text through a separate engine and
 // looks nothing like the browser. Instead we render the HTML in an isolated off-screen
 // iframe (its own document — body/<style> can't leak into the app), snapshot that real
-// browser rendering with html2canvas, then slice the image across Letter pages. The result
-// matches the preview (rasterized) and auto-downloads with no print dialog.
+// browser rendering with html2canvas, then (for PDF) slice the image across Letter pages.
+// The iframe document is fully self-contained, so embedded KaTeX CSS+fonts (data: URIs, via
+// exporters.ts) are what make exported math render — the iframe can't see the app's fonts.
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 
@@ -15,7 +16,20 @@ const PAGE_W_PX = 816; // 8.5in * 96
 const PAGE_W_PT = 612;
 const PAGE_H_PT = 792;
 
-export async function htmlToPdf(html: string): Promise<Uint8Array> {
+// Let the off-screen iframe lay out before measuring/snapshotting. Uses setTimeout, NOT
+// requestAnimationFrame: rAF is throttled to zero in a hidden/backgrounded tab, so an
+// export started (or left running) while the window isn't foreground would hang forever
+// waiting for a frame that never comes. A fixed delay always fires.
+const settle = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Render an HTML document string to a single full-content canvas via an off-screen iframe.
+ * Shared by the PDF (sliced into pages) and PNG (single image) exporters. The caller's
+ * document MUST be self-contained — the iframe inherits nothing from the app, and
+ * `doc.fonts.ready` here is what gates the snapshot on embedded @font-face fonts (incl.
+ * the inlined KaTeX glyph fonts) so math is measured/drawn correctly.
+ */
+async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; bg: string }> {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W_PX}px;height:200px;border:0;`;
@@ -27,22 +41,53 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
     doc.close();
     // Let the iframe document lay out, then grow the frame to the full content height so
     // html2canvas captures everything (not just the initial viewport).
-    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    await settle();
     iframe.style.height = `${doc.body.scrollHeight}px`;
-    // Ensure fonts are loaded so html2canvas measures text with the right metrics.
-    try { await doc.fonts?.ready; } catch { /* fonts API unavailable — proceed */ }
-    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    // Ensure fonts are loaded so html2canvas measures text with the right metrics. With
+    // inlined KaTeX fonts (data: URIs) this resolves once the math glyph fonts are ready.
+    // Race a cap so a never-resolving fonts.ready (some embedded-font edge cases) can't hang.
+    try { await Promise.race([doc.fonts?.ready, settle(4000)]); } catch { /* proceed */ }
+    await settle();
 
     const bg = getComputedStyle(doc.body).backgroundColor || "#ffffff";
+    // Browsers cap a canvas at ~32767px per side. At the default 2x scale that's ~16k source
+    // px (~17 Letter pages); a taller doc makes html2canvas silently return a blank/clamped
+    // canvas. Drop the scale so the scaled height stays under the cap (lower-res but valid)
+    // — matters most for PNG, which is one image with no page slicing.
+    const MAX_CANVAS_PX = 32000;
+    const scale = Math.max(1, Math.min(2, Math.floor(MAX_CANVAS_PX / Math.max(1, doc.body.scrollHeight))));
     const canvas = await html2canvas(doc.body, {
-      scale: 2,
+      scale,
       backgroundColor: bg,
       width: PAGE_W_PX,
       windowWidth: PAGE_W_PX,
       useCORS: true,
     });
-    if (canvas.height === 0) throw new Error("htmlToPdf: nothing to render");
+    if (canvas.height === 0) throw new Error("htmlToCanvas: nothing to render");
+    return { canvas, bg };
+  } finally {
+    iframe.remove();
+  }
+}
 
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/** Rasterize a self-contained HTML document to a single PNG (bytes + a data: URL preview). */
+export async function htmlToPng(html: string): Promise<{ bytes: Uint8Array; dataUrl: string }> {
+  const { canvas } = await htmlToCanvas(html);
+  const dataUrl = canvas.toDataURL("image/png");
+  return { bytes: dataUrlToBytes(dataUrl), dataUrl };
+}
+
+export async function htmlToPdf(html: string): Promise<Uint8Array> {
+  const { canvas, bg } = await htmlToCanvas(html);
+  {
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
     const scale = PAGE_W_PT / canvas.width; // canvas px -> pt
     const pageHpx = Math.floor(PAGE_H_PT / scale); // source px per Letter page
@@ -68,7 +113,5 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
       first = false;
     }
     return new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer);
-  } finally {
-    iframe.remove();
   }
 }

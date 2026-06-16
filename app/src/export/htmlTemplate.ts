@@ -44,9 +44,11 @@ function styles(t: ThemeVars): string {
 
 /**
  * Wrap rendered body HTML in a standalone, styled document (used for .html export, the
- * pdf render source, and the preview iframe). Defaults to a dark theme.
+ * pdf/png render source, and the preview iframe). Defaults to a dark theme. `extraHead`
+ * is injected after the base stylesheet — used to inline self-contained KaTeX CSS+fonts
+ * when the body contains rendered math (see exporters.ts).
  */
-export function wrapHtmlDocument(body: string, title: string, theme: ExportTheme = "dark"): string {
+export function wrapHtmlDocument(body: string, title: string, theme: ExportTheme = "dark", extraHead = ""): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -54,7 +56,7 @@ export function wrapHtmlDocument(body: string, title: string, theme: ExportTheme
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <style>${styles(THEMES[theme])}</style>
-</head>
+${extraHead}</head>
 <body>
 ${body}
 </body>

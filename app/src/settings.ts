@@ -66,6 +66,7 @@ export interface Settings {
 
     autoSaveDelay: number; // ms of idle before save
     lineHeight: number;    // editor prose line height (multiplier)
+    mathMacros: string;    // LaTeX \newcommand preamble applied to all math (Obsidian preamble.sty parity)
   };
   vault: {
     backupOnSave: boolean; // gate the git snapshot taken on every save

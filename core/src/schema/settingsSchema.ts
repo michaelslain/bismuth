@@ -95,6 +95,11 @@ export const SETTINGS_SCHEMA: Schema = {
     grammarCheck: { type: "boolean", default: false, doc: "Grammar + style check the note body (Harper). Independent of spellcheck; off by default." },
     autoSaveDelay: { type: "number", default: 800, min: 200, max: 3000, doc: "Milliseconds of idle before saving." },
     lineHeight: { type: "number", default: 1.65, min: 1.3, max: 2, doc: "Editor prose line height (multiplier)." },
+    mathMacros: {
+      type: "string",
+      default: "",
+      doc: 'LaTeX preamble of \\newcommand / \\def definitions applied to ALL math (KaTeX), mirroring Obsidian\'s preamble.sty. Example: "\\newcommand{\\R}{\\mathbb{R}} \\newcommand{\\norm}[1]{\\left\\lVert #1 \\right\\rVert}". Definitions are available in every $...$ and $$...$$ across the vault.',
+    },
   }),
   vault: object({
     backupOnSave: { type: "boolean", default: true, doc: "Take a git snapshot after every save." },
