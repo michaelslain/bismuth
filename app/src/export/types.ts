@@ -26,5 +26,6 @@ export interface ExportDeps {
   read: (path: string) => Promise<string>;
   resolveRows: (spec: SourceSpec) => Promise<Row[]>;
   htmlToPdf: (html: string) => Promise<Uint8Array>;
+  htmlToPng: (html: string) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
   drawingToPng: (docText: string, theme: ExportTheme) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
 }

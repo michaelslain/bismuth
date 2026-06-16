@@ -19,6 +19,7 @@ function deps(read: string, rows: Row[]): ExportDeps {
     read: async () => read,
     resolveRows: async () => rows,
     htmlToPdf: async () => new Uint8Array(),
+    htmlToPng: async () => ({ bytes: new Uint8Array(), dataUrl: "" }),
     drawingToPng: async () => ({ bytes: new Uint8Array(), dataUrl: "" }),
   };
 }

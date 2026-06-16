@@ -207,7 +207,10 @@ class MathWidget extends WidgetType {
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
-    span.className = "cm-math";
+    // Display math ($$…$$) needs a full-width block wrapper so KaTeX's equation tags /
+    // auto-numbers (\tag, numbered align/equation) can sit at the right margin instead of
+    // overlapping the equation; inline math ($…$) stays inline-block.
+    span.className = this.displayMode ? "cm-math cm-math-display" : "cm-math";
     span.innerHTML = renderMath(this.expr, this.displayMode);
     // KaTeX not loaded yet → fill in once the lazy chunk lands (same output). Keep the
     // unsubscribe so a widget destroyed before KaTeX loads drops its pending callback.
@@ -1046,6 +1049,9 @@ export const livePreview = [
     // Raw "- " / "- [ ]" marker on the cursor line, shown in the mono font.
     ".cm-list-marker": { "font-family": MONO_FONT },
     ".cm-math": { display: "inline-block", "vertical-align": "middle" },
+    // Full-width block for $$…$$ so KaTeX can lay out equation tags / numbers (\tag,
+    // numbered align/equation) flush right of the line instead of on top of the equation.
+    ".cm-math-display": { display: "block", width: "100%" },
     ".cm-math .katex-display": { "text-align": "left", margin: "0.4em 0" },
     // Rendered raw HTML. Inline spans flow with the prose; block elements get a
     // little breathing room. Images stay responsive. Links inherit the editor's

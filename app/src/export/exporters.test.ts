@@ -16,6 +16,7 @@ function deps(over: Partial<ExportDeps> = {}): ExportDeps {
     read: async (p: string) => (p.includes("Reading") ? BASE_MD : "# Title\n\nbody"),
     resolveRows: async () => [{ file: { name: "Dune", path: "Dune.md" } as any, note: { author: "H" }, formula: {} }],
     htmlToPdf: async (html) => new TextEncoder().encode("PDF:" + html.length),
+    htmlToPng: async (html) => ({ bytes: new TextEncoder().encode("PNG:" + html.length), dataUrl: "data:image/png;base64,AQI=" }),
     drawingToPng: async () => ({ bytes: new Uint8Array([1, 2]), dataUrl: "data:image/png;base64,AQI=" }),
     ...over,
   };

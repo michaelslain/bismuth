@@ -17,6 +17,8 @@ import "./ExportView.css";
 // same `htmlToPdf` implementation, code-split into its own chunk (see vite manualChunks).
 const htmlToPdf = (html: string): Promise<Uint8Array> =>
   import("./export/htmlToPdf").then((m) => m.htmlToPdf(html));
+const htmlToPng = (html: string): Promise<{ bytes: Uint8Array; dataUrl: string }> =>
+  import("./export/htmlToPdf").then((m) => m.htmlToPng(html));
 
 const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
 const FORMAT_ICON: Record<ExportFormat, string> = {
@@ -33,6 +35,7 @@ const deps: ExportDeps = {
   read: (p) => api.read(p),
   resolveRows: (spec) => api.resolveRows(spec),
   htmlToPdf,
+  htmlToPng,
   drawingToPng,
 };
 
