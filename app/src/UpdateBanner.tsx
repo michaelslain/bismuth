@@ -4,8 +4,7 @@
 // polls progress (GET /update/progress), and when the build is ready invokes the Tauri
 // `quit_app` command so the detached relauncher can swap the .app bundle + reopen it.
 import { createSignal, Show } from "solid-js";
-import { updateStatus, recheckUpdate } from "./updateCheck";
-import { api } from "./api";
+import { updateStatus, applyUpdateAndRelaunch } from "./updateCheck";
 import { pushToast } from "./Toast";
 import type { UpdatePhase } from "../../core/src/selfUpdate";
 import "./UpdateBanner.css";
@@ -27,49 +26,15 @@ export function UpdateBanner() {
   const behind = () => updateStatus()?.behind ?? 0;
   const show = () => !!updateStatus()?.available && !dismissed();
 
-  // Quit the app so the detached relauncher (waiting on our pid) can swap + relaunch.
-  const quitApp = async () => {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("quit_app");
-    } catch {
-      pushToast("Update built — quit and reopen Bismuth to apply it.");
-      setWorking(false);
-    }
-  };
-
   const update = async () => {
     if (working()) return;
     setWorking(true);
     setPhase("pulling");
     try {
-      const started = await api.applyUpdate();
-      if (started.phase === "error") {
-        pushToast(started.message ?? "Update failed");
-        setWorking(false);
-        return;
-      }
-      const poll = setInterval(async () => {
-        let p;
-        try {
-          p = await api.updateProgress();
-        } catch {
-          return; // transient; keep polling
-        }
-        setPhase(p.phase);
-        if (p.phase === "ready") {
-          clearInterval(poll);
-          await quitApp();
-        } else if (p.phase === "error") {
-          clearInterval(poll);
-          pushToast(p.message ?? "Update failed");
-          setWorking(false);
-        } else if (p.phase === "idle") {
-          clearInterval(poll); // already up to date
-          setWorking(false);
-          recheckUpdate();
-        }
-      }, 2000);
+      const r = await applyUpdateAndRelaunch(setPhase);
+      if (r.result === "relaunching") return; // quitting; relauncher takes over
+      if (r.result === "error") pushToast(r.message ?? "Update failed");
+      setWorking(false); // error or already up to date
     } catch (e) {
       pushToast(`Update failed: ${(e as Error).message}`);
       setWorking(false);

@@ -19,6 +19,7 @@ import { matchesKeybinding } from "./keybindings";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
+import { applyUpdateAndRelaunch } from "./updateCheck";
 import { GalleryHost } from "./ui/gallery/galleryStore";
 import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
@@ -580,6 +581,32 @@ export default function App() {
   // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
   const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false);
   const openBismuthInstall = () => setBismuthInstallOpen(true);
+  // Manual "Update Bismuth" command — for when the UpdateBanner was dismissed/missed. Checks
+  // fresh, then runs the same apply→build→relaunch pipeline as the banner, reporting progress
+  // in a persistent toast. Cleanly says "up to date" when there's nothing to pull (incl. dev).
+  const updateApp = async () => {
+    const id = pushToast("Checking for a Bismuth update…", undefined, 0);
+    let status;
+    try {
+      status = await api.updateStatus();
+    } catch {
+      updateToast(id, "Couldn't reach the update service");
+      setTimeout(() => dismissToast(id), 4000);
+      return;
+    }
+    if (!status.available) {
+      updateToast(id, "Bismuth is already up to date");
+      setTimeout(() => dismissToast(id), 4000);
+      return;
+    }
+    updateToast(id, `Updating Bismuth (${status.behind} commit${status.behind === 1 ? "" : "s"} behind)…`);
+    const phaseText = (p: string) =>
+      p === "pulling" ? "Pulling update…" : p === "building" ? "Building update… (a few min)" : p === "ready" ? "Relaunching…" : "Updating…";
+    const r = await applyUpdateAndRelaunch((p) => updateToast(id, phaseText(p)));
+    if (r.result === "relaunching") return; // quitting; the relauncher swaps + reopens
+    dismissToast(id);
+    pushToast(r.result === "error" ? `Update failed: ${r.message ?? "unknown error"}` : "Bismuth is already up to date");
+  };
   // Custom spellcheck dictionary editor — view/remove the user's added words.
   const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false);
   const openEditDictionary = () => setEditDictionaryOpen(true);
@@ -675,7 +702,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary, archiveTasks, archiveAllTasks }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.

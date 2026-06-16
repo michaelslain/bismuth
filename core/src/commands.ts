@@ -46,6 +46,7 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "daemon-setup",    label: "Set up claude-bot daemon…", icon: "Download" },
   { id: "daemon-update",   label: "Update claude-bot daemon…", icon: "RefreshCw" },
   { id: "bismuth-install", label: "Install Bismuth CLI + MCP…", icon: "Download" },
+  { id: "update-app",      label: "Update Bismuth…",            icon: "RefreshCw" },
 ];
 
 /** All command ids, in catalog order. */

@@ -7,27 +7,25 @@
 import { createSignal } from "solid-js";
 import { api } from "./api";
 import { settings } from "./settings";
-import type { UpdateStatus } from "../../core/src/selfUpdate";
+import type { UpdateStatus, UpdatePhase } from "../../core/src/selfUpdate";
 
 const [updateStatus, setUpdateStatus] = createSignal<UpdateStatus | null>(null);
 export { updateStatus };
 
-// Opt-in (settings.update.autoUpdate): when an update is available, apply it in the
-// background and relaunch when the rebuild is ready — no banner click. Reuses the same
-// pipeline as the manual button (POST /update/apply → poll → quit_app). A no-op in dev
-// (the backend reports available:false), and only runs once per session.
-let autoStarted = false;
-async function maybeAutoUpdate(): Promise<void> {
-  if (autoStarted) return;
-  if (!updateStatus()?.available) return;
-  if (!settings.update?.autoUpdate) return;
-  autoStarted = true;
-  try {
-    const started = await api.applyUpdate();
-    if (started.phase === "error") {
-      autoStarted = false;
-      return;
-    }
+/**
+ * Apply the pending app update, poll progress to completion, and on `ready` invoke the Tauri
+ * `quit_app` command so the detached relauncher swaps the .app bundle + reopens it. The single
+ * shared pipeline behind the UpdateBanner button, the opt-in auto-update, and the manual
+ * "Update Bismuth" command. `onPhase` reports progress for UI; resolves with the outcome
+ * (`relaunching` = build done + quitting, `up-to-date` = nothing to do, `error`).
+ */
+export async function applyUpdateAndRelaunch(
+  onPhase?: (p: UpdatePhase | "") => void,
+): Promise<{ result: "relaunching" | "up-to-date" | "error"; message?: string }> {
+  const started = await api.applyUpdate();
+  if (started.phase === "error") return { result: "error", message: started.message };
+  onPhase?.(started.phase);
+  return await new Promise((resolve) => {
     const poll = setInterval(async () => {
       let p;
       try {
@@ -35,6 +33,7 @@ async function maybeAutoUpdate(): Promise<void> {
       } catch {
         return; // transient; keep polling
       }
+      onPhase?.(p.phase);
       if (p.phase === "ready") {
         clearInterval(poll);
         try {
@@ -43,14 +42,30 @@ async function maybeAutoUpdate(): Promise<void> {
         } catch {
           /* not in Tauri / already quit */
         }
-      } else if (p.phase === "error" || p.phase === "idle") {
+        resolve({ result: "relaunching" });
+      } else if (p.phase === "error") {
         clearInterval(poll);
-        autoStarted = false; // let a later check retry
+        resolve({ result: "error", message: p.message });
+      } else if (p.phase === "idle") {
+        clearInterval(poll);
+        recheckUpdate(); // already up to date — refresh the banner signal
+        resolve({ result: "up-to-date" });
       }
     }, 2000);
-  } catch {
-    autoStarted = false;
-  }
+  });
+}
+
+// Opt-in (settings.update.autoUpdate): when an update is available, apply it in the
+// background and relaunch when the rebuild is ready — no banner click. A no-op in dev
+// (the backend reports available:false), and only runs once per session.
+let autoStarted = false;
+async function maybeAutoUpdate(): Promise<void> {
+  if (autoStarted) return;
+  if (!updateStatus()?.available) return;
+  if (!settings.update?.autoUpdate) return;
+  autoStarted = true;
+  const r = await applyUpdateAndRelaunch();
+  if (r.result !== "relaunching") autoStarted = false; // let a later check retry
 }
 
 const PERIODIC_MS = 5 * 60 * 1000; // re-check every 5 min once the backend is reachable

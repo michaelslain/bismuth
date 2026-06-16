@@ -48,6 +48,9 @@ export interface CommandHandlers {
   openDaemonSetup: () => void;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;
+  // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
+  // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
+  updateApp: () => void | Promise<void>;
   // Open the modal to view/remove the user's custom spellcheck dictionary words.
   openEditDictionary: () => void;
   // Permanently remove completed/cancelled tasks — from the active note, or all notes.
@@ -100,6 +103,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "daemon-setup": h.openDaemonSetup,
     "daemon-update": h.openDaemonSetup,
     "bismuth-install": h.openBismuthInstall,
+    "update-app": h.updateApp,
     "edit-dictionary": h.openEditDictionary,
   };
   const map = new Map<string, BoundCommand>();
