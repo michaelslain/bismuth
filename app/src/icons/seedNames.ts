@@ -8,7 +8,7 @@
 
 /** Canonical PascalCase names of every eagerly-seeded (instant) icon. */
 export const SEED_ICON_NAMES: readonly string[] = [
-  "AppWindow", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "Blend", "Book",
+  "AppWindow", "Archive", "ArchiveX", "ArrowDown", "ArrowLeft", "ArrowRight", "ArrowUp", "Blend", "Book",
   "BookOpen", "Bot", "Box", "Brain", "BrainCircuit", "Calendar", "CaseSensitive",
   "Check", "ChevronDown",
   "ChevronLeft", "ChevronRight", "ChevronUp", "Clock", "Code", "Columns3",

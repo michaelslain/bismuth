@@ -4,7 +4,7 @@ import { createSseRegistry, formatEvent } from "./sse";
 import { createAsyncCache } from "./asyncCache";
 import { buildGraph } from "./engine";
 import { attachLayout, computeViewLayouts } from "./layout-cache";
-import { listTree, listTemplates, readNote, writeNote, moveEntry, deleteEntry, createEntry, resolveAsset, writeBinary, uniqueAssetPath } from "./files";
+import { listTree, listTemplates, listMarkdown, readNote, writeNote, moveEntry, deleteEntry, createEntry, resolveAsset, writeBinary, uniqueAssetPath } from "./files";
 import { commitVault, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { AppError } from "./error";
@@ -15,7 +15,13 @@ import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
 import type { GraphData, TreeEntry } from "./graph";
-import { collectVaultTasks, toggleTaskLine, setTaskLineStatus } from "./tasks";
+import {
+  collectVaultTasks,
+  toggleTaskLine,
+  setTaskLineStatus,
+  reorderTaskBlocks,
+  archiveResolvedTasks,
+} from "./tasks";
 import { todayISO } from "./dates";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
@@ -944,10 +950,38 @@ export function createServer(cfg: CoreConfig) {
           status != null
             ? setTaskLineStatus(lines[line], status, todayISO())
             : toggleTaskLine(lines[line], todayISO());
-        await writeNote(cfg.vault, path, lines.join("\n"));
+        // Resolved (done/cancelled) tasks sink to the bottom of their list so a checked-off
+        // todo drops below the still-open ones, matching the card view's grouping.
+        await writeNote(cfg.vault, path, reorderTaskBlocks(lines.join("\n")));
         return ok();
       },
       (b) => b.path,
+    ),
+
+    // Archive completed/cancelled tasks. With a `path`, only that note; otherwise the whole
+    // vault. Removal is permanent (git retains history). Returns the count removed.
+    "POST /tasks/archive": mutatingHandler(
+      async (req) => {
+        const { path } = (await req.json().catch(() => ({}))) as { path?: string };
+        if (path) {
+          const { content, removed } = archiveResolvedTasks(await readNote(cfg.vault, path));
+          if (removed > 0) await writeNote(cfg.vault, path, content);
+          return ok({ removed, files: removed > 0 ? 1 : 0 });
+        }
+        const rels = await listMarkdown(cfg.vault);
+        let removed = 0;
+        let files = 0;
+        for (const rel of rels) {
+          const res = archiveResolvedTasks(await readNote(cfg.vault, rel));
+          if (res.removed > 0) {
+            await writeNote(cfg.vault, rel, res.content);
+            removed += res.removed;
+            files++;
+          }
+        }
+        return ok({ removed, files });
+      },
+      (b) => (b as { path?: string }).path,
     ),
 
     "POST /cards/review": mutatingHandler(

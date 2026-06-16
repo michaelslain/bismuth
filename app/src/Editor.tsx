@@ -20,6 +20,7 @@ import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
 import { latexHighlightTheme } from "./editor/latexHighlight";
 import { queryBlock } from "./editor/queryBlock";
+import { taskFold } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { iconNames } from "./icons/registry";
@@ -500,7 +501,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           notePathFacet.of(path),
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
-          ...(ed.livePreview ? [livePreview, foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock(), latexHighlightTheme] : []),
+          ...(ed.livePreview ? [livePreview, taskFold(), foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock(), latexHighlightTheme] : []),
           // Harper spell + grammar check. Runs whenever either category is enabled;
           // it filters lints by kind so editor.spellcheck and editor.grammarCheck
           // toggle independently (default: spelling on, grammar off).

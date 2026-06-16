@@ -283,3 +283,57 @@ test("collectTasksFromPaths skips unreadable paths", async () => {
   const tasks = await collectTasksFromPaths(root, ["keep/a.md", "keep/missing.md"]);
   expect(tasks.map((t) => t.description)).toEqual(["real task"]);
 });
+
+import { reorderTaskBlocks, archiveResolvedTasks, isResolvedStatus } from "../src/tasks";
+
+test("isResolvedStatus is true only for done/cancelled", () => {
+  expect(isResolvedStatus("done")).toBe(true);
+  expect(isResolvedStatus("cancelled")).toBe(true);
+  expect(isResolvedStatus("todo")).toBe(false);
+  expect(isResolvedStatus("in-progress")).toBe(false);
+});
+
+test("reorderTaskBlocks sinks done + cancelled to the bottom, stable", () => {
+  const input = ["- [ ] a", "- [x] b", "- [ ] c", "- [-] d", "- [ ] e"].join("\n");
+  expect(reorderTaskBlocks(input)).toBe(["- [ ] a", "- [ ] c", "- [ ] e", "- [x] b", "- [-] d"].join("\n"));
+});
+
+test("reorderTaskBlocks leaves an already-sorted block unchanged (idempotent)", () => {
+  const sorted = ["- [ ] a", "- [ ] b", "- [x] c"].join("\n");
+  expect(reorderTaskBlocks(sorted)).toBe(sorted);
+});
+
+test("reorderTaskBlocks keeps sub-task children with their parent", () => {
+  const input = ["- [x] parent", "  - [ ] child", "- [ ] open"].join("\n");
+  expect(reorderTaskBlocks(input)).toBe(["- [ ] open", "- [x] parent", "  - [ ] child"].join("\n"));
+});
+
+test("reorderTaskBlocks treats blocks separated by prose independently", () => {
+  const input = ["- [x] a", "- [ ] b", "", "text", "", "- [x] c", "- [ ] d"].join("\n");
+  expect(reorderTaskBlocks(input)).toBe(["- [ ] b", "- [x] a", "", "text", "", "- [ ] d", "- [x] c"].join("\n"));
+});
+
+test("reorderTaskBlocks preserves a trailing newline", () => {
+  expect(reorderTaskBlocks("- [x] a\n- [ ] b\n")).toBe("- [ ] b\n- [x] a\n");
+});
+
+test("archiveResolvedTasks removes done + cancelled items and counts them", () => {
+  const input = ["# Todo", "- [ ] keep", "- [x] done", "- [-] cancelled", "- [/] doing"].join("\n");
+  const { content, removed } = archiveResolvedTasks(input);
+  expect(removed).toBe(2);
+  expect(content).toBe(["# Todo", "- [ ] keep", "- [/] doing"].join("\n"));
+});
+
+test("archiveResolvedTasks removes a resolved parent together with its children", () => {
+  const input = ["- [x] parent", "  - [ ] child", "- [ ] keep"].join("\n");
+  const { content, removed } = archiveResolvedTasks(input);
+  expect(removed).toBe(1);
+  expect(content).toBe("- [ ] keep");
+});
+
+test("archiveResolvedTasks is a no-op when nothing is resolved", () => {
+  const input = ["- [ ] a", "- [/] b"].join("\n");
+  const { content, removed } = archiveResolvedTasks(input);
+  expect(removed).toBe(0);
+  expect(content).toBe(input);
+});

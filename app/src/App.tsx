@@ -605,8 +605,33 @@ export default function App() {
       pushToast(`Daily note failed: ${(e as Error).message}`);
     }
   };
+  // Archive (permanently delete) completed/cancelled tasks. "archiveTasks" targets the
+  // active note; "archiveAllTasks" sweeps the whole vault. Git retains the history.
+  const archiveTasks = async () => {
+    const at = activeTab();
+    const fallback = at && at.root.kind === "leaf" ? at.root.content : null;
+    const c = focusedContent() ?? fallback;
+    if (!c || isSentinel(c) || !c.endsWith(".md")) {
+      pushToast("Open a note to archive its completed tasks");
+      return;
+    }
+    try {
+      const { removed } = await api.archiveTasks(c);
+      pushToast(removed > 0 ? `Archived ${removed} completed task${removed === 1 ? "" : "s"}` : "No completed tasks to archive");
+    } catch (e) {
+      pushToast(`Archive failed: ${(e as Error).message}`);
+    }
+  };
+  const archiveAllTasks = async () => {
+    try {
+      const { removed, files } = await api.archiveTasks();
+      pushToast(removed > 0 ? `Archived ${removed} task${removed === 1 ? "" : "s"} across ${files} note${files === 1 ? "" : "s"}` : "No completed tasks to archive");
+    } catch (e) {
+      pushToast(`Archive failed: ${(e as Error).message}`);
+    }
+  };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newSpreadsheet, newDrawing, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, openEditDictionary, archiveTasks, archiveAllTasks }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
