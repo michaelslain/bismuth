@@ -81,15 +81,21 @@ async function headSha(dir: string): Promise<string | null> {
   return sha || null;
 }
 
+// Parse `git diff --name-status -z` output. `-z` is mandatory: it emits paths verbatim
+// (NUL-delimited, never quoted), so non-ASCII / emoji / space paths survive intact — git's
+// default output octal-escapes and quotes those (e.g. "caf\303\251.md"), yielding paths that
+// don't resolve on disk. Layout per entry: <status>\0<path>\0, except renames/copies which
+// carry two paths: <Rxxx>\0<oldpath>\0<newpath>\0 (we report the new path).
 function parseNameStatus(out: string): ChangedFile[] {
-  return out
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const parts = line.split("\t");
-      return { status: parts[0][0], path: parts[parts.length - 1] }; // rename → new path
-    });
+  const tokens = out.split("\0").filter((t) => t.length > 0);
+  const files: ChangedFile[] = [];
+  for (let i = 0; i < tokens.length; ) {
+    const status = tokens[i++][0]; // first char: A/M/D/R/C…
+    if (status === "R" || status === "C") i++; // skip oldpath; the new path comes next
+    const path = tokens[i++];
+    if (path !== undefined) files.push({ status, path });
+  }
+  return files;
 }
 
 /** Current SHA of a checkpoint ref, or null if it doesn't exist yet. */
@@ -120,15 +126,15 @@ export async function checkpointDelta(
   const refExists =
     (await $`git -C ${dir} rev-parse --verify --quiet ${full}`.nothrow().quiet()).exitCode === 0;
   if (!refExists) {
-    const all = (await $`git -C ${dir} ls-tree -r --name-only HEAD`.text())
-      .split("\n")
-      .map((s) => s.trim())
+    // -z → NUL-delimited, verbatim (unquoted) paths; see parseNameStatus for why.
+    const all = (await $`git -C ${dir} ls-tree -r --name-only -z HEAD`.text())
+      .split("\0")
       .filter(Boolean);
     return { base: null, head, files: all.map((path) => ({ status: "A", path })) };
   }
 
   const base = (await $`git -C ${dir} rev-parse ${full}`.text()).trim();
-  const out = await $`git -C ${dir} diff --name-status ${full} HEAD`.text();
+  const out = await $`git -C ${dir} diff --name-status -z ${full} HEAD`.text();
   return { base, head, files: parseNameStatus(out) };
 }
 
