@@ -66,6 +66,9 @@ const deps: ExportDeps = {
   htmlToPdf,
   htmlToPng,
   drawingToPng,
+  // The Vite `?inline`-bundled inline-CSS module (~400KB), dynamic-imported only when an
+  // export actually contains math. Lives behind deps so exporters.ts stays bun-compilable.
+  katexCss: async () => (await import("./export/katexCss")).katexInlineCss(),
 };
 
 export function ExportView(props: { path: string }) {

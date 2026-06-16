@@ -18,6 +18,7 @@ function deps(over: Partial<ExportDeps> = {}): ExportDeps {
     htmlToPdf: async (html) => new TextEncoder().encode("PDF:" + html.length),
     htmlToPng: async (html) => ({ bytes: new TextEncoder().encode("PNG:" + html.length), dataUrl: "data:image/png;base64,AQI=" }),
     drawingToPng: async () => ({ bytes: new Uint8Array([1, 2]), dataUrl: "data:image/png;base64,AQI=" }),
+    katexCss: async () => "",
     ...over,
   };
 }

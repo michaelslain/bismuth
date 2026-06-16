@@ -54,12 +54,14 @@ async function renderedBody(path: string, deps: ExportDeps): Promise<string> {
 // download and the off-screen iframe the PDF/PNG rasterizers snapshot can't reach the
 // app's loaded KaTeX CSS/fonts, so math would otherwise render with broken metrics. The
 // heavy inline-CSS module is dynamic-imported ONLY when math is actually present.
-async function wrapBody(body: string, name: string, theme: ExportTheme): Promise<string> {
+async function wrapBody(body: string, name: string, theme: ExportTheme, deps: ExportDeps): Promise<string> {
   // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
   // far more precise than a bare "katex" substring, which the word "katex" in prose would
-  // wrongly trip, embedding ~368KB of fonts into a math-free export.
+  // wrongly trip, embedding ~368KB of fonts into a math-free export. The inline CSS comes
+  // from deps.katexCss() (env-specific; see ExportDeps) so this module stays bun-compilable
+  // for headless consumers (the cli binary) that can't resolve katexCss.ts's Vite imports.
   const extraHead = body.includes('class="katex')
-    ? `<style>${(await import("./katexCss")).katexInlineCss()}</style>`
+    ? `<style>${await deps.katexCss()}</style>`
     : "";
   return wrapHtmlDocument(body, name, theme, extraHead);
 }
@@ -95,7 +97,7 @@ export async function renderPreview(
     return { previewHtml: wrapHtmlDocument(pre, name, theme) };
   }
   // html + pdf + png share the same rendered HTML body.
-  return { previewHtml: await wrapBody(await renderedBody(path, deps), name, theme) };
+  return { previewHtml: await wrapBody(await renderedBody(path, deps), name, theme, deps) };
 }
 
 /** Render a file to the chosen format, producing downloadable bytes. Impure I/O via `deps`. */
@@ -117,7 +119,7 @@ export async function renderExport(
       return { bytes: TEXT.encode(md), mime: "text/markdown", filename: `${name}.md` };
     }
     case "html": {
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme);
+      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
       return { bytes: TEXT.encode(doc), mime: "text/html", filename: `${name}.html`, previewHtml: doc };
     }
     case "pdf": {
@@ -126,7 +128,7 @@ export async function renderExport(
         const pdf = await deps.htmlToPdf(wrapHtmlDocument(`<img src="${dataUrl}">`, name, theme));
         return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewImg: dataUrl };
       }
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme);
+      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
       const pdf = await deps.htmlToPdf(doc);
       return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewHtml: doc };
     }
@@ -137,7 +139,7 @@ export async function renderExport(
         const { bytes, dataUrl } = await deps.drawingToPng(await deps.read(path), theme);
         return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
       }
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme);
+      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
       const { bytes, dataUrl } = await deps.htmlToPng(doc);
       return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
     }
