@@ -115,6 +115,13 @@ export function GraphView(props: {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
 
+  // The daemon graph mode only exists while the daemon integration is enabled (the
+  // settings master switch). If it's turned off while daemon mode is showing, fall back
+  // to "both" so the mode toggle never points at a now-hidden option.
+  createEffect(() => {
+    if (props.mode === "daemon" && !settings.daemon.enabled) props.setMode("both");
+  });
+
   // Rebuild legend rows + search items from the renderer's current node set. Called after each
   // render() so the cluster directory tracks the live graph.
   const refreshUiData = () => {
@@ -252,7 +259,7 @@ export function GraphView(props: {
           value={props.mode}
           onChange={props.setMode}
           size="sm"
-          options={(["2nd", "3rd", "both", "agents", "daemon"] as GraphMode[]).map((id) => ({
+          options={(["2nd", "3rd", "both", "agents", ...(settings.daemon.enabled ? ["daemon"] : [])] as GraphMode[]).map((id) => ({
             id,
             title: MODE_LABEL[id],
             label: (

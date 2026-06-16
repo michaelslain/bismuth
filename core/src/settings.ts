@@ -11,6 +11,7 @@ import { SETTINGS_SCHEMA, DEFAULTS } from "./schema/settingsSchema";
 import type { Schema, SchemaEntry } from "./schema/types";
 import type { DailyNoteConfig } from "./dailyNote";
 import type { SrsConfig } from "./srs/scheduler";
+import { thisDeviceId } from "./daemon";
 
 export const SETTINGS_FILE = "settings.yaml";
 
@@ -125,6 +126,23 @@ function fillMissing(doc: Document, map: YAMLMap, schema: Schema): boolean {
 }
 
 /**
+ * One-time daemon-config migration. The original schema shipped `daemon.home: ""`
+ * (which rendered as an empty string — looked broken) alongside a `daemon.enabled`
+ * flag that was read nowhere. Normalize an empty home to the portable default so it
+ * reads as a real path, and ADOPT a daemon already installed on this machine
+ * (enabled = true) so the integration works out of the box. Idempotent: only the old
+ * empty-home shape is touched, so once migrated a user's own home/enabled choices are
+ * never overwritten (a non-empty home — including the new default — short-circuits).
+ * Returns true if it changed the doc.
+ */
+function migrateDaemonConfig(doc: Document): boolean {
+  if (doc.getIn(["daemon", "home"]) !== "") return false; // configured already / new default
+  doc.setIn(["daemon", "home"], "~/.claude-bot");
+  if (thisDeviceId()) doc.setIn(["daemon", "enabled"], true); // a real daemon is present → adopt
+  return true;
+}
+
+/**
  * On open: add any missing schema defaults to settings.yaml, preserving comments,
  * key order, user values, and unknown keys. Absent file → write full defaults.
  * Corrupt/empty file → left untouched. Writes only when something actually changed,
@@ -143,8 +161,9 @@ export async function reconcileSettings(vault: string): Promise<void> {
     return;
   }
   if (!isMap(doc.contents)) return; // empty/scalar/corrupt — leave alone
-  const mutated = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA);
-  if (mutated) await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  const filled = fillMissing(doc, doc.contents as YAMLMap, SETTINGS_SCHEMA);
+  const migrated = migrateDaemonConfig(doc);
+  if (filled || migrated) await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
 }
 
 /**

@@ -1,10 +1,10 @@
 // core/test/settings.test.ts
-import { test, expect, describe, it } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { test, expect, describe, it, afterEach } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
-import { readSettings, getVaultSchema } from "../src/settings";
+import { readSettings, getVaultSchema, reconcileSettings } from "../src/settings";
 import { keySuggestions } from "../src/schema/suggest";
 import { validateDocument } from "../src/schema/validate";
 
@@ -551,5 +551,52 @@ describe("concurrent setSettingInFile", () => {
     // Should complete in reasonable time (not severely bottlenecked)
     // Allowing 5s for 150 mutations on typical hardware
     expect(duration).toBeLessThan(5000);
+  });
+});
+
+describe("reconcileSettings daemon migration", () => {
+  const OLD_SHAPE = 'daemon:\n  enabled: false\n  home: ""\n  autoUpdate: true\n';
+  let prevHome: string | undefined;
+  let tmpHome: string | undefined;
+
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.OA_CLAUDEBOT_HOME;
+    else process.env.OA_CLAUDEBOT_HOME = prevHome;
+    if (tmpHome) { try { rmSync(tmpHome, { recursive: true, force: true }); } catch { /* */ } tmpHome = undefined; }
+  });
+
+  it("rewrites an empty daemon.home to the portable default; enabled stays off with no daemon", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, "settings.yaml", OLD_SHAPE);
+    prevHome = process.env.OA_CLAUDEBOT_HOME;
+    tmpHome = mkdtempSync(join(tmpdir(), "cb-empty-")); // a home with NO device-id → not installed
+    process.env.OA_CLAUDEBOT_HOME = tmpHome;
+    await reconcileSettings(vault);
+    const res = await readSettings(vault);
+    expect((res!.data as any).daemon).toMatchObject({ home: "~/.claude-bot", enabled: false });
+  });
+
+  it("adopts an installed daemon (enabled=true) when a device-id is present", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, "settings.yaml", OLD_SHAPE);
+    prevHome = process.env.OA_CLAUDEBOT_HOME;
+    tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
+    writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // looks installed on this machine
+    process.env.OA_CLAUDEBOT_HOME = tmpHome;
+    await reconcileSettings(vault);
+    const res = await readSettings(vault);
+    expect((res!.data as any).daemon).toMatchObject({ home: "~/.claude-bot", enabled: true });
+  });
+
+  it("leaves an already-configured (non-empty) daemon.home untouched", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, "settings.yaml", "daemon:\n  enabled: false\n  home: /custom/bot\n  autoUpdate: true\n");
+    prevHome = process.env.OA_CLAUDEBOT_HOME;
+    tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
+    writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // installed, but home is already set
+    process.env.OA_CLAUDEBOT_HOME = tmpHome;
+    await reconcileSettings(vault);
+    const res = await readSettings(vault);
+    expect((res!.data as any).daemon).toMatchObject({ home: "/custom/bot", enabled: false });
   });
 });

@@ -4,7 +4,7 @@
 // devices.json / owner.json), then asserts the contract-exact shapes.
 import { test, expect, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import {
   listDevices,
@@ -15,6 +15,8 @@ import {
   setCronEnabled,
   setProcessEnabled,
   runCron,
+  claudeBotHome,
+  setClaudeBotHomeOverride,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
@@ -36,6 +38,16 @@ afterEach(() => {
   for (const home of created.splice(0)) {
     try { rmSync(home, { recursive: true, force: true }); } catch { /* */ }
   }
+});
+
+test("claudeBotHome expands a ~ home override (and empty falls back) to the real home dir", () => {
+  delete process.env.OA_CLAUDEBOT_HOME; // the env var wins when set — clear it for the override path
+  setClaudeBotHomeOverride("~/.claude-bot");
+  expect(claudeBotHome()).toBe(join(homedir(), ".claude-bot"));
+  setClaudeBotHomeOverride("~");
+  expect(claudeBotHome()).toBe(homedir());
+  setClaudeBotHomeOverride(""); // empty/whitespace → built-in default (also ~/.claude-bot)
+  expect(claudeBotHome()).toBe(join(homedir(), ".claude-bot"));
 });
 
 test("missing files: everything degrades to empty/null, never throws", () => {
