@@ -15,11 +15,15 @@ let nextId = 1;
 // click / external dismiss) can cancel the pending timeout instead of leaking it.
 const timers = new Map<number, ReturnType<typeof setTimeout>>();
 
-/** Add a toast; auto-dismisses after `ttl` ms. Returns its id so callers can replace/dismiss it. */
+/** Add a toast; auto-dismisses after `ttl` ms. Returns its id so callers can replace/dismiss it.
+ *  Pass `ttl <= 0` (or a non-finite value) to make the toast PERSISTENT — no auto-dismiss timer.
+ *  That's the mode progress toasts use: push once, mutate via updateToast, dismissToast when done.
+ *  (A literal 0 would otherwise schedule setTimeout(…, 0) and the toast would vanish on the next
+ *  tick, before any awaited work resolves — so guard the timer here.) */
 export function pushToast(message: string, action?: Toast["action"], ttl = 5000): number {
   const id = nextId++;
   setToasts((prev) => [...prev, { id, message, action }]);
-  timers.set(id, setTimeout(() => dismissToast(id), ttl));
+  if (ttl > 0 && Number.isFinite(ttl)) timers.set(id, setTimeout(() => dismissToast(id), ttl));
   return id;
 }
 
