@@ -126,6 +126,7 @@ export interface Settings {
   // comma-separate alternatives ("Mod+`, Mod+J"). App.tsx matches events
   // against these (app/src/keybindings.ts), never a hardcoded combo.
   keybindings: {
+    "find": string;
     "command-palette": string;
     "quick-switcher": string;
     "terminal": string;

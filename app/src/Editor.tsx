@@ -1,9 +1,10 @@
 // app/src/Editor.tsx
-import { createEffect, createMemo, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, onCleanup, onMount, Show } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
+import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
@@ -35,6 +36,8 @@ import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wik
 import { findBareUrls } from "./editor/urls";
 import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
+import { matchesKeybinding } from "./keybindings";
+import { findExtension } from "./editor/findPanel";
 import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor } from "./editorRegistry";
 import { saveScroll, loadScroll } from "./scrollMemory";
@@ -231,6 +234,7 @@ async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, n
 
 export function Editor(props: { path: string | null; initialText?: string; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
+  let wrapper!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
   // The text of our most recent write to the current buffer. Used to recognize the
@@ -291,6 +295,28 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   const onBeforeUnload = (): void => flushSave(true);
   if (typeof window !== "undefined") window.addEventListener("beforeunload", onBeforeUnload);
   onCleanup(() => { if (typeof window !== "undefined") window.removeEventListener("beforeunload", onBeforeUnload); });
+
+  // Find-in-note (default Cmd/Ctrl+F, rebindable via settings.keybindings.find). Handled
+  // here rather than in App.tsx's global handler so it only fires for the focused editor
+  // and never collides with the browser's native find. Capture phase + stopPropagation so
+  // it wins before CodeMirror's own keymap and App.tsx's window-level shortcut handler.
+  const onFindKey = (e: KeyboardEvent): void => {
+    if (!view || e.repeat) return;
+    if (!matchesKeybinding(e, settings.keybindings.find)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (searchPanelOpen(view.state)) {
+      const inp = view.dom.querySelector<HTMLInputElement>(".oa-find-input");
+      inp?.focus();
+      inp?.select();
+    } else {
+      openSearchPanel(view);
+    }
+  };
+  onMount(() => {
+    wrapper.addEventListener("keydown", onFindKey, true);
+    onCleanup(() => wrapper.removeEventListener("keydown", onFindKey, true));
+  });
 
   // Re-validate the open buffer when the property registry changes — e.g. you add
   // a property to settings.yaml's `properties:` section. CM linters only re-run on
@@ -390,6 +416,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       ]),
       editorTheme,
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
+      // In-editor find (Cmd/Ctrl+F by default) — custom bar, see editor/findPanel.ts.
+      // The keybinding is wired below (host capture handler) so it stays rebindable.
+      findExtension(),
       autosave,
       // Right-click a spelling / grammar / property mark → the shared app menu.
       editorContextMenu(),
@@ -706,7 +735,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   });
 
   return (
-    <div style={{ display: "flex", "flex-direction": "column", height: "100%", overflow: "hidden" }}>
+    <div ref={wrapper} style={{ display: "flex", "flex-direction": "column", height: "100%", overflow: "hidden", position: "relative" }}>
       <Show when={showTitle()}>
         <NoteTitle path={currentPath()!} />
       </Show>
