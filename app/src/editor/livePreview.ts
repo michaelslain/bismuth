@@ -4,6 +4,7 @@ import { type Range, type Text, StateField, StateEffect, type EditorState } from
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
+import { latexTokenDecorations } from "./latexHighlight";
 import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
@@ -601,13 +602,37 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
 
         // inline math: $...$ (not $$, at least one non-$ char inside)
         // negative lookbehind/ahead for $ to avoid matching $$
+        // Render it display-STYLE (\displaystyle — full-size fractions/sums/limits, the
+        // same typography as a $$ block) but still INLINE (displayMode:false → flows in the
+        // text, no jarring centered line break mid-sentence). So `$\frac{a}{b}$` looks like
+        // the block instead of the cramped default inline style. `\displaystyle` is a valid
+        // KaTeX switch; throwOnError:false in renderMath shrugs off anything malformed.
         const inlineMathRe = /(?<!\$)\$([^$\n]+)\$(?!\$)/g;
         for (const m of text.matchAll(inlineMathRe)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
-          const expr = m[1];
+          const expr = `\\displaystyle ${m[1]}`;
           deco.push(Decoration.replace({ widget: new MathWidget(expr, false) }).range(s, end));
+        }
+      } else {
+        // Cursor on this line → the $…$ / $$…$$ source shows raw (no widget), so
+        // syntax-highlight the LaTeX (\commands, braces, ^/_, %comments, numbers) and dim
+        // the $ delimiters the way revealed **/`` ` `` marks are dimmed. Mirrors the
+        // off-cursor regexes so the same spans that would render as math get highlighted.
+        for (const m of text.matchAll(/\$\$([^$]+)\$\$/g)) {
+          const s = line.from + (m.index ?? 0);
+          const end = s + m[0].length;
+          if (inHtmlSpan(s, end)) continue;
+          deco.push(syntaxMark.range(s, s + 2), syntaxMark.range(end - 2, end));
+          for (const d of latexTokenDecorations(s + 2, m[1])) deco.push(d);
+        }
+        for (const m of text.matchAll(/(?<!\$)\$([^$\n]+)\$(?!\$)/g)) {
+          const s = line.from + (m.index ?? 0);
+          const end = s + m[0].length;
+          if (inHtmlSpan(s, end)) continue;
+          deco.push(syntaxMark.range(s, s + 1), syntaxMark.range(end - 1, end));
+          for (const d of latexTokenDecorations(s + 1, m[1])) deco.push(d);
         }
       }
 
