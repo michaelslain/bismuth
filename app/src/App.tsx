@@ -595,8 +595,18 @@ export default function App() {
       return;
     }
     if (!status.available) {
-      updateToast(id, "Bismuth is already up to date");
-      setTimeout(() => dismissToast(id), 4000);
+      // available:false has several causes — only "no reason" means genuinely up to date.
+      // A reason (TCC access-denied / non-source build / missing repo) means we COULDN'T check,
+      // so say that honestly instead of falsely claiming it's up to date.
+      const r = status.reason;
+      const msg =
+        !r ? "Bismuth is up to date"
+        : r === "not-a-source-build" ? "This build can't self-update (not built from source)"
+        : r === "access-denied" ? "Can't read the update source — grant Bismuth Files & Folders access in System Settings"
+        : r === "no-upstream" ? "No upstream configured to update from"
+        : "Update source unavailable — couldn't check for updates";
+      updateToast(id, msg);
+      setTimeout(() => dismissToast(id), 6000);
       return;
     }
     updateToast(id, `Updating Bismuth (${status.behind} commit${status.behind === 1 ? "" : "s"} behind)…`);
