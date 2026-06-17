@@ -2,13 +2,17 @@
 import { renderMarkdown } from "../bases/markdown";
 import { wrapHtmlDocument, escapeHtml } from "./htmlTemplate";
 import { tableToMarkdown } from "./mdTable";
+import { tableToCsv } from "./csvTable";
 import { tableToHtml } from "./rowsHtml";
 import { baseToTable } from "./baseTable";
+import { baseViewHtml } from "./baseView";
 import { snapshotToHtmlTable } from "./sheetHtml";
 import { formatsFor, ext } from "./formats";
+import { defaultExportOptions } from "./options";
+import { paletteFor } from "./exportTheme";
 import { parseFrontmatter } from "../../../core/src/frontmatter";
 import { whenMathReady } from "../editor/katexLoader";
-import type { ExportFormat, ExportResult, ExportPreview, ExportDeps, ExportTheme } from "./types";
+import type { ExportFormat, ExportResult, ExportPreview, ExportDeps, ExportTheme, ExportOptions, ThemePalette } from "./types";
 
 const TEXT = new TextEncoder();
 
@@ -23,15 +27,29 @@ function baseName(path: string): string {
   return dot === -1 ? file : file.slice(0, dot);
 }
 
-// The canonical rendered-HTML body for a text-ish file (drives html + pdf). Drawings
-// are raster and don't go through here.
-async function bodyHtml(path: string, deps: ExportDeps): Promise<string> {
+// The rendered body of a text-ish file, plus any view-specific CSS to inject into the
+// document head (empty for prose/sheet/data-table; populated for a visual base view).
+// Drawings are raster and don't go through here.
+async function bodyHtml(
+  path: string,
+  deps: ExportDeps,
+  opts: ExportOptions,
+  palette: ThemePalette,
+): Promise<{ html: string; css: string }> {
   const kind = ext(path);
-  if (kind === "sheet") return snapshotToHtmlTable(JSON.parse((await deps.read(path)) || "{}"));
+  if (kind === "sheet") return { html: snapshotToHtmlTable(JSON.parse((await deps.read(path)) || "{}")), css: "" };
   const text = await deps.read(path);
-  // A `type: base` md file renders as its query's table; any other md is prose.
-  if (isBaseText(text)) return tableToHtml(await baseToTable(path, deps));
-  if (kind === "md") return renderMarkdown(text);
+  // A `type: base` md file renders as its chosen view: "visual" → the view AS ITS KIND
+  // (calendar grid / cards / kanban / list); "data" → the view's flat table. Any other
+  // md is prose.
+  if (isBaseText(text)) {
+    if (opts.mode === "visual") {
+      const v = await baseViewHtml(path, deps, opts, palette);
+      return { html: v.body, css: v.css };
+    }
+    return { html: tableToHtml(await baseToTable(path, deps, opts.viewIndex)), css: "" };
+  }
+  if (kind === "md") return { html: renderMarkdown(text), css: "" };
   throw new Error(`No HTML body for ${kind || "this file"}`);
 }
 
@@ -42,62 +60,86 @@ async function bodyHtml(path: string, deps: ExportDeps): Promise<string> {
 // Matches an UNRENDERED math placeholder span (precise — a bare "data-math=" substring
 // would also trip on prose/code that mentions the attribute).
 const UNRENDERED_MATH = /<span class="oa-math[^"]*" data-math=/;
-async function renderedBody(path: string, deps: ExportDeps): Promise<string> {
-  const html = await bodyHtml(path, deps);
-  if (!UNRENDERED_MATH.test(html)) return html; // no math, or already rendered
+async function renderedBody(
+  path: string,
+  deps: ExportDeps,
+  opts: ExportOptions,
+  palette: ThemePalette,
+): Promise<{ html: string; css: string }> {
+  const first = await bodyHtml(path, deps, opts, palette);
+  if (!UNRENDERED_MATH.test(first.html)) return first; // no math, or already rendered
   await whenMathReady();
-  return bodyHtml(path, deps);
+  return bodyHtml(path, deps, opts, palette);
 }
 
 // Wrap a rendered body in a standalone document, inlining a self-contained KaTeX
-// stylesheet (fonts as data: URIs) when the body contains rendered math. The .html
-// download and the off-screen iframe the PDF/PNG rasterizers snapshot can't reach the
-// app's loaded KaTeX CSS/fonts, so math would otherwise render with broken metrics. The
-// heavy inline-CSS module is dynamic-imported ONLY when math is actually present.
-async function wrapBody(body: string, name: string, theme: ExportTheme, deps: ExportDeps): Promise<string> {
+// stylesheet (fonts as data: URIs) when the body contains rendered math, plus any
+// view-specific CSS (`extraCss`) for a visual base export. The .html download and the
+// off-screen iframe the PDF/PNG rasterizers snapshot can't reach the app's loaded
+// stylesheets, so both are inlined here.
+async function wrapBody(
+  body: string,
+  name: string,
+  palette: ThemePalette,
+  deps: ExportDeps,
+  extraCss = "",
+): Promise<string> {
   // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
-  // far more precise than a bare "katex" substring, which the word "katex" in prose would
-  // wrongly trip, embedding ~368KB of fonts into a math-free export. The inline CSS comes
-  // from deps.katexCss() (env-specific; see ExportDeps) so this module stays bun-compilable
-  // for headless consumers (the cli binary) that can't resolve katexCss.ts's Vite imports.
-  const extraHead = body.includes('class="katex')
-    ? `<style>${await deps.katexCss()}</style>`
-    : "";
-  return wrapHtmlDocument(body, name, theme, extraHead);
+  // far more precise than a bare "katex" substring. The inline CSS comes from
+  // deps.katexCss() (env-specific; see ExportDeps) so this module stays bun-compilable
+  // for headless consumers (the cli binary).
+  const katex = body.includes('class="katex') ? `<style>${await deps.katexCss()}</style>` : "";
+  const view = extraCss ? `<style>${extraCss}</style>` : "";
+  return wrapHtmlDocument(body, name, palette, view + katex);
 }
 
 // The exact markdown text a `md` export would write — also shown (in a <pre>) as the
 // md-format preview so it isn't blank.
-async function markdownText(path: string, deps: ExportDeps): Promise<string> {
+async function markdownText(path: string, deps: ExportDeps, opts: ExportOptions): Promise<string> {
   const text = await deps.read(path);
-  // A `type: base` md exports its table as a markdown table; any other md is its own text.
-  return isBaseText(text) ? tableToMarkdown(await baseToTable(path, deps)) : text;
+  // A `type: base` md exports its chosen view's table as a markdown table; any other md
+  // is its own text.
+  return isBaseText(text) ? tableToMarkdown(await baseToTable(path, deps, opts.viewIndex)) : text;
+}
+
+// CSV is base-only (a flat-table format). Non-base files have no sensible CSV form.
+async function csvText(path: string, deps: ExportDeps, opts: ExportOptions): Promise<string> {
+  const text = await deps.read(path);
+  if (!isBaseText(text)) throw new Error("CSV export is only available for bases");
+  return tableToCsv(await baseToTable(path, deps, opts.viewIndex));
 }
 
 /**
- * Compute ONLY what the export tab displays for (path, format, theme). Never produces
- * export bytes and never runs html->pdf — so flipping formats in the UI is instant and
- * has no DOM side effects. The PDF preview is just the HTML the PDF will be rendered from.
+ * Compute ONLY what the export tab displays for (path, format, theme, options). Never
+ * produces export bytes and never runs html->pdf — so flipping formats/options in the UI
+ * is instant and has no DOM side effects. The PDF/PNG preview is just the source HTML.
  */
 export async function renderPreview(
   path: string,
   format: ExportFormat,
   deps: ExportDeps,
   theme: ExportTheme = "dark",
+  opts: ExportOptions = defaultExportOptions(),
 ): Promise<ExportPreview> {
   const kind = ext(path);
   const name = baseName(path);
+  const palette = paletteFor(theme, opts.palette);
 
   if (kind === "draw") {
     const { dataUrl } = await deps.drawingToPng(await deps.read(path), theme);
     return { previewImg: dataUrl };
   }
   if (format === "md") {
-    const pre = `<pre>${escapeHtml(await markdownText(path, deps))}</pre>`;
-    return { previewHtml: wrapHtmlDocument(pre, name, theme) };
+    const pre = `<pre>${escapeHtml(await markdownText(path, deps, opts))}</pre>`;
+    return { previewHtml: wrapHtmlDocument(pre, name, palette) };
   }
-  // html + pdf + png share the same rendered HTML body.
-  return { previewHtml: await wrapBody(await renderedBody(path, deps), name, theme, deps) };
+  if (format === "csv") {
+    const pre = `<pre>${escapeHtml(await csvText(path, deps, opts))}</pre>`;
+    return { previewHtml: wrapHtmlDocument(pre, name, palette) };
+  }
+  // html + pdf + png share the same rendered HTML body (+ view CSS).
+  const { html, css } = await renderedBody(path, deps, opts, palette);
+  return { previewHtml: await wrapBody(html, name, palette, deps, css) };
 }
 
 /** Render a file to the chosen format, producing downloadable bytes. Impure I/O via `deps`. */
@@ -106,29 +148,38 @@ export async function renderExport(
   format: ExportFormat,
   deps: ExportDeps,
   theme: ExportTheme = "dark",
+  opts: ExportOptions = defaultExportOptions(),
 ): Promise<ExportResult> {
-  if (!formatsFor(path).includes(format)) {
+  // csv is base-conditional (not in the extension-keyed matrix); csvText enforces base-ness.
+  if (format !== "csv" && !formatsFor(path).includes(format)) {
     throw new Error(`Cannot export ${ext(path) || "this file"} as ${format}`);
   }
   const name = baseName(path);
   const kind = ext(path);
+  const palette = paletteFor(theme, opts.palette);
 
   switch (format) {
     case "md": {
-      const md = await markdownText(path, deps);
+      const md = await markdownText(path, deps, opts);
       return { bytes: TEXT.encode(md), mime: "text/markdown", filename: `${name}.md` };
     }
+    case "csv": {
+      const csv = await csvText(path, deps, opts);
+      return { bytes: TEXT.encode(csv), mime: "text/csv", filename: `${name}.csv` };
+    }
     case "html": {
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
+      const { html, css } = await renderedBody(path, deps, opts, palette);
+      const doc = await wrapBody(html, name, palette, deps, css);
       return { bytes: TEXT.encode(doc), mime: "text/html", filename: `${name}.html`, previewHtml: doc };
     }
     case "pdf": {
       if (kind === "draw") {
         const { dataUrl } = await deps.drawingToPng(await deps.read(path), theme);
-        const pdf = await deps.htmlToPdf(wrapHtmlDocument(`<img src="${dataUrl}">`, name, theme));
+        const pdf = await deps.htmlToPdf(wrapHtmlDocument(`<img src="${dataUrl}">`, name, palette));
         return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewImg: dataUrl };
       }
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
+      const { html, css } = await renderedBody(path, deps, opts, palette);
+      const doc = await wrapBody(html, name, palette, deps, css);
       const pdf = await deps.htmlToPdf(doc);
       return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewHtml: doc };
     }
@@ -139,7 +190,8 @@ export async function renderExport(
         const { bytes, dataUrl } = await deps.drawingToPng(await deps.read(path), theme);
         return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
       }
-      const doc = await wrapBody(await renderedBody(path, deps), name, theme, deps);
+      const { html, css } = await renderedBody(path, deps, opts, palette);
+      const doc = await wrapBody(html, name, palette, deps, css);
       const { bytes, dataUrl } = await deps.htmlToPng(doc);
       return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
     }

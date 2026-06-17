@@ -1,6 +1,6 @@
 // app/src/export/formats.test.ts
 import { test, expect, describe } from "bun:test";
-import { formatsFor, isExportable } from "./formats";
+import { formatsFor, isExportable, formatsForOptions } from "./formats";
 
 describe("formatsFor", () => {
   test("note offers html, pdf, png, md", () => {
@@ -25,5 +25,19 @@ describe("formatsFor", () => {
   test("isExportable reflects formatsFor", () => {
     expect(isExportable("x.md")).toBe(true);
     expect(isExportable("::graph")).toBe(false);
+  });
+});
+
+describe("formatsForOptions", () => {
+  test("non-base is unchanged from the extension matrix", () => {
+    expect(formatsForOptions("note.md", false, "data")).toEqual(["html", "pdf", "png", "md"]);
+    expect(formatsForOptions("note.md", false, "visual")).toEqual(["html", "pdf", "png", "md"]);
+    expect(formatsForOptions("sketch.draw", false, "data")).toEqual(["pdf", "png"]);
+  });
+  test("base data mode adds md + csv (flat-text forms)", () => {
+    expect(formatsForOptions("Reading.md", true, "data")).toEqual(["html", "pdf", "png", "md", "csv"]);
+  });
+  test("base visual mode offers only rendered forms (no md/csv)", () => {
+    expect(formatsForOptions("Reading.md", true, "visual")).toEqual(["html", "pdf", "png"]);
   });
 });

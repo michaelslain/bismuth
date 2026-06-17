@@ -1,7 +1,10 @@
 // app/src/export/exporters.test.ts
 import { test, expect, describe } from "bun:test";
 import { renderExport, renderPreview } from "./exporters";
-import type { ExportDeps } from "./types";
+import { defaultExportOptions } from "./options";
+import type { ExportDeps, ExportOptions } from "./types";
+
+const opts = (o: Partial<ExportOptions>): ExportOptions => ({ ...defaultExportOptions(), ...o });
 
 const enc = new TextDecoder();
 
@@ -107,5 +110,52 @@ describe("renderPreview (never generates bytes / never runs html->pdf)", () => {
     const light = await renderPreview("a/note.md", "html", deps(), "light");
     expect(dark.previewHtml).not.toBe(light.previewHtml);   // different theme styles
     expect(light.previewHtml).toContain("#ffffff");
+  });
+});
+
+// Fixtures for the export-options paths: a calendar base + a two-view base.
+const CAL_MD = "---\ntype: base\nviews:\n  - type: calendar\n    name: Cal\n---\n";
+const TWOVIEW_MD =
+  "---\ntype: base\nviews:\n  - type: table\n    order:\n      - file.name\n  - type: table\n    order:\n      - author\n---\n";
+
+function optDeps(text: string, rows: any[]): ExportDeps {
+  return deps({ read: async () => text, resolveRows: async () => rows });
+}
+
+describe("export options — view selection / data vs visual / csv", () => {
+  test("data mode + viewIndex selects which view's columns export", async () => {
+    const d = optDeps(TWOVIEW_MD, [{ file: { name: "Dune", path: "Dune.md" } as any, note: { author: "Herbert" }, formula: {} }]);
+    const v0 = await renderExport("Two.md", "md", d, "dark", opts({ viewIndex: 0 }));
+    const v1 = await renderExport("Two.md", "md", d, "dark", opts({ viewIndex: 1 }));
+    expect(enc.decode(v0.bytes)).toContain("| name |");
+    expect(enc.decode(v1.bytes)).toContain("| author |");
+  });
+
+  test("base -> csv builds a CSV from the resolved rows", async () => {
+    const d = optDeps(BASE_MD, [{ file: { name: "Dune", path: "Dune.md" } as any, note: { author: "Herbert" }, formula: {} }]);
+    const r = await renderExport("Reading.md", "csv", d);
+    expect(r.filename).toBe("Reading.csv");
+    expect(r.mime).toBe("text/csv");
+    expect(enc.decode(r.bytes)).toContain("name,author");
+  });
+
+  test("csv export of a non-base file is rejected", async () => {
+    await expect(renderExport("a/note.md", "csv", deps())).rejects.toThrow(/only available for bases/);
+  });
+
+  test("calendar base + visual mode renders the calendar grid (not a table)", async () => {
+    const d = optDeps(CAL_MD, [{ file: { name: "", path: "" } as any, note: { title: "Dentist", date: "2026-06-10" }, formula: {} }]);
+    const r = await renderExport("Cal.md", "html", d, "dark", opts({ mode: "visual", calStart: "2026-06-15" }));
+    expect(r.previewHtml).toContain("exp-cal-month");   // calendar grid markup
+    expect(r.previewHtml).toContain("Dentist");
+    expect(r.previewHtml).toContain(".exp-cal-cell");    // injected calendar CSS
+    expect(r.previewHtml).not.toContain("<th>");          // NOT the flat table
+  });
+
+  test("calendar base + data mode still exports the flat table", async () => {
+    const d = optDeps(CAL_MD, [{ file: { name: "", path: "" } as any, note: { title: "Dentist", date: "2026-06-10" }, formula: {} }]);
+    const r = await renderExport("Cal.md", "html", d, "dark", opts({ mode: "data" }));
+    expect(r.previewHtml).toContain("<th>");             // flat table
+    expect(r.previewHtml).not.toContain("exp-cal-month");
   });
 });
