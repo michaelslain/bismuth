@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, For, Show } from 'solid-js'
+import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { CalendarEvent, RecurrenceType } from '../types'
 import { categories, showEventModal, recurrenceAction, events } from '../state'
 import { EventStore, uuid } from '../EventStore'
@@ -10,7 +10,7 @@ import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
-import { renderMarkdown } from '../../bases/markdown'
+import { MarkdownField } from '../../ui/MarkdownField'
 
 // Segmented repeat control: label shown to the user → stored RecurrenceType ('' = none).
 const RECUR: [string, RecurrenceType | ''][] = [
@@ -38,10 +38,6 @@ export function EventModal(props: { store: EventStore }) {
   const [location, setLocation] = createSignal(editing?.location ?? '')
   const [link, setLink] = createSignal(editing?.link ?? '')
   const [description, setDescription] = createSignal(editing?.description ?? '')
-  const [descEditing, setDescEditing] = createSignal(false)
-  // focus the description textarea when entering edit mode (TextInput renders fresh)
-  let descRef: HTMLDivElement | undefined
-  createEffect(() => { if (descEditing()) queueMicrotask(() => descRef?.querySelector('textarea')?.focus()) })
   const [category, setCategory] = createSignal(editing?.category ?? '')
   const [recType, setRecType] = createSignal<RecurrenceType | ''>(editing?.recurrence?.type ?? '')
   const [recDays, setRecDays] = createSignal<number[]>(editing?.recurrence?.daysOfWeek ?? getDefaultDaysOfWeek())
@@ -95,11 +91,16 @@ export function EventModal(props: { store: EventStore }) {
     // Escape-to-close is handled by <Modal>; this keeps the calendar-specific
     // Enter-to-submit / Backspace-to-delete shortcuts.
     function onKey(e: KeyboardEvent): void {
-      const tag = (e.target as HTMLElement)?.tagName
-      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      const el = e.target as HTMLElement | null
+      const tag = el?.tagName
+      // The description editor is CodeMirror, whose editable surface is a contenteditable <div>
+      // (tagName 'DIV') — the tag checks below wouldn't spare it, so exclude it explicitly.
+      // Otherwise Enter would save and Backspace would delete the event mid-typing.
+      const inEditor = !!el?.closest?.('.cm-editor')
+      if (e.key === 'Enter' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !inEditor) {
         e.preventDefault()
         handleSave()
-      } else if (e.key === 'Backspace' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+      } else if (e.key === 'Backspace' && tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !inEditor) {
         e.preventDefault()
         handleDelete()
       }
@@ -162,23 +163,13 @@ export function EventModal(props: { store: EventStore }) {
           </div>
         </div>
 
-        {/* description — markdown: edit as plain text, renders on blur */}
-        <div class="evm-field" ref={descRef}>
+        {/* description — live-preview markdown, editable exactly like the note editor */}
+        <div class="evm-field">
           <div class="evm-lab"><Icon value="text-align-start" size={12} strokeWidth={2} />Description <span class="opt">· markdown</span></div>
-          <Show
-            when={descEditing() || !description().trim()}
-            fallback={
-              <div class="evm-mdprev" role="button" tabindex="0"
-                title="Click to edit"
-                onClick={() => setDescEditing(true)}
-                innerHTML={renderMarkdown(description())} />
-            }
-          >
-            <TextInput multiline placeholder="Notes, agenda, links to vault… (markdown)"
-              value={description()}
-              onInput={setDescription}
-              onBlur={() => setDescEditing(false)} />
-          </Show>
+          <MarkdownField class="evm-mdedit"
+            value={description()}
+            onInput={setDescription}
+            placeholder="Notes, agenda, links to vault… (markdown)" />
         </div>
 
         {/* category */}
