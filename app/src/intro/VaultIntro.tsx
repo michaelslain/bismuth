@@ -11,7 +11,7 @@ import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
 import { Select } from "../ui/Select";
 import { Icon } from "../icons/Icon";
-import { WebGLRenderer } from "../graph/WebGLRenderer";
+import { CSS3DGraphRenderer } from "../graph/CSS3DGraphRenderer";
 import { GraphAtmosphere } from "../graph/GraphAtmosphere";
 import { paletteToInts, hexToInt } from "../themeColors";
 import type { GraphData } from "../../../core/src/graph";
@@ -136,7 +136,7 @@ const clearGraphPosCache = () => {
 };
 
 // Push the chosen theme's colors into a renderer. Shared by both IntroGraph instances.
-function applyGraphConfig(renderer: WebGLRenderer, name: ThemeName) {
+function applyGraphConfig(renderer: CSS3DGraphRenderer, name: ThemeName) {
   const ap = THEMES[name];
   const palette = ap.accentPalette?.length ? ap.accentPalette : DEFAULT_ACCENT_PALETTE;
   renderer.setConfig({
@@ -171,7 +171,7 @@ function applyGraphConfig(renderer: WebGLRenderer, name: ThemeName) {
 // `.active` opacity transition, so there's no shared instance and no re-render on slide change.
 function IntroGraph(props: { graph: GraphData; pose: "full" | "condensed"; active: boolean; theme: ThemeName; offsetY?: number; fitMargin?: number }) {
   let host!: HTMLDivElement;
-  const renderer = new WebGLRenderer();
+  const renderer = new CSS3DGraphRenderer();
   let mounted = false;
   onMount(() => {
     renderer.mount(host, () => {});
