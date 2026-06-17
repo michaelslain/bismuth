@@ -4,11 +4,11 @@ import { categories, showEventModal, recurrenceAction, events } from '../state'
 import { EventStore, uuid } from '../EventStore'
 import { toDateStr, prettyDate } from '../dates'
 import { refreshEvents } from '../refresh'
+import { resolveCategoryColor } from '../categoryColor'
 import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
 import { TextButton } from '../../ui/TextButton'
-import { IconTextButton } from '../../ui/IconTextButton'
 import { SegmentedToggle } from '../../ui/SegmentedToggle'
 import { MarkdownField } from '../../ui/MarkdownField'
 
@@ -59,8 +59,11 @@ export function EventModal(props: { store: EventStore }) {
     }
   }
 
-  async function handleSave(): Promise<void> {
-    const eventData: Omit<CalendarEvent, 'id'> = {
+  // Build a fresh CalendarEvent payload from the current form state. `freshSeries`
+  // forces a new recurrence seriesId — used when duplicating so the copy is its own
+  // independent series instead of sharing the original's.
+  function buildEventData(freshSeries = false): Omit<CalendarEvent, 'id'> {
+    return {
       title: title(),
       date: date(),
       ...(allDay() || !startTime() ? {} : { startTime: startTime(), ...(endTime() ? { endTime: endTime() } : {}) }),
@@ -68,8 +71,20 @@ export function EventModal(props: { store: EventStore }) {
       ...(link() ? { link: link() } : {}),
       ...(description() ? { description: description() } : {}),
       ...(category() ? { category: category() } : {}),
-      ...(recType() ? { recurrence: { type: recType() as RecurrenceType, ...(recType() === 'weekly' || recType() === 'biweekly' ? { daysOfWeek: recDays().length ? recDays() : undefined } : {}), startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: editing?.recurrence?.seriesId ?? uuid() } } : {}),
+      ...(recType() ? { recurrence: { type: recType() as RecurrenceType, ...(recType() === 'weekly' || recType() === 'biweekly' ? { daysOfWeek: recDays().length ? recDays() : undefined } : {}), startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: freshSeries ? uuid() : (editing?.recurrence?.seriesId ?? uuid()) } } : {}),
     }
+  }
+
+  // Duplicate: create a NEW event from the current form values (a fresh id + series),
+  // leaving the original untouched. Available only when editing an existing event.
+  async function handleDuplicate(): Promise<void> {
+    await props.store.addEvent(buildEventData(true))
+    await refreshEvents(props.store)
+    showEventModal.value = null
+  }
+
+  async function handleSave(): Promise<void> {
+    const eventData = buildEventData()
 
     if (editing && editing.recurrence && modal!.masterId && modal!.occurrenceDate) {
       recurrenceAction.value = { type: 'edit', masterId: modal!.masterId, occurrenceDate: modal!.occurrenceDate, updates: eventData }
@@ -182,7 +197,7 @@ export function EventModal(props: { store: EventStore }) {
             </div>
             <For each={categories.value}>{c => (
               <div class={'evm-cat' + (category() === c.name ? ' on' : '')} role="button"
-                style={{ '--cc': c.color }} onClick={() => setCategory(c.name)}>
+                style={{ '--cc': resolveCategoryColor(c.color) }} onClick={() => setCategory(c.name)}>
                 <span class="dot" />{c.name}
               </div>
             )}</For>
@@ -218,11 +233,11 @@ export function EventModal(props: { store: EventStore }) {
       <div class="evm-foot">
         <Show when={editing}>
           <TextButton size="sm" danger onClick={handleDelete}>DELETE</TextButton>
+          <TextButton size="sm" onClick={handleDuplicate}>DUPLICATE</TextButton>
         </Show>
-        <span class="hintkey"><b>esc</b> to cancel</span>
         <div class="sp" />
         <TextButton size="sm" onClick={close}>CANCEL</TextButton>
-        <IconTextButton icon="Check" size="sm" variant="selected" onClick={handleSave}>SAVE EVENT</IconTextButton>
+        <TextButton size="sm" variant="selected" onClick={handleSave}>{editing ? 'SAVE' : 'CREATE EVENT'}</TextButton>
       </div>
     </Modal>
   )
