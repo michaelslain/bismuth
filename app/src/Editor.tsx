@@ -1,11 +1,11 @@
 // app/src/Editor.tsx
-import { createEffect, createMemo, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
@@ -45,7 +45,7 @@ import { wrapSelection } from "./editor/wrapSelection";
 import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor } from "./editorRegistry";
 import { saveScroll, loadScroll } from "./scrollMemory";
-import { NoteTitle } from "./NoteTitle";
+import { noteTitleWidget } from "./editor/noteTitleWidget";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -430,6 +430,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         // Backspace deletes a bracket pair when the cursor sits between an empty one;
         // falls through to defaultKeymap's deleteCharBackward otherwise. Must precede it.
         ...closeBracketsKeymap,
+        // Markdown list continuation: Enter on "1. foo" / "- foo" inserts the next
+        // marker (renumbering ordered lists), Enter on an empty item outdents it, and
+        // Backspace deletes a list marker. Must precede defaultKeymap so its Enter wins
+        // over the generic insertNewlineAndIndent; falls through (returns false) outside
+        // list/markdown context, so plain notes + YAML buffers are unaffected.
+        ...markdownKeymap,
         ...defaultKeymap,
         ...historyKeymap,
       ]),
@@ -486,6 +492,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // opt-in (prose), while fenced code blocks number themselves inline.
           ...base,
           ...(ed.lineNumbers ? [lineNumbers()] : []),
+          // The note title (`# <title>`) renders as a block widget at the very top of
+          // the document, so it lives inside the scroller and scrolls away with the
+          // content instead of staying pinned. Only real `.md` notes get a title.
+          ...(path.endsWith(".md") ? [noteTitleWidget(path)] : []),
           markdown({ codeLanguages: languages }),
           syntaxHighlighting(codeHighlightStyle),
           queryBlock(() => path),
@@ -571,8 +581,18 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               return true;
             },
             mousedown: (e, view) => {
+              // Only navigate when the click actually lands on a RENDERED link — live
+              // preview marks links/wikilinks/bare-urls with `.cm-link` / `.cm-wikilink`
+              // (livePreview.ts). Without this gate, a click in the empty space below a
+              // note whose last content is a link resolves (via nearest-position mode) to
+              // the doc end, which sits inside that trailing link, and wrongly navigates.
+              // (Links on the caret's own line render raw with no class, so a plain click
+              // there places the cursor to edit instead of navigating — Obsidian-like.)
+              const tgt = e.target as HTMLElement | null;
+              if (!tgt?.closest?.(".cm-link, .cm-wikilink")) return false;
               // `false` = nearest-position mode: precise mode returns null when the click
               // lands between glyphs or on padding, which made links intermittently dead.
+              // Safe now that the DOM-class gate above has confirmed we're on a link.
               const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY }, false);
               if (pos == null) return false;
               const line = view.state.doc.lineAt(pos);
@@ -758,20 +778,14 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     repin();
   });
 
-  // The inline title shows only for real `.md` notes — not config buffers
-  // (settings.yaml etc.) and not a null/new path. It's a pure function of the
-  // path, so it re-derives automatically when the file is renamed elsewhere.
-  const showTitle = createMemo(() => {
-    const p = currentPath();
-    return !!p && p.endsWith(".md");
-  });
-
+  // The inline note title (`# <title>`) is no longer a sibling above the editor —
+  // it's rendered INSIDE the CodeMirror scroller as a block widget at doc-position 0
+  // (see noteTitleWidget, wired into the note extensions above) so it scrolls with
+  // the content. The host fills the wrapper; the wrapper stays `position: relative`
+  // so the absolutely-positioned find bar still anchors to it.
   return (
-    <div ref={wrapper} style={{ display: "flex", "flex-direction": "column", height: "100%", overflow: "hidden", position: "relative" }}>
-      <Show when={showTitle()}>
-        <NoteTitle path={currentPath()!} />
-      </Show>
-      <div ref={host} style={{ flex: "1 1 auto", "min-height": "0", overflow: "auto" }} />
+    <div ref={wrapper} style={{ height: "100%", overflow: "hidden", position: "relative" }}>
+      <div ref={host} style={{ height: "100%", overflow: "auto" }} />
     </div>
   );
 }
