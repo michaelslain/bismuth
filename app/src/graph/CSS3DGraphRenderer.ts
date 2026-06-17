@@ -216,6 +216,7 @@ export class CSS3DGraphRenderer {
 
   destroy() {
     this.stop();
+    this.setSelectionSuppressed(false); // never leave the page unselectable if torn down mid-drag
     this.ro?.disconnect();
     this.viewport?.removeEventListener("pointerdown", this.onPointerDown);
     window.removeEventListener("pointermove", this.onPointerMove);
@@ -817,7 +818,32 @@ export class CSS3DGraphRenderer {
     if (e.button !== 0) return;
     this.pressed = true; this.movedFar = false;
     this.downX = this.lastX = e.clientX; this.downY = this.lastY = e.clientY;
+    // Suppress native text/element selection for the whole press. The drag tracks on `window`
+    // (pointermove/up are window-level), so an orbit started in the viewport sweeps over the
+    // sidebar/cluster-legend/other chrome — none of which carry the viewport's `user-select:
+    // none` — and the browser highlights them. That stray selection is what makes nodes blink
+    // out mid-rotate. `user-select: none` on the viewport alone can't cover elements outside it,
+    // so gate it page-wide for the press and restore it on release. (A plain click sets+clears it
+    // within one tick — harmless.)
+    this.setSelectionSuppressed(true);
   };
+
+  /** Toggle page-wide text-selection suppression (see onPointerDown). Idempotent + restores the
+   *  prior inline value so we never clobber an existing body style. */
+  private prevUserSelect: string | null = null;
+  private setSelectionSuppressed(on: boolean): void {
+    const body = typeof document !== "undefined" ? document.body : null;
+    if (!body) return;
+    if (on) {
+      if (this.prevUserSelect === null) this.prevUserSelect = body.style.userSelect;
+      body.style.userSelect = "none";
+      (body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = "none";
+    } else {
+      body.style.userSelect = this.prevUserSelect ?? "";
+      (body.style as CSSStyleDeclaration & { webkitUserSelect?: string }).webkitUserSelect = this.prevUserSelect ?? "";
+      this.prevUserSelect = null;
+    }
+  }
 
   private onPointerLeave = () => { if (this.hoveredId) this.setHover(null); this.dirty = true; };
 
@@ -847,6 +873,8 @@ export class CSS3DGraphRenderer {
       this.movedFar = true; this.dragging = true; this.userTook = true;
       this.viewport.classList.add("is-dragging");
       if (this.hoveredId) this.setHover(null);
+      // Clear any selection that slipped in before user-select:none took hold on press.
+      if (typeof window !== "undefined") window.getSelection()?.removeAllRanges();
     }
     if (!this.dragging) return;
     if (this.morph > 0.5) { this.panX += dx; this.panY += dy; this.goalPanX = this.panX; this.goalPanY = this.panY; }
@@ -862,6 +890,7 @@ export class CSS3DGraphRenderer {
     const wasDrag = this.dragging || this.movedFar;
     this.pressed = false; this.dragging = false;
     this.viewport.classList.remove("is-dragging");
+    this.setSelectionSuppressed(false); // re-enable text selection now the press is over
     this.dirty = true; // restore the crisp DOM after a drag
     if (wasDrag) return;
     const hit = this.pick(e.clientX, e.clientY);
