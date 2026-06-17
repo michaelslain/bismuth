@@ -129,12 +129,15 @@
 .time-grid-half-cell { flex: 1; box-sizing: border-box; cursor: pointer; }
 .time-grid-hour-cell:hover, .time-grid-half-cell:hover { background: var(--hover-bg); }
 .time-grid-event { position: absolute; left: 3px; right: 3px; overflow: hidden; z-index: 1; cursor: grab; }
-.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 5px 9px; font-size: 11px; }
+.time-grid-event .event-chip { height: 100%; box-sizing: border-box; margin-bottom: 0; overflow: hidden; border-radius: 7px; padding: 4px 9px; font-size: 10.5px; }
 .time-grid-event .event-chip-meta { flex-shrink: 0; }
+/* Tighter line spacing in the grid so a 1h block fits time + a 2-line title in its
+   vertical space (instead of clipping). */
+.time-grid-event .event-chip-time { line-height: 1.2; }
 /* Non-compact (stacked) time-grid title: clamp to 2 lines with a clean ellipsis so a
    long title ends in "…" at a line boundary instead of having its last line clipped
    mid-glyph when the chip is just a little too short. */
-.time-grid-event .event-chip:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.25; min-height: 0; }
+.time-grid-event .event-chip:not(.compact) .event-chip-title { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.15; min-height: 0; }
 /* Short events: time + title on one line so the title stays visible in the
    limited height (a back-to-back 30-min slot is only ~22px tall). */
 .time-grid-event .event-chip.compact { flex-direction: row; align-items: center; gap: 5px; padding: 0 9px; }
