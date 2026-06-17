@@ -4,10 +4,12 @@
 // instead of duplicating the divs + glow-callback wiring. Render it as a sibling AFTER the
 // renderer's canvas inside a positioned container; it fills that container (inset 0).
 import { onMount, type JSX } from "solid-js";
-import type { WebGLRenderer } from "./WebGLRenderer";
 import "./graphAtmosphere.css";
 
-export function GraphAtmosphere(props: { renderer: WebGLRenderer; mode?: string }): JSX.Element {
+// Structural type: any renderer (WebGL or CSS-3D) that can push glow-lobe screen positions.
+type GlowRenderer = { setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void): void };
+
+export function GraphAtmosphere(props: { renderer: GlowRenderer; mode?: string }): JSX.Element {
   let glowEl: HTMLDivElement | undefined;
   onMount(() => {
     // The renderer pushes the 3 biggest clusters' projected screen positions each frame; ride
