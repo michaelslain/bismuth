@@ -219,8 +219,13 @@ export function TimeGrid(props: Props) {
 
     if (endMin <= startMin) endMin = startMin + 15
 
+    // Match the rendered chip's height exactly (see the event block above): short events
+    // get +15min of visual padding and every chip trims 3px, so without this the ghost
+    // came out ~9px shorter than the event it previews.
+    const dur = endMin - startMin
+    const visualDur = dur <= 30 ? dur + 15 : dur
     const top = (startMin / (24 * 60)) * GRID_PX
-    const height = Math.max(((endMin - startMin) / (24 * 60)) * GRID_PX, 10)
+    const height = Math.max((visualDur / (24 * 60)) * GRID_PX - 3, 8)
 
     return (
       <div class="cal-drag-ghost" style={{ top: `${top}px`, height: `${height}px`, background: color }}>
@@ -314,14 +319,19 @@ export function TimeGrid(props: Props) {
                     const compact = height < 42
                     const drag = dragState.value
                     const isBeingMoved = drag?.type === 'move' && drag.event.id === e.id
-                    // Split the column into lanes when this event overlaps others.
+                    // Overlap layout: events that overlap in time get a lane, but instead
+                    // of an even split (which squishes a long event to half-width for its
+                    // whole span just because a short event overlaps part of it), each event
+                    // is offset by its lane and EXTENDS to the right edge, layered by lane.
+                    // So a long event stays full-width and a shorter overlapping one sits on
+                    // top of its right portion (and only where they actually overlap in time).
                     const li = dayLanes().get(e.id)
                     const lanes = li?.lanes ?? 1
                     const lane = li?.lane ?? 0
                     const left = `calc(3px + (100% - 6px) * ${lane} / ${lanes})`
-                    const width = lanes > 1 ? `calc((100% - 6px) / ${lanes} - 2px)` : 'calc(100% - 6px)'
+                    const width = `calc((100% - 6px) * ${lanes - lane} / ${lanes})`
                     return (
-                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, opacity: isBeingMoved ? 0.3 : 1 }}
+                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, 'z-index': lane + 1, 'box-shadow': lane > 0 ? '-4px 0 7px rgba(0,0,0,0.3)' : undefined, opacity: isBeingMoved ? 0.3 : 1 }}
                         onMouseDown={ev => onChipMouseDown(ev, e, ds, e.recurrence ? e.id : undefined)}>
                         <EventChip event={e} compact={compact} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                       </div>
