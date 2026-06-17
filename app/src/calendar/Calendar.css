@@ -329,20 +329,12 @@
 .evm-modal .evm-in.serif textarea { line-height: 1.55; }
 .evm-modal .evm-in.serif input::placeholder, .evm-modal .evm-in.serif textarea::placeholder { font-style: italic; }
 
-/* rendered-markdown description preview (click to edit) */
-.evm-modal .evm-mdprev { display: block; min-height: 76px; cursor: text; font-family: var(--mono); font-size: 13px; line-height: 1.5; color: var(--fg); overflow-wrap: anywhere; background: var(--surface-2); border: 1px solid var(--border-soft); border-radius: 7px; padding: 8px 10px; }
-.evm-modal .evm-mdprev:hover { border-color: var(--border); }
-.evm-modal .evm-mdprev > :first-child { margin-top: 0; }
-.evm-modal .evm-mdprev > :last-child { margin-bottom: 0; }
-.evm-modal .evm-mdprev p { margin: 0 0 8px; }
-.evm-modal .evm-mdprev ul, .evm-modal .evm-mdprev ol { margin: 0 0 8px; padding-left: 20px; }
-.evm-modal .evm-mdprev li { margin: 0 0 3px; }
-.evm-modal .evm-mdprev h1, .evm-modal .evm-mdprev h2, .evm-modal .evm-mdprev h3 { font-size: 16px; font-weight: 600; margin: 4px 0 6px; }
-.evm-modal .evm-mdprev a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
-.evm-modal .evm-mdprev code { font-family: var(--mono); font-size: .88em; background: color-mix(in srgb, var(--fg) 10%, transparent); padding: 1px 5px; border-radius: 4px; }
-.evm-modal .evm-mdprev pre { font-family: var(--mono); font-size: 12px; background: var(--rail); border: 1px solid var(--border2); padding: 9px 11px; border-radius: 7px; overflow-x: auto; margin: 0 0 8px; }
-.evm-modal .evm-mdprev pre code { background: none; padding: 0; }
-.evm-modal .evm-mdprev blockquote { margin: 0 0 8px; padding-left: 11px; border-left: 2px solid var(--border); color: var(--lo); }
+/* description — live-preview markdown editor (MarkdownField); the box matches the old preview,
+   but padding + min-height sit on .cm-content so the whole box is click-to-cursor. */
+.evm-modal .evm-mdedit { cursor: text; background: var(--surface2); border: 1px solid var(--border2); border-radius: 7px; transition: border-color .15s, box-shadow .15s; }
+.evm-modal .evm-mdedit:hover { border-color: var(--border); }
+.evm-modal .evm-mdedit:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.evm-modal .evm-mdedit .cm-content { padding: 8px 10px; min-height: 76px; box-sizing: border-box; }
 
 /* date row: date + all-day toggle inline */
 .evm-modal .evm-daterow { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: end; }
