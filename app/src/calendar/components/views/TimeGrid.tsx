@@ -285,11 +285,19 @@ export function TimeGrid(props: Props) {
                 props.events.filter(e => e.date === ds && e.startTime).map(e => eventMinutes(e).startMin))
               // Side-by-side lanes for events that overlap in time (so a duplicate sits
               // next to its original instead of hidden behind it).
-              const dayLanes = createMemo(() => computeLanes(
-                props.events.filter(e => e.date === ds && e.startTime).map(e => {
+              const dayLanes = createMemo(() => {
+                const dayEvents = props.events.filter(e => e.date === ds && e.startTime)
+                return computeLanes(dayEvents.map(e => {
                   const { startMin, endMin } = eventMinutes(e)
-                  return { id: e.id, startMin, endMin }
-                })))
+                  // An event with no explicit end defaults to a 1h block (eventMinutes),
+                  // which would overlap a back-to-back event starting <1h later and force a
+                  // spurious side-by-side lane. Cap its end at the next event's start (same
+                  // rule the visual-height padding uses) so consecutive untimed events stack.
+                  const nextStart = e.endTime ? Infinity
+                    : Math.min(...dayEvents.map(o => eventMinutes(o).startMin).filter(s => s > startMin), Infinity)
+                  return { id: e.id, startMin, endMin: Math.min(endMin, nextStart) }
+                }))
+              })
               return (
                 <div
                   class={`time-grid-day-col${ds === today ? ' today' : ''}`}
