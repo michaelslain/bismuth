@@ -54,7 +54,10 @@ export function CalendarView(props: { basePath?: string; onChange?: () => void }
   return (
     <div class="calendar-app">
       <Toolbar />
-      <Switch>
+      {/* Fallback to week view so an unrecognized currentView (e.g. a typo'd
+          defaultView in settings.yaml, or a transient during hydration) still
+          renders a calendar instead of blanking the whole grid. */}
+      <Switch fallback={<WeekView store={store} />}>
         <Match when={currentView.value === "month"}><MonthView store={store} /></Match>
         <Match when={currentView.value === "week"}><WeekView store={store} /></Match>
         <Match when={currentView.value === "3day"}><ThreeDayView store={store} /></Match>

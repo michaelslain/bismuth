@@ -78,6 +78,9 @@ const NODE_MAX_FRAC = 0.55;   // cap: a hub never exceeds ~half the spacing
 const SELF_FRAC = 0.5;        // the "you" hub's diameter as a fraction of spacing
 const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
+// Zoom-in label discovery: once a node's projected dot grows past this many px (i.e. the user
+// has zoomed in toward it), reveal its filename label so zooming in progressively surfaces names.
+const LABEL_REVEAL_DOT_PX = 18;
 const DEPTH_MIN_OPACITY = 0.04; // farthest node's opacity in a BIG graph (strong depth cue)
 const DEPTH_MIN_OPACITY_SMALL = 0.5; // small graphs (daemon/agents/small vaults) fade gently so every node stays readable
 const DEPTH_CURVE = 2.4;      // >1 = back fades faster (stronger depth cue)
@@ -580,7 +583,9 @@ export class CSS3DGraphRenderer {
   private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(this.depthRank(nv), DEPTH_CURVE); }
   private nodeDiameter(nv: NodeView): number {
     const base = Math.min(MAX_DOT_PX, this.collideR * this.worldScale * this.nodeFrac(nv)); // cap resting size
-    return base * nv.pscale; // perspective still scales it on zoom-in
+    // Floor at MIN_DOT_PX so zooming out keeps nodes as tiny dots instead of making them
+    // vanish (perspective shrinks every dot; without a floor the small ones drop out).
+    return Math.max(MIN_DOT_PX, base * nv.pscale);
   }
 
   // ---- camera / fit --------------------------------------------------------
@@ -681,7 +686,7 @@ export class CSS3DGraphRenderer {
       const el = nv.el, dot = nv.dot;
       if (!el || !dot) continue; // heavy graphs have no DOM nodes
       const ds = this.nodeDiameter(nv);
-      const hide = !nv.onScreen || ds < MIN_DOT_PX;
+      const hide = !nv.onScreen; // off-screen / behind the camera only — zoomed-out dots stay (floored)
       if (hide) { if (nv.shown) { el.style.display = "none"; nv.shown = false; } continue; }
       if (!nv.shown) { el.style.display = ""; nv.shown = true; }
       el.style.transform = `translate(${nv.sx.toFixed(1)}px,${nv.sy.toFixed(1)}px)`;
@@ -695,6 +700,8 @@ export class CSS3DGraphRenderer {
       const zi = Math.round(rank * 10000);
       if (zi !== nv.lastZi) { el.style.zIndex = String(zi); nv.lastZi = zi; }
       el.style.opacity = String(this.depthFade(nv, is2d));
+      // Re-evaluate label visibility every frame so zoom-in reveal tracks the live camera.
+      nv.label?.classList.toggle("is-shown", this.labelVisible(nv));
     }
   }
 
@@ -751,7 +758,6 @@ export class CSS3DGraphRenderer {
       const order = this.nodes.filter((n) => n.onScreen).sort((a, b) => a.depth - b.depth);
       for (const nv of order) {
         const ds = this.nodeDiameter(nv);
-        if (ds < MIN_DOT_PX) continue;
         let alpha = this.depthFade(nv, is2d);
         if (focus && !focus.has(nv.node.id)) alpha *= 0.13; // dim non-focus on hover/highlight
         ctx.globalAlpha = alpha;
@@ -799,7 +805,12 @@ export class CSS3DGraphRenderer {
     if (!this.cfg.showGraphLabels) return false;
     const id = nv.node.id;
     if (this.alwaysOn.has(id) || this.searchMatches.has(id) || id === this.activeFile || id === this.hoveredId) return true;
-    return this.hoveredId != null && (this.adjacency.get(this.hoveredId)?.has(id) ?? false);
+    if (this.highlightSet?.has(id)) return true;
+    if (this.hoveredId != null && (this.adjacency.get(this.hoveredId)?.has(id) ?? false)) return true;
+    // Zoom-in discovery: once the user has zoomed in (zoom > 0), reveal the label of any node
+    // whose dot has grown past the threshold — so zooming in progressively surfaces names while
+    // the resting framing keeps its curated hub-only set.
+    return this.zoom > 0 && this.nodeDiameter(nv) >= LABEL_REVEAL_DOT_PX;
   }
 
   private emitGlow() {
@@ -971,14 +982,9 @@ export class CSS3DGraphRenderer {
 
   private updateLabels() {
     if (this.heavy) return; // heavy graphs draw labels on the canvas via labelVisible()
-    const show = this.cfg.showGraphLabels;
-    const focus = this.focusSet();
-    for (const nv of this.nodes) {
-      const id = nv.node.id;
-      const on = nv.node.kind === "self" ||
-        (show && (this.alwaysOn.has(id) || this.searchMatches.has(id) || id === this.activeFile || id === this.hoveredId || (!!focus && focus.has(id))));
-      nv.label?.classList.toggle("is-shown", !!on);
-    }
+    // Immediate refresh on state changes (hover/search/active); applyDomNodes also runs this
+    // every frame so zoom-in reveal stays live. Single source of truth: labelVisible().
+    for (const nv of this.nodes) nv.label?.classList.toggle("is-shown", this.labelVisible(nv));
   }
 
   // ---- camera commands -----------------------------------------------------
