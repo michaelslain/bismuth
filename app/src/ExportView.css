@@ -24,6 +24,11 @@
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
   overflow: hidden;
 }
+/* Visual base views (calendar grid, kanban board) are landscape — give them room so
+   the preview matches the wider page the export actually renders to. */
+.paper.paper-wide {
+  width: min(960px, 100%);
+}
 
 /* The rendered note lives in an isolated iframe; keep it on the cream paper. */
 .export-frame {
@@ -97,6 +102,23 @@
   flex: 1 1 auto;
   min-width: 0;
   font-size: 12.5px;
+}
+
+/* Native date picker, styled to sit with the path inputs on the dark rail. */
+.exp-date {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--editor-font);
+  font-size: 12.5px;
+  color: var(--fg);
+  background: var(--input-bg, var(--bg-elevated, #1b1c22));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.exp-date::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
 }
 
 .theme-swatch {

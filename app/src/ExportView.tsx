@@ -1,6 +1,7 @@
 // app/src/ExportView.tsx
-import { createSignal, createResource, For, Show, createEffect } from "solid-js";
+import { createSignal, createResource, createEffect, For, Show } from "solid-js";
 import { api } from "./api";
+import { settings } from "./settings";
 import { Icon } from "./icons/Icon";
 import { Chip } from "./ui/Chip";
 import { IconTextButton } from "./ui/IconTextButton";
@@ -8,11 +9,16 @@ import { TextInput } from "./ui/TextInput";
 import { pushToast } from "./Toast";
 import { isTauri } from "./nativeMenu";
 import { pickFile, pickFolder } from "./appWindow";
-import { formatsFor } from "./export/formats";
+import { formatsForOptions } from "./export/formats";
+import { defaultModeForView } from "./export/options";
+import { readThemePalette } from "./export/resolvePalette";
 import { renderExport, renderPreview } from "./export/exporters";
 import { drawingToPng } from "./export/drawingRaster";
 import { downloadFile, writeToFolder } from "./export/download";
-import type { ExportFormat, ExportTheme, ExportDeps } from "./export/types";
+import type { ExportFormat, ExportTheme, ExportDeps, ExportOptions, RenderMode, CalSpan } from "./export/types";
+import { parseFrontmatter } from "../../core/src/frontmatter";
+import { parseBaseFile } from "../../core/src/bases/parse";
+import type { ViewConfig } from "../../core/src/bases/types";
 import "./ExportView.css";
 
 // Defer jspdf + html2canvas (a few hundred KB) out of the entry/preview path: they
@@ -23,16 +29,23 @@ const htmlToPdf = (html: string): Promise<Uint8Array> =>
 const htmlToPng = (html: string): Promise<{ bytes: Uint8Array; dataUrl: string }> =>
   import("./export/htmlToPdf").then((m) => m.htmlToPng(html));
 
-const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG" };
+const LABEL: Record<ExportFormat, string> = { html: "HTML", pdf: "PDF", md: "Markdown", png: "PNG", csv: "CSV" };
 const FORMAT_ICON: Record<ExportFormat, string> = {
   pdf: "FileText",
   html: "Code",
   md: "Hash",
   png: "Image",
+  csv: "Table",
 };
 const THEMES: ExportTheme[] = ["light", "dark"];
 const THEME_LABEL: Record<ExportTheme, string> = { dark: "Dark", light: "Light" };
 const THEME_SWATCH: Record<ExportTheme, string> = { light: "#f7f6f2", dark: "#0D0E16" };
+
+const MODES: RenderMode[] = ["visual", "data"];
+const MODE_LABEL: Record<RenderMode, string> = { visual: "Visual", data: "Data" };
+const MODE_ICON: Record<RenderMode, string> = { visual: "LayoutGrid", data: "Table" };
+const SPANS: CalSpan[] = ["month", "week", "3day", "day"];
+const SPAN_LABEL: Record<CalSpan, string> = { month: "Month", week: "Week", "3day": "3-day", day: "Day" };
 
 // The vault-relative path of `abs` if it lives under `vaultRoot`, else null (the exporter
 // reads vault-relative paths, so a file outside the vault can't be exported).
@@ -43,21 +56,19 @@ function toVaultRelative(abs: string, vaultRoot: string): string | null {
   return abs.startsWith(prefix) ? abs.slice(prefix.length) : null;
 }
 
-// Remember the last-chosen output folder across sessions (browser localStorage; no schema).
+function baseName(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+// Remember the last-chosen output folder + calendar span across sessions (browser
+// localStorage; no schema).
 const DEST_KEY = "oa.export.destFolder";
-const loadDest = (): string => {
-  try {
-    return localStorage.getItem(DEST_KEY) ?? "";
-  } catch {
-    return "";
-  }
+const SPAN_KEY = "oa.export.calSpan";
+const loadLs = (k: string): string => {
+  try { return localStorage.getItem(k) ?? ""; } catch { return ""; }
 };
-const saveDest = (v: string): void => {
-  try {
-    v ? localStorage.setItem(DEST_KEY, v) : localStorage.removeItem(DEST_KEY);
-  } catch {
-    /* private mode / no storage — keep it in-memory only */
-  }
+const saveLs = (k: string, v: string): void => {
+  try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* private mode */ }
 };
 
 const deps: ExportDeps = {
@@ -70,6 +81,8 @@ const deps: ExportDeps = {
   // export actually contains math. Lives behind deps so exporters.ts stays bun-compilable.
   katexCss: async () => (await import("./export/katexCss")).katexInlineCss(),
 };
+
+const viewLabel = (v: ViewConfig, i: number): string => v.name || v.type || `View ${i + 1}`;
 
 export function ExportView(props: { path: string }) {
   // The "input path" — which file to export. Defaults to the file the tab was opened for,
@@ -87,23 +100,83 @@ export function ExportView(props: { path: string }) {
     if (v && v !== srcPath()) setSrcPath(v);
   };
   // The "output path" — destination folder. Empty = Downloads (the previous behavior).
-  const [destFolder, setDestFolder] = createSignal(loadDest());
+  const [destFolder, setDestFolder] = createSignal(loadLs(DEST_KEY));
 
-  const formats = () => formatsFor(srcPath());
-  const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
+  // Base-export options (ignored for non-base files). `mode` defaults per view kind but is
+  // user-overridable; `viewIndex` picks which of the base's views; the calendar controls
+  // anchor + size the grid.
+  const [viewIndex, setViewIndex] = createSignal(0);
+  const [mode, setMode] = createSignal<RenderMode>("data");
+  const [userSetMode, setUserSetMode] = createSignal(false);
+  const [calSpan, setCalSpan] = createSignal<CalSpan>((loadLs(SPAN_KEY) as CalSpan) || "month");
+  const [calStart, setCalStart] = createSignal(""); // "" = today
+
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
   const [busy, setBusy] = createSignal(false);
+
+  // Read the source file once per path: if it's a `type: base` md, expose its views so we
+  // can offer a view picker + visual/data toggle. null for any non-base file (prose md /
+  // sheet / draw) — none of the base controls render then.
+  const [baseInfo] = createResource(srcPath, async (p) => {
+    try {
+      const text = await api.read(p);
+      if (parseFrontmatter(text).data?.type !== "base") return null;
+      const { config } = parseBaseFile(text, { name: baseName(p), path: p });
+      return { views: config.views ?? [] };
+    } catch {
+      return null;
+    }
+  });
+
+  const isBase = () => !!baseInfo();
+  const views = () => baseInfo()?.views ?? [];
+  const selectedView = (): ViewConfig | undefined => views()[viewIndex()];
+  const showCalendar = () => isBase() && mode() === "visual" && selectedView()?.type === "calendar";
+
+  // Reset per-file selections when the source changes (a different base may have fewer
+  // views, and the mode default should re-derive from the new file's view kind).
+  createEffect(() => {
+    srcPath();
+    setViewIndex(0);
+    setUserSetMode(false);
+  });
+
+  // Default the render mode from the selected view's kind (calendar/cards/kanban/list →
+  // "visual"), until the user manually picks a mode this session.
+  createEffect(() => {
+    const info = baseInfo();
+    if (!info || userSetMode()) return;
+    setMode(defaultModeForView(info.views[viewIndex()]?.type));
+  });
+
+  const buildOptions = (): ExportOptions => ({
+    viewIndex: viewIndex(),
+    mode: mode(),
+    calSpan: calSpan(),
+    calStart: calStart(),
+    weekStartsOnMonday: settings.calendar.weekStartsOnMonday,
+    militaryTime: settings.calendar.militaryTime,
+    // Resolve the live app theme (colors + font) so the export matches the app. Keyed into
+    // the preview resource below via theme()/settings so it re-resolves on theme changes.
+    palette: readThemePalette(theme()),
+  });
+
+  const formats = () => formatsForOptions(srcPath(), isBase(), mode());
+  const [format, setFormat] = createSignal<ExportFormat>(formats()[0] ?? "html");
 
   // Absolute vault root — used to seed the file picker and map a picked absolute path back
   // to the vault-relative path the exporter expects.
   const [vaultRoot] = createResource(() => api.terminalInfo().then((i) => i.vault).catch(() => ""));
 
-  // Preview only — cheap, no byte/PDF generation, so switching source/format/theme is instant.
+  // Preview only — cheap, no byte/PDF generation, so switching source/format/options is
+  // instant. Keyed on every option so the preview tracks the controls.
   const [result] = createResource(
-    () => [srcPath(), format(), theme()] as const,
-    async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm),
+    () => [srcPath(), format(), theme(), viewIndex(), mode(), calSpan(), calStart(), settings.calendar.weekStartsOnMonday] as const,
+    async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm, buildOptions()),
   );
 
+  // Keep the chosen format valid as the available set changes (mode flip adds/removes
+  // md+csv; a different file changes the matrix entirely).
   createEffect(() => {
     const f = formats();
     if (!f.includes(format())) setFormat(f[0] ?? "html");
@@ -137,14 +210,23 @@ export function ExportView(props: { path: string }) {
     const folder = await pickFolder();
     if (!folder) return;
     setDestFolder(folder);
-    saveDest(folder);
+    saveLs(DEST_KEY, folder);
+  };
+
+  const pickMode = (m: RenderMode) => {
+    setUserSetMode(true);
+    setMode(m);
+  };
+  const pickSpan = (s: CalSpan) => {
+    setCalSpan(s);
+    saveLs(SPAN_KEY, s);
   };
 
   const doExport = async () => {
     commitSrc(); // flush an un-blurred edit so we export exactly what's in the field
     setBusy(true);
     try {
-      const r = await renderExport(srcPath(), format(), deps, theme());
+      const r = await renderExport(srcPath(), format(), deps, theme(), buildOptions());
       const dest = destFolder().trim();
       if (dest && isTauri()) {
         const written = await writeToFolder(dest, r.filename, r.bytes);
@@ -167,7 +249,7 @@ export function ExportView(props: { path: string }) {
   return (
     <div class="exp">
       <div class="exppreview">
-        <div class="paper">
+        <div class="paper" classList={{ "paper-wide": isBase() && mode() === "visual" }}>
           <Show
             when={!result.error}
             fallback={<div class="export-empty">Preview failed: {(result.error as Error)?.message}</div>}
@@ -194,7 +276,7 @@ export function ExportView(props: { path: string }) {
 
       <div class="exppanel">
         <div class="exp-title">
-          <Icon value="Share" size={17} /> Export note
+          <Icon value="Share" size={17} /> Export {isBase() ? "base" : "note"}
         </div>
 
         <div class="field">
@@ -228,7 +310,7 @@ export function ExportView(props: { path: string }) {
               value={destFolder()}
               onInput={(v) => {
                 setDestFolder(v);
-                saveDest(v.trim());
+                saveLs(DEST_KEY, v.trim());
               }}
               placeholder="Downloads (default)"
               spellcheck={false}
@@ -238,6 +320,70 @@ export function ExportView(props: { path: string }) {
             </IconTextButton>
           </div>
         </div>
+
+        {/* Base-only: which view to export. */}
+        <Show when={isBase() && views().length > 1}>
+          <div class="field">
+            <span class="flab">View</span>
+            <div class="fopts">
+              <For each={views()}>
+                {(v, i) => (
+                  <Chip selected={viewIndex() === i()} onClick={() => setViewIndex(i())}>
+                    {viewLabel(v, i())}
+                  </Chip>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+
+        {/* Base-only: rendered view ("Visual") vs flat table ("Data"). */}
+        <Show when={isBase()}>
+          <div class="field">
+            <span class="flab">Content</span>
+            <div class="fopts">
+              <For each={MODES}>
+                {(m) => (
+                  <Chip selected={mode() === m} icon={MODE_ICON[m]} iconSize={13} onClick={() => pickMode(m)}>
+                    {MODE_LABEL[m]}
+                  </Chip>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+
+        {/* Calendar visual only: grid span + the day the grid starts at (default today). */}
+        <Show when={showCalendar()}>
+          <div class="field">
+            <span class="flab">Calendar span</span>
+            <div class="fopts">
+              <For each={SPANS}>
+                {(s) => (
+                  <Chip selected={calSpan() === s} onClick={() => pickSpan(s)}>
+                    {SPAN_LABEL[s]}
+                  </Chip>
+                )}
+              </For>
+            </div>
+          </div>
+          <div class="field">
+            <span class="flab">Start day</span>
+            <div class="path-row">
+              <input
+                type="date"
+                class="path-input exp-date"
+                value={calStart()}
+                onInput={(e) => setCalStart(e.currentTarget.value)}
+              />
+              <Show when={calStart()}>
+                <IconTextButton icon="RotateCcw" iconSize={13} onClick={() => setCalStart("")}>
+                  TODAY
+                </IconTextButton>
+              </Show>
+            </div>
+          </div>
+        </Show>
 
         <div class="field">
           <span class="flab">Format</span>

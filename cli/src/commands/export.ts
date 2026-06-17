@@ -11,11 +11,28 @@ import { resolveSource } from "../../../core/src/bases/source";
 import { parseDoc } from "../../../core/src/drawing/model";
 import { renderDocToPng, renderDocToPdf } from "../../../core/src/drawing/export";
 import { renderExport } from "../../../app/src/export/exporters";
-import type { ExportFormat, ExportDeps } from "../../../app/src/export/types";
+import { defaultExportOptions } from "../../../app/src/export/options";
+import type { ExportFormat, ExportDeps, ExportOptions, RenderMode, CalSpan } from "../../../app/src/export/types";
+
+// Base-export options from flags (no-ops for non-base files). `--view` picks which view,
+// `--mode data|visual` flat-table vs rendered view, `--cal-start`/`--cal-span` the calendar
+// grid anchor + span. Visual png/pdf of a base is browser-only (see deps below); html works.
+function optionsFrom(args: string[]): ExportOptions {
+  const o = defaultExportOptions();
+  const view = flag(args, "view");
+  if (view !== undefined) o.viewIndex = Math.max(0, parseInt(view, 10) || 0);
+  const mode = flag(args, "mode");
+  if (mode === "visual" || mode === "data") o.mode = mode as RenderMode;
+  const start = flag(args, "cal-start");
+  if (start) o.calStart = start;
+  const span = flag(args, "cal-span");
+  if (span === "month" || span === "week" || span === "3day" || span === "day") o.calSpan = span as CalSpan;
+  return o;
+}
 
 async function run(args: string[]): Promise<void> {
   const file = args.find((a) => !a.startsWith("--"));
-  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf] [--out FILE]");
+  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]");
   const fmt = (flag(args, "format") ?? (file.endsWith(".draw") ? "png" : "md")) as ExportFormat;
 
   // Drawings: headless core renderer (both png + pdf work without a browser).
@@ -54,7 +71,7 @@ async function run(args: string[]): Promise<void> {
       return { bytes, dataUrl: `data:image/png;base64,${Buffer.from(bytes).toString("base64")}` };
     },
   };
-  const res = await renderExport(file, fmt, deps, "dark");
+  const res = await renderExport(file, fmt, deps, "dark", optionsFrom(args));
   const outPath = flag(args, "out") ?? res.filename;
   writeFileSync(outPath, res.bytes);
   console.log(`wrote ${outPath}`);
@@ -62,8 +79,8 @@ async function run(args: string[]): Promise<void> {
 
 export const commands: CommandMap = {
   export: {
-    summary: "Export a note/base/sheet/drawing to md|html|png|pdf (pdf of notes is app-only)",
-    usage: "<file> [--format md|html|png|pdf] [--out FILE] [--vault <dir>]",
+    summary: "Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)",
+    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--vault <dir>]",
     run,
   },
 };

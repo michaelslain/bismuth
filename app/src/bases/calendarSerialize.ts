@@ -10,12 +10,35 @@ function str(v: unknown): string | undefined {
   return v === undefined || v === null || v === "" ? undefined : String(v);
 }
 
-function rowToEvent(row: Row, i: number): CalendarEvent {
+// Which row columns carry each event field. Mirrors the calendar ViewConfig field
+// overrides (dateField/startTimeField/…); when no view is passed every field falls
+// back to its standard key, so existing callers (the live calendar's BaseBackend)
+// are unaffected.
+export interface EventFieldMap {
+  dateField?: string;
+  startTimeField?: string;
+  endTimeField?: string;
+  recurrenceField?: string;
+  categoryField?: string;
+}
+
+/**
+ * Map a base Row to a CalendarEvent using the SAME field conventions the live
+ * calendar view uses. `view` lets a calendar view override the date/time/recurrence/
+ * category columns; title/location/link/description always read their standard keys.
+ */
+export function rowToEvent(row: Row, i: number, view?: EventFieldMap): CalendarEvent {
   const n = row.note;
+  const dateKey = view?.dateField || "date";
+  const startKey = view?.startTimeField || "startTime";
+  const endKey = view?.endTimeField || "endTime";
+  const recKey = view?.recurrenceField || "recurrence";
+  const catKey = view?.categoryField || "category";
+  const rawRec = n[recKey];
   let recurrence: Recurrence | undefined;
-  if (n.recurrence) {
+  if (rawRec) {
     try {
-      recurrence = typeof n.recurrence === "string" ? (JSON.parse(n.recurrence) as Recurrence) : (n.recurrence as Recurrence);
+      recurrence = typeof rawRec === "string" ? (JSON.parse(rawRec) as Recurrence) : (rawRec as Recurrence);
     } catch {
       recurrence = undefined;
     }
@@ -23,13 +46,13 @@ function rowToEvent(row: Row, i: number): CalendarEvent {
   return {
     id: str(n.id) ?? `row-${i}`,
     title: String(n.title ?? ""),
-    date: String(n.date ?? ""),
-    startTime: str(n.startTime),
-    endTime: str(n.endTime),
+    date: String(n[dateKey] ?? ""),
+    startTime: str(n[startKey]),
+    endTime: str(n[endKey]),
     location: str(n.location),
     link: str(n.link),
     description: str(n.description),
-    category: str(n.category),
+    category: str(n[catKey]),
     recurrence,
   };
 }
@@ -73,7 +96,7 @@ export function parseCalendarFile(text: string): ParsedCalendar {
     body = m[2];
   }
   const rows = parseRows(body, { name: "", path: "" });
-  return { frontmatter, events: rows.map(rowToEvent) };
+  return { frontmatter, events: rows.map((r, i) => rowToEvent(r, i)) };
 }
 
 export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
