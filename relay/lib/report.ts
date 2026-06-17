@@ -17,6 +17,8 @@ export interface HookInput {
   agent_id?: string;
   agent_type?: string;
   last_assistant_message?: string;
+  /** SessionEnd: why the session ended (e.g. "clear", "compact", "logout", "exit"). */
+  reason?: string;
   [k: string]: unknown;
 }
 

@@ -22,6 +22,9 @@ removed when it merged into Bismuth). The relay registry now lives **in core**
    - `SubagentStart` → `bin/subagent-start-hook.ts` → `POST /relay/subagent/start` (add a
      child node under the spawning session).
    - `SubagentStop` → `bin/subagent-stop-hook.ts` → `POST /relay/subagent/stop`.
+   - `SessionEnd` → `bin/session-end-hook.ts` → `POST /relay/session/end` (drop the
+     session node when Claude exits, so it doesn't linger until the pane closes; skips
+     `clear`/`compact`, which keep the terminal's Claude running).
 3. `core/src/agents.ts` builds the graph from the registry; the frontend draws
    you → session → subagent (`app/src/graph/youNode.ts` `withYouAgents`).
 
@@ -34,8 +37,8 @@ error, and exit 0 within a budget so they never block the user's session
 ```
 relay/
   .claude-plugin/plugin.json   # plugin manifest (no `commands` — there are no slash commands)
-  hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop
-  bin/                         # the 4 hook scripts (the only live code)
+  hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
+  bin/                         # the 5 hook scripts (the only live code)
   lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating
   shim/claude                  # PATH shim: exec real claude --plugin-dir <relay>
   package.json tsconfig.json
@@ -47,5 +50,7 @@ relay/
   `claude --resume`/`--continue` sessions register too).
 - `SubagentStart`: `{ session_id (parent), agent_id, agent_type }`.
 - `SubagentStop`: `{ agent_id, agent_type, last_assistant_message }`.
+- `SessionEnd`: `{ session_id, cwd, reason }` (reason ∈ `clear`/`compact`/`logout`/`exit`/…;
+  the hook ignores `clear`/`compact` since the terminal's Claude keeps running).
 
 Subagents cannot spawn subagents, so the tree is exactly 2 levels deep.
