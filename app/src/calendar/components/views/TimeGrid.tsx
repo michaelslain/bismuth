@@ -118,6 +118,10 @@ export function TimeGrid(props: Props) {
       window.removeEventListener('mouseup', onMouseUp)
       if (!dragging) return
       const state = dragState.value
+      // Clear the drag state FIRST, before the awaited persist below. If updateEvent /
+      // refreshEvents throws, an end-of-function reset would be skipped and the dragged
+      // event would stay stuck at 0.3 opacity (renders "faint") until the next interaction.
+      dragState.value = null
       if (state?.type === 'move') {
         const newStart = state.startMinutes
         const newEnd = clamp(newStart + durationMinutes)
@@ -131,7 +135,6 @@ export function TimeGrid(props: Props) {
           await refreshEvents(props.store)
         }
       }
-      dragState.value = null
     }
 
     window.addEventListener('mousemove', onMouseMove)
@@ -241,9 +244,12 @@ export function TimeGrid(props: Props) {
                       ? Math.min(duration + 15, Math.max(duration, nextStart - startMin))
                       : duration
                     const height = Math.max((visualDuration / (24 * 60)) * GRID_PX - 3, 8)
-                    // Too short to stack time-over-title (needs ~42px) → lay the chip
-                    // out on a single line so the title stays visible.
-                    const compact = height < 42
+                    // Too short to cleanly stack time-over-title → lay the chip out on a
+                    // single line so the title stays readable instead of a 2-line title
+                    // whose second line gets clipped mid-glyph. At 50px/hour a 1h event is
+                    // ~47px, which can't fit time + two title lines, so the threshold sits
+                    // above that; the title still ellipsizes at 2 lines for taller events.
+                    const compact = height < 56
                     const drag = dragState.value
                     const isBeingMoved = drag?.type === 'move' && drag.event.id === e.id
                     return (
