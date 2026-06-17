@@ -473,6 +473,16 @@ export default function App() {
   };
   const openSettings = () => openInNewTab("settings.yaml");
   const openTerminal = () => openInNewTab(TERMINAL_PREFIX + crypto.randomUUID());
+  // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
+  // openTerminal, which loads into the focused pane, this targets `leafId` directly:
+  // the button stops mousedown propagation (so it doesn't focus its pane first), so
+  // routing through the focused pane would open the terminal in the wrong (previously
+  // focused) pane. Set the content on this leaf and focus it.
+  const openTerminalInLeaf = (leafId: string) => {
+    const content = TERMINAL_PREFIX + crypto.randomUUID();
+    updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, content), focusId: leafId }));
+    recordNav(leafId, content);
+  };
   const openSearch = () => openInNewTab(SEARCH_TAB);
   const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
@@ -1452,7 +1462,7 @@ export default function App() {
                 // a save itself needs no client-side graph poke.
                 onSaved={() => {}}
                 onOpen={openFile}
-                onNewTerminal={openTerminal}
+                onNewTerminal={openTerminalInLeaf}
                 noteNames={noteCandidates}
                 tagNames={tagCandidates}
                 terminalLabel={(content) => contentLabel(content, terminalContentIndex().get(content))}
