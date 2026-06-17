@@ -1,4 +1,4 @@
-import { For, Show, createSignal, createEffect, on } from "solid-js";
+import { For, Index, Show, createSignal, createEffect, on } from "solid-js";
 import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
 import { canonicalId } from "../../../core/src/bases/query";
 import { renderCell, renderTitle, columnLabel, isTagColumn, isRatingColumn } from "./renderValue";
@@ -195,15 +195,18 @@ export function TableView(props: {
         </tr>
       </thead>
       <tbody>
-        <For each={props.result.groups}>
+        {/* Index-keyed groups (see ListView): keeps each group's rows mounted across a
+            re-resolve so only the inner reference-keyed row <For> diffs — no whole-table
+            remount flash on a task toggle. */}
+        <Index each={props.result.groups}>
           {(group) => (
             <>
-              <Show when={group.key !== ""}>
+              <Show when={group().key !== ""}>
                 <tr class={styles.groupRow}>
-                  <td colspan={cols().length}>{group.key}</td>
+                  <td colspan={cols().length}>{group().key}</td>
                 </tr>
               </Show>
-              <For each={group.rows}>
+              <For each={group().rows}>
                 {(row) => (
                   <tr>
                     <For each={cols()}>
@@ -221,7 +224,7 @@ export function TableView(props: {
               </For>
             </>
           )}
-        </For>
+        </Index>
       </tbody>
       <Show when={Object.keys(props.result.summaries).length > 0}>
         <tfoot>

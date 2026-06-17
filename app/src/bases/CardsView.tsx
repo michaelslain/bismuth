@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { For, Index, Show } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { api } from "../api";
@@ -55,14 +55,17 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
 
   return (
     <div class={styles.cards}>
-      <For each={props.result.groups}>
+      {/* Index-keyed groups (see ListView): keep each group mounted across a re-resolve so only
+          the inner reference-keyed row <For> diffs — no whole-grid remount/masonry-reflow flash
+          on a task toggle. */}
+      <Index each={props.result.groups}>
         {(group) => (
           <>
-            <Show when={group.key !== ""}>
-              <div class={styles.groupHeader}>{group.key}</div>
+            <Show when={group().key !== ""}>
+              <div class={styles.groupHeader}>{group().key}</div>
             </Show>
             <div class={isBody() ? styles.bodyGrid : styles.cardGrid}>
-              <For each={group.rows}>
+              <For each={group().rows}>
                 {(row) => (
                   <Show
                     when={isBody()}
@@ -118,7 +121,7 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
             </div>
           </>
         )}
-      </For>
+      </Index>
     </div>
   );
 }

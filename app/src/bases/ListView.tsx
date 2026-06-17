@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js";
+import { For, Index, Show, type JSX } from "solid-js";
 import type { ViewResult, BaseConfig, Row } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderValue, isTaskRow } from "./renderValue";
@@ -140,17 +140,23 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
 
   return (
     <div class={styles.list}>
-      <For each={props.result.groups}>
+      {/* Groups are index-keyed (Index, not For): a re-resolve mints a new group OBJECT
+          whenever its row set changes (toggle/add/remove), and a reference-keyed <For> would
+          dispose+remount the whole group subtree — discarding every row identity reconcileRows
+          preserved (the "whole list reloads" flash). Index keeps the group's DOM mounted and
+          hands a reactive `group()` accessor, so only the inner reference-keyed <For> over the
+          rows diffs — and just the changed row repaints. */}
+      <Index each={props.result.groups}>
         {(group) => (
           <div class={styles.lgroup}>
-            <Show when={group.key !== ""}>
-              <div class={styles.lghead} style={{ color: groupColor(group.key) }}>
+            <Show when={group().key !== ""}>
+              <div class={styles.lghead} style={{ color: groupColor(group().key) }}>
                 <span class={styles.dot} />
-                {group.key}
-                <span class={styles.count}>· {group.rows.length}</span>
+                {group().key}
+                <span class={styles.count}>· {group().rows.length}</span>
               </div>
             </Show>
-            <For each={group.rows}>
+            <For each={group().rows}>
               {(row) => {
                 // Task rows render as a native checkbox line (see TaskRow).
                 if (isTaskRow(row)) return <TaskRow row={row} onToggle={toggle} onSetStatus={setStatus} />;
@@ -177,7 +183,7 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
             </For>
           </div>
         )}
-      </For>
+      </Index>
     </div>
   );
 }

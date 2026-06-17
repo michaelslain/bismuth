@@ -1,4 +1,4 @@
-import { Decoration, DecorationSet, EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { StateField, StateEffect, type EditorState, type Extension } from "@codemirror/state";
 import { mountSolid, disposeSolid } from "./solidWidget";
 import { BaseView } from "../bases/BaseView";
@@ -169,6 +169,56 @@ const collapseOnClickOutside = EditorView.domEventHandlers({
   },
 });
 
+// Keep the editor's scroll position when you tick a task inside a ```query block. The click
+// toggles the task → the embedded view re-resolves and its rows change → the editor's scroll
+// snaps to the TOP. (It isn't a CodeMirror scroll call, a scrollTop write, or a scrollIntoView
+// — the browser resets the scroll when the block re-renders; CodeMirror fires no update for an
+// embedded re-render, so the Editor's own external-reload scroll-repin never runs.) Rather than
+// chase the exact reset path, snapshot the intended scrollTop on mousedown inside a query block
+// and re-assert it for a short window covering the toggle round-trip (write → SSE → re-resolve).
+// Native scrollTop writes win over whatever reset it, the content height always supports the
+// position, and it's gated to clicks INSIDE a query block so ordinary editing scroll is untouched.
+//
+// A *native capture-phase* listener on scrollDOM is required (not EditorView.domEventHandlers):
+// the widget's ignoreEvent() returns true, so CodeMirror skips its own handlers for events that
+// originate inside the embedded view — a native listener fires regardless.
+const preserveScrollOnTaskToggle = ViewPlugin.fromClass(
+  class {
+    private onDown: (e: MouseEvent) => void;
+    constructor(readonly view: EditorView) {
+      this.onDown = (e: MouseEvent) => {
+        const target = e.target as HTMLElement | null;
+        if (!target?.closest?.(".oa-query-block")) return;
+        const sc = view.scrollDOM;
+        const want = sc.scrollTop;
+        if (want === 0) return; // already at top — nothing to preserve
+        // Re-assert via setInterval (NOT requestAnimationFrame): the reset is a layout-phase
+        // scroll clamp that lands AFTER rAF callbacks run, so an rAF correction gets overwritten
+        // in the same frame. A timer fires after layout, so its write wins. The step only
+        // reads/writes scrollTop (no layout-forcing reads), so it can't thrash. ~720ms covers the
+        // toggle round-trip (write → SSE → re-resolve); corrections are sub-frame so no flicker.
+        let ticks = 0;
+        const stop = () => {
+          window.clearInterval(id);
+          sc.removeEventListener("wheel", stop);
+          sc.removeEventListener("touchmove", stop);
+        };
+        const id = window.setInterval(() => {
+          if (Math.abs(sc.scrollTop - want) > 1) sc.scrollTop = want;
+          if (++ticks >= 36) stop(); // ~720ms at 20ms steps
+        }, 20);
+        // If the user starts scrolling within that window, stop re-asserting — don't fight them.
+        sc.addEventListener("wheel", stop, { passive: true });
+        sc.addEventListener("touchmove", stop, { passive: true });
+      };
+      view.scrollDOM.addEventListener("mousedown", this.onDown, true);
+    }
+    destroy() {
+      this.view.scrollDOM.removeEventListener("mousedown", this.onDown, true);
+    }
+  },
+);
+
 // Factory: the editor passes a getter for the current note path. Rebuilds when the doc
 // changes or a block's revealed state flips (host-path changes drop+remount the editor).
 export function queryBlock(getHostPath: () => string | null): Extension {
@@ -183,5 +233,5 @@ export function queryBlock(getHostPath: () => string | null): Extension {
     },
     provide: (f) => EditorView.decorations.from(f),
   });
-  return [revealedField, collapseOnClickOutside, queryTheme, codeLineNumberTheme, decoField];
+  return [revealedField, collapseOnClickOutside, preserveScrollOnTaskToggle, queryTheme, codeLineNumberTheme, decoField];
 }
