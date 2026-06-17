@@ -2565,8 +2565,12 @@ export class WebGLRenderer {
 
     // Compute camera distance from FOV and radius.
     // Clamp to a minimum so tiny graphs (e.g. just the "you" node) don't fill the whole screen.
+    // Pull the camera back further as the graph grows so a large cloud reads as an airy
+    // constellation (the node points have sizeAttenuation, so they shrink as we zoom out)
+    // instead of a dense blob filling the frame. Small graphs keep their tight framing.
+    const sizeZoom = 1 + Math.min(1.5, Math.max(0, (this.nodes.length - 50) / 300));
     const fov = (this.camera.fov * Math.PI) / 180;
-    const distance = Math.max((radius / Math.sin(fov / 2)) * this.fitMargin, 120);
+    const distance = Math.max((radius / Math.sin(fov / 2)) * this.fitMargin * sizeZoom, 120);
     this.controls.target.set(cx, cy, cz);
     this.camera.position.set(cx, cy, cz + distance);
     this.camera.near = Math.max(0.1, distance / 1000);
