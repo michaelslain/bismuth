@@ -23,6 +23,7 @@ import { queryBlock } from "./editor/queryBlock";
 import { taskFold } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
+import { datePropertyPicker } from "./editor/datePicker";
 import { iconNames } from "./icons/registry";
 import { settingsCompletion, type VaultPath } from "./editor/settingsComplete";
 import { editorContextMenu } from "./editor/contextMenu";
@@ -498,6 +499,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             // candidate's label matches (wikilink semantics — name, not path).
             resolveLink: (target) => props.noteNames().some((n) => n.label === target),
           }),
+          // Calendar popover for `date`/`datetime` frontmatter properties (registered in
+          // the propertyRegistry): native date/time inputs + relative-date quick options.
+          datePropertyPicker(propertyRegistry),
           notePathFacet.of(path),
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
