@@ -1,4 +1,4 @@
-import { createSignal, For, Show, batch, onMount, onCleanup } from "solid-js";
+import { createSignal, For, Index, Show, batch, onMount, onCleanup } from "solid-js";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { CardBody } from "./CardBody";
@@ -183,30 +183,35 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
       }
     >
       <div class={styles.kanban} ref={rootEl}>
-        <For each={props.result.groups}>
+        {/* Index-keyed columns (see ListView): a re-resolve (e.g. a status toggle that moves a
+            card between columns) mints new group OBJECTS for both the source and destination
+            columns; a reference-keyed <For> would remount every card in both. Index keeps the
+            columns mounted and hands a reactive `group()` accessor, so only the inner card <For>
+            diffs — the moved card animates, the rest stay put. */}
+        <Index each={props.result.groups}>
           {(group) => (
             <div
-              class={`${styles.kanbanColumn} ${overCol() === group.key ? styles.kanbanColumnOver : ""}`}
-              onDragOver={(e) => onColumnDragOver(e, group)}
+              class={`${styles.kanbanColumn} ${overCol() === group().key ? styles.kanbanColumnOver : ""}`}
+              onDragOver={(e) => onColumnDragOver(e, group())}
               onDrop={(e) => {
                 e.preventDefault();
-                void handleDrop(group);
+                void handleDrop(group());
               }}
             >
-              <div class={styles.kanbanColHeader} style={{ color: groupColor(group.key) }}>
+              <div class={styles.kanbanColHeader} style={{ color: groupColor(group().key) }}>
                 <span class={styles.dot} />
                 <span class={styles.kanbanColTitle}>
-                  {group.key === "" ? "(empty)" : group.key}
+                  {group().key === "" ? "(empty)" : group().key}
                 </span>
-                <span class={styles.kanbanCount}>{group.rows.length}</span>
+                <span class={styles.kanbanCount}>{group().rows.length}</span>
               </div>
               <div class={styles.kanbanCards}>
-                <For each={visibleRows(group)}>
+                <For each={visibleRows(group())}>
                   {(row: Row, i) => (
                     <>
                       <div
                         class={`${styles.kanbanPlaceholder} ${
-                          overCol() === group.key && overIndex() === i() ? styles.kanbanPlaceholderActive : ""
+                          overCol() === group().key && overIndex() === i() ? styles.kanbanPlaceholderActive : ""
                         }`}
                       />
                       <div
@@ -217,7 +222,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                         onDragStart={(e) => {
                           draggedPath = row.file.path;
                           setDragPath(row.file.path);
-                          setFromCol(group.key);
+                          setFromCol(group().key);
                           if (e.dataTransfer) {
                             e.dataTransfer.effectAllowed = "move";
                             e.dataTransfer.setData("text/plain", row.file.path);
@@ -233,7 +238,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
                 </For>
                 <div
                   class={`${styles.kanbanPlaceholder} ${
-                    overCol() === group.key && overIndex() === visibleRows(group).length
+                    overCol() === group().key && overIndex() === visibleRows(group()).length
                       ? styles.kanbanPlaceholderActive
                       : ""
                   }`}
@@ -241,7 +246,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; onCh
               </div>
             </div>
           )}
-        </For>
+        </Index>
       </div>
     </Show>
   );
