@@ -25,7 +25,7 @@ type PaneTreeProps = {
   onStartPaneDrag: (e: PointerEvent, leafId: string, label: string) => void;
   onSaved: () => void;
   onOpen: (path: string) => void;
-  onNewTerminal: () => void;
+  onNewTerminal: (leafId: string) => void;
   noteNames: () => NoteCandidate[];
   tagNames: () => string[];
   terminalLabel?: (content: string) => string;
@@ -119,7 +119,7 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
           path={props.node.content}
           onSaved={props.onSaved}
           onOpen={props.onOpen}
-          onNewTerminal={props.onNewTerminal}
+          onNewTerminal={() => props.onNewTerminal(props.node.id)}
           noteNames={props.noteNames}
           tagNames={props.tagNames}
         />

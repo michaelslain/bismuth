@@ -212,6 +212,33 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
   // rAF handle for debounced resize — collapses bursts during divider drag.
   let resizeRafId = 0;
 
+  // Cached cursor-overlay geometry. The custom cursor div is repositioned on every
+  // xterm render (onRender fires per output frame), so reading layout there forced a
+  // synchronous reflow each frame — with several terminals streaming at once (e.g.
+  // animating Claude TUIs) that thrashed layout and made the whole app sluggish. The
+  // cell size + rows-element offset only change on resize, so compute them once per
+  // fit/resize and have updateCursor read these cached values (no layout reads).
+  let cellW = 0, cellH = 0, rowOffX = 0, rowOffY = 0;
+  // Cache the rows element to avoid a querySelector per render; re-query lazily if
+  // xterm swaps it out (reflow / addon reset) so the cursor keeps tracking the grid.
+  let rowsEl: HTMLElement | null = null;
+  const getRowsEl = (): HTMLElement | null => {
+    if (!rowsEl || !rowsEl.isConnected) rowsEl = container?.querySelector(".xterm-rows") as HTMLElement | null;
+    return rowsEl;
+  };
+  // Recompute the cached geometry from the live grid. Called only on fit/resize/focus,
+  // NOT per render. This is the only place that reads layout for the cursor overlay.
+  const recomputeCursorMetrics = (): void => {
+    const rows = getRowsEl();
+    if (!term || !rows || !container) return;
+    const cRect = container.getBoundingClientRect();
+    const rRect = rows.getBoundingClientRect();
+    rowOffX = rRect.left - cRect.left;
+    rowOffY = rRect.top - cRect.top;
+    if (term.cols > 0) cellW = rRect.width / term.cols;
+    if (term.rows > 0) cellH = rRect.height / term.rows;
+  };
+
   const sendResize = () => {
     if (!ws || ws.readyState !== WebSocket.OPEN || !term) return;
     ws.send(resizeFrame(term.cols, term.rows));
@@ -227,6 +254,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       try {
         fit?.fit();
         sendResize();
+        recomputeCursorMetrics();
         term?.focus();
       } catch {
         /* ignore during teardown */
@@ -324,15 +352,6 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     fit.fit();
     term.focus();
 
-    // Cache the rows element to avoid a querySelector on every render/cursorMove event,
-    // but re-query lazily if xterm ever swaps it out (reflow / addon reset) so the cursor
-    // overlay and click-to-position keep aligning to the live grid instead of a dead node.
-    let rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
-    const getRowsEl = (): HTMLElement | null => {
-      if (!rowsEl || !rowsEl.isConnected) rowsEl = container.querySelector(".xterm-rows") as HTMLElement | null;
-      return rowsEl;
-    };
-
     // Custom cursor overlay that glides smoothly between positions — xterm's native
     // cursor is a class transferred between inline spans, so CSS transitions don't
     // apply. We render our own absolutely-positioned div and animate transform.
@@ -340,32 +359,29 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     cursorEl.className = "xterm-custom-cursor";
     container.appendChild(cursorEl);
 
+    // Reposition the cursor overlay. Runs on EVERY xterm render, so it must do NO
+    // layout reads — cellW/cellH and the rows-element offset come from the cached
+    // metrics (recomputed only on fit/resize). Only buffer coordinates (cheap, no
+    // reflow) and style writes happen here.
     const updateCursor = () => {
-      const rows = getRowsEl();
-      if (!term || !cursorEl || !rows) return;
+      if (!term || !cursorEl) return;
       // Hide the overlay while the user is scrolled up into the scrollback — the real
       // cursor sits on the (now off-screen) prompt line, so a floating block would be
       // misleading. onRender fires on scroll, so this toggles promptly.
       const buf = term.buffer.active;
       if (buf.viewportY !== buf.baseY) { cursorEl.style.opacity = "0"; return; }
       cursorEl.style.opacity = "";
-      const cellW = rows.clientWidth / term.cols;
-      const cellH = rows.clientHeight / term.rows;
-      // The host container is padded (16px 18px) so the rows element no longer
-      // shares the container's origin. Offset the overlay (anchored at the
-      // container's top-left) by the rows element's position within it so the
-      // cursor stays aligned with the text.
-      const cRect = container.getBoundingClientRect();
-      const rRect = rows.getBoundingClientRect();
-      const offsetX = rRect.left - cRect.left;
-      const offsetY = rRect.top - cRect.top;
-      // cursorX/Y are in cell units relative to the visible viewport.
-      const x = offsetX + buf.cursorX * cellW;
-      const y = offsetY + buf.cursorY * cellH;
+      // First paint (or after an xterm reflow that left the metrics at 0): measure once.
+      if (cellH === 0) recomputeCursorMetrics();
+      // cursorX/Y are in cell units relative to the visible viewport; offset by the
+      // padded rows element's position within the container.
+      const x = rowOffX + buf.cursorX * cellW;
+      const y = rowOffY + buf.cursorY * cellH;
       cursorEl.style.transform = `translate(${x}px, ${y}px)`;
       cursorEl.style.height = `${cellH}px`;
     };
 
+    recomputeCursorMetrics();
     renderSub = term.onRender(() => updateCursor());
     cursorMoveSub = term.onCursorMove(() => updateCursor());
     updateCursor();
@@ -508,6 +524,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
         try {
           fit?.fit();
           sendResize();
+          recomputeCursorMetrics();
         } catch {
           /* ignore during teardown */
         }
