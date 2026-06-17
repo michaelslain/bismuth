@@ -210,16 +210,25 @@ export function keybindCompletions(ctx: CompletionContext, valueSoFar: string): 
  * modifier presses are ignored until a real key lands. Keystrokes are swallowed
  * (capture phase + preventDefault) so they don't type into the editor or fire app
  * shortcuts while recording.
+ *
+ * The capture listener is scoped to THIS editor's DOM (not `window`) and is torn
+ * down on Escape, on blur, and after a 3s backstop. Previously it lived on
+ * `window` and only unbound on a successful combo or the timeout — so a bare
+ * modifier press (or clicking away) left a window-level capture listener calling
+ * `stopPropagation()` on every keystroke, which silently killed global shortcuts
+ * like Cmd+O until the timer fired. Scoping + the extra exits make that
+ * impossible: app shortcuts pressed outside this editor never reach the listener.
  */
 function recordShortcut(view: EditorView, valueFrom: number): void {
   let done = false;
   let toastId: number | null = null;
   let dismiss: ((id: number) => void) | null = null;
 
-  const finish = (combo: string | null) => {
+  const finish = (combo: string | null, refocus = true) => {
     if (done) return;
     done = true;
-    window.removeEventListener("keydown", onKey, true);
+    view.dom.removeEventListener("keydown", onKey, true);
+    view.contentDOM.removeEventListener("blur", onBlur, true);
     clearTimeout(timer);
     if (toastId !== null && dismiss) dismiss(toastId);
     if (combo) {
@@ -229,17 +238,24 @@ function recordShortcut(view: EditorView, valueFrom: number): void {
         selection: { anchor: valueFrom + combo.length },
       });
     }
-    view.focus();
+    // Don't yank focus back to a torn-down view (timeout after the buffer closed)
+    // or away from wherever the user clicked when a blur cancelled recording.
+    if (refocus && view.dom.isConnected) view.focus();
   };
 
   const onKey = (e: KeyboardEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (e.key === "Escape") { finish(null); return; } // cancel, don't record Escape
     const combo = eventToCombo(e); // null for a bare modifier → keep waiting
     if (combo) finish(combo);
   };
+  // Clicking out of the editor cancels recording so the capture listener can't
+  // linger and swallow keys aimed at the rest of the app.
+  const onBlur = () => finish(null, false);
 
-  window.addEventListener("keydown", onKey, true);
+  view.dom.addEventListener("keydown", onKey, true);
+  view.contentDOM.addEventListener("blur", onBlur, true);
   const timer = setTimeout(() => finish(null), 3000);
 
   // Lazy toast import keeps the Solid store out of this module's static path.

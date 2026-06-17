@@ -1,4 +1,20 @@
 /* app/src/NoteTitle.css — inline note title (a `# <title>` heading). */
+
+/* The title now renders as a CodeMirror block widget at the top of the note
+   (editor/noteTitleWidget.tsx) so it scrolls with the content. That widget div
+   lives INSIDE .cm-content — which is already the centered ~680px reading column
+   (the .cm-scroller supplies the 40px side padding). So inside the widget we drop
+   the standalone horizontal padding + max-width + auto-centering the title used
+   when it was a sibling above the scroller; otherwise the title would be inset an
+   extra 40px and misalign with the body text. Vertical rhythm is kept. */
+.oa-note-title .note-title {
+  max-width: none;
+  width: auto;
+  margin: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* H1 row (Bismuth redesign): a mono `#` hash in --accent + a serif title.
    Centered in the same 760px reading column as the editor body, baseline-aligned. */
 .note-title {
