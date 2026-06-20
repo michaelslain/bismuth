@@ -100,3 +100,39 @@ test("computeViewLayouts caches the views; a later attachLayout includes them", 
   expect(out.views?.second?.pos3d["n1"]).toBeDefined();
   expect(out.views?.third?.pos3d["mem:m1"]).toBeDefined();
 });
+
+// Incremental add-only rebuild: creating a note must NOT scramble the existing layout. The warm-start
+// (lastFullLayout) pins every pre-existing node so its 3D + 2D positions are byte-identical across the add.
+test("adding a node pins the existing layout (no scramble) and places the new node", async () => {
+  const key = `test-${randomUUID()}`;
+  const g1 = baseGraph(); // A, B, C with A -> B
+  const out1 = await attachLayout(g1, key);
+  const posOf = (out: GraphData, id: string) => out.nodes.find((n) => n.id === id)!;
+
+  // Add D linked to A — a pure addition (no node removed, no edge retargeted).
+  const g2: GraphData = {
+    nodes: [...g1.nodes, { id: "D", label: "D", kind: "note" }],
+    edges: [...g1.edges, { from: "A", to: "D", kind: "link" }],
+  };
+  const out2 = await attachLayout(g2, key);
+
+  for (const id of ["A", "B", "C"]) {
+    expect(posOf(out2, id).position).toEqual(posOf(out1, id).position);
+    expect(posOf(out2, id).position2d).toEqual(posOf(out1, id).position2d);
+  }
+  const d = posOf(out2, "D");
+  expect(d.position!.every((n) => Number.isFinite(n))).toBe(true);
+  expect(d.position2d!.every((n) => Number.isFinite(n))).toBe(true);
+});
+
+// A deletion is NOT a pure add, so it takes the normal warm path (survivors may relax) — but the layout
+// must still be valid: every remaining node keeps a finite position and the removed node is gone.
+test("removing a node yields a valid layout for the survivors", async () => {
+  const key = `test-${randomUUID()}`;
+  const g1 = baseGraph();
+  await attachLayout(g1, key);
+  const g2: GraphData = { nodes: g1.nodes.filter((n) => n.id !== "C"), edges: g1.edges };
+  const out2 = await attachLayout(g2, key);
+  expect(out2.nodes.map((n) => n.id).sort()).toEqual(["A", "B"]);
+  for (const n of out2.nodes) expect(n.position!.every((c) => Number.isFinite(c))).toBe(true);
+});

@@ -1,0 +1,4 @@
+[test]
+# Redirect the layout disk cache to a temp dir during tests (see core/test/setup.ts) so the suite
+# never writes to the real durable cache (~/.bismuth/layout-cache). Runs before any test module loads.
+preload = ["./core/test/setup.ts"]
