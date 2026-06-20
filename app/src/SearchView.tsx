@@ -50,6 +50,9 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   const onInput = (v: string) => {
     setQuery(v);
     clearTimeout(debounceTimer);
+    // Regex search bypasses the index and scans every note body line-by-line, so don't re-run it on
+    // every keystroke — wait for Enter. Literal search stays live-as-you-type (index-backed, cheap).
+    if (regex()) { setStatus(v ? "Press Enter to run regex search" : ""); return; }
     debounceTimer = setTimeout(runSearch, 150);
   };
   onCleanup(() => clearTimeout(debounceTimer));

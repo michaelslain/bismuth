@@ -33,7 +33,7 @@ import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
-import { searchVault, invalidateSearchIndex } from "./search";
+import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
 import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
@@ -115,27 +115,19 @@ export function createServer(cfg: CoreConfig) {
   let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig;
   void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
 
-  // /graph and /tree go through a deduped, invalidation-safe cache (see asyncCache.ts):
-  // concurrent first requests share one build, and a file change mid-build won't
-  // repopulate a stale value. cachedRows stays a plain lazy cache (rebuilt on next read).
+  // /graph, /tree, and the unscoped vault feeds (rows + tasks) all go through a deduped,
+  // invalidation-safe cache (see asyncCache.ts): concurrent first requests share ONE build,
+  // and a file change mid-build won't repopulate a stale value. This matters most for rows:
+  // one SSE event can fan out to N independent /rows resolves (one per open base/calendar pane),
+  // and a bare lazy cache would let each kick off its own full-vault walk concurrently.
   const graphCache = createAsyncCache<GraphData>(async () =>
     attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault),
   );
   const treeCache = createAsyncCache<TreeEntry[]>(() => listTree(cfg.vault));
-  let cachedRows: Row[] | null = null;
-  let cachedTasks: Row[] | null = null;
+  // The unscoped vault feeds, shared by /vault-data, /rows, and the source resolver.
+  const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
+  const tasksCache = createAsyncCache<Row[]>(() => buildTaskRows(cfg.vault, undefined));
   let version = 0;
-
-  // Lazy accessors for the unscoped vault feeds, shared by /vault-data, /rows, and
-  // the source resolver. Both rebuild on next read after a file-watch change nulls them.
-  async function getCachedRows(): Promise<Row[]> {
-    if (cachedRows === null) cachedRows = await buildVaultRows(cfg.vault);
-    return cachedRows;
-  }
-  async function getCachedTasks(): Promise<Row[]> {
-    if (cachedTasks === null) cachedTasks = await buildTaskRows(cfg.vault, undefined);
-    return cachedTasks;
-  }
   const sse = createSseRegistry();
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -166,13 +158,17 @@ export function createServer(cfg: CoreConfig) {
   function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
     if (dirty.graph) graphCache.invalidate();
     if (dirty.tree) treeCache.invalidate();
-    // The search index covers note bodies (and basenames/headings/tags), so even a
-    // content-only edit that's dirty to neither graph nor tree changes search results.
-    // Drop it on any vault change so the next /search rebuilds from current files.
-    invalidateSearchIndex(cfg.vault);
+    // The search index covers note bodies (and basenames/headings/tags), so even a content-only edit
+    // that's dirty to neither graph nor tree changes search results. When we know exactly which paths
+    // changed, patch just those docs in place (re-read one file, not the whole vault); otherwise (an
+    // unknown-extent change) drop the index so the next /search rebuilds from current files. The patch
+    // is fire-and-forget: a search landing in the brief window before it resolves can return results one
+    // edit stale, which self-heals on the next search; on patch failure we fall back to a full drop.
+    if (paths.length > 0) void updateSearchIndex(cfg.vault, paths).catch(() => invalidateSearchIndex(cfg.vault));
+    else invalidateSearchIndex(cfg.vault);
     // Bases rows + tasks derive from arbitrary frontmatter/body — rebuild lazily on next read.
-    cachedRows = null;
-    cachedTasks = null;
+    rowsCache.invalidate();
+    tasksCache.invalidate();
     version++;
     sse.publish({ version, paths, dirty });
   }
@@ -393,7 +389,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "GET /vault-data": async (_, __) => {
-      return ok(await getCachedRows());
+      return ok(await rowsCache.get());
     },
 
     "GET /base": async (_, url) => {
@@ -551,8 +547,8 @@ export function createServer(cfg: CoreConfig) {
       const rows = await resolveSource(spec, {
         root: cfg.vault,
         today: todayISO(),
-        vaultRows: () => (rowsMemo ??= getCachedRows()),
-        vaultTasks: () => (tasksMemo ??= getCachedTasks()),
+        vaultRows: () => (rowsMemo ??= rowsCache.get()),
+        vaultTasks: () => (tasksMemo ??= tasksCache.get()),
       });
       return ok(rows);
     },
@@ -1049,6 +1045,12 @@ export function createServer(cfg: CoreConfig) {
   // serially after launch. Errors are swallowed (e.g. vault dir absent in tests).
   graphCache.warm();
   treeCache.warm();
+  // Prefetch the 2nd/3rd-brain view layouts in the background once the graph is ready, attaching them
+  // to the cached graph object in place (exactly as GET /graph/views does). Without this, the first
+  // switch to a brain mode pays a cold subgraph layout on the click; with it, that switch is instant.
+  void graphCache.get()
+    .then((g) => computeViewLayouts(g, cfg.vault).then((views) => { g.views = views; }))
+    .catch(() => {});
 
   type TermWsData = { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
   const server = Bun.serve<TermWsData>({

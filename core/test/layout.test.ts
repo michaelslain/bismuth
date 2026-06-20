@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { computeLayout, pivotMDS } from "../src/layout";
+import { computeLayout, computeLayoutAsync, pivotMDS, type Positions } from "../src/layout";
 
 function ring(n: number) {
   return {
@@ -156,4 +156,36 @@ test("pivotMDS is deterministic", () => {
   const a = pivotMDS(adj, 40, 3, 20);
   const b = pivotMDS(adj, 40, 3, 20);
   expect(a).toEqual(b);
+});
+
+// --- Incremental "add-only" pinning (fixedIds) -----------------------------------------------------
+// Used by layout-cache's incremental rebuild: a created note must not scramble the existing layout.
+
+test("fixedIds pins nodes at their initialPositions; only the new node settles", () => {
+  const seed: Positions = { a: [10, 20, 30], b: [-40, 5, 12], c: [100, -100, 50] };
+  const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }], edges: [{ from: "a", to: "d" }] };
+  const pos = computeLayout(input, { refineTicks: 60, initialPositions: { ...seed }, fixedIds: ["a", "b", "c"] });
+  // Pinned nodes are EXACTLY where they were seeded (no drift).
+  expect(pos.a).toEqual([10, 20, 30]);
+  expect(pos.b).toEqual([-40, 5, 12]);
+  expect(pos.c).toEqual([100, -100, 50]);
+  // The new (free) node is placed at a finite position.
+  expect(pos.d.every((n) => Number.isFinite(n))).toBe(true);
+});
+
+test("computeLayoutAsync keeps fixedIds pinned (early-exit path)", async () => {
+  const seed: Positions = { a: [10, 20, 30], b: [-40, 5, 0] };
+  const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }], edges: [{ from: "a", to: "c" }, { from: "b", to: "c" }] };
+  const pos = await computeLayoutAsync(input, { refineTicks: 80, initialPositions: { ...seed }, fixedIds: ["a", "b"] });
+  expect(pos.a).toEqual([10, 20, 30]);
+  expect(pos.b).toEqual([-40, 5, 0]);
+  expect(pos.c.every((n) => Number.isFinite(n))).toBe(true);
+});
+
+test("a 2D pinned settle keeps z=0 for the free node", async () => {
+  const seed: Positions = { a: [10, 20, 0], b: [-30, 8, 0] };
+  const input = { nodes: [{ id: "a" }, { id: "b" }, { id: "c" }], edges: [{ from: "a", to: "c" }] };
+  const pos = await computeLayoutAsync(input, { dimensions: 2, refineTicks: 60, initialPositions: { ...seed }, fixedIds: ["a", "b"] });
+  expect(pos.a).toEqual([10, 20, 0]);
+  expect(pos.c[2]).toBe(0);
 });

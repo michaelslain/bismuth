@@ -1,5 +1,7 @@
 import { test, expect, describe } from "bun:test";
-import { findMatches, buildMatcher, searchVault } from "../src/search";
+import { writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { findMatches, buildMatcher, searchVault, updateSearchIndex, invalidateSearchIndex } from "../src/search";
 import { makeVault } from "./helpers";
 
 describe("findMatches", () => {
@@ -68,5 +70,53 @@ describe("searchVault", () => {
   test("empty query returns nothing", async () => {
     const root = makeVault({ "a.md": "anything" });
     expect(await searchVault(root, "", { caseSensitive: false, wholeWord: false, regex: false })).toEqual([]);
+  });
+});
+
+describe("updateSearchIndex (incremental)", () => {
+  const simple = { caseSensitive: false, wholeWord: false, regex: false };
+
+  test("reflects an edited note without dropping the whole index", async () => {
+    const root = makeVault({ "a.md": "alpha content", "b.md": "beta content" });
+    expect((await searchVault(root, "alpha", simple)).length).toBe(1); // builds + caches the index
+    expect((await searchVault(root, "gamma", simple)).length).toBe(0);
+    writeFileSync(join(root, "a.md"), "gamma content");
+    await updateSearchIndex(root, ["a.md"]);
+    expect((await searchVault(root, "gamma", simple)).length).toBe(1);
+    expect((await searchVault(root, "alpha", simple)).length).toBe(0);
+    invalidateSearchIndex(root);
+  });
+
+  test("adds a newly-created note", async () => {
+    const root = makeVault({ "a.md": "alpha" });
+    expect((await searchVault(root, "delta", simple)).length).toBe(0); // caches the index
+    writeFileSync(join(root, "c.md"), "delta content");
+    await updateSearchIndex(root, ["c.md"]);
+    expect((await searchVault(root, "delta", simple)).map((r) => r.path)).toContain("c.md");
+    invalidateSearchIndex(root);
+  });
+
+  test("drops a deleted note", async () => {
+    const root = makeVault({ "a.md": "alpha", "b.md": "beta" });
+    expect((await searchVault(root, "beta", simple)).length).toBe(1); // caches the index
+    rmSync(join(root, "b.md"));
+    await updateSearchIndex(root, ["b.md"]);
+    expect((await searchVault(root, "beta", simple)).length).toBe(0);
+    invalidateSearchIndex(root);
+  });
+
+  test("no cached index → next search still builds a correct one", async () => {
+    const root = makeVault({ "a.md": "alpha" });
+    await updateSearchIndex(root, ["a.md"]); // nothing cached yet: safe no-op (falls back to invalidate)
+    expect((await searchVault(root, "alpha", simple)).length).toBe(1);
+    invalidateSearchIndex(root);
+  });
+
+  test("ignores non-markdown paths", async () => {
+    const root = makeVault({ "a.md": "alpha" });
+    expect((await searchVault(root, "alpha", simple)).length).toBe(1); // caches the index
+    await updateSearchIndex(root, ["settings.yaml", "somedir"]);
+    expect((await searchVault(root, "alpha", simple)).length).toBe(1); // unaffected
+    invalidateSearchIndex(root);
   });
 });

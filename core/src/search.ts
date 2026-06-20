@@ -127,16 +127,70 @@ export function invalidateSearchIndex(root?: string): void {
   }
 }
 
+/**
+ * Incrementally patch the cached search index for the changed `paths` — re-reading just those notes
+ * instead of dropping the whole index and re-walking the vault on the next /search (which was the cold
+ * cost paid after every edit). No-op when no .md changed. When nothing is cached yet, fall back to a
+ * full invalidation (which also drops any in-flight build, so the next search rebuilds from current
+ * files). Per path: gone-from-disk → discard; already-indexed → replace; new → add. `bodies` is the
+ * authority for "is this path indexed". Mutates the cached index in place.
+ */
+export async function updateSearchIndex(root: string, paths: string[]): Promise<void> {
+  const idx = indexCache.get(root);
+  if (!idx) { invalidateSearchIndex(root); return; }
+  const mdPaths = paths.filter((p) => p.endsWith(".md"));
+  if (mdPaths.length === 0) return;
+  const { readNote } = await getFileAccess();
+  for (const p of mdPaths) {
+    let body: string | null;
+    try {
+      body = await readNote(root, p);
+    } catch {
+      body = null; // unreadable / removed
+    }
+    const indexed = idx.bodies.has(p);
+    if (body === null) {
+      if (indexed) {
+        idx.mini.discard(p);
+        idx.bodies.delete(p);
+        const i = idx.paths.indexOf(p);
+        if (i >= 0) idx.paths.splice(i, 1);
+      }
+      continue;
+    }
+    const doc: IndexDoc = { id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractBodyTags(body), body };
+    if (indexed) {
+      idx.mini.replace(doc);
+    } else {
+      idx.mini.add(doc);
+      idx.paths.push(p);
+    }
+    idx.bodies.set(p, body);
+  }
+}
+
+// Cap on concurrent file reads during a cold index build. Reading every note serially made the cold
+// build's wall time the SUM of all per-file read latencies; reading them concurrently collapses that to
+// roughly one round-trip. Bounded so a huge vault can't exhaust file descriptors / spike memory.
+const BUILD_READ_CONCURRENCY = 32;
+
 async function buildSearchIndex(root: string): Promise<SearchIndex> {
   const { listMarkdown, readNote } = await getFileAccess();
   const paths = await listMarkdown(root);
   const bodies = new Map<string, string>();
-  const docs: IndexDoc[] = [];
-  for (const p of paths) {
-    const body = await readNote(root, p);
-    bodies.set(p, body);
-    docs.push({ id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractBodyTags(body), body });
-  }
+  const docs: IndexDoc[] = new Array(paths.length);
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= paths.length) return;
+      const p = paths[i];
+      const body = await readNote(root, p);
+      bodies.set(p, body);
+      docs[i] = { id: p, basename: fileBasename(p), headings: extractHeadings(body), tags: extractBodyTags(body), body };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(BUILD_READ_CONCURRENCY, paths.length) }, worker));
   const mini = new MiniSearch<IndexDoc>({
     fields: ["basename", "headings", "tags", "body"],
     storeFields: ["id"],

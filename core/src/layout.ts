@@ -39,6 +39,14 @@ export interface LayoutOptions {
    */
   initialPositions?: Positions;
   /**
+   * Ids to PIN at their `initialPositions` coordinates for the whole settle (sets d3 fx/fy/fz). Used by
+   * the incremental "add-only" rebuild (see layout-cache.ts): when a note is created, every pre-existing
+   * node is pinned exactly where it already was and only the new node(s) settle in among them — so an
+   * edit never scrambles the established layout and the refine converges in a fraction of the ticks.
+   * Requires `initialPositions` to contain these ids. Pairs with the convergence early-exit below.
+   */
+  fixedIds?: string[];
+  /**
    * Tuning for the disconnected-component "reel-in" (see prepareLayout). A note with no in-view links is
    * its own connected component; without this it gets flung into an empty direction at the cloud edge.
    * Each node of a SMALL non-main component gets `virtualAnchors` layout-only virtual links to the main
@@ -344,6 +352,20 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     z: dim === 3 ? (X[i][2] ?? 0) : 0,
   }));
 
+  // Pin pre-existing nodes for an incremental settle (see LayoutOptions.fixedIds): they hold their
+  // seeded positions via d3's fx/fy/fz while the new nodes settle around them. Pinned nodes still
+  // EXERT forces (so new nodes are repelled/spaced/linked correctly) but never move themselves — so an
+  // add provably cannot disturb the established layout, and far fewer ticks are needed to converge.
+  if (o.fixedIds && o.fixedIds.length > 0) {
+    const fixed = new Set(o.fixedIds);
+    for (const nd of nodes) {
+      if (!fixed.has(nd.id)) continue;
+      nd.fx = nd.x;
+      nd.fy = nd.y;
+      if (dim === 3) nd.fz = nd.z;
+    }
+  }
+
   // Per-node collide radius: leaves keep the uniform spacing floor; hubs get their actual drawn
   // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
   // indexes `nodes`, the same order as `adj` and the sim's node array. Degree uses realDeg (real edges
@@ -396,13 +418,43 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
  * yield between them, so the output matches the sync path exactly.
  */
 const YIELD_EVERY = 16;
+// Convergence early-exit for an incremental (pinned) settle: once the only moving nodes (the new ones)
+// stop moving more than EPSILON units in a tick, further ticks are no-ops, so we stop. Only armed when
+// `fixedIds` is set — a full cold/warm settle runs at alpha(1) and keeps drifting (it would never fire),
+// so this never changes non-incremental output. MIN guards against quitting before a far-seeded new node
+// has begun travelling toward its links.
+const INCREMENTAL_EXIT_EPSILON = 0.3;
+const INCREMENTAL_EXIT_MIN_TICKS = 8;
 const yieldToEventLoop = (): Promise<void> => new Promise<void>((resolve) => setImmediate(resolve));
 export async function computeLayoutAsync(input: LayoutInput, options: LayoutOptions = {}): Promise<Positions> {
   const o = { ...DEFAULTS, ...options };
   if (input.nodes.length === 0) return {};
   const { sim, nodes, dim } = prepareLayout(input, o);
+  const fixed = o.fixedIds && o.fixedIds.length > 0 ? new Set(o.fixedIds) : null;
+  // Snapshot of the previous tick's free-node positions, for the convergence check above.
+  const px = fixed ? new Float64Array(nodes.length) : null;
+  const py = fixed ? new Float64Array(nodes.length) : null;
+  const pz = fixed ? new Float64Array(nodes.length) : null;
+  const snapshot = () => {
+    if (!px || !py || !pz) return;
+    for (let j = 0; j < nodes.length; j++) { px[j] = nodes[j].x ?? 0; py[j] = nodes[j].y ?? 0; pz[j] = nodes[j].z ?? 0; }
+  };
+  snapshot();
   for (let i = 0; i < o.refineTicks; i++) {
     sim.tick();
+    if (fixed && px && py && pz && i >= INCREMENTAL_EXIT_MIN_TICKS) {
+      let maxMove2 = 0;
+      for (let j = 0; j < nodes.length; j++) {
+        if (fixed.has(nodes[j].id)) continue; // pinned: never moves
+        const dx = (nodes[j].x ?? 0) - px[j];
+        const dy = (nodes[j].y ?? 0) - py[j];
+        const dz = dim === 3 ? (nodes[j].z ?? 0) - pz[j] : 0;
+        const m = dx * dx + dy * dy + dz * dz;
+        if (m > maxMove2) maxMove2 = m;
+      }
+      if (maxMove2 < INCREMENTAL_EXIT_EPSILON * INCREMENTAL_EXIT_EPSILON) break;
+    }
+    snapshot();
     if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
   }
   return extractPositions(nodes, dim);
