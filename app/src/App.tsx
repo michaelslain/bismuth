@@ -29,6 +29,7 @@ import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
+import { pushClosedSession, popClosedSession } from "./closedSession";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
@@ -753,9 +754,40 @@ export default function App() {
   // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
   // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
   document.title = "Bismuth";
-  // Persist tab/pane layout whenever it changes.
+  // Persist tab/pane layout whenever it changes — unless this window is closing, in which
+  // case the close handler below has deliberately cleared this window's key so its tabs
+  // don't auto-restore on next launch.
+  let windowClosing = false;
   createEffect(() => {
-    localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
+    const blob = serializeTabs(tabs(), activeTabId());
+    if (windowClosing) return;
+    localStorage.setItem(TABS_STORAGE_KEY, blob);
+  });
+  // A window worth stashing on close: more than one tab, or a single tab that isn't just the
+  // graph home (no point reopening an empty home).
+  const hasRestorableContent = (ts: Tab[]): boolean =>
+    ts.length > 1 || ts.some((t) => leaves(t.root).some((l) => l.content !== GRAPH_TAB));
+  // When this window is CLOSED (Tauri's onCloseRequested fires on close but NOT on reload),
+  // stash its tab layout to the shared closed-session store and clear its own key so the tabs
+  // don't auto-restore next launch — the user brings them back with Cmd+Shift+T (reopenClosedTab
+  // falls back to that store). Tauri-only: a browser can't reliably tell a close from a reload,
+  // so dev/browser keeps the existing persist-and-restore-on-reload behavior.
+  onMount(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        unlisten = await getCurrentWindow().onCloseRequested(() => {
+          windowClosing = true;
+          if (hasRestorableContent(tabs())) pushClosedSession(serializeTabs(tabs(), activeTabId()));
+          try { localStorage.removeItem(TABS_STORAGE_KEY); } catch { /* storage gone — nothing to clear */ }
+        });
+      } catch (e) {
+        console.error("window close handler wiring failed", e);
+      }
+    })();
+    onCleanup(() => unlisten?.());
   });
   // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
   // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
@@ -789,13 +821,24 @@ export default function App() {
   // round-trip so no id collides with a live pane), and focus it.
   const reopenClosedTab = () => {
     const last = closedTabs.pop();
-    if (!last) return;
-    const { tabs: revived } = deserializeTabs(serializeTabs([last], last.id), () => true);
-    const tab = revived[0];
-    if (!tab) return;
-    setTabs((ts) => [...ts, tab]);
-    setActiveTabId(tab.id);
-    for (const l of leaves(tab.root)) recordNav(l.id, l.content);
+    if (last) {
+      const { tabs: revived } = deserializeTabs(serializeTabs([last], last.id), () => true);
+      const tab = revived[0];
+      if (!tab) return;
+      setTabs((ts) => [...ts, tab]);
+      setActiveTabId(tab.id);
+      for (const l of leaves(tab.root)) recordNav(l.id, l.content);
+      return;
+    }
+    // Nothing closed in THIS window's session — fall back to the most recently closed WINDOW
+    // (persisted across windows + relaunch) and restore all of its tabs into this window.
+    const blob = popClosedSession();
+    if (!blob) return;
+    const { tabs: revived, activeTabId: revivedActive } = deserializeTabs(blob, () => true);
+    if (!revived.length) return;
+    setTabs((ts) => [...ts, ...revived]);
+    setActiveTabId(revivedActive ?? revived[revived.length - 1].id);
+    for (const t of revived) for (const l of leaves(t.root)) recordNav(l.id, l.content);
   };
   // Close the whole active tab (regardless of splits). Cmd+W closes the focused pane via
   // close-pane (which closes the tab when it's the last pane); this command always closes
