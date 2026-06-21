@@ -17,7 +17,6 @@
 // No `transform: scale` is used (it blurs) — dot diameters are set in real pixels.
 
 import "./css3d.css";
-import { forceSimulation, forceManyBody, forceLink, forceCollide, forceX, forceY, forceZ, type SimNode } from "d3-force-3d";
 import type { GraphData, GraphNode, NodeKind } from "../../../core/src/graph";
 import { SELF_NODE_ID } from "../../../core/src/graph";
 
@@ -69,12 +68,11 @@ const ORBIT_SPEED = 0.005; // rad per px of drag
 // --- scale tuning (easy to nudge) ---
 const LINK_SPREAD = 6;        // CONSTANT link-distance multiplier — does NOT change with node count
 const COLLIDE_RATIO = 1.25;   // collision floor = link distance × this
-const SELF_CLEAR = 2.6;       // "you" hub's collision radius multiplier (the clearing around it)
 const HEAVY_NODES = 600;      // above this: canvas-while-moving, no hover-dim, no idle spin
 const SPIN_MAX_NODES = 350;   // idle-spin only for graphs this small
 const NODE_LEAF_FRAC = 0.2;   // node diameter as a fraction of on-screen link spacing (a 0-degree leaf)
-const NODE_DEG_GAIN = 0.06;   // extra diameter fraction per sqrt(degree)
-const NODE_MAX_FRAC = 0.55;   // cap: a hub never exceeds ~half the spacing
+const NODE_DEG_GAIN = 0.10;   // extra diameter fraction per sqrt(degree) — degree is read clearly in size
+const NODE_MAX_FRAC = 0.6;    // cap: a hub never exceeds ~0.6 of the spacing
 const SELF_FRAC = 0.5;        // the "you" hub's diameter as a fraction of spacing
 const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
@@ -117,6 +115,53 @@ interface NodeView {
   lastZi: number; lastDotSize: number; shown: boolean;
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number; } // kr = stable 0..1 rank for per-mode thinning
+
+// The backend layout (core/layout.ts) settles at linkDistance × smallBoost (smallBoost = 400/n clamped
+// 1..8, and ×1.8 in 2D). This renderer draws node sizes tuned for a WIDER, node-count-independent
+// spacing of linkDistance × LINK_SPREAD (×1.4 in 2D) — which is why it used to re-run a force sim to
+// re-spread the backend coords. These mirror those backend constants so we can reproduce that spread
+// with a plain uniform scale instead of a sim.
+const BACKEND_SMALL_BOOST = (n: number) => Math.min(8, Math.max(1, 400 / n));
+const BACKEND_2D_SPACING = 1.8;
+const RENDERER_2D_SPACING = 1.4;
+
+/** Reposition nodes from the backend's precomputed layout WITHOUT a force sim — the slow part of a
+ *  mode switch (~1.2s at 2k nodes). The backend layout is already fully settled (PivotMDS + 120 force
+ *  ticks); it's just spaced tighter than this renderer draws, so we scale it by the ratio of the two
+ *  spacing models (reproducing the spread the old client re-settle produced) in O(n).
+ *
+ *  Centering matters: scaling multiplies every node's distance from the scaling origin, so we scale
+ *  about the CONTENT centroid (excluding the injected "you" hub, which sits at the backend origin and
+ *  would bias it) and pin "you" there. Otherwise any offset between the origin and the cloud's real
+ *  center of mass is amplified ~scale×, flinging the cloud off-center — most visible in 3rd-brain,
+ *  where "you" isn't linked to the memory nodes and sits far from their centroid. Mutates p3/p2 in
+ *  place and returns a snapshot for the per-signature cache. */
+function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
+  const smallBoost = BACKEND_SMALL_BOOST(Math.max(1, nodes.length));
+  const scale = dim === 3
+    ? LINK_SPREAD / smallBoost
+    : (LINK_SPREAD * RENDERER_2D_SPACING) / (smallBoost * BACKEND_2D_SPACING);
+  let cx = 0, cy = 0, cz = 0, cnt = 0;
+  for (const nv of nodes) {
+    if (nv.node.kind === "self") continue; // "you" sits at origin; don't let it bias the centroid
+    const p = dim === 3 ? nv.p3 : nv.p2;
+    cx += p[0]; cy += p[1]; cz += dim === 3 ? p[2] : 0; cnt++;
+  }
+  if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
+  const store = new Map<string, Vec3>();
+  for (const nv of nodes) {
+    let np: Vec3;
+    if (nv.node.kind === "self") {
+      np = [0, 0, 0]; // pin "you" at the cloud's center so the layout stays balanced around it
+    } else {
+      const p = dim === 3 ? nv.p3 : nv.p2;
+      np = [(p[0] - cx) * scale, (p[1] - cy) * scale, dim === 3 ? (p[2] - cz) * scale : 0];
+    }
+    if (dim === 3) nv.p3 = np; else nv.p2 = np;
+    store.set(nv.node.id, np);
+  }
+  return store;
+}
 
 function easeInOutCubic(t: number): number { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
 function lerpInt(a: number, b: number, t: number): number {
@@ -256,8 +301,21 @@ export class CSS3DGraphRenderer {
       for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619);
       h = (h + (x >>> 0)) >>> 0;
     }
+    // Fold node positions into the signature too. The renderer now uses the backend layout directly
+    // (no client re-settle), so a positions-ONLY change — most importantly the 2nd/3rd-brain VIEW
+    // layout arriving async after the structure (same nodes + edges, new coords) — must trigger a
+    // rebuild, or the view would keep the stale fallback positions. O(n), only on graph updates.
+    let ph = 2166136261;
+    for (const n of g.nodes) {
+      const p = n.position, q = n.position2d;
+      ph = Math.imul(ph ^ (p ? p[0] | 0 : 0), 16777619);
+      ph = Math.imul(ph ^ (p ? p[1] | 0 : 0), 16777619);
+      ph = Math.imul(ph ^ (p ? p[2] | 0 : 0), 16777619);
+      ph = Math.imul(ph ^ (q ? q[0] | 0 : 0), 16777619);
+      ph = Math.imul(ph ^ (q ? q[1] | 0 : 0), 16777619);
+    }
     const ds = g.nodes.map((n) => (n.daemon ? `${n.id}:${n.daemon.enabled ? 1 : 0}${n.daemon.running ? 1 : 0}` : n.id)).join(",");
-    return `${g.nodes.length}|${g.edges.length}|${h}|${ds}`;
+    return `${g.nodes.length}|${g.edges.length}|${h}|${ph >>> 0}|${ds}`;
   }
 
   private build(g: GraphData) {
@@ -383,30 +441,13 @@ export class CSS3DGraphRenderer {
     if (n < 2 || this.hasIntentionalLayout()) return; // agents/daemon arrive pre-laid-out
     const hit = this.p3Cache.get(this.sig); // re-visiting a mode -> reuse its settled positions (no re-settle)
     if (hit) { for (const nv of this.nodes) { const p = hit.get(nv.node.id); if (p) nv.p3 = [p[0], p[1], p[2]]; } return; }
-    const collideR = this.collideR;
-    type SN = SimNode & { kind: string; scale: number };
-    const simNodes: SN[] = this.nodes.map((nv) => {
-      const s: SN = { id: nv.node.id, kind: nv.node.kind, scale: nv.scale, x: nv.p3[0], y: nv.p3[1], z: nv.p3[2] };
-      if (nv.node.kind === "self") { s.fx = 0; s.fy = 0; s.fz = 0; }
-      return s;
-    });
-    const links = this.edges.map((e) => ({ source: e.a.node.id, target: e.b.node.id }));
-    const sim = forceSimulation<SN>(simNodes, 3)
-      .force("charge", forceManyBody<SN>().strength(this.cfg.repulsion).theta(this.heavy ? 1.6 : 0.9))
-      .force("link", forceLink<SN>(links).id((d) => d.id as string).distance(linkDist).strength(0.18))
-      .force("collide", forceCollide<SN>((d) => (d.kind === "self" ? collideR * SELF_CLEAR : collideR * (1 + d.scale * 0.08))).iterations(this.heavy ? 1 : 2))
-      .force("x", forceX<SN>(0).strength(this.cfg.centering))
-      .force("y", forceY<SN>(0).strength(this.cfg.centering))
-      .force("z", forceZ<SN>(0).strength(this.cfg.centering))
-      .stop();
-    const ticks = this.heavy ? 45 : Math.min(360, 200 + n); // fewer ticks on big graphs -> fast load
-    for (let t = 0; t < ticks; t++) sim.tick();
-    const store = new Map<string, Vec3>();
-    for (let k = 0; k < this.nodes.length; k++) {
-      const s = simNodes[k];
-      this.nodes[k].p3 = [s.x ?? 0, s.y ?? 0, s.z ?? 0];
-      store.set(this.nodes[k].node.id, this.nodes[k].p3);
-    }
+    // The backend already computed a full force layout (PivotMDS + 120 force ticks, see core/layout.ts)
+    // and ships it as node.position — settled BETTER than the ~45 ticks we could afford on the main
+    // thread, which was the slow part of a mode switch (~1.2s at 2k nodes, growing with the vault). So
+    // we no longer re-simulate here: we just rescale the backend layout to this renderer's wider target
+    // spacing and use it. O(n), instant, and there's no client-side settle left to go degenerate (the
+    // "grid" bug). Scale is derived from the backend's mean edge length so it adapts to any graph size.
+    const store = scaleToSpacing(this.nodes, 3);
     this.cachePut(this.p3Cache, this.sig, store);
   }
 
@@ -430,26 +471,9 @@ export class CSS3DGraphRenderer {
     if (hit) {
       for (const nv of this.nodes) { const p = hit.get(nv.node.id); if (p) nv.p2 = [p[0], p[1], p[2]]; }
     } else if (n >= 2 && !this.hasIntentionalLayout()) {
-      const linkDist = this.cfg.linkDistance * LINK_SPREAD * 1.4; // 2D spreads a touch wider
-      const collideR = linkDist * COLLIDE_RATIO;
-      type SN2 = SimNode & { kind: string; scale: number };
-      const sn: SN2[] = this.nodes.map((nv) => {
-        const s: SN2 = { id: nv.node.id, kind: nv.node.kind, scale: nv.scale, x: nv.p2[0], y: nv.p2[1] };
-        if (nv.node.kind === "self") { s.fx = 0; s.fy = 0; }
-        return s;
-      });
-      const links = this.edges.map((e) => ({ source: e.a.node.id, target: e.b.node.id }));
-      const sim = forceSimulation<SN2>(sn, 2)
-        .force("charge", forceManyBody<SN2>().strength(this.cfg.repulsion).theta(this.heavy ? 1.6 : 0.9))
-        .force("link", forceLink<SN2>(links).id((d) => d.id as string).distance(linkDist).strength(0.18))
-        .force("collide", forceCollide<SN2>((d) => (d.kind === "self" ? collideR * SELF_CLEAR : collideR * (1 + d.scale * 0.08))).iterations(this.heavy ? 1 : 2))
-        .force("x", forceX<SN2>(0).strength(this.cfg.centering))
-        .force("y", forceY<SN2>(0).strength(this.cfg.centering))
-        .stop();
-      const ticks = this.heavy ? 45 : Math.min(360, 200 + n);
-      for (let t = 0; t < ticks; t++) sim.tick();
-      const store = new Map<string, Vec3>();
-      for (let k = 0; k < this.nodes.length; k++) { const s = sn[k]; this.nodes[k].p2 = [s.x ?? 0, s.y ?? 0, 0]; store.set(this.nodes[k].node.id, this.nodes[k].p2); }
+      // Same as the 3D path: rescale the backend's precomputed 2D layout (node.position2d) to this
+      // renderer's spacing instead of re-running a force sim (~0.9s at 2k nodes).
+      const store = scaleToSpacing(this.nodes, 2);
       this.cachePut(this.p2Cache, this.sig, store);
     }
     let r2 = 1;
