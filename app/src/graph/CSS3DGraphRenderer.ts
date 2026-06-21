@@ -67,7 +67,6 @@ const ORBIT_SPEED = 0.005; // rad per px of drag
 
 // --- scale tuning (easy to nudge) ---
 const LINK_SPREAD = 6;        // CONSTANT link-distance multiplier — does NOT change with node count
-const HEAVY_NODES = 600;      // above this: canvas-while-moving, no hover-dim, no idle spin
 const SPIN_MAX_NODES = 350;   // idle-spin only for graphs this small
 const NODE_SIZE_SCALE = 0.5;  // overall node-size multiplier (tuning knob; lower = smaller dots)
 const NODE_LEAF_FRAC = 0.2;   // node diameter as a fraction of on-screen link spacing (a 0-degree leaf)
@@ -320,7 +319,7 @@ export class CSS3DGraphRenderer {
 
   private build(g: GraphData) {
     this.measure();
-    this.heavy = g.nodes.length > HEAVY_NODES;
+    this.heavy = true; // unified: always render nodes on canvas (one renderer; scales to any graph size)
     // adjacency + degree
     this.adjacency.clear();
     const deg = new Map<string, number>();
