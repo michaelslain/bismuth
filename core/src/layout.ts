@@ -74,6 +74,12 @@ export type Positions = Record<string, [number, number, number]>;
 // each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
 const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8 };
 const LINK_STRENGTH = 0.18;
+// 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
+// help it collapses into a hairball. Push communities apart (repulsion ×), let them breathe (centering
+// ×), and enforce a slightly bigger honeycomb gap (collide ×). 3D keeps the gentler defaults.
+const MODE_2D_REPULSION_MULT = 3;
+const MODE_2D_CENTERING_MULT = 0.5;
+const MODE_2D_COLLIDE_MULT = 1.2;
 const COLLIDE_RATIO = 1.25;
 // 6 (was 3): more solver passes per tick so overlaps actually resolve within the refine budget —
 // notably in the 2D view, where nodes separated only along Z in 3D collapse onto the same XY and
@@ -370,21 +376,28 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
   // radius (degree-scaled) so big nodes repel as the circles they're drawn as, not as points. `i`
   // indexes `nodes`, the same order as `adj` and the sim's node array. Degree uses realDeg (real edges
   // only) so layout-only tether links above don't inflate an orphan's drawn-size collision radius.
+  const collideMult = dim === 2 ? MODE_2D_COLLIDE_MULT : 1;
   const collideRadiusFor = (_n: RN, i: number) =>
-    Math.max(collideFloor, drawnNodeRadius(degreeScale(realDeg[i])) * COLLIDE_SIZE_PADDING);
+    collideMult * Math.max(collideFloor, drawnNodeRadius(degreeScale(realDeg[i])) * COLLIDE_SIZE_PADDING);
   // One link force over real + tether links. Tethers (virtual) are shorter and stronger so a stray is
   // held inside the cloud against the long-range many-body repulsion; real edges keep their own spacing.
   const linkForce = forceLink<RN, VL>(links)
     .id((d: RN) => d.id)
     .distance((l: VL) => (l.virtual ? linkDist * o.virtualDistMult : linkDist))
     .strength((l: VL) => (l.virtual ? o.virtualLinkStrength : LINK_STRENGTH));
+  // Flattening to 2D loses a whole dimension of room, so the same forces that spread nicely in 3D
+  // collapse into a dense blob in 2D. Compensate in 2D: stronger many-body repulsion pushes communities
+  // apart (so clusters stay distinct, not one hairball) and weaker pull-to-center lets them breathe into
+  // an even, honeycomb-spaced spread. 3D keeps the gentler defaults.
+  const repulsion = dim === 2 ? o.repulsion * MODE_2D_REPULSION_MULT : o.repulsion;
+  const centering = dim === 2 ? o.centering * MODE_2D_CENTERING_MULT : o.centering;
   const sim = forceSimulation<RN>(nodes, dim)
     .alpha(1)
-    .force("charge", forceManyBody<RN>().strength(o.repulsion).theta(MANYBODY_THETA))
+    .force("charge", forceManyBody<RN>().strength(repulsion).theta(MANYBODY_THETA))
     .force("link", linkForce)
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
-    .force("x", forceX<RN>(0).strength(o.centering))
-    .force("y", forceY<RN>(0).strength(o.centering));
+    .force("x", forceX<RN>(0).strength(centering))
+    .force("y", forceY<RN>(0).strength(centering));
   if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
   sim.stop();
   return { sim, nodes, dim, mainIdx };
