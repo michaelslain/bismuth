@@ -67,7 +67,6 @@ const ORBIT_SPEED = 0.005; // rad per px of drag
 
 // --- scale tuning (easy to nudge) ---
 const LINK_SPREAD = 6;        // CONSTANT link-distance multiplier — does NOT change with node count
-const COLLIDE_RATIO = 1.25;   // collision floor = link distance × this
 const HEAVY_NODES = 600;      // above this: canvas-while-moving, no hover-dim, no idle spin
 const SPIN_MAX_NODES = 350;   // idle-spin only for graphs this small
 const NODE_LEAF_FRAC = 0.2;   // node diameter as a fraction of on-screen link spacing (a 0-degree leaf)
@@ -189,7 +188,7 @@ export class CSS3DGraphRenderer {
   private p2Cache = new Map<string, Map<string, Vec3>>(); // settled 2D positions per graph signature
   private radius3 = 1; private radius2 = 1; // layout extent per view
   private scale3 = 1; private scale2 = 1;   // world-units -> px fit per view
-  private collideR = 50;                     // world-space link spacing (constant); drives node size
+  private fitPx = 1;                          // on-screen fit radius (px); node size derives from DENSITY, not layout scale
   private glowCentroids: Vec3[] = [];        // cached top-3 community centroids (glow lobes)
   private heavy = false;                     // large graph -> canvas-while-moving + reduced interaction
   private minZ = 0; private maxZ = 1;        // last frame's projected depth range
@@ -431,22 +430,16 @@ export class CSS3DGraphRenderer {
     return [x / n, y / n];
   }
 
-  /** Pre-settle the 3D layout once (charge + link + collision + centering), seeded from the backend
-   *  positions, with a CONSTANT link distance so spacing doesn't collapse as the graph grows. Tick
-   *  count + Barnes-Hut theta are tuned down for large graphs so load stays quick. */
+  /** Position the 3D layout from the backend's precomputed coords — no client force sim (that was the
+   *  slow part of a mode switch, ~1.2s at 2k nodes). The backend layout is already fully settled
+   *  (PivotMDS + 120 force ticks, core/layout.ts); we just rescale it to this renderer's wider spacing
+   *  (scaleToSpacing). agents/daemon arrive pre-laid-out by GraphView, so they're left untouched.
+   *  Cached per signature so re-visiting a mode is free. */
   private settlePositions() {
     const n = this.nodes.length;
-    const linkDist = this.cfg.linkDistance * LINK_SPREAD;
-    this.collideR = linkDist * COLLIDE_RATIO;
     if (n < 2 || this.hasIntentionalLayout()) return; // agents/daemon arrive pre-laid-out
-    const hit = this.p3Cache.get(this.sig); // re-visiting a mode -> reuse its settled positions (no re-settle)
+    const hit = this.p3Cache.get(this.sig); // re-visiting a mode -> reuse its positions
     if (hit) { for (const nv of this.nodes) { const p = hit.get(nv.node.id); if (p) nv.p3 = [p[0], p[1], p[2]]; } return; }
-    // The backend already computed a full force layout (PivotMDS + 120 force ticks, see core/layout.ts)
-    // and ships it as node.position — settled BETTER than the ~45 ticks we could afford on the main
-    // thread, which was the slow part of a mode switch (~1.2s at 2k nodes, growing with the vault). So
-    // we no longer re-simulate here: we just rescale the backend layout to this renderer's wider target
-    // spacing and use it. O(n), instant, and there's no client-side settle left to go degenerate (the
-    // "grid" bug). Scale is derived from the backend's mean edge length so it adapts to any graph size.
     const store = scaleToSpacing(this.nodes, 3);
     this.cachePut(this.p3Cache, this.sig, store);
   }
@@ -606,7 +599,12 @@ export class CSS3DGraphRenderer {
   private depthMin(): number { return this.heavy ? DEPTH_MIN_OPACITY : DEPTH_MIN_OPACITY_SMALL; } // small graphs fade gently
   private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(this.depthRank(nv), DEPTH_CURVE); }
   private nodeDiameter(nv: NodeView): number {
-    const base = Math.min(MAX_DOT_PX, this.collideR * this.worldScale * this.nodeFrac(nv)); // cap resting size
+    // Size by node DENSITY, not by the layout's absolute scale. The on-screen node spacing is roughly
+    // (2·fitPx)/√n (n nodes filling a disk of on-screen radius fitPx), and nodeFrac is a node's diameter
+    // as a fraction of that spacing. This is invariant to the layout radius — so it no longer changes
+    // when the backend layout's extent shifts (e.g. as nodes are added), which made dots balloon before.
+    const spacing = (2 * this.fitPx) / Math.sqrt(Math.max(1, this.nodes.length));
+    const base = Math.min(MAX_DOT_PX, spacing * this.nodeFrac(nv)); // cap resting size
     // Floor at MIN_DOT_PX so zooming out keeps nodes as tiny dots instead of making them
     // vanish (perspective shrinks every dot; without a floor the small ones drop out).
     return Math.max(MIN_DOT_PX, base * nv.pscale);
@@ -632,6 +630,7 @@ export class CSS3DGraphRenderer {
 
   private fit() {
     const fitPx = (Math.min(this.W, this.H) * FIT_FRACTION) / this.fitMargin;
+    this.fitPx = fitPx; // node size derives from this (density-based), independent of layout radius
     this.scale3 = fitPx / Math.max(1, this.radius3);
     this.scale2 = fitPx / Math.max(1, this.radius2);
     this.worldScale = this.scale3 + (this.scale2 - this.scale3) * this.morph;
