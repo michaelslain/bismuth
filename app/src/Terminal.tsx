@@ -211,6 +211,14 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
   let reconnectAttempt = 0;
   // rAF handle for debounced resize — collapses bursts during divider drag.
   let resizeRafId = 0;
+  // Whether the viewport is "following" the bottom of the output. True while the
+  // terminal is pinned to the latest line; flips to false only when the user
+  // deliberately scrolls up into the scrollback (and back to true when they return
+  // to the bottom). We use it to keep the viewport pinned on new output even while
+  // the tab is hidden (display:none) — xterm suspends its own auto-scroll then, so a
+  // terminal you leave running on another tab would otherwise be stuck at a stale
+  // scroll position when you come back.
+  let following = true;
 
   // Cached cursor-overlay geometry. The custom cursor div is repositioned on every
   // xterm render (onRender fires per output frame), so reading layout there forced a
@@ -255,6 +263,10 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
         fit?.fit();
         sendResize();
         recomputeCursorMetrics();
+        // Re-show: if the user was following the bottom, snap to the latest output
+        // that streamed in while the tab was hidden (xterm's viewport refresh was
+        // suspended under display:none, so the scroll position can be stale).
+        if (following) term?.scrollToBottom();
         term?.focus();
       } catch {
         /* ignore during teardown */
@@ -276,6 +288,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     // a temporal-dead-zone error if it runs during the await (they stay undefined).
     let renderSub: { dispose: () => void } | undefined;
     let cursorMoveSub: { dispose: () => void } | undefined;
+    let scrollSub: { dispose: () => void } | undefined;
     let dataListener: { dispose: () => void } | undefined;
     onCleanup(() => {
       disposed = true;
@@ -285,6 +298,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       try { dataListener?.dispose(); } catch {}
       try { renderSub?.dispose(); } catch {}
       try { cursorMoveSub?.dispose(); } catch {}
+      try { scrollSub?.dispose(); } catch {}
       try { cursorEl?.remove(); } catch {}
       if (downHandler) try { container.removeEventListener("mousedown", downHandler); } catch {}
       if (upHandler) try { container.removeEventListener("mouseup", upHandler); } catch {}
@@ -384,6 +398,14 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     recomputeCursorMetrics();
     renderSub = term.onRender(() => updateCursor());
     cursorMoveSub = term.onCursorMove(() => updateCursor());
+    // Track whether we're pinned to the bottom. The user scrolling up into the
+    // scrollback flips `following` off (so we stop yanking them down on new output);
+    // scrolling back to the latest line flips it on. Programmatic scrollToBottom
+    // keeps viewportY === baseY, so it leaves `following` true.
+    scrollSub = term.onScroll(() => {
+      const b = term!.buffer.active;
+      following = b.viewportY >= b.baseY;
+    });
     updateCursor();
 
     // Fix 3: Click-to-position cursor on the current prompt line (Warp-style).
@@ -462,9 +484,14 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
         sendResize();
       };
 
-      // Backend → terminal: raw PTY output.
+      // Backend → terminal: raw PTY output. After the chunk is parsed into the
+      // buffer, re-pin to the bottom if we're following — this keeps the viewport
+      // tracking new output even while the tab is hidden (display:none), where
+      // xterm's own auto-scroll is suspended. A no-op when already at the bottom.
       ws.onmessage = (ev) => {
-        term!.write(new Uint8Array(ev.data as ArrayBuffer));
+        term!.write(new Uint8Array(ev.data as ArrayBuffer), () => {
+          if (following) term?.scrollToBottom();
+        });
       };
 
       ws.onclose = (ev) => {
