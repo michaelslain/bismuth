@@ -30,6 +30,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { pushClosedSession, popClosedSession } from "./closedSession";
+import { isReloadNavigation } from "./navType";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
@@ -102,17 +103,33 @@ export default function App() {
   // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
   const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
 
-  // Restore persisted tab/pane layout at setup (before any persist effect runs, so we
-  // never clobber storage with the initial empty state). The graph/vault list isn't
-  // loaded yet, so we keep every leaf here; the existing oa-deleted reconciliation prunes
-  // any leaf whose file turns out to be gone once edits occur.
-  const restored = deserializeTabs(
-    typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null,
-    () => true,
-  );
+  // A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
+  // graph home (no point stashing/reopening an empty home).
+  const hasRestorableContent = (ts: Tab[]): boolean =>
+    ts.length > 1 || ts.some((t) => leaves(t.root).some((l) => l.content !== GRAPH_TAB));
+
+  // Restore persisted tab/pane layout at setup (before any persist effect runs, so we never
+  // clobber storage with the initial empty state). The graph/vault list isn't loaded yet, so we
+  // keep every leaf here; the oa-deleted reconciliation prunes any gone file once edits occur.
+  //
+  // Reload vs. cold launch: a RELOAD (Cmd+R / dev hot-reload) restores the tabs as they were. A
+  // COLD launch — the window/app having been closed and reopened — does NOT auto-restore: the prior
+  // session is stashed for Cmd+Shift+T and the window opens fresh on the graph home. That's the
+  // "closing a window clears its tabs (but you can reopen them)" behavior. Deciding it HERE, at
+  // startup, via the Navigation Timing API is robust: it needs no close-time write (a localStorage
+  // clear inside onCloseRequested can be lost if WebKit hasn't flushed it before the process exits)
+  // and it works identically in the browser and the Tauri app.
+  const reloaded = isReloadNavigation();
+  const savedTabs = typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null;
+  if (!reloaded && savedTabs && hasRestorableContent(deserializeTabs(savedTabs, () => true).tabs)) {
+    pushClosedSession(savedTabs); // cold launch: keep the prior session reachable via Cmd+Shift+T
+  }
+  const restored = reloaded
+    ? deserializeTabs(savedTabs, () => true)
+    : { tabs: [] as Tab[], activeTabId: null as string | null };
   // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
-  // when nothing is restored we open with the graph AS a tab. The no-empty-state effect + the
-  // close handlers keep this invariant (a graph tab always exists) at runtime.
+  // when nothing is restored we open with the graph AS a tab. The no-empty-state effect keeps this
+  // invariant (a graph tab always exists) at runtime.
   const initialTabs = restored.tabs.length > 0 ? restored.tabs : [makeTab(GRAPH_TAB)];
   const [tabs, setTabs] = createSignal<Tab[]>(initialTabs);
   const [activeTabId, setActiveTabId] = createSignal<string | null>(restored.activeTabId ?? initialTabs[0]?.id ?? null);
@@ -754,40 +771,10 @@ export default function App() {
   // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
   // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
   document.title = "Bismuth";
-  // Persist tab/pane layout whenever it changes — unless this window is closing, in which
-  // case the close handler below has deliberately cleared this window's key so its tabs
-  // don't auto-restore on next launch.
-  let windowClosing = false;
+  // Persist tab/pane layout whenever it changes. On a cold launch the startup logic above decides
+  // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is.
   createEffect(() => {
-    const blob = serializeTabs(tabs(), activeTabId());
-    if (windowClosing) return;
-    localStorage.setItem(TABS_STORAGE_KEY, blob);
-  });
-  // A window worth stashing on close: more than one tab, or a single tab that isn't just the
-  // graph home (no point reopening an empty home).
-  const hasRestorableContent = (ts: Tab[]): boolean =>
-    ts.length > 1 || ts.some((t) => leaves(t.root).some((l) => l.content !== GRAPH_TAB));
-  // When this window is CLOSED (Tauri's onCloseRequested fires on close but NOT on reload),
-  // stash its tab layout to the shared closed-session store and clear its own key so the tabs
-  // don't auto-restore next launch — the user brings them back with Cmd+Shift+T (reopenClosedTab
-  // falls back to that store). Tauri-only: a browser can't reliably tell a close from a reload,
-  // so dev/browser keeps the existing persist-and-restore-on-reload behavior.
-  onMount(() => {
-    if (!isTauri()) return;
-    let unlisten: (() => void) | undefined;
-    void (async () => {
-      try {
-        const { getCurrentWindow } = await import("@tauri-apps/api/window");
-        unlisten = await getCurrentWindow().onCloseRequested(() => {
-          windowClosing = true;
-          if (hasRestorableContent(tabs())) pushClosedSession(serializeTabs(tabs(), activeTabId()));
-          try { localStorage.removeItem(TABS_STORAGE_KEY); } catch { /* storage gone — nothing to clear */ }
-        });
-      } catch (e) {
-        console.error("window close handler wiring failed", e);
-      }
-    })();
-    onCleanup(() => unlisten?.());
+    localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
   });
   // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
   // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
