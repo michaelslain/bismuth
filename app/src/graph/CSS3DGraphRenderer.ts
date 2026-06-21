@@ -69,6 +69,7 @@ const ORBIT_SPEED = 0.005; // rad per px of drag
 const LINK_SPREAD = 6;        // CONSTANT link-distance multiplier — does NOT change with node count
 const HEAVY_NODES = 600;      // above this: canvas-while-moving, no hover-dim, no idle spin
 const SPIN_MAX_NODES = 350;   // idle-spin only for graphs this small
+const NODE_SIZE_SCALE = 0.5;  // overall node-size multiplier (tuning knob; lower = smaller dots)
 const NODE_LEAF_FRAC = 0.2;   // node diameter as a fraction of on-screen link spacing (a 0-degree leaf)
 const NODE_DEG_GAIN = 0.10;   // extra diameter fraction per sqrt(degree) — degree is read clearly in size
 const NODE_MAX_FRAC = 0.6;    // cap: a hub never exceeds ~0.6 of the spacing
@@ -604,7 +605,7 @@ export class CSS3DGraphRenderer {
     // as a fraction of that spacing. This is invariant to the layout radius — so it no longer changes
     // when the backend layout's extent shifts (e.g. as nodes are added), which made dots balloon before.
     const spacing = (2 * this.fitPx) / Math.sqrt(Math.max(1, this.nodes.length));
-    const base = Math.min(MAX_DOT_PX, spacing * this.nodeFrac(nv)); // cap resting size
+    const base = Math.min(MAX_DOT_PX, NODE_SIZE_SCALE * spacing * this.nodeFrac(nv)); // cap resting size
     // Floor at MIN_DOT_PX so zooming out keeps nodes as tiny dots instead of making them
     // vanish (perspective shrinks every dot; without a floor the small ones drop out).
     return Math.max(MIN_DOT_PX, base * nv.pscale);

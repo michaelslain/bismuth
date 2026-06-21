@@ -370,16 +370,23 @@ export default function App() {
   // layout isn't loaded yet, fetch it once and merge it in. Throttled so a not-yet-ready
   // layout can't cause a fetch storm; applyView falls back to full-graph positions until
   // the layout lands.
-  let lastViewFetch = -Infinity; // -Infinity (not 0): the first call always clears the throttle
+  // Dedupe concurrent fetches with an in-flight guard, but NEVER permanently skip. The old
+  // time-throttle could swallow the one fetch needed right after a graph change — e.g. adding a memory
+  // note invalidates the cached view layouts, and if a fetch had happened <2s earlier the refetch was
+  // dropped, leaving the brain view stuck on the fallback full-graph positions (the off-center
+  // "crescent"). The trigger effect re-fires on every graph change, so the in-flight guard alone
+  // prevents a fetch storm while still self-healing after each change.
+  let viewFetchInFlight = false;
   const ensureViewLayouts = async () => {
-    const now = performance.now();
-    if (now - lastViewFetch < 2000) return;
-    lastViewFetch = now;
+    if (viewFetchInFlight) return;
+    viewFetchInFlight = true;
     try {
       const views = await api.graphViews();
       setGraph((g) => ({ ...g, views }));
     } catch {
-      // leave views absent — the graph renders with full-graph positions
+      // leave views absent — the graph renders with full-graph positions until the next attempt
+    } finally {
+      viewFetchInFlight = false;
     }
   };
 
