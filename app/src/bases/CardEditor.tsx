@@ -10,6 +10,7 @@ import { api } from "../api";
 import { onServerChange } from "../serverVersion";
 import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
 import { livePreview } from "../editor/livePreview";
+import { toggleBold, toggleItalic } from "../editor/markdownFormat";
 import { notePathFacet } from "../editor/tableState";
 import { codeHighlightStyle } from "../editor/codeHighlight";
 import { findBareUrls } from "../editor/urls";
@@ -309,12 +310,21 @@ export function CardEditor(props: { path: string; title?: string; mode: CardMode
         extensions: [
           history(),
           drawSelection(),
-          indentUnit.of("  "),
-          EditorState.tabSize.of(2),
-          // Tab indents/dedents list items (matches the note editor); the rest is the standard
-          // editing + history keymap.
-          keymap.of([{ key: "Tab", run: indentMore, shift: indentLess }, ...defaultKeymap, ...historyKeymap]),
-          markdown({ codeLanguages: languages }),
+          // Match the note editor: a 4-space Tab so list nesting clears the `1. ` marker
+          // (ordered renumbering survives) and indents uniformly across bullets/numbers/text.
+          indentUnit.of("    "),
+          EditorState.tabSize.of(4),
+          // Tab indents/dedents list items, Cmd/Ctrl-B/I toggle bold/italic — same as the
+          // note editor; the rest is the standard editing + history keymap.
+          keymap.of([
+            { key: "Mod-b", run: toggleBold },
+            { key: "Mod-i", run: toggleItalic },
+            { key: "Tab", run: indentMore, shift: indentLess },
+            ...defaultKeymap,
+            ...historyKeymap,
+          ]),
+          // remove IndentedCode so a 4-space-indented line stays prose, not a code block.
+          markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
           syntaxHighlighting(codeHighlightStyle),
           notePathFacet.of(props.path),
           livePreview, // rendered-yet-editable markdown + checkbox toggle + right-click status menu
