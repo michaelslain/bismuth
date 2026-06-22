@@ -33,12 +33,20 @@ export const MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace";
 // Derive the parse-node type from syntaxTree's return so we don't depend on @lezer/common
 // being a direct dependency (it's only present transitively).
 type ParseNode = NonNullable<ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]>["parent"]>;
-function listDepthAt(state: EditorState, pos: number): number {
+// Visual nesting depth for a list line. Structural (parse-tree) depth handles normal
+// nesting and keeps legacy 2-space + new 4-space notes correct. But a first/sole item
+// indented with no parent to nest under is structurally depth 0, so Tab on it would be
+// invisible — fall back to the raw indent (one level per 4-col Tab) so an indent always
+// shows. max() never lowers a properly-nested item's depth: for 2-space content
+// structural (cols/2) ≥ raw (cols/4), so legacy rendering is unchanged.
+function listDepth(state: EditorState, pos: number, indent: string): number {
   let count = 0;
   for (let n: ParseNode | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
     if (n.name === "ListItem") count++;
   }
-  return Math.max(0, count - 1);
+  const structural = Math.max(0, count - 1);
+  const raw = Math.floor(indent.replace(/\t/g, "    ").length / 4);
+  return Math.max(structural, raw);
 }
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
@@ -607,7 +615,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         isTaskLine = true;
         const status = charToStatus(taskMatch[4]);
         const struck = status === "done" || status === "cancelled";
-        const taskDepth = listDepthAt(view.state, line.from + taskMatch[1].length);
+        const taskDepth = listDepth(view.state, line.from + taskMatch[1].length, taskMatch[1]);
         if (struck) {
           // strike only the task text, not the indentation/checkbox
           const textStart = line.from + taskMatch[0].length;
@@ -634,7 +642,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // reaching here is never one; only task lines need guarding off the bullet path.
       const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
-        const depth = listDepthAt(view.state, line.from + bulletMatch[1].length);
+        const depth = listDepth(view.state, line.from + bulletMatch[1].length, bulletMatch[1]);
         if (revealsPrefix(line.from, line.from + bulletMatch[0].length)) {
           // Raw, but indent like the rendered view and show the "- " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
@@ -655,7 +663,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // matched above (and thematic breaks `continue`d), so they never reach here.
       const orderedMatch = isTaskLine || bulletMatch ? null : text.match(/^(\s*)(\d+)([.)])(\s+)/);
       if (orderedMatch) {
-        const depth = listDepthAt(view.state, line.from + orderedMatch[1].length);
+        const depth = listDepth(view.state, line.from + orderedMatch[1].length, orderedMatch[1]);
         if (revealsPrefix(line.from, line.from + orderedMatch[0].length)) {
           // Raw, but indent like the rendered view and show the "1. " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
@@ -1168,7 +1176,10 @@ export const livePreview = [
     ".cm-task-done": { "text-decoration": "line-through", opacity: "0.55", color: "color-mix(in srgb, var(--fg) 52%, transparent)" },
     // Raw "- " / "- [ ]" marker on the cursor line, shown in the mono font.
     ".cm-list-marker": { "font-family": MONO_FONT },
-    ".cm-math": { display: "inline-block", "vertical-align": "middle" },
+    // text-indent:0 — list lines carry a negative hanging text-indent (it's inherited);
+    // without resetting it the KaTeX content shifts left and, when math is the first thing
+    // after a list marker, lands on top of (hides) the bullet/number.
+    ".cm-math": { display: "inline-block", "vertical-align": "middle", "text-indent": "0" },
     // Full-width block for $$…$$ so KaTeX can lay out equation tags / numbers (\tag,
     // numbered align/equation) flush right of the line instead of on top of the equation.
     ".cm-math-display": { display: "block", width: "100%" },
