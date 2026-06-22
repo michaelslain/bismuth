@@ -62,6 +62,18 @@ describe("scanFoldables — bullets", () => {
     expect(b.depth).toBe(1); // two leading spaces => depth 1
   });
 
+  test("depth is structural, not space-counted: 4-space nesting is depth 1, not 2", () => {
+    const t = doc(["- a", "    - b", "        - c", "        - c2"].join("\n"));
+    const b = scanFoldables(t).find((x) => x.id.startsWith("l|b"))!;
+    expect(b.depth).toBe(1); // 4 leading spaces is still one level deep
+  });
+
+  test("a bullet nested under a numbered item is depth 1 (the number counts as a level)", () => {
+    const t = doc(["1. Alpha", "    - sub", "        - deep", "2. Beta"].join("\n"));
+    const sub = scanFoldables(t).find((x) => x.id.startsWith("l|sub"))!;
+    expect(sub.depth).toBe(1);
+  });
+
   test("a thematic break is never a bullet", () => {
     const t = doc(["- real", "  - kid", "---", "after"].join("\n"));
     const blocks = scanFoldables(t);

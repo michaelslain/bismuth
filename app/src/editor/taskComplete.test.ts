@@ -104,3 +104,30 @@ test("explicit invoke shows the full menu even with one char", () => {
   const res = complete("- [ ] d", 7, true);
   expect(res?.options.length).toBeGreaterThan(1);
 });
+
+test("Ctrl-Space on an EMPTY task line shows the full menu at the caret", () => {
+  const doc = "- [ ] ";
+  const res = complete(doc, doc.length, true); // explicit
+  expect(res).not.toBeNull();
+  expect(res?.options.length).toBeGreaterThan(1);
+  expect(res?.from).toBe(doc.length); // inserts at caret, clobbers nothing
+  // auto (non-explicit) stays silent on an empty task — no noise mid-typing
+  expect(complete(doc, doc.length, false)).toBeNull();
+});
+
+test("Ctrl-Space after a typed word + space offers the menu at the caret", () => {
+  const doc = "- [ ] buy milk ";
+  const res = complete(doc, doc.length, true);
+  expect(res?.options.length).toBeGreaterThan(1);
+  expect(res?.from).toBe(doc.length); // after the space, doesn't replace "milk"
+});
+
+test("Ctrl-Space right after a non-signifier word inserts at the caret, not over the word", () => {
+  const doc = "- [ ] read book";
+  const res = complete(doc, doc.length, true); // "book" matches no signifier
+  expect(res?.options.length).toBeGreaterThan(1);
+  expect(res?.from).toBe(doc.length); // caret, so "book" is preserved
+  // the inserted signifier gets a leading space so it doesn't fuse onto the word
+  const due = res?.options.find((o) => o.label.includes("due"))!;
+  expect(due).toBeTruthy();
+});

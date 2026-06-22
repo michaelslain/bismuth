@@ -1,11 +1,12 @@
 // app/src/Editor.tsx
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Annotation } from "@codemirror/state";
+import { EditorState, Annotation, Prec } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
+import { toggleBold, toggleItalic } from "./editor/markdownFormat";
 import { languages } from "@codemirror/language-data";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
@@ -400,13 +401,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     const base = [
       history(),
       drawSelection(),
-      // Pin indentation to 2 spaces everywhere so Tab/Shift-Tab (indentMore/indentLess),
-      // pasted code, and the list-nesting depth math all agree. The depth calc in
-      // foldBlocks/livePreview treats one level as 2 columns (and a literal tab as 2),
-      // so tabSize must be 2 too — CodeMirror's default tabSize of 4 would render real
-      // tab chars twice as wide as the depth they count for.
-      indentUnit.of("  "),
-      EditorState.tabSize.of(2),
+      // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML
+      // config) — not here in the shared base. Markdown wants a 4-space Tab so a single
+      // indent clears any list marker (`1. ` is 3 cols wide) and nests uniformly; YAML
+      // keeps the conventional 2-space step. List nesting depth is read from the parse
+      // tree (livePreview/foldBlocks), so it stays correct across mixed 2-/4-space notes.
       // Auto-close brackets/quotes like a normal code editor: typing an opener inserts its
       // matching closer just past the cursor; typing the closer when it's already there
       // skips over it; Backspace on an empty pair deletes both (closeBracketsKeymap). `$`
@@ -472,6 +471,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     const extensions = isYaml
       ? [
           ...base,
+          // YAML config keeps the conventional 2-space indent step.
+          indentUnit.of("  "),
+          EditorState.tabSize.of(2),
           // Code files (settings.yaml etc.) always show a line-number gutter — they
           // are code, so numbering is useful regardless of the prose-note toggle.
           lineNumbers(),
@@ -491,12 +493,24 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // validation, and spell/grammar checking. The whole-note gutter stays
           // opt-in (prose), while fenced code blocks number themselves inline.
           ...base,
+          // One Tab = 4 spaces in prose, so an indent is uniform whether you nest a
+          // bullet, a numbered item's child (clears the wider `1. ` marker → renumber
+          // survives), or a plain paragraph. `remove: ["IndentedCode"]` keeps a 4-space
+          // paragraph a paragraph instead of a markdown indented code block.
+          indentUnit.of("    "),
+          EditorState.tabSize.of(4),
           ...(ed.lineNumbers ? [lineNumbers()] : []),
           // The note title (`# <title>`) renders as a block widget at the very top of
           // the document, so it lives inside the scroller and scrolls away with the
           // content instead of staying pinned. Only real `.md` notes get a title.
           ...(path.endsWith(".md") ? [noteTitleWidget(path)] : []),
-          markdown({ codeLanguages: languages }),
+          // Markdown emphasis shortcuts (notes only): Cmd/Ctrl-B bold, Cmd/Ctrl-I italic.
+          // Prec.high so they beat any default Mod-i/Mod-b binding.
+          Prec.high(keymap.of([
+            { key: "Mod-b", run: toggleBold },
+            { key: "Mod-i", run: toggleItalic },
+          ])),
+          markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
           syntaxHighlighting(codeHighlightStyle),
           queryBlock(() => path),
           embedBlock(props.noteNames),
