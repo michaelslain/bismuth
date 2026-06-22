@@ -1,6 +1,7 @@
 // app/src/editor/livePreview.ts
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import { type Range, type Text, StateField, StateEffect, type EditorState } from "@codemirror/state";
+import { syntaxTree } from "@codemirror/language";
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
@@ -24,9 +25,20 @@ import { isThematicBreak } from "./thematicBreak";
 // Shared across every mono region in the live-preview theme (and reused by embedBlock).
 export const MONO_FONT = "'Monaspace Xenon', ui-monospace, monospace";
 
-// Indent depth from leading whitespace: tab = 2 spaces, then depth = floor(indentCols / 2).
-function indentDepth(indent: string): number {
-  return Math.floor(indent.replace(/\t/g, "  ").length / 2);
+// List nesting depth read from the parse tree, not the raw space count, so it's right
+// regardless of how wide each indent step is (2 spaces in legacy notes, 4 in new ones, a
+// child clearing a `1. ` marker, …). `pos` should sit on the line's marker. Depth is the
+// count of enclosing ListItems minus the item itself (top-level = 0). For legacy 2-space
+// notes this equals the old floor(cols/2), so their rendering is unchanged.
+// Derive the parse-node type from syntaxTree's return so we don't depend on @lezer/common
+// being a direct dependency (it's only present transitively).
+type ParseNode = NonNullable<ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]>["parent"]>;
+function listDepthAt(state: EditorState, pos: number): number {
+  let count = 0;
+  for (let n: ParseNode | null = syntaxTree(state).resolveInner(pos, 1); n; n = n.parent) {
+    if (n.name === "ListItem") count++;
+  }
+  return Math.max(0, count - 1);
 }
 
 const hide = Decoration.mark({ class: "cm-hidden-syntax" });
@@ -112,6 +124,31 @@ class BulletWidget extends WidgetType {
     span.className = "cm-bullet";
     const glyph = this.depth === 0 ? "•" : this.depth === 1 ? "◦" : "▪";
     span.textContent = glyph;
+    return span;
+  }
+
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+// Ordered-list marker ("1." / "2)" …). Same hanging gutter as BulletWidget so numbered
+// and bulleted lists share identical spacing — only the glyph differs (the real number
+// stays visible). The min-width keeps single/double digits in the bullet gutter while
+// letting bigger numbers grow rather than overlap the text.
+class OrderedWidget extends WidgetType {
+  constructor(private readonly marker: string, private readonly depth: number) {
+    super();
+  }
+
+  eq(other: OrderedWidget): boolean {
+    return other.marker === this.marker && other.depth === this.depth;
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement("span");
+    span.className = "cm-ol-number";
+    span.textContent = this.marker;
     return span;
   }
 
@@ -570,7 +607,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         isTaskLine = true;
         const status = charToStatus(taskMatch[4]);
         const struck = status === "done" || status === "cancelled";
-        const taskDepth = indentDepth(taskMatch[1]);
+        const taskDepth = listDepthAt(view.state, line.from + taskMatch[1].length);
         if (struck) {
           // strike only the task text, not the indentation/checkbox
           const textStart = line.from + taskMatch[0].length;
@@ -597,7 +634,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // reaching here is never one; only task lines need guarding off the bullet path.
       const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
-        const depth = indentDepth(bulletMatch[1]);
+        const depth = listDepthAt(view.state, line.from + bulletMatch[1].length);
         if (revealsPrefix(line.from, line.from + bulletMatch[0].length)) {
           // Raw, but indent like the rendered view and show the "- " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
@@ -609,6 +646,28 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           // and drive indent + gap from CSS via the hanging-indent line decoration.
           deco.push(indentLine("cm-li", depth).range(line.from));
           deco.push(Decoration.replace({ widget: new BulletWidget(depth) }).range(line.from, line.from + bulletMatch[0].length));
+        }
+      }
+
+      // ---- ordered list lines (1. / 2) / etc.) ----
+      // Mirror the bullet treatment so numbers share the same hanging gutter + text
+      // alignment; the number stays visible (no glyph swap). Task and bullet lines were
+      // matched above (and thematic breaks `continue`d), so they never reach here.
+      const orderedMatch = isTaskLine || bulletMatch ? null : text.match(/^(\s*)(\d+)([.)])(\s+)/);
+      if (orderedMatch) {
+        const depth = listDepthAt(view.state, line.from + orderedMatch[1].length);
+        if (revealsPrefix(line.from, line.from + orderedMatch[0].length)) {
+          // Raw, but indent like the rendered view and show the "1. " marker in mono.
+          deco.push(indentLine("cm-li", depth).range(line.from));
+          const indentLen = orderedMatch[1].length;
+          if (indentLen > 0) deco.push(hide.range(line.from, line.from + indentLen));
+          deco.push(listMarkerMark.range(line.from + indentLen, line.from + orderedMatch[0].length));
+        } else {
+          // Replace the WHOLE prefix (indent + number + delimiter + spaces) with the
+          // number widget; indent + gap come from the hanging-indent line decoration.
+          deco.push(indentLine("cm-li", depth).range(line.from));
+          const marker = orderedMatch[2] + orderedMatch[3];
+          deco.push(Decoration.replace({ widget: new OrderedWidget(marker, depth) }).range(line.from, line.from + orderedMatch[0].length));
         }
       }
 
@@ -931,6 +990,16 @@ export const livePreview = [
       "text-align": "right",
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 50%, transparent)",
+    },
+    // Ordered marker: same gutter geometry as the bullet so spacing matches exactly.
+    // min-width (not fixed width) lets 10+/100+ numbers grow instead of overlapping text.
+    ".cm-ol-number": {
+      display: "inline-block",
+      "min-width": "1.6em",
+      "box-sizing": "border-box",
+      "text-align": "right",
+      "padding-right": "0.62em",
+      color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
     // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
     // are hidden off-cursor (replaced by a header + collapsed close line).

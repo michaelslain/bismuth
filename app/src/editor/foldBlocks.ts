@@ -83,12 +83,25 @@ function scanMarkdown(doc: Text): FoldBlock[] {
     out.push({ ...b, id: `${key}|${n}` });
   };
 
+  // Track the indentation of the enclosing list items so nesting depth comes from
+  // structure, not a fixed space-per-level guess — correct whether a note indents with 2
+  // spaces (legacy) or 4 (current), and for a bullet nested under a wider numbered marker.
+  const stack: number[] = [];
+  const listDepth = (indent: number): number => {
+    while (stack.length && stack[stack.length - 1] >= indent) stack.pop();
+    const d = stack.length;
+    stack.push(indent);
+    return d;
+  };
+
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
     const text = line.text;
+    if (isBlank(text)) continue; // blank lines never break a list
 
     const hm = text.match(/^(#{1,6})\s+(.*)$/);
     if (hm) {
+      stack.length = 0; // a heading ends any open list
       const level = hm[1].length;
       let last = i;
       for (let j = i + 1; j <= doc.lines; j++) {
@@ -109,21 +122,36 @@ function scanMarkdown(doc: Text): FoldBlock[] {
       continue;
     }
 
-    if (isThematicBreak(text)) continue;
-    const bm = text.match(/^(\s*)([-*+])\s+(.*)$/);
-    if (bm) {
-      const indent = indentCols(text);
-      const { last, sawChild } = indentRegionEnd(doc, i, indent);
-      if (sawChild) {
-        push(`l|${bm[3].trim()}`, {
-          kind: "l",
-          depth: Math.floor(indent / 2),
-          anchorFrom: line.from,
-          anchorTo: line.to,
-          regionTo: doc.line(last).to,
-        });
-      }
+    if (isThematicBreak(text)) {
+      stack.length = 0;
+      continue;
     }
+
+    // Every list item (bullet, numbered, or task) advances nesting depth; only bullet /
+    // task items become fold anchors (numbered items aren't folded here).
+    const li = text.match(/^(\s*)(\d+[.)]|[-*+])\s+/);
+    if (li) {
+      const indent = indentCols(text);
+      const depth = listDepth(indent);
+      const bm = text.match(/^(\s*)([-*+])\s+(.*)$/);
+      if (bm) {
+        const { last, sawChild } = indentRegionEnd(doc, i, indent);
+        if (sawChild) {
+          push(`l|${bm[3].trim()}`, {
+            kind: "l",
+            depth,
+            anchorFrom: line.from,
+            anchorTo: line.to,
+            regionTo: doc.line(last).to,
+          });
+        }
+      }
+      continue;
+    }
+
+    // A non-list line at the left margin ends the list; an indented continuation (e.g. a
+    // wrapped paragraph inside an item) leaves the stack untouched.
+    if (indentCols(text) === 0) stack.length = 0;
   }
   return out;
 }

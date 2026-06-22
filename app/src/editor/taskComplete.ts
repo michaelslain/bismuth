@@ -94,7 +94,11 @@ export function taskSource(): CompletionSource {
     if (descStart == null || col < descStart) return null; // not in a task description
 
     const textBefore = line.text.slice(0, col);
-    const cls = classifyTaskContext(textBefore);
+    // classifyTaskContext only matches a signifier word/emoji directly under the caret, so
+    // on an empty or just-spaced task description it returns null. For an explicit invoke
+    // (Ctrl-Space) treat that as an empty keyword query at the caret → the full signifier
+    // menu, inserted at the caret (nothing to clobber). Auto-typing stays quiet.
+    const cls = classifyTaskContext(textBefore) ?? (context.explicit ? { kind: "keyword" as const, from: col, query: "" } : null);
     if (!cls) return null;
     const from = line.from + cls.from;
 
@@ -112,14 +116,26 @@ export function taskSource(): CompletionSource {
       }));
       return { from, options, validFor: /^[\w ]*$/ };
     }
-    // keyword: expand into a signifier. Quiet unless explicitly invoked or ≥2 chars typed.
+    // keyword: expand the trailing word into a signifier. Quiet unless explicitly invoked
+    // or ≥2 chars typed.
     if (!context.explicit && cls.query.length < 2) return null;
-    const fields = matchTaskFields(cls.query);
-    if (fields.length === 0) return null;
-    const options: Completion[] = fields.map((f) => ({
+    const matched = matchTaskFields(cls.query);
+    if (matched.length > 0) {
+      const options: Completion[] = matched.map((f) => ({
+        label: f.label, type: "enum",
+        apply: makeApply(f.insert, f.insert.length, f.follow != null),
+      }));
+      return { from, options, filter: false, validFor: /^[\p{L}]*$/u };
+    }
+    // No signifier starts with the trailing word (e.g. "book"). On an explicit invoke,
+    // offer the whole menu inserted at the caret rather than replacing the word — with a
+    // leading space when the caret isn't already preceded by whitespace.
+    if (!context.explicit) return null;
+    const lead = col > descStart && !/\s/.test(textBefore[col - 1]) ? " " : "";
+    const options: Completion[] = TASK_FIELDS.map((f) => ({
       label: f.label, type: "enum",
-      apply: makeApply(f.insert, f.insert.length, f.follow != null),
+      apply: makeApply(lead + f.insert, (lead + f.insert).length, f.follow != null),
     }));
-    return { from, options, filter: false, validFor: /^[\p{L}]*$/u };
+    return { from: context.pos, options, filter: false, validFor: /^[\p{L}]*$/u };
   };
 }
