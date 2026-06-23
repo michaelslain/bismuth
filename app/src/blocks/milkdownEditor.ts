@@ -33,6 +33,8 @@ import { keymap } from "@milkdown/prose/keymap";
 import type { EditorView } from "@milkdown/prose/view";
 import type { Command } from "@milkdown/prose/state";
 import { inlineAtoms } from "./inlineNodes";
+import { preserveAffixWhitespace } from "./preserveWhitespace";
+import { markerAwareEmphasis, markerAwareStrong } from "./emphasisMarker";
 import { matchWikilinkPrefix } from "../editor/wikilink";
 import { matchTagPrefix } from "../editor/tag";
 
@@ -156,8 +158,12 @@ const STRINGIFY_OPTIONS = {
   // serializes as a resource link because its text differs from its url (formatLinkAsAutolink
   // only collapses to `<url>` when the link's sole text child equals its url + has no title).
   resourceLink: false,
-  // Override the `text` node handler with the verbatim emitter above (see its comment).
-  handlers: { text: verbatimText },
+  // Override the `text` node handler with the verbatim emitter above (see its comment), and the
+  // `emphasis`/`strong` handlers with marker-aware emitters so an authored `_x_`/`__x__` keeps its
+  // underscore marker instead of being normalized to `*x*`/`**x**` (emphasisMarker.ts). The
+  // `emphasis`/`strong` defaults below stay `*` as the fallback for marker-less (programmatically
+  // built) nodes.
+  handlers: { text: verbatimText, emphasis: markerAwareEmphasis, strong: markerAwareStrong },
 } as const;
 
 const onChangeKey = new PluginKey("oa-block-onchange");
@@ -411,6 +417,11 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
         },
       }));
     })
+    // preserveAffixWhitespace FIRST: its remark transformer must run while every paragraph child
+    // still carries its original parse `position`, before commonmark's text-splitting (remarkLineBreak)
+    // or the inline-atom tokenizers re-split text. It only reads positions + appends/prepends a
+    // whitespace text leaf, so registering it ahead of commonmark is safe (schema-independent).
+    .use(preserveAffixWhitespace)
     .use(commonmark)
     .use(inlineAtoms)
     .create();

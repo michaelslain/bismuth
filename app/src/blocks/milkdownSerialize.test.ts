@@ -183,15 +183,38 @@ test("autolink does not break a real labelled link", () =>
 test("mix: snake_case + bold + wikilink + tag + math + autolink (the full adversarial line)", () =>
   expectStable("set my_var **bold** [[Note]] #tag $x^2$ at <https://z.io> end"));
 
+// --- Emphasis / strong marker preservation (issue #3) -----------------------------------
+// The AUTHORED marker (`_`/`*`, `__`/`**`) is preserved byte-for-byte: Milkdown's commonmark
+// preset records the source marker onto the mark via its `remarkMarker` transformer + `marker`
+// schema attr, and our marker-aware emphasis/strong handlers (emphasisMarker.ts) emit it. So
+// `_x_` round-trips as `_x_`, not `*x*` — no save-on-edit churn for underscore emphasis.
+
+test("emphasis underscore _italic_ round-trips as _italic_", () =>
+  expectStable("this is _italic_ text"));
+
+test("emphasis asterisk *italic* round-trips as *italic*", () =>
+  expectStable("this is *italic* text"));
+
+test("strong underscore __bold__ round-trips as __bold__", () =>
+  expectStable("this is __bold__ text"));
+
+test("strong asterisk **bold** round-trips as **bold**", () =>
+  expectStable("this is **bold** text"));
+
+test("mixed markers in one block each keep their own marker", () =>
+  expectStable("_a_ and *b* and __c__ and **d** done"));
+
+test("adjacent underscore emphasis runs stay underscore (no &#x5F; re-encode)", () =>
+  // The stock mdast handler would defensively re-encode `_a_ _b_` → `_a&#x5F; &#x5F;b_`; the
+  // marker-aware emitter (verbatim-text surface) keeps it byte-stable.
+  expectStable("_a_ _b_"));
+
+test("emphasis + strong + atoms keep markers (the mixed adversarial line)", () =>
+  expectStable("set my_var _em_ **bd** [[Note]] #tag $x^2$ at <https://z.io> end"));
+
 // --- Documented canonical normalizations (NOT byte-stable, but a fixed point thereafter) ----
 // These are the ACCEPTED lossy cases: the doc model loses the exact source bytes, but the
 // canonical output is stable on every subsequent round-trip (no churn after the first save).
-
-test("emphasis marker normalizes _italic_ → *italic*", () =>
-  expectNormalizes("this is _italic_ text", "this is *italic* text"));
-
-test("strong marker normalizes __bold__ → **bold**", () =>
-  expectNormalizes("this is __bold__ text", "this is **bold** text"));
 
 test("a source backslash-escape inside prose decodes to the bare char", () =>
   // `\*` → `*` (the parser consumes the backslash; a lone `*` re-parses as itself).
@@ -200,6 +223,37 @@ test("a source backslash-escape inside prose decodes to the bare char", () =>
 test("an HTML entity decodes to its character", () =>
   // `&amp;` decodes to `&` at parse time and can't be recovered (doc-model limitation).
   expectNormalizes("a&amp;b", "a&b"));
+
+// --- Leading / trailing whitespace preservation (issue #2) ------------------------------
+// CommonMark strips the leading + trailing run of spaces/tabs around a paragraph's inline content
+// at PARSE time. The block model + CodeMirror Editor keep it verbatim, so a visual edit must too,
+// or it silently rewrites the bytes. The preserveAffixWhitespace remark transformer
+// (preserveWhitespace.ts) recovers the affixes from the source positions before they're lost.
+
+test("trailing spaces are preserved", () => expectStable("foo   "));
+
+test("a single trailing space is preserved", () => expectStable("foo "));
+
+test("leading spaces are preserved", () => expectStable("  bar"));
+
+test("both leading + trailing spaces are preserved", () => expectStable("  spaced  "));
+
+test("trailing whitespace after an emphasis run is preserved", () => expectStable("trail _it_  "));
+
+test("trailing whitespace after an atom is preserved", () => expectStable("see [[Note]]  "));
+
+test("a whitespace-only block round-trips to the same whitespace", () => expectStable("   "));
+
+// 2+ trailing spaces FOLLOWED by more text is a CommonMark hard line break (a `break` node), NOT
+// a trailing affix — that path is owned by Shift-Enter / remarkLineBreak and is untouched here.
+test("the canonical backslash hard break round-trips byte-stable", () =>
+  expectStable("line one\\\nline two"));
+
+test("a two-space hard break normalizes to the backslash hard break (idempotent)", () =>
+  expectNormalizes("line one  \nline two", "line one\\\nline two"));
+
+test("trailing whitespace after a hard break is preserved", () =>
+  expectStable("a\\\nb   "));
 
 // --- Idempotency under re-seed (the SSE-reload path) ------------------------------------
 

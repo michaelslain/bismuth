@@ -25,6 +25,7 @@ import { primeNoteCache } from "./noteCache";
 import { settings } from "./settings";
 import { renderNoteBody } from "./bases/markdown";
 import { normalizeFrontmatterSpacing } from "./editor/normalizeFrontmatter";
+import { parseFrontmatter } from "../../core/src/frontmatter";
 import {
   parseMarkdownToBlocks,
   serializeBlocksToMarkdown,
@@ -186,6 +187,20 @@ export function BlockEditor(props: {
 
   /** Current document serialized to markdown — the lossless frontmatter + every block's raw. */
   const docText = (): string => serializeBlocksToMarkdown(frontmatter(), blocks);
+
+  // --- Frontmatter properties (read-only display) ---------------------------
+  // The frontmatter is kept as a VERBATIM prefix in `frontmatter()` and is NEVER a block — it's
+  // never edited here and serialize concatenates it byte-for-byte. In source mode CodeMirror shows
+  // the raw `---` YAML with a line-number gutter; visual mode instead surfaces it as a clean
+  // read-only properties strip (key + rendered value chips) so the note's metadata is visible
+  // without the raw monospace `1 | tags: […]` line. Parsing is display-only (parseFrontmatter, the
+  // same tolerant peeler the model uses); editing properties stays in source mode / the FileTree.
+  const properties = createMemo<{ key: string; values: string[] }[]>(() => {
+    const fm = frontmatter();
+    if (!fm) return [];
+    const { data } = parseFrontmatter(fm);
+    return Object.entries(data).map(([key, value]) => ({ key, values: propValues(value) }));
+  });
 
   const save = async (path: string, text: string) => {
     lastSavedText = text; // record before the await so a fast echo still matches
@@ -474,6 +489,56 @@ export function BlockEditor(props: {
     queueMicrotask(() => attempt(8));
   };
 
+  // --- Lazy mount (viewport virtualization) ---------------------------------
+  // A rich-text block hosts a full ProseMirror EditorView, which is heavy to construct and paint.
+  // On a long note we mount Milkdown ONLY for blocks in or NEAR the viewport; an offscreen block
+  // renders a lightweight static `renderNoteBody` preview until scrolled in. The store stays the
+  // single source of truth (every keystroke flows through onPlainInput into the store), so an
+  // unmount can never lose data — serialize always reads the store, never the DOM.
+  //
+  // One shared IntersectionObserver (created lazily once `host` is mounted) watches every
+  // rich-text block's root. Its `root` is the scroll container (`.block-editor` = `host`) and its
+  // `rootMargin` extends a full viewport above + below so a block mounts BEFORE it scrolls into
+  // sight (no blank flash on fast scroll). Each block registers a visibility callback keyed by its
+  // root element; the observer dispatches `isIntersecting` to it.
+  const visibilityCb = new WeakMap<Element, (near: boolean) => void>();
+  let blockObserver: IntersectionObserver | undefined;
+  const ensureObserver = (): IntersectionObserver | undefined => {
+    if (typeof IntersectionObserver === "undefined") return undefined; // headless / jsdom
+    if (!blockObserver) {
+      blockObserver = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            const cb = visibilityCb.get(e.target);
+            if (cb) cb(e.isIntersecting);
+          }
+        },
+        // host is the scroll container; one viewport of pre-mount margin on each edge.
+        { root: host, rootMargin: "100% 0px 100% 0px", threshold: 0 },
+      );
+    }
+    return blockObserver;
+  };
+  /** Observe `el` for viewport proximity, dispatching `near`/`far` to `cb`. Returns an unobserve. */
+  const observeBlock = (el: Element, cb: (near: boolean) => void): (() => void) => {
+    const obs = ensureObserver();
+    if (!obs) {
+      cb(true); // no observer (headless) → always-mounted, preserving prior behaviour + tests
+      return () => {};
+    }
+    visibilityCb.set(el, cb);
+    obs.observe(el);
+    return () => {
+      obs.unobserve(el);
+      visibilityCb.delete(el);
+    };
+  };
+  onCleanup(() => blockObserver?.disconnect());
+
+  // Warm the Milkdown chunk as soon as the surface opens so a block scrolling into view doesn't
+  // stall on the (~one-time) code-split import — only the per-view construction then remains.
+  onMount(() => void loadMilkdown());
+
   /** Textarea autosize: grow to fit content so a block has no inner scrollbar. */
   const autoGrow = (el: HTMLTextAreaElement): void => {
     el.style.height = "auto";
@@ -746,6 +811,22 @@ export function BlockEditor(props: {
   return (
     <div class="block-editor" ref={host}>
       <div class="block-editor-col">
+        <Show when={properties().length > 0}>
+          <div class="block-properties" role="table" aria-label="Note properties">
+            <For each={properties()}>
+              {(prop) => (
+                <div class="block-prop" role="row">
+                  <span class="block-prop-key" role="rowheader">{prop.key}</span>
+                  <span class="block-prop-values" role="cell">
+                    <For each={prop.values}>
+                      {(v) => <span class="block-prop-value">{v}</span>}
+                    </For>
+                  </span>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
         <For each={blocks}>
           {(block) => (
             <div
@@ -930,26 +1011,57 @@ export function BlockEditor(props: {
     );
   }
 
-  // The TRUE-WYSIWYG surface for one rich-text block. Mounts a Milkdown editor in onMount (the
-  // bridge is async — Editor.create()), destroys it in onCleanup, and registers an id-addressed
-  // focus closure (survives reconcile). It seeds from the block's inline markdown (`text`), and:
-  //   • onChange(md) → onPlainInput(id, md) — the EXISTING granular store + scheduleSave path
-  //     (anti-clobber: do NOT add a parallel save).
-  //   • setMarkdown is driven by a createRenderEffect tracking the block's `text`, but the bridge
-  //     GUARDS it: it only replaces the doc when the serialized markdown actually differs (so a
-  //     programmatic split/merge/external-reload syncs, but a keystroke we just emitted is a
-  //     no-op and the caret never jumps — the ProseMirror equivalent of the el.value!==v guard).
+  // The TRUE-WYSIWYG surface for one rich-text block, with VIEWPORT-LAZY mounting.
+  //
+  // Constructing a ProseMirror EditorView per block is heavy, so we only mount Milkdown for blocks
+  // in/near the viewport (the shared IntersectionObserver above). An offscreen block renders a
+  // lightweight, read-only `renderNoteBody` static preview into the SAME root; it mounts the live
+  // surface on scroll-in (or when focused/navigated to) and unmounts back to the preview once it's
+  // far from view AND unfocused. Three-state lifecycle: PREVIEW ⇄ MOUNTED.
+  //
+  // CRITICAL — the store is the single source of truth: every keystroke flows onChange →
+  // onPlainInput → store, synchronously, so by the time a block could unmount its latest text is
+  // already in the store. Serialize reads the store, never the DOM, so unmount NEVER loses data and
+  // the anti-clobber save contract is untouched. Mounting:
+  //   • onChange(md) → onPlainInput(id, md) — the EXISTING granular store + scheduleSave path.
+  //   • setMarkdown is driven by a createRenderEffect tracking the block's `text`, bridge-GUARDED
+  //     (only replaces the doc when serialized markdown differs — keystroke echoes are no-ops and
+  //     the caret never jumps).
   //   • Enter/Backspace-at-start/Arrow-out route to the store's split/merge/focus ops.
+  //   • focusById is registered SYNCHRONOUSLY (independent of mount state) to a closure that
+  //     force-mounts an unmounted block, then places the caret once the async handle is ready — so
+  //     queueFocus/focusSibling/split/merge to an offscreen block mounts-then-places-caret.
   function RichTextBlock(p: { block: Block }) {
     let root!: HTMLDivElement;
     let disposed = false;
     const id = p.block.id;
     // The async-created handle, tracked reactively so the sync effect below attaches once ready.
     const [handle, setHandle] = createSignal<BlockEditorHandle | null>(null);
+    // `near` = the observer says this block is in/near the viewport. `forceMount` = focus/navigation
+    // pinned it mounted regardless of viewport (so a caret target is always live). A block mounts
+    // when EITHER is true; it unmounts only when BOTH are false.
+    const [near, setNear] = createSignal(false);
+    const [forceMount, setForceMount] = createSignal(false);
+    const shouldMount = createMemo(() => near() || forceMount());
+    // The caret to apply once the surface finishes its async mount (set when focus is requested on
+    // an unmounted block). Consumed by the create()-resolution step below.
+    let pendingCaret: CaretHint | undefined;
+    let pendingFocus = false;
 
-    onMount(() => {
+    /** Begin an async Milkdown create() for this root if not already mounting/mounted. Idempotent:
+     *  a second call while a create is in flight is a no-op (mounting flag). */
+    let mounting = false;
+    const startMount = (): void => {
+      if (mounting || handle() || disposed) return;
+      mounting = true;
+      // Clear the static-preview HTML so Milkdown mounts into an empty node (ProseMirror appends
+      // its editable rather than replacing children — a leftover preview would double-render).
+      root.innerHTML = "";
       void loadMilkdown().then(({ createBlockEditor }) => {
-        if (disposed) return;
+        if (disposed) {
+          mounting = false;
+          return;
+        }
         return createBlockEditor({
           root,
           value: p.block.text ?? "",
@@ -1009,27 +1121,91 @@ export function BlockEditor(props: {
             });
           },
         }).then((h) => {
+          mounting = false;
           if (disposed) {
             h.destroy();
             return;
           }
-          focusById.set(id, (caret) => h.focus(caret));
           setHandle(h); // arms the sync effect below
+          // A focus requested while we were mounting now lands on the live surface. Release the
+          // forceMount pin: a focused block stays mounted via the unmount guard's activeElement
+          // check, so a later scroll-away + blur is free to unmount it normally.
+          if (pendingFocus) {
+            pendingFocus = false;
+            const caret = pendingCaret;
+            pendingCaret = undefined;
+            h.focus(caret);
+          }
+          if (forceMount()) setForceMount(false);
         });
       });
+    };
+
+    /** Tear the live Milkdown surface down, dropping back to the static preview. The store already
+     *  holds the latest text, so this is data-safe; popovers anchored here are cleared so a stale
+     *  handle can't be used. */
+    const unmount = (): void => {
+      const h = handle();
+      if (!h) return;
+      if (auto()?.blockId === id) setAuto(null);
+      if (slash()?.blockId === id) setSlash(null);
+      if (format()?.handle === h) setFormat(null);
+      h.destroy(); // editor.destroy() tears down the ProseMirror view + DOM
+      setHandle(null); // → preview effect repaints the static body into the now-empty root
+      root.innerHTML = ""; // belt-and-braces: drop any residual ProseMirror DOM before the repaint
+    };
+
+    // The single per-block focus closure, registered SYNCHRONOUSLY (independent of mount state) so
+    // queueFocus always finds it. If the surface is live, focus it directly; if not, pin it mounted
+    // (forceMount) and remember the caret so the create()-resolution step applies it on ready.
+    focusById.set(id, (caret) => {
+      const h = handle();
+      if (h) {
+        h.focus(caret);
+        return;
+      }
+      pendingFocus = true;
+      pendingCaret = caret;
+      setForceMount(true); // triggers the mount effect; the resolution step applies pendingCaret
     });
 
-    // Sync external/programmatic content changes into the surface (guarded for caret stability +
-    // anti-feedback by the bridge). Registered SYNCHRONOUSLY in the component body (so it's owned
-    // by this component + disposed on unmount — the sheet/univerSheet.ts pattern); it tracks both
-    // the reactive handle (null until the async create resolves) and the block's `text`, so a
-    // split/merge/slash-transform/external-reload re-runs it. A keystroke echo is a no-op (the
-    // bridge sees its own last emit). The initial seed already happened via `value`, so this only
-    // PUSHES later changes.
+    // Observe viewport proximity once the root is in the DOM; mount/unmount follow `shouldMount`.
+    onMount(() => {
+      const stop = observeBlock(root, (n) => setNear(n));
+      onCleanup(stop);
+    });
+
+    // Mount/unmount in step with `shouldMount`. Mounting is async (create()); unmount is sync.
+    createEffect(() => {
+      if (shouldMount()) startMount();
+      else if (handle() && !root.contains(document.activeElement)) unmount();
+    });
+
+    // Sync external/programmatic content changes into the LIVE surface (bridge-guarded for caret
+    // stability + anti-feedback). Tracks the reactive handle (null while unmounted/mounting) + the
+    // block's `text`, so a split/merge/slash-transform/external-reload re-runs it once mounted. A
+    // keystroke echo is a no-op. While unmounted the preview reads `text` directly (below), so the
+    // store stays the single source of truth either way.
     createRenderEffect(() => {
       const h = handle();
       const v = p.block.text ?? "";
       if (h) h.setMarkdown(v);
+    });
+
+    // The static, read-only preview shown while unmounted — the SAME renderNoteBody the rest of the
+    // app uses for note bodies, so an offscreen block reads identically to its mounted form. Painted
+    // into `root` (reactively) only when there's no live handle; mounting clears it (Milkdown owns
+    // the node then). Reserving the preview's rendered height avoids a scroll jump on mount.
+    // createEffect (not createRenderEffect): the render-effect variant runs synchronously at
+    // creation — BEFORE the `ref` below assigns `root` — so it would throw on `root.innerHTML`.
+    // The first paint happens in the ref callback; this only handles REACTIVE repaints (an
+    // offscreen block's text changing via split/external-reload, or handle→null on unmount).
+    createEffect(() => {
+      const h = handle();
+      const text = p.block.text ?? "";
+      if (h || !root) return; // live surface owns the DOM; or root not yet assigned
+      // eslint-disable-next-line solid/no-innerhtml -- sanitized by renderNoteBody (DOMPurify)
+      root.innerHTML = text ? renderNoteBody(text) : "";
     });
 
     onCleanup(() => {
@@ -1049,9 +1225,31 @@ export function BlockEditor(props: {
       let c = "block-rich";
       if (p.block.type === "heading") c += ` block-rich--h${Math.min(6, Math.max(1, p.block.level ?? 1))}`;
       else c += ` block-rich--${p.block.type}`;
+      if (!handle()) c += " block-rich--preview"; // read-only static preview state
       return c;
     };
-    return <div ref={root} class={cls()} data-placeholder={richPlaceholder(p.block)} />;
+    return (
+      <div
+        ref={(el) => {
+          root = el;
+          // Paint the static preview synchronously on assignment — the reactive createEffect runs
+          // before this ref is set (so `root` is undefined there on first run). A live mount clears
+          // this node (startMount sets root.innerHTML = "").
+          // eslint-disable-next-line solid/no-innerhtml -- sanitized by renderNoteBody (DOMPurify)
+          if (!handle()) el.innerHTML = p.block.text ? renderNoteBody(p.block.text) : "";
+        }}
+        class={cls()}
+        data-placeholder={richPlaceholder(p.block)}
+        onMouseDown={(e) => {
+          // Clicking a still-static preview (e.g. mid-async-mount) must mount then focus so the
+          // caret lands rather than being swallowed by the read-only DOM. A live surface handles
+          // its own pointer events, so this only fires while unmounted.
+          if (handle()) return;
+          e.preventDefault();
+          queueFocus(id);
+        }}
+      />
+    );
   }
 
   // A `code` block: an autosizing monospace textarea (raw is the point — no WYSIWYG). Keeps the
@@ -1175,6 +1373,28 @@ function matchScore(hay: string, query: string): number {
   if (hay === query) return 0;
   if (hay.startsWith(query)) return 1;
   return hay.includes(query) ? 2 : -1;
+}
+
+/** Flatten one parsed frontmatter value into the chip strings the properties strip renders. An
+ *  array becomes one chip per item (so `tags: [a, b]` shows two chips); a scalar is a single chip;
+ *  an object/null is shown as its compact JSON / a dash. Display-only — never re-serialized into
+ *  the note (the verbatim frontmatter prefix is the source of truth). */
+function propValues(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => scalarText(v)).filter((s) => s.length > 0);
+  const s = scalarText(value);
+  return s.length > 0 ? [s] : [];
+}
+
+/** A single frontmatter scalar rendered as display text. */
+function scalarText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
 
 /** The placeholder shown in an EMPTY rich-text block (a CSS ::before reads data-placeholder). */

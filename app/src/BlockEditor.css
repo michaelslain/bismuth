@@ -23,6 +23,46 @@
   max-width: 680px;
 }
 
+/* --- Frontmatter properties strip (read-only) --------------------------- */
+/* A clean key/value display of the note's YAML frontmatter, shown above the body in visual mode
+   instead of the raw `---` block. Read-only: the verbatim frontmatter prefix stays the source of
+   truth (edit it in source mode). Sits flush with the content column, separated from the first
+   block by a hairline. */
+.block-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.block-prop {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.92em;
+}
+.block-prop-key {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: color-mix(in srgb, var(--fg) 50%, var(--text-muted));
+  font-variant: small-caps;
+  letter-spacing: 0.02em;
+}
+.block-prop-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.block-prop-value {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 0.94em;
+}
+
 /* --- One block row: [gutter] [body] ------------------------------------- */
 .block-row {
   display: flex;
@@ -152,6 +192,27 @@
   left: 0;
   color: color-mix(in srgb, var(--fg) 28%, transparent);
   pointer-events: none;
+}
+
+/* --- Static preview (lazy-mount: offscreen blocks) ---------------------- */
+/* While a rich-text block is OUTSIDE the viewport its live Milkdown surface is unmounted and the
+   block renders a read-only `renderNoteBody` preview into the SAME root. Match the live surface's
+   metrics so mounting/unmounting causes no scroll jump: identical padding, zeroed inner-paragraph
+   margins, and a one-line min-height so an empty block still reserves the caret's row. The preview
+   is non-interactive (it has no editable; clicks fall through to a focusById mount on caret). */
+.block-rich--preview {
+  padding: 3px 0;
+  min-height: calc(1em * var(--prose-line-height, 1.65));
+  cursor: text;
+}
+.block-rich--preview > :first-child {
+  margin-top: 0;
+}
+.block-rich--preview > :last-child {
+  margin-bottom: 0;
+}
+.block-rich--preview p {
+  margin: 0;
 }
 
 /* Headings size by level (mirrors the live-preview heading scale). */

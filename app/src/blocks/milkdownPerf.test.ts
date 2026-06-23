@@ -1,10 +1,20 @@
 // app/src/blocks/milkdownPerf.bench.ts
 // PER-BLOCK PERF BENCHMARK — the architecture-gating measurement.
 //
-// RichTextBlock mounts ONE full Milkdown / ProseMirror EditorView per text block, with no
-// virtualization. This harness measures the construction cost of that decision: mount N
-// createBlockEditor() instances (each seeded with realistic short inline markdown) into detached
-// divs, time the total wall-clock + per-instance average, and sample peak RSS before/after.
+// RichTextBlock mounts ONE full Milkdown / ProseMirror EditorView per text block. This harness
+// measures the construction cost of one mount: mount N createBlockEditor() instances (each seeded
+// with realistic short inline markdown) into detached divs, time the total wall-clock + per-
+// instance average, and sample peak RSS before/after.
+//
+// LAZY MOUNTING (BlockEditor.tsx): RichTextBlock no longer mounts all N editors eagerly — a shared
+// IntersectionObserver mounts Milkdown only for blocks in/near the viewport (±1 viewport margin)
+// and renders offscreen blocks as a static renderNoteBody preview, unmounting when far + unfocused
+// + (data-safe, since the store is the source of truth). So the per-mount cost measured here is
+// now paid only for the BOUNDED set of on-screen blocks (a screenful, typically << 50), not for
+// every block in a 150+ block note. The table below is therefore the per-mount unit cost; multiply
+// by the visible-block count (not the note's block count) for the real concurrent paint budget.
+// This harness can't observe the viewport gate (happy-dom has no layout/IntersectionObserver), so
+// it still constructs each editor directly to report that unit cost as a lower bound.
 //
 // CAVEAT (read the numbers honestly): happy-dom has no layout/paint engine, so this measures the
 // JS construction cost (Milkdown schema build + plugin wiring + ProseMirror EditorView creation +
