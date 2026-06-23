@@ -17,7 +17,8 @@
 //   • flushSave on unmount and a beforeunload keepalive PUT so a debounced edit can't drop;
 //   • normalizeFrontmatterSpacing applied on open AND in the save path, byte-identically to
 //     Editor.tsx, so the two surfaces don't fight (one normalising what the other wrote).
-import { createEffect, createMemo, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createRenderEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
 import { primeNoteCache } from "./noteCache";
@@ -111,10 +112,17 @@ export function BlockEditor(props: {
   tagNames: () => string[];
 }) {
   // --- Document state -------------------------------------------------------
-  // The verbatim frontmatter prefix + the body blocks. Edits replace `blocks` with a new
-  // array (Solid <For> keys by block id, so untouched rows don't remount).
+  // The verbatim frontmatter prefix + the body blocks. `blocks` is a fine-grained STORE: edits
+  // update individual block fields in place (`setBlocks(i, "text", v)`) so the DOM row + its
+  // focused textarea persist across a keystroke. Structural changes go through `replaceBlocks`,
+  // which reconciles by `id` so only the rows that actually changed remount.
   const [frontmatter, setFrontmatter] = createSignal("");
-  const [blocks, setBlocks] = createSignal<Block[]>([]);
+  const [blocks, setBlocks] = createStore<Block[]>([]);
+
+  /** Replace the whole block list while PRESERVING the store proxy (and thus the DOM row +
+   *  textarea focus) for every block whose `id` is unchanged — reconcile diffs by id, so an
+   *  insert/remove/split/merge/reorder only touches the rows that actually changed. */
+  const replaceBlocks = (next: Block[]): void => setBlocks(reconcile(next, { key: "id" }));
 
   // --- Anti-clobber bookkeeping (mirrors Editor.tsx) ------------------------
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -133,7 +141,7 @@ export function BlockEditor(props: {
   const currentPath = createMemo(() => props.path);
 
   /** Current document serialized to markdown — the lossless frontmatter + every block's raw. */
-  const docText = (): string => serializeBlocksToMarkdown(frontmatter(), blocks());
+  const docText = (): string => serializeBlocksToMarkdown(frontmatter(), blocks);
 
   const save = async (path: string, text: string) => {
     lastSavedText = text; // record before the await so a fast echo still matches
@@ -177,34 +185,29 @@ export function BlockEditor(props: {
     if (typeof window !== "undefined") window.removeEventListener("beforeunload", onBeforeUnload);
   });
 
-  /** Apply a block-array mutation and schedule a debounced autosave. EVERY edit path funnels
-   *  through here so the save contract can't be bypassed. `normalizeFrontmatterSpacing` is
-   *  applied to the serialized text exactly as Editor.tsx does (notes only), keeping the two
-   *  surfaces byte-compatible. */
-  const commit = (nextBlocks: Block[]): void => {
-    setBlocks(nextBlocks);
+  /** Schedule the debounced autosave. Plain typing calls this directly after a granular,
+   *  re-render-free field update; structural edits go through `commit`. It does NOT re-normalize
+   *  or re-parse the document: frontmatter spacing is normalized on open and blocks mode never
+   *  edits the frontmatter, so re-parsing here would only churn — it would replace every block
+   *  (fresh ids) and recreate the focused textarea mid-type. */
+  const scheduleSave = (): void => {
     pendingSave = true; // local change not yet on disk → block reconcile-revert
     clearTimeout(saveTimer);
     const path = activePath;
     if (!path) return;
     saveTimer = setTimeout(async () => {
-      let text = serializeBlocksToMarkdown(frontmatter(), blocks());
-      const isMd = !path.endsWith(".yaml") && !path.endsWith(".yml");
-      if (isMd) {
-        const normalized = normalizeFrontmatterSpacing(text);
-        if (normalized !== text) {
-          // Re-parse the normalized text so the model reflects what we persist (otherwise the
-          // next serialize would re-introduce the spacing the save just fixed → a save loop).
-          text = normalized;
-          const parsed = parseMarkdownToBlocks(text);
-          setFrontmatter(parsed.frontmatter);
-          setBlocks(parsed.blocks);
-        }
-      }
+      const text = serializeBlocksToMarkdown(frontmatter(), blocks);
       await save(path, text);
       // Clear only if nothing changed during the write — else a newer edit is pending.
-      if (serializeBlocksToMarkdown(frontmatter(), blocks()) === text) pendingSave = false;
+      if (serializeBlocksToMarkdown(frontmatter(), blocks) === text) pendingSave = false;
     }, settings.editor.autoSaveDelay);
+  };
+
+  /** Apply a STRUCTURAL block change (insert/remove/split/merge/reorder/type-change) and save.
+   *  reconcile-by-id keeps every untouched row (and its caret) stable. */
+  const commit = (nextBlocks: Block[]): void => {
+    replaceBlocks(nextBlocks);
+    scheduleSave();
   };
 
   // --- Buffer load + teardown ----------------------------------------------
@@ -252,7 +255,7 @@ export function BlockEditor(props: {
 
     const parsed = parseMarkdownToBlocks(text);
     setFrontmatter(parsed.frontmatter);
-    setBlocks(parsed.blocks);
+    replaceBlocks(parsed.blocks);
   });
 
   // --- External-change reconcile (SSE) --------------------------------------
@@ -277,7 +280,7 @@ export function BlockEditor(props: {
     }
     primeNoteCache(path, onDisk); // freshest on-disk truth — keep the body cache warm
     if (path !== props.path) return; // path changed while awaiting
-    const current = serializeBlocksToMarkdown(frontmatter(), blocks());
+    const current = serializeBlocksToMarkdown(frontmatter(), blocks);
     if (current === onDisk) {
       lastIgnoredVersion = change.version; // no-op refresh (e.g. our own save echoed back)
       return;
@@ -292,7 +295,7 @@ export function BlockEditor(props: {
     // way CodeMirror does, so a full reparse is fine — keyed rows keep untouched DOM stable.)
     const parsed = parseMarkdownToBlocks(onDisk);
     setFrontmatter(parsed.frontmatter);
-    setBlocks(parsed.blocks);
+    replaceBlocks(parsed.blocks);
     lastIgnoredVersion = change.version;
   });
 
@@ -300,12 +303,12 @@ export function BlockEditor(props: {
   // Editing operations (all funnel through `commit`)
   // ------------------------------------------------------------------------
 
-  const indexOfId = (id: string): number => blocks().findIndex((b) => b.id === id);
+  const indexOfId = (id: string): number => blocks.findIndex((b) => b.id === id);
 
   const updateBlock = (id: string, mutate: (b: Block) => Block): void => {
     const i = indexOfId(id);
     if (i === -1) return;
-    const next = blocks().slice();
+    const next = blocks.slice();
     next[i] = mutate(next[i]);
     commit(next);
   };
@@ -314,7 +317,7 @@ export function BlockEditor(props: {
    *  tick. Returns the inserted block's id. */
   const insertAfter = (afterId: string, block: Block): string => {
     const i = indexOfId(afterId);
-    const next = blocks().slice();
+    const next = blocks.slice();
     const at = i === -1 ? next.length : i + 1;
     next.splice(at, 0, block);
     commit(next);
@@ -325,7 +328,7 @@ export function BlockEditor(props: {
   const removeBlock = (id: string): void => {
     const i = indexOfId(id);
     if (i === -1) return;
-    const next = blocks().slice();
+    const next = blocks.slice();
     next.splice(i, 1);
     commit(next);
   };
@@ -335,7 +338,7 @@ export function BlockEditor(props: {
   const splitBlock = (id: string, caret: number): void => {
     const i = indexOfId(id);
     if (i === -1) return;
-    const cur = blocks()[i];
+    const cur = blocks[i];
     const text = cur.text ?? "";
     const before = text.slice(0, caret);
     const after = text.slice(caret);
@@ -349,7 +352,7 @@ export function BlockEditor(props: {
     } else {
       created = setBlockText(created, after);
     }
-    const next = blocks().slice();
+    const next = blocks.slice();
     next[i] = setBlockText(cur, before);
     next.splice(i + 1, 0, created);
     commit(next);
@@ -364,17 +367,17 @@ export function BlockEditor(props: {
     if (i <= 0) return;
     // Find the nearest previous TEXT-editable block (skip blank gaps).
     let p = i - 1;
-    while (p >= 0 && !isTextEditable(blocks()[p].type)) p--;
-    const cur = blocks()[i];
+    while (p >= 0 && !isTextEditable(blocks[p].type)) p--;
+    const cur = blocks[i];
     if (p < 0) {
       // No prior text block — just drop this one if it's empty.
       if ((cur.text ?? "") === "") removeBlock(id);
       return;
     }
-    const prev = blocks()[p];
+    const prev = blocks[p];
     const joinAt = (prev.text ?? "").length;
     const merged = setBlockText(prev, (prev.text ?? "") + (cur.text ?? ""));
-    const next = blocks().slice();
+    const next = blocks.slice();
     next[p] = merged;
     // Remove everything from p+1 through i (the blank gap + the current block) so the merge
     // closes the visual gap too.
@@ -384,24 +387,24 @@ export function BlockEditor(props: {
   };
 
   // --- Focus scheduling ------------------------------------------------------
-  // Newly created/merged blocks need focus AFTER Solid renders their textarea. We stash the
-  // target id (+ optional caret) and apply it in an onMount-driven ref callback.
-  let pendingFocus: { id: string; caret?: number } | null = null;
+  // Each block's textarea registers itself by id (the ref runs synchronously during render).
+  // Because reconcile-by-id keeps rows mounted across edits, focus must address the LIVE element
+  // by id — not a ref that only re-fires on remount. queueFocus defers to a microtask so any
+  // just-created row has registered before we focus it.
+  const taById = new Map<string, HTMLTextAreaElement>();
   const queueFocus = (id: string, caret?: number): void => {
-    pendingFocus = { id, caret };
-  };
-  const focusTextarea = (id: string, el: HTMLTextAreaElement): void => {
-    if (!pendingFocus || pendingFocus.id !== id) return;
-    const caret = pendingFocus.caret;
-    pendingFocus = null;
-    el.focus();
-    const pos = caret ?? el.value.length;
-    try {
-      el.setSelectionRange(pos, pos);
-    } catch {
-      /* setSelectionRange not applicable */
-    }
-    autoGrow(el);
+    queueMicrotask(() => {
+      const el = taById.get(id);
+      if (!el) return;
+      el.focus();
+      const pos = caret ?? el.value.length;
+      try {
+        el.setSelectionRange(pos, pos);
+      } catch {
+        /* setSelectionRange not applicable */
+      }
+      autoGrow(el);
+    });
   };
 
   /** Textarea autosize: grow to fit content so a block has no inner scrollbar. */
@@ -451,7 +454,7 @@ export function BlockEditor(props: {
     let block = makeBlock(newType);
     // For a `query` block, seed the code lang so it round-trips as ```query.
     if (item.id === "query") block = regenerateRaw({ ...block, type: "code", lang: "query" });
-    const next = blocks().slice();
+    const next = blocks.slice();
     next[idx] = block;
     commit(next);
     if (isTextEditable(block.type)) queueFocus(block.id);
@@ -468,7 +471,7 @@ export function BlockEditor(props: {
     const fromI = indexOfId(from);
     const toI = indexOfId(targetId);
     if (fromI === -1 || toI === -1) return;
-    const next = blocks().slice();
+    const next = blocks.slice();
     const [moved] = next.splice(fromI, 1);
     // Re-find the target index after removal so the moved block lands just before it.
     const adjusted = next.findIndex((b) => b.id === targetId);
@@ -497,20 +500,34 @@ export function BlockEditor(props: {
     } else if (slash() && slash()!.blockId === block.id) {
       setSlash(null);
     }
-    // Commit the edited text (debounced save inside). Reconcile against the markdown the edit
-    // produces: a pasted/Shift+Enter newline in a single-line block splits it into real blocks,
-    // and a markdown prefix (# / - / >) converts the block — so the model never diverges from
-    // what the .md re-parses to.
-    commitTextEdit(block.id, value);
+    // Plain typing: update text + regenerated raw IN PLACE (granular store writes) and save.
+    // No reconcile/split here — that would replace the block (and recreate the focused textarea)
+    // mid-keystroke. Markdown shortcuts (# → heading) and pasted-newline splits are applied on
+    // BLUR (onTextBlur), so typing is never interrupted.
+    onPlainInput(block.id, value);
   };
 
-  /** Apply a text edit through reconcileEditedBlock, splicing in the (possibly multiple) blocks
-   *  its markdown re-parses to. The edited block keeps its id, so its textarea stays focused. */
-  const commitTextEdit = (id: string, value: string): void => {
+  /** A plain in-place text edit: rewrite the block's `text` + `raw` via granular store updates so
+   *  the DOM row + caret persist (no remount), then schedule a save. */
+  const onPlainInput = (id: string, value: string): void => {
     const i = indexOfId(id);
     if (i === -1) return;
-    const reconciled = reconcileEditedBlock({ ...blocks()[i], text: value });
-    const next = blocks().slice();
+    const raw = regenerateRaw({ ...blocks[i], text: value }).raw;
+    setBlocks(i, "text", value);
+    setBlocks(i, "raw", raw);
+    scheduleSave();
+  };
+
+  /** On blur, re-align the block with what its markdown re-parses to: a "# "/"- "/"> " prefix
+   *  becomes a heading/list/quote, and a pasted/Shift+Enter newline in a single-line block splits
+   *  into real blocks. Deferred to blur (not per keystroke) so the caret is never disturbed while
+   *  typing; no-op when the structure is unchanged. */
+  const onTextBlur = (id: string): void => {
+    const i = indexOfId(id);
+    if (i === -1) return;
+    const reconciled = reconcileEditedBlock({ ...blocks[i] });
+    if (reconciled.length === 1 && reconciled[0].type === blocks[i].type) return; // unchanged
+    const next = blocks.slice();
     next.splice(i, 1, ...reconciled);
     commit(next);
   };
@@ -556,23 +573,9 @@ export function BlockEditor(props: {
     const i = indexOfId(id);
     if (i === -1) return;
     let j = i + dir;
-    while (j >= 0 && j < blocks().length && !isTextEditable(blocks()[j].type)) j += dir;
-    if (j < 0 || j >= blocks().length) return;
-    queueFocus(blocks()[j].id);
-    // Trigger a re-render path so the ref-focus applies; focus the DOM directly as a fast path.
-    const target = blocks()[j].id;
-    requestAnimationFrame(() => {
-      const el = host?.querySelector<HTMLTextAreaElement>(`[data-block-id="${target}"] textarea`);
-      if (el && pendingFocus?.id === target) {
-        pendingFocus = null;
-        el.focus();
-        try {
-          el.setSelectionRange(el.value.length, el.value.length);
-        } catch {
-          /* noop */
-        }
-      }
-    });
+    while (j >= 0 && j < blocks.length && !isTextEditable(blocks[j].type)) j += dir;
+    if (j < 0 || j >= blocks.length) return;
+    queueFocus(blocks[j].id);
   };
 
   // ------------------------------------------------------------------------
@@ -593,7 +596,7 @@ export function BlockEditor(props: {
   return (
     <div class="block-editor" ref={host}>
       <div class="block-editor-col">
-        <For each={blocks()}>
+        <For each={blocks}>
           {(block) => (
             <div
               class={rowClass(block)}
@@ -636,7 +639,7 @@ export function BlockEditor(props: {
             </div>
           )}
         </For>
-        <Show when={blocks().length === 0}>
+        <Show when={blocks.length === 0}>
           <div class="block-empty">
             <button class="block-empty-add" onClick={() => commit([makeBlock("paragraph")])}>
               Start writing…
@@ -693,10 +696,10 @@ export function BlockEditor(props: {
   function TextBlock(p: { block: Block }) {
     let ta: HTMLTextAreaElement | undefined;
     onMount(() => {
-      if (ta) {
-        autoGrow(ta);
-        focusTextarea(p.block.id, ta);
-      }
+      if (ta) autoGrow(ta);
+    });
+    onCleanup(() => {
+      if (ta && taById.get(p.block.id) === ta) taById.delete(p.block.id);
     });
     const placeholder = (): string => {
       switch (p.block.type) {
@@ -741,15 +744,27 @@ export function BlockEditor(props: {
         <textarea
           ref={(el) => {
             ta = el;
-            focusTextarea(p.block.id, el);
+            taById.set(p.block.id, el); // register for id-addressed focus (survives reconcile)
+            // Caret-safe controlled value: write the DOM value ONLY when it differs from what's
+            // already there. While the user types, p.block.text === el.value (we set it from the
+            // input), so we skip the write and the caret never jumps; a PROGRAMMATIC change
+            // (split/merge/slash/external reload) differs, so we sync it. Tracks the reactive
+            // store field, so it re-runs on every in-place text update.
+            createRenderEffect(() => {
+              const v = p.block.text ?? "";
+              if (el.value !== v) {
+                el.value = v;
+                autoGrow(el);
+              }
+            });
           }}
           class={taClass()}
           rows={1}
           placeholder={placeholder()}
           spellcheck={settings.editor.spellcheck}
-          value={p.block.text ?? ""}
           onInput={(e) => onTextInput(p.block, e.currentTarget)}
           onKeyDown={(e) => onTextKeyDown(p.block, e, e.currentTarget)}
+          onBlur={() => onTextBlur(p.block.id)}
         />
       </div>
     );
