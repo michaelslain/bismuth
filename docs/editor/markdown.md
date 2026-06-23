@@ -62,8 +62,8 @@ Frontmatter is detected by `extractFrontmatterBoundary` (in `frontmatterUtils.ts
 - **Opening and closing `---` delimiters** are collapsed to zero height (`cm-collapsed-line`) with their text hidden, unless the cursor is inside the frontmatter block. When the cursor enters the block, both delimiters are revealed in `cm-syntax-mark` (dim Monaspace), and both carry `cm-frontmatter` line styling. This ensures both delimiters look the same even though the markdown tokenizer handles them differently.
 - **Property rows** (lines between the delimiters): each gets `cm-frontmatter` (Monaspace Xenon, `--mono-scale` font-size, `--surface-2` background, 2px `--accent` left inset shadow). In-block 1-based line numbers are displayed via the `numberedLine` mechanism (see [Code Line Numbers](#code-line-numbers-in-block-line-numbers) below).
 - **`key:` portion**: The regex `/^(\s*)([A-Za-z0-9_$.-]+)\s*:/` is used to detect the key name on each property row. The key receives `cm-fm-key` (color: `--accent`), while the value portion inherits `--fg`.
-- **Wikilinks in property values** (e.g. `source: "[[Note]]"`) are styled as wikilinks via `pushWikilinks` — the only inline treatment applied inside frontmatter. Other inline markdown (bold, italic, tags) is skipped.
-- **No heading/list/tag/math treatment** on frontmatter lines — the `continue` after frontmatter handling skips the rest of the per-line pass entirely.
+- **Links in property values** are styled so the value reads as a clickable link, the same as in the body: wikilinks (e.g. `source: "[[Note]]"`) via `pushWikilinks`, markdown links (e.g. `link: "[Anthropic](https://anthropic.com)"`) via `pushMarkdownLinks`, and bare URLs (e.g. `homepage: https://example.com`) via `pushBareUrls`. These three are the only inline treatments applied inside frontmatter; other inline markdown (bold, italic, tags) is skipped. Click handling is shared with the body — `Editor.tsx`'s `mousedown` handler scans the raw line text, so it resolves frontmatter link clicks (open URL / navigate to note) without any frontmatter-specific code.
+- **No heading/list/tag/math treatment** on frontmatter lines — after the link styling, the `continue` skips the rest of the per-line pass entirely.
 
 ---
 
@@ -286,6 +286,8 @@ Regex: `/\[([^\]]+)\]\(([^)]+)\)/g`
 
 The URL itself is never shown unless that specific link is revealed (hidden along with the brackets).
 
+Extracted as `pushMarkdownLinks(deco, text, lineFrom, reveals)`, called on both body lines and frontmatter property rows (so `link: "[Anthropic](https://anthropic.com)"` in frontmatter renders as a link).
+
 ---
 
 ## Bare URLs
@@ -295,6 +297,8 @@ The URL itself is never shown unless that specific link is revealed (hidden alon
 URLs inside markdown link syntax `](url)` are skipped (handled by the markdown-link path instead).
 
 The entire URL text is styled with `cm-link` (same as markdown links). Nothing is hidden — the URL is the visible text. Bare URLs are never revealed/hidden on cursor — they always render as colored links.
+
+Extracted as `pushBareUrls(deco, text, lineFrom)`, called on both body lines and frontmatter property rows (so `homepage: https://example.com` in frontmatter renders as a link).
 
 ---
 
@@ -314,7 +318,7 @@ Reveal is per-token (`pushWikilinks` calls `onCursor = reveals(s, end)` per matc
 
 **Edge case**: a degenerate token where `visTo <= visFrom` (e.g. `[[#heading]]` which has an empty basename) applies `cm-wikilink` to the entire `[[...]]` span.
 
-**Frontmatter wikilinks**: `pushWikilinks` is also called on frontmatter property rows, so `source: "[[Base]]"` in frontmatter renders as a wikilink.
+**Frontmatter wikilinks**: `pushWikilinks` is also called on frontmatter property rows, so `source: "[[Base]]"` in frontmatter renders as a wikilink. Markdown links and bare URLs get the same frontmatter treatment via `pushMarkdownLinks` / `pushBareUrls` (see those sections).
 
 ---
 
