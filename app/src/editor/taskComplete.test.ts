@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test";
 import { EditorState } from "@codemirror/state";
 import { CompletionContext } from "@codemirror/autocomplete";
-import { taskDescStart, classifyTaskContext, relativeDateOptions, matchTaskFields, taskSource } from "./taskComplete";
+import { taskDescStart, classifyTaskContext, relativeDateOptions, weekdayOptions, matchTaskFields, taskSource } from "./taskComplete";
 
 function complete(doc: string, pos: number, explicit = false) {
   const state = EditorState.create({ doc });
@@ -56,6 +56,23 @@ test("relative dates resolve to ISO against the given today", () => {
   expect(opts[0]).toEqual({ label: "today", date: "2026-06-07" });
   expect(opts.find((o) => o.label === "tomorrow")?.date).toBe("2026-06-08");
   expect(opts.find((o) => o.label === "in a week")?.date).toBe("2026-06-14");
+});
+
+// ── weekdayOptions ──────────────────────────────────────────────────────────
+test("weekday options list the seven upcoming days by name (2026-06-07 is a Sunday)", () => {
+  const opts = weekdayOptions("2026-06-07");
+  expect(opts.map((o) => o.label)).toEqual([
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  ]);
+  expect(opts[0]).toEqual({ label: "monday", date: "2026-06-08" });
+  expect(opts.find((o) => o.label === "friday")?.date).toBe("2026-06-12");
+  // today's own weekday (Sunday) lands a week out, not today.
+  expect(opts.find((o) => o.label === "sunday")?.date).toBe("2026-06-14");
+});
+
+test("relativeDateOptions includes the named weekdays so a due date can be set by day-of-week", () => {
+  const opts = relativeDateOptions("2026-06-07");
+  expect(opts.find((o) => o.label === "friday")?.date).toBe("2026-06-12");
 });
 
 // ── matchTaskFields ─────────────────────────────────────────────────────────

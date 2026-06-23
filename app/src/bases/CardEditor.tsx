@@ -3,9 +3,11 @@ import { EditorView, keymap, drawSelection, Decoration, WidgetType, ViewPlugin }
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, Facet, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
+import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, indentUnit } from "@codemirror/language";
+import { taskCompletion } from "../editor/autocomplete";
 import { api } from "../api";
 import { onServerChange } from "../serverVersion";
 import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
@@ -33,7 +35,9 @@ const cardTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "14px", lineHeight: "1.55", overflow: "visible" },
   ".cm-content": { padding: "0", caretColor: "var(--fg)" },
   ".cm-line": { padding: "0" },
-  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)", borderLeftWidth: "2px" },
+  // Smooth-glide caret — same 70ms ease as Editor.tsx so the card preview animates the
+  // cursor between positions instead of jumping.
+  ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)", borderLeftWidth: "2px", transition: "left 70ms ease-out, top 70ms ease-out" },
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
 });
@@ -315,10 +319,14 @@ export function CardEditor(props: { path: string; title?: string; mode: CardMode
           indentUnit.of("    "),
           EditorState.tabSize.of(4),
           // Tab indents/dedents list items, Cmd/Ctrl-B/I toggle bold/italic — same as the
-          // note editor; the rest is the standard editing + history keymap.
+          // note editor; the rest is the standard editing + history keymap. Ctrl-Space opens
+          // completion and Tab accepts an open completion (falling through to indent when the
+          // popup is closed) so task metadata autocomplete works here like in the note editor.
           keymap.of([
             { key: "Mod-b", run: toggleBold },
             { key: "Mod-i", run: toggleItalic },
+            { key: "Ctrl-Space", run: startCompletion },
+            { key: "Tab", run: acceptCompletion },
             { key: "Tab", run: indentMore, shift: indentLess },
             ...defaultKeymap,
             ...historyKeymap,
@@ -327,6 +335,11 @@ export function CardEditor(props: { path: string; title?: string; mode: CardMode
           markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
           syntaxHighlighting(codeHighlightStyle),
           notePathFacet.of(props.path),
+          // The note editor's task-metadata autocomplete (due/scheduled/priority/recurrence
+          // signifiers + named weekday due dates), popup styling included — same extension, not a
+          // reimplementation. Its source only fires on `- [ ] …` lines, so it's inert in
+          // body-mode cards and active in tasks-mode cards.
+          taskCompletion(),
           livePreview, // rendered-yet-editable markdown + checkbox toggle + right-click status menu
           // Tasks card: show ONLY the checklist (hide interleaved headings/prose lines, which the
           // split keeps in the doc for a lossless save), keep resolved tasks sunk to the bottom of

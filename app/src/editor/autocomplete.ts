@@ -1,6 +1,6 @@
 // app/src/editor/autocomplete.ts
 import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
-import { completionDisplayConfig, type IconedCompletion } from "./completionDisplay";
+import { completionDisplayConfig, completionTheme, type IconedCompletion } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
@@ -251,6 +251,17 @@ function emojiSource(): CompletionSource {
     // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
     return { from, to, options: [gallery, ...emoji], filter: false };
   };
+}
+
+// Task-metadata completion as a standalone extension: the SAME `taskSource()` + display
+// config the full `vaultCompletion()` uses, bundled with the shared `completionTheme` so the
+// popup looks identical. For editors that only need task signifiers/dates (the card editor),
+// rather than re-spelling the autocompletion wiring there.
+export function taskCompletion(): Extension {
+  return [
+    autocompletion({ ...completionDisplayConfig, override: [taskSource()] }),
+    completionTheme,
+  ];
 }
 
 // Combined editor completion: property keys/enums/tag-lists (frontmatter) plus

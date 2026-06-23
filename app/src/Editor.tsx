@@ -24,6 +24,7 @@ import { queryBlock } from "./editor/queryBlock";
 import { taskFold } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
+import { completionTheme } from "./editor/completionDisplay";
 import { datePropertyPicker } from "./editor/datePicker";
 import { iconNames } from "./icons/registry";
 import { settingsCompletion, type VaultPath } from "./editor/settingsComplete";
@@ -84,46 +85,8 @@ const editorTheme = EditorView.theme({
   // it — so match that exact selector here to keep the accent tint while focused.
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
-  // Match .oa-popover exactly: same radius, padding, shadow, and UI font tokens —
-  // CodeMirror owns this <ul><li> DOM, so we can't share the component, only the tokens.
-  ".cm-tooltip.cm-tooltip-autocomplete": {
-    border: "1px solid var(--border)",
-    borderRadius: "var(--popover-radius)",
-    backgroundColor: "var(--bg)",
-    boxShadow: "var(--popover-shadow)",
-    fontFamily: "var(--popover-font)",
-    minWidth: "var(--popover-min-width)",
-    overflow: "hidden",
-    padding: "var(--popover-pad)",
-  },
-  // NOTE: two classes (.cm-tooltip.cm-tooltip-autocomplete) so these match CM's
-  // own default li rule specificity and win — a single-class selector loses to it.
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-    display: "flex",
-    alignItems: "center",
-    gap: "var(--popover-row-gap)",
-    padding: "var(--popover-row-pad-y) var(--popover-row-pad-x)",
-    borderRadius: "var(--popover-row-radius)",
-    fontSize: "var(--popover-font-size)",
-    lineHeight: "1.5",
-  },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
-    backgroundColor: "var(--popover-selected-bg)",
-    color: "var(--fg)",
-  },
-  ".cm-completionLabel": { flex: "1 1 auto" },
-  ".cm-completionDetail": { marginLeft: "auto", paddingLeft: "12px", opacity: "var(--popover-detail-opacity)", fontStyle: "normal" },
-  ".cm-tooltip.cm-completionInfo": {
-    border: "1px solid var(--border)",
-    borderRadius: "var(--popover-radius)",
-    backgroundColor: "var(--bg)",
-    color: "var(--fg)",
-    boxShadow: "var(--popover-shadow)",
-    padding: "8px 10px",
-    maxWidth: "320px",
-    fontSize: "12px",
-    lineHeight: "1.5",
-  },
+  // The autocomplete popup styling lives in the shared `completionTheme` (editor/completionDisplay.ts)
+  // so the note editor and the card editor render an identical popup. It's added in `base` below.
 });
 
 // Config buffers (settings.yaml etc.) are CODE, not prose: monospace, tighter
@@ -439,6 +402,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         ...historyKeymap,
       ]),
       editorTheme,
+      completionTheme, // shared autocomplete-popup styling (also used by the card editor)
       ...(ed.lineWrapping ? [EditorView.lineWrapping] : []),
       // In-editor find (Cmd/Ctrl+F by default) — custom bar, see editor/findPanel.ts.
       // The keybinding is wired below (host capture handler) so it stays rebindable.

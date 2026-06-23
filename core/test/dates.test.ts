@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { todayISO, addDaysISO, binKey, binLabel } from "../src/dates";
+import { todayISO, addDaysISO, binKey, binLabel, weekdayName, weekdayIndex, nextWeekdayISO } from "../src/dates";
 
 test("todayISO formats a Date from its LOCAL y/m/d components", () => {
   const d = new Date(2026, 4, 31, 12, 0, 0); // 2026-05-31 local (month is 0-based)
@@ -58,5 +58,30 @@ describe("binLabel", () => {
   });
   test("week label uses the Monday key's date", () => {
     expect(binLabel("2026-05-25", "week")).toBe("May 25");
+  });
+});
+
+describe("weekday helpers", () => {
+  test("weekdayName reports the local weekday", () => {
+    expect(weekdayName("2026-05-27")).toBe("wednesday"); // a known Wednesday
+    expect(weekdayName("2026-06-07")).toBe("sunday");
+  });
+  test("weekdayIndex accepts full names and 3-letter abbreviations, case-insensitive", () => {
+    expect(weekdayIndex("Sunday")).toBe(0);
+    expect(weekdayIndex("fri")).toBe(5);
+    expect(weekdayIndex("SAT")).toBe(6);
+    expect(weekdayIndex("someday")).toBeNull();
+  });
+  test("nextWeekdayISO resolves to the coming occurrence (1–7 days out)", () => {
+    // 2026-05-27 is a Wednesday.
+    expect(nextWeekdayISO("2026-05-27", "friday")).toBe("2026-05-29");
+    expect(nextWeekdayISO("2026-05-27", "fri")).toBe("2026-05-29");
+    expect(nextWeekdayISO("2026-05-27", "monday")).toBe("2026-06-01");
+  });
+  test("nextWeekdayISO maps the same weekday to a week out, not today", () => {
+    expect(nextWeekdayISO("2026-05-27", "wednesday")).toBe("2026-06-03");
+  });
+  test("nextWeekdayISO returns null for non-weekday text", () => {
+    expect(nextWeekdayISO("2026-05-27", "someday")).toBeNull();
   });
 });
