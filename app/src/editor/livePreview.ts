@@ -328,6 +328,37 @@ function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number
   }
 }
 
+/** Style each markdown link `[text](url)` on a line — showing the link text and hiding the
+ *  `[`, `](url)` syntax off the cursor line (revealed in dim Monaspace when the caret touches
+ *  it). Used for both body and frontmatter lines so links in properties read as links.
+ *  Click handling (open the URL) lives in Editor.tsx. */
+function pushMarkdownLinks(deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean) {
+  for (const m of text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    const s = lineFrom + (m.index ?? 0);
+    const end = s + m[0].length;
+    const onCursor = reveals(s, end);
+    const textStart = s + 1, textEnd = s + 1 + m[1].length;
+    deco.push(link.range(textStart, textEnd));
+    if (!onCursor) {
+      deco.push(hide.range(s, textStart));
+      deco.push(hide.range(textEnd, end));
+    } else {
+      // Revealed: the `[`, `](url)` syntax renders in dim Monaspace.
+      deco.push(syntaxMark.range(s, textStart));
+      deco.push(syntaxMark.range(textEnd, end));
+    }
+  }
+}
+
+/** Style each bare (inexplicit) URL — a plain `https://…` typed without `[text](url)`
+ *  syntax — as a clickable link. Nothing is hidden (the URL *is* the visible text). Shared
+ *  by body and frontmatter lines; click handling lives in Editor.tsx. */
+function pushBareUrls(deco: Range<Decoration>[], text: string, lineFrom: number) {
+  for (const { start, end } of findBareUrls(text)) {
+    deco.push(link.range(lineFrom + start, lineFrom + end));
+  }
+}
+
 /** Tint body `#tag` spans (incl. the leading `#`) in --teal. A tag is `#` at
  *  start-of-line or after whitespace + tag chars (letters/digits/`/`/`_`/`-`). The
  *  mark only colors text and hides nothing, so the cursor-line reveal stays consistent
@@ -495,7 +526,8 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const text = line.text;
 
       // frontmatter: dim lines and skip inline markdown — but still highlight any
-      // wikilinks (e.g. a `source: "[[Note]]"` property) so they read as links.
+      // wikilinks, markdown links, and bare URLs (e.g. a `source: "[[Note]]"`,
+      // `link: "[x](url)"`, or `homepage: https://…` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
         // The `---` delimiters collapse to nothing until the cursor enters the
         // block; only the property rows show (a clean "properties" panel).
@@ -525,6 +557,8 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           deco.push(fmKeyMark.range(start, start + km[2].length));
         }
         pushWikilinks(deco, text, line.from, revealsRange);
+        pushMarkdownLinks(deco, text, line.from, revealsRange);
+        pushBareUrls(deco, text, line.from);
         pos = line.to + 1;
         continue;
       }
@@ -731,29 +765,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike);
       pushInline(deco, text, line.from, revealsRange, /`([^`]+)`/g, 1, code);
 
-      // markdown links [text](url): show text as a link, hide the brackets/url unless the
-      // caret touches THIS link (per-token reveal, not the whole line)
-      for (const m of text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
-        const s = line.from + (m.index ?? 0);
-        const end = s + m[0].length;
-        const onCursor = revealsRange(s, end);
-        const textStart = s + 1, textEnd = s + 1 + m[1].length;
-        deco.push(link.range(textStart, textEnd));
-        if (!onCursor) {
-          deco.push(hide.range(s, textStart));
-          deco.push(hide.range(textEnd, end));
-        } else {
-          // Revealed: the `[`, `](url)` syntax renders in dim Monaspace.
-          deco.push(syntaxMark.range(s, textStart));
-          deco.push(syntaxMark.range(textEnd, end));
-        }
-      }
-
-      // bare (inexplicit) URLs — a plain https://… typed without [text](url) syntax.
-      // Style them as clickable links; nothing is hidden (the URL *is* the visible text).
-      for (const { start, end } of findBareUrls(text)) {
-        deco.push(link.range(line.from + start, line.from + end));
-      }
+      // markdown links [text](url) + bare https://… URLs: show the link text, hide the
+      // brackets/url unless the caret touches THIS link (per-token reveal). Shared with the
+      // frontmatter branch so links in properties get the same treatment.
+      pushMarkdownLinks(deco, text, line.from, revealsRange);
+      pushBareUrls(deco, text, line.from);
 
       // wikilinks [[target#heading|alias]] — reveal only the basename (or alias).
       pushWikilinks(deco, text, line.from, revealsRange);
