@@ -253,3 +253,23 @@
   color: var(--text-muted);
   font-size: var(--popover-font-size, 13px);
 }
+
+/* --- Live ```query block ------------------------------------------------- */
+/* A rendered query block: the embedded BaseView plus a pencil overlay (top-right) that
+   re-opens the visual builder. The Edit affordance only fades in on hover so it doesn't
+   clutter the rendered view. */
+.block-query {
+  position: relative;
+}
+.block-query-edit {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.block-query:hover .block-query-edit,
+.block-query:focus-within .block-query-edit {
+  opacity: 1;
+}

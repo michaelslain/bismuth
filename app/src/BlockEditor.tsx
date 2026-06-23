@@ -45,6 +45,11 @@ import {
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { NoteCandidate } from "./editor/wikilink";
+import { BaseView } from "./bases/BaseView";
+import { QueryBuilder } from "./bases/QueryBuilder";
+import { looksLikeBaseConfig, parseQueryBlockBody, type BuilderState } from "./bases/queryGen";
+import { parseQueryBlock } from "../../core/src/bases/queryBlock";
+import { IconButton } from "./ui/IconButton";
 import "./BlockEditor.css";
 
 let blockSeq = 0;
@@ -102,6 +107,18 @@ function isTextEditable(type: BlockType): boolean {
 /** Blocks rendered as read-only markdown (with a click-to-edit-raw fallback). */
 function isRendered(type: BlockType): boolean {
   return type === "table" || type === "image" || type === "html" || type === "mathBlock";
+}
+
+/** A live `\`\`\`query` block (code + lang "query") renders as a BaseView, not a textarea. */
+function isQueryBlock(b: Block): boolean {
+  return b.type === "code" && b.lang === "query";
+}
+
+/** A block that hosts an editable textarea, for caret navigation (Arrow up/down, Backspace
+ *  merge). Excludes query blocks: they're a code type but render a BaseView with no textarea,
+ *  so treating them as a focus target would strand the caret. */
+function isTextNavTarget(b: Block): boolean {
+  return isTextEditable(b.type) && !isQueryBlock(b);
 }
 
 export function BlockEditor(props: {
@@ -365,9 +382,9 @@ export function BlockEditor(props: {
   const mergeIntoPrevious = (id: string): void => {
     const i = indexOfId(id);
     if (i <= 0) return;
-    // Find the nearest previous TEXT-editable block (skip blank gaps).
+    // Find the nearest previous TEXT-editable block (skip blank gaps + query blocks).
     let p = i - 1;
-    while (p >= 0 && !isTextEditable(blocks[p].type)) p--;
+    while (p >= 0 && !isTextNavTarget(blocks[p])) p--;
     const cur = blocks[i];
     if (p < 0) {
       // No prior text block — just drop this one if it's empty.
@@ -422,6 +439,12 @@ export function BlockEditor(props: {
     x: number;
     y: number;
   } | null>(null);
+  // The visual query builder. When set, the QueryBuilder modal is open over `blockId`; on
+  // confirm it rewrites that block as a ```query fence (built from the no-code form). `initial`
+  // seeds it when editing an existing block (parsed from its body); absent → a fresh query.
+  const [builder, setBuilder] = createSignal<{ blockId: string; initial?: BuilderState } | null>(
+    null,
+  );
   const slashFiltered = createMemo<SlashItem[]>(() => {
     const s = slash();
     if (!s) return [];
@@ -450,10 +473,15 @@ export function BlockEditor(props: {
     setSlash(null);
     const idx = indexOfId(s.blockId);
     if (idx === -1) return;
+    // `/query` opens the no-code visual builder instead of inserting an empty fence. The trigger
+    // block stays as-is (the empty paragraph) until the builder confirms — at which point it's
+    // rewritten as a ```query fence; cancelling leaves the empty paragraph untouched.
+    if (item.id === "query") {
+      setBuilder({ blockId: s.blockId, initial: undefined });
+      return;
+    }
     const newType = blockTypeForSlashItem(item.id);
-    let block = makeBlock(newType);
-    // For a `query` block, seed the code lang so it round-trips as ```query.
-    if (item.id === "query") block = regenerateRaw({ ...block, type: "code", lang: "query" });
+    const block = makeBlock(newType);
     const next = blocks.slice();
     next[idx] = block;
     commit(next);
@@ -573,7 +601,7 @@ export function BlockEditor(props: {
     const i = indexOfId(id);
     if (i === -1) return;
     let j = i + dir;
-    while (j >= 0 && j < blocks.length && !isTextEditable(blocks[j].type)) j += dir;
+    while (j >= 0 && j < blocks.length && !isTextNavTarget(blocks[j])) j += dir;
     if (j < 0 || j >= blocks.length) return;
     queueFocus(blocks[j].id);
   };
@@ -669,11 +697,37 @@ export function BlockEditor(props: {
           </div>
         )}
       </Show>
+
+      <Show when={builder()}>
+        {(b) => (
+          <QueryBuilder
+            hostPath={props.path ?? undefined}
+            initial={b().initial}
+            onConfirm={(body) => {
+              const id = b().blockId;
+              setBuilder(null);
+              // Rewrite the target block as a ```query fence carrying the built body. The block
+              // model stores the fence body in `text`; regenerateRaw re-emits the ```query fence
+              // (renderBlockToMarkdown "code"). reconcile-by-id keeps the rest of the doc stable.
+              updateBlock(id, (blk) =>
+                regenerateRaw({ ...blk, type: "code", lang: "query", text: body }),
+              );
+            }}
+            onClose={() => setBuilder(null)}
+          />
+        )}
+      </Show>
     </div>
   );
 
   // --- Per-type block renderers --------------------------------------------
   function renderBlock(block: Block) {
+    // A ```query fenced code block renders as a LIVE base view (not a monospace textarea),
+    // mirroring the CodeMirror editor/queryBlock.ts mount. An Edit affordance re-opens the
+    // visual builder seeded from the parsed body.
+    if (block.type === "code" && block.lang === "query") {
+      return <QueryBlockBlock block={block} />;
+    }
     if (block.type === "divider") {
       return <hr class="block-hr" />;
     }
@@ -810,6 +864,32 @@ export function BlockEditor(props: {
           }}
         />
       </Show>
+    );
+  }
+
+  // A live ```query block: render its body as a BaseView (same flat-vs-config branch as the
+  // CodeMirror editor's queryBlock.ts widget), with a pencil overlay that re-opens the visual
+  // builder seeded from the parsed body. BaseView is a Solid component and we're inside a Solid
+  // component tree, so it mounts directly as JSX (no mountSolid bridge needed here).
+  function QueryBlockBlock(p: { block: Block }) {
+    const body = createMemo(() => p.block.text ?? "");
+    return (
+      <div class="block-query">
+        <div class="block-query-edit">
+          <IconButton
+            icon="Pencil"
+            size="sm"
+            label="Edit query"
+            onClick={() => setBuilder({ blockId: p.block.id, initial: parseQueryBlockBody(body()) })}
+          />
+        </div>
+        <Show
+          when={looksLikeBaseConfig(body())}
+          fallback={<BaseView view={parseQueryBlock(body())} hostPath={props.path ?? undefined} />}
+        >
+          <BaseView source={body()} hostPath={props.path ?? undefined} />
+        </Show>
+      </div>
     );
   }
 }
