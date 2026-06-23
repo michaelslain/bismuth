@@ -1,8 +1,8 @@
 // app/src/BlockEditor.tsx
 // A Notion-like BLOCK editing surface — the second editor surface over a note (the first
 // being the CodeMirror `Editor`). It shares the EXACT same props contract as `Editor`
-// ({ path, initialText, onSaved, noteNames, tagNames }) so App/PaneContent can swap one for
-// the other purely on the per-note editor mode (blocks/editorMode.ts).
+// ({ path, initialText, onSaved, noteNames, tagNames }) so FileView can swap one for the other
+// based solely on the `editor.defaultMode` setting (no per-note UI toggle).
 //
 // CRITICAL — anti-clobber contract. A note's source of truth is the RAW markdown string and
 // there is NO server-side conflict detection (last-write-wins on PUT /file). So this surface

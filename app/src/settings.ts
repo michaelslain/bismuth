@@ -149,7 +149,6 @@ export interface Settings {
     "focus-pane-up": string;
     "focus-pane-down": string;
     "new-claude-chat": string;
-    "toggle-blocks": string;
     "insert-template": string;
     "toggle-sidebar": string;
   };

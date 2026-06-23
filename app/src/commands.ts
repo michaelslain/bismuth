@@ -58,8 +58,6 @@ export interface CommandHandlers {
   archiveAllTasks: () => void | Promise<void>;
   // Open a fresh Claude Code chat session in its own tab.
   newClaudeChat: () => void;
-  // Flip the focused note between the source editor and the Notion-like Blocks editor.
-  toggleBlocksMode: () => void;
 }
 
 export interface BoundCommand {
@@ -91,7 +89,6 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
     "new-claude-chat": h.newClaudeChat,
-    "toggle-blocks": h.toggleBlocksMode,
     "export": h.exportActive,
     "archive-tasks": h.archiveTasks,
     "archive-all-tasks": h.archiveAllTasks,

@@ -40,9 +40,6 @@ import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, contentLabel, contentIcon, isSentinel } from "./tabIds";
-import { toggleMode as toggleEditorMode } from "./blocks/editorMode";
-import { peekNoteCache } from "./noteCache";
-import { parseFrontmatter } from "../../core/src/frontmatter";
 import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
@@ -714,24 +711,6 @@ export default function App() {
   // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
   // invocation is a distinct conversation rather than re-focusing an old one).
   const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID());
-  // Flip the focused note between the source editor and the Blocks editor. Mode is a
-  // per-note transient UI preference (blocks/editorMode store), not a vault setting.
-  const toggleBlocksMode = () => {
-    const c = focusedContent();
-    if (!c || isSentinel(c) || !c.endsWith(".md")) {
-      pushToast("Open a note to toggle Blocks mode");
-      return;
-    }
-    // A `type: base` note renders as a BaseView (not the editor), so Blocks mode doesn't apply.
-    // FileView already hides the Source/Blocks toggle for bases; guard the command the same way
-    // so the keybinding/palette can't store an inert preference on a base file.
-    const body = peekNoteCache(c);
-    if (body !== undefined && parseFrontmatter(body).data.type === "base") {
-      pushToast("Blocks mode doesn't apply to a base");
-      return;
-    }
-    toggleEditorMode(c);
-  };
   // No empty state: if every tab ever closes (via any path — close, drag-detach, prune), reopen
   // the graph home tab. The close handler already swaps atomically; this is the catch-all.
   createEffect(() => {
@@ -772,7 +751,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, newClaudeChat, toggleBlocksMode }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, newClaudeChat }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1257,17 +1236,6 @@ export default function App() {
       if (tag !== "INPUT" && tag !== "TEXTAREA") {
         e.preventDefault();
         newClaudeChat();
-      }
-      return;
-    }
-    // Toggle Blocks mode for the focused note (default Mod+Shift+B). Don't hijack the chord
-    // while typing in a form field; the CodeMirror editor is contentEditable (not a TEXTAREA),
-    // so toggling from Source mode still works — and Blocks mode has its own Source/Blocks UI.
-    if (matchesKeybinding(e, kb["toggle-blocks"])) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag !== "INPUT" && tag !== "TEXTAREA") {
-        e.preventDefault();
-        toggleBlocksMode();
       }
       return;
     }

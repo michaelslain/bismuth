@@ -60,8 +60,6 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
     doc: "Move focus to the pane below." },
   { id: "new-claude-chat", label: "New Claude chat", default: "Mod+Shift+C",
     doc: "Open a new Claude Code chat session in its own tab." },
-  { id: "toggle-blocks", label: "Toggle Blocks mode", default: "Mod+Shift+B",
-    doc: "Switch the focused note between the source editor and the Blocks editor." },
   { id: "insert-template", label: "Insert template", default: "Alt+T",
     doc: "Open the template-insertion palette (ignored while typing in a form field)." },
   { id: "toggle-sidebar", label: "Toggle sidebar", default: "Alt+S",
