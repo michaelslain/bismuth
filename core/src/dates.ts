@@ -25,6 +25,36 @@ export function addDaysISO(iso: string, n: number): string {
   return todayISO(d);
 }
 
+const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+const WEEKDAY_ABBR = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** Lowercase weekday name of an ISO date (anchored at local midnight, like todayISO). */
+export function weekdayName(iso: string): string {
+  return WEEKDAYS[new Date(iso.slice(0, 10) + "T00:00:00").getDay()];
+}
+
+/** Day-of-week index (0=Sunday … 6=Saturday) for a weekday name — full ("friday") or
+ *  3-letter abbreviation ("fri"), case-insensitive — or null if it isn't a weekday. */
+export function weekdayIndex(name: string): number | null {
+  const n = name.trim().toLowerCase();
+  const full = WEEKDAYS.indexOf(n);
+  if (full >= 0) return full;
+  const abbr = WEEKDAY_ABBR.indexOf(n);
+  return abbr >= 0 ? abbr : null;
+}
+
+/** Resolve a weekday name ("friday"/"fri") to the next date with that weekday strictly
+ *  AFTER `today` (1–7 days out), so "friday" means the coming Friday and a weekday equal
+ *  to today resolves a week out (today itself is the separate "today" choice). Returns
+ *  null for anything that isn't a weekday name. */
+export function nextWeekdayISO(today: string, name: string): string | null {
+  const target = weekdayIndex(name);
+  if (target == null) return null;
+  const cur = new Date(today.slice(0, 10) + "T00:00:00").getDay();
+  const offset = ((target - cur + 6) % 7) + 1; // 1..7, never 0 (today)
+  return addDaysISO(today, offset);
+}
+
 export type Bin = "day" | "week" | "month";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
