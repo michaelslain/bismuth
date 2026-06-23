@@ -215,13 +215,15 @@
   margin: 0;
 }
 
-/* Headings size by level (mirrors the live-preview heading scale). */
-.block-rich--h1 .ProseMirror { font-size: 1.9em; font-weight: 700; line-height: 1.25; }
-.block-rich--h2 .ProseMirror { font-size: 1.55em; font-weight: 700; line-height: 1.3; }
-.block-rich--h3 .ProseMirror { font-size: 1.28em; font-weight: 650; line-height: 1.35; }
-.block-rich--h4 .ProseMirror { font-size: 1.12em; font-weight: 600; }
-.block-rich--h5 .ProseMirror { font-size: 1.02em; font-weight: 600; }
-.block-rich--h6 .ProseMirror { font-size: 0.95em; font-weight: 600; color: var(--text-muted); }
+/* Headings size by level (mirrors the live-preview heading scale). The same scale is applied to
+ * the unmounted static-preview container — its rendered text inherits the size — so a heading
+ * doesn't visibly resize ("pop") when it mounts/unmounts on scroll. */
+.block-rich--h1 .ProseMirror, .block-rich--h1.block-rich--preview { font-size: 1.9em; font-weight: 700; line-height: 1.25; }
+.block-rich--h2 .ProseMirror, .block-rich--h2.block-rich--preview { font-size: 1.55em; font-weight: 700; line-height: 1.3; }
+.block-rich--h3 .ProseMirror, .block-rich--h3.block-rich--preview { font-size: 1.28em; font-weight: 650; line-height: 1.35; }
+.block-rich--h4 .ProseMirror, .block-rich--h4.block-rich--preview { font-size: 1.12em; font-weight: 600; }
+.block-rich--h5 .ProseMirror, .block-rich--h5.block-rich--preview { font-size: 1.02em; font-weight: 600; }
+.block-rich--h6 .ProseMirror, .block-rich--h6.block-rich--preview { font-size: 0.95em; font-weight: 600; color: var(--text-muted); }
 
 .block-rich--quote .ProseMirror {
   font-style: italic;
