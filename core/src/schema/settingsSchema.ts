@@ -89,9 +89,9 @@ export const SETTINGS_SCHEMA: Schema = {
   }),
   editor: object({
     defaultMode: {
-      type: enumType(["source", "blocks"]),
+      type: enumType(["source", "visual"]),
       default: "source",
-      doc: "How a note opens by default: 'source' (the Markdown source editor) or 'blocks' (the Notion-like block editor). Per-note overrides via the Toggle Blocks command are remembered separately and don't change this default.",
+      doc: "How every note opens: 'source' (the raw Markdown editor) or 'visual' (the no-code, Notion-like editor — no markdown knowledge needed). This is the only control; there is no per-note toggle.",
     },
     livePreview: { type: "boolean", default: true, doc: "Render markdown inline as you type." },
     lineNumbers: { type: "boolean", default: false, doc: "Show line numbers." },

@@ -43,7 +43,7 @@ export function FileView(props: {
     const text = body();
     return text !== undefined && parseFrontmatter(text).data.type === "base";
   };
-  const blocksMode = () => settings.editor.defaultMode === "blocks";
+  const visualMode = () => settings.editor.defaultMode === "visual";
   return (
     <Show when={body.state === "ready"} fallback={<Loading />}>
       <Switch>
@@ -52,7 +52,7 @@ export function FileView(props: {
         </Match>
         <Match when={!isBase()}>
           <Show
-            when={blocksMode()}
+            when={visualMode()}
             fallback={
               <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
             }

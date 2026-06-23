@@ -58,7 +58,7 @@ export interface Settings {
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
   };
   editor: {
-    defaultMode: "source" | "blocks"; // how a note opens: source editor vs Blocks editor
+    defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
     livePreview: boolean;
     lineNumbers: boolean;
     lineWrapping: boolean;
