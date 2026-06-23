@@ -291,7 +291,9 @@ fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run
     if !script.is_empty() {
         builder = builder.initialization_script(&script);
     }
-    builder.build()?;
+    let _window = builder.build()?;
+    #[cfg(target_os = "macos")]
+    unlock_webview_fps(&_window);
     Ok(())
 }
 
@@ -364,6 +366,53 @@ fn apply_vault_dock_icon(app: &tauri::AppHandle) {
         let nsapp = NSApplication::sharedApplication(mtm);
         unsafe { nsapp.setApplicationIconImage(Some(&image)) };
     }
+}
+
+// macOS WKWebView pins `requestAnimationFrame` to ~60fps via a private WebKit "feature"
+// (PreferPageRenderingUpdatesNear60FPSEnabled). On a ProMotion 120Hz display that caps the
+// graph render loop at 60fps even though the same code runs at 120 in Chrome. Turning the
+// feature off restores native-refresh rAF. Uses the private `_features` /
+// `_setEnabled:forFeature:` API, so this must NOT ship in a Mac App Store build.
+#[cfg(target_os = "macos")]
+fn unlock_webview_fps(window: &tauri::WebviewWindow) {
+    use objc2::runtime::{AnyObject, Bool};
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+
+    let _ = window.with_webview(|wv| unsafe {
+        let wk = wv.inner() as *mut AnyObject;
+        if wk.is_null() {
+            return;
+        }
+        let config: *mut AnyObject = msg_send![wk, configuration];
+        if config.is_null() {
+            return;
+        }
+        let prefs: *mut AnyObject = msg_send![config, preferences];
+        if prefs.is_null() {
+            return;
+        }
+        let features: *mut AnyObject = msg_send![class!(WKPreferences), _features];
+        if features.is_null() {
+            eprintln!("bismuth: WKPreferences._features unavailable; cannot lift 60fps cap");
+            return;
+        }
+        let count: usize = msg_send![features, count];
+        for i in 0..count {
+            let feature: *mut AnyObject = msg_send![features, objectAtIndex: i];
+            let key: *mut NSString = msg_send![feature, key];
+            if key.is_null() {
+                continue;
+            }
+            let key_ref: &NSString = &*key;
+            if key_ref.to_string() == "PreferPageRenderingUpdatesNear60FPSEnabled" {
+                let _: () = msg_send![prefs, _setEnabled: Bool::new(false), forFeature: feature];
+                eprintln!("bismuth: lifted WKWebView 60fps cap (ProMotion rAF enabled)");
+                return;
+            }
+        }
+        eprintln!("bismuth: 60fps-cap WebKit feature not found among {count} features");
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
