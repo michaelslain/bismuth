@@ -82,6 +82,16 @@ test("relative date expr: due before in 7 days", () => {
   expect(runTaskQuery(tasks, "due before in 7 days", TODAY).tasks.map((t) => t.description)).toEqual(["within"]);
 });
 
+test("day-of-week expr: due friday (TODAY is Wed 2026-05-27 → coming Fri 2026-05-29)", () => {
+  const tasks = [
+    task({ due: "2026-05-29", description: "fri" }),
+    task({ due: "2026-06-01", description: "mon" }),
+  ];
+  expect(runTaskQuery(tasks, "due friday", TODAY).tasks.map((t) => t.description)).toEqual(["fri"]);
+  expect(runTaskQuery(tasks, "due next monday", TODAY).tasks.map((t) => t.description)).toEqual(["mon"]);
+  expect(runTaskQuery(tasks, "due before friday", TODAY).tasks.map((t) => t.description)).toEqual([]);
+});
+
 test("boolean OR / AND with parentheses", () => {
   const tasks = [
     task({ priority: "high", description: "h" }),

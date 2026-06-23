@@ -10,7 +10,7 @@
 // Pure, unit-tested helpers (taskDescStart, classifyTaskContext, relativeDateOptions) do
 // the matching; the source is thin wiring, mirroring wikilink.ts/tag.ts/queryComplete.ts.
 import { type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
-import { todayISO, addDaysISO } from "../../../core/src/dates";
+import { todayISO, addDaysISO, weekdayName } from "../../../core/src/dates";
 import { makeApply } from "./applyCompletion";
 
 /** Column where a task's description begins (just past `- [ ] `), or null if the line is
@@ -74,9 +74,23 @@ const DATE_OFFSETS: Array<{ label: string; days: number }> = [
   { label: "in two weeks", days: 14 },
 ];
 
-/** Relative-date choices resolved to ISO against `today` (pure; `today` injectable for tests). */
+/** The seven upcoming weekdays by name (`monday`…`sunday`), each resolved to its next
+ *  occurrence 1–7 days out — so typing `friday` picks the coming Friday. Today's own
+ *  weekday lands at +7 (today itself is the separate "today" choice). */
+export function weekdayOptions(today: string = todayISO()): Array<{ label: string; date: string }> {
+  return Array.from({ length: 7 }, (_, i) => {
+    const date = addDaysISO(today, i + 1);
+    return { label: weekdayName(date), date };
+  });
+}
+
+/** Relative-date choices resolved to ISO against `today` (pure; `today` injectable for tests).
+ *  Includes the named weekdays so a due date can be set by day-of-week ("friday"). */
 export function relativeDateOptions(today: string = todayISO()): Array<{ label: string; date: string }> {
-  return DATE_OFFSETS.map((o) => ({ label: o.label, date: o.days === 0 ? today : addDaysISO(today, o.days) }));
+  return [
+    ...DATE_OFFSETS.map((o) => ({ label: o.label, date: o.days === 0 ? today : addDaysISO(today, o.days) })),
+    ...weekdayOptions(today),
+  ];
 }
 
 /** TASK_FIELDS whose any keyword starts with `query` (case-insensitive). Empty query → all. */

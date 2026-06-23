@@ -2,7 +2,7 @@
 // Pure + synchronous: given all tasks, a query string, and today's date, return the
 // filtered/sorted tasks plus any human-readable errors for unrecognized filter lines.
 import { DATE_FIELD_NAMES, type Task, type Priority, type DateField } from "./tasks";
-import { addDaysISO } from "./dates";
+import { addDaysISO, nextWeekdayISO } from "./dates";
 
 export interface QueryOutcome {
   tasks: Task[];
@@ -27,6 +27,9 @@ function resolveDateExpr(expr: string, today: string): string | null {
   if (inM) return addDaysISO(today, Number(inM[1]));
   const agoM = e.match(/^(\d+) days? ago$/);
   if (agoM) return addDaysISO(today, -Number(agoM[1]));
+  // Day-of-week words: `friday`, `next friday`, `mon`, … → the coming occurrence.
+  const wd = nextWeekdayISO(today, e.replace(/^next\s+/, ""));
+  if (wd) return wd;
   return null;
 }
 
