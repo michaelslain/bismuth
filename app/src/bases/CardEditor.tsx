@@ -3,12 +3,11 @@ import { EditorView, keymap, drawSelection, Decoration, WidgetType, ViewPlugin }
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, Facet, Annotation } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
-import { autocompletion, startCompletion, acceptCompletion } from "@codemirror/autocomplete";
+import { startCompletion, acceptCompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, indentUnit } from "@codemirror/language";
-import { completionDisplayConfig } from "../editor/completionDisplay";
-import { taskSource } from "../editor/taskComplete";
+import { taskCompletion } from "../editor/autocomplete";
 import { api } from "../api";
 import { onServerChange } from "../serverVersion";
 import { readNoteCached, primeNoteCache, peekNoteCache } from "../noteCache";
@@ -336,10 +335,11 @@ export function CardEditor(props: { path: string; title?: string; mode: CardMode
           markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
           syntaxHighlighting(codeHighlightStyle),
           notePathFacet.of(props.path),
-          // Task-metadata autocomplete (due/scheduled/priority/recurrence signifiers + named
-          // weekday due dates). taskSource only fires on `- [ ] …` lines, so it's inert in
+          // The note editor's task-metadata autocomplete (due/scheduled/priority/recurrence
+          // signifiers + named weekday due dates), popup styling included — same extension, not a
+          // reimplementation. Its source only fires on `- [ ] …` lines, so it's inert in
           // body-mode cards and active in tasks-mode cards.
-          autocompletion({ ...completionDisplayConfig, override: [taskSource()] }),
+          taskCompletion(),
           livePreview, // rendered-yet-editable markdown + checkbox toggle + right-click status menu
           // Tasks card: show ONLY the checklist (hide interleaved headings/prose lines, which the
           // split keeps in the doc for a lossless save), keep resolved tasks sunk to the bottom of
