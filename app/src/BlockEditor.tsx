@@ -44,13 +44,24 @@ import {
 } from "./editor/slashMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import type { NoteCandidate } from "./editor/wikilink";
+import { type NoteCandidate, buildInsert } from "./editor/wikilink";
+import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
 import { BaseView } from "./bases/BaseView";
 import { QueryBuilder } from "./bases/QueryBuilder";
 import { looksLikeBaseConfig, parseQueryBlockBody, type BuilderState } from "./bases/queryGen";
 import { parseQueryBlock } from "../../core/src/bases/queryBlock";
 import { IconButton } from "./ui/IconButton";
+import type { BlockEditorHandle, CaretHint, createBlockEditor as CreateBlockEditorFn } from "./blocks/milkdownEditor";
 import "./BlockEditor.css";
+
+// The Milkdown bridge is code-split (ProseMirror + remark are heavy) — loaded once on first
+// text-block mount and shared by every block afterwards (sheet/univerSheet.ts pattern). The
+// promise is module-scoped so concurrent first mounts share one import.
+let milkdownModule: Promise<{ createBlockEditor: typeof CreateBlockEditorFn }> | null = null;
+function loadMilkdown(): Promise<{ createBlockEditor: typeof CreateBlockEditorFn }> {
+  if (!milkdownModule) milkdownModule = import("./blocks/milkdownEditor");
+  return milkdownModule;
+}
 
 let blockSeq = 0;
 /** A fresh, parse-unique id for a block created at runtime (insert/split), distinct from the
@@ -112,6 +123,22 @@ function isRendered(type: BlockType): boolean {
 /** A live `\`\`\`query` block (code + lang "query") renders as a BaseView, not a textarea. */
 function isQueryBlock(b: Block): boolean {
   return b.type === "code" && b.lang === "query";
+}
+
+/** A TRUE-WYSIWYG rich-text block: edited in a Milkdown surface (bold renders bold, wikilinks/
+ *  tags become chips, no markdown symbols shown). This is every text-editable type EXCEPT `code`
+ *  — code stays a monospace textarea (raw is the point) and a `\`\`\`query` code block renders a
+ *  BaseView. The block model still owns the block PREFIX (#, -, >, - [ ]); Milkdown only edits
+ *  the inline `text`. */
+function isRichText(type: BlockType): boolean {
+  return (
+    type === "paragraph" ||
+    type === "heading" ||
+    type === "quote" ||
+    type === "bulletItem" ||
+    type === "orderedItem" ||
+    type === "task"
+  );
 }
 
 /** A block that hosts an editable textarea, for caret navigation (Arrow up/down, Backspace
@@ -373,7 +400,9 @@ export function BlockEditor(props: {
     next[i] = setBlockText(cur, before);
     next.splice(i + 1, 0, created);
     commit(next);
-    queueFocus(created.id);
+    // Focus the new block at its START (caret 0), where the split occurred — the carried-over
+    // tail text sits after the caret, matching a normal editor's Enter behaviour.
+    queueFocus(created.id, 0);
   };
 
   /** Backspace at the start of an empty/short block: merge into the previous text block,
@@ -403,25 +432,46 @@ export function BlockEditor(props: {
     queueFocus(prev.id, joinAt);
   };
 
+  /** Change a block's TYPE in place (the format toolbar's H1-H3 / bullet actions), PRESERVING its
+   *  inline `text`. Heading carries the level; list/quote drop the heading level. Re-runs
+   *  regenerateRaw so the new prefix (#, -, >) round-trips. reconcile-by-id keeps the row + caret
+   *  stable, then we re-focus so the Milkdown surface keeps the caret. */
+  const changeBlockKind = (id: string, kind: FormatBlockKind): void => {
+    const i = indexOfId(id);
+    if (i === -1) return;
+    const cur = blocks[i];
+    const text = cur.text ?? "";
+    let next: Block;
+    if (kind === "bullet") {
+      next = regenerateRaw({ id: cur.id, type: "bulletItem", indent: "", marker: "-", ordered: false, text, raw: "" });
+    } else {
+      const level = kind === "h1" ? 1 : kind === "h2" ? 2 : 3;
+      next = regenerateRaw({ id: cur.id, type: "heading", level, text, raw: "" });
+    }
+    updateBlock(id, () => next);
+    queueFocus(id, text.length);
+  };
+
   // --- Focus scheduling ------------------------------------------------------
-  // Each block's textarea registers itself by id (the ref runs synchronously during render).
-  // Because reconcile-by-id keeps rows mounted across edits, focus must address the LIVE element
-  // by id — not a ref that only re-fires on remount. queueFocus defers to a microtask so any
-  // just-created row has registered before we focus it.
-  const taById = new Map<string, HTMLTextAreaElement>();
+  // Each block's editable surface registers a focus closure by id (the ref runs synchronously
+  // during render). Because reconcile-by-id keeps rows mounted across edits, focus must address
+  // the LIVE surface by id — not a ref that only re-fires on remount. A rich-text block registers
+  // a Milkdown handle's focus(); a code block registers its textarea's. queueFocus defers to a
+  // microtask so any just-created row has registered before we focus it. The Milkdown surface
+  // mounts ASYNCHRONOUSLY (Editor.create() is async), so a focus that lands before the handle is
+  // ready is retried for a couple of frames.
+  const focusById = new Map<string, (caret?: CaretHint) => void>();
   const queueFocus = (id: string, caret?: number): void => {
-    queueMicrotask(() => {
-      const el = taById.get(id);
-      if (!el) return;
-      el.focus();
-      const pos = caret ?? el.value.length;
-      try {
-        el.setSelectionRange(pos, pos);
-      } catch {
-        /* setSelectionRange not applicable */
+    const want: CaretHint | undefined = caret;
+    const attempt = (tries: number): void => {
+      const fn = focusById.get(id);
+      if (fn) {
+        fn(want);
+        return;
       }
-      autoGrow(el);
-    });
+      if (tries > 0) requestAnimationFrame(() => attempt(tries - 1));
+    };
+    queueMicrotask(() => attempt(8));
   };
 
   /** Textarea autosize: grow to fit content so a block has no inner scrollbar. */
@@ -445,6 +495,78 @@ export function BlockEditor(props: {
   const [builder, setBuilder] = createSignal<{ blockId: string; initial?: BuilderState } | null>(
     null,
   );
+
+  // --- Wikilink / tag autocomplete (the Milkdown-surface equivalent of the CodeMirror sources).
+  // The bridge detects the open `[[…`/`#tag` trigger + reports the query + caret rect; we render
+  // the SAME PopoverList + createMenuNav the slash menu uses, and commit the chosen candidate back
+  // through the bridge's applyAutocomplete (which re-parses the inserted text into a live chip).
+  const [auto, setAuto] = createSignal<{
+    blockId: string;
+    handle: BlockEditorHandle;
+    kind: "wikilink" | "tag";
+    query: string;
+    from: number; // markdown offset where the query starts (after `[[` / `#`)
+    x: number;
+    y: number;
+  } | null>(null);
+
+  /** Candidate strings (the raw insert text) for the active autocomplete, ranked by a simple
+   *  prefix-then-substring match — note basenames for `[[`, tag names for `#`. */
+  const autoCandidates = createMemo<{ label: string; detail?: string }[]>(() => {
+    const a = auto();
+    if (!a) return [];
+    const q = a.query.toLowerCase();
+    if (a.kind === "wikilink") {
+      const notes = props.noteNames();
+      const ranked = notes
+        .map((n) => ({ n, score: matchScore(n.label.toLowerCase(), q) }))
+        .filter((r) => r.score >= 0)
+        .sort((r1, r2) => r1.score - r2.score || r1.n.label.localeCompare(r2.n.label))
+        .slice(0, 50);
+      return ranked.map((r) => ({ label: r.n.label, detail: r.n.folder }));
+    }
+    const tags = props.tagNames();
+    const ranked = tags
+      .map((t) => ({ t, score: matchScore(t.toLowerCase(), q) }))
+      .filter((r) => r.score >= 0)
+      .sort((r1, r2) => r1.score - r2.score || r1.t.localeCompare(r2.t))
+      .slice(0, 50);
+    return ranked.map((r) => ({ label: r.t }));
+  });
+  const autoNav = createMenuNav({
+    count: () => autoCandidates().length,
+    onSelect: (i) => chooseAuto(i),
+    onEscape: () => setAuto(null),
+  });
+  const autoRows = createMemo<PopoverRow[]>(() =>
+    autoCandidates().map((c) => ({
+      label: c.label,
+      icon: auto()?.kind === "tag" ? "Hash" : "FileText",
+      detail: c.detail,
+    })),
+  );
+
+  /** Commit the chosen wikilink/tag candidate: replace the typed query (from the bridge-reported
+   *  `from` offset to the caret) with the full token + close delimiter, landing the caret past it.
+   *  For `[[`: insert `Label]]`; for `#`: insert the tag name (no closing token). */
+  const chooseAuto = (i: number): void => {
+    const a = auto();
+    const cand = autoCandidates()[i];
+    if (!a || !cand) return;
+    setAuto(null);
+    if (a.kind === "wikilink") {
+      const { insert } = buildInsert(cand.label, false); // never a closing `]]` ahead in our surface
+      // The query started at `from`; replacing [from, caret) with `Label]]` yields `[[Label]]`.
+      a.handle.applyAutocomplete(a.from, insert, insert.length);
+    } else {
+      a.handle.applyAutocomplete(a.from, cand.label, cand.label.length);
+    }
+  };
+
+  // --- Selection-anchored format toolbar (B/I/code/link + H1-H3/list). Shown while a rich-text
+  // block holds a non-empty selection; the bridge reports the selection rect, marks route to the
+  // bridge's exec(), heading/list buttons change the BLOCK type via the store.
+  const [format, setFormat] = createSignal<FormatBarState | null>(null);
   const slashFiltered = createMemo<SlashItem[]>(() => {
     const s = slash();
     if (!s) return [];
@@ -698,6 +820,36 @@ export function BlockEditor(props: {
         )}
       </Show>
 
+      <Show when={auto()}>
+        {(a) => (
+          <div
+            class="block-slash-popover"
+            style={{ position: "fixed", left: `${a().x}px`, top: `${a().y}px`, "z-index": 55 }}
+            onMouseDown={(e) => e.preventDefault() /* keep the surface focused */}
+          >
+            <Show
+              when={autoRows().length > 0}
+              fallback={
+                <div class="oa-popover block-slash-empty">
+                  {a().kind === "wikilink" ? "No notes" : "No tags"}
+                </div>
+              }
+            >
+              <PopoverList
+                items={autoRows()}
+                active={autoNav.active()}
+                onActivate={(i) => chooseAuto(i)}
+                onHover={(i) => autoNav.setActive(i)}
+              />
+            </Show>
+          </div>
+        )}
+      </Show>
+
+      <Show when={format()}>
+        {(f) => <FormatBar state={f()} />}
+      </Show>
+
       <Show when={builder()}>
         {(b) => (
           <QueryBuilder
@@ -746,41 +898,17 @@ export function BlockEditor(props: {
     return <pre class="block-raw">{block.raw}</pre>;
   }
 
-  // A text block: a checkbox (tasks) + an autosizing textarea styled per type.
+  // A text block: a checkbox (tasks) / list marker + the editable content. Rich-text blocks
+  // (paragraph/heading/quote/list/task) host a TRUE-WYSIWYG Milkdown surface (RichTextBlock);
+  // `code` keeps a monospace textarea (raw is the point).
   function TextBlock(p: { block: Block }) {
-    let ta: HTMLTextAreaElement | undefined;
-    onMount(() => {
-      if (ta) autoGrow(ta);
-    });
-    onCleanup(() => {
-      if (ta && taById.get(p.block.id) === ta) taById.delete(p.block.id);
-    });
-    const placeholder = (): string => {
-      switch (p.block.type) {
-        case "heading":
-          return `Heading ${p.block.level ?? 1}`;
-        case "task":
-          return "To-do";
-        case "bulletItem":
-        case "orderedItem":
-          return "List item";
-        case "quote":
-          return "Quote";
-        case "code":
-          return "Code";
-        default:
-          return "Type '/' for blocks…";
-      }
-    };
-    const taClass = (): string => {
-      let c = "block-text";
-      if (p.block.type === "heading") c += ` block-text--h${Math.min(6, Math.max(1, p.block.level ?? 1))}`;
-      else c += ` block-text--${p.block.type}`;
-      if (p.block.type === "task" && p.block.checked) c += " block-text--done";
+    const wrapClass = (): string => {
+      let c = "block-text-wrap";
+      if (p.block.type === "task" && p.block.checked) c += " block-text-wrap--done";
       return c;
     };
     return (
-      <div class="block-text-wrap">
+      <div class={wrapClass()}>
         <Show when={p.block.type === "task"}>
           <input
             type="checkbox"
@@ -795,32 +923,178 @@ export function BlockEditor(props: {
         <Show when={p.block.type === "orderedItem"}>
           <span class="block-number">{p.block.marker ?? "1."}</span>
         </Show>
-        <textarea
-          ref={(el) => {
-            ta = el;
-            taById.set(p.block.id, el); // register for id-addressed focus (survives reconcile)
-            // Caret-safe controlled value: write the DOM value ONLY when it differs from what's
-            // already there. While the user types, p.block.text === el.value (we set it from the
-            // input), so we skip the write and the caret never jumps; a PROGRAMMATIC change
-            // (split/merge/slash/external reload) differs, so we sync it. Tracks the reactive
-            // store field, so it re-runs on every in-place text update.
-            createRenderEffect(() => {
-              const v = p.block.text ?? "";
-              if (el.value !== v) {
-                el.value = v;
-                autoGrow(el);
-              }
-            });
-          }}
-          class={taClass()}
-          rows={1}
-          placeholder={placeholder()}
-          spellcheck={settings.editor.spellcheck}
-          onInput={(e) => onTextInput(p.block, e.currentTarget)}
-          onKeyDown={(e) => onTextKeyDown(p.block, e, e.currentTarget)}
-          onBlur={() => onTextBlur(p.block.id)}
-        />
+        <Show when={isRichText(p.block.type)} fallback={<CodeBlock block={p.block} />}>
+          <RichTextBlock block={p.block} />
+        </Show>
       </div>
+    );
+  }
+
+  // The TRUE-WYSIWYG surface for one rich-text block. Mounts a Milkdown editor in onMount (the
+  // bridge is async — Editor.create()), destroys it in onCleanup, and registers an id-addressed
+  // focus closure (survives reconcile). It seeds from the block's inline markdown (`text`), and:
+  //   • onChange(md) → onPlainInput(id, md) — the EXISTING granular store + scheduleSave path
+  //     (anti-clobber: do NOT add a parallel save).
+  //   • setMarkdown is driven by a createRenderEffect tracking the block's `text`, but the bridge
+  //     GUARDS it: it only replaces the doc when the serialized markdown actually differs (so a
+  //     programmatic split/merge/external-reload syncs, but a keystroke we just emitted is a
+  //     no-op and the caret never jumps — the ProseMirror equivalent of the el.value!==v guard).
+  //   • Enter/Backspace-at-start/Arrow-out route to the store's split/merge/focus ops.
+  function RichTextBlock(p: { block: Block }) {
+    let root!: HTMLDivElement;
+    let disposed = false;
+    const id = p.block.id;
+    // The async-created handle, tracked reactively so the sync effect below attaches once ready.
+    const [handle, setHandle] = createSignal<BlockEditorHandle | null>(null);
+
+    onMount(() => {
+      void loadMilkdown().then(({ createBlockEditor }) => {
+        if (disposed) return;
+        return createBlockEditor({
+          root,
+          value: p.block.text ?? "",
+          spellcheck: settings.editor.spellcheck,
+          onChange: (md) => onPlainInput(id, md),
+          onEnter: (caret) => splitBlock(id, caret),
+          onBackspaceAtStart: () => mergeIntoPrevious(id),
+          onArrowOut: (dir) => focusSibling(id, dir),
+          onSlash: (query, rect) => {
+            // Only the rich-text types that host a paragraph-like body trigger the block menu.
+            if (p.block.type !== "paragraph" && p.block.type !== "bulletItem" && p.block.type !== "orderedItem") return;
+            const open = slash();
+            setSlash({ blockId: id, query, x: rect.left, y: rect.bottom + 4 });
+            if (!open || open.blockId !== id) slashNav.setActive(0); // reset only on (re)open
+          },
+          onSlashDismiss: () => {
+            if (slash() && slash()!.blockId === id) setSlash(null);
+          },
+          slashOpen: () => slash()?.blockId === id,
+          onSlashKey: (e) => {
+            // Consume Arrow/Enter/Escape for the open menu; let any other key fall through.
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape") {
+              slashNav.onKeyDown(e);
+              return true;
+            }
+            return false;
+          },
+          onAutocomplete: (kind, query, from, rect) => {
+            const open = auto();
+            const h = handle();
+            if (!h) return;
+            setAuto({ blockId: id, handle: h, kind, query, from, x: rect.left, y: rect.bottom + 4 });
+            if (!open || open.blockId !== id) autoNav.setActive(0); // reset only on (re)open
+          },
+          onAutocompleteDismiss: () => {
+            if (auto() && auto()!.blockId === id) setAuto(null);
+          },
+          autocompleteOpen: () => auto()?.blockId === id,
+          onAutocompleteKey: (e) => {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape") {
+              autoNav.onKeyDown(e);
+              return true;
+            }
+            return false;
+          },
+          onSelectionChange: (rect) => {
+            const h = handle();
+            if (!rect || !h) {
+              if (format()) setFormat(null);
+              return;
+            }
+            setFormat({
+              x: rect.left + rect.width / 2,
+              y: rect.top - 8,
+              handle: h,
+              onBlockKind: (k) => changeBlockKind(id, k),
+            });
+          },
+        }).then((h) => {
+          if (disposed) {
+            h.destroy();
+            return;
+          }
+          focusById.set(id, (caret) => h.focus(caret));
+          setHandle(h); // arms the sync effect below
+        });
+      });
+    });
+
+    // Sync external/programmatic content changes into the surface (guarded for caret stability +
+    // anti-feedback by the bridge). Registered SYNCHRONOUSLY in the component body (so it's owned
+    // by this component + disposed on unmount — the sheet/univerSheet.ts pattern); it tracks both
+    // the reactive handle (null until the async create resolves) and the block's `text`, so a
+    // split/merge/slash-transform/external-reload re-runs it. A keystroke echo is a no-op (the
+    // bridge sees its own last emit). The initial seed already happened via `value`, so this only
+    // PUSHES later changes.
+    createRenderEffect(() => {
+      const h = handle();
+      const v = p.block.text ?? "";
+      if (h) h.setMarkdown(v);
+    });
+
+    onCleanup(() => {
+      disposed = true;
+      if (focusById.get(id)) focusById.delete(id);
+      if (auto()?.blockId === id) setAuto(null);
+      if (slash()?.blockId === id) setSlash(null);
+      // Drop a format toolbar still pointing at THIS block's (about-to-be-destroyed) handle, so a
+      // stale FormatBarState.handle can't route exec()/coords to a torn-down ProseMirror view.
+      // FormatBarState carries no block id, so compare the handle identity directly.
+      if (format()?.handle === handle()) setFormat(null);
+      handle()?.destroy();
+      setHandle(null);
+    });
+
+    const cls = (): string => {
+      let c = "block-rich";
+      if (p.block.type === "heading") c += ` block-rich--h${Math.min(6, Math.max(1, p.block.level ?? 1))}`;
+      else c += ` block-rich--${p.block.type}`;
+      return c;
+    };
+    return <div ref={root} class={cls()} data-placeholder={richPlaceholder(p.block)} />;
+  }
+
+  // A `code` block: an autosizing monospace textarea (raw is the point — no WYSIWYG). Keeps the
+  // exact textarea behaviour the prior TextBlock had: granular onPlainInput, structural keys,
+  // blur-reconcile, and the caret-safe controlled value-sync.
+  function CodeBlock(p: { block: Block }) {
+    let ta: HTMLTextAreaElement | undefined;
+    onMount(() => {
+      if (ta) autoGrow(ta);
+    });
+    onCleanup(() => {
+      if (focusById.get(p.block.id)) focusById.delete(p.block.id);
+    });
+    return (
+      <textarea
+        ref={(el) => {
+          ta = el;
+          focusById.set(p.block.id, (caret) => {
+            el.focus();
+            const pos = typeof caret === "number" ? caret : caret === "start" ? 0 : el.value.length;
+            try {
+              el.setSelectionRange(pos, pos);
+            } catch {
+              /* setSelectionRange not applicable */
+            }
+            autoGrow(el);
+          });
+          createRenderEffect(() => {
+            const v = p.block.text ?? "";
+            if (el.value !== v) {
+              el.value = v;
+              autoGrow(el);
+            }
+          });
+        }}
+        class="block-text block-text--code"
+        rows={1}
+        placeholder="Code"
+        spellcheck={false}
+        onInput={(e) => onTextInput(p.block, e.currentTarget)}
+        onKeyDown={(e) => onTextKeyDown(p.block, e, e.currentTarget)}
+        onBlur={() => onTextBlur(p.block.id)}
+      />
     );
   }
 
@@ -891,6 +1165,32 @@ export function BlockEditor(props: {
         </Show>
       </div>
     );
+  }
+}
+
+/** Cheap relevance score for autocomplete ranking: 0 exact, 1 prefix, 2 substring, -1 no match.
+ *  Empty query matches everything at the lowest tier (declared/alpha order then applies). */
+function matchScore(hay: string, query: string): number {
+  if (!query) return 2;
+  if (hay === query) return 0;
+  if (hay.startsWith(query)) return 1;
+  return hay.includes(query) ? 2 : -1;
+}
+
+/** The placeholder shown in an EMPTY rich-text block (a CSS ::before reads data-placeholder). */
+function richPlaceholder(block: Block): string {
+  switch (block.type) {
+    case "heading":
+      return `Heading ${block.level ?? 1}`;
+    case "task":
+      return "To-do";
+    case "bulletItem":
+    case "orderedItem":
+      return "List item";
+    case "quote":
+      return "Quote";
+    default:
+      return "Type '/' for blocks…";
   }
 }
 

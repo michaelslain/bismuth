@@ -92,6 +92,7 @@
   gap: 8px;
 }
 
+/* The monospace code textarea (the one text block that is NOT a WYSIWYG Milkdown surface). */
 .block-text {
   width: 100%;
   border: none;
@@ -111,26 +112,83 @@
   color: color-mix(in srgb, var(--fg) 28%, transparent);
 }
 
-/* Headings size by level (mirrors the live-preview heading scale). */
-.block-text--h1 { font-size: 1.9em; font-weight: 700; line-height: 1.25; }
-.block-text--h2 { font-size: 1.55em; font-weight: 700; line-height: 1.3; }
-.block-text--h3 { font-size: 1.28em; font-weight: 650; line-height: 1.35; }
-.block-text--h4 { font-size: 1.12em; font-weight: 600; }
-.block-text--h5 { font-size: 1.02em; font-weight: 600; }
-.block-text--h6 { font-size: 0.95em; font-weight: 600; color: var(--text-muted); }
+/* --- The TRUE-WYSIWYG Milkdown surface (rich text) ---------------------- */
+/* `.block-rich` wraps a ProseMirror `.ProseMirror` editable. The block model owns the block
+   prefix; Milkdown holds only inline content, so the heading/quote sizing lives on the wrapper. */
+.block-rich {
+  width: 100%;
+  min-width: 0;
+}
+/* Base ProseMirror rules (Milkdown ships no CSS): make the editable behave like a textarea —
+   wrap, no outline, a visible caret, room for the empty-block placeholder. */
+.block-rich .ProseMirror {
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+  caret-color: var(--fg);
+  padding: 3px 0;
+  margin: 0;
+}
+.block-rich .ProseMirror p {
+  margin: 0;
+}
+.block-rich .ProseMirror:focus {
+  outline: none;
+}
+/* Empty-block placeholder: ProseMirror keeps a lone <p> holding only a trailing <br> in an empty
+   textblock, so :empty won't match — target that <p> via :has(). The per-type hint rides on the
+   wrapper's data-placeholder, painted as an absolutely-positioned ::before so it doesn't shift
+   the caret. */
+.block-rich {
+  position: relative;
+}
+.block-rich:has(.ProseMirror > p:only-child > br.ProseMirror-trailingBreak:only-child)::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 3px;
+  left: 0;
+  color: color-mix(in srgb, var(--fg) 28%, transparent);
+  pointer-events: none;
+}
 
-.block-text--quote {
+/* Headings size by level (mirrors the live-preview heading scale). */
+.block-rich--h1 .ProseMirror { font-size: 1.9em; font-weight: 700; line-height: 1.25; }
+.block-rich--h2 .ProseMirror { font-size: 1.55em; font-weight: 700; line-height: 1.3; }
+.block-rich--h3 .ProseMirror { font-size: 1.28em; font-weight: 650; line-height: 1.35; }
+.block-rich--h4 .ProseMirror { font-size: 1.12em; font-weight: 600; }
+.block-rich--h5 .ProseMirror { font-size: 1.02em; font-weight: 600; }
+.block-rich--h6 .ProseMirror { font-size: 0.95em; font-weight: 600; color: var(--text-muted); }
+
+.block-rich--quote .ProseMirror {
   font-style: italic;
   color: color-mix(in srgb, var(--fg) 78%, var(--text-muted));
-}
-.block-row--quote {
-  /* A left accent bar for the whole quote row. */
 }
 .block-row--quote .block-body {
   border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
   padding-left: 12px;
 }
 
+/* Inline marks rendered WYSIWYG (no markdown symbols shown). */
+.block-rich .ProseMirror strong { font-weight: 700; }
+.block-rich .ProseMirror em { font-style: italic; }
+.block-rich .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.block-rich .ProseMirror code {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 4px;
+  padding: 0.5px 4px;
+}
+
+/* The code textarea (block-text--code) keeps its monospace styling + boxed row. */
 .block-text--code {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 0.92em;
@@ -143,9 +201,66 @@
   padding: 8px 12px;
 }
 
-.block-text--done {
+/* A done task strikes through its content (the wrapper carries --done). */
+.block-text-wrap--done .block-rich .ProseMirror {
   text-decoration: line-through;
   color: color-mix(in srgb, var(--fg) 45%, var(--text-muted));
+}
+
+/* --- Inline atom chips (wikilink / tag / math / embed / bare url) -------- */
+/* contenteditable=false spans the bridge renders; styled to read as chips, no markdown symbols. */
+.block-rich .oa-wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 1px;
+  text-decoration: none;
+}
+.block-rich .oa-wikilink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.block-rich .oa-tag {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.88em;
+  cursor: pointer;
+}
+.block-rich .oa-tag:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.block-rich .oa-math {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.95em;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.block-rich .oa-embed {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  color: color-mix(in srgb, var(--fg) 70%, var(--text-muted));
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.9em;
+}
+.block-rich .oa-bareurl {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+/* A selected inline atom (clicked / arrowed onto) gets a subtle ring. */
+.block-rich .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-radius: 4px;
 }
 
 /* Task checkbox + list markers sit in the gutter-side of the body. */
@@ -252,6 +367,27 @@
   padding: 8px 12px;
   color: var(--text-muted);
   font-size: var(--popover-font-size, 13px);
+}
+
+/* --- Selection-anchored format toolbar ----------------------------------- */
+/* Floats above a non-empty selection (translateX(-50%) centers it on the selection midpoint).
+   Built from IconButtons so it matches the rest of the chrome; theme-aware surface + border. */
+.block-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  transform: translateX(-50%) translateY(-100%);
+  background: var(--popover-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.block-format-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 3px;
+  background: var(--border);
 }
 
 /* --- Live ```query block ------------------------------------------------- */
