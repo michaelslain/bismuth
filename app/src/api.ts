@@ -38,6 +38,15 @@ import type { InstallStatus, SetupResult, UpdateResult } from "../../core/src/cl
 import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
 import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
+import type { ChatFrame } from "../../core/src/chat";
+
+/** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
+ *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
+export interface ChatSessionInfo {
+  sessionId: string;
+  summary: string;
+  lastModified: number; // ms epoch
+}
 
 // --- Transport seam -------------------------------------------------------
 // Everything the `api` object needs from the outside world is funnelled through
@@ -297,4 +306,12 @@ export const api = {
   updateStatus: () => getJson<UpdateStatus>("/update/status"),
   applyUpdate: () => postJson<UpdateProgress>("/update/apply", {}),
   updateProgress: () => getJson<UpdateProgress>("/update/progress"),
+
+  // Chat history picker. Both reads operate on the vault cwd server-side (the SDK's session store
+  // unifies the user's terminal Claude Code sessions AND in-app chat sessions). `chatSessions` lists
+  // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
+  // rehydrate the transcript before resuming it over the WS.
+  chatSessions: () => getJson<{ sessions: ChatSessionInfo[] }>("/chat/sessions").then((r) => r.sessions),
+  chatSessionMessages: (id: string) =>
+    getJson<{ frames: ChatFrame[] }>(`/chat/session-messages?id=${encodeURIComponent(id)}`).then((r) => r.frames),
 };

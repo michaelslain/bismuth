@@ -58,6 +58,7 @@ export interface Settings {
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
   };
   editor: {
+    defaultMode: "source" | "blocks"; // how a note opens: source editor vs Blocks editor
     livePreview: boolean;
     lineNumbers: boolean;
     lineWrapping: boolean;
@@ -147,6 +148,8 @@ export interface Settings {
     "focus-pane-right": string;
     "focus-pane-up": string;
     "focus-pane-down": string;
+    "new-claude-chat": string;
+    "toggle-blocks": string;
     "insert-template": string;
     "toggle-sidebar": string;
   };

@@ -28,6 +28,19 @@ import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool } from "./terminal";
+import {
+  sendMessage as chatSend,
+  abortTurn as chatAbort,
+  closeChat,
+  scheduleClose as scheduleChatClose,
+  newChatId,
+  respondPermission as chatRespondPermission,
+  setPermissionMode as chatSetPermissionMode,
+  setModel as chatSetModel,
+  resumeSession as chatResume,
+  listChatSessions,
+  sessionHistoryFrames,
+} from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
@@ -307,6 +320,19 @@ export function createServer(cfg: CoreConfig) {
     // insert at the shell prompt.
     "GET /terminal/info": async (_, __) => {
       return ok({ vault: cfg.vault });
+    },
+
+    // The chat history picker. Both reads operate against the vault (cfg.vault) — the SDK's session
+    // store unifies the user's terminal Claude Code sessions AND in-app chat sessions for that cwd.
+    "GET /chat/sessions": async (_, __) => {
+      return ok({ sessions: await listChatSessions(cfg.vault) });
+    },
+
+    // Replay one past session as ChatFrames (in order) so the client can rehydrate the transcript
+    // before binding/resuming it. Empty `id` → empty replay.
+    "GET /chat/session-messages": async (_, url) => {
+      const id = url.searchParams.get("id");
+      return ok({ frames: id ? await sessionHistoryFrames(id, cfg.vault) : [] });
     },
 
     "GET /events": (_, __) => {
@@ -1052,8 +1078,12 @@ export function createServer(cfg: CoreConfig) {
     .then((g) => computeViewLayouts(g, cfg.vault).then((views) => { g.views = views; }))
     .catch(() => {});
 
-  type TermWsData = { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
-  const server = Bun.serve<TermWsData>({
+  // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
+  // drive the headless Claude Code chat driver (core/src/chat.ts).
+  type TermWsData = { kind: "terminal"; sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+  type ChatWsData = { kind: "chat"; chatId: string };
+  type WsData = TermWsData | ChatWsData;
+  const server = Bun.serve<WsData>({
     port: cfg.port ?? 4321,
     // Bun's default idleTimeout is 10s, which would drop a connection mid-request for the
     // few slow handlers we have (notably POST /daemon/setup, which git-clones + bun-installs
@@ -1108,7 +1138,7 @@ export function createServer(cfg: CoreConfig) {
             createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId });
           createdNew = true;
         }
-        const upgraded = server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
+        const upgraded = server.upgrade(req, { data: { kind: "terminal", sessionId: session.id } as TermWsData });
         if (!upgraded) {
           // Never hard-kill a reattached live shell on a failed upgrade; just let its
           // grace timer reclaim it if no socket reconnects.
@@ -1117,6 +1147,26 @@ export function createServer(cfg: CoreConfig) {
           return withCors(error("upgrade failed", 400));
         }
         return new Response(null, { status: 101 }); // upgrade response is sent by Bun
+      }
+
+      // Chat WebSocket upgrade — drives the headless Claude Code chat driver. Same origin
+      // allow-list as /terminal. Read-path (not a vault mutation): the client may pass a
+      // stable `chatId` to resume conversation continuity across reconnects; otherwise one
+      // is generated.
+      if (req.method === "GET" && url.pathname === "/chat") {
+        const origin = req.headers.get("origin");
+        const allowed =
+          !origin ||
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+          /^tauri:\/\//.test(origin) ||
+          /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
+        if (!allowed) {
+          return withCors(error("forbidden origin", 403));
+        }
+        const chatId = url.searchParams.get("chatId") || newChatId();
+        const upgraded = server.upgrade(req, { data: { kind: "chat", chatId } as ChatWsData });
+        if (!upgraded) return withCors(error("upgrade failed", 400));
+        return new Response(null, { status: 101 });
       }
 
       const route = `${req.method} ${url.pathname}`;
@@ -1137,7 +1187,8 @@ export function createServer(cfg: CoreConfig) {
 
     websocket: {
       open(ws) {
-        const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+        if (ws.data.kind === "chat") return; // chat sends nothing until the first user message
+        const data = ws.data;
         const s = getSession(data.sessionId);
         if (!s) { ws.close(); return; }
         // Pipe PTY -> ws via the session's switchable sink. attachSink first flushes any
@@ -1149,7 +1200,68 @@ export function createServer(cfg: CoreConfig) {
         data.exitSub = s.pty.onExit(() => { try { ws.close(1000, "exited"); } catch { /* */ } });
       },
       message(ws, msg) {
-        const { sessionId } = ws.data as { sessionId: string };
+        if (ws.data.kind === "chat") {
+          // Chat protocol is text JSON, driving the visual Claude Code session (core/src/chat.ts):
+          //   {type:"user",text}                              → run a turn (slash commands are just text)
+          //   {type:"resume",sessionId}                       → bind this chat to an existing session
+          //   {type:"permission_response",id,behavior,always?} → answer a "permission" frame
+          //   {type:"set_permission_mode",mode}               → switch permission mode live
+          //   {type:"set_model",model}                        → switch model live
+          //   {type:"stop"}                                   → interrupt the in-flight turn
+          // ChatFrames stream back via the sink.
+          const { chatId } = ws.data;
+          const text = msg instanceof ArrayBuffer || msg instanceof Uint8Array ? dec.decode(msg) : (msg as string);
+          let parsed: {
+            type?: string;
+            text?: string;
+            sessionId?: string;
+            id?: string;
+            behavior?: "allow" | "deny";
+            always?: boolean;
+            mode?: string;
+            model?: string;
+          };
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            return;
+          }
+          if (parsed.type === "user" && typeof parsed.text === "string") {
+            const sink = (frame: unknown) => {
+              try {
+                ws.send(JSON.stringify(frame));
+              } catch {
+                /* socket closed mid-turn */
+              }
+            };
+            chatSend(chatId, parsed.text, cfg.vault, sink);
+          } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
+            // Bind this chat socket to an existing Claude Code session — its init manifest streams
+            // back, and the next {type:"user"} continues the resumed conversation.
+            const sink = (frame: unknown) => {
+              try {
+                ws.send(JSON.stringify(frame));
+              } catch {
+                /* socket closed mid-turn */
+              }
+            };
+            chatResume(chatId, parsed.sessionId, cfg.vault, sink);
+          } else if (
+            parsed.type === "permission_response" &&
+            typeof parsed.id === "string" &&
+            (parsed.behavior === "allow" || parsed.behavior === "deny")
+          ) {
+            chatRespondPermission(chatId, parsed.id, parsed.behavior, parsed.always === true);
+          } else if (parsed.type === "set_permission_mode" && typeof parsed.mode === "string") {
+            chatSetPermissionMode(chatId, parsed.mode);
+          } else if (parsed.type === "set_model" && typeof parsed.model === "string") {
+            chatSetModel(chatId, parsed.model);
+          } else if (parsed.type === "stop") {
+            chatAbort(chatId);
+          }
+          return;
+        }
+        const { sessionId } = ws.data;
         const s = getSession(sessionId);
         if (!s) return;
         const bytes = msg instanceof ArrayBuffer
@@ -1169,7 +1281,16 @@ export function createServer(cfg: CoreConfig) {
         }
       },
       close(ws, code) {
-        const data = ws.data as { sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
+        if (ws.data.kind === "chat") {
+          // A CLEAN close (1000) is an intentional tab-close → tear the session down now. An
+          // ABNORMAL close (reload 1001, network drop 1006) → keep the session alive for a short
+          // grace window so a reconnect (the client retries with the same chatId) resumes the same
+          // `claude` conversation instead of spawning a fresh one. The next sendMessage cancels it.
+          if (code === 1000) closeChat(ws.data.chatId);
+          else scheduleChatClose(ws.data.chatId, 30_000);
+          return;
+        }
+        const data = ws.data;
         // Detach the live sink (no ws.send on a closed socket) — output resumes buffering
         // for a possible reattach — and drop the exit listener.
         detachSink(data.sessionId);

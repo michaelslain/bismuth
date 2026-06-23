@@ -88,6 +88,11 @@ export const SETTINGS_SCHEMA: Schema = {
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
   }),
   editor: object({
+    defaultMode: {
+      type: enumType(["source", "blocks"]),
+      default: "source",
+      doc: "How a note opens by default: 'source' (the Markdown source editor) or 'blocks' (the Notion-like block editor). Per-note overrides via the Toggle Blocks command are remembered separately and don't change this default.",
+    },
     livePreview: { type: "boolean", default: true, doc: "Render markdown inline as you type." },
     lineNumbers: { type: "boolean", default: false, doc: "Show line numbers." },
     lineWrapping: { type: "boolean", default: true, doc: "Wrap long lines." },

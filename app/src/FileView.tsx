@@ -2,9 +2,15 @@ import { createResource, Show, Switch, Match } from "solid-js";
 import { readNoteCached } from "./noteCache";
 import { parseFrontmatter } from "../../core/src/frontmatter";
 import { Editor } from "./Editor";
+import { BlockEditor } from "./BlockEditor";
+import { getMode, setMode } from "./blocks/editorMode";
 import { BaseView } from "./bases/BaseView";
 import { Loading } from "./ui/EmptyState";
+import { ViewBar, ViewBarSpacer } from "./ui/ViewBar";
+import { SegmentedToggle } from "./ui/SegmentedToggle";
+import type { EditorMode } from "./blocks/editorMode";
 import type { NoteCandidate } from "./editor/wikilink";
+import styles from "./FileView.module.css";
 
 /**
  * Routes a `.md` file to the right view: a `type: base` file renders as a BaseView,
@@ -43,10 +49,35 @@ export function FileView(props: {
           <BaseView path={props.path} body={body()} onOpen={props.onOpen} />
         </Match>
         <Match when={!isBase()}>
-          {/* Hand the already-fetched body to the Editor so it doesn't re-read the
-              same file over HTTP — FileView's read above is the single round-trip.
-              External edits still reload via the Editor's SSE reconcile effect. */}
-          <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+          {/* A plain note can be edited as raw markdown (the CodeMirror Editor) or as a
+              Notion-like stack of blocks (BlockEditor). Both are interchangeable surfaces
+              over the SAME file: each gets the already-fetched body() as initialText and the
+              SAME onSaved, and each flushes its debounced save on cleanup, so toggling the
+              mode never loses an edit. The mode is a per-note localStorage preference
+              (blocks/editorMode.ts) — shown only here, never for base files. */}
+          <div class={styles.noteShell}>
+            <ViewBar>
+              <ViewBarSpacer />
+              <SegmentedToggle<EditorMode>
+                value={getMode(props.path)}
+                onChange={(m) => setMode(props.path, m)}
+                options={[
+                  { id: "source", label: "Source" },
+                  { id: "blocks", label: "Blocks" },
+                ]}
+              />
+            </ViewBar>
+            <div class={styles.surface}>
+              <Show
+                when={getMode(props.path) === "blocks"}
+                fallback={
+                  <Editor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+                }
+              >
+                <BlockEditor path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+              </Show>
+            </div>
+          </div>
         </Match>
       </Switch>
     </Show>
