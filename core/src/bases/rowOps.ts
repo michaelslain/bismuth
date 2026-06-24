@@ -15,7 +15,7 @@ function emptyFile(meta: Meta): Row["file"] {
  * Rebuild the file: keep the frontmatter block verbatim, replace the body with the YAML rows.
  * Preserves the column order defined in the base config's first view (or the original data).
  */
-function reassemble(text: string, rows: Row[], config?: BaseConfig): string {
+export function reassemble(text: string, rows: Row[], config?: BaseConfig): string {
   const m = text.match(FM_RE);
   const fm = m ? m[1].replace(/\n*$/, "\n") : "";
 

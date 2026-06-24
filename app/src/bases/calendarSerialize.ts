@@ -54,6 +54,7 @@ export function rowToEvent(row: Row, i: number, view?: EventFieldMap): CalendarE
     description: str(n.description),
     category: str(n[catKey]),
     recurrence,
+    localUpdated: str(n.localUpdated),
   };
 }
 
@@ -71,6 +72,7 @@ function eventToRow(e: CalendarEvent): Row {
       description: e.description,
       category: e.category,
       recurrence: e.recurrence ? JSON.stringify(e.recurrence) : undefined,
+      localUpdated: e.localUpdated,
     },
     formula: {},
   };

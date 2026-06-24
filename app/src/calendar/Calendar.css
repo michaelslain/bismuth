@@ -261,6 +261,15 @@
 .evm-modal .set-col.locked { cursor: default; }
 .evm-modal .set-col.locked:hover { background: none; }
 
+/* ----- Google Calendar sync section (in the calendar settings modal) ----- */
+.evm-modal .gcal-connect { display: flex; flex-direction: column; align-items: flex-start; gap: 11px; }
+.evm-modal .gcal-status { display: flex; align-items: center; gap: 10px; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border2); border-radius: 10px; font-family: var(--mono); font-size: 13px; }
+.evm-modal .gcal-status .status-dot { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 22%, transparent); }
+.evm-modal .gcal-status .gcal-acct { flex: 1; min-width: 0; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .gcal-toggle-group { display: flex; flex-direction: column; gap: 7px; }
+.evm-modal .gcal-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.evm-modal .gcal-actions .sp { flex: 1; }
+
 /* ============================================================
    New Event modal — redesign (see ~/Downloads/claude-design).
    `.event-modal` IS the card (the <Modal> portals it inside `.ui-overlay`,

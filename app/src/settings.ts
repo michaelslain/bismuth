@@ -86,6 +86,14 @@ export interface Settings {
     timeGutterWidth: number;      // px
     defaultCategoryColor: string; // hex
   };
+  googleCalendar: {
+    enabled: boolean;        // master switch for two-way sync
+    calendarId: string;      // which Google calendar ('primary' = main)
+    basePath: string;        // vault path to the calendar base to sync
+    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
+    syncIntervalMinutes: number; // auto-sync cadence
+    timeZone: string;        // IANA tz for naive events ("" = system)
+  };
   ui: {
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px

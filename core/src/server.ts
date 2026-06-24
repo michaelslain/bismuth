@@ -43,6 +43,15 @@ import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, runUpdate } from "./claudebot";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
+import {
+  status as gcalStatus,
+  setCredentials as gcalSetCredentials,
+  startAuth as gcalStartAuth,
+  completeAuth as gcalCompleteAuth,
+  disconnect as gcalDisconnect,
+  sync as gcalSync,
+} from "./gcal";
+import type { ConflictPolicy } from "./gcal/sync";
 
 export interface CoreConfig { vault: string; memory?: string; port?: number }
 
@@ -78,6 +87,33 @@ function ok(data?: unknown): Response {
 /** Standardized error response: message + HTTP status code. */
 function error(message: string, statusCode: number = 400): Response {
   return new Response(message, { status: statusCode });
+}
+
+/** A small self-contained HTML page shown in the user's browser after the Google
+ *  OAuth loopback redirect (success or failure). `message` is escaped — it can carry
+ *  the account email or an error string from Google. */
+function gcalCallbackHtml(message: string, success: boolean): Response {
+  const esc = message.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
+  const tint = success ? "#3fb950" : "#f85149";
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Bismuth · Google Calendar</title>
+<style>html,body{height:100%;margin:0}body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#0f1115;color:#e6e6e6;display:flex;align-items:center;justify-content:center}
+.card{max-width:440px;padding:40px;text-align:center;line-height:1.55}.glyph{font-size:44px;color:${tint};margin-bottom:8px}.msg{font-size:15px;color:#c9d1d9}</style></head>
+<body><div class="card"><div class="glyph">${success ? "✓" : "✕"}</div><div class="msg">${esc}</div></div></body></html>`;
+  return new Response(html, { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+/** The arguments for a gcal sync, derived from settings (one place for the manual route + the
+ *  auto-sync ticker). `basePathOverride` lets a manual "Sync now" target a specific calendar
+ *  without waiting for the debounced settings write to land in appConfig. */
+function gcalSyncArgs(appConfig: AppConfig, basePathOverride?: string) {
+  const gc = appConfig.googleCalendar;
+  return {
+    basePath: (basePathOverride && basePathOverride.trim()) || gc?.basePath || "",
+    calendarId: gc?.calendarId || "primary",
+    policy: (gc?.conflictPolicy ?? "lastWriteWins") as ConflictPolicy,
+    timeZone: gc?.timeZone ?? "",
+    theme: (appConfig.appearance as { theme?: string } | undefined)?.theme,
+  };
 }
 
 export function cliArg(name: string): string | undefined {
@@ -735,6 +771,57 @@ export function createServer(cfg: CoreConfig) {
       setProcessEnabled(name, enabled);
       return ok({ ok: true });
     },
+
+    // Google Calendar two-way sync — Phase 0: OAuth plumbing. The flow (Authorization
+    // Code + PKCE, loopback redirect) and all secrets live OUTSIDE the vault
+    // (~/.bismuth/gcal); these are SYSTEM actions, not vault mutations, so — like the
+    // /daemon/* routes — they live in the READ table (no cache-invalidate). The single
+    // requested scope is calendar.events (events read+write only; no Gmail/Drive/contacts).
+    "GET /gcal/status": async (_, __) => {
+      return ok(gcalStatus());
+    },
+
+    // Store the OAuth client credentials (id + secret) outside the vault. Sent once
+    // from the connect modal; the secret never enters settings.yaml/git.
+    "POST /gcal/credentials": async (req) => {
+      const { clientId, clientSecret } = (await req.json()) as { clientId?: string; clientSecret?: string };
+      if (!clientId || !clientSecret) return error("missing clientId/clientSecret", 400);
+      gcalSetCredentials(clientId, clientSecret);
+      return ok({ ok: true });
+    },
+
+    // Begin auth: returns the Google consent URL for the frontend to open in the system
+    // browser. The loopback redirect targets THIS backend's port (Google desktop clients
+    // accept any 127.0.0.1 port), so the callback lands right back here.
+    "POST /gcal/auth/start": async (_, __) => {
+      const redirectUri = `http://127.0.0.1:${server.port}/gcal/callback`;
+      try {
+        return ok({ url: await gcalStartAuth(redirectUri) });
+      } catch (e) {
+        return error((e as Error).message, 400);
+      }
+    },
+
+    // The loopback redirect target Google sends the user's browser to (top-level
+    // navigation, not fetch → no CORS). Exchanges the code and renders a small HTML page.
+    "GET /gcal/callback": async (_, url) => {
+      const errParam = url.searchParams.get("error");
+      if (errParam) return gcalCallbackHtml(`Authorization was cancelled or failed (${errParam}).`, false);
+      const code = url.searchParams.get("code");
+      const state = url.searchParams.get("state");
+      if (!code || !state) return gcalCallbackHtml("Missing authorization code in the callback.", false);
+      try {
+        const st = await gcalCompleteAuth(code, state);
+        return gcalCallbackHtml(`Connected as ${st.account ?? "Google Calendar"}. You can close this tab and return to Bismuth.`, true);
+      } catch (e) {
+        return gcalCallbackHtml(`Could not complete sign-in: ${(e as Error).message}`, false);
+      }
+    },
+
+    "POST /gcal/disconnect": async (_, __) => {
+      await gcalDisconnect();
+      return ok({ ok: true });
+    },
   };
 
 
@@ -833,6 +920,27 @@ export function createServer(cfg: CoreConfig) {
         return ok({ ok: true });
       },
       () => SETTINGS_FILE, // invalidate settings.yaml so subscribers re-hydrate
+    ),
+
+    // Google Calendar two-way sync (Phase 2): reconcile the configured Google calendar with
+    // the configured calendar base in both directions (last-write-wins). A vault MUTATION (it
+    // rewrites the base file), so it lives here and `pathOf` returns the base path →
+    // cache-invalidate + SSE re-render of the open calendar. Config from appConfig.googleCalendar.
+    "POST /gcal/sync": mutatingHandler(
+      async (req) => {
+        // A manual sync may pass an explicit basePath (the per-calendar modal does) so it
+        // targets the right calendar immediately, without waiting for the debounced settings
+        // write to round-trip into appConfig.
+        const body = (await req.json().catch(() => ({}))) as { basePath?: string };
+        const { basePath, calendarId, policy, timeZone, theme } = gcalSyncArgs(appConfig, body.basePath);
+        if (!basePath) return error("set googleCalendar.basePath to the calendar base you want to sync", 400);
+        try {
+          return ok(await gcalSync(cfg.vault, basePath, calendarId, policy, timeZone, theme));
+        } catch (e) {
+          return error((e as Error).message, 400);
+        }
+      },
+      () => appConfig.googleCalendar?.basePath || undefined,
     ),
 
     "POST /set-property": mutatingHandler(
@@ -1193,6 +1301,27 @@ export function createServer(cfg: CoreConfig) {
   } catch {
     /* pre-warm is best-effort */
   }
+
+  // Background Google Calendar auto-sync: when enabled + connected + a base is configured,
+  // run a two-way sync every `syncIntervalMinutes`. The base-file write is picked up by the
+  // vault watcher (cache-invalidate + SSE) so the open calendar refreshes. Best-effort +
+  // error-tolerant; the 60s ticker is unref'd so it never keeps the process alive, and is a
+  // no-op in tests (googleCalendar.enabled defaults to false). A run-guard prevents overlap.
+  let gcalAutoSyncAt = 0;
+  let gcalAutoSyncRunning = false;
+  setInterval(() => {
+    const gc = appConfig.googleCalendar;
+    if (!gc?.enabled || !gc.basePath || gcalAutoSyncRunning) return;
+    if (!gcalStatus().connected) return;
+    const everyMs = Math.max(1, gc.syncIntervalMinutes || 15) * 60_000;
+    if (Date.now() - gcalAutoSyncAt < everyMs) return;
+    gcalAutoSyncAt = Date.now();
+    gcalAutoSyncRunning = true;
+    const { basePath, calendarId, policy, timeZone, theme } = gcalSyncArgs(appConfig);
+    void gcalSync(cfg.vault, basePath, calendarId, policy, timeZone, theme)
+      .catch((e) => console.error(`[gcal] auto-sync failed: ${(e as Error).message}`))
+      .finally(() => { gcalAutoSyncRunning = false; });
+  }, 60_000).unref();
 
   return server;
 }

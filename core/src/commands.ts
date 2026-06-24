@@ -47,6 +47,9 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "daemon-update",   label: "Update claude-bot daemon…", icon: "RefreshCw" },
   { id: "bismuth-install", label: "Install Bismuth CLI + MCP…", icon: "Download" },
   { id: "update-app",      label: "Update Bismuth…",            icon: "RefreshCw" },
+  { id: "gcal-connect",    label: "Connect Google Calendar…",  icon: "Calendar" },
+  { id: "gcal-sync",       label: "Sync Google Calendar",      icon: "RefreshCw" },
+  { id: "gcal-disconnect", label: "Disconnect Google Calendar", icon: "CalendarX" },
 ];
 
 /** All command ids, in catalog order. */

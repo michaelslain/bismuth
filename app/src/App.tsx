@@ -1,6 +1,6 @@
 // app/src/App.tsx
 import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
-import { api, apiBase } from "./api";
+import { api, apiBase, summarizeSync } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
 import { Icon } from "./icons/Icon";
@@ -25,6 +25,7 @@ import { FolderPrompt } from "./FolderPrompt";
 import { DaemonOwnerModal } from "./DaemonOwnerModal";
 import { DaemonSetupModal } from "./DaemonSetupModal";
 import { BismuthInstallModal } from "./BismuthInstallModal";
+import { GcalConnectModal } from "./GcalConnectModal";
 import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
@@ -655,6 +656,29 @@ export default function App() {
   // Custom spellcheck dictionary editor — view/remove the user's added words.
   const [editDictionaryOpen, setEditDictionaryOpen] = createSignal(false);
   const openEditDictionary = () => setEditDictionaryOpen(true);
+  // "Connect Google Calendar" panel — OAuth connect/disconnect/status for two-way sync.
+  const [gcalConnectOpen, setGcalConnectOpen] = createSignal(false);
+  const openGcalConnect = () => setGcalConnectOpen(true);
+  // "Sync Google Calendar" command — two-way sync with the configured base.
+  const gcalSync = async () => {
+    const id = pushToast("Syncing Google Calendar…", undefined, 0);
+    try {
+      updateToast(id, summarizeSync(await api.gcalSync()));
+      setTimeout(() => dismissToast(id), 4000);
+    } catch (e) {
+      updateToast(id, `Sync failed: ${(e as Error).message}`);
+      setTimeout(() => dismissToast(id), 6000);
+    }
+  };
+  // Direct "Disconnect Google Calendar" command (revoke + wipe stored tokens).
+  const gcalDisconnect = async () => {
+    try {
+      await api.gcalDisconnect();
+      pushToast("Disconnected from Google Calendar");
+    } catch (e) {
+      pushToast(`Disconnect failed: ${(e as Error).message}`);
+    }
+  };
   // Create a blank document (.draw / .sheet) and open it. Falls back to a unique name on collision.
   const newDoc = async (base: string, ext: string) => {
     let path = `${base}.${ext}`;
@@ -747,7 +771,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1578,6 +1602,9 @@ export default function App() {
       </Show>
       <Show when={editDictionaryOpen()}>
         <EditDictionaryModal onClose={() => setEditDictionaryOpen(false)} />
+      </Show>
+      <Show when={gcalConnectOpen()}>
+        <GcalConnectModal onClose={() => setGcalConnectOpen(false)} />
       </Show>
       <Show when={paneMenu()}>
         {(m) => (
