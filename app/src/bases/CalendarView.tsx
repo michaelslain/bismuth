@@ -1,4 +1,5 @@
 import { onMount, createEffect, Show, Switch, Match } from "solid-js";
+import { lastChange } from "../serverVersion";
 import { EventStore, MemoryBackend } from "../calendar/EventStore";
 import { currentView, currentDate, settings, showEventModal, showCalendarSettings, applyDefaultView, userSwitchedView, reconcileDefaultView, resetUserSwitchedView } from "../calendar/state";
 import { refreshEvents } from "../calendar/refresh";
@@ -49,6 +50,23 @@ export function CalendarView(props: { basePath?: string; onChange?: () => void }
     currentDate.value;
     settings.value.weekStartsOnMonday;
     void refreshEvents(store);
+  });
+
+  // Re-read the base file when it changes on disk underneath us (e.g. a background Google
+  // Calendar sync rewrote it). Without this the snapshot taken at mount goes stale and the
+  // next in-app edit would clobber the sync's changes. Skips our own writes (lastText match).
+  let firstChange = true;
+  createEffect(() => {
+    const change = lastChange(); // track every server change
+    const b = backend;
+    if (firstChange) { firstChange = false; return; } // initial run: onMount already loaded
+    if (!b || !props.basePath) return;
+    if (change.paths.length > 0 && !change.paths.includes(props.basePath)) return; // unrelated file
+    void b.reloadIfChanged().then(async (changed) => {
+      if (!changed) return;
+      await store.load();
+      await refreshEvents(store);
+    });
   });
 
   return (

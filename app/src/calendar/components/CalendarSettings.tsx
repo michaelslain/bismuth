@@ -6,6 +6,7 @@ import { Icon } from '../../icons/Icon'
 import { Select } from '../../ui/Select'
 import { TextButton } from '../../ui/TextButton'
 import { IconTextButton } from '../../ui/IconTextButton'
+import { GcalSyncPanel } from './GcalSyncPanel'
 
 // Each calendar field binds to a note column. Keys match the base view-config keys
 // (parse.ts reads these top-level keys into the default view).
@@ -88,6 +89,8 @@ export function CalendarSettings(props: { basePath: string; onChange?: () => voi
             </div>
           )}</For>
         </div>
+
+        <GcalSyncPanel basePath={props.basePath} />
       </div>
 
       <div class="evm-foot">

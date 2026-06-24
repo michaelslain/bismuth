@@ -47,7 +47,7 @@ export class EventStore {
   getCategories(): Category[] { return [...this.data.categories] }
 
   async addEvent(event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
-    const newEvent = { ...event, id: uuid() }
+    const newEvent = { ...event, id: uuid(), localUpdated: new Date().toISOString() }
     this.data.events.push(newEvent)
     await this.save()
     return newEvent
@@ -55,7 +55,7 @@ export class EventStore {
 
   async updateEvent(id: string, updates: Partial<CalendarEvent>): Promise<void> {
     const idx = this.data.events.findIndex(e => e.id === id)
-    if (idx !== -1) { this.data.events[idx] = { ...this.data.events[idx], ...updates }; await this.save() }
+    if (idx !== -1) { this.data.events[idx] = { ...this.data.events[idx], ...updates, localUpdated: new Date().toISOString() }; await this.save() }
   }
 
   async deleteEvent(id: string): Promise<void> {
