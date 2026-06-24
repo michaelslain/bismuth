@@ -19,11 +19,34 @@ import { VIEW_TYPES } from "./types";
  */
 export function parseQueryBlock(src: string): QueryBlock {
   const kv: Record<string, string> = {};
-  for (const line of src.split("\n")) {
-    const l = line.trim();
+  const lines = src.split("\n");
+  const indentOf = (s: string): number => s.length - s.replace(/^\s*/, "").length;
+  for (let idx = 0; idx < lines.length; idx++) {
+    const raw = lines[idx];
+    const l = raw.trim();
     if (!l) continue;
     const i = l.indexOf(":");
-    if (i > 0) kv[l.slice(0, i).trim()] = l.slice(i + 1).trim();
+    if (i <= 0) continue;
+    const key = l.slice(0, i).trim();
+    let val = l.slice(i + 1).trim();
+    // YAML block scalar (`tasks: |-`): gather the following more-indented lines as a multi-LINE
+    // value. The Tasks DSL needs `sort by …` on its own line (runTaskQuery only honors a sort that
+    // is a whole line, never inside an ` AND `-joined one), which a single-line value can't carry.
+    if (/^[|>][+-]?$/.test(val)) {
+      const keyIndent = indentOf(raw);
+      const collected: string[] = [];
+      while (idx + 1 < lines.length) {
+        const nx = lines[idx + 1];
+        if (nx.trim() === "") { collected.push(""); idx++; continue; }
+        if (indentOf(nx) <= keyIndent) break; // dedent to the key's level ends the block
+        collected.push(nx);
+        idx++;
+      }
+      const bodyIndents = collected.filter((s) => s.trim()).map(indentOf);
+      const strip = bodyIndents.length ? Math.min(...bodyIndents) : 0;
+      val = collected.map((s) => s.slice(strip)).join("\n").replace(/\n+$/, "");
+    }
+    kv[key] = val;
   }
 
   let source: SourceSpec | undefined;

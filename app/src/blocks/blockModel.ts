@@ -235,6 +235,11 @@ function parseBody(body: string): Block[] {
     }
 
     // Divider / thematic break.
+    // KNOWN LIMITATION: a `---` directly under a non-blank paragraph line is a CommonMark SETEXT H2,
+    // but we classify it as paragraph + divider (we don't model setext headings). This is a
+    // visual-only divergence — serialization is byte-for-byte verbatim, so nothing is lost on disk;
+    // the note just shows a rule instead of an H2. Setext is rare (ATX `## ` is canonical); model a
+    // setext block here if it ever matters.
     if (DIVIDER_RE.test(line)) {
       blocks.push({ id: nextId(), type: "divider", raw: rawFor(i, i + 1) });
       i += 1;

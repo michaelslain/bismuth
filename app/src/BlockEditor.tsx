@@ -39,17 +39,16 @@ import {
 } from "./blocks/blockModel";
 import {
   SLASH_ITEMS,
-  matchSlashPrefix,
   filterSlashItems,
   type SlashItem,
 } from "./editor/slashMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import { type NoteCandidate, buildInsert } from "./editor/wikilink";
+import { type NoteCandidate } from "./editor/wikilink";
 import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
 import { BaseView } from "./bases/BaseView";
 import { QueryBuilder } from "./bases/QueryBuilder";
-import { looksLikeBaseConfig, parseQueryBlockBody, type BuilderState } from "./bases/queryGen";
+import { looksLikeBaseConfig, parseQueryBlockBody, isBuilderRepresentable, type BuilderState } from "./bases/queryGen";
 import { parseQueryBlock } from "../../core/src/bases/queryBlock";
 import { IconButton } from "./ui/IconButton";
 import type { BlockEditorHandle, CaretHint, createBlockEditor as CreateBlockEditorFn } from "./blocks/milkdownEditor";
@@ -611,20 +610,22 @@ export function BlockEditor(props: {
     })),
   );
 
-  /** Commit the chosen wikilink/tag candidate: replace the typed query (from the bridge-reported
-   *  `from` offset to the caret) with the full token + close delimiter, landing the caret past it.
-   *  For `[[`: insert `Label]]`; for `#`: insert the tag name (no closing token). */
+  /** Commit the chosen wikilink/tag candidate: replace the partial token (from its OPENING delimiter
+   *  to the caret) with the complete `[[Label]]` / `#tag`, which the bridge re-parses into a live
+   *  chip, landing the caret past it. */
   const chooseAuto = (i: number): void => {
     const a = auto();
     const cand = autoCandidates()[i];
     if (!a || !cand) return;
     setAuto(null);
+    // Anchor the replacement at the OPENING delimiter (`[[` / `#`) and insert the WHOLE token so the
+    // bridge's inline re-parse tokenizes it into a live wikilink/tag CHIP — anchoring after the
+    // delimiter (and inserting just the tail) leaves `[[Label]]` as raw text until an external reload.
+    // Caret lands past the atom (applyAutocomplete defaults to the parsed content size).
     if (a.kind === "wikilink") {
-      const { insert } = buildInsert(cand.label, false); // never a closing `]]` ahead in our surface
-      // The query started at `from`; replacing [from, caret) with `Label]]` yields `[[Label]]`.
-      a.handle.applyAutocomplete(a.from, insert, insert.length);
+      a.handle.applyAutocomplete(a.from - 2, `[[${cand.label}]]`);
     } else {
-      a.handle.applyAutocomplete(a.from, cand.label, cand.label.length);
+      a.handle.applyAutocomplete(a.from - 1, `#${cand.label}`);
     }
   };
 
@@ -697,29 +698,15 @@ export function BlockEditor(props: {
   // ------------------------------------------------------------------------
   // Per-block input handling
   // ------------------------------------------------------------------------
+  // NOTE: onTextInput/onTextKeyDown/onTextBlur now back ONLY the `code` block's textarea (rich-text
+  // blocks use the Milkdown bridge, which owns slash/Enter-split/etc.). The slash-menu and
+  // Enter-split branches that existed here for the old rich-text textarea were dead for `code` (the
+  // type guard excluded it; Enter already fell through to a literal newline) and have been removed.
   const onTextInput = (block: Block, el: HTMLTextAreaElement): void => {
     autoGrow(el);
-    const value = el.value;
-    // Slash trigger: only fires when the `/` is the first content char of the (single) line —
-    // matchSlashPrefix enforces that. We feed it the text up to the caret on the current line.
-    const caret = el.selectionStart ?? value.length;
-    const lineStart = value.lastIndexOf("\n", caret - 1) + 1;
-    const textBefore = value.slice(lineStart, caret);
-    const m = matchSlashPrefix(textBefore);
-    if (m && (block.type === "paragraph" || block.type === "bulletItem" || block.type === "orderedItem")) {
-      // Only offer the menu on an otherwise-empty block (Notion behaviour): the `/query` token
-      // is the only content. Position the popover under the textarea.
-      const rect = el.getBoundingClientRect();
-      setSlash({ blockId: block.id, query: m.query, x: rect.left, y: rect.bottom + 4 });
-      slashNav.setActive(0);
-    } else if (slash() && slash()!.blockId === block.id) {
-      setSlash(null);
-    }
-    // Plain typing: update text + regenerated raw IN PLACE (granular store writes) and save.
-    // No reconcile/split here — that would replace the block (and recreate the focused textarea)
-    // mid-keystroke. Markdown shortcuts (# → heading) and pasted-newline splits are applied on
-    // BLUR (onTextBlur), so typing is never interrupted.
-    onPlainInput(block.id, value);
+    // Plain typing in a code block: update text + regenerated raw IN PLACE (granular store writes)
+    // and save. No reconcile/split here — applied on BLUR (onTextBlur) so the caret isn't disturbed.
+    onPlainInput(block.id, el.value);
   };
 
   /** A plain in-place text edit: rewrite the block's `text` + `raw` via granular store updates so
@@ -748,23 +735,9 @@ export function BlockEditor(props: {
   };
 
   const onTextKeyDown = (block: Block, e: KeyboardEvent, el: HTMLTextAreaElement): void => {
-    // Slash menu owns navigation/selection keys while open for this block.
-    if (slash() && slash()!.blockId === block.id) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Enter" || e.key === "Escape") {
-        slashNav.onKeyDown(e);
-        return;
-      }
-    }
     const caret = el.selectionStart ?? 0;
     const value = el.value;
-    if (e.key === "Enter" && !e.shiftKey) {
-      // Shift+Enter inserts a literal newline within the block (default textarea behaviour);
-      // plain Enter splits into a new block. Code blocks keep Enter as a newline.
-      if (block.type === "code") return;
-      e.preventDefault();
-      splitBlock(block.id, caret);
-      return;
-    }
+    // Enter is a literal newline in a code block (default textarea behaviour) — no split intercept.
     if (e.key === "Backspace" && caret === 0 && (el.selectionEnd ?? 0) === 0) {
       // At the very start of a block: merge into the previous text block.
       e.preventDefault();
@@ -1169,14 +1142,30 @@ export function BlockEditor(props: {
       setForceMount(true); // triggers the mount effect; the resolution step applies pendingCaret
     });
 
+    // Tracks whether focus is within this block's DOM. The unmount guard refuses to tear down a
+    // focused surface; without re-running the effect on BLUR, a block focused then scrolled offscreen
+    // would stay mounted until the next scroll. focusin/focusout (which bubble from the ProseMirror
+    // editable) toggle this so the effect re-evaluates the moment focus leaves.
+    const [focused, setFocused] = createSignal(false);
+
     // Observe viewport proximity once the root is in the DOM; mount/unmount follow `shouldMount`.
     onMount(() => {
       const stop = observeBlock(root, (n) => setNear(n));
-      onCleanup(stop);
+      const onIn = () => setFocused(true);
+      const onOut = () => setFocused(false);
+      root.addEventListener("focusin", onIn);
+      root.addEventListener("focusout", onOut);
+      onCleanup(() => {
+        stop();
+        root.removeEventListener("focusin", onIn);
+        root.removeEventListener("focusout", onOut);
+      });
     });
 
-    // Mount/unmount in step with `shouldMount`. Mounting is async (create()); unmount is sync.
+    // Mount/unmount in step with `shouldMount`. Mounting is async (create()); unmount is sync. Tracks
+    // `focused` so a blur re-runs this and an offscreen-but-just-blurred block unmounts promptly.
     createEffect(() => {
+      focused();
       if (shouldMount()) startMount();
       else if (handle() && !root.contains(document.activeElement)) unmount();
     });
@@ -1347,14 +1336,19 @@ export function BlockEditor(props: {
     const body = createMemo(() => p.block.text ?? "");
     return (
       <div class="block-query">
-        <div class="block-query-edit">
-          <IconButton
-            icon="Pencil"
-            size="sm"
-            label="Edit query"
-            onClick={() => setBuilder({ blockId: p.block.id, initial: parseQueryBlockBody(body()) })}
-          />
-        </div>
+        {/* The no-code builder can only EDIT a query it can losslessly round-trip; for a richer
+            hand-authored config (formulas/filters tree/extra views/tasks-base config form) the Pencil
+            is hidden so opening + Save can't clobber it — edit those as source instead. */}
+        <Show when={isBuilderRepresentable(body())}>
+          <div class="block-query-edit">
+            <IconButton
+              icon="Pencil"
+              size="sm"
+              label="Edit query"
+              onClick={() => setBuilder({ blockId: p.block.id, initial: parseQueryBlockBody(body()) })}
+            />
+          </div>
+        </Show>
         <Show
           when={looksLikeBaseConfig(body())}
           fallback={<BaseView view={parseQueryBlock(body())} hostPath={props.path ?? undefined} />}

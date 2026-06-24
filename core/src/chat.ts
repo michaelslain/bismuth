@@ -617,7 +617,10 @@ export function setPermissionMode(chatId: string, mode: string): void {
   }
 }
 
-/** Switch the model live. */
+/** Switch the model live. Fully wired end-to-end (server `set_model` route → ChatView's `setModel`),
+ *  but NOT yet surfaced in the UI: the manifest exposes the active model read-only, and there's no
+ *  reliable available-models list from the SDK to populate a picker. Intentionally kept available
+ *  for when a model chooser is added — the header shows the current model today. */
 export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
@@ -686,6 +689,22 @@ export function scheduleClose(chatId: string, ms: number): void {
   if (!s) return;
   if (s.closeTimer) clearTimeout(s.closeTimer);
   s.closeTimer = setTimeout(() => closeChat(chatId), ms);
+}
+
+/** Re-point a live session's frame sink at a freshly-reconnected socket (and cancel any pending
+ *  grace-period teardown). The server calls this on a chat WS `open` so a reconnect mid-turn resumes
+ *  the SAME session and its in-flight frames flow to the new socket — without this, the drain loop
+ *  keeps writing to the dead socket and the turn's tail (incl. `done`) is lost, wedging the UI.
+ *  Returns true if a session existed for `chatId` (the reconnect rebound it). */
+export function rebindSink(chatId: string, sink: ChatSink): boolean {
+  const s = sessions.get(chatId);
+  if (!s) return false;
+  if (s.closeTimer) {
+    clearTimeout(s.closeTimer);
+    s.closeTimer = undefined;
+  }
+  s.sink = sink;
+  return true;
 }
 
 export function chatSessionCount(): number {

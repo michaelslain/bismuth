@@ -219,7 +219,10 @@ export function ChatView(props: { chatId: string }) {
     withAssistant((a) => {
       const tail = a.parts[a.parts.length - 1];
       if (tail && tail.kind === kind) tail.text += text;
-      else a.parts.push(kind === "text" ? { kind, text } : { kind, text });
+      // `{ kind, text }` widens `kind` to "text"|"thinking", which isn't assignable to the
+      // discriminated AssistantPart union — the cast (sound: it IS a TextPart|ThinkingPart) keeps it
+      // a one-liner without the narrowing ternary.
+      else a.parts.push({ kind, text } as TextPart | ThinkingPart);
     });
   };
 
@@ -305,6 +308,10 @@ export function ChatView(props: { chatId: string }) {
     ws = new WebSocket(`${wsBase()}/chat?chatId=${encodeURIComponent(activeChatId())}`);
     ws.onopen = () => {
       reconnectAttempt = 0;
+      // Clear any stale "connection lost" notice — the backend rebinds this socket's sink on open
+      // (server.ts), so an in-flight turn resumes streaming here. Safe: turn-level errors are set by
+      // `result`/`error` frames that only arrive AFTER this point.
+      setTurnError(null);
       // Flush a resume that was requested while the socket wasn't open yet.
       if (pendingResume) {
         const sid = pendingResume;
@@ -321,6 +328,10 @@ export function ChatView(props: { chatId: string }) {
     };
     ws.onclose = () => {
       if (disposed) return;
+      // Mid-turn drop: tell the user we're reconnecting rather than leaving the composer looking
+      // live but wedged in streaming() (the backend holds the session in a grace window and the
+      // reconnect's open rebinds the sink, so the turn resumes; turnError clears on onopen).
+      if (streaming()) setTurnError("Connection lost — reconnecting…");
       // Reconnect with exponential backoff; the backend keeps the session resumable by chatId.
       const delay = Math.min(500 * 2 ** reconnectAttempt, 8000);
       reconnectAttempt++;
@@ -337,7 +348,12 @@ export function ChatView(props: { chatId: string }) {
   const send = () => {
     const text = draft().trim();
     if (!text || streaming() || setupError()) return;
-    if (!sendJson({ type: "user", text })) return;
+    // Socket not open (backend down / mid-reconnect): tell the user instead of silently dropping the
+    // message. The draft is preserved (setDraft("") only runs on success) so they can retry.
+    if (!sendJson({ type: "user", text })) {
+      setTurnError("Not connected to the backend — message not sent. Reconnecting…");
+      return;
+    }
     setTurnError(null);
     setTranscript(produce((m) => m.push({ role: "user", text })));
     setDraft("");
@@ -389,10 +405,20 @@ export function ChatView(props: { chatId: string }) {
   const reconnectOn = (id: string) => {
     clearTimeout(reconnectTimer);
     reconnectAttempt = 0;
-    try {
-      ws?.close(1000, "switch");
-    } catch {
-      /* ignore */
+    // Detach the OLD socket's handlers BEFORE closing it. A `close` event fires asynchronously —
+    // after connect() below has already reassigned `ws` — and the onclose handler only bails on
+    // `disposed`, so a deliberate switch would otherwise schedule a stray reconnect that opens a
+    // SECOND socket bound to the new id (duplicate session + leaked socket, accumulating per click).
+    const old = ws;
+    if (old) {
+      old.onclose = null;
+      old.onmessage = null;
+      old.onerror = null;
+      try {
+        old.close(1000, "switch");
+      } catch {
+        /* ignore */
+      }
     }
     setActiveChatId(id);
     connect();

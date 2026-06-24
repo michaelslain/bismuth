@@ -101,7 +101,7 @@ export interface BlockEditorHandle {
    *  markdown so a chosen `[[Note]]`/`#tag` lands as a live atom chip, not literal characters.
    *  Used by the host's wikilink/tag autocomplete to commit a chosen candidate. Fires onChange. */
   applyAutocomplete: (from: number, text: string, caretAfter?: number) => void;
-  /** Whether the caret is at doc start (offset 0) — used by the host to disambiguate keys. */
+  /** Tear down the ProseMirror view + Milkdown editor (called from the block's onCleanup). */
   destroy: () => void;
 }
 
@@ -356,9 +356,11 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
       return false;
     }),
     Backspace: blockCmd((v) => {
-      // Only intercept at the very start of an empty selection; else let commonmark delete.
-      const { empty, from } = v.state.selection;
-      if (empty && from === 1) {
+      // Only intercept at the very start of the block's text (empty selection at the textblock's
+      // start), else let commonmark delete. `parentOffset === 0` is position-independent — robust to
+      // a leading inline atom that would shift the absolute `from` away from 1.
+      const { empty, $from } = v.state.selection;
+      if (empty && $from.parentOffset === 0) {
         opts.onBackspaceAtStart();
         return true;
       }

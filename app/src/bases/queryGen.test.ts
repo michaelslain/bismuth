@@ -7,12 +7,14 @@ import {
   compileNotesWhere,
   compileTaskLeaves,
   looksLikeBaseConfig,
+  isBuilderRepresentable,
   defaultBuilderState,
   defaultTaskFilters,
   type BuilderState,
   type NotesRow,
   type NotesOp,
 } from "./queryGen";
+import { parseQueryBlock } from "../../../core/src/bases/queryBlock";
 
 const row = (prop: string, op: NotesOp, val = "", type: NotesRow["type"] = "string"): NotesRow => ({ prop, op, val, type });
 
@@ -129,12 +131,13 @@ describe("compileTaskLeaves — presets", () => {
       sortKey: "due",
       sortReverse: true,
     };
+    // compileTaskLeaves returns FILTER leaves only — `sort by …` is emitted separately (on its own
+    // line via a block scalar) because runTaskQuery only honors a sort that is a whole line.
     expect(compileTaskLeaves(tf)).toEqual([
       "not done",
       "priority is high",
       "due before in 7 days",
       "is not recurring",
-      "sort by due reverse",
     ]);
   });
   test("done + overdue + has", () => {
@@ -293,5 +296,49 @@ describe("build -> parse -> build idempotence (supported subset)", () => {
     const once = rebuild(s);
     const twice = rebuild(parseQueryBlockBody(once));
     expect(twice).toBe(once);
+  });
+});
+
+describe("review fixes — task sort, date_within, builder-representable", () => {
+  // #3: task `sort by …` must land on its OWN DSL line (a block scalar), not inside the AND-joined
+  // filter value — else runTaskQuery treats it as an unrecognized filter and never sorts.
+  test("task sort emits a multi-line block scalar runTaskQuery can honor", () => {
+    const s: BuilderState = {
+      ...defaultBuilderState(),
+      source: "tasks",
+      tasks: { ...defaultTaskFilters(), status: "open", sortKey: "due", sortReverse: true },
+    };
+    const body = buildQueryBlockBody(s);
+    // `sort by …` is NOT glued onto the filter line with ` AND `.
+    expect(body).not.toMatch(/AND sort by/);
+    expect(body).toContain("tasks: |-");
+    // parseQueryBlock carries the multi-line value, with `sort by due reverse` as its own line.
+    const qb = parseQueryBlock(body);
+    expect(qb.source?.kind).toBe("tasks");
+    expect((qb.source?.where ?? "").split("\n")).toContain("sort by due reverse");
+    // …and it round-trips back into the builder's sort controls.
+    const back = parseQueryBlockBody(body);
+    expect(back.tasks.sortKey).toBe("due");
+    expect(back.tasks.sortReverse).toBe(true);
+  });
+
+  // #6: a "within N days" control round-trips as ONE row, not a split date_after+date_before pair.
+  test("date_within round-trips as a single row", () => {
+    const s = notesState([row("due", "date_within", "7", "date")]);
+    const back = parseQueryBlockBody(buildQueryBlockBody(s));
+    expect(back.notes.rows).toHaveLength(1);
+    expect(back.notes.rows[0]).toMatchObject({ prop: "due", op: "date_within", val: "7" });
+    const once = buildQueryBlockBody(s);
+    expect(buildQueryBlockBody(parseQueryBlockBody(once))).toBe(once);
+  });
+
+  // #4: the builder's own output is always representable; a richer hand-authored config is NOT (so
+  // the Pencil is hidden and the block isn't clobbered).
+  test("isBuilderRepresentable gates rich configs", () => {
+    expect(isBuilderRepresentable(buildQueryBlockBody(notesState([row("status", "equals", "open")])))).toBe(true);
+    expect(isBuilderRepresentable("tasks: not done")).toBe(true);
+    expect(isBuilderRepresentable("source: notes\nformulas:\n  x: 1\nviews:\n  - type: table")).toBe(false);
+    expect(isBuilderRepresentable("source: notes\nviews:\n  - type: table\n  - type: cards")).toBe(false);
+    expect(isBuilderRepresentable("source: tasks where not done\nviews:\n  - type: table")).toBe(false);
   });
 });

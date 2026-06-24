@@ -23,7 +23,7 @@
 import type { MilkdownPlugin } from "@milkdown/ctx";
 import { $remark, $node } from "@milkdown/utils";
 import type { MarkdownNode } from "@milkdown/transformer";
-import { escapeAttr, escapeHtml } from "../htmlEscape";
+import { escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
 import { sanitizeHtml } from "../sanitizeHtml";
 
@@ -289,8 +289,10 @@ const math = makeAtom({
 
 // Once KaTeX lands, fill every still-empty `.oa-math[data-math]` chip this surface painted.
 // Scoped to OUR chips (cleared `data-math` once upgraded so it runs at most once per chip);
-// idempotent + cheap (skips chips that already have rendered children). One shared schedule
-// flag dedupes concurrent block surfaces. No-op when there's no document (headless tests).
+// idempotent + cheap (skips chips that already have rendered children). One shared schedule flag
+// dedupes concurrent block surfaces; the callback resets it so later renders re-schedule. No-op when
+// there's no document (headless tests). If KaTeX never resolves the flag stays set, but that's moot:
+// no math renders at all then, so there's nothing for a re-schedule to upgrade.
 let mathUpgradeScheduled = false;
 function scheduleMathUpgrade(): void {
   if (mathUpgradeScheduled || typeof document === "undefined") return;
@@ -364,6 +366,3 @@ export const INLINE_PATTERNS = {
   math: MATH_RE,
   bareUrl: BARE_URL_RE,
 };
-
-// `escapeHtml` re-exported so chip renderers in this module + the host share one escaper.
-export { escapeHtml };

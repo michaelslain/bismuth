@@ -262,9 +262,14 @@ export function compileTaskLeaves(tf: TaskFilters): string[] {
 
   if (tf.rawWhere && tf.rawWhere.trim()) leaves.push(tf.rawWhere.trim());
 
-  if (tf.sortKey) leaves.push(`sort by ${tf.sortKey}${tf.sortReverse ? " reverse" : ""}`);
-
+  // NOTE: `sort by …` is intentionally NOT a filter leaf — it must land on its OWN line (emitted by
+  // buildQueryBlockBody as a block scalar), since runTaskQuery only honors a sort as a whole line.
   return leaves;
+}
+
+/** The `sort by <key>[ reverse]` Tasks-DSL line for a task filter set, or "" when no sort. */
+function taskSortLine(tf: TaskFilters): string {
+  return tf.sortKey ? `sort by ${tf.sortKey}${tf.sortReverse ? " reverse" : ""}` : "";
 }
 
 // ---------------------------------------------------------------------------------------
@@ -296,8 +301,18 @@ export function buildQueryBlockBody(state: BuilderState): string {
 
   if (state.source === "tasks") {
     const lines: string[] = [];
-    const leaves = compileTaskLeaves(state.tasks);
-    lines.push(`tasks: ${leaves.join(" AND ")}`.trimEnd());
+    const filters = compileTaskLeaves(state.tasks).join(" AND ");
+    const sortLine = taskSortLine(state.tasks);
+    if (sortLine) {
+      // A sort needs its own DSL line, so emit a multi-line `tasks:` block scalar (filters AND-joined
+      // on one line, `sort by …` on the next). parseQueryBlock reads block scalars; runTaskQuery then
+      // honors the sort (incl. rank-aware `sort by priority`, which a view-level sort can't replicate).
+      lines.push("tasks: |-");
+      if (filters) lines.push(`  ${filters}`);
+      lines.push(`  ${sortLine}`);
+    } else {
+      lines.push(`tasks: ${filters}`.trimEnd());
+    }
     if (state.tasks.from) lines.push(`from: ${state.tasks.from}`);
     if (state.view && state.view !== "list") lines.push(`view: ${state.view}`);
     if (state.group) lines.push(`group: ${state.group}`);
@@ -543,7 +558,28 @@ function reverseWhere(where: string): BuilderState["notes"] {
     if (!row) return { connective: "and", rows: [], rawWhere: where.trim() };
     rows.push(row);
   }
-  return { connective, rows };
+  // date_within compiles to `date(P) >= today() && date(P) < today()+"Nd"` — a single leaf with an
+  // inner `&&` that flattenSameOp splits into a date_after+date_before pair. Re-fuse that consecutive
+  // pair so a "within N days" control round-trips as one row instead of degrading into two.
+  return { connective, rows: connective === "and" ? coalesceDateWithin(rows) : rows };
+}
+
+/** Merge a consecutive `[date_after P "today", date_before P "today+Nd"]` pair (how date_within
+ *  compiles + flattens) back into one `date_within` row. */
+function coalesceDateWithin(rows: NotesRow[]): NotesRow[] {
+  const out: NotesRow[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const a = rows[i];
+    const b = rows[i + 1];
+    const m = b && /^today\+(\d+)d$/.exec(b.val);
+    if (a.op === "date_after" && a.val === "today" && b && b.op === "date_before" && b.prop === a.prop && m) {
+      out.push({ prop: a.prop, op: "date_within", val: m[1], type: "date" });
+      i++; // consumed b
+    } else {
+      out.push(a);
+    }
+  }
+  return out;
 }
 
 export function parseQueryBlockBody(body: string): BuilderState {
@@ -612,4 +648,35 @@ export function parseQueryBlockBody(body: string): BuilderState {
   if (qb.group) state.group = qb.group;
   if (qb.limit != null) state.limit = qb.limit;
   return state;
+}
+
+/** Whether the no-code builder can edit `body` WITHOUT dropping anything on save. The builder models
+ *  exactly: a flat tasks/base spec, OR a notes inline-config with a fully-reversible `where`, a single
+ *  view, and only the view fields it knows (type/name/sort/groupBy/limit) — and NO top-level
+ *  filters/formulas/properties/schema. A richer hand-authored config (extra views, formulas, a
+ *  structured filters tree, a tasks/base config form) is NOT representable; callers should hide the
+ *  builder's edit affordance for it so the raw block is edited as source instead of being clobbered. */
+export function isBuilderRepresentable(body: string): boolean {
+  const trimmed = body.trim();
+  if (!trimmed) return true;
+  if (!looksLikeBaseConfig(body)) return true; // flat tasks/base round-trips losslessly
+  let config: Record<string, unknown>;
+  try {
+    config = yamlParse(body) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (!config || typeof config !== "object") return false;
+  // Only `source` + `views` are modeled — any other top-level key (filters/formulas/properties/schema)
+  // would be lost.
+  for (const k of Object.keys(config)) if (k !== "source" && k !== "views") return false;
+  const src = typeof config.source === "string" ? config.source.trim() : "";
+  const m = src.match(/^notes(?:\s+where\s+([\s\S]+))?$/i);
+  if (!m) return false; // tasks/base CONFIG form (builder emits those flat, so it can't round-trip a config one)
+  if (m[1] && reverseWhere(m[1]).rawWhere) return false; // a where the builder can't reverse into rows
+  const views = Array.isArray(config.views) ? (config.views as Record<string, unknown>[]) : [];
+  if (views.length > 1) return false; // extra views would be dropped
+  const v = views[0];
+  if (v) for (const k of Object.keys(v)) if (!["type", "name", "sort", "groupBy", "limit"].includes(k)) return false;
+  return true;
 }

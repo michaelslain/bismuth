@@ -33,6 +33,7 @@ import {
   abortTurn as chatAbort,
   closeChat,
   scheduleClose as scheduleChatClose,
+  rebindSink as chatRebindSink,
   newChatId,
   respondPermission as chatRespondPermission,
   setPermissionMode as chatSetPermissionMode,
@@ -1187,7 +1188,17 @@ export function createServer(cfg: CoreConfig) {
 
     websocket: {
       open(ws) {
-        if (ws.data.kind === "chat") return; // chat sends nothing until the first user message
+        if (ws.data.kind === "chat") {
+          // A reconnect (same chatId) mid-turn: re-point the live session's sink at THIS new socket
+          // and cancel its grace-period teardown, so in-flight drain frames (incl. the turn's tail
+          // and `done`) flow here instead of the dead socket. A brand-new chat has no session yet —
+          // rebind is a no-op and the first {type:"user"} binds the sink via sendMessage.
+          const { chatId } = ws.data;
+          chatRebindSink(chatId, (frame: unknown) => {
+            try { ws.send(JSON.stringify(frame)); } catch { /* socket closed mid-turn */ }
+          });
+          return;
+        }
         const data = ws.data;
         const s = getSession(data.sessionId);
         if (!s) { ws.close(); return; }
