@@ -37,6 +37,8 @@ import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
 import type { InstallStatus, SetupResult, UpdateResult } from "../../core/src/claudebot";
 import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
 import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
+import type { GcalStatus } from "../../core/src/gcal";
+import type { SyncResult } from "../../core/src/gcal/sync";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 
 // --- Transport seam -------------------------------------------------------
@@ -297,4 +299,25 @@ export const api = {
   updateStatus: () => getJson<UpdateStatus>("/update/status"),
   applyUpdate: () => postJson<UpdateProgress>("/update/apply", {}),
   updateProgress: () => getJson<UpdateProgress>("/update/progress"),
+
+  // Google Calendar sync — Phase 0: OAuth plumbing. Credentials + tokens live OUTSIDE
+  // the vault (~/.bismuth/gcal). The consent URL opens in the system browser; the
+  // loopback callback completes on the backend. `post`/`postJson` throw on non-2xx.
+  gcalStatus: () => getJson<GcalStatus>("/gcal/status"),
+  gcalSetCredentials: (clientId: string, clientSecret: string) =>
+    post("/gcal/credentials", { clientId, clientSecret }).then(() => {}),
+  gcalAuthStart: () => postJson<{ url: string }>("/gcal/auth/start", {}),
+  gcalDisconnect: () => post("/gcal/disconnect", {}).then(() => {}),
+  // Two-way sync (Google ⇄ Bismuth); pass `basePath` to target a specific calendar now
+  // (avoids a race with the debounced settings write). Returns counts.
+  gcalSync: (basePath?: string) => postJson<SyncResult>("/gcal/sync", basePath ? { basePath } : {}),
 };
+
+/** Concise one-line summary of a sync result for a toast. */
+export function summarizeSync(r: SyncResult): string {
+  const removed = r.deletedLocal + r.deletedRemote;
+  const parts = [`${r.pulledNew + r.pulledUpdate} in`, `${r.pushedNew + r.pushedUpdate} out`];
+  if (removed) parts.push(`${removed} removed`);
+  if (r.conflicts) parts.push(`${r.conflicts} conflict${r.conflicts === 1 ? "" : "s"}`);
+  return `Synced — ${parts.join(", ")}`;
+}

@@ -21,6 +21,9 @@ export interface CalendarEvent {
   description?: string
   category?: string
   recurrence?: Recurrence
+  // ISO timestamp stamped on every local create/edit (EventStore). Used by Google
+  // Calendar sync as the last-write-wins tiebreaker against the remote `updated` time.
+  localUpdated?: string
 }
 
 export interface EventsFile { events: CalendarEvent[]; categories: Category[] }

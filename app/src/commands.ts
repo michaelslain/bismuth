@@ -56,6 +56,12 @@ export interface CommandHandlers {
   // Permanently remove completed/cancelled tasks — from the active note, or all notes.
   archiveTasks: () => void | Promise<void>;
   archiveAllTasks: () => void | Promise<void>;
+  // Open the "Connect Google Calendar" panel (OAuth connect/disconnect/status).
+  gcalConnect: () => void;
+  // Pull events from Google Calendar into the configured base (one-way sync).
+  gcalSync: () => void | Promise<void>;
+  // Disconnect Google Calendar (revoke + wipe stored tokens).
+  gcalDisconnect: () => void | Promise<void>;
 }
 
 export interface BoundCommand {
@@ -105,6 +111,9 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "bismuth-install": h.openBismuthInstall,
     "update-app": h.updateApp,
     "edit-dictionary": h.openEditDictionary,
+    "gcal-connect": h.gcalConnect,
+    "gcal-sync": h.gcalSync,
+    "gcal-disconnect": h.gcalDisconnect,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {

@@ -367,6 +367,14 @@ export interface AppConfig {
   daemon: { enabled: boolean; home: string; autoUpdate: boolean };
   templates?: { folder: string };
   srs: SrsConfig;
+  googleCalendar?: {
+    enabled: boolean;
+    calendarId: string;
+    basePath: string;
+    conflictPolicy: "lastWriteWins" | "googleWins" | "bismuthWins";
+    syncIntervalMinutes: number;
+    timeZone: string;
+  };
   // Other schema sections (graph, appearance, ui, …) are present at runtime but
   // not read by the backend; expose them loosely so callers can reach them.
   [section: string]: unknown;

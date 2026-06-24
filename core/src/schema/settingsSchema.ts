@@ -140,6 +140,22 @@ export const SETTINGS_SCHEMA: Schema = {
     timeGutterWidth: { type: "number", default: 50, min: 40, max: 80, doc: "Width of the hour-label gutter in week/day views (px)." },
     defaultCategoryColor: { type: "string", default: "#4a90e2", doc: "Default color for a newly created event category (hex)." },
   }),
+  // Two-way Google Calendar sync. NON-SECRET operational config only — the OAuth client
+  // credentials + tokens live OUTSIDE the vault (~/.bismuth/gcal), never in settings.yaml
+  // or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is
+  // calendar.events (read+write events only; no Gmail/Drive/contacts access).
+  googleCalendar: object({
+    enabled: { type: "boolean", default: false, doc: "Enable two-way Google Calendar sync." },
+    calendarId: { type: "string", default: "primary", doc: "Which Google calendar to sync with ('primary' = your main calendar)." },
+    basePath: { type: "string", default: "", doc: "Vault path to the calendar base (a type: base note with view: calendar) to sync." },
+    conflictPolicy: {
+      type: enumType(["lastWriteWins", "googleWins", "bismuthWins"]),
+      default: "lastWriteWins",
+      doc: "How to resolve an event changed on BOTH sides since the last sync: lastWriteWins (newest edit wins) · googleWins · bismuthWins.",
+    },
+    syncIntervalMinutes: { type: "number", default: 15, min: 1, max: 1440, doc: "Auto-sync cadence in minutes (manual sync is always available)." },
+    timeZone: { type: "string", default: "", doc: "IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone)." },
+  }),
   ui: object({
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
