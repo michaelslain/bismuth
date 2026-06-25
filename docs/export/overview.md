@@ -1,0 +1,158 @@
+# Export
+
+Bismuth can turn any vault document — a prose note, a base, a spreadsheet, or a drawing — into a downloadable file: Markdown, HTML, PNG, PDF, or (bases only) CSV. The system has two faces that share one renderer: a **dedicated export pane** inside the app (`ExportView.tsx`, opened via the `::export:<path>` sentinel) and the **`bismuth export` CLI command**, which calls the *exact same* `renderExport()` function with headless dependencies injected. Bases get a "visual vs data" choice — render the chosen view as its kind (a calendar grid, cards, kanban, list) or flatten it to a table — and calendars additionally pick a grid span and anchor day. Most paths are fully headless; the only browser-only step is rasterizing a note/base's HTML to PNG/PDF (which needs `html2canvas`), while drawings rasterize through the headless core renderer.
+
+## The export pane (`ExportView.tsx`)
+
+Export is a first-class pane content, not a modal. Its content id is the `EXPORT_PREFIX` sentinel from `app/src/tabIds.ts`:
+
+```ts
+// Export options screen for a file: EXPORT_PREFIX + "<file path>".
+export const EXPORT_PREFIX = "::export:";
+```
+
+`PaneContent.tsx` routes any leaf whose path `startsWith(EXPORT_PREFIX)` to a **lazily-imported** `ExportView` (`ExportView` pulls in `jspdf`/`html2canvas` transitively, so it is deferred off the entry bundle), stripping the prefix to recover the vault-relative file path: `<ExportView path={props.path.slice(EXPORT_PREFIX.length)} />`. The tab reads as `Export: <name>` with a `Download` icon (`contentLabel`/`contentIcon` in `tabIds.ts`).
+
+The pane is a two-column layout: a live **preview** on the left (an `<iframe srcdoc>` for HTML/MD/CSV, an `<img>` for image previews) and a **control panel** on the right. The panel exposes:
+
+- **Input path** — which vault-relative file to export. Defaults to the file the tab was opened for, re-pointable by typing a path or (in the desktop app) the `BROWSE` button (`pickFile`, filtered to `md`/`sheet`/`draw`). The committed `srcPath` (which drives the preview resource) is kept separate from the live `srcDraft` text so typing doesn't refetch on every keystroke and drop input focus mid-word; the draft commits on blur/Enter.
+- **Output path** — the destination folder. Empty = the browser/OS Downloads dir. A chosen folder (desktop only, via `pickFolder`) is remembered in `localStorage` under `oa.export.destFolder`.
+- **View** (bases with >1 view) — a chip per base view, picking `viewIndex`.
+- **Content** (bases only) — the `Visual` / `Data` `RenderMode` toggle.
+- **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `oa.export.calSpan`.
+- **Format** — the valid format chips for the current file/mode (see Formats below).
+- **Theme** — `dark` or `light`.
+
+`browseSource`/`browseDest` short-circuit with a toast when not running under Tauri (`isTauri()`), since native pickers and arbitrary-folder writes are desktop-only.
+
+### Source detection: is it a base?
+
+On every source change, a `createResource` keyed on `srcPath` reads the file and checks `parseFrontmatter(text).data?.type === "base"`. If so it parses the file (`parseBaseFile`) and exposes its `config.views`; otherwise it resolves to `null` and **none** of the base controls render. A base is therefore detected by frontmatter, not by extension — there is no `.base` extension; a base is just a `.md` (mirrored by `isBaseText()` in `exporters.ts`).
+
+When the source changes, `viewIndex` resets to 0 and `userSetMode` clears, so the mode default re-derives from the new file's first view kind.
+
+## Targets × formats
+
+`formats.ts` holds the extension-keyed matrix (`ext(path)` lowercases the trailing extension):
+
+```ts
+const MATRIX: Record<string, ExportFormat[]> = {
+  md:    ["html", "pdf", "png", "md"],
+  sheet: ["html", "pdf", "png"],
+  draw:  ["pdf", "png"],
+};
+```
+
+`formatsFor(path)` returns `[]` for sentinels (`::…`) and for `settings.yaml` (config, not a document), so those are never exportable; `isExportable(path)` is the boolean App.tsx uses to gate the export command at render time.
+
+`ExportFormat` is `"html" | "pdf" | "md" | "png" | "csv"`. CSV is **not** in the static matrix — it's base-only and bolted on by the contents-aware refinement below.
+
+### The four targets
+
+- **Note** (`.md`, not a base) — prose rendered to HTML via `renderMarkdown`. Exports to `md` (its own text), `html`, `png`, `pdf`.
+- **Base** (`.md` with `type: base`) — falls under `md` in the matrix, but the *available* formats narrow by render mode (below). Exports to `html`/`pdf`/`png`/`md`/`csv` in data mode; `html`/`pdf`/`png` in visual mode.
+- **Sheet** (`.sheet`) — the Univer workbook JSON is rendered to an HTML table by `snapshotToHtmlTable`. Exports to `html`/`pdf`/`png` (no `md`/`csv`).
+- **Drawing** (`.draw`) — rasterized directly. Exports to `pdf`/`png` only.
+
+### Mode-aware format refinement (bases)
+
+`formatsForOptions(path, isBase, mode)` is what the UI's format chips actually use, because `formatsFor` is extension-keyed and can't see file contents:
+
+```ts
+if (!isBase) return formatsFor(path);
+return mode === "data"
+  ? ["html", "pdf", "png", "md", "csv"]   // flat-table forms; md + csv only make sense as data
+  : ["html", "pdf", "png"];               // a calendar grid / kanban board has no md/csv form
+```
+
+The export pane keeps the chosen format valid: a `createEffect` re-snaps `format()` to the first valid entry whenever the available set changes (a mode flip or a new file).
+
+## Visual vs data render mode (bases)
+
+`RenderMode` is `"visual" | "data"`:
+
+- **`data`** — the chosen view's flat table, in the requested format: a Markdown table (`tableToMarkdown`), CSV (`tableToCsv`, RFC-4180 quoting + CRLF), or an HTML table (`tableToHtml(baseToTable(...))`). This is the historical behavior.
+- **`visual`** — the view rendered **as its kind**: a calendar grid, cards, kanban board, or list. Implemented by `baseView.ts`'s `baseViewHtml`, which resolves the base's `ViewResult` and dispatches on `vr.view.type`:
+  - `calendar` → `calendarHtml`
+  - `cards` → `cardsHtml`
+  - `kanban` → `kanbanHtml`
+  - `list` / `bullets` → `listHtml`
+  - everything else (`table`/`map`/`bar`/`line`/`stat`/`heatmap`/`flashcards`) → **degrades to the flat data table**, so a visual export never throws on an unsupported kind.
+
+The visual renderers (`viewHtml.ts`, `calendarHtml.ts`) are pure string builders — no Solid, no DOM — so they share the exporter's bun-compilable path. Each returns `{ body, css }`; the exporter injects the scoped CSS into the document `<head>`. They reuse the live views' value formatting (`cellText` + `renderCellHtml`) and the **resolved live-theme palette** (`ThemePalette`) for colors/fonts so the export reads like what's on screen.
+
+`defaultModeForView(kind)` (in `options.ts`) decides the initial mode the pane shows: `calendar`, `cards`, `kanban`, `list`, `bullets` default to `visual`; everything else to `data`. The user can override per session; once overridden (`userSetMode`), the default stops re-applying.
+
+### Calendar span + anchor
+
+When the selected view is a calendar in visual mode, the pane shows two extra controls. They flow into `ExportOptions.calSpan` and `ExportOptions.calStart`, resolved by `calendarHtml`:
+
+```ts
+const anchor = opts.calStart ? parseLocal(opts.calStart) : new Date();  // "" = today
+const span: CalSpan = opts.calSpan;                                     // month | week | 3day | day
+```
+
+- **`month`** → a full month grid (`monthGrid`) anchored on the month containing `anchor`, with leading/trailing days from adjacent months (`out` cells) and a `today` marker.
+- **`week`** → 7 columns from `startOfWeek(anchor, ...)`.
+- **`3day`** → `anchor`, `anchor+1`, `anchor+2`.
+- **`day`** → just `anchor`.
+
+Week/3day/day all render a column-per-day time grid (`timeGrid`): a left hour gutter, an all-day band on top, and timed events absolutely positioned at `44px/hour` (`HOUR_PX`), with simple lane assignment so overlapping events don't stack. Events come from `rowToEvent` (the exact mapping the live calendar uses) and are expanded recurrence-aware via `expandRecurrence`/`occurrencesIn`, so an exported calendar agrees with the on-screen one. `weekStartsOnMonday` and `militaryTime` (from `settings.calendar`) drive the week start and 12h/24h times.
+
+## The renderer: `exporters.ts`
+
+Both faces call into two functions, parameterized by an injected `ExportDeps` so the module stays unit-testable and bun-compilable:
+
+- **`renderPreview(path, format, deps, theme, opts)`** — computes *only what the pane displays*. It never produces export bytes and never runs the heavy `html → pdf` pipeline, so flipping formats/options in the UI is instant and side-effect-free. The PDF/PNG **preview** is just the source HTML (shown in the iframe); MD/CSV previews are the literal text in a `<pre>`; a drawing preview is its rasterized data-URL `previewImg`.
+- **`renderExport(path, format, deps, theme, opts)`** — produces the real downloadable `{ bytes, mime, filename }` (`ExportResult`).
+
+Inside, a file's HTML body is built by `bodyHtml` → `renderedBody` → `wrapBody`:
+
+- `bodyHtml` picks the body by file kind: a sheet → `snapshotToHtmlTable`; a base → visual (`baseViewHtml`) or data table; any other `md` → `renderMarkdown`; otherwise it throws ("No HTML body").
+- `renderedBody` guards math: if the first render leaves an unrendered KaTeX placeholder (`/<span class="oa-math[^"]*" data-math=/`), it `await whenMathReady()` and re-renders, so exported math isn't blank.
+- `wrapBody` wraps the body in a standalone document (`wrapHtmlDocument`), inlining a self-contained KaTeX stylesheet (fonts as `data:` URIs, via `deps.katexCss()`) **only when** the body contains rendered math (`class="katex`), plus any view-specific CSS. The `.html` download and the off-screen rasterizer iframe can't reach the app's loaded stylesheets, so everything must be inlined.
+
+`md`/`csv` exports bypass HTML entirely: `markdownText` returns a base's view-table as a Markdown table or any other note's own text; `csvText` enforces base-ness (throws "CSV export is only available for bases").
+
+## Headless vs browser-only paths
+
+The split is entirely about *who supplies `deps`*. The pure renderers (markdown, table builders, calendar/cards/kanban/list HTML, document wrapping) run anywhere. The rasterization steps are injected:
+
+- **`md` / `html`** — fully headless. Pure string output; the CLI writes them directly.
+- **`png` / `pdf` of a note / base / sheet** — **browser-only**. These rasterize the rendered HTML body through `deps.htmlToPng` / `deps.htmlToPdf`, implemented by `htmlToPdf.ts`: the HTML document is written into an isolated off-screen `<iframe>`, snapshotted with **`html2canvas`**, then (for PDF) sliced across US-Letter pages via **`jsPDF`**. This requires a DOM, so the CLI's `htmlToPdf`/`htmlToPng` deps simply throw a clear message ("pdf/png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app …").
+- **`png` / `pdf` of a drawing** — headless. Drawings rasterize through `deps.drawingToPng`. In the app this is `drawingRaster.ts` (browser-safe `render2d` on a `<canvas>`); in the CLI it's the **core headless renderer** `renderDocToPng`/`renderDocToPdf` (`@napi-rs/canvas` + `pdf-lib`). The PDF path for a drawing wraps the rasterized PNG data-URL in an `<img>` document and runs it through `htmlToPdf` (in the app) — but the CLI special-cases `.draw` *before* reaching the app exporter and renders both formats straight through the core renderer, so drawing PNG **and** PDF both work headlessly there.
+
+## The CLI: `bismuth export`
+
+`cli/src/commands/export.ts` reuses the **same** `renderExport` so CLI output matches the in-app export exactly. Usage:
+
+```
+bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
+  [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--vault <dir>]
+```
+
+Flow:
+
+1. The default format is `md`, except a `.draw` defaults to `png`.
+2. **Drawings short-circuit**: a `.draw` is parsed (`parseDoc`) and rendered with the headless core renderer (`renderDocToPng`/`renderDocToPdf`, dark theme); `png` and `pdf` both work, any other format errors ("a .draw file exports to png or pdf").
+3. **Everything else** calls `renderExport(file, fmt, deps, "dark", optionsFrom(args))` with headless deps:
+   - `read` → `readNote(vault, p)`
+   - `resolveRows` → `resolveSource(spec, { root: vault, today })`
+   - `htmlToPdf` / `htmlToPng` → **throw** the browser-only message
+   - `drawingToPng` → core `renderDocToPng`
+   - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
+4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span` onto `defaultExportOptions()` (no-ops for non-base files).
+5. Bytes are written to `--out` (or `res.filename`).
+
+So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format pdf`, and `bismuth export Calendar.md --mode visual --cal-span week --format html` all work headlessly; `bismuth export note.md --format pdf` errors with the "open in the app" hint.
+
+## Download flow
+
+`doExport` (`ExportView.tsx`) flushes any un-blurred edit, calls `renderExport`, then dispatches on the chosen output:
+
+- **A chosen folder + desktop app** → `writeToFolder(dest, filename, bytes)` (Tauri fs plugin; returns the absolute path; the folder must be inside the app's fs capability scope), toasting `Exported … → <path>`.
+- **Otherwise** → `downloadFile(filename, bytes, mime)`: in Tauri, writes to the OS `downloadDir`; in the browser, a `Blob` + `<a download>` anchor click. If a folder was set but the app isn't Tauri, it falls back to Downloads with an explanatory toast.
+
+The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), the deferred `htmlToPdf`/`htmlToPng` (dynamic-imported only when actually exporting a PDF/PNG, to keep `jspdf`+`html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
+
+Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/baseView.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`.

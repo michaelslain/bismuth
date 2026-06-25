@@ -156,19 +156,19 @@ Everything staged by `git add -A` except `settings.yaml` (excluded via `.git/inf
 ### 5.1 Location
 
 ```
-<os.tmpdir()>/oa-layout/
+~/.bismuth/layout-cache/
 ```
 
-`os.tmpdir()` returns the OS temp directory (e.g. `/tmp` on macOS/Linux). The constant `CACHE_DIR = join(tmpdir(), "oa-layout")`.
+The constant `CACHE_DIR = process.env.OA_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache")`. It lives under a **durable** app dir, not `os.tmpdir()` — macOS periodically purges `/tmp`, which was wiping the cache between sessions and forcing a cold rebuild on every reopen. Override with `OA_LAYOUT_CACHE_DIR` (tests redirect it to an isolated temp dir).
 
-**Why not the vault?** Writing into the vault would trip the file-system watcher and create an infinite invalidate → rebuild → recompute → rewrite loop. The temp dir is intentionally outside any watched directory.
+**Why not the vault?** Writing into the vault would trip the file-system watcher and create an infinite invalidate → rebuild → recompute → rewrite loop. The cache dir is intentionally outside any watched directory.
 
 ### 5.2 File Format
 
 Each cached layout is a single JSON file:
 
 ```
-<os.tmpdir()>/oa-layout/<version>-<sha1_16hex>.json
+~/.bismuth/layout-cache/<version>-<sha1_16hex>.json
 ```
 
 The filename is the `graphSig`:
@@ -177,7 +177,7 @@ The filename is the `graphSig`:
 <CACHE_VERSION>-<16-hex-chars>
 ```
 
-Current `CACHE_VERSION = "v5"`. The version prefix is bumped whenever the layout algorithm changes (e.g. v4 changed pivot count + warm-start seeding; v5 changed collide iterations and padding) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted; the OS temp cleaner handles them eventually).
+Current `CACHE_VERSION = "v9"`. The version prefix is bumped whenever the layout algorithm or cache shape changes (e.g. v9 added the persisted full-layout warm-seed that powers incremental add-only relayout) — bumping the version causes all existing cached files to be ignored on the next run (stale files are never explicitly deleted).
 
 The SHA-1 is computed over the `vaultKey` string + sorted node ids + sorted `from|to|kind` edge triples. This means retargeting a wikilink (same node set and edge count, different connectivity) correctly busts the cache.
 
@@ -195,7 +195,7 @@ File contents:
 ### 5.3 Two-Tier Caching
 
 1. **In-memory** (`memCache: Map<string, Layout>`) — survives for the lifetime of a server process, eliminates disk reads for warm layouts
-2. **On-disk** (`<tmpdir>/oa-layout/<sig>.json`) — survives across server restarts
+2. **On-disk** (`~/.bismuth/layout-cache/<sig>.json`) — survives across server restarts
 
 `peekLayout` checks both tiers without computing; `layoutFor` computes on miss and writes both tiers.
 
@@ -390,7 +390,7 @@ $OA_VAULT/                         # vault root (required)
 $OA_MEMORY/                          # 3rd-brain memory dir (required; may be empty)
   *.md                               # Claude-bot memory notes (mem: namespace in graph)
 
-<os.tmpdir()>/oa-layout/             # backend layout cache (outside vault to avoid watcher loop)
+~/.bismuth/layout-cache/      # backend layout cache (durable; outside vault to avoid watcher loop)
   v5-<16hex>.json                    # precomputed pos3d + pos2d per graph signature
 
 ~/.claude-bot/  (or $OA_CLAUDEBOT_HOME or daemon.home)

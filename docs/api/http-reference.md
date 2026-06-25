@@ -125,6 +125,31 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Params:** none.
 - **Response:** the property registry parsed from `settings.yaml`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `settings.yaml` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
 
+### `GET /chat/sessions`
+- **Params:** none.
+- **Action:** `listChatSessions(cfg.vault)`. The SDK's session store unifies the user's **terminal Claude Code sessions AND in-app chat sessions** for the vault cwd — so this picker surfaces both.
+- **Response:** `{ sessions: [...] }` — the past Claude Code sessions for this vault, for the chat history picker (the client resumes one by sending `{type:"resume",sessionId}` over the `/chat` WS).
+- **Cache/SSE:** none.
+
+### `GET /chat/session-messages`
+- **Params:** `?id=<sessionId>` (optional; absent/empty → empty replay).
+- **Action:** `sessionHistoryFrames(id, cfg.vault)` when `id` is present, else `[]`.
+- **Response:** `{ frames: ChatFrame[] }` — one past session replayed **in order** as the same `ChatFrame`s the live `/chat` WS streams, so the client can rehydrate the transcript before binding/resuming it.
+- **Cache/SSE:** none.
+
+### `GET /gcal/status`
+- **Params:** none.
+- **Action:** `gcalStatus()` — reads the durable Google Calendar store (kept **outside** the vault, `~/.bismuth/gcal`).
+- **Response:** `GcalStatus` = `{ connected: boolean, needsCredentials: boolean, account?: string, timeZone?: string, connectedAt?: string }`. `connected` = a refresh token is stored; `needsCredentials` = the OAuth client id/secret haven't been supplied yet.
+- **Cache/SSE:** none. (These `/gcal/*` reads are SYSTEM actions, not vault mutations — like `/daemon/*` they live in the read table.)
+
+### `GET /gcal/callback`
+> The OAuth loopback redirect target. Google sends the user's browser here as a **top-level navigation** (not `fetch` → no CORS); `POST /gcal/auth/start` builds the redirect URI as `http://127.0.0.1:<this server's port>/gcal/callback`.
+- **Params:** `?code=<auth code>&state=<state>` on success, or `?error=<reason>` on cancel/denial.
+- **Action:** on `code`+`state`, `gcalCompleteAuth(code, state)` exchanges the code (Authorization Code + PKCE) and persists the refresh token.
+- **Response:** a small self-contained **HTML page** (`text/html`, status 200) — a green checkmark "Connected as `<account>`…" on success, or a red ✕ with the error/missing-code message. The message text is HTML-escaped. (Never JSON — it's rendered in the system browser.)
+- **Cache/SSE:** none.
+
 ### `GET /agent-graph`
 - **Params:** none.
 - **Action:** `relayPrune(live)` against the live PTY set (`listSessionIds()`) — closed tabs leave no terminal-close hook, so this is where stale sessions are dropped — then `buildAgentGraph(relaySnapshot(), live)`.
@@ -243,6 +268,13 @@ These run system actions (filesystem + git + `claude mcp` + a rebuild) but are *
 
 - **`POST /bismuth/install`** — body none. `ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC)` — the idempotent, version-gated machine-wide install of the `bismuth` CLI + MCP from the bundled tools resource (`core/src/bismuthInstall.ts`). Response `InstallResult` = `{ action, status: BismuthStatus, warnings: string[] }`, where `action` ∈ `"up-to-date"` | `"installed"` | `"updated"` | `"would-install"` | `"would-update"` | `"skipped-no-src"`. A no-op (`"up-to-date"`) when the bundled-binary content hash matches `~/.bismuth/.version` AND the CLI symlink + MCP registration are present; `"skipped-no-src"` when `OA_BISMUTH_INSTALL_SRC` is unset / incomplete (the dev case). See [machine-wide install](../mcp/overview.md).
 - **`POST /update/apply`** — body none. `startUpdate()` (`core/src/selfUpdate.ts`) — starts the git self-update and **returns immediately** with the initial `UpdateProgress` (the heavy `git pull` + `bun run tauri build` runs in the background; poll `GET /update/progress`). Idempotent while a run is in flight (returns the current `state`). Guards: returns `phase:"error"` when not a bundled source build, when the repo has uncommitted changes (`dirty`), and `phase:"idle"` when already up to date. See [self-update](../overview/self-update.md).
+
+### Google Calendar OAuth (read table)
+These drive the Google Calendar OAuth flow + connection lifecycle. All secrets and tokens live **outside** the vault (`~/.bismuth/gcal`), so these are SYSTEM actions, not vault mutations — they live in the read table with **no** cache-invalidation. The single requested OAuth scope is `calendar.events` (events read+write only; no Gmail/Drive/contacts). The two-way *sync* itself (`POST /gcal/sync`) IS a vault mutation — see below.
+
+- **`POST /gcal/credentials`** — body `{ clientId, clientSecret }`. `gcalSetCredentials(...)` stores the OAuth client id + secret in the durable store outside the vault (the secret never enters `settings.yaml`/git). Sent once from the connect modal. Response `{ ok: true }`. `400 "missing clientId/clientSecret"` if either is absent.
+- **`POST /gcal/auth/start`** — body none. Builds `redirectUri = http://127.0.0.1:<server.port>/gcal/callback` (Google desktop clients accept any 127.0.0.1 port, so the callback lands back on THIS backend) and returns `gcalStartAuth(redirectUri)`. Response `{ url: <Google consent URL> }` for the frontend to open in the system browser. A thrown error (e.g. credentials not set) → `400` with the message.
+- **`POST /gcal/disconnect`** — body none. `gcalDisconnect()` clears the stored tokens. Response `{ ok: true }`.
 
 ### `POST /asset`
 > Listed in the read table — uploading an attachment is NOT a graph/tree/search mutation (attachments are excluded from those caches; the subsequent note edit that inserts the embed triggers its own invalidation).
@@ -372,6 +404,48 @@ Dual-mode SRS review.
 - **Errors:** `400` (with the message) when `deviceId` is missing/empty, or when `setOwner` throws because the device isn't a known, heartbeating device (e.g. `deviceId: "nope"`).
 - **`pathOf`:** constant `"::daemon-owner"` (a non-vault sentinel) so the path-derived invalidation is effectively a no-op for graph/tree.
 
+### `POST /gcal/sync`
+> Unlike the other `/gcal/*` routes (read table, system actions), the actual two-way sync **rewrites the calendar base file**, so it IS a vault mutation and lives in `mutatingRoutes`.
+- **Body:** `{ basePath?: string }` (missing/non-JSON body tolerated → `{}`). A manual "Sync now" from the per-calendar modal may pass an explicit `basePath` so it targets the right calendar immediately, without waiting for the debounced `settings.yaml` write to round-trip into `appConfig`.
+- **Action:** resolves sync args from `appConfig.googleCalendar` (`gcalSyncArgs`): `basePath` (override or `googleCalendar.basePath`), `calendarId` (default `"primary"`), `policy` (`conflictPolicy`, default `"lastWriteWins"`), `timeZone`, and the appearance `theme`. Then `gcalSync(...)` reconciles the configured Google calendar with the configured calendar base in **both directions** (last-write-wins). A thrown sync error → `400` with the message.
+- **Response:** the `gcalSync` result JSON.
+- **Errors:** `400 "set googleCalendar.basePath to the calendar base you want to sync"` when no base path is configured (neither body override nor `appConfig.googleCalendar.basePath`).
+- **`pathOf`:** `appConfig.googleCalendar?.basePath || undefined` — invalidates the base file (graph/tree per `classifyVault` + SSE re-render of the open calendar); a sync with no configured base falls through to `undefined` → full invalidation.
+
+#### Auto-sync ticker
+Separately from the manual route, `createServer` installs an **unref'd 60s `setInterval`** that auto-syncs when `appConfig.googleCalendar.enabled` is set, a `basePath` is configured, `gcalStatus().connected` is true, and at least `max(1, syncIntervalMinutes || 15)` minutes have elapsed since the last run. A `gcalAutoSyncRunning` run-guard prevents overlap; failures are logged (`[gcal] auto-sync failed: …`) and swallowed. It's a no-op in tests (`googleCalendar.enabled` defaults to `false`) and the unref'd timer never keeps the process alive. This is the same `gcalSyncArgs(appConfig)` path as the manual route, just driven by settings.
+
+---
+
+## WebSocket: `GET /chat`
+
+A special-cased upgrade handled before the route tables (alongside `GET /terminal`). Drives the **headless Claude Code chat driver** (`core/src/chat.ts`) — the in-app visual Claude chat — over a text-JSON protocol.
+
+### Upgrade request
+- **Method/path:** `GET /chat`.
+- **Query params:** optional `?chatId=<stable id>`. A client passes a stable `chatId` to resume conversation continuity across reconnects; absent → one is generated (`newChatId()`).
+- **Origin policy:** the SAME allow-list as `/terminal` — allowed with no `Origin` header (same-origin / Tauri webview), or an origin matching `http(s)://localhost|127.0.0.1[:port]`, `tauri://...`, or `http(s)://10.x.x.x[:port]`; otherwise `403 "forbidden origin"`.
+- This is a read-path upgrade (not a vault mutation). On a failed `server.upgrade`, returns `400 "upgrade failed"`; success returns the Bun-managed `101`. The socket carries `{ kind: "chat", chatId }`.
+
+### Message protocol (client → server)
+Text JSON frames (`ChatFrame` inputs), discriminated by `type`:
+- **`{type:"user",text}`** — run a turn (slash commands are just text). On a brand-new chat this binds the session's sink via `chatSend(chatId, text, vault, sink)`.
+- **`{type:"resume",sessionId}`** — bind this chat socket to an existing Claude Code session (`chatResume`); its init manifest streams back and the next `{type:"user"}` continues the resumed conversation. (Sessions come from `GET /chat/sessions`; transcript from `GET /chat/session-messages`.)
+- **`{type:"permission_response",id,behavior,always?}`** — answer a "permission" frame; `behavior` must be `"allow"` or `"deny"`, `always` defaults `false` (`chatRespondPermission`).
+- **`{type:"set_permission_mode",mode}`** — switch permission mode live (`chatSetPermissionMode`).
+- **`{type:"set_model",model}`** — switch model live (`chatSetModel`).
+- **`{type:"stop"}`** — interrupt the in-flight turn (`chatAbort`).
+
+Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse as JSON, or whose `type`/fields don't match one of the above, is silently ignored.
+
+### Server → client
+`ChatFrame`s stream back via the session's sink — `ws.send(JSON.stringify(frame))` (each frame is the same shape `GET /chat/session-messages` replays). On `open`, the server **rebinds the sink** (`chatRebindSink`) to THIS socket: a reconnect (same `chatId`) mid-turn re-points the live session's sink here so in-flight drain frames (the turn's tail + `done`) flow to the new socket instead of the dead one. A brand-new chat has no session yet, so rebind is a no-op until the first `{type:"user"}`.
+
+### Lifecycle
+On `close`:
+- **Clean close** (code `1000`) — intentional tab-close → tear the session down now (`closeChat(chatId)`).
+- **Abnormal close** (reload `1001`, network drop `1006`, etc.) — keep the session alive for a **30000ms** grace window (`scheduleChatClose(chatId, 30_000)`) so a reconnect with the same `chatId` resumes the same `claude` conversation instead of spawning a fresh one. The next `sendMessage` cancels the pending close.
+
 ---
 
 ## WebSocket: `GET /terminal`
@@ -430,6 +504,13 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/settings` | read | no |
 | GET | `/schema` | read | no |
 | GET | `/agent-graph` | read | no |
+| GET | `/chat/sessions` | read | no |
+| GET | `/chat/session-messages` | read | no |
+| GET | `/gcal/status` | read | no |
+| GET | `/gcal/callback` | read | no |
+| POST | `/gcal/credentials` | read | no |
+| POST | `/gcal/auth/start` | read | no |
+| POST | `/gcal/disconnect` | read | no |
 | POST | `/relay/session` | read | no |
 | POST | `/relay/session/end` | read | no |
 | POST | `/relay/subagent/start` | read | no |
@@ -474,6 +555,8 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/cards/review` | mutating | yes |
 | POST | `/daily-note` | mutating | yes (full) |
 | POST | `/daemon/owner` | mutating | yes (no-op scope) |
+| POST | `/gcal/sync` | mutating | yes (base file) |
 | GET | `/terminal` | (WS upgrade) | n/a |
+| GET | `/chat` | (WS upgrade) | n/a |
 
-Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/search.ts, core/src/claudebot.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts
+Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/search.ts, core/src/claudebot.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts
