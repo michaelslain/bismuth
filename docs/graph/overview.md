@@ -324,7 +324,7 @@ collideRadius(node, i) = max(linkDistance * 1.25, drawnNodeRadius(degreeScale(ad
 Two-tier:
 
 1. **In-memory**: `Map<sig, Layout>` within a server run.
-2. **On-disk**: JSON files in `os.tmpdir()/oa-layout/<sig>.json`, versioned by `CACHE_VERSION` (currently `"v8"`).
+2. **On-disk**: JSON files in `~/.bismuth/layout-cache/<sig>.json` (durable app dir, not `os.tmpdir()`; override with `OA_LAYOUT_CACHE_DIR`), versioned by `CACHE_VERSION` (currently `"v9"`).
 
 `CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the history: `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links.
 
@@ -518,11 +518,11 @@ terminal tab (PTY) → relay plugin hooks
 - **The `"self"` node is frontend-only.** Never emitted by backend graph builders. Injected by `withYouNode()` at render time. Not present in agents mode or daemon mode.
 - **Layout is backend-only.** The browser never runs a force simulation. Positions come from `position` / `position2d` fields on nodes. The renderer morphs between them.
 - **Sub-view layouts may be absent on first load.** `GET /graph` only includes `views.second`/`views.third` if already cached. The frontend falls back to full-graph positions until `GET /graph/views` responds.
-- **Cache is written to `os.tmpdir()`, not the vault.** Writing inside the vault would trigger the fs watcher and cause an infinite invalidate→rebuild loop.
+- **Cache is written to `~/.bismuth/layout-cache/`, not the vault.** Writing inside the vault would trigger the fs watcher and cause an infinite invalidate→rebuild loop. The durable app dir (not `os.tmpdir()`, which macOS purges) keeps reopens as cache hits; override with `OA_LAYOUT_CACHE_DIR`.
 - **`mergeGraphs` keeps duplicate edges.** Two memory notes can both reference the same vault note and both produce `"about"` edges to it — this is by design.
 - **Agent graph drops closed-tab sessions.** A session whose terminal tab is closed is dropped at `GET /agent-graph` read time (prune against live PTY ids). There is no terminal-close hook in Claude Code; cleanup happens lazily.
 - **Wikilink resolution is basename-first.** `[[My Note]]` matches `My Note.md` anywhere in the vault. `[[reading/My Note]]` matches by full path first, then falls back to basename. Ambiguous basename matches are undefined.
-- **`CACHE_VERSION` must be bumped when layout output changes** — not just force constants, but the small-graph boost and the disconnected-component reel-in too. The current version is `"v8"`. A stale cached layout computed under different rules would mismatch the renderer's forces.
+- **`CACHE_VERSION` must be bumped when layout output changes** — not just force constants, but the small-graph boost and the disconnected-component reel-in too. The current version is `"v9"`. A stale cached layout computed under different rules would mismatch the renderer's forces.
 - **`now` in `nodeVisualState` is a no-op.** `lastResult` and `lastFiredMs` do not drive the visual encoding — only `enabled` and `running` matter.
 
 ---

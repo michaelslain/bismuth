@@ -8,9 +8,9 @@ There is **no settings GUI** in Bismuth — the "settings page" is literally `se
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `googleCalendar`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `settings.yaml`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `settings.yaml`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -102,8 +102,9 @@ graph:
 
 CodeMirror editor behavior.
 
-| Key | Type | Default | Bounds | Doc |
-|-----|------|---------|--------|-----|
+| Key | Type | Default | Bounds / Values | Doc |
+|-----|------|---------|-----------------|-----|
+| `defaultMode` | enum | `source` | `source`, `visual` | How every note opens: `source` (the raw Markdown editor) or `visual` (the no-code, Notion-like editor — no markdown knowledge needed). This is the only control; there is no per-note toggle. |
 | `livePreview` | boolean | `true` | — | Render markdown inline as you type. |
 | `lineNumbers` | boolean | `false` | — | Show line numbers. |
 | `lineWrapping` | boolean | `true` | — | Wrap long lines. |
@@ -117,8 +118,11 @@ CodeMirror editor behavior.
 
 Example:
 
+> **Surface switch — `defaultMode`.** This picks which editor *surface* notes open into: `source` is the CodeMirror Markdown editor (the rest of this section's keys apply to it), while `visual` is the no-code, Notion-like WYSIWYG editor. It is a global, vault-wide switch with no per-note override.
+
 ```yaml
 editor:
+  defaultMode: source
   livePreview: true
   lineNumbers: true
   autoSaveDelay: 1200
@@ -192,6 +196,33 @@ calendar:
   weekStartsOnMonday: false
   militaryTime: true
   defaultCategoryColor: "#e2844a"
+```
+
+---
+
+## `googleCalendar`
+
+Two-way Google Calendar sync. Connect via the "Connect Google Calendar…" command; the single OAuth scope is `calendar.events` (read+write events only — no Gmail/Drive/contacts access). When `enabled`, Bismuth periodically syncs the calendar base at `basePath` against the Google calendar named by `calendarId`, reconciling double-edited events per `conflictPolicy`.
+
+| Key | Type | Default | Bounds / Values | Doc |
+|-----|------|---------|-----------------|-----|
+| `enabled` | boolean | `false` | — | Enable two-way Google Calendar sync. |
+| `calendarId` | string | `primary` | — | Which Google calendar to sync with (`'primary'` = your main calendar). |
+| `basePath` | string | `""` (empty) | — | Vault path to the calendar base (a `type: base` note with `view: calendar`) to sync. |
+| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync: `lastWriteWins` (newest edit wins) · `googleWins` · `bismuthWins`. |
+| `syncIntervalMinutes` | number | `15` | min `1`, max `1440` | Auto-sync cadence in minutes (manual sync is always available). |
+| `timeZone` | string | `""` (empty) | — | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
+
+Example:
+
+```yaml
+googleCalendar:
+  enabled: true
+  calendarId: primary
+  basePath: Calendar/My Calendar.md
+  conflictPolicy: googleWins
+  syncIntervalMinutes: 30
+  timeZone: America/New_York
 ```
 
 ---
@@ -391,19 +422,19 @@ folderIcons:
 
 ## `toolbar`
 
-The sidebar header bar buttons, **in order**. Each button runs a command-palette command. Seeded with the three built-ins so a fresh install is unchanged.
+The sidebar header bar buttons, **in order**. Each button runs a command-palette command. Seeded with **two** built-ins so a fresh install is unchanged.
 
 - **Type:** `{ kind: "list", item: { kind: "object", fields: {...} } }` — a list of button objects.
 - **Default:**
   ```yaml
   toolbar:
-    - command: new-note
-      icon: FilePlus
-    - command: new-folder
-      icon: FolderPlus
+    - command: create-menu
+      icon: Plus
     - command: search
       icon: Search
   ```
+
+  The first button is `create-menu` — the "+Create" chooser (new note / folder / spreadsheet / drawing / base submenu) — followed by `search`. The older three-button seed (`new-note` / `new-folder` / `search`) was replaced by this `create-menu` + `search` pair.
 
 ### Toolbar item fields
 

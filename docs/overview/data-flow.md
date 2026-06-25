@@ -380,7 +380,7 @@ Running a PivotMDS + force simulation in the browser on a main-thread `requestAn
 Layout results are cached at two levels:
 
 1. **In-memory** (`memCache: Map<string, Layout>`) — survives for the lifetime of the server process.
-2. **On-disk** (`os.tmpdir()/oa-layout/<sig>.json`) — survives server restarts. The cache is written to `os.tmpdir()`, **not** inside the vault or memory directories. Writing inside the vault would trip the file watcher and create an infinite invalidate → rebuild → recompute → rewrite loop.
+2. **On-disk** (`~/.bismuth/layout-cache/<sig>.json`, override `OA_LAYOUT_CACHE_DIR`) — survives server restarts. It lives in a **durable** app dir, not `os.tmpdir()` (which macOS purges), so reopens stay cache hits; and **not** inside the vault or memory directories — writing inside the vault would trip the file watcher and create an infinite invalidate → rebuild → recompute → rewrite loop.
 
 Cache keys are derived from `graphSig(graph, vaultKey)`:
 
@@ -500,7 +500,7 @@ POST /create { path, kind }
 - **Mid-build invalidation**: `asyncCache`'s generation counter ensures that if the vault changes while a graph build is in flight, the build result is discarded. The next `GET /graph` starts a fresh build.
 - **SSE silently dies**: proxies and OS sleep drop long-lived connections without sending a close frame. The 1 s disconnected poll catches this within 1–2 intervals.
 - **Content-only edit (no structural change)**: `sse.publish` is still called with `{ dirty: { graph: false, tree: false } }`. The `version` still increments. The editor reconciles externally-edited files via `serverVersion`; graph and tree consumers can skip refetching by checking `dirty`.
-- **Layout cache in `os.tmpdir()`**: if the temp dir is unavailable (write failure), only the in-memory cache is populated for that run. Disk write failures are silently swallowed.
+- **Layout cache in `~/.bismuth/layout-cache/`**: if the dir is unavailable (write failure), only the in-memory cache is populated for that run. Disk write failures are silently swallowed.
 - **`graph.views` mutation in `GET /graph/views`**: the handler mutates the live cached `GraphData` object in place. This is safe only because `graphCache.invalidate()` always replaces the reference, never patching the existing object.
 - **`dirty` absent in poll**: the `/version` endpoint returns only `{ version }`. The frontend's poll-triggered `fireChange` has no `dirty` field, so consumers must treat it as a full invalidation.
 

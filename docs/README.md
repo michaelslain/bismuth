@@ -45,6 +45,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 ## Editor
 
 - [Markdown & live preview](editor/markdown.md) — every rendered block/inline kind
+- [Block editor (WYSIWYG)](editor/blocks.md) — the Milkdown true-WYSIWYG surface + `editor.defaultMode`
 - [Tables](editor/tables.md) — editable GFM pipe tables
 - [Autocomplete](editor/autocomplete.md) — wikilink/tag/task/query/settings completion
 
@@ -68,6 +69,9 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 - [Flashcards / SRS](flashcards/srs.md) — markdown + row cards, SM-2, decks, bidirectional, cram
 - [Calendar](calendar/overview.md) — events, recurrence, categories
+- [Google Calendar sync](gcal/overview.md) — OAuth/PKCE two-way sync, conflict policies, recurrence, manifest
+- [Visual Claude chat](chat/overview.md) — in-app Claude Code chat (`/chat` WS, Agent-SDK sessions, unified with terminals)
+- [Export](export/overview.md) — note/base/sheet/drawing → md|html|png|pdf, visual/data modes
 - [Drawing](drawing/overview.md) — the `.draw` vector format + export
 - [Sheets](sheets/overview.md) — the `.sheet` Univer workbook format
 - [Templates & daily notes](templates/syntax.md) — token syntax + daily-note config

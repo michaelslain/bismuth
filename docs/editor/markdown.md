@@ -62,7 +62,7 @@ Frontmatter is detected by `extractFrontmatterBoundary` (in `frontmatterUtils.ts
 - **Opening and closing `---` delimiters** are collapsed to zero height (`cm-collapsed-line`) with their text hidden, unless the cursor is inside the frontmatter block. When the cursor enters the block, both delimiters are revealed in `cm-syntax-mark` (dim Monaspace), and both carry `cm-frontmatter` line styling. This ensures both delimiters look the same even though the markdown tokenizer handles them differently.
 - **Property rows** (lines between the delimiters): each gets `cm-frontmatter` (Monaspace Xenon, `--mono-scale` font-size, `--surface-2` background, 2px `--accent` left inset shadow). In-block 1-based line numbers are displayed via the `numberedLine` mechanism (see [Code Line Numbers](#code-line-numbers-in-block-line-numbers) below).
 - **`key:` portion**: The regex `/^(\s*)([A-Za-z0-9_$.-]+)\s*:/` is used to detect the key name on each property row. The key receives `cm-fm-key` (color: `--accent`), while the value portion inherits `--fg`.
-- **Links in property values** are styled so the value reads as a clickable link, the same as in the body: wikilinks (e.g. `source: "[[Note]]"`) via `pushWikilinks`, markdown links (e.g. `link: "[Anthropic](https://anthropic.com)"`) via `pushMarkdownLinks`, and bare URLs (e.g. `homepage: https://example.com`) via `pushBareUrls`. These three are the only inline treatments applied inside frontmatter; other inline markdown (bold, italic, tags) is skipped. Click handling is shared with the body — `Editor.tsx`'s `mousedown` handler scans the raw line text, so it resolves frontmatter link clicks (open URL / navigate to note) without any frontmatter-specific code.
+- **Links in property values** are styled so the value reads as a clickable link, the same as in the body: wikilinks (e.g. `source: "[[Note]]"`) via `pushWikilinks`, markdown links (e.g. `link: "[Anthropic](https://anthropic.com)"`) via `pushMarkdownLinks`, and bare URLs (e.g. `homepage: https://example.com`) via `pushBareUrls`. All three calls sit together on the frontmatter branch (`pushWikilinks(...); pushMarkdownLinks(deco, text, line.from, revealsRange); pushBareUrls(deco, text, line.from);`) before the `continue`, so they are the only inline treatments applied inside frontmatter; other inline markdown (bold, italic, tags) is skipped. Click handling is shared with the body — `Editor.tsx`'s `mousedown` handler scans the raw line text, so it resolves frontmatter link clicks (open URL / navigate to note) without any frontmatter-specific code.
 - **No heading/list/tag/math treatment** on frontmatter lines — after the link styling, the `continue` skips the rest of the per-line pass entirely.
 
 ---
@@ -182,12 +182,9 @@ Regex: `/^(\s*)([-*+])(\s+)/` — captures indent, marker, and trailing whitespa
 
 **Thematic break detection**: lines matching `/^\s*([-*_])(?:[ \t]*\1){2,}[ \t]*$/` (3+ of the same character optionally separated by spaces) are excluded from bullet treatment even though they match the marker regex.
 
-**Indent depth**: `indentDepth(indent)` converts the leading whitespace to a depth. Tabs are expanded as 2 spaces; depth = `floor(cols / 2)`. So 0–1 chars = depth 0, 2–3 = depth 1, 4–5 = depth 2, etc.
+**Indent depth**: `listDepth(state, pos, indent)` derives the nesting level from the **parse tree first**, falling back to raw indent. It walks `syntaxTree(state).resolveInner(pos, 1)` up its parent chain counting `ListItem` ancestors — the innermost item is itself a `ListItem`, so the structural depth is `Math.max(0, count - 1)`. It also computes a raw-indent depth (`Math.floor(indent.replace(/\t/g, "    ").length / 4)` — tabs expand to 4 spaces, 4 spaces per level) and returns `Math.max(structural, raw)`. So a markdown-recognized nested item gets its true tree depth even when the source indentation is shallow, while a freshly-typed or not-yet-parsed line still indents off its raw whitespace. This 4-space-per-level rule matches `EditorState.tabSize.of(4)` / `indentUnit.of("    ")` for notes — the old `floor(cols / 2)` (tabs-as-2-spaces) rule is gone.
 
-**Bullet glyphs by depth**:
-- Depth 0: `•`
-- Depth 1: `◦`
-- Depth 2+: `▪`
+**Bullet glyphs by depth (parity rule)**: the glyph alternates by depth parity, only two variants — even depth → `•` (filled), odd depth → `◦` (hollow): `const glyph = this.depth % 2 === 0 ? "•" : "◦";` in `BulletWidget.toDOM()`. So depth 0 → `•`, depth 1 → `◦`, depth 2 → `•`, depth 3 → `◦`, and so on. The earlier three-variant scheme (`•` / `◦` / `▪` with a `▪` square at depth 2+) no longer exists.
 
 **Hanging indent**: `indentLine("cm-li", depth)` applies a line decoration with:
 ```
@@ -195,9 +192,11 @@ padding-left: (depth + 1) * 1.6em
 text-indent: -1.6em
 line-height: 1.55
 ```
-The `LIST_STEP` is 1.6em per depth level; `LIST_GUTTER` is 1.6em (width of the bullet gutter column).
+`LIST_STEP` (1.6em, the per-level step) lives in `app/src/editor/listLayout.ts` as a dependency-free leaf module shared with `foldBlocks.ts`; `LIST_GUTTER = LIST_STEP` (so the marker gutter is exactly one step wide and the text aligns across levels). The bullet glyph hangs in that gutter via the `text-indent: -1.6em` pulling the marker back into the padding.
 
-The reveal here is keyed on `revealsPrefix(line.from, line.from + bulletMatch[0].length)` — the caret must sit **within the `- ` marker itself** (half-open `[from, to)`, so a caret at the start of the text just past the marker keeps the bullet rendered).
+The reveal here is keyed on `revealsPrefix(line.from, prefixEnd)` — the caret must sit **within the `- ` marker itself** (half-open `[from, to)`, so a caret at the start of the text just past the marker keeps the bullet rendered).
+
+**Empty-item caret anchoring** (`emptyActive`): the raw branch is also taken when `prefixEnd === line.to && onCursor` — i.e. the line is an *empty* list item (`- ` with nothing after) and the caret is on it. Without this, replacing the whole prefix with a `BulletWidget` on an otherwise-empty line would leave nowhere for the caret and shove it to the far left of the line. Keeping the raw `- ` marker (still indented + mono via `cm-li`/`cm-list-marker`) anchors the end-of-line caret right after the marker where you're about to type. The same `emptyActive` guard appears on the task and ordered-list branches.
 
 **Marker not revealed** (caret not on the marker):
 1. The entire prefix (indent + marker + spaces) is replaced by a `BulletWidget` (the depth-appropriate glyph, class `cm-bullet`). The bullet glyph is right-aligned in a 1.6em inline-block column with `padding-right:0.62em`.
@@ -206,6 +205,20 @@ The reveal here is keyed on `revealsPrefix(line.from, line.from + bulletMatch[0]
 **Marker revealed** (caret within the marker):
 1. Leading whitespace chars are hidden; the `cm-li` line decoration drives indent from CSS.
 2. The marker (`- `, `* `, `+ `) gets `cm-list-marker` (Monaspace Xenon), so the raw dash shows in a monospace font rather than the serif body face.
+
+---
+
+## Ordered Lists
+
+Regex: `/^(\s*)(\d+)([.)])(\s+)/` — captures indent, the number, the `.`/`)` delimiter, and trailing whitespace. The match is **only attempted when the line is neither a task line nor a bullet line** (`const orderedMatch = isTaskLine || bulletMatch ? null : text.match(...)`), and thematic breaks have already `continue`d, so the three list kinds never collide.
+
+Ordered items share the **exact same hanging gutter as bullets** so numbered and bulleted lists line up identically — the only difference is the glyph (the real number stays visible; there is no glyph swap). Depth comes from the same parse-tree-aware `listDepth(...)`, and the line gets the same `indentLine("cm-li", depth)` hanging-indent decoration.
+
+**Rendered** (caret not on the marker, item not empty): the whole prefix (indent + number + delimiter + trailing spaces) is replaced by an `OrderedWidget` carrying `marker = orderedMatch[2] + orderedMatch[3]` (e.g. `"1."` or `"2)"`) and the depth. Its `toDOM()` emits `<span class="cm-ol-number">` with the marker text; a min-width keeps single/double digits aligned in the bullet gutter while letting bigger numbers grow rather than overlap the text. Because `LIST_GUTTER === LIST_STEP`, a `1.` number and a `•` bullet occupy the same column.
+
+**Raw** (`emptyActive` empty-item-with-caret, or `revealsPrefix` caret-within-marker): the same `cm-li` hanging indent is kept, the literal indent whitespace is hidden (when present), and the `1. ` marker span gets `cm-list-marker` (Monaspace) — the number shows in mono, not the serif body face.
+
+Enter/Backspace handling for ordered lists (inserting the next number, renumbering, outdenting an empty item) lives in `markdownKeymap` (registered before `defaultKeymap` in `Editor.tsx`), not in the live-preview decorator.
 
 ---
 
@@ -226,7 +239,7 @@ Task lines are processed **before** bullet lines, and `isTaskLine = true` guards
 
 **Strikethrough**: applied to task text (not the checkbox gutter) for `done` and `cancelled` via `cm-task-done` (`text-decoration:line-through; opacity:0.55`).
 
-Reveal is keyed on `revealsPrefix` over the prefix span (same as bullets): the caret must sit within the marker to edit it raw.
+Reveal is keyed on `revealsPrefix` over the prefix span (same as bullets), plus the `emptyActive` guard (`prefixEnd === line.to && onCursor`) for an empty checkbox line so its end-of-line caret stays anchored after the marker.
 
 **Marker not revealed**: the entire prefix (indent + `- ` + `[ ]` + trailing space) is replaced by a `CheckboxWidget` (a Solid `<TaskCheckbox>` component). The widget uses `updateDOM()` to drive status changes through a reactive signal, so status transitions animate via CSS transitions rather than snapping on widget recreate.
 
@@ -265,13 +278,34 @@ All inline tokens use the same `pushInline(deco, text, lineFrom, reveals, re, ma
 | `__bold__` | `/__([^_]+)__/g` | 2 | `cm-strong` |
 | `*italic*` | `/(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g` | 1 | `cm-em` (`font-style:italic`) |
 | `~~strike~~` | `/~~([^~]+)~~/g` | 2 | `cm-strike` (`text-decoration:line-through; opacity:0.7`) |
-| `` `code` `` | `/\`([^\`]+)\`/g` | 1 | `cm-inline-code` |
+| `` `code` `` | `/(`+)((?:(?!\1)[^\n])*?)\1/g` | run-length | `cm-inline-code` |
 
-**Inline code** (`cm-inline-code`): Monaspace Xenon, `calc(1em * var(--mono-scale, 0.85))` font-size, `rgba(140,140,140,0.18)` background, `3px` border-radius, `0 3px` padding. Note: `--mono-scale` (default 0.85) is an optical correction for monospace-next-to-serif so the inline code matches the surrounding body text size visually.
+**Inline code — CommonMark backtick-run parsing**: inline code does NOT go through `pushInline` (its fixed-length-fence helper can't handle variable fences). It is its own loop over `/(`+)((?:(?!\1)[^\n])*?)\1/g`. The leading `(`+)` captures a run of N backticks that **opens** the span; the inner `(?:(?!\1)[^\n])*?` matches any non-newline chars that are not the full N-backtick run; and the closing `\1` requires a run of **exactly** N backticks to close. So ``` ``a`b`` ``` (a 2-backtick fence) treats the inner single `` ` `` as literal content rather than a closer — a backtick can live *inside* a code span. The old single-backtick `/`([^`]+)`/` regex couldn't do this (it closed on the first inner backtick). The loop computes `fenceLen = m[1].length`, derives `innerStart`/`innerEnd` from it, skips empty spans (`innerEnd <= innerStart`), styles the inner with `cm-inline-code`, and — mirroring `pushInline`'s fence logic — hides both fences (`cm-hidden-syntax`) when not revealed or dims them (`cm-syntax-mark`, Monaspace) when the caret/selection touches the span (`revealsRange(s, end)`). It is kept in the **same inline-token position** (before links/wikilinks) so `[[x]]` inside a code span isn't styled as a wikilink. This mirrors `core/src/wikilinks.ts`'s `stripCode` + CommonMark's run-length code-span rule.
+
+**Inline code styling** (`cm-inline-code`): Monaspace Xenon, `calc(1em * var(--mono-scale, 0.85))` font-size, `rgba(140,140,140,0.18)` background, `3px` border-radius, `0 3px` padding. Note: `--mono-scale` (default 0.85) is an optical correction for monospace-next-to-serif so the inline code matches the surrounding body text size visually.
 
 **Note on italic**: The italic regex uses lookbehind/lookahead `(?<![*\w])\*(?!\*)` and `\*(?![*\w])` to avoid matching `**bold**` patterns as italic. There is no `_italic_` support (only `*`).
 
 **Wrap-on-selection** (input, not rendering): with text selected, typing one of `editor.wrapSelectionChars` (default `* _ ~ `` ` ``) surrounds the selection instead of replacing it — select a word and press `*` to get `*word*`, press again for `**word**`. The selection stays on the inner text so wraps nest. Brackets and quotes `( [ { ' " $` already do this via auto-close, so they're excluded from the default set; the feature is the `wrapSelection` extension (`app/src/editor/wrapSelection.ts`), gated by the `editor.wrapSelection` setting.
+
+### Cmd+B / Cmd+I emphasis toggles
+
+`app/src/editor/markdownFormat.ts` adds keyboard **toggles** for bold and italic, registered **only on note buffers** (the non-YAML branch in `Editor.tsx`) and at `Prec.high` so they beat any default `Mod-b`/`Mod-i` binding:
+
+```ts
+Prec.high(keymap.of([
+  { key: "Mod-b", run: toggleBold },
+  { key: "Mod-i", run: toggleItalic },
+]))
+```
+
+`toggleBold` = `toggleWrap("**")`, `toggleItalic` = `toggleWrap("*")`. Both are `StateCommand`s built by the same `toggleWrap(marker)` factory, which runs `state.changeByRange` so it handles every cursor and a multi-cursor selection uniformly. For each range, in order:
+
+1. **Markers just outside the selection** → unwrap. If `sliceDoc(from - m, from) === marker` *and* `sliceDoc(to, to + m) === marker` (the caret/selection sits *inside* an already-wrapped span, e.g. `**x**` with `x` selected), it deletes both flanking marker runs and shifts the selection left by `m`. So `**hi**` with `hi` (offsets 2–4) selected becomes `hi` with `0–2` selected.
+2. **Selection itself carries the markers** → strip them. If the selected text is `>= 2*m` long and both `startsWith`/`endsWith` the marker, it replaces the selection with the inner slice (`selected.slice(m, length - m)`) and contracts the selection by `2*m`. So selecting the whole `**hi**` toggles it back to `hi`.
+3. **Otherwise** → wrap. It inserts `marker + selected + marker`. An **empty** selection lands the caret *between* the two markers (`EditorSelection.cursor(from + m)`) so you can start typing inside — e.g. `Cmd+B` on empty text gives `****` with the caret between the pairs. A non-empty selection keeps the selection on the inner text (`range(from + m, to + m)`), matching the wrap-on-selection feel.
+
+The dispatch uses `userEvent: "input"` with `scrollIntoView: true`. Unlike wrap-on-selection (which only wraps and only fires on a literal keystroke of a wrap char), these are true toggles bound to the platform Cmd/Ctrl chord, so pressing the chord a second time on the same span removes the emphasis. Unit-tested in `markdownFormat.test.ts`.
 
 ---
 
@@ -493,8 +527,9 @@ Sanitization is applied in:
 | Multi-line `$$` math | `$$` fence lines | `MathBlockWidget` (KaTeX display mode) | Cursor inside block | Raw LaTeX source |
 | Blockquote | `^>\s?` | `cm-quote` border; `>` hidden | Cursor on line | `>` in `cm-syntax-mark` |
 | Heading H1–H6 | `^#{1,6}\s+` | Sized line; `#`s hidden | Cursor on line | `#`s in `cm-heading-mark` |
-| Bullet list | `^\s*([-*+])\s+` | `BulletWidget` glyph; hanging indent | Caret **within the marker** (`revealsPrefix`) | `- ` in `cm-list-marker` |
-| Task list | `^\s*([-*+])\s+\[…\]\s` | `CheckboxWidget`; hanging indent | Caret **within the marker** (`revealsPrefix`) | `- [ ]` in `cm-list-marker` |
+| Bullet list | `^\s*([-*+])\s+` | `BulletWidget` glyph (`•`/`◦` by depth parity); hanging indent | Caret **within the marker** (`revealsPrefix`) or empty item (`emptyActive`) | `- ` in `cm-list-marker` |
+| Ordered list | `^\s*\d+[.)]\s+` | `OrderedWidget` (number visible, `cm-ol-number`); same gutter as bullets | Caret **within the marker** (`revealsPrefix`) or empty item (`emptyActive`) | `1. ` in `cm-list-marker` |
+| Task list | `^\s*([-*+])\s+\[…\]\s` | `CheckboxWidget`; hanging indent | Caret **within the marker** (`revealsPrefix`) or empty item (`emptyActive`) | `- [ ]` in `cm-list-marker` |
 
 ---
 
@@ -507,7 +542,7 @@ Reveal is **per token** (`revealsRange`): only the token a selection range touch
 | `**bold**` / `__bold__` | Bold text; delimiters hidden | Delimiters in `cm-syntax-mark` |
 | `*italic*` | Italic text; delimiters hidden | Delimiter `*` in `cm-syntax-mark` |
 | `~~strike~~` | Strikethrough + 0.7 opacity; delimiters hidden | Delimiters in `cm-syntax-mark` |
-| `` `code` `` | Monaspace background box; backticks hidden | Backticks in `cm-syntax-mark` |
+| `` `code` `` | Monaspace background box; backtick run hidden | Backtick run in `cm-syntax-mark` (run-length-aware: N backticks open, only an equal run closes — a backtick can live inside) |
 | `[text](url)` | Accent-colored text; `[`, `](url)` hidden | `[` and `](url)` in `cm-syntax-mark` |
 | `https://…` bare URL | Accent-colored URL text; nothing hidden | Always shown as link, no hide/reveal |
 | `[[target\|alias]]` | Alias or basename in accent; brackets/path/heading hidden | `[[`, path, `#heading`, `]]` in `cm-syntax-mark` |
@@ -537,8 +572,21 @@ export const livePreview = [
 ];
 ```
 
-`mathBlock()` (from `mathBlock.ts`) is a separate export combined elsewhere in `Editor.tsx`. `codeHighlightStyle` is consumed via CodeMirror's `syntaxHighlighting()`.
+`mathBlock()` (from `mathBlock.ts`) is a separate export combined elsewhere in `Editor.tsx`. `codeHighlightStyle` is consumed via CodeMirror's `syntaxHighlighting()`. The `Mod-b`/`Mod-i` keymap (`markdownFormat.ts`) and the `datePropertyPicker` extension are added directly in `Editor.tsx`'s note branch, not inside the `livePreview` array.
 
 ---
 
-Source: `app/src/editor/livePreview.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`
+## Date / Time Property Picker
+
+`app/src/editor/datePicker.ts` (`datePropertyPicker(getSchema)`) opens a small calendar popover when the caret sits in the **value** of a note-frontmatter property whose registered type is `date` or `datetime` (the property type comes from the `properties:` section of `settings.yaml`, surfaced to the editor as the `propertyRegistry`). The popover offers a native `<input type="date">` (plus an `<input type="time">` for `datetime`), defaulting to today / now — the same native controls the calendar `EventModal` uses — above a list of relative-date quick options (today, tomorrow, in a week…, from `relativeDateOptions()` in `taskComplete.ts`).
+
+It is a `showTooltip` tooltip, **not** a CodeMirror autocomplete source, on purpose: the autocomplete popup closes the moment the editor loses focus, so a focusable native date input inside it would be dismissed the instant you click it to open the OS calendar. A `showTooltip` tooltip is state-driven (tied to the cursor/selection via a `StateField`, not focus), so the native input can take focus freely. The relative-date rows apply on `mousedown` + `preventDefault`, so clicking them never blurs the editor.
+
+- **State**: a `StateField<PickerState>` recomputes only when the caret or doc changed, calling the pure `findDateTarget(doc, head, schema)` (in `datePickerCore.ts`). It preserves tooltip identity (so the native inputs don't remount and lose focus) while the caret stays on the same property at the same anchor, rebuilding only when the value's start position shifts. A dismissed property's signature is held in `dismissed` so the picker stays closed until the caret leaves that property.
+- **Applying a value**: `composeDateValue(kind, dateStr, timeStr)` builds the value and it's spliced over the property's value range. A bare `date` closes the popover and returns focus to the editor; a `datetime` keeps the popover open after the date is set so the time can still be entered (and vice-versa).
+- **Keymap** (`Prec.highest`): `Escape` dismisses, `ArrowUp`/`ArrowDown` move the relative-option highlight, `Enter` picks the highlighted option (falling through to a normal Enter when nothing is highlighted).
+- Pure helpers (`findDateTarget` / `parseDateValue` / `composeDateValue` / `nowHHMM`) live in `datePickerCore.ts` and are unit-tested in `datePicker.test.ts`.
+
+---
+
+Source: `app/src/editor/livePreview.ts`, `app/src/editor/markdownFormat.ts`, `app/src/editor/listLayout.ts`, `app/src/editor/datePicker.ts`, `app/src/editor/datePickerCore.ts`, `app/src/editor/htmlPreview.ts`, `app/src/editor/mathBlock.ts`, `app/src/editor/latexHighlight.ts`, `app/src/editor/mathMacros.ts`, `app/src/editor/findPanel.ts`, `app/src/editor/codeHighlight.ts`, `app/src/editor/codeLineNumbers.ts`, `app/src/sanitizeHtml.ts`, `app/src/editor/katexLoader.ts`, `app/src/editor/urls.ts`, `app/src/editor/wikilink.ts`, `app/src/editor/frontmatterUtils.ts`, `app/src/editor/TaskCheckbox.tsx`, `app/src/editor/CodeHeader.tsx`, `app/src/editor/tableModel.ts`, `app/src/Editor.tsx`
