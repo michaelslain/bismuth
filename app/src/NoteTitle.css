@@ -68,6 +68,11 @@
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.015em;
+  /* Floor the height at one line (line-height 1.1 + the 0.22em descender padding) so the
+     JS autosize can never collapse the title to a clipped sliver if it measures scrollHeight
+     before layout/font are ready — e.g. when CodeMirror virtualizes this block widget back
+     into view on a long note (B3). autosize still grows it for multi-line titles. */
+  min-height: calc(1.1em + 0.22em);
   /* Bottom padding gives Lora's descenders (g/p/y) room inside the clip box.
      `overflow: hidden` clips to the PADDING edge, and line-height 1.1 is tighter
      than Lora's glyph box, so without this the tails get cut off. Top padding

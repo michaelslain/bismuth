@@ -54,6 +54,8 @@ test("a trailing space (no word) → no context", () => {
 test("relative dates resolve to ISO against the given today", () => {
   const opts = relativeDateOptions("2026-06-07");
   expect(opts[0]).toEqual({ label: "today", date: "2026-06-07" });
+  // yesterday resolves to today-1 (negative offset via addDaysISO); opts[0] stays 'today'.
+  expect(opts.find((o) => o.label === "yesterday")?.date).toBe("2026-06-06");
   expect(opts.find((o) => o.label === "tomorrow")?.date).toBe("2026-06-08");
   expect(opts.find((o) => o.label === "in a week")?.date).toBe("2026-06-14");
 });

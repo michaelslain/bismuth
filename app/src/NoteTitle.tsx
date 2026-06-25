@@ -13,6 +13,7 @@ import { createMemo, createSignal, createEffect } from "solid-js";
 import { api } from "./api";
 import { pushToast } from "./Toast";
 import { deriveTitle, renamedPath } from "./noteTitleOps";
+import { flushFocusedEditor } from "./editorRegistry";
 import "./NoteTitle.css";
 
 export function NoteTitle(props: { path: string }) {
@@ -33,7 +34,17 @@ export function NoteTitle(props: { path: string }) {
   // Local edit buffer. Kept in sync with the derived title whenever the path
   // (and thus the title) changes, so an external rename is reflected here too.
   const [draft, setDraft] = createSignal(title());
-  createEffect(() => { draft(); autosize(); });
+  createEffect(() => {
+    draft();
+    autosize();
+    // A fresh mount — including CodeMirror virtualizing this block widget OUT of view
+    // and back IN as you scroll a long note — can run autosize before the textarea has
+    // layout, so scrollHeight reads collapsed (~one descender) and the title is clipped to
+    // a sliver (B3). Re-measure after the next frame (layout settled) and once the serif
+    // font has loaded (it reflows the height). A CSS min-height floors it meanwhile.
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(autosize);
+    if (typeof document !== "undefined") (document as Document & { fonts?: FontFaceSet }).fonts?.ready?.then(autosize);
+  });
   createEffect(() => setDraft(title()));
 
   // setEditing-style guard: blur fires after Enter (which blurs the input), so
@@ -53,6 +64,10 @@ export function NoteTitle(props: { path: string }) {
     const from = props.path;
     const to = renamedPath(from, draft()); // null = empty/whitespace/unchanged
     if (!to) { revert(); return; }
+    // Persist any unsaved edits to the OLD path and AWAIT it BEFORE moving, so the move carries
+    // the complete buffer and the editor's path-change cleanup has nothing left to stray-write to
+    // the old path (which would re-create it as an empty orphan when you rename mid-autosave). B6.
+    await flushFocusedEditor();
     // Reuse the file-tree rename flow: retarget open tabs immediately, then
     // persist. On failure, revert the field and surface the error like the tree.
     window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));

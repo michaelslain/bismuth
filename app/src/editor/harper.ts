@@ -7,6 +7,7 @@
 // the shared editorContextMenu (editor/contextMenu.ts), so spelling, grammar, and
 // property menus all look identical. Hover tooltips are suppressed (tooltipFilter).
 import { linter, type Diagnostic, type Action } from "@codemirror/lint";
+import { syntaxTree } from "@codemirror/language";
 import type { EditorView } from "@codemirror/view";
 import type { Extension } from "@codemirror/state";
 import { WorkerLinter, Dialect, type Lint } from "harper.js";
@@ -214,6 +215,27 @@ function lintToDiagnostic(
   };
 }
 
+/** True iff [from, to) intersects a Markdown Blockquote node in the syntax tree.
+ *  Quoted text (`> …`) is someone else's prose — flagging its spelling/grammar is
+ *  noise — so we drop any diagnostic landing inside a blockquote (always on, no
+ *  setting). `iterate` enters nodes overlapping the range; returning false stops the
+ *  walk as soon as one Blockquote is seen. */
+function inBlockquote(view: EditorView, from: number, to: number): boolean {
+  let hit = false;
+  syntaxTree(view.state).iterate({
+    from,
+    to,
+    enter(n) {
+      if (n.name === "Blockquote") {
+        hit = true;
+        return false;
+      }
+      return undefined;
+    },
+  });
+  return hit;
+}
+
 export function harperSpellcheck(opts: HarperOpts): Extension {
   prewarmOnIdle();
   return linter(
@@ -227,7 +249,11 @@ export function harperSpellcheck(opts: HarperOpts): Extension {
       // Surface only the categories the user enabled — spelling and grammar
       // toggle independently (editor.spellcheck / editor.grammarCheck).
       const visible = lints.filter((l) => (isSpellingLint(l) ? opts.spelling : opts.grammar));
-      return visible.map((l) => lintToDiagnostic(view, bodyText, from, l));
+      // Drop diagnostics inside Markdown blockquotes (`> …`): quoted prose isn't the
+      // user's own writing, so spell/grammar squiggles there are noise (always on).
+      return visible
+        .map((l) => lintToDiagnostic(view, bodyText, from, l))
+        .filter((d) => !inBlockquote(view, d.from, d.to));
     },
     {
       delay: 400,

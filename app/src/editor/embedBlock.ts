@@ -236,11 +236,22 @@ class EmbedWidget extends WidgetType {
 // `![[target#frag|alias]]` OR `![alt](url "title")`.
 const EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
+/** Split a markdown image alt into its text + a trailing `|WIDTH` (the size we persist there,
+ *  since a markdown image has no `[[...|size]]` slot). `![logo|300](url)` → alt "logo", width 300. */
+function altSize(alt: string): { alt: string; width?: number } {
+  const pipe = alt.lastIndexOf("|");
+  if (pipe === -1) return { alt };
+  const m = /^(\d+)$/.exec(alt.slice(pipe + 1).trim());
+  return m ? { alt: alt.slice(0, pipe), width: +m[1] } : { alt };
+}
+
 /** Spec for a markdown `![](url)` image. A remote URL renders as-is; a bare vault path is
  *  classified by extension so `![](clip.mp4)` / `![](doc.pdf#page=2)` render as that medium
- *  (Obsidian parity), not a broken <img>. */
-function specForMarkdownImage(url: string, alt: string): EmbedSpec {
-  if (/^(https?:|data:|blob:)/i.test(url)) return { kind: "image", src: url, alt };
+ *  (Obsidian parity), not a broken <img>. A trailing `|WIDTH` in the alt sets the image width
+ *  (resize is persisted there — markdown images have no `[[...|size]]` slot). */
+function specForMarkdownImage(url: string, rawAlt: string): EmbedSpec {
+  const { alt, width } = altSize(rawAlt);
+  if (/^(https?:|data:|blob:)/i.test(url)) return { kind: "image", src: url, alt, width };
   const hash = url.indexOf("#");
   const target = hash === -1 ? url : url.slice(0, hash);
   const frag = hash === -1 ? undefined : url.slice(hash + 1);
@@ -248,12 +259,16 @@ function specForMarkdownImage(url: string, alt: string): EmbedSpec {
   const src = api.assetUrl(target);
   if (kind === "pdf") return { kind, src, page: frag };
   if (kind === "audio" || kind === "video") return { kind, src };
-  return { kind: "image", src, alt }; // image, or a non-media ext we can only try as an image
+  return { kind: "image", src, alt, width }; // image, or a non-media ext we can only try as an image
 }
 
 interface EmbedToken {
   from: number; to: number; lineFrom: number; lineTo: number; standalone: boolean; spec: EmbedSpec;
   wiki: boolean; // a `![[...]]` embed (resizable + size-persistable) vs a `![](url)` image
+  // For a standalone embed that sits AFTER a list marker / indentation (`- ![[img]]`), the
+  // leading prefix — non-empty only then. We replace just the embed token (not the whole line)
+  // so the bullet stays visible and the image renders under it (vs a tiny inline thumbnail).
+  listIndent: string;
 }
 
 /** Scan the document for embed tokens. Runs the whole-doc stripCode + regex pass; the
@@ -273,8 +288,20 @@ function scanEmbeds(state: EditorState): EmbedToken[] {
     const spec = wiki ? specForWikiEmbed(m[1]) : specForMarkdownImage(m[3], m[2]);
     if (!spec) continue;
     const line = doc.lineAt(from);
-    const standalone = doc.lineAt(to).number === line.number && line.text.trim() === m[0].trim();
-    tokens.push({ from, to, lineFrom: line.from, lineTo: line.to, standalone, spec, wiki });
+    // "Standalone" = the embed is the only content on its line — but allow a leading list
+    // marker / indentation (`- ![[img]]`, `    ![[img]]`) so an image inside a bullet renders
+    // as a block instead of a tiny inline thumbnail. `prefix` is that leading run; the embed is
+    // standalone when nothing but the prefix precedes it (and nothing follows). `listIndent` is
+    // recorded ONLY when there's a real prefix, so the plain case keeps a whole-line block.
+    const prefix = /^(\s*(?:[-*+]|\d+[.)])\s+|\s+)/.exec(line.text)?.[0] ?? "";
+    const sameLine = doc.lineAt(to).number === line.number;
+    const standalone = sameLine && (
+      line.text.trim() === m[0].trim() ||
+      line.text.slice(prefix.length).trim() === m[0].trim()
+    );
+    // A list/indent prefix only counts when the embed isn't already the whole trimmed line.
+    const listIndent = standalone && line.text.trim() !== m[0].trim() ? prefix : "";
+    tokens.push({ from, to, lineFrom: line.from, lineTo: line.to, standalone, spec, wiki, listIndent });
   }
   return tokens;
 }
@@ -287,9 +314,17 @@ function decorationsFor(tokens: EmbedToken[], head: number, ctx: EmbedCtx): Deco
   for (const tk of tokens) {
     if (tk.standalone) {
       if (head >= tk.lineFrom && head <= tk.lineTo) continue; // cursor on the line → reveal raw
-      // Only standalone `![[...]]` media gets a resize handle (the size persists as `|WxH`).
-      const resizable = tk.wiki && RESIZABLE_KINDS.has(tk.spec.kind);
-      decos.push(Decoration.replace({ widget: new EmbedWidget(tk.spec, false, resizable, ctx), block: true }).range(tk.lineFrom, tk.lineTo));
+      // Standalone media gets a resize handle regardless of wiki/markdown form (the size persists
+      // as `|W` — in the alias for wiki embeds, in the alt for markdown images; see commitEmbedSize).
+      const resizable = RESIZABLE_KINDS.has(tk.spec.kind);
+      if (tk.listIndent) {
+        // Inside a bullet: replace ONLY the embed token (not the whole line) so the list marker
+        // stays visible and the image sits under it. A NON-block replace keeps the marker on the
+        // same visual line; the image (a block-ish element) still flows below within the wrapper.
+        decos.push(Decoration.replace({ widget: new EmbedWidget(tk.spec, false, resizable, ctx), block: false }).range(tk.from, tk.to));
+      } else {
+        decos.push(Decoration.replace({ widget: new EmbedWidget(tk.spec, false, resizable, ctx), block: true }).range(tk.lineFrom, tk.lineTo));
+      }
     } else {
       if (head >= tk.from && head <= tk.to) continue; // cursor in the token → reveal raw
       decos.push(Decoration.replace({ widget: new EmbedWidget(tk.spec, true, false, ctx), block: false }).range(tk.from, tk.to));
@@ -298,9 +333,11 @@ function decorationsFor(tokens: EmbedToken[], head: number, ctx: EmbedCtx): Deco
   return Decoration.set(decos, true);
 }
 
-/** Write a drag-resize back into the `![[file|size]]` source at the widget's doc position,
- *  so the size survives reload (Obsidian-style). Re-finds the embed token at commit time
- *  (via posAtDOM) so it's robust to edits above the widget. */
+/** Write a drag-resize back into the embed source at the widget's doc position, so the size
+ *  survives reload (Obsidian-style). Re-finds the embed token at commit time (via posAtDOM) so
+ *  it's robust to edits above the widget. Wiki embeds persist as `![[file|size]]`; a markdown
+ *  `![alt](url)` image has no size slot, so the size is carried in the alt as `![alt|WIDTH](url)`
+ *  (only a bare width — a `WxH` from the aspect-resizer collapses to its width for round-trip). */
 function commitEmbedSize(view: EditorView, dom: HTMLElement, size: string): void {
   let pos: number;
   try { pos = view.posAtDOM(dom); } catch { return; }
@@ -312,12 +349,32 @@ function commitEmbedSize(view: EditorView, dom: HTMLElement, size: string): void
     if (pos >= from && pos <= to) { hit = { from, to, inner: m[1] }; break; }
     if (!hit) hit = { from, to, inner: m[1] }; // fallback: first embed on the line
   }
-  if (!hit) return;
-  const pipe = hit.inner.indexOf("|");
-  const beforePipe = pipe === -1 ? hit.inner : hit.inner.slice(0, pipe); // keep target + #frag
-  const replacement = `![[${beforePipe}|${size}]]`;
-  if (view.state.sliceDoc(hit.from, hit.to) === replacement) return; // already this size
-  view.dispatch({ changes: { from: hit.from, to: hit.to, insert: replacement } });
+  if (hit) {
+    const pipe = hit.inner.indexOf("|");
+    const beforePipe = pipe === -1 ? hit.inner : hit.inner.slice(0, pipe); // keep target + #frag
+    const replacement = `![[${beforePipe}|${size}]]`;
+    if (view.state.sliceDoc(hit.from, hit.to) === replacement) return; // already this size
+    view.dispatch({ changes: { from: hit.from, to: hit.to, insert: replacement } });
+    return;
+  }
+  // No wiki embed on the line → a markdown `![alt](url)` image. Persist the width in the alt
+  // (the only place a markdown image can carry it): drop any existing `|width`, then re-append
+  // the new bare width. `WxH` from a freer resizer collapses to its width for the round-trip.
+  const width = size.split("x")[0];
+  let mhit: { from: number; to: number; alt: string; url: string } | null = null;
+  for (const m of line.text.matchAll(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
+    const from = line.from + (m.index ?? 0);
+    const to = from + m[0].length;
+    if (pos >= from && pos <= to) { mhit = { from, to, alt: m[1], url: m[2] }; break; }
+    if (!mhit) mhit = { from, to, alt: m[1], url: m[2] }; // fallback: first image on the line
+  }
+  if (!mhit) return;
+  const basePipe = mhit.alt.lastIndexOf("|");
+  const baseAlt = basePipe !== -1 && /^\d+$/.test(mhit.alt.slice(basePipe + 1).trim())
+    ? mhit.alt.slice(0, basePipe) : mhit.alt;
+  const replacement = `![${baseAlt}|${width}](${mhit.url})`;
+  if (view.state.sliceDoc(mhit.from, mhit.to) === replacement) return; // already this size
+  view.dispatch({ changes: { from: mhit.from, to: mhit.to, insert: replacement } });
 }
 
 const embedTheme = EditorView.theme({

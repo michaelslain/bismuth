@@ -67,6 +67,9 @@ const RECUR_RULES = ["every day", "every week", "every weekday", "every month", 
 
 const DATE_OFFSETS: Array<{ label: string; days: number }> = [
   { label: "today", days: 0 },
+  // "yesterday" sits right after "today" so opts[0] stays 'today' (asserted in tests);
+  // negative offsets resolve via addDaysISO just like the positive ones (relativeDateOptions).
+  { label: "yesterday", days: -1 },
   { label: "tomorrow", days: 1 },
   { label: "in 2 days", days: 2 },
   { label: "in 3 days", days: 3 },

@@ -16,6 +16,13 @@ import { SolidWidget, mountSolid } from "./solidWidget";
 import { NoteTitle } from "../NoteTitle";
 
 class NoteTitleWidget extends SolidWidget {
+  // Stashed so destroy() can tear it down. The widget's drawn height changes after
+  // mount — a long title wraps to multiple lines, and the Lora serif font loads
+  // asynchronously and reflows — but CodeMirror caches each block widget's height
+  // in its height map at mount time. Without telling CM to re-measure, that stale
+  // height leaves the title overlapping/clipping the body text on scroll (B3).
+  private resizeObs?: ResizeObserver;
+
   constructor(private readonly path: string) {
     super("oa-note-title");
   }
@@ -26,6 +33,26 @@ class NoteTitleWidget extends SolidWidget {
 
   protected renderSolid(container: HTMLElement): void {
     mountSolid(container, () => NoteTitle({ path: this.path }));
+  }
+
+  toDOM(view: EditorView): HTMLElement {
+    const dom = super.toDOM(view);
+    // Re-measure whenever the title's box changes height (wrap on long titles,
+    // autosize) so CodeMirror's height map stays in sync with the real layout.
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObs = new ResizeObserver(() => view.requestMeasure());
+      this.resizeObs.observe(dom);
+    }
+    // The Lora serif loads async; once ready the title reflows to a taller box, so
+    // ask CM to re-measure after the font settles too.
+    (document as any).fonts?.ready?.then(() => view.requestMeasure());
+    return dom;
+  }
+
+  destroy(dom: HTMLElement): void {
+    this.resizeObs?.disconnect();
+    this.resizeObs = undefined;
+    super.destroy(dom);
   }
 }
 

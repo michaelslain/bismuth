@@ -11,6 +11,7 @@ import type { TreeEntry } from "../../core/src/graph";
 import { Icon } from "./icons/Icon";
 import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
+import { primeNoteCache } from "./noteCache";
 
 type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
 
@@ -252,6 +253,10 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     setEditing(path);
     try {
       await trackPending(() => api.create(path, fsKind));
+      // Seed the cache with the freshly-created empty body so the first open is an
+      // instant cache hit instead of a GET /file round-trip (which would briefly
+      // flash a spinner). Dirs have no body; only prime real files.
+      if (fsKind === "file") primeNoteCache(path, "");
     } catch (e) {
       setEditing(null);
       await refetch();
@@ -384,6 +389,13 @@ function EditableLabel(props: {
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
+  // The input shows the extension-STRIPPED stem (like Obsidian hides `.md`), so the
+  // user never sees or has to preserve the `.md`/`.yaml`/`.yml`. The extension is
+  // re-applied on commit. Dirs (and any name without a hidden ext) have ext="" and
+  // stem === initial. `.slice` (not `.replace`) so a multi-dot name like
+  // `notes.v2.md` strips only the trailing `.md`, leaving `notes.v2`.
+  const ext = props.isDir ? "" : (initial.match(STRIP_EXT)?.[0] ?? "");
+  const stem = ext ? initial.slice(0, initial.length - ext.length) : initial;
   // setEditing(null) unmounts the input, which fires blur → a second commit.
   // `done` makes the rename (or cancel) run exactly once.
   let done = false;
@@ -393,10 +405,10 @@ function EditableLabel(props: {
     done = true;
     const raw = inputRef?.value.trim() ?? "";
     props.setEditing(null);
-    if (!raw || raw === initial) return; // no-op
+    if (!raw || raw === stem) return; // no-op (input holds the stem, not the full name)
     // Re-apply the original hidden extension (.md/.yaml/.yml) if the user dropped it.
-    const ext = props.isDir ? "" : (initial.match(STRIP_EXT)?.[0] ?? "");
     const newName = ext && !raw.toLowerCase().endsWith(ext.toLowerCase()) ? `${raw}${ext}` : raw;
+    if (newName === initial) return; // typed the exact current name back (e.g. with the ext) → silent no-op, not an EEXIST error
     const from = props.node.path;
     const to = joinPath(parentOf(from), newName);
     props.optimisticRename(from, to); // instant; reverted via refresh() on failure
@@ -420,14 +432,13 @@ function EditableLabel(props: {
     <input
       ref={(el) => {
         inputRef = el;
-        // Select the editable stem (filename without its extension) so typing replaces it.
+        // The value is already the extension-stripped stem, so just select it all.
         queueMicrotask(() => {
           el.focus();
-          const dot = props.isDir ? -1 : el.value.search(STRIP_EXT);
-          el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
+          el.select();
         });
       }}
-      value={initial}
+      value={stem}
       class="ft-edit-input"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {

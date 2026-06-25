@@ -8,6 +8,10 @@ import { requestRelint } from "./editor/relint";
 
 let focusedView: EditorView | null = null;
 const liveViews = new Set<EditorView>();
+// Per-view "flush my pending autosave NOW (and await it)" hooks. A rename (NoteTitle / file
+// tree) must persist unsaved edits to the OLD path BEFORE moving, or the editor's path-change
+// cleanup stray-writes the buffer to the old path AFTER the move, re-creating it as an orphan (B6).
+const flushers = new Map<EditorView, () => Promise<void>>();
 
 /** Track a newly-created view for relintAllEditors. Does NOT change the focused view
  *  — focus tracking (for insertIntoFocusedEditor) stays focus-event-driven below, so a
@@ -24,6 +28,22 @@ export function registerEditor(view: EditorView): void {
 export function unregisterEditor(view: EditorView): void {
   if (focusedView === view) focusedView = null;
   liveViews.delete(view);
+  flushers.delete(view);
+}
+
+/** Register a view's awaitable autosave-flush (called by the Editor). */
+export function setEditorFlush(view: EditorView, fn: () => Promise<void>): void {
+  flushers.set(view, fn);
+}
+
+/** Flush the last-focused editor's pending save and await it. Used by the rename flows so the
+ *  move carries the complete buffer and nothing strays back to the old path afterward (B6).
+ *  No-op when the active pane isn't a note (no focused view) or it has nothing pending. */
+export async function flushFocusedEditor(): Promise<void> {
+  const view = focusedView;
+  if (!view) return;
+  const f = flushers.get(view);
+  if (f) await f();
 }
 
 /** Force a lint re-run on every open editor. Used after a change that affects

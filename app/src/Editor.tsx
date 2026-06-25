@@ -1,7 +1,7 @@
 // app/src/Editor.tsx
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Annotation, Prec } from "@codemirror/state";
+import { EditorState, Annotation, Prec, type Line } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
@@ -20,8 +20,8 @@ import { notePathFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
 import { latexHighlightTheme } from "./editor/latexHighlight";
-import { queryBlock } from "./editor/queryBlock";
-import { taskFold } from "./editor/taskFold";
+import { queryBlock, queryScrollPinActive } from "./editor/queryBlock";
+import { taskFold, reorderAroundLine } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
 import { vaultCompletion } from "./editor/autocomplete";
 import { completionTheme } from "./editor/completionDisplay";
@@ -45,7 +45,7 @@ import { matchesKeybinding } from "./keybindings";
 import { findExtension } from "./editor/findPanel";
 import { wrapSelection } from "./editor/wrapSelection";
 import { pushToast } from "./Toast";
-import { registerEditor, trackEditor, unregisterEditor } from "./editorRegistry";
+import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, loadScroll } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
 import "./Editor.css";
@@ -156,8 +156,20 @@ const MIME_EXT: Record<string, string> = {
 };
 const extFromMime = (mime: string): string => MIME_EXT[mime] ?? (mime.split("/")[1] || "bin");
 
-const isEmbeddableFile = (f: File): boolean =>
-  /^(image|audio|video)\//.test(f.type) || f.type === "application/pdf";
+// Media extensions we accept by NAME when the dropped file has no MIME type. Some platforms
+// hand a dropped file an empty `File.type` (and a clipboard/synthetic blob often has none), so
+// a MIME-only test would silently reject a perfectly droppable image.
+const EMBEDDABLE_EXT = new Set([
+  "png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico", "pdf",
+  "mp3", "wav", "ogg", "m4a", "mp4", "webm", "mov",
+]);
+
+const isEmbeddableFile = (f: File): boolean => {
+  if (/^(image|audio|video)\//.test(f.type) || f.type === "application/pdf") return true;
+  // Extension fallback for empty/unknown MIME (e.g. some OS drag sources).
+  const dot = f.name.lastIndexOf(".");
+  return dot !== -1 && EMBEDDABLE_EXT.has(f.name.slice(dot + 1).toLowerCase());
+};
 
 /** Vault-relative destination for a new attachment, honoring settings.attachments.folder
  *  ("" = vault root, "." = the current note's folder). */
@@ -181,10 +193,44 @@ function pastedImageName(ext: string): string {
   return `${tmpl.replace("{timestamp}", stamp)}.${ext}`;
 }
 
-/** Replace the current selection with `text`, leaving the cursor just after it. */
-function insertAtCursor(view: EditorView, text: string): void {
+/** Insert an `![[..]]` / `![](..)` embed on its OWN line and drop the caret on the new line
+ *  BELOW it. embedBlock reveals raw source while the caret is on the embed's line, so leaving
+ *  the caret on the embed (the default for a plain insert) flashes the raw `![[name]]` until you
+ *  click away (B15). Inserting a trailing newline + parking the caret past it renders the widget
+ *  immediately, and keeping the embed alone on its line keeps it standalone (→ resizable, B16/B18).
+ *  A leading newline is prepended when the caret isn't already at the start of an empty line. */
+function insertEmbedStandalone(view: EditorView, embed: string): void {
   const { from, to } = view.state.selection.main;
-  view.dispatch({ changes: { from, to, insert: text }, selection: { anchor: from + text.length } });
+  const line = view.state.doc.lineAt(from);
+  // Need a fresh line for the embed unless the caret is at the very start of an empty line.
+  const atLineStart = from === line.from;
+  const lineEmptyBefore = view.state.sliceDoc(line.from, from).trim() === "";
+  const lead = atLineStart && lineEmptyBefore ? "" : "\n";
+  const insert = lead + embed + "\n";
+  view.dispatch({ changes: { from, to, insert }, selection: { anchor: from + insert.length } });
+}
+
+/** Where the caret should land after a task-block reorder replaces [ch.from, ch.to] with
+ *  `ch.insert`: on the SAME logical line it was on, at the same column. reorderTaskBlocks is a
+ *  STABLE partition (open tasks keep order, then resolved keep order), so the caret's line text
+ *  reappears in the reordered block — we match it by text + occurrence index to handle duplicate
+ *  lines. Without this, CodeMirror maps an inside-block caret to the block start, yanking it away
+ *  from the line the user just typed/checked (B12). */
+function caretAfterReorder(state: EditorState, head: number, caretLine: Line, ch: { from: number; to: number; insert: string }): number {
+  if (head < ch.from || head > ch.to) return head; // caret outside the reordered block — CM maps it fine
+  const col = head - caretLine.from;
+  const origLines = state.doc.sliceString(ch.from, ch.to).split("\n");
+  const caretIdx = caretLine.number - state.doc.lineAt(ch.from).number;
+  // Which occurrence of this line's text is the caret on (1-based), counting within the block.
+  let occ = 0;
+  for (let i = 0; i <= caretIdx && i < origLines.length; i++) if (origLines[i] === caretLine.text) occ++;
+  const newLines = ch.insert.split("\n");
+  let seen = 0, newIdx = -1;
+  for (let i = 0; i < newLines.length; i++) if (newLines[i] === caretLine.text && ++seen === occ) { newIdx = i; break; }
+  if (newIdx < 0) return ch.from; // shouldn't happen for a stable partition; fall back to block start
+  let off = 0;
+  for (let i = 0; i < newIdx; i++) off += newLines[i].length + 1; // +1 for each rejoined "\n"
+  return ch.from + off + Math.min(col, newLines[newIdx].length);
 }
 
 /** Read a file's bytes, upload into the attachment folder, then insert `![[basename]]` at
@@ -194,7 +240,9 @@ async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, n
   try {
     const bytes = await file.arrayBuffer();
     const finalPath = await api.uploadAsset(attachmentTarget(fileName, notePath), bytes);
-    insertAtCursor(view, `![[${finalPath.split("/").pop() ?? fileName}]]`);
+    // Insert on its own line with the caret BELOW so the embed renders immediately (no raw flash,
+    // B15) and stays standalone (→ resizable, B16/B18).
+    insertEmbedStandalone(view, `![[${finalPath.split("/").pop() ?? fileName}]]`);
   } catch (e) {
     pushToast(`Couldn't save attachment: ${(e as Error).message}`);
   }
@@ -205,6 +253,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   let wrapper!: HTMLDivElement;
   let view: EditorView | undefined;
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  // Debounce timer for the "sink a checked task below a newly-typed open one" reorder (B12).
+  // Separate from the save timer so reordering and saving stay independent.
+  let reorderTimer: ReturnType<typeof setTimeout> | undefined;
   // The text of our most recent write to the current buffer. Used to recognize the
   // SSE echo of our own save even after we've typed further, so we don't reload the
   // (now-stale) on-disk content over in-flight edits. Reset when the buffer switches.
@@ -260,6 +311,18 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     }
   };
 
+  // Awaitable flush, for the rename flows: callers (NoteTitle / file-tree rename) await this so the
+  // current buffer is on disk at the OLD path BEFORE the move runs — otherwise the path-change
+  // cleanup below would write it to the old path AFTER the move and re-create it as an orphan (B6).
+  const flushSaveAsync = async (): Promise<void> => {
+    if (!pendingSave || !view || !activePath) return;
+    clearTimeout(saveTimer);
+    const text = view.state.doc.toString();
+    pendingSave = false;
+    lastSavedText = text;
+    await save(activePath, text);
+  };
+
   const onBeforeUnload = (): void => flushSave(true);
   if (typeof window !== "undefined") window.addEventListener("beforeunload", onBeforeUnload);
   onCleanup(() => { if (typeof window !== "undefined") window.removeEventListener("beforeunload", onBeforeUnload); });
@@ -306,6 +369,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     onCleanup(() => {
       if (view && path) saveScroll(path, view.scrollDOM.scrollTop);
       flushSave(false);
+      clearTimeout(reorderTimer); // drop any pending B12 reorder for the buffer being torn down
       if (view) unregisterEditor(view);
       view?.destroy();
     });
@@ -339,6 +403,32 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       if (!u.docChanged) return;
       if (u.transactions.some((tr) => tr.annotation(ExternalReload))) return;
       pendingSave = true; // local change not yet on disk → block reconcile-revert
+
+      // B12: sink a checked task below a newly-typed UNCHECKED one (reorder-on-type, mirroring
+      // what the toggle path already does via the backend). DEBOUNCED so it only runs once the
+      // user stops typing. reorderAroundLine replaces the caret's WHOLE task block, so we must
+      // re-anchor the caret onto its moved line ourselves (caretAfterReorder) — CodeMirror's
+      // default mapping would collapse an inside-block caret to the block start, yanking it away
+      // from where the user just typed. We deliberately do NOT annotate ExternalReload: the
+      // reorder is a real content change that must be persisted, so we let it re-enter this
+      // listener (which reschedules the save). The re-entry is a no-op for reordering — the block
+      // is now sorted, so reorderAroundLine returns null — so there's no loop. Notes only.
+      if (view && !path.endsWith(".yaml") && !path.endsWith(".yml")) {
+        clearTimeout(reorderTimer);
+        reorderTimer = setTimeout(() => {
+          if (!view) return;
+          const state = view.state;
+          const caretLine = state.doc.lineAt(state.selection.main.head);
+          const spec = reorderAroundLine(state, caretLine.number); // null when already sorted
+          if (!spec) return;
+          const ch = spec.changes as { from: number; to: number; insert: string };
+          const newHead = caretAfterReorder(state, state.selection.main.head, caretLine, ch);
+          queueMicrotask(() => {
+            if (!view) return;
+            view.dispatch({ changes: ch, selection: { anchor: newHead } });
+          });
+        }, 400);
+      }
       clearTimeout(saveTimer);
       saveTimer = setTimeout(async () => {
         // Auto-format on save: enforce one blank line between frontmatter and body. Apply
@@ -357,7 +447,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         await save(path, text);
         // Clear only if nothing was typed during the write — else a newer edit is pending.
         if (view && view.state.doc.toString() === text) pendingSave = false;
-      }, settings.editor.autoSaveDelay);
+      // First edit of a buffer that's never been saved this session (lastSavedText === undefined):
+      // use a short floor so a brand-new note persists fast instead of waiting the full debounce
+      // (B1 — new-file first edits felt lost for ~800ms). Subsequent edits use the normal delay.
+      }, lastSavedText === undefined ? Math.min(settings.editor.autoSaveDelay, 150) : settings.editor.autoSaveDelay);
     });
 
     // Shared base for every buffer: editing, theme, gutters, autosave.
@@ -532,9 +625,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               }
               return false;
             },
-            // Allow dropping files onto the editor (the default would navigate away).
+            // Allow dropping files onto the editor (the default would navigate away). Accept both
+            // the `Files` type flag AND a non-empty `items` list — some drag sources populate
+            // `items` but not `types` during dragover, which made image drops silently fall through.
             dragover: (e) => {
-              if ((e as DragEvent).dataTransfer?.types?.includes("Files")) e.preventDefault();
+              const dt = (e as DragEvent).dataTransfer;
+              if (dt?.types?.includes("Files") || dt?.items?.length) e.preventDefault();
               return false;
             },
             // Drop an image/audio/video/PDF from outside → copy into the attachment folder
@@ -542,16 +638,20 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             // `![[name]]` reference instead (no copy). Move/reference-by-absolute-path are
             // desktop-only refinements (the browser can't read a dropped file's real path).
             drop: (e, view) => {
+              // preventDefault FIRST, before any early return, so the browser never navigates to
+              // a dropped file even when we end up not embedding it.
+              e.preventDefault();
               const dt = (e as DragEvent).dataTransfer;
               const files = dt ? [...dt.files].filter(isEmbeddableFile) : [];
               if (files.length === 0) return false; // not a media drop — let CM handle text
-              e.preventDefault();
               const pos = view.posAtCoords({ x: (e as DragEvent).clientX, y: (e as DragEvent).clientY });
               if (pos != null) view.dispatch({ selection: { anchor: pos } });
               const reference = (e as DragEvent).altKey || settings.attachments.onDrop === "reference";
               for (const f of files) {
                 if (reference) {
-                  insertAtCursor(view, `![[${f.name}]]`); // best-effort; resolves only if already in-vault
+                  // Off-line standalone insert (like paste) so it renders immediately + resizable
+                  // (B15/B16/B18); best-effort — resolves only if the file is already in-vault.
+                  insertEmbedStandalone(view, `![[${f.name}]]`);
                 } else {
                   void uploadAndInsert(view, f, f.name, path);
                 }
@@ -613,6 +713,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // edit can re-lint all open notes — without touching the last-focused view that
     // the template picker targets. unregisterEditor runs in the onCleanup above.
     trackEditor(view);
+    setEditorFlush(view, flushSaveAsync); // so a rename can persist this buffer before moving (B6)
 
     // Restore the reader's scroll position for this buffer (saved when its previous
     // view was torn down on a tab switch). A plain scrollTop set right after creation
@@ -711,13 +812,18 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // heights), and that re-measure can clobber scrollTop back to 0 — the "scrolls
     // to the top" glitch. Re-assert the position inside requestMeasure (after CM's
     // own layout pass) so it sticks.
-    view.scrollDOM.scrollTop = scrollTop;
-    view.requestMeasure({
-      read: () => null,
-      write: () => {
-        if (view && view.scrollDOM.scrollTop !== scrollTop) view.scrollDOM.scrollTop = scrollTop;
-      },
-    });
+    // Back off if a query-block task-toggle pin is currently re-asserting scrollTop (B24): both
+    // want to own the scroll during the same toggle round-trip, and fighting it causes a flicker.
+    // The query-block pin already holds the user's intended position, so let it win this window.
+    if (!queryScrollPinActive) {
+      view.scrollDOM.scrollTop = scrollTop;
+      view.requestMeasure({
+        read: () => null,
+        write: () => {
+          if (view && !queryScrollPinActive && view.scrollDOM.scrollTop !== scrollTop) view.scrollDOM.scrollTop = scrollTop;
+        },
+      });
+    }
     lastIgnoredVersion = change.version;
   });
 

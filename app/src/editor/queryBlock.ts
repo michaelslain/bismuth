@@ -182,6 +182,12 @@ const collapseOnClickOutside = EditorView.domEventHandlers({
 // A *native capture-phase* listener on scrollDOM is required (not EditorView.domEventHandlers):
 // the widget's ignoreEvent() returns true, so CodeMirror skips its own handlers for events that
 // originate inside the embedded view — a native listener fires regardless.
+// Shared pin-ownership flag so the Editor's external-reload scroll-repin and this query-block
+// pin don't fight over scrollTop during the same toggle round-trip. Whoever starts a pin first
+// owns it for its window; the other backs off (it reads this flag) instead of writing a stale
+// position. Module-level (one editor is focused at a time), reset when the window ends.
+export let queryScrollPinActive = false;
+
 const preserveScrollOnTaskToggle = ViewPlugin.fromClass(
   class {
     private onDown: (e: MouseEvent) => void;
@@ -195,17 +201,27 @@ const preserveScrollOnTaskToggle = ViewPlugin.fromClass(
         // Re-assert via setInterval (NOT requestAnimationFrame): the reset is a layout-phase
         // scroll clamp that lands AFTER rAF callbacks run, so an rAF correction gets overwritten
         // in the same frame. A timer fires after layout, so its write wins. The step only
-        // reads/writes scrollTop (no layout-forcing reads), so it can't thrash. ~720ms covers the
-        // toggle round-trip (write → SSE → re-resolve); corrections are sub-frame so no flicker.
-        let ticks = 0;
+        // reads/writes scrollTop (no layout-forcing reads), so it can't thrash. The window covers
+        // the toggle round-trip (write → SSE → re-resolve); corrections are sub-frame so no flicker.
+        //
+        // Hardened (B24): instead of a fixed ~720ms, keep correcting until scrollTop has MATCHED
+        // the target for several consecutive ticks (the reset has settled) — but cap at ~1500ms so
+        // a never-settling case can't pin forever. This also covers keyboard/programmatic toggles,
+        // whose reset can land later than a mouse toggle's.
+        queryScrollPinActive = true;
+        let ticks = 0, stable = 0;
         const stop = () => {
           window.clearInterval(id);
+          queryScrollPinActive = false;
           sc.removeEventListener("wheel", stop);
           sc.removeEventListener("touchmove", stop);
         };
         const id = window.setInterval(() => {
-          if (Math.abs(sc.scrollTop - want) > 1) sc.scrollTop = want;
-          if (++ticks >= 36) stop(); // ~720ms at 20ms steps
+          if (Math.abs(sc.scrollTop - want) > 1) { sc.scrollTop = want; stable = 0; }
+          else stable++;
+          // Stop early once it's held for ~6 ticks (120ms) after the round-trip likely fired,
+          // or at the hard cap (~1500ms at 20ms steps), whichever comes first.
+          if ((stable >= 6 && ticks >= 36) || ++ticks >= 75) stop();
         }, 20);
         // If the user starts scrolling within that window, stop re-asserting — don't fight them.
         sc.addEventListener("wheel", stop, { passive: true });

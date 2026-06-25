@@ -7,7 +7,7 @@
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { renderMath, onMathReady } from "./katexLoader";
-import { latexTokenDecorations, texDelim } from "./latexHighlight";
+import { latexTokenDecorations, texDelim, mathSrcMark } from "./latexHighlight";
 
 /** Matches a line whose entire trimmed content is exactly `$$`. */
 const MATH_FENCE = /^\s*\$\$\s*$/;
@@ -96,9 +96,16 @@ function build(state: EditorState): DecorationSet {
           } else {
             // Editing the block → no widget, so highlight the LaTeX on each inner line and
             // dim the $$ fences (mirrors livePreview's cursor-line treatment of inline math).
+            // Cover every revealed line (fences + inner) in the mono font (mathSrcMark) so
+            // the gaps between colored tokens read as code, not the body serif — layered
+            // under the color/delim marks (font outer, color inner). Guard empty lines:
+            // a zero-length range (from === to) is an invalid mark.
             decos.push(texDelim.range(line.from, line.to), texDelim.range(jLine.from, jLine.to));
+            if (line.to > line.from) decos.push(mathSrcMark.range(line.from, line.to));
+            if (jLine.to > jLine.from) decos.push(mathSrcMark.range(jLine.from, jLine.to));
             for (let k = i + 1; k < j; k++) {
               const kl = doc.line(k);
+              if (kl.to > kl.from) decos.push(mathSrcMark.range(kl.from, kl.to));
               for (const d of latexTokenDecorations(kl.from, kl.text)) decos.push(d);
             }
           }
