@@ -109,11 +109,32 @@ function tagsToSpans(src: string): string {
   return src.replace(TAG_RE, (_m, pre: string, tag: string) => `${pre}<span class="oa-tag">#${escapeHtml(tag)}</span>`);
 }
 
+// `wikilinksToAnchors`/`tagsToSpans` run on the RAW source before marked, so on their own they'd
+// also rewrite `[[x]]`/`#y` that sit INSIDE a code span or fenced block — where they're literal —
+// and the injected anchor/span HTML would then leak as visible text inside the `<code>`. Mask code
+// regions (fenced ```/~~~ blocks + inline `…` spans) with null-delimited placeholders that can't
+// match the wikilink/tag regexes, convert the rest, then restore the code verbatim before marked
+// parses it. Fenced alternatives come first so a ``` block isn't chewed up by the inline rule.
+const CODE_MASK_RE = /```[\s\S]*?```|~~~[\s\S]*?~~~|`+[^`\n]*?`+/g;
+function maskCode(src: string): { masked: string; codes: string[] } {
+  const codes: string[] = [];
+  const masked = src.replace(CODE_MASK_RE, (m) => `\u0000${codes.push(m) - 1}\u0000`);
+  return { masked, codes };
+}
+function unmaskCode(s: string, codes: string[]): string {
+  return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? "");
+}
+/** Resolve `[[wikilinks]]` + `#tags` on the source while leaving code spans/fences untouched. */
+function linkifyOutsideCode(src: string): string {
+  const { masked, codes } = maskCode(src);
+  return unmaskCode(tagsToSpans(wikilinksToAnchors(masked)), codes);
+}
+
 /** Render a NOTE body to sanitized HTML — like `renderMarkdown`, but also resolves
  *  Obsidian `[[wikilinks]]` into clickable anchors and styles `#tags`. Use for any surface
  *  that renders a vault note's own body (cards, transclusion) rather than arbitrary markdown. */
 export function renderNoteBody(src: string): string {
-  return renderMarkdown(tagsToSpans(wikilinksToAnchors(src ?? "")));
+  return renderMarkdown(linkifyOutsideCode(src ?? ""));
 }
 
 /** Render a single cell/line of markdown to sanitized INLINE HTML — emphasis, code, inline

@@ -58,6 +58,8 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
     doc: "Move focus to the pane above." },
   { id: "focus-pane-down", label: "Focus pane down", default: "Mod+Alt+ArrowDown",
     doc: "Move focus to the pane below." },
+  { id: "new-claude-chat", label: "New Claude chat", default: "Mod+Shift+C",
+    doc: "Open a new Claude Code chat session in its own tab." },
   { id: "insert-template", label: "Insert template", default: "Alt+T",
     doc: "Open the template-insertion palette (ignored while typing in a form field)." },
   { id: "toggle-sidebar", label: "Toggle sidebar", default: "Alt+S",

@@ -1,0 +1,57 @@
+/* app/src/bases/QueryBuilder.css
+ *
+ * Query-builder-specific layout on top of the shared `.evm-modal` chrome
+ * (header/body/footer/sections/grid/fields/inputs/buttons from Calendar.css).
+ * Only the bits the calendar modals don't already cover: a wider panel, the
+ * filter-row grid, the All/Any connective line, and the generated-query preview.
+ */
+
+.evm-modal.query-builder { width: 600px; max-width: calc(100vw - 32px); }
+.evm-modal.query-builder .evm-body { max-height: min(72vh, 720px); }
+
+/* Source segmented control spans the row. */
+.evm-modal.query-builder .qb-source { align-self: flex-start; }
+
+/* All / Any connective line above the filter rows. */
+.evm-modal.query-builder .qb-connective { display: flex; align-items: center; gap: 9px; }
+.evm-modal.query-builder .qb-conn-lab { font-size: 12.5px; color: var(--lo); }
+
+/* Filter rows: property | operator | value | remove. */
+.evm-modal.query-builder .qb-rows { display: flex; flex-direction: column; gap: 8px; }
+.evm-modal.query-builder .qb-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+.evm-modal.query-builder .qb-val { min-width: 0; }
+/* A valueless op (is set / checked …) leaves the value cell empty but keeps the grid columns. */
+.evm-modal.query-builder .qb-val:empty::before { content: ''; }
+
+.evm-modal.query-builder .qb-rm {
+  width: 28px; height: 28px; flex: 0 0 auto;
+  display: grid; place-items: center;
+  border-radius: 7px; color: var(--faint);
+  background: none; border: none; cursor: pointer; padding: 0;
+  transition: background .14s, color .14s;
+}
+.evm-modal.query-builder .qb-rm:hover { color: var(--rose); background: color-mix(in srgb, var(--rose) 14%, transparent); }
+
+/* Generated-query preview — monospace, read-only, the editor's code look. */
+.evm-modal.query-builder .qb-preview {
+  margin: 0;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 11px 13px;
+  overflow: auto;
+  max-height: 180px;
+}
+.evm-modal.query-builder .qb-preview code {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--lo);
+  white-space: pre-wrap;
+  word-break: break-word;
+}

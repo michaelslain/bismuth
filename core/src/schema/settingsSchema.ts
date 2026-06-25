@@ -88,6 +88,11 @@ export const SETTINGS_SCHEMA: Schema = {
     refreshDebounceMs: { type: "number", default: 300, min: 100, max: 1000, doc: "Delay before rebuilding the graph after an edit burst (ms)." },
   }),
   editor: object({
+    defaultMode: {
+      type: enumType(["source", "visual"]),
+      default: "source",
+      doc: "How every note opens: 'source' (the raw Markdown editor) or 'visual' (the no-code, Notion-like editor — no markdown knowledge needed). This is the only control; there is no per-note toggle.",
+    },
     livePreview: { type: "boolean", default: true, doc: "Render markdown inline as you type." },
     lineNumbers: { type: "boolean", default: false, doc: "Show line numbers." },
     lineWrapping: { type: "boolean", default: true, doc: "Wrap long lines." },

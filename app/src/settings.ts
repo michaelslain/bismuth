@@ -58,6 +58,7 @@ export interface Settings {
     refreshDebounceMs: number;    // ms before rebuilding the graph after edits
   };
   editor: {
+    defaultMode: "source" | "visual"; // how a note opens: raw markdown editor vs no-code visual editor
     livePreview: boolean;
     lineNumbers: boolean;
     lineWrapping: boolean;
@@ -155,6 +156,7 @@ export interface Settings {
     "focus-pane-right": string;
     "focus-pane-up": string;
     "focus-pane-down": string;
+    "new-claude-chat": string;
     "insert-template": string;
     "toggle-sidebar": string;
   };

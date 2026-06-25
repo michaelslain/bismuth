@@ -62,6 +62,8 @@ export interface CommandHandlers {
   gcalSync: () => void | Promise<void>;
   // Disconnect Google Calendar (revoke + wipe stored tokens).
   gcalDisconnect: () => void | Promise<void>;
+  // Open a fresh Claude Code chat session in its own tab.
+  newClaudeChat: () => void;
 }
 
 export interface BoundCommand {
@@ -92,6 +94,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "new-base": h.newBase,
     "new-spreadsheet": h.newSpreadsheet,
     "new-drawing": h.newDrawing,
+    "new-claude-chat": h.newClaudeChat,
     "export": h.exportActive,
     "archive-tasks": h.archiveTasks,
     "archive-all-tasks": h.archiveAllTasks,

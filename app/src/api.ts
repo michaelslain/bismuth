@@ -40,6 +40,15 @@ import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
 import type { GcalStatus } from "../../core/src/gcal";
 import type { SyncResult } from "../../core/src/gcal/sync";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
+import type { ChatFrame } from "../../core/src/chat";
+
+/** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
+ *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
+export interface ChatSessionInfo {
+  sessionId: string;
+  summary: string;
+  lastModified: number; // ms epoch
+}
 
 // --- Transport seam -------------------------------------------------------
 // Everything the `api` object needs from the outside world is funnelled through
@@ -311,6 +320,13 @@ export const api = {
   // Two-way sync (Google ⇄ Bismuth); pass `basePath` to target a specific calendar now
   // (avoids a race with the debounced settings write). Returns counts.
   gcalSync: (basePath?: string) => postJson<SyncResult>("/gcal/sync", basePath ? { basePath } : {}),
+  // Chat history picker. Both reads operate on the vault cwd server-side (the SDK's session store
+  // unifies the user's terminal Claude Code sessions AND in-app chat sessions). `chatSessions` lists
+  // them (newest first); `chatSessionMessages` replays one as ChatFrames (in order) so the client can
+  // rehydrate the transcript before resuming it over the WS.
+  chatSessions: () => getJson<{ sessions: ChatSessionInfo[] }>("/chat/sessions").then((r) => r.sessions),
+  chatSessionMessages: (id: string) =>
+    getJson<{ frames: ChatFrame[] }>(`/chat/session-messages?id=${encodeURIComponent(id)}`).then((r) => r.frames),
 };
 
 /** Concise one-line summary of a sync result for a toast. */
