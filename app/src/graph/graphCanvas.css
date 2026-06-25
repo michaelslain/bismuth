@@ -1,0 +1,29 @@
+/* app/src/graph/graphCanvas.css
+ * Styles for the canvas knowledge-graph renderer (CanvasGraphRenderer).
+ *
+ * The renderer does the 3D projection (orbit + zoom + perspective) in JS each frame and rasterizes
+ * every node, edge, and label onto a single <canvas> (the `.graph-edges` element — it draws far more
+ * than edges now; the name is historical). There are no per-node DOM elements: one canvas pass scales
+ * to thousands of nodes/edges. These rules only style the container + canvas; everything else is drawn.
+ */
+
+.graph-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  /* Own stacking context so the canvas can't paint over the floating legend / stats / find panel
+     (which sit at z-index 4-5 in .graph-area). */
+  isolation: isolate;
+}
+.graph-viewport.is-dragging { cursor: grabbing; }
+
+/* The single canvas everything is drawn on — screen-space, re-projected each frame (one draw call,
+   not thousands of DOM elements, so it scales to thousands of nodes + edges). Sized in JS. */
+.graph-edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}

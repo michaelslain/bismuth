@@ -95,7 +95,7 @@ export class LabelLayer {
   // distance) so discovery selection avoids allocating + full-sorting a per-call scored[] array.
   private topKIds: string[] = [];
   private topKDist: number[] = [];
-  // Camera pose the accepted-label SELECTION was last computed for (mirrors WebGLRenderer's camKey:
+  // Camera pose the accepted-label SELECTION was last computed for (mirrors CanvasGraphRenderer's camKey:
   // same rounding epsilon). When the camera/zoom hasn't moved enough we keep the prior accepted set
   // and only reposition() — selection is the expensive full-node scan, repositioning is cheap.
   private selectCamKey = "";
@@ -248,7 +248,7 @@ export class LabelLayer {
       this.hideAll();
       return;
     }
-    // Camera-delta early-out (mirrors WebGLRenderer.refreshCrowdingIfMoved's camKey rounding). The
+    // Camera-delta early-out (mirrors CanvasGraphRenderer.refreshCrowdingIfMoved's camKey rounding). The
     // SELECT* pass is a full-node scan; reposition() is cheap. When neither the camera/zoom NOR any
     // other selection input (hover/active/search/screen size/mode) changed since the last select*,
     // we keep the prior accepted set and only reposition so labels still track motion. Anything that
@@ -453,7 +453,7 @@ export class LabelLayer {
     }
   }
 
-  /** Free DOM resources. Called at WebGLRenderer.destroy(). */
+  /** Free DOM resources. Called at CanvasGraphRenderer.destroy(). */
   dispose(): void {
     if (this.overlay) this.overlay.replaceChildren();
     this.elById.clear();
