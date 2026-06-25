@@ -12,8 +12,10 @@ const DrawingPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ de
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
+// Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX); defer it off the entry bundle.
+const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { SEARCH_TAB, GRAPH_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, isSentinel } from "./tabIds";
+import { SEARCH_TAB, GRAPH_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -76,6 +78,11 @@ export function PaneContent(props: {
             scrollback survive tab/pane switches. App.tsx measures this host's
             bounding rect to position the overlay over this exact pane body. */}
         <div data-terminal-host={props.path} class="full" />
+      </Match>
+      <Match when={props.path.startsWith(CHAT_PREFIX)}>
+        <Suspense fallback={<div class="full" />}>
+          <ChatView chatId={props.path.slice(CHAT_PREFIX.length)} />
+        </Suspense>
       </Match>
       {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
           Tasks page was removed) falls back to an empty pane rather than trying

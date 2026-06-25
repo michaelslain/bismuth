@@ -8,6 +8,8 @@ export const GRAPH_TAB = "::graph";
 export const TERMINAL_PREFIX = "::term:";
 // Export options screen for a file: EXPORT_PREFIX + "<file path>".
 export const EXPORT_PREFIX = "::export:";
+// Chat session with Claude Code: CHAT_PREFIX + "<chat id>".
+export const CHAT_PREFIX = "::chat:";
 
 // The app's "settings page" is settings.yaml opened as an ordinary file tab (there is no
 // ::settings sentinel). We treat it as a first-class app: shown as "settings" with a gear
@@ -35,6 +37,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
+  if (content.startsWith(CHAT_PREFIX)) return "Chat";
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
   if (isSettingsFile(content)) return "settings";
   return noteName(content);
@@ -46,6 +49,7 @@ export function contentIcon(content: string): string | undefined {
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "Share2";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
+  if (content.startsWith(CHAT_PREFIX)) return "MessageSquare";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
   if (isSettingsFile(content)) return "Settings";
   if (content.endsWith(".sheet")) return "Table";

@@ -62,9 +62,11 @@ import Hash from "lucide-solid/icons/hash";
 import Highlighter from "lucide-solid/icons/highlighter";
 import Image from "lucide-solid/icons/image";
 import Landmark from "lucide-solid/icons/landmark";
+import LayoutList from "lucide-solid/icons/layout-list";
 import Link from "lucide-solid/icons/link";
 import Lock from "lucide-solid/icons/lock";
 import Menu from "lucide-solid/icons/menu";
+import MessageSquare from "lucide-solid/icons/message-square";
 import Minus from "lucide-solid/icons/minus";
 import Network from "lucide-solid/icons/network";
 import Notebook from "lucide-solid/icons/notebook";
@@ -82,6 +84,7 @@ import Repeat from "lucide-solid/icons/repeat";
 import Replace from "lucide-solid/icons/replace";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
 import Search from "lucide-solid/icons/search";
+import Send from "lucide-solid/icons/send";
 import Server from "lucide-solid/icons/server";
 import Settings from "lucide-solid/icons/settings";
 import Settings2 from "lucide-solid/icons/settings-2";
@@ -120,9 +123,9 @@ const SEED: Record<string, LucideIcon> = {
   ChevronLeft, ChevronRight,
   ChevronUp, Clock, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
-  Landmark, Link, Lock, Menu, Minus, Network, Notebook, PanelBottom, PanelLeft,
+  Landmark, LayoutList, Link, Lock, Menu, MessageSquare, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
-  Replace, RotateCcw, Search, Server, Settings, Settings2, Share, Share2, Square,
+  Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
   WholeWord, Wrench, X, Zap, ZoomIn, ZoomOut,
 } as unknown as Record<string, LucideIcon>;

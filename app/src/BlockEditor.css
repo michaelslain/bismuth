@@ -1,0 +1,474 @@
+/* app/src/BlockEditor.css
+ * The Notion-like block editing surface. Theme-aware throughout: every color / font reads a
+ * CSS custom property (set by settingsCssVars.ts + App.css), so it tracks the active theme,
+ * accent, and editor typography exactly like the CodeMirror Editor does. */
+
+.block-editor {
+  height: 100%;
+  overflow: auto;
+  /* Center a comfortable reading column, matching the CodeMirror editor's 680px content. */
+  display: flex;
+  justify-content: center;
+  padding: 8px 40px 120px;
+  box-sizing: border-box;
+  background: transparent;
+  color: color-mix(in srgb, var(--fg) 88%, var(--text-muted));
+  font-family: var(--editor-font);
+  font-size: var(--editor-font-size);
+  line-height: var(--prose-line-height, 1.65);
+}
+
+.block-editor-col {
+  width: 100%;
+  max-width: 680px;
+}
+
+/* --- Frontmatter properties strip (read-only) --------------------------- */
+/* A clean key/value display of the note's YAML frontmatter, shown above the body in visual mode
+   instead of the raw `---` block. Read-only: the verbatim frontmatter prefix stays the source of
+   truth (edit it in source mode). Sits flush with the content column, separated from the first
+   block by a hairline. */
+.block-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.block-prop {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.92em;
+}
+.block-prop-key {
+  flex: 0 0 auto;
+  min-width: 96px;
+  color: color-mix(in srgb, var(--fg) 50%, var(--text-muted));
+  font-variant: small-caps;
+  letter-spacing: 0.02em;
+}
+.block-prop-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.block-prop-value {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 6px;
+  padding: 1px 8px;
+  font-size: 0.94em;
+}
+
+/* --- One block row: [gutter] [body] ------------------------------------- */
+.block-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  position: relative;
+  border-radius: 6px;
+  /* Pull the gutter into the left margin so the body text aligns to the column edge. */
+  margin-left: -52px;
+  padding-left: 52px;
+}
+
+.block-row--dragover {
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
+/* The hover gutter: a "+" insert button and a drag handle, revealed on row hover. */
+.block-gutter {
+  position: absolute;
+  left: 0;
+  top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transition: opacity 90ms ease-out;
+}
+.block-row:hover > .block-gutter {
+  opacity: 1;
+}
+
+.block-add,
+.block-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--fg) 45%, transparent);
+  border-radius: 5px;
+  cursor: pointer;
+  padding: 0;
+}
+.block-handle {
+  cursor: grab;
+}
+.block-handle:active {
+  cursor: grabbing;
+}
+.block-add:hover,
+.block-handle:hover {
+  background: color-mix(in srgb, var(--fg) 9%, transparent);
+  color: var(--fg);
+}
+
+/* --- The editable body --------------------------------------------------- */
+.block-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.block-text-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* The monospace code textarea (the one text block that is NOT a WYSIWYG Milkdown surface). */
+.block-text {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 3px 0;
+  margin: 0;
+  overflow: hidden;
+  caret-color: var(--fg);
+}
+.block-text::placeholder {
+  color: color-mix(in srgb, var(--fg) 28%, transparent);
+}
+
+/* --- The TRUE-WYSIWYG Milkdown surface (rich text) ---------------------- */
+/* `.block-rich` wraps a ProseMirror `.ProseMirror` editable. The block model owns the block
+   prefix; Milkdown holds only inline content, so the heading/quote sizing lives on the wrapper. */
+.block-rich {
+  width: 100%;
+  min-width: 0;
+}
+/* Base ProseMirror rules (Milkdown ships no CSS): make the editable behave like a textarea —
+   wrap, no outline, a visible caret, room for the empty-block placeholder. */
+.block-rich .ProseMirror {
+  outline: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  -webkit-font-variant-ligatures: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+  caret-color: var(--fg);
+  padding: 3px 0;
+  margin: 0;
+}
+.block-rich .ProseMirror p {
+  margin: 0;
+}
+.block-rich .ProseMirror:focus {
+  outline: none;
+}
+/* Empty-block placeholder: ProseMirror keeps a lone <p> holding only a trailing <br> in an empty
+   textblock, so :empty won't match — target that <p> via :has(). The per-type hint rides on the
+   wrapper's data-placeholder, painted as an absolutely-positioned ::before so it doesn't shift
+   the caret. */
+.block-rich {
+  position: relative;
+}
+.block-rich:has(.ProseMirror > p:only-child > br.ProseMirror-trailingBreak:only-child)::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 3px;
+  left: 0;
+  color: color-mix(in srgb, var(--fg) 28%, transparent);
+  pointer-events: none;
+}
+
+/* --- Static preview (lazy-mount: offscreen blocks) ---------------------- */
+/* While a rich-text block is OUTSIDE the viewport its live Milkdown surface is unmounted and the
+   block renders a read-only `renderNoteBody` preview into the SAME root. Match the live surface's
+   metrics so mounting/unmounting causes no scroll jump: identical padding, zeroed inner-paragraph
+   margins, and a one-line min-height so an empty block still reserves the caret's row. The preview
+   is non-interactive (it has no editable; clicks fall through to a focusById mount on caret). */
+.block-rich--preview {
+  padding: 3px 0;
+  min-height: calc(1em * var(--prose-line-height, 1.65));
+  cursor: text;
+}
+.block-rich--preview > :first-child {
+  margin-top: 0;
+}
+.block-rich--preview > :last-child {
+  margin-bottom: 0;
+}
+.block-rich--preview p {
+  margin: 0;
+}
+
+/* Headings size by level (mirrors the live-preview heading scale). The same scale is applied to
+ * the unmounted static-preview container — its rendered text inherits the size — so a heading
+ * doesn't visibly resize ("pop") when it mounts/unmounts on scroll. */
+.block-rich--h1 .ProseMirror, .block-rich--h1.block-rich--preview { font-size: 1.9em; font-weight: 700; line-height: 1.25; }
+.block-rich--h2 .ProseMirror, .block-rich--h2.block-rich--preview { font-size: 1.55em; font-weight: 700; line-height: 1.3; }
+.block-rich--h3 .ProseMirror, .block-rich--h3.block-rich--preview { font-size: 1.28em; font-weight: 650; line-height: 1.35; }
+.block-rich--h4 .ProseMirror, .block-rich--h4.block-rich--preview { font-size: 1.12em; font-weight: 600; }
+.block-rich--h5 .ProseMirror, .block-rich--h5.block-rich--preview { font-size: 1.02em; font-weight: 600; }
+.block-rich--h6 .ProseMirror, .block-rich--h6.block-rich--preview { font-size: 0.95em; font-weight: 600; color: var(--text-muted); }
+
+.block-rich--quote .ProseMirror {
+  font-style: italic;
+  color: color-mix(in srgb, var(--fg) 78%, var(--text-muted));
+}
+.block-row--quote .block-body {
+  border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  padding-left: 12px;
+}
+
+/* Inline marks rendered WYSIWYG (no markdown symbols shown). */
+.block-rich .ProseMirror strong { font-weight: 700; }
+.block-rich .ProseMirror em { font-style: italic; }
+.block-rich .ProseMirror a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.block-rich .ProseMirror code {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.92em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  border-radius: 4px;
+  padding: 0.5px 4px;
+}
+
+/* The code textarea (block-text--code) keeps its monospace styling + boxed row. */
+.block-text--code {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.92em;
+  line-height: 1.5;
+}
+.block-row--code .block-body {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+/* A done task strikes through its content (the wrapper carries --done). */
+.block-text-wrap--done .block-rich .ProseMirror {
+  text-decoration: line-through;
+  color: color-mix(in srgb, var(--fg) 45%, var(--text-muted));
+}
+
+/* --- Inline atom chips (wikilink / tag / math / embed / bare url) -------- */
+/* contenteditable=false spans the bridge renders; styled to read as chips, no markdown symbols. */
+.block-rich .oa-wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 1px;
+  text-decoration: none;
+}
+.block-rich .oa-wikilink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.block-rich .oa-tag {
+  color: color-mix(in srgb, var(--accent) 80%, var(--fg));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.88em;
+  cursor: pointer;
+}
+.block-rich .oa-tag:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.block-rich .oa-math {
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.95em;
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.block-rich .oa-embed {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  color: color-mix(in srgb, var(--fg) 70%, var(--text-muted));
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 6px;
+  font-size: 0.9em;
+}
+.block-rich .oa-bareurl {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  word-break: break-all;
+}
+/* A selected inline atom (clicked / arrowed onto) gets a subtle ring. */
+.block-rich .ProseMirror-selectednode {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+
+/* Task checkbox + list markers sit in the gutter-side of the body. */
+.block-checkbox {
+  margin-top: 7px;
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.block-bullet,
+.block-number {
+  flex: 0 0 auto;
+  padding-top: 3px;
+  color: color-mix(in srgb, var(--fg) 60%, var(--text-muted));
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+.block-bullet {
+  font-size: 1.1em;
+  line-height: 1;
+  padding-top: 6px;
+}
+
+/* Divider. */
+.block-hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+
+/* A blank spacer block keeps a hoverable row for its gutter affordances. */
+.block-spacer {
+  height: 8px;
+}
+
+/* --- Rendered (read-only) blocks: table / image / html / math ----------- */
+.block-rendered {
+  cursor: text;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: 0 -6px;
+}
+.block-rendered:hover {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+.block-rendered table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.block-rendered th,
+.block-rendered td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+.block-rendered img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.block-raw-edit {
+  width: 100%;
+  border: 1px solid var(--accent);
+  outline: none;
+  resize: none;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  color: inherit;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.92em;
+  line-height: 1.5;
+  border-radius: 6px;
+  padding: 8px 10px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.block-raw {
+  white-space: pre-wrap;
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: 0.9em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* --- Empty document affordance ------------------------------------------ */
+.block-empty {
+  padding: 8px 0;
+}
+.block-empty-add {
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--fg) 38%, transparent);
+  font-family: inherit;
+  font-size: inherit;
+  cursor: text;
+  padding: 3px 0;
+}
+
+/* --- Slash menu popover -------------------------------------------------- */
+.block-slash-popover {
+  /* The PopoverList inside brings its own .oa-popover chrome; this just positions it. */
+}
+.block-slash-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--popover-font-size, 13px);
+}
+
+/* --- Selection-anchored format toolbar ----------------------------------- */
+/* Floats above a non-empty selection (translateX(-50%) centers it on the selection midpoint).
+   Built from IconButtons so it matches the rest of the chrome; theme-aware surface + border. */
+.block-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  transform: translateX(-50%) translateY(-100%);
+  background: var(--popover-bg, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.block-format-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 3px;
+  background: var(--border);
+}
+
+/* --- Live ```query block ------------------------------------------------- */
+/* A rendered query block: the embedded BaseView plus a pencil overlay (top-right) that
+   re-opens the visual builder. The Edit affordance only fades in on hover so it doesn't
+   clutter the rendered view. */
+.block-query {
+  position: relative;
+}
+.block-query-edit {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.block-query:hover .block-query-edit,
+.block-query:focus-within .block-query-edit {
+  opacity: 1;
+}
