@@ -16,9 +16,13 @@ import {
   snapshotMessage,
 } from "../../../core/src/backup";
 
-/** The repo to operate on: --dir wins, then --vault, then OA_VAULT. */
+/** The repo to operate on: --dir wins, then --vault, then OA_VAULT, then BISMUTH_VAULT. */
 function repoDir(args: string[]): string {
-  const d = flag(args, "dir") ?? flag(args, "vault") ?? process.env.OA_VAULT;
+  const d =
+    flag(args, "dir") ??
+    flag(args, "vault") ??
+    process.env.OA_VAULT ??
+    process.env.BISMUTH_VAULT;
   if (!d) fail("no dir — pass --dir <path> (the vault or memory repo)");
   return d;
 }

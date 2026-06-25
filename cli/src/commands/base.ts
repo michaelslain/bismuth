@@ -21,7 +21,7 @@ async function readBase(vault: string, file: string): Promise<{ text: string; na
 /** Parse a required `--json '{...}'` flag into a note record (the row's fields). */
 function requireJson(args: string[]): Record<string, unknown> {
   const raw = flag(args, "json");
-  if (raw === undefined) fail("missing --json '{...}'");
+  if (raw === undefined) fail("--json '{...}' required");
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -48,7 +48,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [path] = positionals(args);
-      if (!path) fail("missing <path>");
+      if (!path) fail("<path> required");
       const { text, name } = await readBase(vault, path);
       const { config, rows } = parseBaseFile(text, { name, path });
       out({ config, rows }, args);
@@ -84,7 +84,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [basePath] = positionals(args);
-      if (!basePath) fail("missing <basePath>");
+      if (!basePath) fail("<basePath> required");
       const note = requireJson(args);
       const { text, name } = await readBase(vault, basePath);
       const next = upsertRow(text, { name, path: basePath }, null, note);
@@ -99,7 +99,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [basePath, indexStr] = positionals(args);
-      if (!basePath) fail("missing <basePath>");
+      if (!basePath) fail("<basePath> required");
       const index = intArg(indexStr, "<index>");
       const note = requireJson(args);
       const { text, name } = await readBase(vault, basePath);
@@ -115,7 +115,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [basePath, indexStr] = positionals(args);
-      if (!basePath) fail("missing <basePath>");
+      if (!basePath) fail("<basePath> required");
       const index = intArg(indexStr, "<index>");
       const { text, name } = await readBase(vault, basePath);
       const next = deleteRow(text, { name, path: basePath }, index);
@@ -130,7 +130,7 @@ export const commands: CommandMap = {
     run: async (args) => {
       const vault = requireVault(args);
       const [basePath, fromStr, toStr] = positionals(args);
-      if (!basePath) fail("missing <basePath>");
+      if (!basePath) fail("<basePath> required");
       const from = intArg(fromStr, "<from>");
       const to = intArg(toStr, "<to>");
       const { text, name } = await readBase(vault, basePath);

@@ -193,16 +193,23 @@ export function parseBase(text: string): BaseConfig {
   return parseBaseObject(o);
 }
 
-const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+/**
+ * Single frontmatter-split regex shared by the base parser and the row rewriter (rowOps.ts)
+ * so they slice the exact same boundary. Capture groups:
+ *   [1] the whole frontmatter block including the `---` delimiters (rowOps keeps this verbatim)
+ *   [2] the inner YAML between the delimiters (parseBaseFile feeds this to the YAML parser)
+ *   [3] the body after the closing delimiter
+ */
+export const FRONTMATTER_RE = /^(---\r?\n([\s\S]*?)\r?\n---\r?\n?)([\s\S]*)$/;
 
 /**
  * Parse a `type: base` markdown file: YAML frontmatter (config) + optional GFM table (rows).
  * `view: <type>` is shorthand for a single default view. Reuses parseBase() for the config.
  */
 export function parseBaseFile(text: string, meta: { name: string; path: string }): ParsedBase {
-  const m = text.match(FM_RE);
-  const fmText = m ? m[1] : "";
-  const body = m ? m[2] : text;
+  const m = text.match(FRONTMATTER_RE);
+  const fmText = m ? m[2] : "";
+  const body = m ? m[3] : text;
   const raw = fmText ? safeYaml(fmText) : null;
   const config = raw ? parseBaseObject(raw) : { views: [] as ViewConfig[] };
 

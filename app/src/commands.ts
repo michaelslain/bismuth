@@ -46,6 +46,9 @@ export interface CommandHandlers {
   openDaemonOwner: () => void;
   // Open the panel to install/repair (adopt) the claude-bot daemon.
   openDaemonSetup: () => void;
+  // Update the claude-bot daemon to the latest version (POST /daemon/update, idempotent +
+  // fetch-gated) — toasts progress. Distinct from openDaemonSetup, which only installs/adopts.
+  updateDaemon: () => void | Promise<void>;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;
   // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
@@ -110,7 +113,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "toggle-sidebar": h.toggleSidebar,
     "daemon-owner": h.openDaemonOwner,
     "daemon-setup": h.openDaemonSetup,
-    "daemon-update": h.openDaemonSetup,
+    "daemon-update": h.updateDaemon,
     "bismuth-install": h.openBismuthInstall,
     "update-app": h.updateApp,
     "edit-dictionary": h.openEditDictionary,

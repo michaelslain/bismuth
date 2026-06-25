@@ -151,7 +151,7 @@ const all: EmojiEntry[] = [...emojiEntries, ...specialEntries];
 const outPath = join(import.meta.dir, "..", "app", "src", "editor", "emoji-data.json");
 writeFileSync(outPath, JSON.stringify(all));
 
-// Summary (also to a file, since interactive shell output can buffer).
+// Summary.
 const summary = [
   `emoji entries: ${emojiEntries.length}`,
   `special entries: ${specialEntries.length}`,
@@ -160,5 +160,4 @@ const summary = [
   `sample emoji: ${JSON.stringify(emojiEntries.find((e) => e.name === "grinning_face") ?? emojiEntries[0])}`,
   `sample special: ${JSON.stringify(specialEntries.find((e) => e.name === "emdash"))}`,
 ].join("\n");
-writeFileSync("/tmp/emoji_gen_summary.txt", summary);
 console.log(summary);

@@ -614,6 +614,23 @@ export default function App() {
   // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
   const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false);
   const openDaemonSetup = () => setDaemonSetupOpen(true);
+  // "Update claude-bot daemon" command — POST /daemon/update (git pull + install + restart;
+  // idempotent + fetch-gated, so it no-ops cleanly when already current). Reports via a toast.
+  const updateDaemon = async () => {
+    const id = pushToast("Updating claude-bot daemon…", undefined, 0);
+    try {
+      const r = await api.daemonUpdate();
+      const msg =
+        r.action === "updated" ? `Daemon updated${r.to ? ` to ${r.to.slice(0, 7)}` : ""}${r.restarted ? " (restarted)" : ""}`
+        : r.action === "up-to-date" ? "Daemon is already up to date"
+        : r.action === "no-remote" ? "No daemon remote configured to update from"
+        : "Daemon update checked";
+      updateToast(id, msg);
+    } catch {
+      updateToast(id, "Couldn't update the daemon");
+    }
+    setTimeout(() => dismissToast(id), 5000);
+  };
   // Machine-wide bismuth CLI + MCP install panel (idempotent, version-gated ensure).
   const [bismuthInstallOpen, setBismuthInstallOpen] = createSignal(false);
   const openBismuthInstall = () => setBismuthInstallOpen(true);
@@ -775,7 +792,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1196,6 +1213,7 @@ export default function App() {
   const handleGlobalKeydown = (e: KeyboardEvent) => {
     if (e.repeat) return;
     const kb = settings.keybindings;
+    const isEditableTarget = (tag: string | undefined) => tag === "INPUT" || tag === "TEXTAREA";
 
     // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
     // first-run intro (handy for re-watching the onboarding animation).
@@ -1214,7 +1232,7 @@ export default function App() {
     // not an INPUT/TEXTAREA, so insertion from a focused note still works.
     if (matchesKeybinding(e, kb["insert-template"])) {
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+      if (!isEditableTarget(tag)) {
         e.preventDefault();
         setPalette((p) => (p === "template" ? null : "template"));
       }
@@ -1223,7 +1241,7 @@ export default function App() {
     // Toggle sidebar (default Alt+S): don't hijack while typing in a form field.
     if (matchesKeybinding(e, kb["toggle-sidebar"])) {
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+      if (!isEditableTarget(tag)) {
         e.preventDefault();
         toggleSidebar();
       }
@@ -1257,7 +1275,7 @@ export default function App() {
     // chord while typing in a form field (palette/search inputs).
     if (matchesKeybinding(e, kb["new-claude-chat"])) {
       const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag !== "INPUT" && tag !== "TEXTAREA") {
+      if (!isEditableTarget(tag)) {
         e.preventDefault();
         newClaudeChat();
       }

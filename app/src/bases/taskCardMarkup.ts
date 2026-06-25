@@ -8,11 +8,9 @@
 // to the line to rewrite — no index counting.
 import { renderNoteBody } from "./markdown";
 import { stripFrontmatter } from "./cardBodySplit";
+import { TASK_LINE_CAP } from "./taskLine";
 import { escapeAttr } from "../htmlEscape";
 
-// `- [<one char>] body` — the bullet is normalized to `-` by the writers (toggleTaskLine /
-// setTaskLineStatus), so a single `-` bullet is all the card needs to recognize.
-const TASK_LINE_CAP = /^(\s*)- \[(.)\] (.*)$/;
 const HEADING_RE = /^#{1,6}\s/;
 
 // Drop headings with no remaining content beneath them (their tasks all moved to the

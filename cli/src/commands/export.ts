@@ -5,7 +5,7 @@
 // with a clear message. Drawings go straight through the headless core renderer.
 import { readFileSync, writeFileSync } from "node:fs";
 import type { CommandMap } from "../types";
-import { flag, requireVault, fail, today } from "../args";
+import { flag, requireVault, fail, today, out } from "../args";
 import { readNote } from "../../../core/src/files";
 import { resolveSource } from "../../../core/src/bases/source";
 import { parseDoc } from "../../../core/src/drawing/model";
@@ -42,7 +42,7 @@ async function run(args: string[]): Promise<void> {
     const bytes = fmt === "pdf" ? await renderDocToPdf(doc, "dark") : await renderDocToPng(doc, "dark");
     const outPath = flag(args, "out") ?? `${file}.${fmt}`;
     writeFileSync(outPath, bytes);
-    console.log(`wrote ${outPath}`);
+    out(`wrote ${outPath}`, args);
     return;
   }
 
@@ -74,7 +74,7 @@ async function run(args: string[]): Promise<void> {
   const res = await renderExport(file, fmt, deps, "dark", optionsFrom(args));
   const outPath = flag(args, "out") ?? res.filename;
   writeFileSync(outPath, res.bytes);
-  console.log(`wrote ${outPath}`);
+  out(`wrote ${outPath}`, args);
 }
 
 export const commands: CommandMap = {

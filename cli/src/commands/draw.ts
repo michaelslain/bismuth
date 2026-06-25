@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { CommandMap } from "../types";
-import { bool, flag, positionals, fail } from "../args";
+import { bool, flag, positionals, fail, out } from "../args";
 import { parseDoc } from "../../../core/src/drawing/model";
 import { renderDocToPng, renderDocToPdf } from "../../../core/src/drawing/export";
 
@@ -12,7 +12,7 @@ async function render(args: string[]): Promise<void> {
   const bytes = pdf ? await renderDocToPdf(doc, "dark") : await renderDocToPng(doc, "dark");
   const outPath = flag(args, "out") ?? `${file}.${pdf ? "pdf" : "png"}`;
   writeFileSync(outPath, bytes);
-  console.log(`wrote ${outPath}`);
+  out(`wrote ${outPath}`, args);
 }
 
 export const commands: CommandMap = {

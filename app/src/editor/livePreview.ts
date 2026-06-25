@@ -92,7 +92,7 @@ const hrLine = Decoration.line({ class: "cm-hr" });
 // This keeps the marker→text gap and per-level indent consistent regardless of how the
 // source happens to be spaced.
 // em added to the text indent per nesting level (shared leaf — see ./listLayout).
-const LIST_GUTTER = 1.6; // em — width of the marker gutter (== one step, so text aligns)
+const LIST_GUTTER = LIST_STEP; // em — width of the marker gutter (== one step, so text aligns)
 const LIST_LINE_HEIGHT = "1.55"; // tighter than prose (1.65) for a cleaner list rhythm
 const indentLineCache = new Map<string, Decoration>();
 /** A line decoration giving a list line a depth-based hanging indent. */
