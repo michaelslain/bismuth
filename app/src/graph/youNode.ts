@@ -24,10 +24,11 @@ function contentToNodeId(content: string): string | null {
  * tab/pane note that exists in this view's node set. Duplicates and not-yet-loaded / out-of-view
  * notes are skipped, so the hub only links to what's actually on screen.
  *
- * The hub is seeded at the layout origin `[0,0,0]` / `[0,0]` — the center of the cloud. The
- * renderer also fixes it there (d3 `fx/fy/fz`) so it's the one node the simulation never moves,
- * and gives it an enlarged collision radius so a small clearing of "physics space" opens around
- * it. The input graph is left untouched.
+ * The hub is seeded at the layout origin `[0,0,0]` / `[0,0]` — the center of the cloud. The CSS3D
+ * renderer pins it there (it scales the layout about the self-excluded content centroid and maps
+ * self to the origin) and runs a deterministic clearing pass (no force sim): any non-self node that
+ * lands inside a clearance radius is pushed radially outward, so a ring of empty space opens around
+ * "you" in both the 3D and 2D layouts. The input graph is left untouched.
  */
 export function withYouNode(g: GraphData, openContents: string[]): GraphData {
   const present = new Set(g.nodes.map((n) => n.id));

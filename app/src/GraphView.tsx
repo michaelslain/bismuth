@@ -1,7 +1,7 @@
 // app/src/GraphView.tsx
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 import type { GraphData } from "../../core/src/graph";
-import { CSS3DGraphRenderer, type HoverNode } from "./graph/CSS3DGraphRenderer";
+import { CanvasGraphRenderer, type HoverNode } from "./graph/CanvasGraphRenderer";
 import { GraphAtmosphere } from "./graph/GraphAtmosphere";
 import { AgentsGraph } from "./graph/AgentsGraph";
 import { layoutAgentGraph } from "./graph/agentLayout";
@@ -100,7 +100,7 @@ export function GraphView(props: {
 }) {
   let host!: HTMLDivElement;
   let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
-  const renderer = new CSS3DGraphRenderer();
+  const renderer = new CanvasGraphRenderer();
   let mounted = false;
   let lastGraph: GraphData | null = null;
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);

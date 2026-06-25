@@ -1,24 +1,17 @@
-// app/src/graph/CSS3DGraphRenderer.ts
+// app/src/graph/CanvasGraphRenderer.ts
 //
-// A web-NATIVE knowledge-graph renderer. At rest, every node is a real HTML <div> and every label
-// native text, so the graph reads as crisp DOM UI (sharp fonts/circles) instead of "off". Edges
-// always draw on one <canvas> (one call, not thousands of elements). It's a drop-in replacement for
-// WebGLRenderer, mirroring that class's public surface.
-//
-// Scaling to a real vault (2k+ nodes): the cost is reprojecting thousands of DOM nodes per frame.
-// So for large graphs we draw the NODES on the canvas while the camera is MOVING (orbit/zoom/morph
-// — smooth, GPU-cheap) and swap the crisp DOM nodes back in the instant it comes to REST. You get
-// HTML when you're reading it and 60fps when you're spinning it. Small graphs keep full DOM the
-// whole time (they're cheap), including hover-dimming and idle spin.
+// The knowledge-graph renderer. It does the 3D camera math (orbit + zoom + perspective) by hand in
+// JS and rasterizes the whole graph — nodes, edges, and labels — onto a single 2D <canvas>. NOT
+// WebGL/GPU and NOT CSS/DOM nodes: a plain Canvas-2D context. One draw pass scales to thousands of
+// nodes + edges, and Canvas-2D gives crisp text labels for free (which WebGL would not).
 //
 // 3D coords come off the backend layout (`node.position` / `position2d`), de-cluttered once by a
-// d3-force settle. Each frame the camera (orbit + zoom + perspective) projects nodes to a screen
-// pixel + depth; near nodes are bigger and opaque, far nodes smaller and faded (the depth cue).
-// No `transform: scale` is used (it blurs) — dot diameters are set in real pixels.
+// d3-force settle. Each frame the camera projects every node to a screen pixel + depth; near nodes
+// are bigger and opaque, far nodes smaller and faded (the depth cue). 2D mode uses the flat
+// `position2d` layout; the 2D<->3D toggle interpolates (morphs) between the two coordinate sets.
 
-import "./css3d.css";
+import "./graphCanvas.css";
 import type { GraphData, GraphNode, NodeKind } from "../../../core/src/graph";
-import { SELF_NODE_ID } from "../../../core/src/graph";
 
 /** Live graph settings pushed by GraphView (mirrors settings.graph + appearance tokens). */
 export interface GraphConfig {
@@ -75,11 +68,16 @@ const NODE_MAX_FRAC = 0.6;    // cap: a hub never exceeds ~0.6 of the spacing
 const SELF_FRAC = 0.5;        // the "you" hub's diameter as a fraction of spacing
 const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
+// Breathing room kept clear around the "you" hub, in SCREEN px (see clearAroundSelf): a node's drawn
+// circle is pushed out until it's at least this far from the hub's circle. Per-frame + in px, so it
+// holds at ANY zoom / graph size — unlike the world-space pre-spread, which can't know how big a dot
+// is actually drawn (a one-link neighbour in a sparse, zoomed-in graph draws large enough to graze
+// the hub even when its center clears the world radius).
+const SELF_CLEAR_GAP = 16;
 // Zoom-in label discovery: once a node's projected dot grows past this many px (i.e. the user
 // has zoomed in toward it), reveal its filename label so zooming in progressively surfaces names.
 const LABEL_REVEAL_DOT_PX = 18;
-const DEPTH_MIN_OPACITY = 0.04; // farthest node's opacity in a BIG graph (strong depth cue)
-const DEPTH_MIN_OPACITY_SMALL = 0.5; // small graphs (daemon/agents/small vaults) fade gently so every node stays readable
+const DEPTH_MIN_OPACITY = 0.04; // farthest node's opacity (strong depth cue)
 const DEPTH_CURVE = 2.4;      // >1 = back fades faster (stronger depth cue)
 const BACK_INTERACT_CUTOFF = 0.18; // 3D nodes whose depth rank is below this aren't hover/click targets
 // Dense-graph edge thinning is per-mode: 2D thins hard (flat view clutters fast), 3D keeps more
@@ -102,9 +100,6 @@ type Vec3 = [number, number, number];
 
 interface NodeView {
   node: GraphNode;
-  el?: HTMLDivElement;   // DOM elements exist only for SMALL graphs; heavy graphs render on canvas
-  dot?: HTMLDivElement;
-  label?: HTMLSpanElement;
   p3: Vec3; // centered world coords (3D layout, Y flipped to screen-up)
   p2: Vec3; // centered world coords (flat 2D layout, z=0)
   colorInt: number; colorHex: string;
@@ -147,7 +142,17 @@ function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
     cx += p[0]; cy += p[1]; cz += dim === 3 ? p[2] : 0; cnt++;
   }
   if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
+  // Carve a deterministic clearing around the origin where "you" is pinned. This renderer runs NO
+  // force/collide sim, so without this any non-self node that the layout placed near the center
+  // would land ON TOP of the "you" hub. We push every such node radially outward to a clearance
+  // radius, so a ring of empty space opens around self in BOTH the 3D and 2D layouts (the morph
+  // interpolates p3<->p2, so the clearing must exist in each to survive it). This is only a mild
+  // WORLD-space pre-spread so central nodes aren't piled on the origin; the exact, drawn-size-aware
+  // clearing that guarantees the hub stays uncovered at any zoom is done per-frame in screen space
+  // (clearAroundSelf). O(n).
+  const clearance = LINK_SPREAD * 1.5;
   const store = new Map<string, Vec3>();
+  let originIdx = 0; // distinct angle for any node that lands EXACTLY on the origin (see below)
   for (const nv of nodes) {
     let np: Vec3;
     if (nv.node.kind === "self") {
@@ -155,6 +160,18 @@ function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
     } else {
       const p = dim === 3 ? nv.p3 : nv.p2;
       np = [(p[0] - cx) * scale, (p[1] - cy) * scale, dim === 3 ? (p[2] - cz) * scale : 0];
+      const r = Math.hypot(np[0], np[1], dim === 3 ? np[2] : 0);
+      if (r === 0) {
+        // The node maps exactly onto the origin where "you" sits — e.g. the sole neighbour in a
+        // self+1 graph, whose self-excluded centroid IS its own position. Radial scaling can't push
+        // a zero vector out, so seat it on the clearance ring at a golden-angle-spread bearing so
+        // several coincident-at-origin nodes fan out instead of stacking on the hub.
+        const a = originIdx++ * 2.39996323; // golden angle (rad) → even angular distribution
+        np = [clearance * Math.cos(a), clearance * Math.sin(a), 0];
+      } else if (r < clearance) {
+        const f = clearance / r; // scale this node out along its own radial so directions are preserved
+        np = [np[0] * f, np[1] * f, dim === 3 ? np[2] * f : 0];
+      }
     }
     if (dim === 3) nv.p3 = np; else nv.p2 = np;
     store.set(nv.node.id, np);
@@ -168,10 +185,9 @@ function lerpInt(a: number, b: number, t: number): number {
   return (ch(16) << 16) | (ch(8) << 8) | ch(0);
 }
 
-export class CSS3DGraphRenderer {
+export class CanvasGraphRenderer {
   private host?: HTMLElement;
   private viewport!: HTMLDivElement;
-  private world!: HTMLDivElement;
   private edgeCanvas!: HTMLCanvasElement;
   private edgeCtx: CanvasRenderingContext2D | null = null;
   private dpr = 1;
@@ -190,7 +206,6 @@ export class CSS3DGraphRenderer {
   private scale3 = 1; private scale2 = 1;   // world-units -> px fit per view
   private fitPx = 1;                          // on-screen fit radius (px); node size derives from DENSITY, not layout scale
   private glowCentroids: Vec3[] = [];        // cached top-3 community centroids (glow lobes)
-  private heavy = false;                     // large graph -> canvas-while-moving + reduced interaction
   private minZ = 0; private maxZ = 1;        // last frame's projected depth range
 
   // viewport geometry
@@ -237,13 +252,11 @@ export class CSS3DGraphRenderer {
     if (onHover) this.onHover = onHover;
 
     this.viewport = document.createElement("div");
-    this.viewport.className = "css3d-viewport";
+    this.viewport.className = "graph-viewport";
     this.edgeCanvas = document.createElement("canvas");
-    this.edgeCanvas.className = "css3d-edges";
+    this.edgeCanvas.className = "graph-edges";
     this.edgeCtx = this.edgeCanvas.getContext("2d");
-    this.world = document.createElement("div");
-    this.world.className = "css3d-world";
-    this.viewport.append(this.edgeCanvas, this.world);
+    this.viewport.append(this.edgeCanvas);
     el.appendChild(this.viewport);
 
     this.applyHostVars();
@@ -319,7 +332,6 @@ export class CSS3DGraphRenderer {
 
   private build(g: GraphData) {
     this.measure();
-    this.heavy = true; // unified: always render nodes on canvas (one renderer; scales to any graph size)
     // adjacency + degree
     this.adjacency.clear();
     const deg = new Map<string, number>();
@@ -329,9 +341,15 @@ export class CSS3DGraphRenderer {
       this.link(e.from, e.to); this.link(e.to, e.from);
     }
 
-    const self = g.nodes.find((n) => n.id === SELF_NODE_ID || n.kind === "self");
-    const c3 = self?.position ?? this.centroid(g.nodes.map((n) => n.position ?? [0, 0, 0]));
-    const c2 = self?.position2d ?? this.centroid2(g.nodes.map((n) => n.position2d ?? [0, 0]));
+    // Center on the CONTENT centroid EXCLUDING the injected "you" hub — NOT self.position. The hub
+    // is injected at the backend origin [0,0,0] (youNode.ts), so centering on it would frame the
+    // empty origin instead of the real cloud's center of mass. The exclusion mirrors scaleToSpacing,
+    // which scales about the same self-excluded centroid; using the same origin here keeps the
+    // initial p3/p2 centered on the cloud before any rescale runs (most visible in 3rd-brain, where
+    // "you" isn't linked to the memory nodes and sits far from their centroid). Falls back to the
+    // all-node centroid when there are no non-self nodes.
+    const c3 = this.centroid(g.nodes.filter((n) => n.kind !== "self").map((n) => n.position ?? [0, 0, 0]));
+    const c2 = this.centroid2(g.nodes.filter((n) => n.kind !== "self").map((n) => n.position2d ?? [0, 0]));
 
     // hovered/highlight state is stale across modes
     this.hoveredId = null; this.highlightSet = null;
@@ -345,47 +363,10 @@ export class CSS3DGraphRenderer {
         sx: 0, sy: 0, depth: 0, pscale: 1, onScreen: true, lastZi: -1, lastDotSize: -1, shown: true,
       };
     };
-    if (this.heavy) {
-      // BIG graph: NO DOM node elements (this is the load/switch cost). Render everything on the
-      // canvas. Just (re)build the data array — no createElement, no reconcile, no layout thrash.
-      if (this.world.childElementCount) this.world.replaceChildren();
-      this.nodes = g.nodes.map(mkNode);
-      this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
-    } else {
-      // SMALL graph: real DOM nodes, reconciled (reuse divs for ids shared across a mode switch).
-      const prev = this.byId;
-      const next = new Map<string, NodeView>();
-      const nodes: NodeView[] = [];
-      for (const node of g.nodes) {
-        const text = node.kind === "self" ? "You" : node.label;
-        let nv = prev.get(node.id);
-        const fresh = mkNode(node);
-        if (nv && nv.el) {
-          prev.delete(node.id);
-          nv.node = node; nv.deg = fresh.deg; nv.scale = fresh.scale; nv.p3 = fresh.p3; nv.p2 = fresh.p2;
-          nv.lastDotSize = -1; nv.lastZi = -1;
-          if (nv.label!.textContent !== text) nv.label!.textContent = text;
-          nv.el.classList.toggle("css3d-node--self", node.kind === "self");
-          nv.el.classList.remove("is-hover", "is-active", "is-match", "is-dim");
-          if (!nv.shown) { nv.el.style.display = ""; nv.shown = true; }
-        } else {
-          nv = fresh;
-          nv.el = document.createElement("div");
-          nv.dot = document.createElement("div");
-          nv.label = document.createElement("span");
-          nv.el.className = node.kind === "self" ? "css3d-node css3d-node--self" : "css3d-node";
-          nv.dot.className = "css3d-dot";
-          nv.dot.dataset.id = node.id;
-          nv.label.className = "css3d-label";
-          nv.label.textContent = text;
-          nv.el.append(nv.dot, nv.label);
-          this.world.appendChild(nv.el);
-        }
-        nodes.push(nv); next.set(node.id, nv);
-      }
-      for (const old of prev.values()) old.el?.remove();
-      this.nodes = nodes; this.byId = next;
-    }
+    // Nodes (and edges) are rendered entirely on the canvas — there are no per-node DOM elements,
+    // which is what keeps load + mode-switch cheap at any graph size. We just (re)build the data array.
+    this.nodes = g.nodes.map(mkNode);
+    this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
 
     // Each edge gets a stable 0..1 rank; the draw loop keeps those below the current mode's fraction.
     this.edges = [];
@@ -394,8 +375,14 @@ export class CSS3DGraphRenderer {
       if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
     }
 
-    this.settled2D = false; // 2D layout is settled lazily on first switch to 2D
+    this.settled2D = false;
     this.settlePositions();
+    // Eagerly settle the 2D layout too (not lazily on first 2D reveal). A mode switch can happen
+    // WHILE the renderer is already showing 2D — if p2/radius2 were still stale at that point the
+    // flat view would morph using the previous graph's center/extent and look unbalanced. Running
+    // ensure2D's exact pass here (same n>=2 + no-intentional-layout + cache guards) makes radius2/p2
+    // correct immediately. radius2 below is then recomputed from the settled p2 (not the seed).
+    this.ensure2D();
 
     let r3 = 1, r2 = 1;
     for (const nv of this.nodes) {
@@ -517,14 +504,8 @@ export class CSS3DGraphRenderer {
       nv.colorInt = this.colorFor(nv.node);
       nv.colorHex = intToHex(nv.colorInt);
       nv.lastDotSize = -1;
-      if (nv.el) { // DOM nodes (small graphs) — heavy graphs read colorHex on the canvas
-        nv.el.style.setProperty("--dot-color", nv.colorHex);
-        nv.el.classList.toggle("css3d-node--hollow", this.isHollow(nv.node));
-      }
     }
-    this.applyDimming();
-    this.updateLabels();
-    this.dirty = true;
+    this.dirty = true; // the canvas reads colorHex on the next frame
   }
 
   private isHollow(node: GraphNode): boolean {
@@ -553,8 +534,8 @@ export class CSS3DGraphRenderer {
 
   private daemonColor(n: GraphNode): number {
     const vs = nodeVisualState(n.daemon ?? { enabled: true, running: false, lastResult: null, lastFiredMs: null });
-    // running fills with palette; enabled-idle draws a palette RING (hollow) — both want the per-node
-    // palette colour (the `--bg` fill of a hollow dot comes from the .css3d-node--hollow CSS).
+    // running fills with palette; enabled-idle draws a palette RING (hollow, via isHollow on the
+    // canvas) — both want the per-node palette colour.
     if (vs.fill === "palette" || vs.border === "palette") return this.paletteColor(n.id);
     return lerpInt(this.cfg.daemonNeutral ?? 0xaeb4c2, this.cfg.backgroundColor, 1 - vs.opacity); // disabled: faded
   }
@@ -593,10 +574,41 @@ export class CSS3DGraphRenderer {
       if (pr.z > maxZ) maxZ = pr.z;
     }
     this.minZ = minZ; this.maxZ = maxZ;
+    this.clearAroundSelf();
+  }
+
+  /** Guarantee a clear ring around the "you" hub IN SCREEN SPACE, using each node's actual drawn
+   *  radius. The world-space pre-spread (scaleToSpacing) can't do this: how big a dot is DRAWN
+   *  depends on zoom, so a one-link neighbour in a sparse, zoomed-in graph draws large enough to
+   *  graze the hub even though its CENTER clears the world radius. After projecting, push any
+   *  non-self node whose drawn circle would overlap the hub's (plus SELF_CLEAR_GAP) radially
+   *  outward in screen px. Runs every frame, so it holds in 2D, 3D, and through the morph; the hub
+   *  is pinned at the cloud centre, so the push direction is stable (no jitter). Edges, DOM nodes,
+   *  and labels all read sx/sy, so they follow the nudge. O(n). */
+  private clearAroundSelf() {
+    const self = this.nodes.find((n) => n.node.kind === "self");
+    if (!self || !self.onScreen) return;
+    const rSelf = this.nodeDiameter(self) / 2;
+    let coincident = 0;
+    for (const nv of this.nodes) {
+      if (nv === self || !nv.onScreen) continue;
+      const minDist = rSelf + this.nodeDiameter(nv) / 2 + SELF_CLEAR_GAP;
+      let dx = nv.sx - self.sx, dy = nv.sy - self.sy;
+      let d = Math.hypot(dx, dy);
+      if (d >= minDist) continue;
+      if (d < 0.01) {
+        // Exactly on the hub — fan coincident nodes out on a golden-angle bearing so they don't stack.
+        const a = (coincident++) * 2.39996323;
+        dx = Math.cos(a); dy = Math.sin(a); d = 1;
+      }
+      const f = minDist / d;
+      nv.sx = self.sx + dx * f;
+      nv.sy = self.sy + dy * f;
+    }
   }
 
   private depthRank(nv: NodeView): number { const span = this.maxZ - this.minZ; return span < 1 ? 1 : (nv.depth - this.minZ) / span; } // 0 far, 1 near; flat/single -> 1
-  private depthMin(): number { return this.heavy ? DEPTH_MIN_OPACITY : DEPTH_MIN_OPACITY_SMALL; } // small graphs fade gently
+  private depthMin(): number { return DEPTH_MIN_OPACITY; }
   private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(this.depthRank(nv), DEPTH_CURVE); }
   private nodeDiameter(nv: NodeView): number {
     // Size by node DENSITY, not by the layout's absolute scale. The on-screen node spacing is roughly
@@ -686,47 +698,16 @@ export class CSS3DGraphRenderer {
       this.dirty = true;
     }
 
-    // Big graphs render entirely on the canvas (no DOM node elements at all — that's what makes
-    // load + mode-switch fast). Small graphs render as real DOM nodes + a canvas edge layer.
+    // Everything renders on the canvas — nodes, edges, labels — in one pass.
     if (this.dirty) {
       this.projectPositions();
-      if (this.heavy) {
-        this.drawCanvas(true, is2d);
-      } else {
-        this.applyDomNodes(is2d);
-        this.drawCanvas(false, is2d);
-      }
+      this.drawCanvas(true, is2d);
       this.emitGlow();
       this.dirty = false;
     }
 
     this.raf = requestAnimationFrame(this.tick);
   };
-
-  /** Write each node's DOM transform + pixel size + depth fade + interactivity (rest state). */
-  private applyDomNodes(is2d: boolean) {
-    for (const nv of this.nodes) {
-      const el = nv.el, dot = nv.dot;
-      if (!el || !dot) continue; // heavy graphs have no DOM nodes
-      const ds = this.nodeDiameter(nv);
-      const hide = !nv.onScreen; // off-screen / behind the camera only — zoomed-out dots stay (floored)
-      if (hide) { if (nv.shown) { el.style.display = "none"; nv.shown = false; } continue; }
-      if (!nv.shown) { el.style.display = ""; nv.shown = true; }
-      el.style.transform = `translate(${nv.sx.toFixed(1)}px,${nv.sy.toFixed(1)}px)`;
-      if (Math.abs(ds - nv.lastDotSize) > 0.4) {
-        dot.style.width = `${ds.toFixed(1)}px`;
-        dot.style.height = `${ds.toFixed(1)}px`;
-        el.style.setProperty("--r", `${(ds / 2).toFixed(1)}px`);
-        nv.lastDotSize = ds;
-      }
-      const rank = this.depthRank(nv);
-      const zi = Math.round(rank * 10000);
-      if (zi !== nv.lastZi) { el.style.zIndex = String(zi); nv.lastZi = zi; }
-      el.style.opacity = String(this.depthFade(nv, is2d));
-      // Re-evaluate label visibility every frame so zoom-in reveal tracks the live camera.
-      nv.label?.classList.toggle("is-shown", this.labelVisible(nv));
-    }
-  }
 
   /** Draw edges (always) and, when `withNodes`, the node dots on the canvas (the moving state). */
   private drawCanvas(withNodes: boolean, is2d: boolean) {
@@ -953,42 +934,30 @@ export class CSS3DGraphRenderer {
     if (id === this.hoveredId) return;
     const nv = id ? this.byId.get(id) : undefined;
     this.onHover(nv ? { id: nv.node.id, label: nv.node.label, kind: nv.node.kind, folder: nv.node.folder } : null);
-    if (this.heavy) {
-      // Big graph: the highlight + neighbour-dim is rendered on the canvas (one cheap pass), so a
-      // hover just flags the id and asks for a redraw — NO O(n) DOM class toggles or reproject.
-      this.hoveredId = id;
-      this.dirty = true;
-      return;
-    }
-    // Small graph: rich DOM highlight (cheap at this size).
-    if (this.hoveredId) this.byId.get(this.hoveredId)?.el?.classList.remove("is-hover");
+    // The highlight + neighbour-dim is rendered on the canvas (one cheap pass, reading focusSet()),
+    // so a hover just flags the id and asks for a redraw — no O(n) DOM toggles or reproject.
     this.hoveredId = id;
-    nv?.el?.classList.add("is-hover");
-    this.applyDimming();
-    this.updateLabels();
+    this.dirty = true;
   }
 
   // ---- highlight / selection ----------------------------------------------
 
   setActiveFile(id: string | null) {
-    if (this.activeFile) this.byId.get(this.activeFile)?.el?.classList.remove("is-active");
     this.activeFile = id;
-    if (id) this.byId.get(id)?.el?.classList.add("is-active");
     this.alwaysOn = computeAlwaysOnSet(this.nodes.map((n) => n.node), this.edges.map((e) => ({ source: e.a.node.id, target: e.b.node.id })), this.activeFile, this.cfg.graphLabelHubCount);
-    this.updateLabels();
-    this.dirty = true; // heavy graphs reflect the active file on the canvas
+    this.dirty = true; // the canvas reflects the active file (label + emphasis) on the next frame
   }
 
   setSearchMatches(ids: Set<string>) {
-    for (const nv of this.nodes) nv.el?.classList.toggle("is-match", ids.has(nv.node.id));
     this.searchMatches = ids;
-    this.updateLabels();
-    this.dirty = true;
+    this.dirty = true; // matches are drawn on the canvas via labelVisible()
   }
 
-  highlightNodes(ids: string[]) { this.highlightSet = ids.length ? new Set(ids) : null; this.applyDimming(); this.updateLabels(); this.dirty = true; }
-  clearHighlight() { this.highlightSet = null; this.applyDimming(); this.updateLabels(); this.dirty = true; }
+  highlightNodes(ids: string[]) { this.highlightSet = ids.length ? new Set(ids) : null; this.dirty = true; }
+  clearHighlight() { this.highlightSet = null; this.dirty = true; }
 
+  // The hovered/highlighted node plus its neighbours — read by drawCanvas to emphasise that set
+  // and dim the rest in a single canvas pass.
   private focusSet(): Set<string> | null {
     if (this.hoveredId) {
       const s = new Set<string>([this.hoveredId]);
@@ -996,18 +965,6 @@ export class CSS3DGraphRenderer {
       return s;
     }
     return this.highlightSet;
-  }
-
-  private applyDimming() {
-    const focus = this.focusSet();
-    for (const nv of this.nodes) nv.el?.classList.toggle("is-dim", !!focus && !focus.has(nv.node.id));
-  }
-
-  private updateLabels() {
-    if (this.heavy) return; // heavy graphs draw labels on the canvas via labelVisible()
-    // Immediate refresh on state changes (hover/search/active); applyDomNodes also runs this
-    // every frame so zoom-in reveal stays live. Single source of truth: labelVisible().
-    for (const nv of this.nodes) nv.label?.classList.toggle("is-shown", this.labelVisible(nv));
   }
 
   // ---- camera commands -----------------------------------------------------
