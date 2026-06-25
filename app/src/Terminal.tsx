@@ -123,6 +123,31 @@ function shellQuote(p: string): string {
   return "'" + p.replace(/'/g, "'\\''") + "'";
 }
 
+// Vault-relative destination for an attachment dropped onto the terminal, honoring
+// settings.attachments.folder (mirrors Editor.tsx's attachmentTarget, minus the "."
+// = current-note case — the terminal has no note context). Leading/trailing slashes
+// are stripped so a stray `folder: /attachments` still lands vault-relative.
+function terminalAttachmentTarget(fileName: string): string {
+  const folder = (settings.attachments?.folder ?? "attachments").trim().replace(/^\/+|\/+$/g, "");
+  return folder ? `${folder}/${fileName}` : fileName;
+}
+
+// Upload an OS/browser-dropped File's bytes into the vault attachment folder and return
+// its ABSOLUTE path (the terminal's cwd is the vault root, so we prefix the returned
+// vault-relative path with it). dataTransfer File objects expose only a basename — never
+// a real filesystem path — so the only way to hand Claude Code a usable path is to
+// materialize the bytes inside the vault first. Returns "" on failure so the caller skips it.
+async function uploadDroppedFile(file: File): Promise<string> {
+  try {
+    const bytes = await file.arrayBuffer();
+    const rel = await api.uploadAsset(terminalAttachmentTarget(file.name), bytes);
+    const root = (await vaultRoot()).replace(/\/+$/, "");
+    return root ? `${root}/${rel}` : rel;
+  } catch {
+    return "";
+  }
+}
+
 // True if a drag carries something we can turn into a path. Read from `types` (the only
 // dataTransfer field readable during dragover; getData is blocked there).
 function dragHasPath(e: DragEvent): boolean {
@@ -131,11 +156,16 @@ function dragHasPath(e: DragEvent): boolean {
 }
 
 // Extract droppable paths. Reads dataTransfer SYNCHRONOUSLY (valid only during the event)
-// before any await. Sources, in priority order: an in-app tree drag (vault-relative →
-// absolute), OS file: URIs, then a browser file drop (name only — no real path exposed).
+// before any await — including snapshotting `dt.files` into a real array up front, since the
+// FileList is detached the moment the event handler returns and the first `await` below would
+// otherwise read it too late. Sources, in priority order: an in-app tree drag (vault-relative →
+// absolute), OS file: URIs, then a browser/OS file drop (B20: upload the bytes into the vault
+// and use the absolute path, since the File object exposes only a basename, not a real path).
 async function pathsFromDrop(e: DragEvent): Promise<string[]> {
   const dt = e.dataTransfer;
   if (!dt) return [];
+  // Snapshot the FileList synchronously, before any await invalidates dataTransfer.
+  const files = dt.files ? [...dt.files] : [];
   const rel = dt.getData("application/x-oa-path");
   if (rel) {
     const root = (await vaultRoot()).replace(/\/+$/, "");
@@ -150,7 +180,12 @@ async function pathsFromDrop(e: DragEvent): Promise<string[]> {
       .filter(Boolean);
     if (paths.length) return paths;
   }
-  if (dt.files?.length) return [...dt.files].map((f) => f.name);
+  // OS/browser file drop: the File exposes no real filesystem path, so upload each one's
+  // bytes into the vault and hand back the absolute path it landed at.
+  if (files.length) {
+    const uploaded = await Promise.all(files.map(uploadDroppedFile));
+    return uploaded.filter(Boolean);
+  }
   return [];
 }
 

@@ -16,7 +16,7 @@
 //     }
 //   }
 
-import { WidgetType } from "@codemirror/view";
+import { WidgetType, type EditorView } from "@codemirror/view";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 
@@ -50,7 +50,10 @@ export abstract class SolidWidget extends WidgetType {
   /** Subclass must call `mountSolid(container, ...)` to mount the component. */
   protected abstract renderSolid(container: HTMLElement): void;
 
-  toDOM(): HTMLElement {
+  // `_view` is optional/unused by the base mount, but the signature accepts it so
+  // subclasses (e.g. NoteTitleWidget) can override with the view in hand and still
+  // chain `super.toDOM(view)`.
+  toDOM(_view?: EditorView): HTMLElement {
     const container = document.createElement("div");
     container.className = this.containerClass;
     this.renderSolid(container);

@@ -5,7 +5,7 @@ import { syntaxTree } from "@codemirror/language";
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
-import { latexTokenDecorations } from "./latexHighlight";
+import { latexTokenDecorations, mathSrcMark } from "./latexHighlight";
 import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
@@ -111,7 +111,7 @@ function indentLine(cls: string, depth: number): Decoration {
 }
 
 // Bullet glyph widget — replaces the raw marker character (-, *, +) off the cursor line.
-// Depth-varied glyph: 0 → "•", 1 → "◦", 2+ → "▪"
+// Depth-varied glyph alternates by parity: even depth → • (filled), odd depth → ◦ (hollow)
 // NOTE: Task-list lines (- [ ] / - [x]) also match the bullet regex. A follow-up task
 // will render those as checkboxes. That checkbox renderer must guard lines BEFORE this
 // bullet rule runs (i.e. skip the bullet widget for task lines).
@@ -130,7 +130,7 @@ class BulletWidget extends WidgetType {
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = "cm-bullet";
-    const glyph = this.depth === 0 ? "•" : this.depth === 1 ? "◦" : "▪";
+    const glyph = this.depth % 2 === 0 ? "•" : "◦";
     span.textContent = glyph;
     return span;
   }
@@ -655,7 +655,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const textStart = line.from + taskMatch[0].length;
           if (line.to > textStart) deco.push(taskDoneMark.range(textStart, line.to));
         }
-        if (revealsPrefix(line.from, line.from + taskMatch[0].length)) {
+        // An EMPTY item (nothing after the marker) with the caret on it must render the raw
+        // marker, not the atomic checkbox widget: a whole-line replace leaves the end-of-line
+        // caret unanchored and it renders at the far left (B2). Showing raw keeps it anchored.
+        const prefixEnd = line.from + taskMatch[0].length;
+        const emptyActive = prefixEnd === line.to && onCursor;
+        if (emptyActive || revealsPrefix(line.from, prefixEnd)) {
           // Raw, but indent like the rendered view (hide the literal leading
           // whitespace, drive indent from the same hanging-indent decoration) and
           // show the "- [ ]" marker in the mono font.
@@ -677,7 +682,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
       if (bulletMatch) {
         const depth = listDepth(view.state, line.from + bulletMatch[1].length, bulletMatch[1]);
-        if (revealsPrefix(line.from, line.from + bulletMatch[0].length)) {
+        // Empty active item → render raw marker so the end-of-line caret stays anchored
+        // (a whole-line widget replace would place it at the far left). See B2 / task branch.
+        const prefixEnd = line.from + bulletMatch[0].length;
+        const emptyActive = prefixEnd === line.to && onCursor;
+        if (emptyActive || revealsPrefix(line.from, prefixEnd)) {
           // Raw, but indent like the rendered view and show the "- " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
           const indentLen = bulletMatch[1].length;
@@ -698,7 +707,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       const orderedMatch = isTaskLine || bulletMatch ? null : text.match(/^(\s*)(\d+)([.)])(\s+)/);
       if (orderedMatch) {
         const depth = listDepth(view.state, line.from + orderedMatch[1].length, orderedMatch[1]);
-        if (revealsPrefix(line.from, line.from + orderedMatch[0].length)) {
+        // Empty active item → render raw marker so the end-of-line caret stays anchored
+        // (a whole-line widget replace would place it at the far left). See B2 / task branch.
+        const prefixEnd = line.from + orderedMatch[0].length;
+        const emptyActive = prefixEnd === line.to && onCursor;
+        if (emptyActive || revealsPrefix(line.from, prefixEnd)) {
           // Raw, but indent like the rendered view and show the "1. " marker in mono.
           deco.push(indentLine("cm-li", depth).range(line.from));
           const indentLen = orderedMatch[1].length;
@@ -731,6 +744,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
           if (revealsRange(s, end)) {
+            // Cover the whole revealed inner range in mono FIRST (layered under the color
+            // token marks) so the gaps between LaTeX tokens don't fall back to the body serif.
+            deco.push(mathSrcMark.range(s + 2, end - 2));
             deco.push(syntaxMark.range(s, s + 2), syntaxMark.range(end - 2, end));
             for (const d of latexTokenDecorations(s + 2, m[1])) deco.push(d);
           } else {
@@ -750,6 +766,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
           if (revealsRange(s, end)) {
+            // Cover the whole revealed inner range in mono FIRST (under the color marks) so
+            // letters/operators between tokens read as code, not the body serif.
+            deco.push(mathSrcMark.range(s + 1, end - 1));
             deco.push(syntaxMark.range(s, s + 1), syntaxMark.range(end - 1, end));
             for (const d of latexTokenDecorations(s + 1, m[1])) deco.push(d);
           } else {
@@ -763,7 +782,29 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       pushInline(deco, text, line.from, revealsRange, /__([^_]+)__/g, 2, strong);
       pushInline(deco, text, line.from, revealsRange, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em);
       pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike);
-      pushInline(deco, text, line.from, revealsRange, /`([^`]+)`/g, 1, code);
+      // inline code: run-length-aware so a backtick can live INSIDE a span. A run of N
+      // backticks opens a span that closes only on the next run of EXACTLY N backticks
+      // (mirrors core/src/wikilinks.ts stripCode + CommonMark). The single-backtick regex
+      // (/`([^`]+)`/) couldn't do this — it closed on the first inner backtick. Kept in the
+      // SAME inline-token position (before links/wikilinks) so `[[x]]` inside a code span
+      // isn't styled as a wikilink. Mirrors pushInline's hide/syntaxMark fence logic.
+      for (const m of text.matchAll(/(`+)((?:(?!\1)[^\n])*?)\1/g)) {
+        const s = line.from + (m.index ?? 0);
+        const end = s + m[0].length;
+        const fenceLen = m[1].length;
+        const innerStart = s + fenceLen, innerEnd = end - fenceLen;
+        if (innerEnd <= innerStart) continue;
+        const onCursor = revealsRange(s, end);
+        deco.push(code.range(innerStart, innerEnd));
+        if (!onCursor) {
+          deco.push(hide.range(s, innerStart));
+          deco.push(hide.range(innerEnd, end));
+        } else {
+          // Revealed: the backtick fences render in dim Monaspace, not the prose serif.
+          deco.push(syntaxMark.range(s, innerStart));
+          deco.push(syntaxMark.range(innerEnd, end));
+        }
+      }
 
       // markdown links [text](url) + bare https://… URLs: show the link text, hide the
       // brackets/url unless the caret touches THIS link (per-token reveal). Shared with the
@@ -1195,7 +1236,7 @@ export const livePreview = [
     // text-indent:0 — list lines carry a negative hanging text-indent (it's inherited);
     // without resetting it the KaTeX content shifts left and, when math is the first thing
     // after a list marker, lands on top of (hides) the bullet/number.
-    ".cm-math": { display: "inline-block", "vertical-align": "middle", "text-indent": "0" },
+    ".cm-math": { display: "inline-block", "vertical-align": "baseline", "text-indent": "0" },
     // Full-width block for $$…$$ so KaTeX can lay out equation tags / numbers (\tag,
     // numbered align/equation) flush right of the line instead of on top of the equation.
     ".cm-math-display": { display: "block", width: "100%" },

@@ -275,7 +275,13 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
 fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Bismuth")
-        .inner_size(1200.0, 800.0);
+        .inner_size(1200.0, 800.0)
+        // Tauri v2 enables a NATIVE file drag-drop handler by default, which intercepts OS
+        // file drops at the window level and SUPPRESSES the webview's HTML5 `drop` DOM event.
+        // We rely on the DOM event (B20: dragging an image onto the in-app terminal uploads it
+        // into the vault and writes its path to the PTY), so disable the native handler and let
+        // the webview's own HTML5 DnD receive the drop instead.
+        .disable_drag_drop_handler();
     let mut script = String::new();
     if let Some(api) = injected {
         script.push_str(&format!("window.__OA_API__={api:?};"));

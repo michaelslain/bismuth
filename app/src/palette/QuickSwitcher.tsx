@@ -1,10 +1,11 @@
 // app/src/palette/QuickSwitcher.tsx
 // Cmd+O — fuzzy-search vault files and open one. Thin wrapper over PaletteModal that
-// loads the file list from /tree on open and opens the chosen file (then closes).
-import { createSignal, onMount } from "solid-js";
+// renders the file list off the pre-warmed, SSE-synced `vaultTree` cache (so the list
+// shows instantly with no empty/stale flash on open) and opens the chosen file (then closes).
+import { createMemo } from "solid-js";
 import { PaletteModal, type PaletteItem } from "./PaletteModal";
-import { api } from "../api";
 import { contentLabel, contentIcon } from "../tabIds";
+import { vaultTree, refreshVaultTree } from "../treeStore";
 import type { TreeEntry } from "../../../core/src/graph";
 
 type Props = {
@@ -34,23 +35,21 @@ function toItem(e: TreeEntry): PaletteItem {
 }
 
 export function QuickSwitcher(props: Props) {
-  const [items, setItems] = createSignal<PaletteItem[]>([]);
-  const [failed, setFailed] = createSignal(false);
+  // Derive items reactively from the pre-warmed cache: the list paints immediately
+  // off the last-known tree (no per-open fetch), and re-renders if a refresh lands.
+  const items = createMemo<PaletteItem[]>(() => vaultTree().filter(isFile).map(toItem));
 
-  onMount(async (): Promise<void> => {
-    try {
-      const tree = await api.tree();
-      setItems(tree.filter(isFile).map(toItem));
-    } catch {
-      setFailed(true);
-    }
-  });
+  // Still kick a refresh on open so a missed SSE corrects fast — but we render the
+  // cache right now rather than waiting on it (the await would re-introduce the flash).
+  void refreshVaultTree();
 
   return (
     <PaletteModal
       placeholder="Find a file..."
       items={items()}
-      emptyText={failed() ? "Failed to load files" : "No files"}
+      // Empty almost always means the cache hasn't warmed yet (cold boot) rather than a
+      // truly empty vault, so frame it as loading; the kicked refresh fills it in.
+      emptyText="Loading files…"
       onClose={props.onClose}
       onSelect={(item) => {
         props.openFile(item.id);

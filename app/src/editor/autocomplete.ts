@@ -1,8 +1,9 @@
 // app/src/editor/autocomplete.ts
-import { autocompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { autocompletion, startCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
+import { syntaxTree } from "@codemirror/language";
 import { completionDisplayConfig, completionTheme, type IconedCompletion } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
 import { matchTagPrefix } from "./tag";
 import { matchEmojiPrefix, searchEmoji } from "./emoji";
@@ -15,6 +16,30 @@ import { querySource } from "./queryComplete";
 import { taskSource } from "./taskComplete";
 import { slashSource } from "./slashComplete";
 import { applyCompletion as applyInsert } from "./applyCompletion";
+
+// Is the caret inside a code span / fenced block per the markdown syntax tree? `[[`,
+// `#tag` and `:emoji:` are prose features — they must NOT fire inside code, where those
+// characters are literal source (e.g. `arr[[0]]`, `c#`, Python slices `x[1:2]`). We walk
+// from the innermost node at the caret up to the root, matching the Lezer-markdown code
+// node names. `-1` biases resolution to the node ending at the caret so a span we just
+// finished typing still counts as code.
+function inCode(context: CompletionContext): boolean {
+  // Derive the parse-node type from resolveInner so we don't depend on @lezer/common
+  // (same idiom as livePreview.ts).
+  type ParseNode = NonNullable<ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]>["parent"]>;
+  for (let n: ParseNode | null = syntaxTree(context.state).resolveInner(context.pos, -1); n; n = n.parent) {
+    if (["InlineCode", "FencedCode", "CodeBlock", "CodeText"].includes(n.name)) return true;
+  }
+  return false;
+}
+
+// Cheap textual fallback for an *open* inline-code span on the current line: an odd
+// number of backticks before the caret means we're inside a still-unclosed `` `…``. The
+// syntax tree only marks a *closed* `InlineCode`, so this catches the half-typed case
+// the tree misses. (`[[` / `#` alone have zero backticks → false, so the trigger is safe.)
+function inInlineCode(textBefore: string): boolean {
+  return ((textBefore.match(/`/g) || []).length % 2) === 1;
+}
 
 // Shared shape for the prefix-triggered body sources (wikilink, tag): extract the
 // text before the caret, match a trigger prefix, map items to options, and return a
@@ -29,6 +54,8 @@ function prefixSource<T>(opts: {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
+    // `[[wikilink]]` / `#tag` are prose triggers — suppress them inside code (B22).
+    if (inCode(context) || inInlineCode(textBefore)) return null;
     const match = opts.match(textBefore);
     if (!match) return null;
 
@@ -215,6 +242,9 @@ function emojiSource(): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     const line = context.state.doc.lineAt(context.pos);
     const textBefore = line.text.slice(0, context.pos - line.from);
+    // `:emoji:` is a prose trigger — suppress it inside code (B22). Note `:` is common in
+    // code (slices, ternaries, dict literals) so this matters even more than for `[[`/`#`.
+    if (inCode(context) || inInlineCode(textBefore)) return null;
     // Inside an open `[[wikilink`, let the wikilink source own the popup — wikilink names
     // can contain spaces, so the emoji rule (`:` after whitespace) would otherwise
     // double-fire and mix note + emoji suggestions in one list.
@@ -266,6 +296,24 @@ export function taskCompletion(): Extension {
 
 // Combined editor completion: property keys/enums/tag-lists (frontmatter) plus
 // `[[wikilinks]]`, `#tags`, and `:emoji:`/special chars (body) — all in ONE config.
+// CodeMirror's `activateOnTyping` only auto-opens the popup on word-character input, but the
+// wikilink trigger opens with punctuation (`[[`), so typing it never auto-activated — the popup
+// only appeared via Ctrl-Space (B21). This listener force-opens it the instant a `[[` prefix
+// appears from user typing. `startCompletion` is deferred (you may not dispatch inside an
+// updateListener) and is a no-op when no source returns options (e.g. inside code, where the
+// wikilink source bails per B22), so it's safe to fire optimistically.
+const wikilinkAutoTrigger = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  if (!update.transactions.some((tr) => tr.isUserEvent("input.type"))) return;
+  const pos = update.state.selection.main.head;
+  const line = update.state.doc.lineAt(pos);
+  const textBefore = line.text.slice(0, pos - line.from);
+  if (matchWikilinkPrefix(textBefore)) {
+    const view = update.view;
+    queueMicrotask(() => startCompletion(view));
+  }
+});
+
 // Multiple autocompletion() extensions would conflict, so every source lives in this
 // single override array.
 export function vaultCompletion(opts: {
@@ -275,7 +323,7 @@ export function vaultCompletion(opts: {
   getIconNames: () => string[];
   inFrontmatter: (ctx: CompletionContext) => boolean;
 }): Extension {
-  return autocompletion({
+  return [autocompletion({
     ...completionDisplayConfig,
     override: [
       // frontmatter-position sources (gated by inFrontmatter)
@@ -292,5 +340,5 @@ export function vaultCompletion(opts: {
       tagSource(opts.getTags),
       emojiSource(),
     ],
-  });
+  }), wikilinkAutoTrigger];
 }

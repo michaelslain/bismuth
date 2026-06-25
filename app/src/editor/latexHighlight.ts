@@ -91,6 +91,13 @@ function mark(cls: string): Decoration {
  *  syntax marks (`**`, `` ` ``) on the cursor line. */
 export const texDelim = mark("cm-tex-delim");
 
+/** Covering mono-font mark for the WHOLE revealed math source (the inner `$…$` range),
+ *  layered UNDER the per-token color marks. The token marks (cm-tex-*) only color the
+ *  delimiters/commands/braces; the gaps between them (letters, operators) would otherwise
+ *  inherit the body serif. This mark gives the whole revealed range Monaspace so editing
+ *  LaTeX reads as code — color marks layered on top still apply (font outer, color inner). */
+export const mathSrcMark = Decoration.mark({ class: "cm-math-src" });
+
 /** LaTeX token mark decorations for `src`, offset so range starts at `offset`.
  *  Caller pushes these into its decoration array (ranges are pre-offset, unsorted —
  *  rely on `Decoration.set(decos, true)` to sort). */
@@ -98,13 +105,19 @@ export function latexTokenDecorations(offset: number, src: string): Range<Decora
   return tokenizeLatex(src).map((tok) => mark(tok.cls).range(offset + tok.from, offset + tok.to));
 }
 
-/** Colors for the `cm-tex-*` token classes — One Dark, matching codeHighlight.ts so
- *  math source and fenced code read consistently. */
+/** Colors for the `cm-tex-*` token classes — sourced from the theme CSS vars
+ *  (settingsCssVars.ts) so math source re-tints per theme, matching codeHighlight.ts.
+ *  CodeMirror's theme accepts `color: "var(--x)"` (proven by codeHighlight's propertyName). */
 export const latexHighlightTheme = EditorView.theme({
-  ".cm-tex-command": { color: "#c678dd" }, // \frac, \alpha … (keyword purple)
-  ".cm-tex-bracket": { color: "#abb2bf" }, // { } [ ]            (punctuation grey)
-  ".cm-tex-script": { color: "#56b6c2" }, //  ^ _               (escape cyan)
-  ".cm-tex-number": { color: "#d19a66" }, //  0-9               (number orange)
-  ".cm-tex-comment": { color: "#7f848e", fontStyle: "italic" }, // % …  (comment grey)
-  ".cm-tex-delim": { color: "#7f848e" }, //   $ / $$            (dim, recedes)
+  ".cm-tex-command": { color: "var(--accent-purple)" }, // \frac, \alpha … (keyword purple)
+  ".cm-tex-bracket": { color: "var(--text-muted)" }, // { } [ ]            (punctuation grey)
+  ".cm-tex-script": { color: "var(--teal)" }, //  ^ _                  (escape teal)
+  ".cm-tex-number": { color: "var(--gold)" }, //  0-9                  (number gold)
+  ".cm-tex-comment": { color: "var(--text-muted)", fontStyle: "italic" }, // % …  (comment grey)
+  // `$` / `$$` delimiters — a dim color that recedes. No `--faint`-equiv color var ships,
+  // so mix the foreground toward transparent (matches settingsCssVars' --faint formula).
+  ".cm-tex-delim": { color: "color-mix(in srgb, var(--fg) 45%, transparent)" },
+  // Covering mono font for revealed math source (mathSrcMark), so the gaps between
+  // colored tokens read as code instead of the body serif.
+  ".cm-math-src": { fontFamily: "'Monaspace Xenon', ui-monospace, monospace" },
 });
