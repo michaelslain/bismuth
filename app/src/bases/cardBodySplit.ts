@@ -6,6 +6,8 @@
 // sliced off the front and kept verbatim in `prefix`. The card editor saves `prefix + body`, so
 // the stripped parts round-trip losslessly (prefix is always a literal substring of the input).
 
+import { TASK_LINE } from "./taskLine";
+
 export const FRONTMATTER_RE = /^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n?/;
 
 /** Strip a leading YAML frontmatter block (incl. an optional BOM). Pure. */
@@ -48,10 +50,6 @@ export function splitCardBody(raw: string, title?: string): CardBodySplit {
 
   return { prefix: raw.slice(0, pos), body: raw.slice(pos) };
 }
-
-// A task line: `- [x] body` (any single status char between the brackets), possibly indented. The
-// writers normalize the bullet to `-`, so a single-dash bullet is enough to recognize one.
-const TASK_LINE = /^[ \t]*- \[.\] /;
 
 export type CardMode = "body" | "tasks";
 

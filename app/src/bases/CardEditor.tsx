@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { TASK_LINE } from "./taskLine";
 import { EditorView, keymap, drawSelection, Decoration, WidgetType, ViewPlugin } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { EditorState, StateField, StateEffect, Facet, Annotation } from "@codemirror/state";
@@ -42,8 +43,6 @@ const cardTheme = EditorView.theme({
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
 });
 
-// A task line: `- [<one char>] body`, possibly indented (writers normalize the bullet to `-`).
-const TASK_LINE_RE = /^[ \t]*- \[.\] /;
 function lineIndentWidth(text: string): number {
   const m = /^[ \t]*/.exec(text);
   return m ? m[0].length : 0;
@@ -78,7 +77,7 @@ function hiddenLineDecorations(state: EditorState, focused: boolean): Decoration
   for (let i = 1; i <= doc.lines; i++) {
     const line = doc.line(i);
     const text = line.text;
-    const isTask = TASK_LINE_RE.test(text);
+    const isTask = TASK_LINE.test(text);
     const indent = lineIndentWidth(text);
     const isContinuation = prevTaskIndent >= 0 && text.trim() !== "" && indent > prevTaskIndent;
     if (isTask) prevTaskIndent = indent;

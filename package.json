@@ -4,7 +4,7 @@
   "workspaces": ["core", "cli", "app", "relay", "mcp"],
   "scripts": {
     "test": "bun test",
-    "typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit)",
+    "typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd cli && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit)",
     "core:serve": "bun run core/src/server.ts",
     "build:app": "cd app && bun run installer"
   },

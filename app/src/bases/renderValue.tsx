@@ -66,12 +66,18 @@ export function renderStars(n: number): JSX.Element {
   return <Stars value={n} />;
 }
 
+/** Clean display label for a Link: explicit display text, else the basename
+ *  of the path with the .md extension stripped. */
+function linkLabel(link: Link): string {
+  return link.display || link.path.replace(/\.md$/, "").split("/").pop() || link.path;
+}
+
 /** First-column title cell: accent book icon + medium-weight label. */
 export function renderTitle(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
   // A Link value (e.g. file.asLink("quote text")) shows its display text and opens
   // its own target; otherwise stringify and open this row's note.
-  const label = isLink(v) ? ((v as Link).display ?? (v as Link).path) : v == null ? "" : String(v);
+  const label = isLink(v) ? linkLabel(v as Link) : v == null ? "" : String(v);
   const target = isLink(v) ? (v as Link).path : row.file.path;
   const open = () => window.dispatchEvent(new CustomEvent("oa-open", { detail: target }));
   return (
@@ -112,7 +118,7 @@ export function renderValue(id: string, row: Row): JSX.Element {
   // renders as a clickable note link, not "[object Object]".
   if (isLink(v)) {
     const link = v as Link;
-    const label = link.display || link.path.replace(/\.md$/, "").split("/").pop() || link.path;
+    const label = linkLabel(link);
     return (
       <a
         href="#"

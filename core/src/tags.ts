@@ -2,7 +2,7 @@ import { parseList, normalizeTag } from "./schema/coerce";
 import { stripCode } from "./wikilinks";
 
 /** Regex to match inline tags: #tag-name (preceded by whitespace or line start). */
-const INLINE_TAG_REGEX = /(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g;
+export const INLINE_TAG_REGEX = /(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g;
 
 export function extractTags(data: Record<string, unknown>, body: string): string[] {
   const tags = new Set<string>();

@@ -1,9 +1,7 @@
-import { parseBaseFile } from "./parse";
+import { parseBaseFile, FRONTMATTER_RE } from "./parse";
 import { serializeRows } from "./rows";
 import type { Row } from "./types";
 import type { BaseConfig } from "./types";
-
-const FM_RE = /^(---\r?\n[\s\S]*?\r?\n---\r?\n?)([\s\S]*)$/;
 
 type Meta = { name: string; path: string };
 
@@ -16,7 +14,7 @@ function emptyFile(meta: Meta): Row["file"] {
  * Preserves the column order defined in the base config's first view (or the original data).
  */
 export function reassemble(text: string, rows: Row[], config?: BaseConfig): string {
-  const m = text.match(FM_RE);
+  const m = text.match(FRONTMATTER_RE);
   const fm = m ? m[1].replace(/\n*$/, "\n") : "";
 
   // Extract column order from the base config's first view (if present).

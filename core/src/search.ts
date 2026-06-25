@@ -4,6 +4,8 @@
 import MiniSearch from "minisearch";
 import { getFileAccess } from "./fileAccess";
 import { fileBasename } from "./pathUtils";
+import { INLINE_TAG_REGEX } from "./tags";
+import { stripCode } from "./wikilinks";
 
 export interface SearchOpts {
   caseSensitive: boolean;
@@ -76,15 +78,11 @@ function extractHeadings(body: string): string {
     .join(" ");
 }
 
-// Mirror tags.ts INLINE_TAG_REGEX exactly so search tag tokens match the graph's tag
-// set (first char must be alnum/underscore). Kept as a literal rather than imported
-// because tags.ts does not export it.
-const INLINE_TAG_REGEX = /(?:^|\s)#([A-Za-z0-9_][A-Za-z0-9_/-]*)/g;
-
 /** Extract #tags from the body for index weighting. */
 function extractBodyTags(body: string): string {
-  // matchAll over a fresh regex avoids shared /g lastIndex state across calls.
-  return [...body.matchAll(INLINE_TAG_REGEX)].map((m) => m[1]).join(" ");
+  // Strip fenced/inline code first (exactly like tags.ts extractTags) so tags inside
+  // code blocks don't get indexed — keeping search's tag set in sync with the graph's.
+  return [...stripCode(body).matchAll(INLINE_TAG_REGEX)].map((m) => m[1]).join(" ");
 }
 
 interface IndexDoc {
