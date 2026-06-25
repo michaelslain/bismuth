@@ -37,6 +37,7 @@ import Box from "lucide-solid/icons/box";
 import Brain from "lucide-solid/icons/brain";
 import BrainCircuit from "lucide-solid/icons/brain-circuit";
 import Calendar from "lucide-solid/icons/calendar";
+import CalendarX from "lucide-solid/icons/calendar-x";
 import CaseSensitive from "lucide-solid/icons/case-sensitive";
 import Check from "lucide-solid/icons/check";
 import ChevronDown from "lucide-solid/icons/chevron-down";
@@ -119,7 +120,7 @@ import ZoomOut from "lucide-solid/icons/zoom-out";
 // registry-seed.test.ts asserts every command-catalog icon is covered.
 const SEED: Record<string, LucideIcon> = {
   AppWindow, Archive, ArchiveX, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
-  Bot, Box, Brain, BrainCircuit, Calendar, CaseSensitive, Check, ChevronDown,
+  Bot, Box, Brain, BrainCircuit, Calendar, CalendarX, CaseSensitive, Check, ChevronDown,
   ChevronLeft, ChevronRight,
   ChevronUp, Clock, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
