@@ -4,6 +4,8 @@
   "type": "module",
   "private": true,
   "module": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": { ".": "./src/index.ts" },
   "description": "Pure markdown memory graph (the 3rd brain): note CRUD + frontmatter + backlinks, keyword search, and the query DSL. Consumed by the daemon (writer/dream), the relay recall/collect hooks, and the per-session MCP memory tools.",
   "devDependencies": {
     "@types/bun": "latest",
