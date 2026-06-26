@@ -109,7 +109,8 @@ export interface Settings {
     sseHeartbeatMs: number;      // backend: live-update keepalive interval (ms)
   };
   daemon: {
-    enabled: boolean;    // supervise the claude-bot daemon
+    enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
+    name: string;        // per-vault daemon name ("" = "daemon")
     home: string;        // override claude-bot home dir ("" = ~/.claude-bot)
     autoUpdate: boolean; // auto-update the daemon on launch when behind
   };
