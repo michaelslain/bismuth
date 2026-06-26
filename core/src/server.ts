@@ -169,8 +169,14 @@ export function createServer(cfg: CoreConfig) {
   // and a file change mid-build won't repopulate a stale value. This matters most for rows:
   // one SSE event can fan out to N independent /rows resolves (one per open base/calendar pane),
   // and a bare lazy cache would let each kick off its own full-vault walk concurrently.
+  // The 3rd brain (memory) is gated on the daemon: when enabled, memory lives at
+  // <vault>/.daemon/memory; when disabled there is no 3rd brain at all (undefined →
+  // engine skips buildMemoryGraph + the about-edges, emitting no mem: nodes). Resolved
+  // live from appConfig so a daemon.enabled toggle adds/removes the 3rd brain.
+  const effectiveMemoryDir = (): string | undefined =>
+    appConfig.daemon?.enabled ? join(cfg.vault, ".daemon", "memory") : undefined;
   const graphCache = createAsyncCache<GraphData>(async () =>
-    attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault),
+    attachLayout(await buildGraph(cfg.vault, effectiveMemoryDir()), cfg.vault),
   );
   const treeCache = createAsyncCache<TreeEntry[]>(() =>
     listTree(cfg.vault, { daemonEnabled: appConfig.daemon?.enabled, daemonName: appConfig.daemon?.name }),
@@ -190,6 +196,11 @@ export function createServer(cfg: CoreConfig) {
     setClaudeBotHomeOverride(c.daemon?.home);
     treeCache.invalidate();
     graphCache.invalidate();
+    // Notify any already-connected client to refetch — daemon.enabled in the loaded
+    // config may add the 3rd brain (graph) and the .daemon folder (tree) that the
+    // DEFAULTS-seeded boot state did not have.
+    version++;
+    sse.publish({ version, paths: [], dirty: { graph: true, tree: true } });
   }).catch(() => {});
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -756,7 +767,7 @@ export function createServer(cfg: CoreConfig) {
       // backend-computed position2d/position3d so the WebGL renderer can place nodes
       // (unlike agents mode, daemon has no separate SVG layout). Cached by graph sig,
       // so polled state changes (opacity/tint) keep stable positions.
-      return ok(await attachLayout(daemonGraph(), "daemon"));
+      return ok(await attachLayout(daemonGraph(undefined, appConfig.daemon?.name || "daemon"), "daemon"));
     },
 
     // claude-bot daemon install/setup, bridged to the claude-bot package's

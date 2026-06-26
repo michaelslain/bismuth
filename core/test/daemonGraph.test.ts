@@ -89,9 +89,14 @@ test("daemonSnapshot reads processes (filename fallback when no `name`), enabled
 
 test("daemonSnapshot sets the daemon hub label + home, never throws on a fresh home", () => {
   const snap = daemonSnapshot(home);
-  expect(snap.daemon.label).toBe("claude-bot");
+  expect(snap.daemon.label).toBe("daemon"); // default name; overridden by settings.daemon.name
   expect(snap.daemon.home).toBe(home);
   expect(typeof snap.daemon.running).toBe("boolean"); // no daemon.pid → false, but always a bool
+});
+
+test("daemonSnapshot uses the provided daemon name as the hub label", () => {
+  const snap = daemonSnapshot(home, "Atlas");
+  expect(snap.daemon.label).toBe("Atlas");
 });
 
 test("daemonSnapshot on a nonexistent home degrades to empty (never throws)", () => {

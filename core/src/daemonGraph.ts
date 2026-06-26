@@ -71,8 +71,8 @@ function daemonRunning(home: string): boolean {
  * degrades to `{ daemon, crons: [], processes: [] }`. `home` is injectable so tests point it at
  * a fixture dir instead of the real ~/.claude-bot.
  */
-export function daemonSnapshot(home: string = claudeBotHome()): DaemonSnapshot {
-  const daemon = { label: "claude-bot", running: daemonRunning(home), home };
+export function daemonSnapshot(home: string = claudeBotHome(), name: string = "daemon"): DaemonSnapshot {
+  const daemon = { label: name, running: daemonRunning(home), home };
   try {
     const cronsDir = join(home, "crons");
     const lastFired = readJsonObj(join(cronsDir, ".last-fired.json"));
@@ -170,6 +170,6 @@ export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
 }
 
 /** Convenience: snapshot the real (or injected) home and build its graph. Never throws. */
-export function daemonGraph(home: string = claudeBotHome()): GraphData {
-  return buildDaemonGraph(daemonSnapshot(home));
+export function daemonGraph(home: string = claudeBotHome(), name: string = "daemon"): GraphData {
+  return buildDaemonGraph(daemonSnapshot(home, name));
 }
