@@ -3,7 +3,8 @@
 // Reads/writes ride the existing files.ts path-traversal guard; the property
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
-import { join } from "node:path";
+import { join, dirname } from "node:path";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { parse, parseDocument, Document, YAMLMap, isMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
@@ -13,9 +14,30 @@ import type { DailyNoteConfig } from "./dailyNote";
 import type { SrsConfig } from "./srs/scheduler";
 import { thisDeviceId } from "./daemon";
 
-export const SETTINGS_FILE = "settings.yaml";
+export const SETTINGS_FILE = ".settings/settings.yaml";
+/** Legacy location (vault root) — migrated into .settings/ on first open. */
+export const LEGACY_SETTINGS_FILE = "settings.yaml";
 
 export interface ReadSettingsResult { raw: string; data: Record<string, unknown>; }
+
+/**
+ * One-time relocation of a vault-root `settings.yaml` into `.settings/settings.yaml`.
+ * Idempotent: only fires when the legacy file exists and the new one doesn't. Uses a
+ * filesystem rename so user comments/values are preserved verbatim. Best-effort —
+ * a rename failure (e.g. permissions) leaves the legacy file in place.
+ */
+export function migrateSettingsLocation(vault: string): void {
+  const legacy = join(vault, LEGACY_SETTINGS_FILE);
+  const next = join(vault, SETTINGS_FILE);
+  if (existsSync(legacy) && !existsSync(next)) {
+    try {
+      mkdirSync(dirname(next), { recursive: true });
+      renameSync(legacy, next);
+    } catch {
+      // leave the legacy file in place; reconcile will still read it via the fallback path
+    }
+  }
+}
 
 /**
  * Per-vault mutex for settings file mutations. Prevents concurrent POST /set-setting
@@ -150,6 +172,7 @@ function migrateDaemonConfig(doc: Document): boolean {
  * by SETTINGS_SCHEMA, so adding or removing a schema entry self-reconciles next open.
  */
 export async function reconcileSettings(vault: string): Promise<void> {
+  migrateSettingsLocation(vault); // move a legacy root settings.yaml into .settings/ (idempotent)
   const full = join(vault, SETTINGS_FILE);
   if (!(await Bun.file(full).exists())) { await initializeSettings(vault); return; }
   const raw = await readNote(vault, SETTINGS_FILE);
@@ -364,7 +387,7 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
 // section is an identity match for SrsConfig (see scheduler.ts).
 export interface AppConfig {
   server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean; home: string; autoUpdate: boolean };
+  daemon: { enabled: boolean; name: string; home: string; autoUpdate: boolean };
   templates?: { folder: string };
   srs: SrsConfig;
   googleCalendar?: {

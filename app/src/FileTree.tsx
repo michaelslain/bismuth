@@ -13,7 +13,7 @@ import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
 import { primeNoteCache } from "./noteCache";
 
-type TreeNode = { name: string; path: string; icon?: string; children?: Map<string, TreeNode> };
+type TreeNode = { name: string; path: string; icon?: string; label?: string; isSystemFolder?: boolean; children?: Map<string, TreeNode> };
 
 // Every artifact the file tree can create in place. "base" is a `.md` seeded with
 // BASE_TEMPLATE; the rest map onto the backend's blank file/dir create. Shared with
@@ -29,7 +29,7 @@ const TREE_CACHE_KEY = "oa-tree-cache-v1";
 
 function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
-  for (const { path, icon, kind } of entries) {
+  for (const { path, icon, kind, isSystemFolder, label } of entries) {
     const parts = path.split("/");
     let cur = root;
     let acc = "";
@@ -44,6 +44,10 @@ function buildTree(entries: TreeEntry[]): TreeNode {
       // Custom icon for the entry's own node — files (frontmatter `icon`) and
       // folders (folder-icon override surfaced on dir entries) alike.
       if (isLeaf && icon) node.icon = icon;
+      // System folders (.settings / .daemon): rendered distinctly, label override
+      // (e.g. .daemon shows the configured daemon name), guarded from rename/delete.
+      if (isLeaf && isSystemFolder) node.isSystemFolder = true;
+      if (isLeaf && label) node.label = label;
       cur = node;
     });
   }
@@ -280,9 +284,14 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
       items.push({ label: "New Drawing", icon: "PenTool", onSelect: () => doCreate(node.path, "draw") });
     }
-    items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
-    items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
-    items.push({ label: "Delete", icon: "Trash2", danger: true, separatorBefore: true, onSelect: () => doDelete(node) });
+    // .settings / .daemon are runtime-managed: their name comes from settings, their
+    // contents are daemon state. Block rename/delete/set-icon so they can't be broken
+    // from the tree (the create actions above stay, for hand-adding crons/memory).
+    if (!node.isSystemFolder) {
+      items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
+      items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
+      items.push({ label: "Delete", icon: "Trash2", danger: true, separatorBefore: true, onSelect: () => doDelete(node) });
+    }
     return items;
   }
 
@@ -506,9 +515,9 @@ function Level(props: {
           <div>
             <div
               class="ft-row"
-              classList={{ "drop-target": props.dropTarget === child.path }}
+              classList={{ "drop-target": props.dropTarget === child.path, system: !!child.isSystemFolder }}
               style={{ "padding-left": indent }}
-              draggable={props.editing !== child.path}
+              draggable={props.editing !== child.path && !child.isSystemFolder}
               onDragStart={props.makeDragStart(child.path, false)}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
@@ -517,8 +526,8 @@ function Level(props: {
               onContextMenu={(e) => props.onMenu(child, e)}
             >
               <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
-              <Icon value={child.icon} fallback={props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
-              <Show when={props.editing === child.path} fallback={child.name}>
+              <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
+              <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
               </Show>
             </div>
