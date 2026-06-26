@@ -893,7 +893,13 @@ const tableWidgetField = StateField.define<DecorationSet>({
     if (tr.docChanged || tr.selection || activeChanged) return buildTableWidgets(tr.state);
     return value.map(tr.changes);
   },
-  provide: (f) => EditorView.decorations.from(f),
+  // Provide the rendered-table block ranges as BOTH decorations and atomic ranges.
+  // A block `Decoration.replace` is NOT atomic for cursor motion by default, so without
+  // this an arrow-key press or selection drag from the paragraph below the table sinks the
+  // caret INTO the table's hidden source lines (cursor jumps/disappears, typing lands in
+  // the wrong place). Marking the range atomic makes CM step over the whole table as one
+  // unit. The active (raw-source) table is excluded from this set, so it stays editable.
+  provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f, false) ?? Decoration.none)],
 });
 
 export const livePreview = [
