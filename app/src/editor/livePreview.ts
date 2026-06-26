@@ -1123,9 +1123,16 @@ export const livePreview = [
     // Raw (active) table source — monospace pipes for structural / power edits.
     ".cm-table": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))" },
     // Rendered editable table (the block-replace widget). Cells are contenteditable.
+    // The vertical spacing lives on the OUTER `.cm-table-block` as PADDING, not as a margin
+    // on the wrap: CodeMirror measures a block widget's height with getBoundingClientRect,
+    // which excludes margins (see measureVisibleLineHeights in @codemirror/view). A margin
+    // here would be left out of CM's height model, compressing every line below the table by
+    // ~one line, so a click/keystroke under the table landed (and drew the caret) one line
+    // too low. Padding is inside the measured box, so the model matches the real layout.
+    ".cm-table-block": { padding: "0.6em 0 1.4em 0" },
     // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
     // table's top-right corner instead of floating off in the full-width line box.
-    ".cm-table-wrap": { position: "relative", width: "fit-content", "max-width": "100%", margin: "0.6em 0 1.4em 0" },
+    ".cm-table-wrap": { position: "relative", width: "fit-content", "max-width": "100%" },
     ".cm-table-rendered": { "border-collapse": "collapse", "table-layout": "auto" },
     ".cm-table-rendered th, .cm-table-rendered td": {
       border: "1px solid color-mix(in srgb, var(--fg) 18%, transparent)",
