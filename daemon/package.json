@@ -1,0 +1,16 @@
+{
+  "name": "@bismuth/daemon",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "module": "src/index.ts",
+  "description": "The per-vault daemon runtime (absorbed from claude-bot): one machine process that multiplexes each enabled vault's brain — memory + crons + processes + a conversation session. Runs as a launchd/systemd service from a bundled binary; runtime entry is src/daemon/index.ts.",
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.96",
+    "@bismuth/memory": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25"
+  }
+}
