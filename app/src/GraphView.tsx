@@ -114,11 +114,13 @@ export function GraphView(props: {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
 
-  // The daemon graph mode only exists while the daemon integration is enabled (the
-  // settings master switch). If it's turned off while daemon mode is showing, fall back
-  // to "both" so the mode toggle never points at a now-hidden option.
+  // The 3rd-brain (memory) + daemon graph modes only exist while the daemon is enabled
+  // (the per-vault master switch). When it's off, the 3rd brain carries no nodes and the
+  // daemon graph is empty — fall back to "2nd" so the toggle never points at a hidden mode.
   createEffect(() => {
-    if (props.mode === "daemon" && !settings.daemon.enabled) props.setMode("both");
+    if (!settings.daemon.enabled && (props.mode === "daemon" || props.mode === "3rd" || props.mode === "both")) {
+      props.setMode("2nd");
+    }
   });
 
   // Rebuild legend rows + search items from the renderer's current node set. Called after each
@@ -258,7 +260,7 @@ export function GraphView(props: {
           value={props.mode}
           onChange={props.setMode}
           size="sm"
-          options={(["2nd", "3rd", "both", "agents", ...(settings.daemon.enabled ? ["daemon"] : [])] as GraphMode[]).map((id) => ({
+          options={((settings.daemon.enabled ? ["2nd", "3rd", "both", "agents", "daemon"] : ["2nd", "agents"]) as GraphMode[]).map((id) => ({
             id,
             title: MODE_LABEL[id],
             label: (

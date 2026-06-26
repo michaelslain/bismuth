@@ -11,10 +11,19 @@ import { makeSampleVault } from "./helpers";
 
 test("GET /graph returns the merged brain graph", async () => {
   const { vault, memory } = await makeSampleVault();
+  // The 3rd brain is gated on the daemon and sourced from <vault>/.daemon/memory.
+  await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: true\n");
+  await writeNote(vault, ".daemon/memory/michael-profile.md", "Profile of the user. He is working on [[internship]] and [[essay]].\n");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
-    const g = await (await fetch(`${base}/graph`)).json();
+    // appConfig loads async at boot, so poll briefly until the daemon-gated 3rd brain lands.
+    let g: any;
+    for (let i = 0; i < 40; i++) {
+      g = await (await fetch(`${base}/graph`)).json();
+      if (g.nodes.some((n: any) => n.id === "mem:michael-profile")) break;
+      await new Promise((r) => setTimeout(r, 25));
+    }
     const ids = g.nodes.map((n: any) => n.id);
     expect(ids).toContain("internship");
     expect(ids).toContain("mem:michael-profile");

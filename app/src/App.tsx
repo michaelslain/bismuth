@@ -99,7 +99,8 @@ export default function App() {
   );
   const [agents, setAgents] = createSignal<GraphData>({ nodes: [], edges: [] });
   const [daemon, setDaemon] = createSignal<GraphData>({ nodes: [], edges: [] });
-  const [mode, setMode] = createSignal<GraphMode>("both");
+  // Default to "both" only when the daemon (3rd brain) is on; otherwise start on "2nd".
+  const [mode, setMode] = createSignal<GraphMode>(settings.daemon.enabled ? "both" : "2nd");
   // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
   // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
   const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
