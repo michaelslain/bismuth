@@ -10,20 +10,20 @@ Bismuth is a Bun workspace monorepo. The root `package.json` declares five works
 
 ```
 bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-json)
-  core/                @oa/core — backend server, all pure logic
+  core/                @bismuth/core — backend server, all pure logic
   app/                 app — Tauri + Solid.js desktop UI
-  cli/                 @oa/cli — `bismuth` binary wrapping @oa/core
-  relay/               @oa/relay — Claude Code plugin for the agent graph
-  mcp/                 @oa/mcp — stdio MCP server (docs + CLI) for app-terminal Claude sessions
+  cli/                 @bismuth/cli — `bismuth` binary wrapping @bismuth/core
+  relay/               @bismuth/relay — Claude Code plugin for the agent graph
+  mcp/                 @bismuth/mcp — stdio MCP server (docs + CLI) for app-terminal Claude sessions
 ```
 
-`core` is the library that `app`, `cli`, and `mcp` import as `@oa/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
+`core` is the library that `app`, `cli`, and `mcp` import as `@bismuth/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.
 
 Add a dep: `cd <workspace> && bun add <package>` then `bun install` at the root.
 
 ---
 
-## `core/` — Backend + Pure Logic (`@oa/core`)
+## `core/` — Backend + Pure Logic (`@bismuth/core`)
 
 Everything in `core/src/` is importable by both `app` and `cli`. Modules are grouped below by responsibility.
 
@@ -971,7 +971,7 @@ Dialog for picking a vault folder (used by "Open folder" flow).
 
 ## `cli/src/` — CLI Binary
 
-The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries two-word phrases first (`"task toggle"`), then single words (`"graph"`). Each command group is a thin wrapper over `@oa/core` functions — no running server required for file-based operations.
+The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries two-word phrases first (`"task toggle"`), then single words (`"graph"`). Each command group is a thin wrapper over `@bismuth/core` functions — no running server required for file-based operations.
 
 ### `args.ts`
 `flag(args, name)`, `positionals(args)`, `requireVault(args)`, `out(data, args)`, `fail(msg)` — shared CLI argument helpers.

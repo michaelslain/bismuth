@@ -1,6 +1,6 @@
 # Bismuth CLI Reference
 
-The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@oa/cli` workspace. It is a thin shell wrapper over the `@oa/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live. The only exceptions are the two commands that need the server process's in-memory state (`agent-graph`, `api`), and the `serve` command which *starts* the server. This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model.
+The `bismuth` CLI ("control every aspect of a Bismuth vault from the shell") is the `@bismuth/cli` workspace. It is a thin shell wrapper over the `@bismuth/core` library: nearly every command calls a core function directly against the vault's files on disk, with **no running HTTP server required** — the running app's file watcher picks up writes live. The only exceptions are the two commands that need the server process's in-memory state (`agent-graph`, `api`), and the `serve` command which *starts* the server. This page documents every command (one per `cli/src/commands/*.ts`), every flag, the global flags + environment variables, output conventions, and the dispatch model.
 
 ## Invocation & Binary
 
@@ -16,7 +16,7 @@ Once installed/linked, it is the `bismuth` binary:
 bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]
 ```
 
-> Note on naming: the `package.json` `bin` name is **`bismuth`** (the `@oa/` namespace and `OA_*` env vars are legacy prefixes, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
+> Note on naming: the `package.json` `bin` name is **`bismuth`**, matching the `@bismuth/` workspace namespace (the `OA_*` env vars are a legacy prefix, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
 
 ### Help
 

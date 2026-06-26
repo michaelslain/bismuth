@@ -1,8 +1,8 @@
 {
-  "name": "@oa/cli",
+  "name": "@bismuth/cli",
   "version": "0.1.0",
   "type": "module",
   "bin": { "bismuth": "src/index.ts" },
-  "dependencies": { "@oa/core": "workspace:*" },
+  "dependencies": { "@bismuth/core": "workspace:*" },
   "devDependencies": { "@types/bun": "latest" }
 }
