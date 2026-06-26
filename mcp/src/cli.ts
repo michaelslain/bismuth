@@ -1,5 +1,5 @@
 // Bridge to the bismuth CLI (cli/src/index.ts). Spawns it via `bun run` and
-// captures stdout/stderr/exit code. The CLI is a thin wrapper over @oa/core and
+// captures stdout/stderr/exit code. The CLI is a thin wrapper over @bismuth/core and
 // reads OA_VAULT/OA_MEMORY from the environment, so we pass process.env through.
 // Never throws — every failure mode resolves to a CliResult.
 

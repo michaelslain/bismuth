@@ -135,7 +135,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override the port: `
 
 ### CLI (`cli/`)
 
-The `bismuth` binary (thin wrapper over `@oa/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`OA_VAULT`.
+The `bismuth` binary (thin wrapper over `@bismuth/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`OA_VAULT`.
 
 - `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase, then one-word), `--help`, error-wrap.
 - `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`out`/`fail`…) + `src/types.ts` (`Command`/`CommandMap`) — the shared seam every group imports.
@@ -239,7 +239,7 @@ Global shortcuts come from `keybindings:` in `settings.yaml` (nothing hardcoded 
 
 ## Workspace Management
 
-Workspaces are linked via Bun's `workspaces` in the root `package.json`: `core` exports `@oa/core`, which `app` (UI), `cli`, and `mcp` import; `relay` is the hooks-only plugin and `mcp` is the stdio MCP server (deps `@modelcontextprotocol/sdk`). Add a dep with `cd <workspace> && bun add <package>`; `bun install` (root) syncs all.
+Workspaces are linked via Bun's `workspaces` in the root `package.json`: `core` exports `@bismuth/core`, which `app` (UI), `cli`, and `mcp` import; `relay` is the hooks-only plugin and `mcp` is the stdio MCP server (deps `@modelcontextprotocol/sdk`). Add a dep with `cd <workspace> && bun add <package>`; `bun install` (root) syncs all.
 
 ## Module Organization
 

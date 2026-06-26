@@ -95,20 +95,20 @@
       },
     },
     "cli": {
-      "name": "@oa/cli",
+      "name": "@bismuth/cli",
       "version": "0.1.0",
       "bin": {
-        "oa": "src/index.ts",
+        "bismuth": "src/index.ts",
       },
       "dependencies": {
-        "@oa/core": "workspace:*",
+        "@bismuth/core": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
       },
     },
     "core": {
-      "name": "@oa/core",
+      "name": "@bismuth/core",
       "version": "0.1.0",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.186",
@@ -125,7 +125,7 @@
       },
     },
     "mcp": {
-      "name": "@oa/mcp",
+      "name": "@bismuth/mcp",
       "version": "0.1.0",
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.0.0",
@@ -136,7 +136,7 @@
       },
     },
     "relay": {
-      "name": "@oa/relay",
+      "name": "@bismuth/relay",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
@@ -202,6 +202,14 @@
     "@babel/traverse": ["@babel/traverse@7.29.7", "", { "dependencies": { "@babel/code-frame": "^7.29.7", "@babel/generator": "^7.29.7", "@babel/helper-globals": "^7.29.7", "@babel/parser": "^7.29.7", "@babel/template": "^7.29.7", "@babel/types": "^7.29.7", "debug": "^4.3.1" } }, "sha512-EhlfNQtZ+NK22w5BM61ciuiq1m58ed33Wr1Xan//ZRTy6hgjnwyCffRYwzsGXdASJSUJ1guZILsErh1eQcl+zw=="],
 
     "@babel/types": ["@babel/types@7.29.7", "", { "dependencies": { "@babel/helper-string-parser": "^7.29.7", "@babel/helper-validator-identifier": "^7.29.7" } }, "sha512-4zBIxpPzowiZpusoFkyGVwakdRJUyuH5PxQ/PrqghfdFWWasvnCdPfQXHrenDai+gyLARulZjZowCOj6fjT4pA=="],
+
+    "@bismuth/cli": ["@bismuth/cli@workspace:cli"],
+
+    "@bismuth/core": ["@bismuth/core@workspace:core"],
+
+    "@bismuth/mcp": ["@bismuth/mcp@workspace:mcp"],
+
+    "@bismuth/relay": ["@bismuth/relay@workspace:relay"],
 
     "@codemirror/autocomplete": ["@codemirror/autocomplete@6.20.2", "", { "dependencies": { "@codemirror/language": "^6.0.0", "@codemirror/state": "^6.0.0", "@codemirror/view": "^6.17.0", "@lezer/common": "^1.0.0" } }, "sha512-G5FPkgIiLjOgZMjqVjvuKQ1rGPtHogLldJr33eFJdVLtmwY+giGrlv/ewljLz6b9BSQLkjxuwBc6g6omDM+YxQ=="],
 
@@ -488,14 +496,6 @@
     "@noble/ed25519": ["@noble/ed25519@3.1.0", "", {}, "sha512-pfcObRY3CtvwfaG9Mt5XqZdKmAQppl37tHUeuBhDUbiwJBCVY4/A4lbMvb1xKhMDx96AqAqZpMWuBX1HulhX4g=="],
 
     "@noble/hashes": ["@noble/hashes@2.2.0", "", {}, "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg=="],
-
-    "@oa/cli": ["@oa/cli@workspace:cli"],
-
-    "@oa/core": ["@oa/core@workspace:core"],
-
-    "@oa/mcp": ["@oa/mcp@workspace:mcp"],
-
-    "@oa/relay": ["@oa/relay@workspace:relay"],
 
     "@pdf-lib/standard-fonts": ["@pdf-lib/standard-fonts@1.0.0", "", { "dependencies": { "pako": "^1.0.6" } }, "sha512-hU30BK9IUN/su0Mn9VdlVKsWBS6GyhVfqjwl1FjZN4TxP6cCw0jP2w7V3Hf5uX7M0AZJ16vey9yE0ny7Sa59ZA=="],
 

@@ -1,5 +1,5 @@
 {
-  "name": "@oa/core",
+  "name": "@bismuth/core",
   "version": "0.1.0",
   "type": "module",
   "module": "src/index.ts",

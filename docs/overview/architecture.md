@@ -16,11 +16,11 @@ The root `package.json` declares five Bun workspaces:
 
 | Workspace | Package name | Role |
 |-----------|--------------|------|
-| `core/` | `@oa/core` | Backend HTTP server, graph builders, all business logic |
-| `app/` | `app` | Tauri + Solid.js desktop frontend; imports `@oa/core` for shared types |
-| `cli/` | `@oa/cli` | `bismuth` binary; imports `@oa/core` and calls core functions headlessly |
-| `relay/` | `@oa/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
-| `mcp/` | `@oa/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
+| `core/` | `@bismuth/core` | Backend HTTP server, graph builders, all business logic |
+| `app/` | `app` | Tauri + Solid.js desktop frontend; imports `@bismuth/core` for shared types |
+| `cli/` | `@bismuth/cli` | `bismuth` binary; imports `@bismuth/core` and calls core functions headlessly |
+| `relay/` | `@bismuth/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
+| `mcp/` | `@bismuth/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
 
 Install all workspaces at once with `bun install` from the repo root. To add a package to a specific workspace: `cd <workspace> && bun add <package>`.
 
@@ -32,7 +32,7 @@ Install all workspaces at once with `bun install` from the repo root. To add a p
 - Exposes a REST API consumed by both the app and the CLI.
 - Watches the vault and memory directories for file changes, debounces them at 250 ms, selectively invalidates caches, bumps a version counter, and pushes SSE events to connected frontend clients.
 
-`core` exports `@oa/core` (via `"module": "src/index.ts"`) so app and cli can import its pure functions and types.
+`core` exports `@bismuth/core` (via `"module": "src/index.ts"`) so app and cli can import its pure functions and types.
 
 ### `app/` — the desktop frontend
 
@@ -42,7 +42,7 @@ The entry point `app/src/index.tsx` code-splits two roots. On **first run** the 
 
 ### `cli/` — the `bismuth` binary
 
-A thin dispatcher over `@oa/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `OA_VAULT` env var.
+A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `OA_VAULT` env var.
 
 ### `relay/` — the agent-graph plugin
 
@@ -61,7 +61,7 @@ All hooks are **best-effort**: they exit 0 within a 2-second budget and swallow 
 
 ### `mcp/` — the docs + CLI MCP server
 
-A stdio [MCP](https://modelcontextprotocol.io) server (`@oa/mcp`) that rides the **same auto-attach mechanism as relay**: the relay plugin's `relay/.mcp.json` declares it, so when a bare `claude` loads the plugin (`--plugin-dir <relay>`) Claude Code auto-starts the server — no flags, no approval prompts. It exposes the `docs/` reference and the `bismuth` CLI to that session **token-frugally** (search returns snippets, not whole pages): `mcp/src/docs.ts` (pure index/search/read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/server.ts` (low-level SDK server, 5 tools: `bismuth_docs_list`/`search`/`read`, `bismuth_cli`, `bismuth_cli_help`). Scope is app-local, like relay. See [MCP server](../mcp/overview.md).
+A stdio [MCP](https://modelcontextprotocol.io) server (`@bismuth/mcp`) that rides the **same auto-attach mechanism as relay**: the relay plugin's `relay/.mcp.json` declares it, so when a bare `claude` loads the plugin (`--plugin-dir <relay>`) Claude Code auto-starts the server — no flags, no approval prompts. It exposes the `docs/` reference and the `bismuth` CLI to that session **token-frugally** (search returns snippets, not whole pages): `mcp/src/docs.ts` (pure index/search/read), `mcp/src/cli.ts` (CLI bridge), `mcp/src/server.ts` (low-level SDK server, 5 tools: `bismuth_docs_list`/`search`/`read`, `bismuth_cli`, `bismuth_cli_help`). Scope is app-local, like relay. See [MCP server](../mcp/overview.md).
 
 ---
 

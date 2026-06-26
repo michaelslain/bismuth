@@ -1,6 +1,6 @@
 // Prebuild step: compile the core server into a standalone Tauri sidecar binary.
 //
-// core (the @oa/core HTTP server) is plain Bun/TS and compiles cleanly to a single
+// core (the @bismuth/core HTTP server) is plain Bun/TS and compiles cleanly to a single
 // self-contained executable via `bun build --compile` (native deps like bun-pty are
 // embedded). Unlike claude-bot (which must ship as source because its daemon spawns
 // `bun run` itself), core just needs to run, so a compiled binary is the simplest

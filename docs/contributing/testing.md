@@ -93,7 +93,7 @@ From `package.json` this expands to a `tsc --noEmit` pass per workspace, each ru
 "typecheck": "(cd core && bunx tsc --noEmit) && (cd app && bunx tsc --noEmit) && (cd mcp && bunx tsc --noEmit) && (cd relay && bunx tsc --noEmit)"
 ```
 
-Four workspaces are checked in order — `core`, `app`, `mcp`, `relay` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript (`app/package.json` and `relay/package.json` pin `typescript: ~5.6.2`), so a compiler version in one workspace never bleeds into another. (`cli` imports `@oa/core` and rides along via the `core`/`app` passes; it has no separate step.)
+Four workspaces are checked in order — `core`, `app`, `mcp`, `relay` — and the `&&` chain stops at the first failure. Each step `cd`s into the workspace so `bunx tsc` picks up that workspace's own `tsconfig.json` and its own pinned TypeScript (`app/package.json` and `relay/package.json` pin `typescript: ~5.6.2`), so a compiler version in one workspace never bleeds into another. (`cli` imports `@bismuth/core` and rides along via the `core`/`app` passes; it has no separate step.)
 
 All four `tsconfig.json` files now carry the same strict lint flags — `"strict": true`, `"noUnusedLocals": true`, `"noUnusedParameters": true`, and `"noFallthroughCasesInSwitch": true`. In particular `core/tsconfig.json` was brought up to match the others (it previously lacked the three `noUnused*`/`noFallthrough*` flags), so an unused local or a missing `break` now fails the gate in `core/` just as it does in `app/`, `mcp/`, and `relay/`.
 

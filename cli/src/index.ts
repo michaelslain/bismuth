@@ -1,7 +1,7 @@
 // `bismuth` CLI entry point. Merges every command group (cli/src/commands/*.ts)
 // into one registry and dispatches by longest-match: it tries a three-word command
 // phrase ("daemon cron toggle") first, then a two-word phrase ("task toggle"), then
-// a one-word command ("graph"). Each group is a thin wrapper over `@oa/core`
+// a one-word command ("graph"). Each group is a thin wrapper over `@bismuth/core`
 // functions — no running server required for the file-based commands (the app's
 // vault watcher picks up writes live).
 import type { CommandMap } from "./types";
