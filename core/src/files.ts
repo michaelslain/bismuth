@@ -28,6 +28,7 @@ function resolveInVault(root: string, rel: string): string {
 async function walkDir<T>(
   absRoot: string,
   filter: (entry: Dirent, rel: string) => boolean | { data: T },
+  allowDot: (rel: string) => boolean = () => false,
 ): Promise<Array<{ name: string; rel: string; isDir: boolean; data?: T }>> {
   const out: Array<{ name: string; rel: string; isDir: boolean; data?: T }> = [];
 
@@ -40,8 +41,12 @@ async function walkDir<T>(
     }
 
     for (const d of entries) {
-      if (d.name.startsWith(".")) continue;
       const rel = relDir ? `${relDir}/${d.name}` : d.name;
+      // Hidden entries are skipped unless explicitly allowed. `allowDot` opts in
+      // specific system roots (.settings / .daemon) so they show in the sidebar
+      // while their internal dot-state (e.g. .daemon/crons/.last-fired.json) stays
+      // hidden and the knowledge graph (listMarkdown, dot:false) is unaffected.
+      if (d.name.startsWith(".") && !allowDot(rel)) continue;
 
       if (d.isDirectory()) {
         const result = filter(d, rel);
@@ -95,8 +100,18 @@ export async function listBases(root: string): Promise<string[]> {
 // walk are looked up). `icon` is null when the note has no icon frontmatter.
 const iconCache = new Map<string, { mtime: number; icon: string | null }>();
 
-export async function listTree(root: string): Promise<TreeEntry[]> {
-  const entries = await walkDir(root, (d) => {
+export async function listTree(
+  root: string,
+  opts?: { daemonEnabled?: boolean; daemonName?: string },
+): Promise<TreeEntry[]> {
+  // System folders shown in the sidebar but kept out of the knowledge graph:
+  // .settings always; .daemon only when this vault's daemon is enabled.
+  const allowDot = (rel: string): boolean =>
+    rel === ".settings" || (!!opts?.daemonEnabled && rel === ".daemon");
+  const inSystemFolder = (rel: string): boolean =>
+    rel.startsWith(".settings/") || rel.startsWith(".daemon/");
+
+  const entries = await walkDir(root, (d, rel) => {
     if (d.isDirectory()) {
       return true; // Include all directories
     }
@@ -108,6 +123,12 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
       return false;
     }
 
+    // System folders surface every file regardless of extension (cron/process
+    // defs, memory notes, settings.yaml, …) — the .draw marker still applies.
+    if (inSystemFolder(rel)) {
+      return name.endsWith(".draw") ? { data: "PenTool" } : true;
+    }
+
     // Include supported file types; .draw files get special icon marker.
     // (A base is a `type: base` md file — no separate `.base` extension.)
     if (name.endsWith(".md") || name.endsWith(".draw") ||
@@ -116,13 +137,21 @@ export async function listTree(root: string): Promise<TreeEntry[]> {
     }
 
     return false;
-  });
+  }, allowDot);
+
+  const daemonLabel = opts?.daemonName?.trim() || "daemon";
 
   const out: TreeEntry[] = [];
 
   for (const entry of entries) {
     if (entry.isDir) {
-      out.push({ path: entry.rel, kind: "dir" });
+      if (entry.rel === ".settings") {
+        out.push({ path: entry.rel, kind: "dir", isSystemFolder: true });
+      } else if (entry.rel === ".daemon") {
+        out.push({ path: entry.rel, kind: "dir", isSystemFolder: true, label: daemonLabel });
+      } else {
+        out.push({ path: entry.rel, kind: "dir" });
+      }
     } else if (entry.name.endsWith(".md")) {
       const abs = join(root, entry.rel);
       // Reuse the cached icon when the file's mtime is unchanged; only re-read + parse

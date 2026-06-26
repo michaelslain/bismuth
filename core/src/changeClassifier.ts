@@ -39,9 +39,11 @@ export function extractFingerprint(content: string): Fingerprint {
   };
 }
 
-/** True when a changed path is the vault settings file (drives registry re-parse + SSE). */
+/** True when a changed path is the vault settings file (drives registry re-parse + SSE).
+ *  Settings live at `.settings/settings.yaml`; the legacy root path is still matched
+ *  during the migration window. */
 export function isSettingsPath(path: string): boolean {
-  return path === "settings.yaml";
+  return path === ".settings/settings.yaml" || path === "settings.yaml";
 }
 
 /**

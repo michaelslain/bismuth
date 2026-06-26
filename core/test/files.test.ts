@@ -239,3 +239,47 @@ test("listTree shows .draw files but hides .draw.png/.pdf sidecars", async () =>
   expect(paths).not.toContain("a.draw.png");
   expect(paths).not.toContain("a.draw.pdf");
 });
+
+test("listTree surfaces system folders: .settings always, .daemon only when enabled", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sysfolders-"));
+  await Bun.write(join(root, "Note.md"), "# Note");
+  await Bun.write(join(root, ".settings/settings.yaml"), "appearance:\n  theme: light\n");
+  await Bun.write(join(root, ".daemon/memory/m.md"), "mem");
+  await Bun.write(join(root, ".daemon/crons/c.md"), "cron");
+  await Bun.write(join(root, ".daemon/crons/.last-fired.json"), "{}"); // internal dot-state
+  await Bun.write(join(root, ".daemon/session-id"), "sid");
+
+  // Daemon OFF (default): .settings shown, .daemon entirely hidden.
+  const off = await listTree(root);
+  const offPaths = off.map((e) => e.path);
+  expect(offPaths).toContain(".settings");
+  expect(offPaths).toContain(".settings/settings.yaml");
+  expect(offPaths.some((p) => p.startsWith(".daemon"))).toBe(false);
+  expect(off.find((e) => e.path === ".settings")?.isSystemFolder).toBe(true);
+
+  // Daemon ON: .daemon shown + labeled with the name; memory/crons/session-id surface;
+  // internal dot-state (.last-fired.json) stays hidden; the normal note is unaffected.
+  const on = await listTree(root, { daemonEnabled: true, daemonName: "Atlas" });
+  const onPaths = on.map((e) => e.path);
+  expect(onPaths).toContain("Note.md");
+  expect(onPaths).toContain(".daemon");
+  expect(onPaths).toContain(".daemon/memory/m.md");
+  expect(onPaths).toContain(".daemon/crons/c.md");
+  expect(onPaths).toContain(".daemon/session-id");
+  expect(onPaths).not.toContain(".daemon/crons/.last-fired.json");
+  const daemonEntry = on.find((e) => e.path === ".daemon");
+  expect(daemonEntry?.isSystemFolder).toBe(true);
+  expect(daemonEntry?.label).toBe("Atlas");
+
+  // System folders never enter the knowledge graph (listMarkdown excludes dotfiles).
+  const md = await listMarkdown(root);
+  expect(md).toContain("Note.md");
+  expect(md.some((p) => p.startsWith(".daemon") || p.startsWith(".settings"))).toBe(false);
+});
+
+test("listTree daemon label falls back to 'daemon' when name is blank", async () => {
+  const root = mkdtempSync(join(tmpdir(), "sysfolders-noname-"));
+  await Bun.write(join(root, ".daemon/memory/m.md"), "mem");
+  const on = await listTree(root, { daemonEnabled: true, daemonName: "" });
+  expect(on.find((e) => e.path === ".daemon")?.label).toBe("daemon");
+});

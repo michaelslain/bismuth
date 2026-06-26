@@ -86,6 +86,10 @@ export interface TreeEntry {
   path: string;
   icon?: string;
   kind: "file" | "dir";
+  /** True for the .settings / .daemon system folders — rendered distinctly, guarded from rename/delete. */
+  isSystemFolder?: boolean;
+  /** Display label override (e.g. the .daemon folder shows the configured daemon name). */
+  label?: string;
 }
 
 export function emptyGraph(): GraphData {

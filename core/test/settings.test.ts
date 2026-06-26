@@ -19,7 +19,7 @@ test("readSettings returns null when settings.yaml is absent", async () => {
 
 test("readSettings returns raw text + parsed data", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: light\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: light\n");
   const res = await readSettings(vault);
   expect(res).not.toBeNull();
   expect(res!.raw).toContain("theme: light");
@@ -28,7 +28,7 @@ test("readSettings returns raw text + parsed data", async () => {
 
 test("readSettings tolerates malformed YAML by returning empty data", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: : : broken\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: : : broken\n");
   const res = await readSettings(vault);
   expect(res).not.toBeNull();
   expect(res!.data).toEqual({});
@@ -38,7 +38,7 @@ test("getVaultSchema parses the properties section into a registry", async () =>
   const vault = await emptyVault();
   await writeNote(
     vault,
-    "settings.yaml",
+    ".settings/settings.yaml",
     "properties:\n  due: date\n  status:\n    enum: [todo, doing, done]\n",
   );
   const schema = await getVaultSchema(vault);
@@ -95,7 +95,7 @@ test("initializeSettings writes a clean (comment-free) defaults file when missin
 
 test("initializeSettings does not clobber an existing file", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: light\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: light\n");
   await initializeSettings(vault);
   const res = await readSettings(vault);
   expect(res!.data).toEqual({ appearance: { theme: "light" } });
@@ -150,7 +150,7 @@ test("serializeSettingsForFrontend overlays valid keys, ignoring wrong types", a
   const vault = await emptyVault();
   await writeNote(
     vault,
-    "settings.yaml",
+    ".settings/settings.yaml",
     "appearance:\n  editorFont: Georgia\n  editorFontSize: big\ngraph:\n  nodeSize: 9\n",
   );
   const data = await serializeSettingsForFrontend(vault);
@@ -163,7 +163,7 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
   const vault = await emptyVault();
   await writeNote(
     vault,
-    "settings.yaml",
+    ".settings/settings.yaml",
     // editorFontSize max is 28, theme is an enum — both stored values are invalid.
     "appearance:\n  editorFontSize: 999\n  theme: not-a-real-theme\n",
   );
@@ -174,7 +174,7 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
 
 test("serializeSettingsForFrontend omits the properties registry section", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "properties:\n  due: date\n");
+  await writeNote(vault, ".settings/settings.yaml", "properties:\n  due: date\n");
   const data = await serializeSettingsForFrontend(vault);
   expect(data.properties).toBeUndefined();
 });
@@ -183,7 +183,7 @@ import { readFileSync } from "node:fs";
 
 test("reconcile fills a missing top-level section with its defaults", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  editorFont: Georgia\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  editorFont: Georgia\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).editorFont).toBe("Georgia"); // user value kept
@@ -193,7 +193,7 @@ test("reconcile fills a missing top-level section with its defaults", async () =
 
 test("reconcile preserves unknown keys", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: oxide-duotone\n  myCustomKey: 42\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: oxide-duotone\n  myCustomKey: 42\n");
   await reconcileSettings(vault);
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).myCustomKey).toBe(42);
@@ -201,9 +201,9 @@ test("reconcile preserves unknown keys", async () => {
 
 test("reconcile preserves comments", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "# my notes\nappearance:\n  theme: oxide-duotone # inline\n");
+  await writeNote(vault, ".settings/settings.yaml", "# my notes\nappearance:\n  theme: oxide-duotone # inline\n");
   await reconcileSettings(vault);
-  const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+  const raw = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   expect(raw).toContain("# my notes");
   expect(raw).toContain("# inline");
 });
@@ -211,27 +211,27 @@ test("reconcile preserves comments", async () => {
 test("reconcile is a no-op write when nothing is missing", async () => {
   const vault = await emptyVault();
   await reconcileSettings(vault); // absent -> writes full defaults
-  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  const before = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   await reconcileSettings(vault); // second run must not rewrite
-  const after = readFileSync(join(vault, "settings.yaml"), "utf8");
+  const after = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   expect(after).toBe(before);
 });
 
 test("reconcile leaves a corrupt file untouched", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await writeNote(vault, ".settings/settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   await reconcileSettings(vault);
-  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
+  expect(readFileSync(join(vault, ".settings/settings.yaml"), "utf8")).toBe(before);
 });
 
 import { setSettingInFile } from "../src/settings";
 
 test("setSettingInFile updates a nested key, preserving siblings/comments/unknowns", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "# hdr\nappearance:\n  theme: oxide-duotone\n  myCustom: 1\ngraph:\n  spin: true\n");
+  await writeNote(vault, ".settings/settings.yaml", "# hdr\nappearance:\n  theme: oxide-duotone\n  myCustom: 1\ngraph:\n  spin: true\n");
   await setSettingInFile(vault, ["appearance", "theme"], "light");
-  const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+  const raw = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).theme).toBe("light");
   expect((data.appearance as any).myCustom).toBe(1);  // unknown preserved
@@ -249,7 +249,7 @@ test("setSettingInFile creates the file (via reconcile) when absent, then sets t
 
 test("setSettingInFile ignores an empty path", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "appearance:\n  theme: oxide-duotone\n");
+  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: oxide-duotone\n");
   await setSettingInFile(vault, [], "x");
   const { data } = (await readSettings(vault))!;
   expect((data.appearance as any).theme).toBe("oxide-duotone");
@@ -257,25 +257,25 @@ test("setSettingInFile ignores an empty path", async () => {
 
 test("setSettingInFile leaves a corrupt file's bytes unchanged", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await writeNote(vault, ".settings/settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   await setSettingInFile(vault, ["appearance", "theme"], "light");
-  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
+  expect(readFileSync(join(vault, ".settings/settings.yaml"), "utf8")).toBe(before);
 });
 
 test("setFolderIcon leaves a corrupt file's bytes unchanged (never clobbers content)", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", ": : : not yaml\n[[[");
-  const before = readFileSync(join(vault, "settings.yaml"), "utf8");
+  await writeNote(vault, ".settings/settings.yaml", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
   await setFolderIcon(vault, "projects", "Folder");
-  expect(readFileSync(join(vault, "settings.yaml"), "utf8")).toBe(before);
+  expect(readFileSync(join(vault, ".settings/settings.yaml"), "utf8")).toBe(before);
 });
 
 import { loadAppConfig } from "../src/settings";
 
 test("loadAppConfig returns file values merged over defaults, typed", async () => {
   const vault = await emptyVault();
-  await writeNote(vault, "settings.yaml", "graph:\n  repulsion: -22\n");
+  await writeNote(vault, ".settings/settings.yaml", "graph:\n  repulsion: -22\n");
   const cfg = await loadAppConfig(vault);
   expect((cfg.graph as any).repulsion).toBe(-22);    // from file
   expect((cfg.graph as any).linkDistance).toBe(5);   // schema default
@@ -407,7 +407,7 @@ describe("concurrent setSettingInFile", () => {
   it("serializes concurrent requests so none clobber each other", async () => {
     const vault = await emptyVault();
     // Set up initial settings with multiple keys
-    await writeNote(vault, "settings.yaml", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+    await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
 
     // Fire 3 concurrent requests that each modify a different key
     const results = await Promise.all([
@@ -430,7 +430,7 @@ describe("concurrent setSettingInFile", () => {
     const vault = await emptyVault();
     const comment = "# important settings\n";
     const custom = "myCustomKey: 42\n";
-    await writeNote(vault, "settings.yaml", `${comment}appearance:\n  theme: oxide-duotone\n${custom}graph:\n  spin: true\n`);
+    await writeNote(vault, ".settings/settings.yaml", `${comment}appearance:\n  theme: oxide-duotone\n${custom}graph:\n  spin: true\n`);
 
     // Fire multiple concurrent mutations
     await Promise.all([
@@ -438,7 +438,7 @@ describe("concurrent setSettingInFile", () => {
       setSettingInFile(vault, ["graph", "spin"], false),
     ]);
 
-    const raw = readFileSync(join(vault, "settings.yaml"), "utf8");
+    const raw = readFileSync(join(vault, ".settings/settings.yaml"), "utf8");
 
     // Comments and unknown keys must survive concurrent mutations
     expect(raw).toContain(comment);
@@ -565,7 +565,7 @@ describe("reconcileSettings daemon migration", () => {
 
   it("rewrites an empty daemon.home to the portable default; enabled stays off with no daemon", async () => {
     const vault = await emptyVault();
-    await writeNote(vault, "settings.yaml", OLD_SHAPE);
+    await writeNote(vault, ".settings/settings.yaml", OLD_SHAPE);
     prevHome = process.env.OA_CLAUDEBOT_HOME;
     tmpHome = mkdtempSync(join(tmpdir(), "cb-empty-")); // a home with NO device-id → not installed
     process.env.OA_CLAUDEBOT_HOME = tmpHome;
@@ -576,7 +576,7 @@ describe("reconcileSettings daemon migration", () => {
 
   it("adopts an installed daemon (enabled=true) when a device-id is present", async () => {
     const vault = await emptyVault();
-    await writeNote(vault, "settings.yaml", OLD_SHAPE);
+    await writeNote(vault, ".settings/settings.yaml", OLD_SHAPE);
     prevHome = process.env.OA_CLAUDEBOT_HOME;
     tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
     writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // looks installed on this machine
@@ -588,7 +588,7 @@ describe("reconcileSettings daemon migration", () => {
 
   it("leaves an already-configured (non-empty) daemon.home untouched", async () => {
     const vault = await emptyVault();
-    await writeNote(vault, "settings.yaml", "daemon:\n  enabled: false\n  home: /custom/bot\n  autoUpdate: true\n");
+    await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: false\n  home: /custom/bot\n  autoUpdate: true\n");
     prevHome = process.env.OA_CLAUDEBOT_HOME;
     tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
     writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // installed, but home is already set

@@ -163,7 +163,6 @@ export function createServer(cfg: CoreConfig) {
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
   // boot and whenever settings.yaml changes (see classifyVault).
   let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig;
-  void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
 
   // /graph, /tree, and the unscoped vault feeds (rows + tasks) all go through a deduped,
   // invalidation-safe cache (see asyncCache.ts): concurrent first requests share ONE build,
@@ -173,12 +172,25 @@ export function createServer(cfg: CoreConfig) {
   const graphCache = createAsyncCache<GraphData>(async () =>
     attachLayout(await buildGraph(cfg.vault, cfg.memory), cfg.vault),
   );
-  const treeCache = createAsyncCache<TreeEntry[]>(() => listTree(cfg.vault));
+  const treeCache = createAsyncCache<TreeEntry[]>(() =>
+    listTree(cfg.vault, { daemonEnabled: appConfig.daemon?.enabled, daemonName: appConfig.daemon?.name }),
+  );
   // The unscoped vault feeds, shared by /vault-data, /rows, and the source resolver.
   const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
   const tasksCache = createAsyncCache<Row[]>(() => buildTaskRows(cfg.vault, undefined));
   let version = 0;
   const sse = createSseRegistry();
+
+  // Load the real settings.yaml over DEFAULTS, then invalidate the caches that depend
+  // on it — the tree shows .daemon only when daemon.enabled, and the graph gates the
+  // 3rd brain on it — so a cache built during the brief boot window before this resolves
+  // can't go stale. (Defined after the caches so we can reference them here.)
+  void loadAppConfig(cfg.vault).then((c) => {
+    appConfig = c;
+    setClaudeBotHomeOverride(c.daemon?.home);
+    treeCache.invalidate();
+    graphCache.invalidate();
+  }).catch(() => {});
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingVault = new Set<string>();
@@ -200,6 +212,11 @@ export function createServer(cfg: CoreConfig) {
   const DAEMON_STATUS_FILE = "DAEMON.md";
   const isWatchIgnored = (p: string) =>
     isHidden(p) || p === DAEMON_STATUS_FILE || p.endsWith("/" + DAEMON_STATUS_FILE);
+  // System folders are dot-prefixed (so isHidden treats them as hidden) but ARE
+  // meaningful: .settings/.daemon show in the sidebar, and .daemon/memory is the
+  // 3rd brain. Route their changes through instead of dropping them as hidden.
+  const isSystemFolderPath = (p: string) => p.startsWith(".settings/") || p.startsWith(".daemon/");
+  const isDaemonMemoryPath = (p: string) => p === ".daemon/memory" || p.startsWith(".daemon/memory/");
 
   // Clear only the caches a change touched, bump version, and tell subscribers
   // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -233,16 +250,33 @@ export function createServer(cfg: CoreConfig) {
     let tree = false;
     const notePaths: string[] = [];
     for (const p of paths) {
-      if (isWatchIgnored(p)) continue;
+      // settings.yaml (now under .settings/) is dot-hidden, so it must be matched
+      // BEFORE the isWatchIgnored drop below.
       if (isSettingsPath(p)) {
         // settings.yaml drives the property registry + appearance — both graph
         // and tree consumers should refetch; /schema reads it fresh on demand.
         // Also refresh the backend runtime config (debounce, heartbeat, …).
-        void loadAppConfig(cfg.vault).then((c) => { appConfig = c; setClaudeBotHomeOverride(c.daemon?.home); }).catch(() => {});
+        void loadAppConfig(cfg.vault).then((c) => {
+          appConfig = c;
+          setClaudeBotHomeOverride(c.daemon?.home);
+          // The graph/tree dirty flags below invalidate synchronously, but appConfig
+          // reloads async — so re-invalidate the daemon-gated caches AFTER it lands and
+          // nudge clients to refetch, so toggling daemon.enabled/name updates the sidebar
+          // (.daemon visibility + label) and graph (3rd brain) live, without a stale frame.
+          treeCache.invalidate();
+          graphCache.invalidate();
+          version++;
+          sse.publish({ version, paths: [], dirty: { graph: true, tree: true } });
+        }).catch(() => {});
         graph = true;
         tree = true;
         continue;
       }
+      // .daemon/memory is the 3rd brain → graph only; other .settings/.daemon
+      // content (cron/process defs, etc.) → sidebar (tree) only.
+      if (isDaemonMemoryPath(p)) { graph = true; continue; }
+      if (isSystemFolderPath(p)) { tree = true; continue; }
+      if (isWatchIgnored(p)) continue;
       if (!p.endsWith(".md")) { graph = true; tree = true; continue; }
       notePaths.push(p);
     }
@@ -328,8 +362,9 @@ export function createServer(cfg: CoreConfig) {
     watch(cfg.vault, { recursive: true }, (_event, filename) => {
       // Ignore churn in .git (backup commits), .trash, and the daemon's DAEMON.md status
       // heartbeat — none feed the graph or tree. A null filename means "something changed,
-      // extent unknown".
-      if (filename && isWatchIgnored(filename)) return;
+      // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
+      // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
+      if (filename && !isSystemFolderPath(filename) && isWatchIgnored(filename)) return;
       scheduleVault(filename ?? undefined);
     });
   } catch {

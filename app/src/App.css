@@ -142,6 +142,11 @@ body { background: var(--bg); color: var(--fg); }
 .ft-row.active { background: var(--accent-soft); color: var(--fg); }
 .ft-row.active .ft-icon { color: var(--accent); }
 .ft-row.drop-target { background: var(--accent-soft); }
+/* System folders (.settings / .daemon): rendered as muted, italic surfaces so they
+   read as runtime-managed rather than ordinary vault folders. */
+.ft-row.system { color: var(--text-muted); font-style: italic; opacity: 0.85; }
+.ft-row.system .ft-icon { color: var(--text-muted); }
+.ft-row.system:hover { opacity: 1; }
 /* Folder children slide open/closed: a grid row animates 0fr→1fr (i.e. 0→content
    height) with no measuring; the inner wrapper clips the overflow as it grows/shrinks. */
 .ft-collapse { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.22s cubic-bezier(0.22, 1, 0.36, 1); }
