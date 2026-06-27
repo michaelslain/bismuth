@@ -332,9 +332,9 @@ if (typeof window !== "undefined") {
       createEffect(() => {
         const change = lastChange();
         if (change.version <= 0) return;
-        // Match the relocated `.settings/settings.yaml` (and the legacy root path during
-        // migration) — the watcher reports the vault-relative path verbatim.
-        if (!change.paths.some((p) => p === "settings.yaml" || p.endsWith("/settings.yaml"))) return;
+        // Match the `.settings` file (and the legacy `settings.yaml` / interim `.settings/settings.yaml`
+        // during the migration window) — the watcher reports the vault-relative path verbatim.
+        if (!change.paths.some((p) => p === ".settings" || p === "settings.yaml" || p === ".settings/settings.yaml")) return;
         void (async () => {
           let data: Record<string, unknown>;
           try { data = await api.settings(); } catch { return; }

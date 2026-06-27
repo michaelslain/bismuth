@@ -20,7 +20,7 @@ process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(tmpdir(), "oa-no-legacy-claude-
 test("GET /graph returns the merged brain graph", async () => {
   const { vault, memory } = await makeSampleVault();
   // The 3rd brain is gated on the daemon and sourced from <vault>/.daemon/memory.
-  await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: true\n");
+  await writeNote(vault, ".settings", "daemon:\n  enabled: true\n");
   await writeNote(vault, ".daemon/memory/michael-profile.md", "Profile of the user. He is working on [[internship]] and [[essay]].\n");
   // Daemon enabled → boot + the debounced settings-change handler both run migrateDaemonState;
   // the module-level BISMUTH_DAEMON_DIR / BISMUTH_LEGACY_CLAUDE_BOT_DIR isolation above keeps
@@ -758,7 +758,7 @@ test("GET /settings returns parsed app settings with defaults", async () => {
 
 test("GET /schema returns the property registry from settings.yaml", async () => {
   const { vault, memory } = await makeSampleVault();
-  await writeNote(vault, ".settings/settings.yaml", "properties:\n  due: date\n  rating: number\n");
+  await writeNote(vault, ".settings", "properties:\n  due: date\n  rating: number\n");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -776,7 +776,7 @@ test("createServer writes a settings.yaml on boot when missing", async () => {
   try {
     // initializeSettings is fire-and-forget on boot; allow the write to land.
     await initializeSettings(vault); // idempotent — ensures the file is present
-    const exists = await Bun.file(join(vault, ".settings/settings.yaml")).exists();
+    const exists = await Bun.file(join(vault, ".settings")).exists();
     expect(exists).toBe(true);
   } finally {
     server.stop(true);
@@ -791,13 +791,13 @@ test("GET /file materializes settings.yaml from defaults when missing at read ti
     // Defeat the fire-and-forget boot init so the file is genuinely absent at the
     // moment of the read — the exact state a stale/never-booted server leaves behind.
     await initializeSettings(vault); // drain any pending boot write deterministically
-    rmSync(join(vault, ".settings/settings.yaml"));
-    const res = await fetch(`${base}/file?path=.settings/settings.yaml`);
+    rmSync(join(vault, ".settings"));
+    const res = await fetch(`${base}/file?path=.settings`);
     const text = await res.text();
     expect(res.status).toBe(200);
     expect(text).toContain("appearance:"); // default content, not a blank editor
     expect(text).toContain("theme: oxide-duotone");
-    expect(existsSync(join(vault, ".settings/settings.yaml"))).toBe(true); // recreated on disk
+    expect(existsSync(join(vault, ".settings"))).toBe(true); // recreated on disk
   } finally {
     server.stop(true);
   }
@@ -805,7 +805,7 @@ test("GET /file materializes settings.yaml from defaults when missing at read ti
 
 test("editing settings.yaml refreshes GET /schema without restart", async () => {
   const { vault, memory } = await makeSampleVault();
-  await writeNote(vault, ".settings/settings.yaml", "properties:\n  due: date\n");
+  await writeNote(vault, ".settings", "properties:\n  due: date\n");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -817,7 +817,7 @@ test("editing settings.yaml refreshes GET /schema without restart", async () => 
     await fetch(`${base}/file`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path: ".settings/settings.yaml", contents: "properties:\n  rating: number\n" }),
+      body: JSON.stringify({ path: ".settings", contents: "properties:\n  rating: number\n" }),
     });
 
     const after = await (await fetch(`${base}/schema`)).json();
@@ -1001,7 +1001,7 @@ test("POST /rows notes source serves cached vault rows that a file edit invalida
 test("POST /set-setting merges one key and preserves the rest of settings.yaml", async () => {
   const { vault } = await makeSampleVault();
   // Seed a settings.yaml with a comment + a custom key + the properties registry.
-  await writeNote(vault, ".settings/settings.yaml", "# my settings\nappearance:\n  theme: oxide-duotone\n  myCustom: 7\nproperties:\n  due: date\n");
+  await writeNote(vault, ".settings", "# my settings\nappearance:\n  theme: oxide-duotone\n  myCustom: 7\nproperties:\n  due: date\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
@@ -1016,7 +1016,7 @@ test("POST /set-setting merges one key and preserves the rest of settings.yaml",
     expect(settings.appearance.editorFont).toBe("Georgia"); // changed key
     expect(settings.appearance.theme).toBe("oxide-duotone"); // reconciled default present
 
-    const raw = await readNote(vault, ".settings/settings.yaml");
+    const raw = await readNote(vault, ".settings");
     expect(raw).toContain("# my settings");                // comment preserved
     expect(raw).toContain("myCustom: 7");                  // unknown key preserved
     expect(raw).toContain("due: date");                    // properties registry preserved
@@ -1071,7 +1071,7 @@ test("GET /templates returns [] when the folder is absent", async () => {
 
 test("POST /daily-note creates today's note from the template, then reopens it without clobbering", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
-  await writeNote(vault, ".settings/settings.yaml", [
+  await writeNote(vault, ".settings", [
     "dailyNotes:",
     "  - id: journal",
     "    label: Journal",
@@ -1107,7 +1107,7 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 
 test("POST /daily-note bumps version only on create (SSE carries the new path), not on the no-op reopen", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-daily-version-"));
-  await writeNote(vault, ".settings/settings.yaml", [
+  await writeNote(vault, ".settings", [
     "dailyNotes:",
     "  - id: journal",
     "    label: Journal",
@@ -1251,7 +1251,7 @@ test("a structural mutation invalidates the cached /graph", async () => {
 test("POST /set-setting serializes concurrent requests without clobbering changes", async () => {
   const { vault } = await makeSampleVault();
   // Seed settings with multiple keys
-  await writeNote(vault, ".settings/settings.yaml", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
+  await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n  editorFont: Lora\ngraph:\n  nodeSize: 5\n");
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {

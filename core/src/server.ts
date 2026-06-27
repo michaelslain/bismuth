@@ -234,10 +234,11 @@ export function createServer(cfg: CoreConfig) {
   const DAEMON_STATUS_FILE = "DAEMON.md";
   const isWatchIgnored = (p: string) =>
     isHidden(p) || p === DAEMON_STATUS_FILE || p.endsWith("/" + DAEMON_STATUS_FILE);
-  // System folders are dot-prefixed (so isHidden treats them as hidden) but ARE
-  // meaningful: .settings/.daemon show in the sidebar, and .daemon/memory is the
-  // 3rd brain. Route their changes through instead of dropping them as hidden.
-  const isSystemFolderPath = (p: string) => p.startsWith(".settings/") || p.startsWith(".daemon/");
+  // The .daemon folder is dot-prefixed (so isHidden treats it as hidden) but its contents ARE
+  // meaningful: .daemon shows in the sidebar, and .daemon/memory is the 3rd brain. Route its
+  // changes through instead of dropping them as hidden. (The `.settings` FILE is matched earlier
+  // by isSettingsPath, before the hidden-drop.)
+  const isSystemFolderPath = (p: string) => p.startsWith(".daemon/");
   const isDaemonMemoryPath = (p: string) => p === ".daemon/memory" || p.startsWith(".daemon/memory/");
   // The daemon writes high-frequency runtime state under .daemon while it runs — process logs,
   // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the

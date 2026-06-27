@@ -11,10 +11,10 @@ export const EXPORT_PREFIX = "::export:";
 // Chat session with Claude Code: CHAT_PREFIX + "<chat id>".
 export const CHAT_PREFIX = "::chat:";
 
-// The app's "settings page" is .settings/settings.yaml opened as an ordinary file tab
-// (there is no ::settings sentinel). We treat it as a first-class app: shown as "settings"
+// The app's "settings page" is the single hidden `.settings` file (YAML) opened as an ordinary
+// file tab (there is no ::settings sentinel). We treat it as a first-class app: shown as "settings"
 // with a gear icon rather than a raw filename.
-export const SETTINGS_FILE = ".settings/settings.yaml";
+export const SETTINGS_FILE = ".settings";
 export function isSettingsFile(content: string): boolean {
   return content === SETTINGS_FILE || content.endsWith("/" + SETTINGS_FILE);
 }
