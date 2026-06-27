@@ -1,13 +1,11 @@
-// Daemon command group for the `bismuth` CLI.
-// Reads/writes the daemon's shared machine-identity state under ~/.bismuth/daemon
-// (BISMUTH_DAEMON_DIR override) — NOT the vault — mirroring server.ts's /daemon/*
-// routes. status/devices/owner-read/graph just read shared files; owner-set,
-// cron/process toggle, and cron run flip frontmatter / drop trigger files that the
-// running daemon polls. install/setup spawn the claude-bot entrypoint (read-only
-// status vs. the idempotent, adopt-only setup). None of these touch the vault, so
-// none require --vault.
+// Daemon command group for the `bismuth` CLI, mirroring server.ts's /daemon/* routes.
+// MACHINE-level state lives under ~/.bismuth/daemon (BISMUTH_DAEMON_DIR override): status,
+// devices, owner-read/set, install/setup — these don't touch the vault. But crons + processes
+// are PER-VAULT (under <vault>/.daemon), so `daemon graph`, `daemon cron toggle/run`, and
+// `daemon process toggle` REQUIRE a vault (--vault / BISMUTH_VAULT) and operate on that vault's
+// .daemon dir.
 import type { CommandMap } from "../types";
-import { bool, fail, out, positionals } from "../args";
+import { bool, fail, out, positionals, requireVault } from "../args";
 import {
   daemonStatus,
   listDevices,
@@ -16,6 +14,7 @@ import {
   setCronEnabled,
   setProcessEnabled,
   runCron,
+  vaultDaemonDir,
 } from "../../../core/src/daemon";
 import { daemonGraph } from "../../../core/src/daemonGraph";
 import { installStatus, runSetup } from "../../../core/src/daemonInstall";
@@ -69,39 +68,39 @@ export const commands: CommandMap = {
     },
   },
   "daemon graph": {
-    summary: "Build the daemon-mode graph (daemon hub → crons + processes) and print it as JSON",
-    usage: "[--pretty]",
+    summary: "Build this vault's daemon-mode graph (daemon hub → crons + processes) and print it as JSON",
+    usage: "--vault <dir> [--pretty]",
     run: (args) => {
-      out(daemonGraph(), args);
+      out(daemonGraph(vaultDaemonDir(requireVault(args))), args);
     },
   },
   "daemon cron toggle": {
-    summary: "Enable (or, with --off, disable) a cron by flipping its `enabled` frontmatter",
-    usage: "<name> [--off]",
+    summary: "Enable (or, with --off, disable) a cron in this vault by flipping its `enabled` frontmatter",
+    usage: "<name> --vault <dir> [--off]",
     run: (args) => {
       const [name] = positionals(args);
-      if (name === undefined) fail("usage: daemon cron toggle <name> [--off]");
-      setCronEnabled(name, !bool(args, "off"));
+      if (name === undefined) fail("usage: daemon cron toggle <name> --vault <dir> [--off]");
+      setCronEnabled(name, !bool(args, "off"), vaultDaemonDir(requireVault(args)));
       out("ok", args);
     },
   },
   "daemon cron run": {
-    summary: "Request the daemon to run a cron NOW (drops a trigger file the daemon polls)",
-    usage: "<name>",
+    summary: "Request the daemon to run a cron in this vault NOW (drops a trigger file the daemon polls)",
+    usage: "<name> --vault <dir>",
     run: (args) => {
       const [name] = positionals(args);
-      if (name === undefined) fail("usage: daemon cron run <name>");
-      runCron(name);
+      if (name === undefined) fail("usage: daemon cron run <name> --vault <dir>");
+      runCron(name, vaultDaemonDir(requireVault(args)));
       out("ok", args);
     },
   },
   "daemon process toggle": {
-    summary: "Enable (or, with --off, disable) a background process by flipping its `enabled` frontmatter",
-    usage: "<name> [--off]",
+    summary: "Enable (or, with --off, disable) a background process in this vault by flipping its `enabled` frontmatter",
+    usage: "<name> --vault <dir> [--off]",
     run: (args) => {
       const [name] = positionals(args);
-      if (name === undefined) fail("usage: daemon process toggle <name> [--off]");
-      setProcessEnabled(name, !bool(args, "off"));
+      if (name === undefined) fail("usage: daemon process toggle <name> --vault <dir> [--off]");
+      setProcessEnabled(name, !bool(args, "off"), vaultDaemonDir(requireVault(args)));
       out("ok", args);
     },
   },

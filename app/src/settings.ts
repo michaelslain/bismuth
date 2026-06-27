@@ -14,6 +14,7 @@ import { stringify } from "yaml";
 import { api } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { diffLeaves } from "./settingsDiff";
+import { SETTINGS_FILE } from "./tabIds";
 import { DEFAULTS, type AppSettings as SpineSettings } from "../../core/src/schema/settingsSchema";
 import { SHEEN } from "./themes";
 
@@ -294,7 +295,7 @@ async function hydrateFromServer(): Promise<void> {
   const imported = firstLaunchImport(legacy, data);
   if (imported) {
     try {
-      await api.write("settings.yaml", stringify(imported));
+      await api.write(SETTINGS_FILE, stringify(imported));
       if (typeof localStorage !== "undefined") localStorage.removeItem(LEGACY_KEY);
     } catch { /* leave legacy in place; retry next launch */ }
     setSettings(reconcile(imported));
@@ -331,7 +332,9 @@ if (typeof window !== "undefined") {
       createEffect(() => {
         const change = lastChange();
         if (change.version <= 0) return;
-        if (!change.paths.includes("settings.yaml")) return;
+        // Match the relocated `.settings/settings.yaml` (and the legacy root path during
+        // migration) — the watcher reports the vault-relative path verbatim.
+        if (!change.paths.some((p) => p === "settings.yaml" || p.endsWith("/settings.yaml"))) return;
         void (async () => {
           let data: Record<string, unknown>;
           try { data = await api.settings(); } catch { return; }

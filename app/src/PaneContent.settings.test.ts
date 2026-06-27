@@ -6,9 +6,9 @@ import { join } from "path";
 const src = (rel: string) => readFileSync(join(import.meta.dir, rel), "utf8");
 
 describe("settings opens as an editor tab", () => {
-  it("App.tsx gear opens settings.yaml, not the ::settings sentinel", () => {
+  it("App.tsx gear opens the relocated settings file via the SETTINGS_FILE constant, not the ::settings sentinel", () => {
     const app = src("App.tsx");
-    expect(app).toContain('openInNewTab("settings.yaml")');
+    expect(app).toContain("openInNewTab(SETTINGS_FILE)");
   });
 
   it("PaneContent.tsx no longer references SettingsPage", () => {

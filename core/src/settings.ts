@@ -4,7 +4,7 @@
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
 import { join, dirname } from "node:path";
-import { existsSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, copyFileSync } from "node:fs";
 import { parse, parseDocument, Document, YAMLMap, isMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
@@ -33,7 +33,11 @@ export function migrateSettingsLocation(vault: string): void {
       mkdirSync(dirname(next), { recursive: true });
       renameSync(legacy, next);
     } catch {
-      // leave the legacy file in place; reconcile will still read it via the fallback path
+      // rename can fail (a lock on the legacy file, an odd filesystem state). Fall back to a
+      // COPY so the new location exists with the user's real settings — reconcile reads only
+      // SETTINGS_FILE, so without this a failed move silently resets the vault to defaults. The
+      // legacy file is left in place as a harmless backup.
+      try { copyFileSync(legacy, next); } catch { /* give up — reconcile seeds defaults */ }
     }
   }
 }

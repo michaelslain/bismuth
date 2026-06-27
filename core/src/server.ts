@@ -239,6 +239,16 @@ export function createServer(cfg: CoreConfig) {
   // 3rd brain. Route their changes through instead of dropping them as hidden.
   const isSystemFolderPath = (p: string) => p.startsWith(".settings/") || p.startsWith(".daemon/");
   const isDaemonMemoryPath = (p: string) => p === ".daemon/memory" || p.startsWith(".daemon/memory/");
+  // The daemon writes high-frequency runtime state under .daemon while it runs — process logs,
+  // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the
+  // sidebar or the graph, so reacting to it (cache invalidate → version bump → SSE → full
+  // /tree or /graph rebuild) is pure churn — the same reason DAEMON_STATUS_FILE is dropped
+  // above. A .daemon path is "noise" UNLESS it's the 3rd brain (.daemon/memory/**) or a cron/
+  // process DEFINITION file (.daemon/{crons,processes}/<name>.md) that the sidebar/graph show.
+  const isDaemonRuntimeNoise = (p: string) =>
+    p.startsWith(".daemon/") &&
+    !isDaemonMemoryPath(p) &&
+    !/^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/.test(p);
 
   // Clear only the caches a change touched, bump version, and tell subscribers
   // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -300,6 +310,7 @@ export function createServer(cfg: CoreConfig) {
       }
       // .daemon/memory is the 3rd brain → graph only; other .settings/.daemon
       // content (cron/process defs, etc.) → sidebar (tree) only.
+      if (isDaemonRuntimeNoise(p)) continue; // daemon logs/pids/cron-state → never refetch
       if (isDaemonMemoryPath(p)) { graph = true; continue; }
       if (isSystemFolderPath(p)) { tree = true; continue; }
       if (isWatchIgnored(p)) continue;
@@ -390,6 +401,7 @@ export function createServer(cfg: CoreConfig) {
       // heartbeat — none feed the graph or tree. A null filename means "something changed,
       // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
       // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
+      if (filename && isDaemonRuntimeNoise(filename)) return; // drop daemon runtime churn early
       if (filename && !isSystemFolderPath(filename) && isWatchIgnored(filename)) return;
       scheduleVault(filename ?? undefined);
     });
