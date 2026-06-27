@@ -248,6 +248,7 @@ export function createServer(cfg: CoreConfig) {
   const isDaemonRuntimeNoise = (p: string) =>
     p.startsWith(".daemon/") &&
     !isDaemonMemoryPath(p) &&
+    p !== ".daemon/identity.md" && // the user-editable personality file — show it in the sidebar
     !/^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/.test(p);
 
   // Clear only the caches a change touched, bump version, and tell subscribers

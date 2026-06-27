@@ -27,17 +27,33 @@ async function saveSessionId(ctx: VaultContext, id: string): Promise<void> {
   await writeFile(ctx.sessionFile, id, "utf-8")
 }
 
-/** The bot's identity for one vault, parameterized by the configured daemon name. Appended
- *  to Claude Code's system prompt so the daemon self-identifies (e.g. "Atlas"). */
-function buildSystemPrompt(name: string): string {
-  return [
-    `You are ${name}, a persistent personal-assistant daemon for this Bismuth vault.`,
-    `You run continuously in the background with durable memory. Your memory lives in this`,
-    `vault's .daemon/memory folder; use the remember/recall/forget tools to read and write it,`,
-    `and consult it for prior context before acting. You operate inside the vault (your cwd),`,
-    `maintain the user's scheduled crons and background processes, and act as their right hand`,
-    `for intellectual and systems work. Be direct; skip performative politeness.`,
-  ].join(" ")
+/** Default daemon personality, seeded into <vault>/.daemon/identity.md so the user can edit it
+ *  in the Bismuth editor. The name (settings.daemon.name) is prepended separately at runtime, so
+ *  renaming the daemon never requires touching this prose. */
+export const DEFAULT_DAEMON_IDENTITY = [
+  "A persistent personal-assistant daemon for this Bismuth vault, running continuously in the",
+  "background with durable memory.",
+  "",
+  "Your memory lives in this vault's `.daemon/memory` — use the remember/recall/forget tools to",
+  "read and write it, and consult it for prior context before acting. You operate inside the vault",
+  "(your working directory) and maintain the user's scheduled crons and background processes.",
+  "",
+  "Act as the user's right hand for intellectual and systems work. Be direct; skip performative politeness.",
+].join("\n")
+
+/** The bot's system prompt for one vault: "You are <name>." followed by the user-editable
+ *  .daemon/identity.md (or the default above when absent/empty). Appended to Claude Code's system
+ *  prompt so the daemon self-identifies (e.g. "Atlas") with whatever personality the user authored.
+ *  Read fresh per session, so edits to identity.md take effect on the next cron/message. */
+async function buildSystemPrompt(ctx: VaultContext): Promise<string> {
+  let identity = DEFAULT_DAEMON_IDENTITY
+  try {
+    const custom = (await readFile(ctx.identityFile, "utf-8")).trim()
+    if (custom) identity = custom
+  } catch {
+    // no identity.md (or unreadable) → default
+  }
+  return `You are ${ctx.name}.\n\n${identity}`
 }
 
 export interface BotResponse {
@@ -79,7 +95,7 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
     // tools target the right brain, and the vault's daemon name as the bot's identity.
     cwd: ctx.root,
     env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
-    appendSystemPrompt: buildSystemPrompt(ctx.name),
+    appendSystemPrompt: await buildSystemPrompt(ctx),
     model: opts?.model ?? "haiku",
   }
 

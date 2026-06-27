@@ -27,6 +27,8 @@ export interface VaultContext {
   cronsDir: string
   processesDir: string
   logsDir: string
+  /** <root>/.daemon/identity.md — the user-editable system prompt (personality/voice). */
+  identityFile: string
   sessionFile: string
   lastFiredFile: string
   runningFile: string
@@ -47,6 +49,7 @@ export function vaultPaths(root: string, name: string = "daemon"): VaultContext 
     cronsDir,
     processesDir,
     logsDir: join(daemonDir, "logs"),
+    identityFile: join(daemonDir, "identity.md"),
     sessionFile: join(daemonDir, "session-id"),
     lastFiredFile: join(cronsDir, ".last-fired.json"),
     runningFile: join(cronsDir, ".running.json"),

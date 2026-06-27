@@ -1,6 +1,6 @@
 import { mkdir, writeFile, unlink } from "fs/promises"
 import { existsSync, readFileSync } from "fs"
-import { sendMessage } from "./session.ts"
+import { sendMessage, DEFAULT_DAEMON_IDENTITY } from "./session.ts"
 import { startCronScheduler, stopCronScheduler, recoverInterruptedCrons, waitForRunningJobs } from "./cron.ts"
 import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, startProcessTriggers, stopProcessTriggers, stopProcessTriggersForVault } from "./process.ts"
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
@@ -37,6 +37,11 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
   await mkdir(ctx.cronsDir, { recursive: true })
   await mkdir(ctx.processesDir, { recursive: true })
   await mkdir(ctx.logsDir, { recursive: true })
+  // Seed the editable personality file so the user has something to shape (shows in the sidebar
+  // under .daemon, opens in the Bismuth editor). Only when absent — never clobber the user's edits.
+  if (!existsSync(ctx.identityFile)) {
+    try { await writeFile(ctx.identityFile, DEFAULT_DAEMON_IDENTITY + "\n", "utf-8") } catch { /* best-effort */ }
+  }
 }
 
 async function writePid(): Promise<void> {
