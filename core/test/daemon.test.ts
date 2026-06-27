@@ -16,6 +16,7 @@ import {
   setProcessEnabled,
   runCron,
   daemonMachineDir,
+  migrateDaemonState,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
@@ -37,6 +38,41 @@ afterEach(() => {
   for (const home of created.splice(0)) {
     try { rmSync(home, { recursive: true, force: true }); } catch { /* */ }
   }
+});
+
+test("migrateDaemonState copies a legacy claude-bot brain into the vault, COPY-ONLY + machine-gated", () => {
+  const home = makeHome({}); // points BISMUTH_DAEMON_DIR at a temp machine dir (holds the marker)
+  // Fake legacy ~/.claude-bot with memory + crons.
+  const legacy = mkdtempSync(join(tmpdir(), "legacy-cb-"));
+  created.push(legacy);
+  mkdirSync(join(legacy, "memory"), { recursive: true });
+  writeFileSync(join(legacy, "memory", "note.md"), "old memory");
+  mkdirSync(join(legacy, "crons"), { recursive: true });
+  writeFileSync(join(legacy, "crons", "dream.md"), "schedule");
+  const vaultA = mkdtempSync(join(tmpdir(), "vaultA-"));
+  created.push(vaultA);
+
+  // Migrates into vault A: content copied, source preserved, marker records the destination.
+  expect(migrateDaemonState(vaultA, legacy)).toBe(true);
+  expect(readFileSync(join(vaultA, ".daemon", "memory", "note.md"), "utf8")).toBe("old memory");
+  expect(existsSync(join(vaultA, ".daemon", "crons", "dream.md"))).toBe(true);
+  expect(existsSync(join(legacy, "memory", "note.md"))).toBe(true); // COPY-ONLY: source never deleted
+  expect(readFileSync(join(home, ".claude-bot-migrated"), "utf8")).toBe(vaultA);
+
+  // Idempotent for vault A; a SECOND vault does NOT get the brain (machine-gated to one).
+  expect(migrateDaemonState(vaultA, legacy)).toBe(true);
+  const vaultB = mkdtempSync(join(tmpdir(), "vaultB-"));
+  created.push(vaultB);
+  expect(migrateDaemonState(vaultB, legacy)).toBe(false);
+  expect(existsSync(join(vaultB, ".daemon", "memory"))).toBe(false);
+});
+
+test("migrateDaemonState is a no-op when there is no legacy claude-bot dir", () => {
+  makeHome({});
+  const vault = mkdtempSync(join(tmpdir(), "vaultC-"));
+  created.push(vault);
+  expect(migrateDaemonState(vault, join(tmpdir(), "does-not-exist-claude-bot"))).toBe(false);
+  expect(existsSync(join(vault, ".daemon"))).toBe(false);
 });
 
 test("daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon", () => {

@@ -52,7 +52,7 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, runUpdate } from "./claudebot";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
@@ -193,6 +193,11 @@ export function createServer(cfg: CoreConfig) {
   // can't go stale. (Defined after the caches so we can reference them here.)
   void loadAppConfig(cfg.vault).then((c) => {
     appConfig = c;
+    // First boot after upgrade: if this vault's daemon is enabled, copy any legacy
+    // ~/.claude-bot brain into <vault>/.daemon (copy-only — never deletes the source).
+    // Machine-marker-gated, so it lands in exactly one vault. Runs before the cache
+    // rebuilds below so the migrated memory shows up immediately.
+    if (c.daemon?.enabled) migrateDaemonState(cfg.vault);
     treeCache.invalidate();
     graphCache.invalidate();
     // Re-bake the warm pool with the now-known memory dir so the first terminal tab
@@ -271,6 +276,9 @@ export function createServer(cfg: CoreConfig) {
         // Also refresh the backend runtime config (debounce, heartbeat, …).
         void loadAppConfig(cfg.vault).then((c) => {
           appConfig = c;
+          // Enabling the daemon for this vault triggers the one-time copy-only migration of
+          // any legacy ~/.claude-bot brain into <vault>/.daemon (machine-marker-gated).
+          if (c.daemon?.enabled) migrateDaemonState(cfg.vault);
           // The graph/tree dirty flags below invalidate synchronously, but appConfig
           // reloads async — so re-invalidate the daemon-gated caches AFTER it lands and
           // nudge clients to refetch, so toggling daemon.enabled/name updates the sidebar
