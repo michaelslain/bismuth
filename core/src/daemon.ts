@@ -19,7 +19,7 @@
 // that has never run yet, or a partially-written file, degrades to empty/null).
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { pidAlive } from "./daemonState";
 import { AppError } from "./error";
@@ -27,6 +27,45 @@ import { AppError } from "./error";
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
 export function daemonMachineDir(): string {
   return process.env.BISMUTH_DAEMON_DIR || join(homedir(), ".bismuth", "daemon");
+}
+
+/**
+ * One-time, COPY-ONLY migration of a legacy standalone claude-bot brain
+ * (~/.claude-bot/{memory,crons,processes}) into a vault's `.daemon/`.
+ *
+ * Data-safety by construction (the no-data-loss rule): the source is NEVER deleted or
+ * moved — it stays as a permanent backup, so this can never lose the user's memory graph.
+ * A machine-level marker ensures the brain lands in exactly ONE vault (the first one whose
+ * daemon gets enabled after upgrade), not duplicated into every opened vault. Idempotent,
+ * and it skips any target subdir that already has content. Best-effort; never throws.
+ *
+ * Returns true when it performed (or had already performed) the migration into THIS vault.
+ */
+export function migrateDaemonState(vault: string, legacy: string = join(homedir(), ".claude-bot")): boolean {
+  const machineMarker = join(daemonMachineDir(), ".claude-bot-migrated");
+  // Already migrated into some vault (records which) — never migrate again machine-wide.
+  if (existsSync(machineMarker)) {
+    try { return readFileSync(machineMarker, "utf8").trim() === vault; } catch { return false; }
+  }
+  // Nothing to migrate.
+  if (!existsSync(legacy)) return false;
+
+  const daemonDir = join(vault, ".daemon");
+  try {
+    mkdirSync(daemonDir, { recursive: true });
+    for (const sub of ["memory", "crons", "processes"] as const) {
+      const src = join(legacy, sub);
+      const dst = join(daemonDir, sub);
+      // Copy only when the source exists and the target isn't already populated — never
+      // overwrite a brain the user has already started building in this vault.
+      if (existsSync(src) && !existsSync(dst)) cpSync(src, dst, { recursive: true });
+    }
+    mkdirSync(daemonMachineDir(), { recursive: true });
+    writeFileSync(machineMarker, vault); // record the destination; gate future vaults
+    return true;
+  } catch {
+    return false; // leave ~/.claude-bot untouched — it remains the source of truth
+  }
 }
 
 export interface Owner {
