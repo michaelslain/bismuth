@@ -51,8 +51,16 @@ export function vaultDaemonDir(vault: string): string {
  * and it skips any target subdir that already has content. Best-effort; never throws.
  *
  * Returns true when it performed (or had already performed) the migration into THIS vault.
+ *
+ * The legacy source defaults to ~/.claude-bot but is overridable via BISMUTH_LEGACY_CLAUDE_BOT_DIR
+ * (or the `legacy` arg) so the boot path (which passes no arg) can be pointed at a throwaway dir
+ * in tests — otherwise a daemon-enabled test would read the user's REAL ~/.claude-bot and write a
+ * marker into their REAL machine dir.
  */
-export function migrateDaemonState(vault: string, legacy: string = join(homedir(), ".claude-bot")): boolean {
+export function migrateDaemonState(
+  vault: string,
+  legacy: string = process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR ?? join(homedir(), ".claude-bot"),
+): boolean {
   const machineMarker = join(daemonMachineDir(), ".claude-bot-migrated");
   // Already migrated into some vault (records which) — never migrate again machine-wide.
   if (existsSync(machineMarker)) {
