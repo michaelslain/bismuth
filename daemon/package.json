@@ -7,7 +7,8 @@
   "description": "The per-vault daemon runtime (absorbed from claude-bot): one machine process that multiplexes each enabled vault's brain — memory + crons + processes + a conversation session. Runs as a launchd/systemd service from a bundled binary; runtime entry is src/daemon/index.ts.",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.96",
-    "@bismuth/memory": "workspace:*"
+    "@bismuth/memory": "workspace:*",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/bun": "latest",

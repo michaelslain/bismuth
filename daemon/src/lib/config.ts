@@ -21,6 +21,60 @@ export const RUNNING_FILE = join(CRONS_DIR, ".running.json")
 export const TRIGGER_DIR = join(CRONS_DIR, ".triggers")
 export const PROCESS_TRIGGER_DIR = join(PROCESSES_DIR, ".triggers")
 
+// ── One runtime, many brains ──────────────────────────────────────────────────
+// The daemon is a single machine process that multiplexes per-vault brains. Machine-
+// level identity + runtime state live in MACHINE_DIR (one device, one owner, reachable
+// from mobile). Each vault's brain — memory, crons, processes, conversation session —
+// lives under <vault>/.daemon, resolved by vaultPaths() into a VaultContext that is
+// threaded through session/cron/process so concurrent vaults never collide.
+
+/** Machine-level daemon home: device-id, owner.json, devices.json, daemon.pid, logs,
+ *  and vaults.json (the registry of known vault roots). NOT per-vault. */
+export const MACHINE_DIR = process.env.BISMUTH_DAEMON_DIR || join(homedir(), ".bismuth", "daemon")
+export const MACHINE_PID_FILE = join(MACHINE_DIR, "daemon.pid")
+export const MACHINE_LOGS_DIR = join(MACHINE_DIR, "logs")
+/** JSON array of absolute vault roots the daemon knows about (written by Bismuth core). */
+export const VAULTS_FILE = join(MACHINE_DIR, "vaults.json")
+
+/** Resolved per-vault brain paths. Everything the runtime touches for one vault. */
+export interface VaultContext {
+  /** Vault root — also the session cwd. */
+  root: string
+  /** Daemon display name (settings.daemon.name; "" falls back to "daemon"). */
+  name: string
+  daemonDir: string
+  memoryDir: string
+  cronsDir: string
+  processesDir: string
+  logsDir: string
+  sessionFile: string
+  lastFiredFile: string
+  runningFile: string
+  triggerDir: string
+  processTriggerDir: string
+}
+
+/** Compute a vault's brain paths under <root>/.daemon. */
+export function vaultPaths(root: string, name: string = "daemon"): VaultContext {
+  const daemonDir = join(root, ".daemon")
+  const cronsDir = join(daemonDir, "crons")
+  const processesDir = join(daemonDir, "processes")
+  return {
+    root,
+    name: name.trim() || "daemon",
+    daemonDir,
+    memoryDir: join(daemonDir, "memory"),
+    cronsDir,
+    processesDir,
+    logsDir: join(daemonDir, "logs"),
+    sessionFile: join(daemonDir, "session-id"),
+    lastFiredFile: join(cronsDir, ".last-fired.json"),
+    runningFile: join(cronsDir, ".running.json"),
+    triggerDir: join(cronsDir, ".triggers"),
+    processTriggerDir: join(processesDir, ".triggers"),
+  }
+}
+
 // ── Timeouts & intervals ────────────────────────────────────────────────────
 
 /** Default cron job session timeout in seconds */
@@ -49,5 +103,5 @@ export const RESTART_BACKOFF_MAX_MS = 60_000
 
 // ── Platform service names ──────────────────────────────────────────────────
 
-export const LAUNCHD_LABEL = "com.claude-bot.daemon"
-export const SYSTEMD_SERVICE_NAME = "claude-bot"
+export const LAUNCHD_LABEL = "com.bismuth.daemon"
+export const SYSTEMD_SERVICE_NAME = "bismuth-daemon"
