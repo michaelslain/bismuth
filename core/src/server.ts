@@ -1516,8 +1516,8 @@ export function createServer(cfg: CoreConfig) {
 }
 
 if (import.meta.main) {
-  const vault = cliArg("vault") ?? process.env.OA_VAULT;
-  const memory = cliArg("memory") ?? process.env.OA_MEMORY;
+  const vault = cliArg("vault") ?? process.env.BISMUTH_VAULT ?? process.env.OA_VAULT;
+  const memory = cliArg("memory") ?? process.env.BISMUTH_MEMORY ?? process.env.OA_MEMORY;
   if (!vault || !memory) {
     console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
     process.exit(1);
