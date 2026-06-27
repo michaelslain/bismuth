@@ -12,6 +12,7 @@
     "predmg:clean": "bun run scripts/predmg-clean.ts",
     "build:core-sidecar": "bun run scripts/build-core-sidecar.ts",
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
+    "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
     "installer": "bun run tauri build && bun run scripts/open-installer.ts",
     "tauri": "tauri"
   },
