@@ -1,6 +1,6 @@
 // core/src/fsPaths.ts
 // Filesystem path completion: given the partial path a user is typing in a
-// `scope:"fs"` setting (e.g. daemon.home), list matching directory entries so the
+// `scope:"fs"` setting, list matching directory entries so the
 // editor can autocomplete them. The vault-path completion (settingsComplete.ts) is
 // vault-rooted; this is its filesystem-rooted counterpart, for settings that name a
 // path OUTSIDE the vault (absolute or `~`-relative).

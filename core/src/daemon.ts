@@ -1,15 +1,19 @@
 // core/src/daemon.ts
-// Bismuth's read/write window onto the claude-bot daemon's shared state files.
-// Bismuth runs on the SAME machine as the claude-bot daemon, so it reads and
-// writes the same on-disk files under the claude-bot home dir (default
-// ~/.claude-bot, overridable via OA_CLAUDEBOT_HOME). The files are authored by
-// claude-bot; Bismuth only writes owner.json (the owner-device selection).
+// Bismuth's read/write window onto the daemon's MACHINE-LEVEL identity state files.
+// Machine-level identity (device-id, devices.json, owner.json, daemon.pid) now lives
+// under ~/.bismuth/daemon (env override BISMUTH_DAEMON_DIR). Bismuth runs on the SAME
+// machine as the daemon, so it reads and writes the same on-disk files; it only writes
+// owner.json (the owner-device selection).
 //
-// Shared integration contract (kept byte-compatible with what claude-bot reads):
-//   <home>/device-id   — a stable UUID for THIS machine.
-//   <home>/devices.json = { "<deviceId>": { "label", "lastSeenISO" }, ... }
-//   <home>/owner.json   = { ownerDeviceId, ownerLabel, updatedAt }  (ABSENT = unclaimed)
-//   <home>/daemon.pid   — the running daemon's pid (presence + liveness => running).
+// NOTE: per-vault crons/processes live under <vault>/.daemon and are NOT read here yet
+// — a later phase repoints the daemon graph to per-vault. This module only covers the
+// machine-identity home; the rename from the old ~/.claude-bot home is its only change.
+//
+// Shared integration contract (kept byte-compatible with what the daemon reads):
+//   <dir>/device-id   — a stable UUID for THIS machine.
+//   <dir>/devices.json = { "<deviceId>": { "label", "lastSeenISO" }, ... }
+//   <dir>/owner.json   = { ownerDeviceId, ownerLabel, updatedAt }  (ABSENT = unclaimed)
+//   <dir>/daemon.pid   — the running daemon's pid (presence + liveness => running).
 //
 // Every function tolerates missing/malformed files and NEVER throws (a daemon
 // that has never run yet, or a partially-written file, degrades to empty/null).
@@ -20,27 +24,9 @@ import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { pidAlive } from "./daemonState";
 import { AppError } from "./error";
 
-// Optional home override fed from settings.yaml (daemon.home) by server.ts. The
-// OA_CLAUDEBOT_HOME env var still wins (ops/dev override), per the integration
-// contract; this fills in when the env var is absent.
-let homeOverride = "";
-
-/** Set the settings-driven home override (empty/whitespace clears it). */
-export function setClaudeBotHomeOverride(home: string | null | undefined): void {
-  homeOverride = (home ?? "").trim();
-}
-
-/** Expand a leading `~` / `~/` to the home dir, so settings can hold the portable
- *  `~/.claude-bot` (the default) instead of a machine-specific absolute path. */
-function expandTilde(p: string): string {
-  if (p === "~") return homedir();
-  if (p.startsWith("~/") || p.startsWith("~\\")) return join(homedir(), p.slice(2));
-  return p;
-}
-
-/** Resolved claude-bot home dir: OA_CLAUDEBOT_HOME env, else the settings override, else ~/.claude-bot. */
-export function claudeBotHome(): string {
-  return expandTilde(process.env.OA_CLAUDEBOT_HOME || homeOverride || join(homedir(), ".claude-bot"));
+/** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
+export function daemonMachineDir(): string {
+  return process.env.BISMUTH_DAEMON_DIR || join(homedir(), ".bismuth", "daemon");
 }
 
 export interface Owner {
@@ -71,7 +57,7 @@ export interface DaemonStatus {
 /** Read + JSON-parse a file under <home>, returning null on any failure. */
 function readJson<T>(name: string): T | null {
   try {
-    const raw = readFileSync(join(claudeBotHome(), name), "utf8");
+    const raw = readFileSync(join(daemonMachineDir(), name), "utf8");
     return JSON.parse(raw) as T;
   } catch {
     return null;
@@ -81,7 +67,7 @@ function readJson<T>(name: string): T | null {
 /** This machine's stable device id (from <home>/device-id), or null if absent. */
 export function thisDeviceId(): string | null {
   try {
-    const raw = readFileSync(join(claudeBotHome(), "device-id"), "utf8").trim();
+    const raw = readFileSync(join(daemonMachineDir(), "device-id"), "utf8").trim();
     return raw.length > 0 ? raw : null;
   } catch {
     return null;
@@ -103,7 +89,7 @@ export function getOwner(): Owner | null {
 export function daemonStatus(): DaemonStatus {
   let running = false;
   try {
-    const raw = readFileSync(join(claudeBotHome(), "daemon.pid"), "utf8").trim();
+    const raw = readFileSync(join(daemonMachineDir(), "daemon.pid"), "utf8").trim();
     running = pidAlive(Number(raw));
   } catch {
     running = false;
@@ -150,7 +136,7 @@ export function setOwner(deviceId: string): Owner {
     ownerLabel: match.label,
     updatedAt: new Date().toISOString(),
   };
-  writeFileSync(join(claudeBotHome(), "owner.json"), JSON.stringify(owner, null, 2));
+  writeFileSync(join(daemonMachineDir(), "owner.json"), JSON.stringify(owner, null, 2));
   return owner;
 }
 
@@ -215,7 +201,7 @@ function setEnabled(subdir: "crons" | "processes", name: string, enabled: boolea
 
 /** Enable/disable a cron by editing its `enabled` frontmatter. The daemon re-reads
  *  every cron file on its next scheduler tick, so no trigger is needed for crons. */
-export function setCronEnabled(name: string, enabled: boolean, home: string = claudeBotHome()): void {
+export function setCronEnabled(name: string, enabled: boolean, home: string = daemonMachineDir()): void {
   setEnabled("crons", name, enabled, home);
 }
 
@@ -228,7 +214,7 @@ export function setCronEnabled(name: string, enabled: boolean, home: string = cl
  * it / stop it) via claude-bot's general process-trigger port. No-op vs the live process
  * if the daemon isn't running; the disk flip still takes effect on next boot.
  */
-export function setProcessEnabled(name: string, enabled: boolean, home: string = claudeBotHome()): void {
+export function setProcessEnabled(name: string, enabled: boolean, home: string = daemonMachineDir()): void {
   const base = setEnabled("processes", name, enabled, home);
   writeTrigger(join(home, "processes"), base);
 }
@@ -240,7 +226,7 @@ export function setProcessEnabled(name: string, enabled: boolean, home: string =
  * the owner; otherwise the file is consumed without firing. Throws AppError("ENOENT")
  * if no cron matches `name`.
  */
-export function runCron(name: string, home: string = claudeBotHome()): void {
+export function runCron(name: string, home: string = daemonMachineDir()): void {
   const dir = join(home, "crons");
   const base = resolveDaemonFile(dir, name);
   if (!base) throw new AppError("ENOENT", `Cron "${name}" not found`, 404);

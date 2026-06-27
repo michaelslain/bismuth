@@ -1,6 +1,6 @@
 // core/test/daemon.test.ts
-// Unit-tests core/src/daemon.ts against a TEMP OA_CLAUDEBOT_HOME. Each test points
-// OA_CLAUDEBOT_HOME at a fresh tmp dir and writes fake state files (device-id /
+// Unit-tests core/src/daemon.ts against a TEMP BISMUTH_DAEMON_DIR. Each test points
+// BISMUTH_DAEMON_DIR at a fresh tmp dir and writes fake state files (device-id /
 // devices.json / owner.json), then asserts the contract-exact shapes.
 import { test, expect, afterEach } from "bun:test";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
@@ -15,18 +15,17 @@ import {
   setCronEnabled,
   setProcessEnabled,
   runCron,
-  claudeBotHome,
-  setClaudeBotHomeOverride,
+  daemonMachineDir,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
 const created: string[] = [];
 
-/** Make a tmp claude-bot home, point OA_CLAUDEBOT_HOME at it, and return the path. */
+/** Make a tmp daemon machine dir, point BISMUTH_DAEMON_DIR at it, and return the path. */
 function makeHome(files: Record<string, string>): string {
-  const home = mkdtempSync(join(tmpdir(), "claude-bot-"));
+  const home = mkdtempSync(join(tmpdir(), "bismuth-daemon-"));
   created.push(home);
-  process.env.OA_CLAUDEBOT_HOME = home;
+  process.env.BISMUTH_DAEMON_DIR = home;
   for (const [name, contents] of Object.entries(files)) {
     writeFileSync(join(home, name), contents);
   }
@@ -34,20 +33,18 @@ function makeHome(files: Record<string, string>): string {
 }
 
 afterEach(() => {
-  delete process.env.OA_CLAUDEBOT_HOME;
+  delete process.env.BISMUTH_DAEMON_DIR;
   for (const home of created.splice(0)) {
     try { rmSync(home, { recursive: true, force: true }); } catch { /* */ }
   }
 });
 
-test("claudeBotHome expands a ~ home override (and empty falls back) to the real home dir", () => {
-  delete process.env.OA_CLAUDEBOT_HOME; // the env var wins when set — clear it for the override path
-  setClaudeBotHomeOverride("~/.claude-bot");
-  expect(claudeBotHome()).toBe(join(homedir(), ".claude-bot"));
-  setClaudeBotHomeOverride("~");
-  expect(claudeBotHome()).toBe(homedir());
-  setClaudeBotHomeOverride(""); // empty/whitespace → built-in default (also ~/.claude-bot)
-  expect(claudeBotHome()).toBe(join(homedir(), ".claude-bot"));
+test("daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon", () => {
+  delete process.env.BISMUTH_DAEMON_DIR;
+  expect(daemonMachineDir()).toBe(join(homedir(), ".bismuth", "daemon"));
+  process.env.BISMUTH_DAEMON_DIR = "/custom/daemon/dir";
+  expect(daemonMachineDir()).toBe("/custom/daemon/dir");
+  delete process.env.BISMUTH_DAEMON_DIR;
 });
 
 test("missing files: everything degrades to empty/null, never throws", () => {

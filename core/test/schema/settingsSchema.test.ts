@@ -91,6 +91,18 @@ test("calendar section mirrors the calendar defaults", () => {
   expect(cal.militaryTime.default).toBe(false);
 });
 
+test("daemon section is exactly { enabled, name } (home + autoUpdate dropped)", () => {
+  const daemon = objectFields(SETTINGS_SCHEMA.daemon);
+  expect(Object.keys(daemon).sort()).toEqual(["enabled", "name"]);
+  expect(daemon.enabled.type).toBe("boolean");
+  expect(daemon.enabled.default).toBe(false);
+  expect(daemon.name.type).toBe("string");
+  expect(daemon.name.default).toBe("");
+  // The obsolete keys are gone (daemon is bundled; home is fixed; no git-pull self-update).
+  expect(daemon.home).toBeUndefined();
+  expect(daemon.autoUpdate).toBeUndefined();
+});
+
 test("keybindings section has one string key per catalog action, defaulting to its combo", () => {
   const kb = objectFields(SETTINGS_SCHEMA.keybindings);
   // Exactly the catalog ids, no more, no less.
