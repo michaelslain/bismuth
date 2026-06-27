@@ -9,11 +9,22 @@ import { resetRelay } from "../src/relay";
 import { createTerminalSession, killSession } from "../src/terminal";
 import { makeSampleVault } from "./helpers";
 
+// Isolate the daemon machine dir + the legacy claude-bot source for the WHOLE file. A
+// daemon-enabled server (the merged-brain test) runs migrateDaemonState on boot AND again from
+// the debounced settings-change handler that fires ~250ms after reconcile rewrites settings.yaml
+// — the latter can outlive a per-test env restore. Set these at module scope (never restored)
+// so neither path can ever touch the real ~/.claude-bot or write the real ~/.bismuth/daemon.
+process.env.BISMUTH_DAEMON_DIR = mkdtempSync(join(tmpdir(), "oa-srv-machine-"));
+process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(tmpdir(), "oa-no-legacy-claude-bot-xyz");
+
 test("GET /graph returns the merged brain graph", async () => {
   const { vault, memory } = await makeSampleVault();
   // The 3rd brain is gated on the daemon and sourced from <vault>/.daemon/memory.
   await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: true\n");
   await writeNote(vault, ".daemon/memory/michael-profile.md", "Profile of the user. He is working on [[internship]] and [[essay]].\n");
+  // Daemon enabled → boot + the debounced settings-change handler both run migrateDaemonState;
+  // the module-level BISMUTH_DAEMON_DIR / BISMUTH_LEGACY_CLAUDE_BOT_DIR isolation above keeps
+  // both off the real machine.
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
