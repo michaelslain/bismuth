@@ -1,12 +1,12 @@
 import { join } from "path"
 import { readFile, writeFile, mkdir, rename } from "fs/promises"
-import { BOT_DIR } from "./config.ts"
+import { MACHINE_DIR } from "./config.ts"
 import { getDeviceId, getDeviceLabel } from "./device.ts"
 
 /**
  * Multi-device ownership coordination (SHARED INTEGRATION CONTRACT v1).
  *
- * State files under <home> (default ~/.claude-bot):
+ * State files under <home> (default ~/.bismuth/daemon):
  *  - devices.json: { "<deviceId>": { label, lastSeenISO }, ... }
  *      Every daemon UPSERTS its own entry each tick (heartbeat), even when idle.
  *  - owner.json:   { ownerDeviceId, ownerLabel, updatedAt }
@@ -15,7 +15,7 @@ import { getDeviceId, getDeviceLabel } from "./device.ts"
  * isOwner(): owner.json absent => true; else ownerDeviceId === thisDeviceId.
  *
  * All functions accept an optional `home` dir for test injection; production
- * callers omit it and use BOT_DIR.
+ * callers omit it and use MACHINE_DIR.
  */
 
 export interface DeviceEntry {
@@ -75,7 +75,7 @@ async function readDevices(home: string): Promise<DevicesFile> {
  * Read owner.json. Returns null when the file is absent (UNCLAIMED) or
  * unreadable/malformed — both cases mean "no explicit owner".
  */
-export async function getOwner(home: string = BOT_DIR): Promise<Owner | null> {
+export async function getOwner(home: string = MACHINE_DIR): Promise<Owner | null> {
   try {
     const raw = await readFile(ownerPath(home), "utf-8")
     const parsed = JSON.parse(raw)
@@ -92,7 +92,7 @@ export async function getOwner(home: string = BOT_DIR): Promise<Owner | null> {
  * Upsert this device's entry into devices.json with a fresh lastSeenISO.
  * Called every tick — the device stays selectable even when idle / not owner.
  */
-export async function heartbeatDevice(home: string = BOT_DIR): Promise<void> {
+export async function heartbeatDevice(home: string = MACHINE_DIR): Promise<void> {
   const [deviceId, devices] = await Promise.all([getDeviceId(home), readDevices(home)])
   devices[deviceId] = {
     label: getDeviceLabel(),
@@ -106,7 +106,7 @@ export async function heartbeatDevice(home: string = BOT_DIR): Promise<void> {
  * MCP return shape exactly.
  */
 export async function listDevices(
-  home: string = BOT_DIR
+  home: string = MACHINE_DIR
 ): Promise<{ devices: DeviceListEntry[]; ownerDeviceId: string | null }> {
   const [devices, owner, thisId] = await Promise.all([
     readDevices(home),
@@ -129,7 +129,7 @@ export async function listDevices(
  *  - owner.json absent (UNCLAIMED) => true (legacy / single-device behavior)
  *  - else ownerDeviceId === thisDeviceId
  */
-export async function isOwner(home: string = BOT_DIR): Promise<boolean> {
+export async function isOwner(home: string = MACHINE_DIR): Promise<boolean> {
   const owner = await getOwner(home)
   if (!owner) return true
   const thisId = await getDeviceId(home)
@@ -139,7 +139,7 @@ export async function isOwner(home: string = BOT_DIR): Promise<boolean> {
 /**
  * Full device identity + ownership view. Matches the device_info MCP shape.
  */
-export async function deviceInfo(home: string = BOT_DIR): Promise<DeviceInfo> {
+export async function deviceInfo(home: string = MACHINE_DIR): Promise<DeviceInfo> {
   const [deviceId, owner] = await Promise.all([getDeviceId(home), getOwner(home)])
   const ownedByThis = owner ? owner.ownerDeviceId === deviceId : true
   return {
@@ -158,7 +158,7 @@ export async function deviceInfo(home: string = BOT_DIR): Promise<DeviceInfo> {
  */
 export async function setOwnerDevice(
   deviceId: string,
-  home: string = BOT_DIR
+  home: string = MACHINE_DIR
 ): Promise<DeviceInfo> {
   const devices = await readDevices(home)
   const entry = devices[deviceId]
