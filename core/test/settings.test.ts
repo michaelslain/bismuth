@@ -552,49 +552,31 @@ describe("concurrent setSettingInFile", () => {
   });
 });
 
-describe("reconcileSettings daemon migration", () => {
-  const OLD_SHAPE = 'daemon:\n  enabled: false\n  home: ""\n  autoUpdate: true\n';
-  let prevHome: string | undefined;
-  let tmpHome: string | undefined;
+describe("reconcileSettings daemon migration (now a no-op)", () => {
+  let prevDir: string | undefined;
+  let tmpDir: string | undefined;
 
   afterEach(() => {
-    if (prevHome === undefined) delete process.env.OA_CLAUDEBOT_HOME;
-    else process.env.OA_CLAUDEBOT_HOME = prevHome;
-    if (tmpHome) { try { rmSync(tmpHome, { recursive: true, force: true }); } catch { /* */ } tmpHome = undefined; }
+    if (prevDir === undefined) delete process.env.BISMUTH_DAEMON_DIR;
+    else process.env.BISMUTH_DAEMON_DIR = prevDir;
+    if (tmpDir) { try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* */ } tmpDir = undefined; }
   });
 
-  it("rewrites an empty daemon.home to the portable default; enabled stays off with no daemon", async () => {
+  // The daemon is bundled now: home is fixed (not a setting) and there is no
+  // adopt-on-reconcile. Reconcile fills the new `name` key but never re-adds the
+  // obsolete `home`, and never flips `enabled` even when a device is installed.
+  it("does NOT adopt (enable) an installed daemon and never writes daemon.home", async () => {
     const vault = await emptyVault();
-    await writeNote(vault, ".settings/settings.yaml", OLD_SHAPE);
-    prevHome = process.env.OA_CLAUDEBOT_HOME;
-    tmpHome = mkdtempSync(join(tmpdir(), "cb-empty-")); // a home with NO device-id → not installed
-    process.env.OA_CLAUDEBOT_HOME = tmpHome;
+    await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: false\n");
+    prevDir = process.env.BISMUTH_DAEMON_DIR;
+    tmpDir = mkdtempSync(join(tmpdir(), "bismuth-daemon-"));
+    writeFileSync(join(tmpDir, "device-id"), "dev-x\n"); // looks installed on this machine
+    process.env.BISMUTH_DAEMON_DIR = tmpDir;
     await reconcileSettings(vault);
     const res = await readSettings(vault);
-    expect((res!.data as any).daemon).toMatchObject({ home: "~/.claude-bot", enabled: false });
-  });
-
-  it("adopts an installed daemon (enabled=true) when a device-id is present", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings/settings.yaml", OLD_SHAPE);
-    prevHome = process.env.OA_CLAUDEBOT_HOME;
-    tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
-    writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // looks installed on this machine
-    process.env.OA_CLAUDEBOT_HOME = tmpHome;
-    await reconcileSettings(vault);
-    const res = await readSettings(vault);
-    expect((res!.data as any).daemon).toMatchObject({ home: "~/.claude-bot", enabled: true });
-  });
-
-  it("leaves an already-configured (non-empty) daemon.home untouched", async () => {
-    const vault = await emptyVault();
-    await writeNote(vault, ".settings/settings.yaml", "daemon:\n  enabled: false\n  home: /custom/bot\n  autoUpdate: true\n");
-    prevHome = process.env.OA_CLAUDEBOT_HOME;
-    tmpHome = mkdtempSync(join(tmpdir(), "cb-real-"));
-    writeFileSync(join(tmpHome, "device-id"), "dev-x\n"); // installed, but home is already set
-    process.env.OA_CLAUDEBOT_HOME = tmpHome;
-    await reconcileSettings(vault);
-    const res = await readSettings(vault);
-    expect((res!.data as any).daemon).toMatchObject({ home: "/custom/bot", enabled: false });
+    const daemon = (res!.data as any).daemon;
+    expect(daemon.enabled).toBe(false);  // no adoption — the master switch stays as written
+    expect(daemon.name).toBe("");        // fillMissing adds the new `name` key
+    expect(daemon.home).toBeUndefined(); // home is gone — migration never re-adds it
   });
 });

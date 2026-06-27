@@ -28,7 +28,7 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-export const DAEMON_LABEL = "com.claude-bot.daemon";
+export const DAEMON_LABEL = "com.bismuth.daemon";
 
 /** getInstallStatus() shape printed by the claude-bot entrypoint with `--status`. */
 export interface InstallStatus {

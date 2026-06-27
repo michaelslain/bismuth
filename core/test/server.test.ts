@@ -1289,8 +1289,8 @@ test("daemon routes: status + devices read shared state, owner round-trips", asy
       "dev-b": { label: "desktop", lastSeenISO: "2026-06-02T00:00:00.000Z" },
     }),
   );
-  const prev = process.env.OA_CLAUDEBOT_HOME;
-  process.env.OA_CLAUDEBOT_HOME = home;
+  const prev = process.env.BISMUTH_DAEMON_DIR;
+  process.env.BISMUTH_DAEMON_DIR = home;
 
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -1328,8 +1328,8 @@ test("daemon routes: status + devices read shared state, owner round-trips", asy
     expect(bad.status).toBe(400);
   } finally {
     server.stop(true);
-    if (prev === undefined) delete process.env.OA_CLAUDEBOT_HOME;
-    else process.env.OA_CLAUDEBOT_HOME = prev;
+    if (prev === undefined) delete process.env.BISMUTH_DAEMON_DIR;
+    else process.env.BISMUTH_DAEMON_DIR = prev;
   }
 });
 

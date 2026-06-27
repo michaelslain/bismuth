@@ -236,7 +236,7 @@ export const api = {
   // backend's base URL; the caller opens a window with `?api=<url>` to show it.
   openFolder: (folder: string) => postJson<{ url: string; vault: string }>("/open-folder", { folder }),
   // List filesystem directory entries matching a partial path (absolute or "~"-relative)
-  // — backs autocomplete for `scope:"fs"` settings (e.g. daemon.home).
+  // — backs autocomplete for `scope:"fs"` settings.
   listDir: (path: string, only?: "dir" | "file") =>
     postJson<{ entries: Array<{ path: string; kind: "file" | "dir" }> }>("/list-dir", { path, only })
       .then((r) => r.entries),

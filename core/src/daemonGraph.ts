@@ -2,8 +2,8 @@
 // Reads the claude-bot daemon's on-disk cron/process state into a "DAEMON" graph snapshot,
 // then turns that snapshot into GraphData for the graph view's DAEMON mode.
 //
-// claude-bot runs on the SAME machine and authors these files under its home dir (default
-// ~/.claude-bot, OA_CLAUDEBOT_HOME override) — Bismuth only READS them here (no writes, no
+// The daemon runs on the SAME machine and authors these files under its machine dir (default
+// ~/.bismuth/daemon, BISMUTH_DAEMON_DIR override) — Bismuth only READS them here (no writes, no
 // subprocess spawn). Every read tolerates missing/malformed files and NEVER throws: a daemon
 // that has never run, or a half-written JSON file, degrades to an empty/partial snapshot.
 //
@@ -18,7 +18,7 @@
 // no backing file (e.g. a renamed/removed cron) are dropped.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { claudeBotHome } from "./daemon";
+import { daemonMachineDir } from "./daemon";
 import { pidAlive, readJsonObj, readFrontmatter, isEnabled } from "./daemonState";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
@@ -69,9 +69,9 @@ function daemonRunning(home: string): boolean {
 /**
  * Read the claude-bot daemon's cron/process state into a snapshot. NEVER throws — any failure
  * degrades to `{ daemon, crons: [], processes: [] }`. `home` is injectable so tests point it at
- * a fixture dir instead of the real ~/.claude-bot.
+ * a fixture dir instead of the real ~/.bismuth/daemon.
  */
-export function daemonSnapshot(home: string = claudeBotHome(), name: string = "daemon"): DaemonSnapshot {
+export function daemonSnapshot(home: string = daemonMachineDir(), name: string = "daemon"): DaemonSnapshot {
   const daemon = { label: name, running: daemonRunning(home), home };
   try {
     const cronsDir = join(home, "crons");
@@ -170,6 +170,6 @@ export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
 }
 
 /** Convenience: snapshot the real (or injected) home and build its graph. Never throws. */
-export function daemonGraph(home: string = claudeBotHome(), name: string = "daemon"): GraphData {
+export function daemonGraph(home: string = daemonMachineDir(), name: string = "daemon"): GraphData {
   return buildDaemonGraph(daemonSnapshot(home, name));
 }

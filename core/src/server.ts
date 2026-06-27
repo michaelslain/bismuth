@@ -52,7 +52,7 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setClaudeBotHomeOverride, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, runUpdate } from "./claudebot";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
@@ -193,7 +193,6 @@ export function createServer(cfg: CoreConfig) {
   // can't go stale. (Defined after the caches so we can reference them here.)
   void loadAppConfig(cfg.vault).then((c) => {
     appConfig = c;
-    setClaudeBotHomeOverride(c.daemon?.home);
     treeCache.invalidate();
     graphCache.invalidate();
     // Re-bake the warm pool with the now-known memory dir so the first terminal tab
@@ -272,7 +271,6 @@ export function createServer(cfg: CoreConfig) {
         // Also refresh the backend runtime config (debounce, heartbeat, …).
         void loadAppConfig(cfg.vault).then((c) => {
           appConfig = c;
-          setClaudeBotHomeOverride(c.daemon?.home);
           // The graph/tree dirty flags below invalidate synchronously, but appConfig
           // reloads async — so re-invalidate the daemon-gated caches AFTER it lands and
           // nudge clients to refetch, so toggling daemon.enabled/name updates the sidebar
@@ -728,7 +726,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     // List filesystem directory entries matching a partial path — backs autocomplete
-    // for `scope:"fs"` settings (e.g. daemon.home), which name a path OUTSIDE the vault.
+    // for `scope:"fs"` settings, which name a path OUTSIDE the vault.
     // Read-only despite POST (the body carries the partial path), so it lives here.
     "POST /list-dir": async (req, __) => {
       const { path, only } = (await req.json()) as { path?: string; only?: "dir" | "file" };
@@ -753,8 +751,8 @@ export function createServer(cfg: CoreConfig) {
       return ok(await dueCards(cfg.vault, todayISO(), deck));
     },
 
-    // claude-bot daemon supervision. These read the shared state files under the
-    // claude-bot home dir (OA_CLAUDEBOT_HOME, default ~/.claude-bot) that the daemon
+    // Daemon supervision. These read the shared machine-identity state files under the
+    // daemon machine dir (BISMUTH_DAEMON_DIR, default ~/.bismuth/daemon) that the daemon
     // authors; vault-independent, so they live here regardless of cfg.vault.
     "GET /daemon/status": async (_, __) => {
       return ok(daemonStatus());
@@ -1548,28 +1546,5 @@ if (import.meta.main) {
         for (const w of r.warnings) console.warn(`bismuth tools: ${w}`);
       })
       .catch((e) => console.warn(`bismuth tools install failed: ${e?.message ?? e}`));
-  }
-
-  // Bundled app launch (OA_APP_PATH is set only by the Tauri shell): if the claude-bot
-  // daemon is installed and daemon.autoUpdate is on, update it in the background. Gated to
-  // the bundled app so dev/standalone/tests never touch a live daemon. claude-bot's
-  // runUpdate is idempotent + fetch-gated — it only pulls/restarts when actually behind, so
-  // an up-to-date daemon is a no-op. Best-effort; never crashes the server.
-  if (process.env.OA_APP_PATH) {
-    void (async () => {
-      try {
-        const cfg = await loadAppConfig(vault);
-        if (!cfg.daemon?.enabled) return; // master switch off → don't touch the daemon
-        if (cfg.daemon?.autoUpdate === false) return;
-        const status = await installStatus();
-        if (!status.installed) return;
-        const r = await runUpdate();
-        if (r.action === "updated") {
-          console.log(`claude-bot: auto-updated ${r.from?.slice(0, 7)} → ${r.to?.slice(0, 7)}${r.restarted ? " (restarted)" : ""}`);
-        }
-      } catch (e) {
-        console.warn(`claude-bot auto-update skipped: ${(e as Error)?.message ?? e}`);
-      }
-    })();
   }
 }

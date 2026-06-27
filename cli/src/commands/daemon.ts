@@ -1,6 +1,6 @@
 // Daemon command group for the `bismuth` CLI.
-// Reads/writes the claude-bot daemon's shared on-disk state under ~/.claude-bot
-// (OA_CLAUDEBOT_HOME override) — NOT the vault — mirroring server.ts's /daemon/*
+// Reads/writes the daemon's shared machine-identity state under ~/.bismuth/daemon
+// (BISMUTH_DAEMON_DIR override) — NOT the vault — mirroring server.ts's /daemon/*
 // routes. status/devices/owner-read/graph just read shared files; owner-set,
 // cron/process toggle, and cron run flip frontmatter / drop trigger files that the
 // running daemon polls. install/setup spawn the claude-bot entrypoint (read-only

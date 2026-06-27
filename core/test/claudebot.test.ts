@@ -60,13 +60,13 @@ test("installStatus returns the safe default on spawn failure (never throws)", a
     throw new Error("spawn EACCES");
   };
   const status = await installStatus({ entrypoint: ENTRY, spawn });
-  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.claude-bot.daemon" });
+  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.bismuth.daemon" });
 });
 
 test("installStatus returns the safe default on non-JSON output (never throws)", async () => {
   const { spawn } = fakeSpawn("command not found: bun\n");
   const status = await installStatus({ entrypoint: ENTRY, spawn });
-  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.claude-bot.daemon" });
+  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.bismuth.daemon" });
 });
 
 test("installStatus returns the safe default when the entrypoint can't be resolved (no provisioning)", async () => {
@@ -74,7 +74,7 @@ test("installStatus returns the safe default when the entrypoint can't be resolv
     throw new Error("should not be called");
   };
   const status = await installStatus({ entrypoint: null, spawn });
-  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.claude-bot.daemon" });
+  expect(status).toEqual({ installed: false, running: false, daemonLabel: "com.bismuth.daemon" });
 });
 
 // ── runSetup ─────────────────────────────────────────────────────────────────

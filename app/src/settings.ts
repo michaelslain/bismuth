@@ -111,8 +111,6 @@ export interface Settings {
   daemon: {
     enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
     name: string;        // per-vault daemon name ("" = "daemon")
-    home: string;        // override claude-bot home dir ("" = ~/.claude-bot)
-    autoUpdate: boolean; // auto-update the daemon on launch when behind
   };
   update: {
     autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)
