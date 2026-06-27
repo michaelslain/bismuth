@@ -243,19 +243,20 @@ test("listTree shows .draw files but hides .draw.png/.pdf sidecars", async () =>
 test("listTree surfaces system folders: .settings always, .daemon only when enabled", async () => {
   const root = mkdtempSync(join(tmpdir(), "sysfolders-"));
   await Bun.write(join(root, "Note.md"), "# Note");
-  await Bun.write(join(root, ".settings/settings.yaml"), "appearance:\n  theme: light\n");
+  await Bun.write(join(root, ".settings"), "appearance:\n  theme: light\n");
   await Bun.write(join(root, ".daemon/memory/m.md"), "mem");
   await Bun.write(join(root, ".daemon/crons/c.md"), "cron");
   await Bun.write(join(root, ".daemon/crons/.last-fired.json"), "{}"); // internal dot-state
   await Bun.write(join(root, ".daemon/session-id"), "sid");
 
-  // Daemon OFF (default): .settings shown, .daemon entirely hidden.
+  // Daemon OFF (default): the .settings FILE is shown; .daemon entirely hidden.
   const off = await listTree(root);
   const offPaths = off.map((e) => e.path);
   expect(offPaths).toContain(".settings");
-  expect(offPaths).toContain(".settings/settings.yaml");
   expect(offPaths.some((p) => p.startsWith(".daemon"))).toBe(false);
-  expect(off.find((e) => e.path === ".settings")?.isSystemFolder).toBe(true);
+  const settingsEntry = off.find((e) => e.path === ".settings");
+  expect(settingsEntry?.kind).toBe("file"); // a file, not a folder
+  expect(settingsEntry?.label).toBe("Settings");
 
   // Daemon ON: .daemon shown + labeled with the name; memory/crons/session-id surface;
   // internal dot-state (.last-fired.json) stays hidden; the normal note is unaffected.

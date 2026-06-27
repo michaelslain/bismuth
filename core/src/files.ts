@@ -106,10 +106,12 @@ export async function listTree(
 ): Promise<TreeEntry[]> {
   // System folders shown in the sidebar but kept out of the knowledge graph:
   // .settings always; .daemon only when this vault's daemon is enabled.
+  // `.settings` is a single hidden FILE (the vault config); `.daemon` is a folder shown only when
+  // this vault's daemon is enabled.
   const allowDot = (rel: string): boolean =>
     rel === ".settings" || (!!opts?.daemonEnabled && rel === ".daemon");
   const inSystemFolder = (rel: string): boolean =>
-    rel.startsWith(".settings/") || rel.startsWith(".daemon/");
+    rel.startsWith(".daemon/");
 
   const entries = await walkDir(root, (d, rel) => {
     if (d.isDirectory()) {
@@ -123,8 +125,11 @@ export async function listTree(
       return false;
     }
 
+    // The root settings file (hidden `.settings`, no extension) — always include it.
+    if (rel === ".settings") return true;
+
     // System folders surface every file regardless of extension (cron/process
-    // defs, memory notes, settings.yaml, …) — the .draw marker still applies.
+    // defs, memory notes, …) — the .draw marker still applies.
     if (inSystemFolder(rel)) {
       return name.endsWith(".draw") ? { data: "PenTool" } : true;
     }
@@ -144,10 +149,12 @@ export async function listTree(
   const out: TreeEntry[] = [];
 
   for (const entry of entries) {
-    if (entry.isDir) {
-      if (entry.rel === ".settings") {
-        out.push({ path: entry.rel, kind: "dir", isSystemFolder: true });
-      } else if (entry.rel === ".daemon") {
+    if (!entry.isDir && entry.rel === ".settings") {
+      // The single hidden settings file (YAML, no extension) — a FILE, not a folder: shown with a
+      // gear + "Settings" label, opens in the editor.
+      out.push({ path: entry.rel, kind: "file", label: "Settings", icon: "Settings2" });
+    } else if (entry.isDir) {
+      if (entry.rel === ".daemon") {
         out.push({ path: entry.rel, kind: "dir", isSystemFolder: true, label: daemonLabel });
       } else {
         out.push({ path: entry.rel, kind: "dir" });

@@ -9,7 +9,7 @@ export function snapshotMessage(now: Date = new Date(), kind = "vault"): string 
   return `${kind} snapshot ${stamp}`;
 }
 
-const EXCLUDE_LINE = "settings.yaml";
+const EXCLUDE_LINE = ".settings";
 
 /** Ensure .git/info/exclude ignores the per-vault settings file (idempotent). */
 function ensureExclude(dir: string): void {

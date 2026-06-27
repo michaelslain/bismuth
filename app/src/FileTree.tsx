@@ -8,6 +8,7 @@ import { openContextMenu } from "./nativeMenu";
 import { pushToast } from "./Toast";
 import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
+import { SETTINGS_FILE } from "./tabIds";
 import { Icon } from "./icons/Icon";
 import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
@@ -284,10 +285,10 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       items.push({ label: "New Spreadsheet", icon: "Table", onSelect: () => doCreate(node.path, "sheet") });
       items.push({ label: "New Drawing", icon: "PenTool", onSelect: () => doCreate(node.path, "draw") });
     }
-    // .settings / .daemon are runtime-managed: their name comes from settings, their
-    // contents are daemon state. Block rename/delete/set-icon so they can't be broken
-    // from the tree (the create actions above stay, for hand-adding crons/memory).
-    if (!node.isSystemFolder) {
+    // The `.settings` config file + the .daemon system folder are runtime-managed: block
+    // rename/delete/set-icon so they can't be broken from the tree (the create actions above
+    // stay, for hand-adding crons/memory).
+    if (!node.isSystemFolder && node.path !== SETTINGS_FILE) {
       items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
       items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
       items.push({ label: "Delete", icon: "Trash2", danger: true, separatorBefore: true, onSelect: () => doDelete(node) });
@@ -544,16 +545,16 @@ function Level(props: {
         ) : (
           <div
             class="ft-row file"
-            classList={{ active: child.path === props.activeFile }}
+            classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE }}
             style={{ "padding-left": fileIndent }}
-            draggable={props.editing !== child.path}
+            draggable={props.editing !== child.path && child.path !== SETTINGS_FILE}
             onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}
             onClick={() => { if (props.editing !== child.path) props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
-            <Show when={props.editing === child.path} fallback={displayName(child.name)}>
+            <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
             </Show>
           </div>

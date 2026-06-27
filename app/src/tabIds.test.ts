@@ -15,16 +15,17 @@ describe("export tab id", () => {
   });
 });
 
-describe("settings.yaml is a first-class app tab", () => {
-  test("isSettingsFile matches root and nested settings.yaml", () => {
+describe(".settings is a first-class app tab", () => {
+  test("isSettingsFile matches the root .settings (and a nested one)", () => {
+    expect(SETTINGS_FILE).toBe(".settings");
     expect(isSettingsFile(SETTINGS_FILE)).toBe(true);
-    expect(isSettingsFile("sub/dir/settings.yaml")).toBe(true);
-    expect(isSettingsFile("settings.md")).toBe(false);
-    expect(isSettingsFile("mysettings.yaml")).toBe(false);
+    expect(isSettingsFile("sub/dir/.settings")).toBe(true);
+    expect(isSettingsFile("settings.yaml")).toBe(false); // the legacy name is no longer the settings file
+    expect(isSettingsFile("notes/my.settings")).toBe(false);
   });
   test("label is 'settings' (no extension)", () => {
     expect(contentLabel(SETTINGS_FILE)).toBe("settings");
-    expect(contentLabel("sub/settings.yaml")).toBe("settings");
+    expect(contentLabel("sub/.settings")).toBe("settings");
   });
   test("icon is the gear (Settings)", () => {
     expect(contentIcon(SETTINGS_FILE)).toBe("Settings");

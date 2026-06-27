@@ -3,8 +3,8 @@
 // Reads/writes ride the existing files.ts path-traversal guard; the property
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
-import { join, dirname } from "node:path";
-import { existsSync, mkdirSync, renameSync, copyFileSync } from "node:fs";
+import { join } from "node:path";
+import { existsSync, renameSync, copyFileSync, statSync, rmSync } from "node:fs";
 import { parse, parseDocument, Document, YAMLMap, isMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
@@ -13,30 +13,47 @@ import type { Schema, SchemaEntry } from "./schema/types";
 import type { DailyNoteConfig } from "./dailyNote";
 import type { SrsConfig } from "./srs/scheduler";
 
-export const SETTINGS_FILE = ".settings/settings.yaml";
-/** Legacy location (vault root) — migrated into .settings/ on first open. */
+/** The vault's settings live in a single hidden file `.settings` (YAML), at the vault root. */
+export const SETTINGS_FILE = ".settings";
+/** Legacy location (vault root) — migrated into `.settings` on first open. */
 export const LEGACY_SETTINGS_FILE = "settings.yaml";
 
 export interface ReadSettingsResult { raw: string; data: Record<string, unknown>; }
 
 /**
- * One-time relocation of a vault-root `settings.yaml` into `.settings/settings.yaml`.
- * Idempotent: only fires when the legacy file exists and the new one doesn't. Uses a
- * filesystem rename so user comments/values are preserved verbatim. Best-effort —
- * a rename failure (e.g. permissions) leaves the legacy file in place.
+ * One-time relocation of older settings layouts into the single `.settings` file. Handles two
+ * legacy shapes: a vault-root `settings.yaml`, and the interim `.settings/settings.yaml` folder
+ * from an earlier build of this branch. Idempotent (no-op once a `.settings` FILE exists). Uses
+ * filesystem renames so user comments/values are preserved verbatim. Best-effort throughout.
  */
 export function migrateSettingsLocation(vault: string): void {
+  const next = join(vault, SETTINGS_FILE); // ".settings" (a file)
+  // Already migrated — a `.settings` FILE exists. (Guard: an interim `.settings/` DIR also makes
+  // existsSync true, so require isFile before bailing.)
+  try { if (existsSync(next) && statSync(next).isFile()) return; } catch { /* fall through */ }
+
+  // Interim layout: `.settings/settings.yaml` (a DIR). Collapse it to the `.settings` file via a
+  // temp name (a file and a dir can't share the name `.settings`), then drop the empty dir.
+  const interim = join(vault, ".settings", "settings.yaml");
+  if (existsSync(interim)) {
+    try {
+      const tmp = join(vault, ".settings.migrating");
+      renameSync(interim, tmp);
+      rmSync(join(vault, ".settings"), { recursive: true, force: true });
+      renameSync(tmp, next);
+      return;
+    } catch { /* fall through to the legacy-root path */ }
+  }
+
+  // Legacy layout: a vault-root `settings.yaml` → `.settings`.
   const legacy = join(vault, LEGACY_SETTINGS_FILE);
-  const next = join(vault, SETTINGS_FILE);
   if (existsSync(legacy) && !existsSync(next)) {
     try {
-      mkdirSync(dirname(next), { recursive: true });
       renameSync(legacy, next);
     } catch {
-      // rename can fail (a lock on the legacy file, an odd filesystem state). Fall back to a
-      // COPY so the new location exists with the user's real settings — reconcile reads only
-      // SETTINGS_FILE, so without this a failed move silently resets the vault to defaults. The
-      // legacy file is left in place as a harmless backup.
+      // rename can fail (a lock, an odd filesystem state). Fall back to a COPY so `.settings`
+      // exists with the user's real settings — reconcile reads only SETTINGS_FILE, so without
+      // this a failed move silently resets the vault to defaults. Legacy left as a backup.
       try { copyFileSync(legacy, next); } catch { /* give up — reconcile seeds defaults */ }
     }
   }
