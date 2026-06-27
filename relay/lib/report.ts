@@ -19,6 +19,10 @@ export interface HookInput {
   last_assistant_message?: string;
   /** SessionEnd: why the session ended (e.g. "clear", "compact", "logout", "exit"). */
   reason?: string;
+  /** UserPromptSubmit: the submitted prompt text (used for memory recall). */
+  prompt?: string;
+  /** SessionEnd: path to the session transcript jsonl (used for memory collection). */
+  transcript_path?: string;
   [k: string]: unknown;
 }
 
@@ -30,6 +34,13 @@ export function terminalId(): string | undefined {
 /** Base URL of this app's core server (set in the pty env by terminal.ts). */
 export function relayUrl(): string {
   return process.env.CLAUDE_RELAY_URL || "http://localhost:4321";
+}
+
+/** This vault's daemon memory dir, or undefined. terminal.ts injects BISMUTH_MEMORY_DIR
+ *  only when settings.daemon.enabled — so its presence is the gate for memory recall +
+ *  collection (both no-op without it). */
+export function memoryDir(): string | undefined {
+  return process.env.BISMUTH_MEMORY_DIR;
 }
 
 /** Parse the hook payload from stdin; {} on empty/invalid input. */

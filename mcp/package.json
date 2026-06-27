@@ -5,7 +5,8 @@
   "private": true,
   "description": "MCP server that auto-attaches to Bismuth terminal-tab Claude sessions (via the relay plugin) and serves the docs/ reference + the bismuth CLI, token-frugally.",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@bismuth/memory": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

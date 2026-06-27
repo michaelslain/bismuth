@@ -1,19 +1,29 @@
 #!/usr/bin/env bun
-// SessionEnd hook: this terminal-tab Claude Code session is ending (the user quit
-// Claude). Drop it from the agents graph NOW, instead of waiting for the whole
-// terminal pane to close — otherwise an exited session lingers as a stale "idle"
-// node for as long as the shell stays open. Payload carries session_id + a reason.
-//
-// `clear` / `compact` also fire SessionEnd, but Claude keeps running in this terminal
-// (a fresh session registers immediately via SessionStart), so we must NOT drop the
-// node for those — only real exits should clear it.
-import { readHookInput, postRelay, terminalId, runHook } from "../lib/report.ts";
+// SessionEnd hook, two best-effort jobs:
+//   1. Drop this terminal-tab session from the agents graph NOW (on real exits), instead
+//      of waiting for the whole pane to close. `clear`/`compact` keep Claude running in
+//      this terminal (a fresh session re-registers via SessionStart), so we must NOT drop
+//      the node for those.
+//   2. When the daemon is enabled (BISMUTH_MEMORY_DIR set), collect the session transcript
+//      into memory as an auto note — except on `compact` (the same logical session
+//      continues). This replaces claude-bot's old global ~/.claude collect hook.
+import { readHookInput, postRelay, terminalId, memoryDir, runHook } from "../lib/report.ts";
+import { collectTranscript } from "../lib/memory.ts";
 
 runHook(async () => {
   if (!terminalId()) return; // not launched from a Bismuth terminal tab
   const input = await readHookInput();
-  if (!input.session_id) return;
   const reason = String(input.reason ?? "");
-  if (reason === "clear" || reason === "compact") return; // session continues — keep the node
-  await postRelay("/relay/session/end", { sessionId: input.session_id });
+  const dir = memoryDir();
+
+  // Collect the transcript (exit/logout/clear), drop the graph node (exit/logout only) —
+  // concurrently, both best-effort.
+  await Promise.all([
+    dir && input.transcript_path && reason !== "compact"
+      ? collectTranscript(dir, input.transcript_path, input.session_id)
+      : Promise.resolve(),
+    input.session_id && reason !== "clear" && reason !== "compact"
+      ? postRelay("/relay/session/end", { sessionId: input.session_id })
+      : Promise.resolve(),
+  ]);
 });

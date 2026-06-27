@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
 import { runCli, cliHelp } from "./cli";
+import { memoryDir, remember, recall, forget } from "./memory";
 
 // mcp/src → repo root → docs/. In a machine-wide install the compiled binary lives in
 // ~/.bismuth (import.meta.dir is virtual), so the installer sets OA_DOCS_DIR (→ the staged
@@ -94,7 +95,53 @@ const tools = [
   },
 ] as const;
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+// Memory tools are exposed ONLY when the daemon is enabled for this vault (terminal.ts
+// injects BISMUTH_MEMORY_DIR, inherited by this MCP child). So the bot never even sees
+// remember/recall/forget outside a daemon-enabled Bismuth session.
+const memoryTools = [
+  {
+    name: "remember",
+    description: "Save a note to this vault's memory graph (the 3rd brain). Overwrites by name.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Note name (used as filename)." },
+        type: { type: "string", description: "person | project | workflow | fact | preference | daily | auto" },
+        tags: { type: "array", items: { type: "string" }, description: "Tags for the note." },
+        content: { type: "string", description: "Markdown content (can include [[backlinks]])." },
+        folder: { type: "string", description: "Optional single-level subfolder (alphanumeric/dash/underscore). Omit for root." },
+      },
+      required: ["name", "content"],
+    },
+  },
+  {
+    name: "recall",
+    description: "Search this vault's memory graph (supports tag:, type:, keyword:, link:, after:, before: filters).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Query, e.g. 'type:person tag:active' or 'auth module'." },
+        folder: { type: "string", description: "Optional. Restrict to a single subfolder. Omit to search all." },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "forget",
+    description: "Remove a note from this vault's memory graph. Accepts folder-prefixed names (e.g. 'moltbook/foo').",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Name of the note to forget (may be folder-prefixed)." },
+      },
+      required: ["name"],
+    },
+  },
+] as const;
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: memoryDir() ? [...tools, ...memoryTools] : tools,
+}));
 
 function asText(result: unknown): string {
   if (typeof result === "string") return result;
@@ -146,6 +193,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return {
           content: [{ type: "text", text: asText(await cliHelp(repoRoot, group)) }],
         };
+      }
+      case "remember":
+      case "recall":
+      case "forget": {
+        const dir = memoryDir();
+        if (!dir) {
+          return {
+            content: [{ type: "text", text: "Memory is unavailable — the daemon is not enabled for this vault." }],
+            isError: true,
+          };
+        }
+        const result =
+          name === "remember"
+            ? await remember(args as { name: string; type?: string; tags?: string[]; content: string; folder?: string }, dir)
+            : name === "recall"
+              ? await recall(args as { query: string; folder?: string }, dir)
+              : await forget(args as { name: string }, dir);
+        return { content: [{ type: "text", text: asText(result) }] };
       }
       default:
         return {

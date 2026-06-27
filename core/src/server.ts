@@ -27,7 +27,7 @@ import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./
 import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
-import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool } from "./terminal";
+import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool, setPoolMemoryDir } from "./terminal";
 import {
   sendMessage as chatSend,
   abortTurn as chatAbort,
@@ -196,6 +196,9 @@ export function createServer(cfg: CoreConfig) {
     setClaudeBotHomeOverride(c.daemon?.home);
     treeCache.invalidate();
     graphCache.invalidate();
+    // Re-bake the warm pool with the now-known memory dir so the first terminal tab
+    // injects (or doesn't) per the loaded daemon.enabled, not the DEFAULTS-seeded state.
+    setPoolMemoryDir(effectiveMemoryDir());
     // Notify any already-connected client to refetch — daemon.enabled in the loaded
     // config may add the 3rd brain (graph) and the .daemon folder (tree) that the
     // DEFAULTS-seeded boot state did not have.
@@ -276,6 +279,8 @@ export function createServer(cfg: CoreConfig) {
           // (.daemon visibility + label) and graph (3rd brain) live, without a stale frame.
           treeCache.invalidate();
           graphCache.invalidate();
+          // Toggling daemon.enabled flips memory injection for newly-claimed tabs.
+          setPoolMemoryDir(effectiveMemoryDir());
           version++;
           sse.publish({ version, paths: [], dirty: { graph: true, tree: true } });
         }).catch(() => {});
@@ -1290,7 +1295,7 @@ export function createServer(cfg: CoreConfig) {
           // core (multiple windows = multiple backends).
           session =
             claimPooledSession({ termId, cols, rows }) ??
-            createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId });
+            createTerminalSession({ cwd: cfg.vault, cols, rows, relayPort: server.port, termId, memoryDir: effectiveMemoryDir() });
           createdNew = true;
         }
         const upgraded = server.upgrade(req, { data: { kind: "terminal", sessionId: session.id } as TermWsData });
@@ -1475,7 +1480,7 @@ export function createServer(cfg: CoreConfig) {
   // (cwd = vault, reporting to this server's port). Guarded so a spawn failure here can
   // never take the server down — terminals still cold-spawn on demand.
   try {
-    prewarmPool(cfg.vault, server.port);
+    prewarmPool(cfg.vault, server.port, effectiveMemoryDir());
   } catch {
     /* pre-warm is best-effort */
   }

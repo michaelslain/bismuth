@@ -24,6 +24,14 @@ test("buildPtyEnv sets relay provenance vars + TERM", () => {
   expect(env.CLAUDE_TERMINAL_ID).toBe("tab-1");
 });
 
+test("buildPtyEnv injects BISMUTH_MEMORY_DIR only when a memoryDir is given (the daemon gate)", () => {
+  // Off (daemon disabled / not passed) → no injection, so memory hooks + MCP tools no-op.
+  expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).BISMUTH_MEMORY_DIR).toBeUndefined();
+  // On → the active vault's memory dir is injected, scoping recall/collect to this session.
+  expect(buildPtyEnv({ ...ENV_BASE, realClaude: null, memoryDir: "/vault/.daemon/memory" }).BISMUTH_MEMORY_DIR)
+    .toBe("/vault/.daemon/memory");
+});
+
 test("buildPtyEnv prepends the shim to PATH + sets BISMUTH_REAL_CLAUDE when claude resolves", () => {
   const env = buildPtyEnv({ ...ENV_BASE, realClaude: "/usr/local/bin/claude" });
   expect(env.BISMUTH_REAL_CLAUDE).toBe("/usr/local/bin/claude");

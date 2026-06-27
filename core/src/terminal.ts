@@ -93,6 +93,10 @@ export interface PtyEnvParams {
   shimDir: string;
   /** zsh init dir (ZDOTDIR) that defines the `claude` function; zsh-only. */
   zdotDir: string;
+  /** This vault's .daemon/memory dir, injected as BISMUTH_MEMORY_DIR when the daemon is
+   *  enabled. Its presence is the gate: the relay recall/collect hooks + the memory MCP
+   *  tools target this dir, and no-op when it's absent (daemon off / non-Bismuth session). */
+  memoryDir?: string;
 }
 
 /**
@@ -113,6 +117,10 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   env.DISABLE_UPDATE_PROMPT = "true";
   env.CLAUDE_RELAY_URL = p.relayUrl;
   env.CLAUDE_TERMINAL_ID = p.terminalId;
+  // Scope memory injection to Bismuth sessions, gated on the daemon: presence of this var
+  // is the gate (recall/collect hooks + memory MCP tools no-op without it). The caller only
+  // sets memoryDir when settings.daemon.enabled, so "off" simply omits it.
+  if (p.memoryDir) env.BISMUTH_MEMORY_DIR = p.memoryDir;
   if (p.shimAvailable) {
     // zsh: load our init dir, which sources the user's rc then defines a `claude` function
     // (un-shadowable by PATH ordering) that loads the relay plugin. Works even without a
@@ -153,6 +161,8 @@ interface SpawnOpts {
   relayPort?: number;
   /** Stable client term id to key this session under, enabling reattach. */
   termId?: string;
+  /** This vault's .daemon/memory dir when the daemon is enabled (gates memory injection). */
+  memoryDir?: string;
 }
 
 /** Spawn a login shell and register it as a buffering Session (no live socket yet). */
@@ -169,6 +179,7 @@ function spawnSession(opts: SpawnOpts): Session {
     pluginDir: RELAY_PLUGIN_DIR,
     shimDir: SHIM_DIR,
     zdotDir: ZDOTDIR_DIR,
+    memoryDir: opts.memoryDir,
   });
 
   const pty = spawnPty(shell, loginShellArgs(), {
@@ -234,6 +245,7 @@ const POOL_SIZE = 1;
 const pool: Session[] = [];
 let poolCwd: string | undefined;
 let poolRelayPort: number | undefined;
+let poolMemoryDir: string | undefined;
 
 function ensurePool(): void {
   if (poolCwd === undefined) return; // not initialized — no pre-warming
@@ -241,7 +253,7 @@ function ensurePool(): void {
     let s: Session;
     try {
       // 80×24 is provisional; the claiming client resizes on attach and the shell reflows.
-      s = spawnSession({ cwd: poolCwd, cols: 80, rows: 24, relayPort: poolRelayPort });
+      s = spawnSession({ cwd: poolCwd, cols: 80, rows: 24, relayPort: poolRelayPort, memoryDir: poolMemoryDir });
     } catch {
       return; // spawn failed (e.g. no shell) — cold spawn on demand still works; don't loop
     }
@@ -257,9 +269,24 @@ function ensurePool(): void {
 }
 
 /** Start (and keep) the warm pool. Idempotent; safe to call once at server start. */
-export function prewarmPool(cwd: string, relayPort?: number): void {
+export function prewarmPool(cwd: string, relayPort?: number, memoryDir?: string): void {
   poolCwd = cwd;
   poolRelayPort = relayPort;
+  poolMemoryDir = memoryDir;
+  ensurePool();
+}
+
+/** Re-bake the warm pool's injected memory dir when settings.daemon.enabled toggles. Pooled
+ *  shells cache their env at spawn, so flush the idle ones (POOL_SIZE is 1 — cheap) and
+ *  re-warm, so a newly enabled/disabled daemon takes effect for the next claimed tab. */
+export function setPoolMemoryDir(memoryDir: string | undefined): void {
+  if (memoryDir === poolMemoryDir) return;
+  poolMemoryDir = memoryDir;
+  for (const s of pool.splice(0)) {
+    s.poolExitSub?.dispose();
+    s.poolExitSub = undefined;
+    killSession(s.id);
+  }
   ensurePool();
 }
 
