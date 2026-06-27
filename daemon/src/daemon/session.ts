@@ -1,6 +1,6 @@
 import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk"
 import { readFile, writeFile, mkdir } from "fs/promises"
-import { BOT_DIR, SESSION_FILE } from "../lib/config.ts"
+import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 
 /** Messages emitted by the Claude Agent SDK query stream. */
@@ -11,18 +11,33 @@ interface SdkMessage {
   result?: string
 }
 
-export async function getSessionId(): Promise<string | undefined> {
+/** Per-vault conversation continuity: each vault's brain keeps its own session id under
+ *  <vault>/.daemon/session-id, so the single runtime resumes the right thread per vault. */
+export async function getSessionId(ctx: VaultContext): Promise<string | undefined> {
   try {
-    const id = (await readFile(SESSION_FILE, "utf-8")).trim()
+    const id = (await readFile(ctx.sessionFile, "utf-8")).trim()
     return id || undefined
   } catch {
     return undefined
   }
 }
 
-async function saveSessionId(id: string): Promise<void> {
-  await mkdir(BOT_DIR, { recursive: true })
-  await writeFile(SESSION_FILE, id, "utf-8")
+async function saveSessionId(ctx: VaultContext, id: string): Promise<void> {
+  await mkdir(ctx.daemonDir, { recursive: true })
+  await writeFile(ctx.sessionFile, id, "utf-8")
+}
+
+/** The bot's identity for one vault, parameterized by the configured daemon name. Appended
+ *  to Claude Code's system prompt so the daemon self-identifies (e.g. "Atlas"). */
+function buildSystemPrompt(name: string): string {
+  return [
+    `You are ${name}, a persistent personal-assistant daemon for this Bismuth vault.`,
+    `You run continuously in the background with durable memory. Your memory lives in this`,
+    `vault's .daemon/memory folder; use the remember/recall/forget tools to read and write it,`,
+    `and consult it for prior context before acting. You operate inside the vault (your cwd),`,
+    `maintain the user's scheduled crons and background processes, and act as their right hand`,
+    `for intellectual and systems work. Be direct; skip performative politeness.`,
+  ].join(" ")
 }
 
 export interface BotResponse {
@@ -40,21 +55,31 @@ export interface SendOptions {
   newSession?: boolean
 }
 
-export async function sendMessage(message: string, opts?: SendOptions): Promise<BotResponse> {
-  // Multi-device gating (CONTRACT v1): when this device is NOT the owner, the
-  // persistent bot session stays idle — we don't start or resume it. When the
-  // install is unclaimed (no owner.json) isOwner() is true, so single-device
-  // installs behave exactly as before.
+/**
+ * Send a message to a vault's bot session. ONE machine runtime multiplexes every enabled
+ * vault: the per-call cwd (vault root), env (BISMUTH_MEMORY_DIR → this vault's memory),
+ * resume (this vault's session id), and appended identity (the vault's daemon name) are all
+ * supplied here, so concurrent vault sessions never race a process-global anything.
+ */
+export async function sendMessage(message: string, ctx: VaultContext, opts?: SendOptions): Promise<BotResponse> {
+  // Multi-device gating (CONTRACT v1): when this device is NOT the owner, the persistent
+  // bot session stays idle. Ownership is machine-level (owner.json under MACHINE_DIR), not
+  // per-vault. When unclaimed (no owner.json) isOwner() is true, so a single-device install
+  // behaves as before.
   if (!(await isOwner())) {
     throw new Error("This device is not the owner — bot session is idle. Use set_owner_device to claim it.")
   }
 
-  const existingSessionId = await getSessionId()
+  const existingSessionId = await getSessionId(ctx)
 
   const options: Record<string, unknown> = {
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
-    cwd: BOT_DIR,
+    // Operate inside the vault, with this vault's memory dir injected so the bot's memory
+    // tools target the right brain, and the vault's daemon name as the bot's identity.
+    cwd: ctx.root,
+    env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
+    appendSystemPrompt: buildSystemPrompt(ctx.name),
     model: opts?.model ?? "haiku",
   }
 
@@ -69,7 +94,7 @@ export async function sendMessage(message: string, opts?: SendOptions): Promise<
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   if (ac && opts?.timeoutSecs && opts.timeoutSecs > 0) {
     timeoutId = setTimeout(() => {
-      console.log(`[session] Timeout reached (${opts.timeoutSecs}s), aborting session`)
+      console.log(`[session:${ctx.name}] Timeout reached (${opts.timeoutSecs}s), aborting session`)
       ac.abort()
     }, opts.timeoutSecs * 1000)
   }
@@ -88,7 +113,7 @@ export async function sendMessage(message: string, opts?: SendOptions): Promise<
       const msg = event as SdkMessage
       if (msg.session_id && msg.session_id !== latestSessionId) {
         latestSessionId = msg.session_id
-        await saveSessionId(latestSessionId)
+        await saveSessionId(ctx, latestSessionId)
       }
       if (msg.type === "result" && msg.subtype === "success") {
         resultText = (msg.result ?? "").trim()

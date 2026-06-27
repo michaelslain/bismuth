@@ -8,9 +8,8 @@ const execFileAsync = promisify(execFile)
 import { notify } from "../lib/platform"
 import { parseFrontmatter } from "../lib/frontmatter"
 import { heartbeatDevice, isOwner } from "../lib/owner"
-
-export { CRONS_DIR } from "../lib/config.ts"
-import { CRONS_DIR, PROCESSES_DIR, LAST_FIRED_FILE, RUNNING_FILE, TRIGGER_DIR, DEFAULT_CRON_TIMEOUT, CRON_CHECK_INTERVAL_MS, TRIGGER_CHECK_INTERVAL_MS, SHUTDOWN_POLL_MS } from "../lib/config.ts"
+import { loadEnabledVaults } from "../lib/registry.ts"
+import { DEFAULT_CRON_TIMEOUT, CRON_CHECK_INTERVAL_MS, TRIGGER_CHECK_INTERVAL_MS, SHUTDOWN_POLL_MS, type VaultContext } from "../lib/config.ts"
 
 export interface CronExpression {
   minute: string
@@ -35,6 +34,15 @@ export interface CronJob {
   /** Process pattern to monitor after session ends (matched via pgrep -f). */
   waitFor?: string
 }
+
+// ── Per-vault state keys ──────────────────────────────────────────────────────
+//
+// ONE machine runtime multiplexes every enabled vault. In-memory runtime state
+// (running set, abort controllers) is keyed by `${ctx.root}::${jobName}` so two
+// vaults can each own a cron of the same name without colliding. On-disk write
+// queues stay keyed by absolute file path — each vault's last-fired/running file
+// lives under its own .daemon, so the path is already vault-unique.
+const jobKey = (ctx: VaultContext, name: string): string => `${ctx.root}::${name}`
 
 function parseTimeoutSecs(raw: string | undefined): number {
   if (!raw) return DEFAULT_CRON_TIMEOUT
@@ -63,18 +71,18 @@ function parseCronFrontmatter(name: string, frontmatter: Record<string, string>,
   }
 }
 
-// Cron job names become filenames in CRONS_DIR. Reject anything that could
-// escape the directory or produce surprising filesystem entries.
+// Cron job names become filenames in the vault's crons dir. Reject anything that
+// could escape the directory or produce surprising filesystem entries.
 const CRON_NAME_RE = /^[a-zA-Z0-9_-][a-zA-Z0-9_.\-]*$/
-function validateCronName(name: string): { ok: boolean; error?: string } {
+function validateCronName(name: string, ctx: VaultContext): { ok: boolean; error?: string } {
   if (!name) return { ok: false, error: "Cron name is required" }
   if (name.length > 100) return { ok: false, error: "Cron name too long (max 100)" }
   if (!CRON_NAME_RE.test(name)) {
     return { ok: false, error: `Invalid cron name "${name}" — use only [a-zA-Z0-9_.-], no path separators` }
   }
-  // Defense-in-depth: confirm the resolved path stays inside CRONS_DIR.
-  const candidate = join(CRONS_DIR, `${name}.md`)
-  if (!candidate.startsWith(CRONS_DIR + "/") && !candidate.startsWith(CRONS_DIR + "\\")) {
+  // Defense-in-depth: confirm the resolved path stays inside the vault's crons dir.
+  const candidate = join(ctx.cronsDir, `${name}.md`)
+  if (!candidate.startsWith(ctx.cronsDir + "/") && !candidate.startsWith(ctx.cronsDir + "\\")) {
     return { ok: false, error: `Invalid cron name "${name}"` }
   }
   return { ok: true }
@@ -136,10 +144,10 @@ export function shouldFire(cron: CronExpression, now: Date): boolean {
   )
 }
 
-export async function loadCronJobs(): Promise<CronJob[]> {
+export async function loadCronJobs(ctx: VaultContext): Promise<CronJob[]> {
   let files: string[]
   try {
-    files = await readdir(CRONS_DIR)
+    files = await readdir(ctx.cronsDir)
   } catch {
     return []
   }
@@ -148,7 +156,7 @@ export async function loadCronJobs(): Promise<CronJob[]> {
   for (const file of files) {
     if (!file.endsWith(".md")) continue
     try {
-      const content = await readFile(join(CRONS_DIR, file), "utf-8")
+      const content = await readFile(join(ctx.cronsDir, file), "utf-8")
       const { frontmatter, body } = parseFrontmatter(content)
       const job = parseCronFrontmatter(file.replace(/\.md$/, ""), frontmatter, body)
       if (job) jobs.push(job)
@@ -161,6 +169,7 @@ export async function loadCronJobs(): Promise<CronJob[]> {
 
 let cronInterval: ReturnType<typeof setInterval> | null = null
 let triggerInterval: ReturnType<typeof setInterval> | null = null
+// Keyed by `${ctx.root}::${jobName}` — see jobKey above.
 const runningJobs = new Set<string>()
 const jobAbortControllers = new Map<string, AbortController>()
 
@@ -169,9 +178,9 @@ export interface LastFiredEntry {
   result: "success" | "failed" | "unknown" | "killed"
 }
 
-export async function loadLastFired(): Promise<Record<string, LastFiredEntry>> {
+export async function loadLastFired(ctx: VaultContext): Promise<Record<string, LastFiredEntry>> {
   try {
-    const raw = await readFile(LAST_FIRED_FILE, "utf-8")
+    const raw = await readFile(ctx.lastFiredFile, "utf-8")
     const parsed = JSON.parse(raw)
     // Migrate old format (plain string timestamps) to new format
     const result: Record<string, LastFiredEntry> = {}
@@ -190,7 +199,9 @@ export async function loadLastFired(): Promise<Record<string, LastFiredEntry>> {
 
 // Per-file serial write queue. Without this, two concurrent saves race on the
 // shared .tmp filename (ENOENT on rename) AND clobber each other's updates
-// (load-modify-save read the same baseline, last writer wins).
+// (load-modify-save read the same baseline, last writer wins). Keyed by the
+// absolute file path, which is already per-vault (each vault's last-fired/running
+// file lives under its own .daemon), so vaults never share a queue entry.
 const writeQueues = new Map<string, Promise<unknown>>()
 
 function enqueueWrite<T>(file: string, fn: () => Promise<T>): Promise<T> {
@@ -212,14 +223,14 @@ async function atomicWriteJson(file: string, data: unknown): Promise<void> {
 }
 
 /**
- * Read-modify-write LAST_FIRED_FILE under the file's serial queue.
+ * Read-modify-write a vault's last-fired file under that file's serial queue.
  * Always uses fresh on-disk state so concurrent updates merge instead of clobbering.
  */
-async function updateLastFired(name: string, entry: LastFiredEntry): Promise<void> {
-  await enqueueWrite(LAST_FIRED_FILE, async () => {
-    const data = await loadLastFired()
+async function updateLastFired(ctx: VaultContext, name: string, entry: LastFiredEntry): Promise<void> {
+  await enqueueWrite(ctx.lastFiredFile, async () => {
+    const data = await loadLastFired(ctx)
     data[name] = entry
-    await atomicWriteJson(LAST_FIRED_FILE, data)
+    await atomicWriteJson(ctx.lastFiredFile, data)
   })
 }
 
@@ -229,30 +240,30 @@ export interface RunningEntry {
   startedAt: string
 }
 
-export async function loadRunning(): Promise<Record<string, RunningEntry>> {
+export async function loadRunning(ctx: VaultContext): Promise<Record<string, RunningEntry>> {
   try {
-    const raw = await readFile(RUNNING_FILE, "utf-8")
+    const raw = await readFile(ctx.runningFile, "utf-8")
     return JSON.parse(raw)
   } catch {
     return {}
   }
 }
 
-async function markRunning(name: string): Promise<void> {
+async function markRunning(ctx: VaultContext, name: string): Promise<void> {
   console.log(`[cron] markRunning: ${name}`)
-  await enqueueWrite(RUNNING_FILE, async () => {
-    const data = await loadRunning()
+  await enqueueWrite(ctx.runningFile, async () => {
+    const data = await loadRunning(ctx)
     data[name] = { startedAt: new Date().toISOString() }
-    await atomicWriteJson(RUNNING_FILE, data)
+    await atomicWriteJson(ctx.runningFile, data)
   })
 }
 
-async function markDone(name: string): Promise<void> {
+async function markDone(ctx: VaultContext, name: string): Promise<void> {
   console.log(`[cron] markDone: ${name}`)
-  await enqueueWrite(RUNNING_FILE, async () => {
-    const data = await loadRunning()
+  await enqueueWrite(ctx.runningFile, async () => {
+    const data = await loadRunning(ctx)
     delete data[name]
-    await atomicWriteJson(RUNNING_FILE, data)
+    await atomicWriteJson(ctx.runningFile, data)
   })
 }
 
@@ -327,7 +338,7 @@ function parseNotifyMessage(output: string): string | null {
   return matches[matches.length - 1]?.[1]?.trim() || null
 }
 
-// ── Protected directory guard ───────────────────────────────────────��──────
+// ── Protected directory guard ─────────────────────────────────────────────────
 // Snapshot .md files in crons/ and processes/ before a cron session runs,
 // then restore any that were modified or deleted by the session.
 
@@ -405,31 +416,32 @@ async function waitForProcessPattern(
 }
 
 /**
- * Start a cron job: marks it as running (in-memory + on-disk) synchronously,
- * then runs the session in the background. Callers should await this to ensure
- * .running.json is written before proceeding.
+ * Start a cron job for a vault: marks it as running (in-memory + on-disk)
+ * synchronously, then runs the session in the background. Callers should await
+ * this to ensure .running.json is written before proceeding.
  */
-async function fireJob(job: CronJob, lastFired: Record<string, LastFiredEntry>): Promise<void> {
+async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string, LastFiredEntry>): Promise<void> {
+  const key = jobKey(ctx, job.name)
   const ac = new AbortController()
-  runningJobs.add(job.name)
-  jobAbortControllers.set(job.name, ac)
+  runningJobs.add(key)
+  jobAbortControllers.set(key, ac)
   const startedAt = Date.now()
-  await markRunning(job.name)
+  await markRunning(ctx, job.name)
 
   // Guard only the running cron's OWN definition file, not the entire
   // crons directory. The old approach (snapshotDir of all .md) reverted
   // legitimate external edits to sibling crons that happened while this
   // job was running. Self-modification is the real threat.
-  const ownCronFile = join(CRONS_DIR, `${job.name}.md`)
+  const ownCronFile = join(ctx.cronsDir, `${job.name}.md`)
   let ownCronContent: string | null = null
   try { ownCronContent = await readFile(ownCronFile, "utf-8") } catch {}
-  const procSnap = await snapshotDir(PROCESSES_DIR)
+  const procSnap = await snapshotDir(ctx.processesDir)
 
   // Run the actual session in the background (not awaited by caller)
   const sessionPromise = (async () => {
     try {
       const prompt = `[Cron: ${job.name}] ${job.prompt}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
-      const response = await sendMessage(prompt, { model: job.model, effort: job.effort, abortController: ac, timeoutSecs: job.timeout, newSession: true })
+      const response = await sendMessage(prompt, ctx, { model: job.model, effort: job.effort, abortController: ac, timeoutSecs: job.timeout, newSession: true })
 
       if (job.waitFor) {
         // timeout: 0 means "no timeout" — wait indefinitely for the launched
@@ -446,11 +458,11 @@ async function fireJob(job: CronJob, lastFired: Record<string, LastFiredEntry>):
       const result = parseCronResult(response.result)
       const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result }
       lastFired[job.name] = entry
-      await updateLastFired(job.name, entry)
+      await updateLastFired(ctx, job.name, entry)
       if (job.notify) {
         const status = result === "success" ? "completed" : result === "failed" ? "failed" : "completed (unknown result)"
         const notifyMsg = parseNotifyMessage(response.result) || `Cron job ${status}.`
-        notify(`claude-bot: ${job.name}`, notifyMsg)
+        notify(`${ctx.name}: ${job.name}`, notifyMsg)
       }
     } catch (err) {
       if (ac.signal.aborted) {
@@ -460,15 +472,15 @@ async function fireJob(job: CronJob, lastFired: Record<string, LastFiredEntry>):
         // catchup (elapsed computed from a stale timestamp).
         const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "killed" }
         lastFired[job.name] = entry
-        await updateLastFired(job.name, entry)
+        await updateLastFired(ctx, job.name, entry)
         return
       }
       console.error(`[cron] Failed to fire job "${job.name}":`, err)
       const entry: LastFiredEntry = { timestamp: new Date().toISOString(), result: "failed" }
       lastFired[job.name] = entry
-      await updateLastFired(job.name, entry)
+      await updateLastFired(ctx, job.name, entry)
       if (job.notify) {
-        notify(`claude-bot: ${job.name}`, `Failed: ${err}`)
+        notify(`${ctx.name}: ${job.name}`, `Failed: ${err}`)
       }
     } finally {
       // Restore the running cron's own definition if it self-modified.
@@ -487,10 +499,10 @@ async function fireJob(job: CronJob, lastFired: Record<string, LastFiredEntry>):
         }
       }
       // Process definitions are still broadly guarded (rarely edited externally)
-      await restoreDir(PROCESSES_DIR, procSnap, job.name)
-      jobAbortControllers.delete(job.name)
-      await markDone(job.name)
-      runningJobs.delete(job.name)
+      await restoreDir(ctx.processesDir, procSnap, job.name)
+      jobAbortControllers.delete(key)
+      await markDone(ctx, job.name)
+      runningJobs.delete(key)
     }
   })()
 
@@ -499,34 +511,34 @@ async function fireJob(job: CronJob, lastFired: Record<string, LastFiredEntry>):
 }
 
 /**
- * Re-fire any crons that were still in .running.json when the daemon died.
- * MUST be called BEFORE startCronScheduler(): recovery populates runningJobs
- * so the scheduler's catch-up pass skips these jobs. If startCronScheduler()
- * runs first, its catch-up IIFE adds jobs to runningJobs, and the branch below
- * at "!runningJobs.has(name)" flips — the else branch markDone()s live jobs.
+ * Re-fire any of a vault's crons that were still in .running.json when the daemon
+ * died. MUST be called BEFORE startCronScheduler(): recovery populates runningJobs
+ * so the scheduler's catch-up pass skips these jobs. If startCronScheduler() runs
+ * first, its catch-up IIFE adds jobs to runningJobs, and the branch below at
+ * "!runningJobs.has(key)" flips — the else branch markDone()s live jobs.
  */
-export async function recoverInterruptedCrons(): Promise<void> {
+export async function recoverInterruptedCrons(ctx: VaultContext): Promise<void> {
   // Not the owner device — idle. Don't re-fire interrupted crons; the owner
   // owns the work. (Unclaimed => isOwner true => behaves exactly as before.)
   if (!(await isOwner())) return
 
-  const running = await loadRunning()
+  const running = await loadRunning(ctx)
   const names = Object.keys(running)
   if (names.length === 0) return
 
-  console.log(`[cron] Recovering interrupted crons: ${names.join(", ")}`)
-  const [jobs, lastFired] = await Promise.all([loadCronJobs(), loadLastFired()])
+  console.log(`[cron] Recovering interrupted crons for ${ctx.name}: ${names.join(", ")}`)
+  const [jobs, lastFired] = await Promise.all([loadCronJobs(ctx), loadLastFired(ctx)])
   const jobMap = new Map(jobs.map((j) => [j.name, j]))
 
   for (const name of names) {
     const job = jobMap.get(name)
-    if (job && job.enabled && !runningJobs.has(name)) {
+    if (job && job.enabled && !runningJobs.has(jobKey(ctx, name))) {
       console.log(`[cron] Re-firing interrupted cron: ${name}`)
       // Await fireJob to ensure .running.json + in-memory state are set before continuing
-      await fireJob(job, lastFired)
+      await fireJob(ctx, job, lastFired)
     } else {
       // Job no longer exists or is disabled — clean up stale entry
-      await markDone(name)
+      await markDone(ctx, name)
     }
   }
 }
@@ -534,22 +546,24 @@ export async function recoverInterruptedCrons(): Promise<void> {
 export function startCronScheduler(): void {
   if (cronInterval !== null) return
 
-  // Run catch-up check immediately on start
+  // Run catch-up check immediately on start, across every enabled vault.
   ;(async () => {
     // Heartbeat even on a non-owner device so it stays selectable.
     await heartbeatDevice()
     if (!(await isOwner())) return
-    const [jobs, lastFired] = await Promise.all([loadCronJobs(), loadLastFired()])
-    for (const job of jobs) {
-      if (job.enabled && shouldCatchUp(job, lastFired) && !runningJobs.has(job.name)) {
-        console.log(`[cron] Catch-up firing: ${job.name}`)
-        await fireJob(job, lastFired) // await ensures .running.json is written before next iteration
+    for (const ctx of await loadEnabledVaults()) {
+      const [jobs, lastFired] = await Promise.all([loadCronJobs(ctx), loadLastFired(ctx)])
+      for (const job of jobs) {
+        if (job.enabled && shouldCatchUp(job, lastFired) && !runningJobs.has(jobKey(ctx, job.name))) {
+          console.log(`[cron] Catch-up firing: ${job.name}`)
+          await fireJob(ctx, job, lastFired) // await ensures .running.json is written before next iteration
+        }
       }
     }
   })()
 
-  // Check for MCP trigger files every 5 seconds for fast response
-  triggerInterval = setInterval(() => { processTriggers() }, TRIGGER_CHECK_INTERVAL_MS)
+  // Check for MCP trigger files every 5 seconds for fast response (all vaults)
+  triggerInterval = setInterval(() => { void processAllTriggers() }, TRIGGER_CHECK_INTERVAL_MS)
 
   cronInterval = setInterval(async () => {
     // Heartbeat every tick — even when idle / not owner — so this device stays
@@ -559,14 +573,17 @@ export function startCronScheduler(): void {
     // Unclaimed (no owner.json) => isOwner true => normal behavior unchanged.
     if (!(await isOwner())) return
     const now = new Date()
-    const [jobs, lastFired] = await Promise.all([loadCronJobs(), loadLastFired()])
-    for (const job of jobs) {
-      if (!job.enabled || runningJobs.has(job.name)) continue
-      // Fire on schedule OR when overdue (catchup). Without the catchup
-      // check here, a missed/failed/killed run waits until the next daemon
-      // restart to be retried.
-      if (shouldFire(job.cron, now) || shouldCatchUp(job, lastFired)) {
-        fireJob(job, lastFired)
+    // One tick fans out across every enabled vault — the multiplex.
+    for (const ctx of await loadEnabledVaults()) {
+      const [jobs, lastFired] = await Promise.all([loadCronJobs(ctx), loadLastFired(ctx)])
+      for (const job of jobs) {
+        if (!job.enabled || runningJobs.has(jobKey(ctx, job.name))) continue
+        // Fire on schedule OR when overdue (catchup). Without the catchup
+        // check here, a missed/failed/killed run waits until the next daemon
+        // restart to be retried.
+        if (shouldFire(job.cron, now) || shouldCatchUp(job, lastFired)) {
+          fireJob(ctx, job, lastFired)
+        }
       }
     }
   }, CRON_CHECK_INTERVAL_MS)
@@ -584,8 +601,9 @@ export function stopCronScheduler(): void {
 }
 
 /**
- * Returns a promise that resolves when all currently running cron jobs finish.
- * Used during graceful shutdown. Resolves after a timeout to prevent hanging.
+ * Returns a promise that resolves when all currently running cron jobs (across
+ * every vault) finish. Used during graceful shutdown. Resolves after a timeout
+ * to prevent hanging.
  */
 export async function waitForRunningJobs(timeoutMs: number = 10_000): Promise<void> {
   if (runningJobs.size === 0) return
@@ -607,10 +625,10 @@ export async function waitForRunningJobs(timeoutMs: number = 10_000): Promise<vo
 
 // ── Cron CRUD helpers ────────────────────────────────────────────────────────
 
-async function loadCronJob(name: string): Promise<CronJob | null> {
-  if (!validateCronName(name).ok) return null
+async function loadCronJob(name: string, ctx: VaultContext): Promise<CronJob | null> {
+  if (!validateCronName(name, ctx).ok) return null
   try {
-    const content = await readFile(join(CRONS_DIR, `${name}.md`), "utf-8")
+    const content = await readFile(join(ctx.cronsDir, `${name}.md`), "utf-8")
     const { frontmatter, body } = parseFrontmatter(content)
     return parseCronFrontmatter(name, frontmatter, body)
   } catch {
@@ -618,16 +636,16 @@ async function loadCronJob(name: string): Promise<CronJob | null> {
   }
 }
 
-export async function runCronJob(name: string): Promise<{ ok: boolean; error?: string }> {
-  const nameCheck = validateCronName(name)
+export async function runCronJob(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
-  if (runningJobs.has(name)) return { ok: false, error: `Cron job "${name}" is already running. Call cron_stop first to kill it.` }
+  if (runningJobs.has(jobKey(ctx, name))) return { ok: false, error: `Cron job "${name}" is already running. Call cron_stop first to kill it.` }
 
-  const job = await loadCronJob(name)
+  const job = await loadCronJob(name, ctx)
   if (!job) return { ok: false, error: `Cron job "${name}" not found` }
 
-  const lastFired = await loadLastFired()
-  await fireJob(job, lastFired) // await ensures .running.json is written before returning
+  const lastFired = await loadLastFired(ctx)
+  await fireJob(ctx, job, lastFired) // await ensures .running.json is written before returning
   return { ok: true }
 }
 
@@ -635,24 +653,34 @@ export async function runCronJob(name: string): Promise<{ ok: boolean; error?: s
  * Write a trigger file so the daemon picks up the run request on its next tick.
  * Used by the MCP server (separate process) instead of runCronJob directly.
  */
-export async function requestCronRun(name: string): Promise<{ ok: boolean; error?: string }> {
-  const nameCheck = validateCronName(name)
+export async function requestCronRun(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
-  const job = await loadCronJob(name)
+  const job = await loadCronJob(name, ctx)
   if (!job) return { ok: false, error: `Cron job "${name}" not found` }
 
-  await mkdir(TRIGGER_DIR, { recursive: true })
-  await writeFile(join(TRIGGER_DIR, name), new Date().toISOString(), "utf-8")
+  await mkdir(ctx.triggerDir, { recursive: true })
+  await writeFile(join(ctx.triggerDir, name), new Date().toISOString(), "utf-8")
   return { ok: true }
 }
 
 /**
- * Check for trigger files written by the MCP server and fire those jobs.
+ * Scan every enabled vault's trigger dir for files written by the MCP server and
+ * fire those jobs. Driven by the single trigger interval.
  */
-async function processTriggers(): Promise<void> {
+async function processAllTriggers(): Promise<void> {
+  for (const ctx of await loadEnabledVaults()) {
+    await processTriggers(ctx)
+  }
+}
+
+/**
+ * Check for trigger files written by the MCP server for one vault and fire those jobs.
+ */
+async function processTriggers(ctx: VaultContext): Promise<void> {
   let files: string[]
   try {
-    files = await readdir(TRIGGER_DIR)
+    files = await readdir(ctx.triggerDir)
   } catch {
     return
   }
@@ -664,42 +692,42 @@ async function processTriggers(): Promise<void> {
   // up, but don't fire. Unclaimed => isOwner true => normal behavior.
   if (!(await isOwner())) {
     for (const name of triggers) {
-      try { await unlink(join(TRIGGER_DIR, name)) } catch {}
+      try { await unlink(join(ctx.triggerDir, name)) } catch {}
     }
     return
   }
 
-  const lastFired = await loadLastFired()
+  const lastFired = await loadLastFired(ctx)
   for (const name of triggers) {
-    try { await unlink(join(TRIGGER_DIR, name)) } catch {}
+    try { await unlink(join(ctx.triggerDir, name)) } catch {}
 
-    if (runningJobs.has(name)) {
+    if (runningJobs.has(jobKey(ctx, name))) {
       console.log(`[cron] Trigger for "${name}" ignored — already running`)
       continue
     }
 
-    const job = await loadCronJob(name)
+    const job = await loadCronJob(name, ctx)
     if (!job) {
       console.warn(`[cron] Trigger for unknown job "${name}" — skipping`)
       continue
     }
 
     console.log(`[cron] Trigger firing: ${name}`)
-    await fireJob(job, lastFired)
+    await fireJob(ctx, job, lastFired)
   }
 }
 
-export async function stopCronJob(name: string): Promise<{ ok: boolean; error?: string }> {
-  const ac = jobAbortControllers.get(name)
+export async function stopCronJob(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const ac = jobAbortControllers.get(jobKey(ctx, name))
   if (!ac) return { ok: false, error: `Cron job "${name}" is not running` }
 
   ac.abort()
 
   // Record as killed
-  await updateLastFired(name, { timestamp: new Date().toISOString(), result: "killed" })
+  await updateLastFired(ctx, name, { timestamp: new Date().toISOString(), result: "killed" })
 
   // Clean up running state (fireJob's finally block will also run, but we do it eagerly)
-  await markDone(name)
+  await markDone(ctx, name)
 
   console.log(`[cron] Stopped running job "${name}"`)
   return { ok: true }
@@ -724,23 +752,23 @@ function buildCronFile(opts: { name: string; schedule: string; model?: string; e
   return lines.join("\n")
 }
 
-export async function createCronJob(opts: { name: string; schedule: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean }): Promise<{ ok: boolean; error?: string }> {
-  const nameCheck = validateCronName(opts.name)
+export async function createCronJob(opts: { name: string; schedule: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const nameCheck = validateCronName(opts.name, ctx)
   if (!nameCheck.ok) return nameCheck
   const cron = parseCronExpression(opts.schedule)
   if (!cron) return { ok: false, error: `Invalid cron schedule: "${opts.schedule}"` }
 
-  const filePath = join(CRONS_DIR, `${opts.name}.md`)
+  const filePath = join(ctx.cronsDir, `${opts.name}.md`)
   if (await Bun.file(filePath).exists()) return { ok: false, error: `Cron job "${opts.name}" already exists` }
 
   await Bun.write(filePath, buildCronFile(opts))
   return { ok: true }
 }
 
-export async function deleteCronJob(name: string): Promise<{ ok: boolean; error?: string }> {
-  const nameCheck = validateCronName(name)
+export async function deleteCronJob(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
-  const filePath = join(CRONS_DIR, `${name}.md`)
+  const filePath = join(ctx.cronsDir, `${name}.md`)
   try {
     await unlink(filePath)
     return { ok: true }
@@ -749,10 +777,10 @@ export async function deleteCronJob(name: string): Promise<{ ok: boolean; error?
   }
 }
 
-export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; prompt?: string }): Promise<{ ok: boolean; error?: string }> {
-  const nameCheck = validateCronName(name)
+export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; prompt?: string }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
-  const filePath = join(CRONS_DIR, `${name}.md`)
+  const filePath = join(ctx.cronsDir, `${name}.md`)
   let content: string
   try {
     content = await readFile(filePath, "utf-8")

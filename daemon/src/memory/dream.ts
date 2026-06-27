@@ -1,12 +1,12 @@
-import { loadAllNotes, writeNote, deleteNote, getMemoryDir, parseNoteRef } from "@bismuth/memory"
+import { loadAllNotes, writeNote, deleteNote, parseNoteRef } from "@bismuth/memory"
 import type { MemoryNote, NoteType } from "@bismuth/memory"
 import { sendMessage } from "../daemon/session.ts"
 import { parseJsonResponse } from "../lib/json.ts"
 import { today } from "../lib/json.ts"
-import { DEFAULT_DREAM_INTERVAL_MS } from "../lib/config.ts"
+import { DEFAULT_DREAM_INTERVAL_MS, type VaultContext } from "../lib/config.ts"
 
-async function dispatch(prompt: string): Promise<string> {
-  const response = await sendMessage(prompt)
+async function dispatch(prompt: string, ctx: VaultContext): Promise<string> {
+  const response = await sendMessage(prompt, ctx)
   return response.result
 }
 
@@ -22,8 +22,10 @@ const DEFAULT_CONFIG: DreamConfig = {
   enabled: true,
 }
 
-let dreamTimer: ReturnType<typeof setInterval> | null = null
-let currentConfig: DreamConfig = { ...DEFAULT_CONFIG }
+// ONE machine runtime dreams for every enabled vault. Each vault's dream timer +
+// config are keyed by ctx.root so concurrent vaults consolidate independently.
+const dreamTimers = new Map<string, ReturnType<typeof setInterval>>()
+const dreamConfigs = new Map<string, DreamConfig>()
 
 const CONSOLIDATION_PROMPT = `You are a memory consolidation assistant. You are "dreaming" — reviewing a set of memory notes to improve, deduplicate, and consolidate them.
 
@@ -109,8 +111,9 @@ function groupByFolder(notes: MemoryNote[]): Map<string, MemoryNote[]> {
  * Processes notes in batches per folder; folders never merge into each other.
  */
 export async function dream(
-  dir: string = getMemoryDir()
+  ctx: VaultContext
 ): Promise<{ merged: number; improved: number; deleted: number }> {
+  const dir = ctx.memoryDir
   const notes = await loadAllNotes(dir)
   if (notes.length < 2) return { merged: 0, improved: 0, deleted: 0 }
 
@@ -144,7 +147,7 @@ export async function dream(
 
       let response: string
       try {
-        response = await dispatch(CONSOLIDATION_PROMPT + `\n\nToday's date: ${today()}\n\n` + notesJson)
+        response = await dispatch(CONSOLIDATION_PROMPT + `\n\nToday's date: ${today()}\n\n` + notesJson, ctx)
       } catch (err) {
         console.error(`[dream] Failed to dispatch folder=${folder || "<root>"} batch ${i / BATCH_SIZE + 1}:`, err)
         continue
@@ -221,52 +224,58 @@ export async function dream(
 }
 
 /**
- * Start the dreaming loop — runs consolidation on a timer.
+ * Start the dreaming loop for one vault — runs consolidation on a timer.
  */
-export function startDreaming(config?: Partial<DreamConfig>): void {
-  stopDreaming()
-  currentConfig = { ...DEFAULT_CONFIG, ...config }
+export function startDreaming(ctx: VaultContext, config?: Partial<DreamConfig>): void {
+  stopDreaming(ctx)
+  const merged: DreamConfig = { ...DEFAULT_CONFIG, ...config }
+  dreamConfigs.set(ctx.root, merged)
 
-  if (!currentConfig.enabled) return
+  if (!merged.enabled) return
 
-  dreamTimer = setInterval(async () => {
+  const timer = setInterval(async () => {
     try {
-      const result = await dream()
+      const result = await dream(ctx)
       if (result.merged + result.improved + result.deleted > 0) {
         console.log(
-          `[dream] Consolidated memory: ${result.merged} merged, ${result.improved} improved, ${result.deleted} deleted`
+          `[dream] Consolidated memory for ${ctx.name}: ${result.merged} merged, ${result.improved} improved, ${result.deleted} deleted`
         )
       }
     } catch (err) {
       console.error(`[dream] Error during consolidation: ${err}`)
     }
-  }, currentConfig.intervalMs)
+  }, merged.intervalMs)
+  dreamTimers.set(ctx.root, timer)
 }
 
 /**
- * Stop the dreaming loop.
+ * Stop the dreaming loop for one vault.
  */
-export function stopDreaming(): void {
-  if (dreamTimer) {
-    clearInterval(dreamTimer)
-    dreamTimer = null
+export function stopDreaming(ctx: VaultContext): void {
+  const timer = dreamTimers.get(ctx.root)
+  if (timer) {
+    clearInterval(timer)
+    dreamTimers.delete(ctx.root)
   }
 }
 
 /**
- * Get current dreaming configuration.
+ * Get a vault's current dreaming configuration.
  */
-export function getDreamConfig(): DreamConfig & { active: boolean } {
-  return { ...currentConfig, active: dreamTimer !== null }
+export function getDreamConfig(ctx: VaultContext): DreamConfig & { active: boolean } {
+  const cfg = dreamConfigs.get(ctx.root) ?? { ...DEFAULT_CONFIG }
+  return { ...cfg, active: dreamTimers.has(ctx.root) }
 }
 
 /**
- * Update dreaming configuration. Restarts the loop only if it was already running.
+ * Update a vault's dreaming configuration. Restarts its loop only if it was
+ * already running.
  */
-export function updateDreamConfig(config: Partial<DreamConfig>): void {
-  const wasActive = dreamTimer !== null
-  currentConfig = { ...currentConfig, ...config }
+export function updateDreamConfig(ctx: VaultContext, config: Partial<DreamConfig>): void {
+  const wasActive = dreamTimers.has(ctx.root)
+  const next: DreamConfig = { ...(dreamConfigs.get(ctx.root) ?? DEFAULT_CONFIG), ...config }
+  dreamConfigs.set(ctx.root, next)
   if (wasActive) {
-    startDreaming(currentConfig)
+    startDreaming(ctx, next)
   }
 }
