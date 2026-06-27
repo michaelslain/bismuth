@@ -7,7 +7,7 @@
 // a failed daemon install must never block the app.
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, copyFileSync, chmodSync, existsSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { mkdirSync, copyFileSync, chmodSync, existsSync, readFileSync, writeFileSync, statSync, renameSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 export const DAEMON_LABEL = "com.bismuth.daemon";
@@ -70,8 +70,15 @@ export async function installDaemonFromBundle(): Promise<void> {
     try { prev = readFileSync(marker, "utf8").trim(); } catch { /* first run */ }
     if (prev === sig && existsSync(bin)) { await runSetup(); return; } // current → just ensure the service
     mkdirSync(join(homedir(), ".bismuth", "bin"), { recursive: true });
-    copyFileSync(src, bin);
-    chmodSync(bin, 0o755);
+    // Copy to a temp file then atomically rename over `bin`. A direct copyFileSync TRUNCATES
+    // the destination, which on Linux throws ETXTBSY when `bin` is the currently-executing
+    // daemon binary (the service outlives the app, so the old version is running during an
+    // update). rename() swaps the directory entry without opening the busy inode — the running
+    // process keeps its old inode, and the new binary is in place for the next (re)start.
+    const tmp = `${bin}.new-${process.pid}`;
+    copyFileSync(src, tmp);
+    chmodSync(tmp, 0o755);
+    renameSync(tmp, bin);
     writeFileSync(marker, sig);
     await runSetup();
   } catch {

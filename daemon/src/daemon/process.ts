@@ -240,11 +240,22 @@ function defMatchesCommand(def: ProcessDef, cmd: string): boolean {
   return true
 }
 
+/** Live pids of EVERY vault's currently-supervised children. The `managed` map is machine-
+ *  global, and ps command-lines (argv only, no cwd) can't tell apart two vaults running the
+ *  same command — so a sibling vault's legitimate child must never be reaped as an "orphan". */
+function managedPids(): Set<number> {
+  const pids = new Set<number>()
+  for (const [, mp] of managed) if (mp.proc?.pid) pids.add(mp.proc.pid)
+  return pids
+}
+
 function matchOrphans(def: ProcessDef, knownPid: number | null, rows: PsRow[]): PsRow[] {
+  const owned = managedPids()
   return rows.filter(
     (r) =>
       r.pid !== knownPid &&
       r.pid !== process.pid &&
+      !owned.has(r.pid) && // never kill another vault's supervised child
       defMatchesCommand(def, r.command),
   )
 }
@@ -455,10 +466,15 @@ export async function reapOrphans(ctx: VaultContext): Promise<void> {
  * Shared by the global stopProcesses() and the per-vault stopProcessesForVault().
  */
 async function stopAndClear(entries: Array<[string, ManagedProcess]>, timeoutMs: number): Promise<void> {
+  // Mark EVERY entry stopping first — including ones with no live proc that are mid restart-
+  // backoff. Their pending restart timer guards on `!mp.stopping`, so without this a disabled
+  // or deregistered vault's crash-looping process would re-spawn AFTER we delete it from
+  // `managed` (line below) and run forever as an untracked orphan.
+  for (const [, mp] of entries) mp.stopping = true
+
   const active = entries.filter(([, mp]) => mp.proc?.pid)
 
   for (const [, mp] of active) {
-    mp.stopping = true
     killProcessGroup(mp)
   }
 
@@ -671,6 +687,9 @@ export async function disableProcess(name: string, ctx: VaultContext): Promise<{
   // firing its inner loop) until something else killed it.
   registerDef({ ...def, enabled: false }, ctx)
   const mp = managed.get(procKey(ctx, name))
+  // Mark stopping even when there's no live proc — a process mid restart-backoff has a pending
+  // timer that re-spawns it unless `stopping` is set (stopProcess only covers the live case).
+  if (mp) mp.stopping = true
   if (mp?.proc) await stopProcess(name, ctx)
 
   const isDisabled = frontmatter.enabled === "false"

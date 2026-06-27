@@ -40,7 +40,7 @@ import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import { isExportable } from "./export/formats";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
@@ -498,7 +498,7 @@ export default function App() {
     setActiveTabId(tab.id);
     recordNav(tab.root.id, GRAPH_TAB);
   };
-  const openSettings = () => openInNewTab("settings.yaml");
+  const openSettings = () => openInNewTab(SETTINGS_FILE);
   const openTerminal = () => openInNewTab(TERMINAL_PREFIX + crypto.randomUUID());
   // Open a terminal in a SPECIFIC pane (the EmptyPane "new terminal" button). Unlike
   // openTerminal, which loads into the focused pane, this targets `leafId` directly:

@@ -88,9 +88,12 @@ async function startVault(ctx: VaultContext, opts: { owner: boolean; boot: boole
   startProcessTriggers(ctx)
 
   // Recover crons interrupted by the previous shutdown BEFORE the scheduler runs
-  // (recovery populates the in-memory running set so catch-up skips them). Safe
-  // before session init because fireJob uses newSession: true.
-  await recoverInterruptedCrons(ctx)
+  // (recovery populates the in-memory running set so catch-up skips them). Safe before
+  // session init because fireJob uses newSession: true. BOOT-ONLY: at runtime-enable the
+  // scheduler is already ticking, so recovery could observe a job the live tick just fired
+  // and wrongly markDone() it (corrupting .running.json) — and the scheduler's own catch-up
+  // covers overdue jobs anyway, making recovery redundant once running.
+  if (opts.boot) await recoverInterruptedCrons(ctx)
 
   // Only the owner device keeps the persistent bot session alive, and only on
   // boot. A non-owner daemon idles (still heartbeats via the cron tick); a vault
@@ -210,7 +213,15 @@ async function ensureInstalled(): Promise<void> {
 function printStatus(): void {
   const installed = existsSync(daemonConfigPath())
   let running = false
-  try { running = Boolean(readFileSync(MACHINE_PID_FILE, "utf8").trim()) } catch { /* not running */ }
+  try {
+    // Liveness, not mere presence: the pid file survives a crash / SIGKILL (removePid only
+    // runs on graceful shutdown), so check the pid is actually alive — matching how core's
+    // daemon.ts / daemonGraph.ts gate "running".
+    const pid = Number(readFileSync(MACHINE_PID_FILE, "utf8").trim())
+    if (pid > 0) {
+      try { process.kill(pid, 0); running = true } catch { running = false }
+    }
+  } catch { /* no pid file → not running */ }
   console.log(JSON.stringify({ installed, running, label: LAUNCHD_LABEL }))
 }
 
