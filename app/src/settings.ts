@@ -111,7 +111,7 @@ export interface Settings {
   };
   daemon: {
     enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
-    name: string;        // per-vault daemon name ("" = "daemon")
+    // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
   };
   update: {
     autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)

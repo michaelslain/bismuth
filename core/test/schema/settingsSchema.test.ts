@@ -91,14 +91,14 @@ test("calendar section mirrors the calendar defaults", () => {
   expect(cal.militaryTime.default).toBe(false);
 });
 
-test("daemon section is exactly { enabled, name } (home + autoUpdate dropped)", () => {
+test("daemon section is exactly { enabled } (name moved to identity.md; home + autoUpdate dropped)", () => {
   const daemon = objectFields(SETTINGS_SCHEMA.daemon);
-  expect(Object.keys(daemon).sort()).toEqual(["enabled", "name"]);
+  expect(Object.keys(daemon).sort()).toEqual(["enabled"]);
   expect(daemon.enabled.type).toBe("boolean");
   expect(daemon.enabled.default).toBe(false);
-  expect(daemon.name.type).toBe("string");
-  expect(daemon.name.default).toBe("");
-  // The obsolete keys are gone (daemon is bundled; home is fixed; no git-pull self-update).
+  // The obsolete keys are gone: name now lives in .daemon/identity.md frontmatter; daemon is
+  // bundled (home is fixed); no git-pull self-update.
+  expect(daemon.name).toBeUndefined();
   expect(daemon.home).toBeUndefined();
   expect(daemon.autoUpdate).toBeUndefined();
 });

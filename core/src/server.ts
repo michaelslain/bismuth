@@ -52,7 +52,7 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
@@ -183,7 +183,7 @@ export function createServer(cfg: CoreConfig) {
     attachLayout(await buildGraph(cfg.vault, effectiveMemoryDir()), cfg.vault),
   );
   const treeCache = createAsyncCache<TreeEntry[]>(() =>
-    listTree(cfg.vault, { daemonEnabled: appConfig.daemon?.enabled, daemonName: appConfig.daemon?.name }),
+    listTree(cfg.vault, { daemonEnabled: appConfig.daemon?.enabled, daemonName: daemonIdentityName(cfg.vault) }),
   );
   // The unscoped vault feeds, shared by /vault-data, /rows, and the source resolver.
   const rowsCache = createAsyncCache<Row[]>(() => buildVaultRows(cfg.vault));
@@ -795,7 +795,7 @@ export function createServer(cfg: CoreConfig) {
       // backend-computed position2d/position3d so the WebGL renderer can place nodes
       // (unlike agents mode, daemon has no separate SVG layout). Cached by graph sig,
       // so polled state changes (opacity/tint) keep stable positions.
-      return ok(await attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), appConfig.daemon?.name || "daemon"), "daemon"));
+      return ok(await attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault)), "daemon"));
     },
 
     // Daemon install/setup, bridged to the bundled daemon binary's CLI surface
