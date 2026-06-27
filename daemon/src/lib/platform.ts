@@ -16,8 +16,9 @@ export function daemonConfigPath(): string {
 // ── Config generation ────────────────────────────────────────────────────────
 
 interface DaemonOpts {
-  bunPath: string
-  daemonEntry: string
+  /** Full launch argv (ProgramArguments / ExecStart). For the bundled, compiled daemon this
+   *  is just `[binPath]` (a self-executing bun binary); a source run would be `[bun, "run", entry]`. */
+  programArgs: string[]
   logsDir: string
   workDir: string
   envPath: string
@@ -27,7 +28,8 @@ export function generateDaemonConfig(opts: DaemonOpts): string {
   return IS_LINUX ? generateSystemdUnit(opts) : generatePlist(opts)
 }
 
-function generatePlist({ bunPath, daemonEntry, logsDir, workDir, envPath }: DaemonOpts): string {
+function generatePlist({ programArgs, logsDir, workDir, envPath }: DaemonOpts): string {
+  const args = programArgs.map((a) => `        <string>${a}</string>`).join("\n")
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -35,9 +37,7 @@ function generatePlist({ bunPath, daemonEntry, logsDir, workDir, envPath }: Daem
     <key>Label</key><string>${LAUNCHD_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${bunPath}</string>
-        <string>run</string>
-        <string>${daemonEntry}</string>
+${args}
     </array>
     <key>EnvironmentVariables</key>
     <dict><key>PATH</key><string>${envPath}</string></dict>
@@ -50,14 +50,14 @@ function generatePlist({ bunPath, daemonEntry, logsDir, workDir, envPath }: Daem
 </plist>`
 }
 
-function generateSystemdUnit({ bunPath, daemonEntry, logsDir, workDir, envPath }: DaemonOpts): string {
+function generateSystemdUnit({ programArgs, logsDir, workDir, envPath }: DaemonOpts): string {
   return `[Unit]
 Description=Bismuth daemon
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=${bunPath} run ${daemonEntry}
+ExecStart=${programArgs.join(" ")}
 WorkingDirectory=${workDir}
 Environment=PATH=${envPath}
 Restart=always

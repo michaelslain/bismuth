@@ -52,9 +52,9 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
-import { installStatus, runSetup, runUpdate } from "./claudebot";
+import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
 import {
@@ -158,6 +158,10 @@ export function createServer(cfg: CoreConfig) {
   // (e.g. a non-existent/read-only vault dir in tests) so it can never take the
   // whole server down on boot.
   void reconcileSettings(cfg.vault).catch(() => {});
+
+  // Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
+  // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
+  void installDaemonFromBundle();
 
   // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
@@ -770,19 +774,19 @@ export function createServer(cfg: CoreConfig) {
       return ok(listDevices());
     },
 
-    // DAEMON graph mode: the claude-bot daemon hub + a node per cron / process, read straight
-    // from the shared state files under the claude-bot home (never throws → degrades to empty).
-    // Vault-independent, like the other /daemon/* reads. Polled by the frontend while in daemon mode.
+    // DAEMON graph mode: the daemon hub + a node per cron / process for THIS vault, read
+    // straight from the vault's `.daemon` dir (never throws → degrades to empty). The daemon
+    // liveness is still machine-level. Polled by the frontend while in daemon mode.
     "GET /daemon/graph": async (_, __) => {
       // Position the daemon star the same way the vault graph is laid out: attach
       // backend-computed position2d/position3d so the WebGL renderer can place nodes
       // (unlike agents mode, daemon has no separate SVG layout). Cached by graph sig,
       // so polled state changes (opacity/tint) keep stable positions.
-      return ok(await attachLayout(daemonGraph(undefined, appConfig.daemon?.name || "daemon"), "daemon"));
+      return ok(await attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), appConfig.daemon?.name || "daemon"), "daemon"));
     },
 
-    // claude-bot daemon install/setup, bridged to the claude-bot package's
-    // idempotent, ADOPT-ONLY installer entrypoint (core/src/claudebot.ts).
+    // Daemon install/setup, bridged to the bundled daemon binary's CLI surface
+    // (core/src/daemonInstall.ts → `bismuth-daemon --status` / `--ensure-installed`).
     // Read-only install probe + a one-shot setup action — both system actions,
     // NOT vault mutations, so they live in the READ routes (like POST /open-folder),
     // never through mutatingHandler. installStatus() never throws; runSetup() is
@@ -795,11 +799,12 @@ export function createServer(cfg: CoreConfig) {
       return ok(await runSetup());
     },
 
-    // Update the claude-bot daemon: spawns its bin/update.ts (git pull --ff-only + bun
-    // install + restart). System action, not a vault mutation → READ routes. Idempotent
-    // (no-op when already current). The restart is claude-bot's own (we never launchctl).
+    // The daemon ships as a bundled binary that updates WITH the app (no git pull / self-
+    // update path anymore), so "update" just re-runs the idempotent, adopt-only install to
+    // (re-)register the launchd/systemd service. System action, not a vault mutation → READ
+    // routes. Idempotent (adopts an already-installed/running daemon).
     "POST /daemon/update": async (_, __) => {
-      return ok(await runUpdate());
+      return ok(await runSetup());
     },
 
     // Machine-wide bismuth CLI + MCP install (core/src/bismuthInstall.ts). Like the daemon
@@ -838,21 +843,21 @@ export function createServer(cfg: CoreConfig) {
     "POST /daemon/cron/toggle": async (req) => {
       const { name, enabled } = (await req.json()) as { name?: string; enabled?: boolean };
       if (!name || typeof enabled !== "boolean") return error("missing name/enabled", 400);
-      setCronEnabled(name, enabled);
+      setCronEnabled(name, enabled, vaultDaemonDir(cfg.vault));
       return ok({ ok: true });
     },
 
     "POST /daemon/cron/run": async (req) => {
       const { name } = (await req.json()) as { name?: string };
       if (!name) return error("missing name", 400);
-      runCron(name);
+      runCron(name, vaultDaemonDir(cfg.vault));
       return ok({ ok: true });
     },
 
     "POST /daemon/process/toggle": async (req) => {
       const { name, enabled } = (await req.json()) as { name?: string; enabled?: boolean };
       if (!name || typeof enabled !== "boolean") return error("missing name/enabled", 400);
-      setProcessEnabled(name, enabled);
+      setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault));
       return ok({ ok: true });
     },
 

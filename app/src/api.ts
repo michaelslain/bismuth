@@ -34,7 +34,7 @@ import type { Card } from "../../core/src/srs/types";
 import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
-import type { InstallStatus, SetupResult, UpdateResult } from "../../core/src/claudebot";
+import type { InstallStatus, SetupResult } from "../../core/src/daemonInstall";
 import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
 import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
 import type { GcalStatus } from "../../core/src/gcal";
@@ -300,7 +300,7 @@ export const api = {
   daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
   daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
   // Update the claude-bot daemon: git pull + bun install + restart (the whole thing).
-  daemonUpdate: () => postJson<UpdateResult>("/daemon/update", {}),
+  daemonUpdate: () => postJson<SetupResult>("/daemon/update", {}),
   // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
   bismuthInstallStatus: () => getJson<BismuthStatus>("/bismuth/install"),
   bismuthInstall: () => postJson<InstallResult>("/bismuth/install", {}),
