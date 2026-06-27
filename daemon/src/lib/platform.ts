@@ -2,7 +2,7 @@ import { homedir } from "os"
 import { join } from "path"
 import { spawnSync } from "child_process"
 import { mkdir, readFile } from "fs/promises"
-import { LAUNCHD_LABEL, PID_FILE, SYSTEMD_SERVICE_NAME } from "./config.ts"
+import { LAUNCHD_LABEL, MACHINE_PID_FILE, SYSTEMD_SERVICE_NAME } from "./config.ts"
 
 const IS_LINUX = process.platform === "linux"
 
@@ -43,8 +43,8 @@ function generatePlist({ bunPath, daemonEntry, logsDir, workDir, envPath }: Daem
     <dict><key>PATH</key><string>${envPath}</string></dict>
     <key>RunAtLoad</key><true/>
     <key>KeepAlive</key><true/>
-    <key>StandardOutPath</key><string>${join(logsDir, "claude-bot.stdout.log")}</string>
-    <key>StandardErrorPath</key><string>${join(logsDir, "claude-bot.stderr.log")}</string>
+    <key>StandardOutPath</key><string>${join(logsDir, "bismuth-daemon.stdout.log")}</string>
+    <key>StandardErrorPath</key><string>${join(logsDir, "bismuth-daemon.stderr.log")}</string>
     <key>WorkingDirectory</key><string>${workDir}</string>
 </dict>
 </plist>`
@@ -52,7 +52,7 @@ function generatePlist({ bunPath, daemonEntry, logsDir, workDir, envPath }: Daem
 
 function generateSystemdUnit({ bunPath, daemonEntry, logsDir, workDir, envPath }: DaemonOpts): string {
   return `[Unit]
-Description=claude-bot daemon
+Description=Bismuth daemon
 After=network.target
 
 [Service]
@@ -62,8 +62,8 @@ WorkingDirectory=${workDir}
 Environment=PATH=${envPath}
 Restart=always
 RestartSec=5
-StandardOutput=append:${join(logsDir, "claude-bot.stdout.log")}
-StandardError=append:${join(logsDir, "claude-bot.stderr.log")}
+StandardOutput=append:${join(logsDir, "bismuth-daemon.stdout.log")}
+StandardError=append:${join(logsDir, "bismuth-daemon.stderr.log")}
 
 [Install]
 WantedBy=default.target`
@@ -128,7 +128,8 @@ export function restartDaemon(): { ok: boolean; error?: string } {
 // ── Daemon-process identity ──────────────────────────────────────────────────
 
 /**
- * True only when the calling process IS the daemon (its pid matches PID_FILE).
+ * True only when the calling process IS the daemon (its pid matches the machine
+ * PID file).
  *
  * `daemon/process.ts` keeps the `managed` map at module scope, so any process
  * importing it has its own copy. When server.ts is loaded outside the daemon
@@ -141,7 +142,7 @@ export function restartDaemon(): { ok: boolean; error?: string } {
  *
  * Accepts an optional override path for testing.
  */
-export async function isDaemonProcess(pidFile: string = PID_FILE): Promise<boolean> {
+export async function isDaemonProcess(pidFile: string = MACHINE_PID_FILE): Promise<boolean> {
   try {
     const text = await readFile(pidFile, "utf-8")
     const pid = parseInt(text.trim(), 10)

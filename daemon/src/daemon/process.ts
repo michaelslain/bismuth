@@ -5,9 +5,16 @@ import { spawn as nodeSpawn, type ChildProcess } from "child_process"
 import { openSync, closeSync } from "fs"
 import { parseFrontmatter } from "../lib/frontmatter"
 import { isOwner } from "../lib/owner"
-import { BOT_DIR, PROCESSES_DIR, PROCESS_TRIGGER_DIR, LOGS_DIR, RESTART_BACKOFF_RESET_MS, RESTART_BACKOFF_MAX_MS, TRIGGER_CHECK_INTERVAL_MS } from "../lib/config.ts"
+import { RESTART_BACKOFF_RESET_MS, RESTART_BACKOFF_MAX_MS, TRIGGER_CHECK_INTERVAL_MS, type VaultContext } from "../lib/config.ts"
 
 const PIDS_SUBDIR = ".pids"
+
+// ── Per-vault state keys ──────────────────────────────────────────────────────
+//
+// ONE machine runtime supervises every enabled vault's processes. The `managed`
+// map (and the per-vault trigger intervals) are keyed by `${ctx.root}::${name}`
+// so two vaults can each run a process with the same name without colliding.
+const procKey = (ctx: VaultContext, name: string): string => `${ctx.root}::${name}`
 
 export interface ProcessDef {
   name: string
@@ -81,14 +88,15 @@ function parseProcessFrontmatter(name: string, frontmatter: Record<string, strin
 }
 
 /**
- * Load all process definitions from disk. Returns ALL defs including disabled
- * ones — callers decide what to do with `enabled`. (Boot path skips spawning
- * disabled entries; runtime API still registers them so process_start works.)
+ * Load all process definitions for a vault from disk. Returns ALL defs including
+ * disabled ones — callers decide what to do with `enabled`. (Boot path skips
+ * spawning disabled entries; runtime API still registers them so process_start
+ * works.)
  */
-export async function loadProcessDefs(dir: string = PROCESSES_DIR): Promise<ProcessDef[]> {
+export async function loadProcessDefs(ctx: VaultContext): Promise<ProcessDef[]> {
   let files: string[]
   try {
-    files = await readdir(dir)
+    files = await readdir(ctx.processesDir)
   } catch {
     return []
   }
@@ -97,7 +105,7 @@ export async function loadProcessDefs(dir: string = PROCESSES_DIR): Promise<Proc
   for (const file of files) {
     if (!file.endsWith(".md")) continue
     try {
-      const content = await readFile(join(dir, file), "utf-8")
+      const content = await readFile(join(ctx.processesDir, file), "utf-8")
       const { frontmatter } = parseFrontmatter(content)
       const def = parseProcessFrontmatter(file.replace(/\.md$/, ""), frontmatter)
       if (def) defs.push(def)
@@ -131,29 +139,31 @@ interface ManagedProcess {
   lastStart: number
   backoff: number
   stopping: boolean
-  // Remembered so spawnProcess (called from the exit-handler restart path)
-  // and stopProcess can locate the right .pids/<name>.pid file without the
-  // caller threading the dir through.
-  processesDir: string
+  // The vault this process belongs to. Remembered so spawnProcess (called from
+  // the exit-handler restart path) and stopProcess can locate the right
+  // .pids/<name>.pid file + log dir without the caller threading the ctx through,
+  // and so the global stop/list passes can filter by vault.
+  ctx: VaultContext
 }
 
+// Keyed by `${ctx.root}::${name}` — see procKey above.
 const managed = new Map<string, ManagedProcess>()
 
 // ── PID files ───────────────────────────────────────────────────────────────
 //
-// Each spawned child writes its pid to <processesDir>/.pids/<name>.pid. The
+// Each spawned child writes its pid to <ctx.processesDir>/.pids/<name>.pid. The
 // file is the link between a previous daemon's children and a fresh daemon
 // boot — without it, a daemon that crashes (or is SIGKILLed by launchctl
 // before its own shutdown handler runs) leaves orphans that the next daemon
 // has no way to identify. Removed on confirmed exit.
 
-function pidsDirFor(processesDir: string): string {
-  return join(processesDir, PIDS_SUBDIR)
+function pidsDirFor(ctx: VaultContext): string {
+  return join(ctx.processesDir, PIDS_SUBDIR)
 }
 
-async function readPidFile(processesDir: string, name: string): Promise<number | null> {
+async function readPidFile(ctx: VaultContext, name: string): Promise<number | null> {
   try {
-    const content = await readFile(join(pidsDirFor(processesDir), `${name}.pid`), "utf-8")
+    const content = await readFile(join(pidsDirFor(ctx), `${name}.pid`), "utf-8")
     const pid = parseInt(content.trim(), 10)
     return Number.isFinite(pid) && pid > 0 ? pid : null
   } catch {
@@ -161,14 +171,14 @@ async function readPidFile(processesDir: string, name: string): Promise<number |
   }
 }
 
-async function writePidFile(processesDir: string, name: string, pid: number): Promise<void> {
-  const dir = pidsDirFor(processesDir)
+async function writePidFile(ctx: VaultContext, name: string, pid: number): Promise<void> {
+  const dir = pidsDirFor(ctx)
   await mkdir(dir, { recursive: true })
   await writeFile(join(dir, `${name}.pid`), String(pid), "utf-8")
 }
 
-async function removePidFile(processesDir: string, name: string): Promise<void> {
-  try { await unlink(join(pidsDirFor(processesDir), `${name}.pid`)) } catch {}
+async function removePidFile(ctx: VaultContext, name: string): Promise<void> {
+  try { await unlink(join(pidsDirFor(ctx), `${name}.pid`)) } catch {}
 }
 
 // ── ps argv scanning ────────────────────────────────────────────────────────
@@ -290,17 +300,17 @@ function forceKill(mp: ManagedProcess): void {
 }
 
 async function spawnProcess(mp: ManagedProcess): Promise<void> {
-  const { def, processesDir } = mp
+  const { def, ctx } = mp
 
   // Defensive orphan reap before forking: a stale pid file or an argv-match
   // in `ps` means a previous instance of this def is still running. Kill it
   // first — otherwise we'd create a duplicate.
-  const stalePid = await readPidFile(processesDir, def.name)
+  const stalePid = await readPidFile(ctx, def.name)
   if (stalePid && stalePid !== mp.proc?.pid && isAlive(stalePid)) {
     console.warn(`[process] Stale pid ${stalePid} for "${def.name}" — killing before spawn`)
     await killAndConfirm(stalePid)
   }
-  await removePidFile(processesDir, def.name)
+  await removePidFile(ctx, def.name)
 
   const psRows = await scanPs()
   const orphans = matchOrphans(def, mp.proc?.pid ?? null, psRows)
@@ -310,8 +320,8 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
     await killAndConfirm(o.pid)
   }
 
-  const stdoutPath = join(LOGS_DIR, `${def.name}.stdout.log`)
-  const stderrPath = join(LOGS_DIR, `${def.name}.stderr.log`)
+  const stdoutPath = join(ctx.logsDir, `${def.name}.stdout.log`)
+  const stderrPath = join(ctx.logsDir, `${def.name}.stderr.log`)
 
   const stdoutFd = openSync(stdoutPath, "a")
   const stderrFd = openSync(stderrPath, "a")
@@ -333,14 +343,14 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
   console.log(`[process] Started "${def.name}" (PID ${spawnedPid})`)
 
   if (spawnedPid) {
-    void writePidFile(processesDir, def.name, spawnedPid).catch((err) => {
+    void writePidFile(ctx, def.name, spawnedPid).catch((err) => {
       console.error(`[process] Failed to write pid file for "${def.name}": ${err}`)
     })
   }
 
   // Watch for exit
   mp.proc.on("exit", (code, signal) => {
-    void removePidFile(processesDir, def.name)
+    void removePidFile(ctx, def.name)
     if (mp.stopping) return
     const exitInfo = signal ? `signal ${signal}` : `code ${code}`
     console.log(`[process] "${def.name}" exited with ${exitInfo}`)
@@ -370,11 +380,12 @@ async function spawnProcess(mp: ManagedProcess): Promise<void> {
   })
 }
 
-function registerDef(def: ProcessDef, processesDir: string = PROCESSES_DIR): ManagedProcess {
-  const existing = managed.get(def.name)
+function registerDef(def: ProcessDef, ctx: VaultContext): ManagedProcess {
+  const key = procKey(ctx, def.name)
+  const existing = managed.get(key)
   if (existing) {
     existing.def = def
-    existing.processesDir = processesDir
+    existing.ctx = ctx
     return existing
   }
   const mp: ManagedProcess = {
@@ -384,17 +395,17 @@ function registerDef(def: ProcessDef, processesDir: string = PROCESSES_DIR): Man
     lastStart: 0,
     backoff: def.restartDelay,
     stopping: false,
-    processesDir,
+    ctx,
   }
-  managed.set(def.name, mp)
+  managed.set(key, mp)
   return mp
 }
 
-export async function startProcesses(dir: string = PROCESSES_DIR): Promise<void> {
-  const defs = await loadProcessDefs(dir)
+export async function startProcesses(ctx: VaultContext): Promise<void> {
+  const defs = await loadProcessDefs(ctx)
   for (const def of defs) {
-    const wasRegistered = managed.has(def.name)
-    const mp = registerDef(def, dir)
+    const wasRegistered = managed.has(procKey(ctx, def.name))
+    const mp = registerDef(def, ctx)
     // Only auto-spawn if enabled. Disabled defs sit in `managed` ready for
     // a runtime process_start; re-running startProcesses doesn't relaunch
     // already-running children.
@@ -403,26 +414,26 @@ export async function startProcesses(dir: string = PROCESSES_DIR): Promise<void>
 }
 
 /**
- * Reap processes left behind by a previous daemon instance. Run on daemon
- * boot BEFORE startProcesses(): the new daemon's `managed` map is empty, so
- * if we don't reap first, startProcesses() forks fresh children alongside
+ * Reap a vault's processes left behind by a previous daemon instance. Run on
+ * daemon boot BEFORE startProcesses(): the new daemon's `managed` map is empty,
+ * so if we don't reap first, startProcesses() forks fresh children alongside
  * the orphans and we end up supervising one while three actually run.
  *
  * Two-pass: (1) trust pid files for fast common case, (2) argv-scan ps as a
  * safety net for the case where the pid file was lost or the orphan was
  * spawned outside the supervisor.
  */
-export async function reapOrphans(dir: string = PROCESSES_DIR): Promise<void> {
-  const defs = await loadProcessDefs(dir)
+export async function reapOrphans(ctx: VaultContext): Promise<void> {
+  const defs = await loadProcessDefs(ctx)
   if (defs.length === 0) return
 
   for (const def of defs) {
-    const stalePid = await readPidFile(dir, def.name)
+    const stalePid = await readPidFile(ctx, def.name)
     if (stalePid && isAlive(stalePid)) {
       console.warn(`[process] Reaping orphan pid ${stalePid} for "${def.name}" (stale pid file)`)
       await killAndConfirm(stalePid)
     }
-    await removePidFile(dir, def.name)
+    await removePidFile(ctx, def.name)
   }
 
   const psRows = await scanPs()
@@ -437,15 +448,16 @@ export async function reapOrphans(dir: string = PROCESSES_DIR): Promise<void> {
 }
 
 /**
- * Send SIGTERM to all managed children, wait up to `timeoutMs` for them to exit,
- * then SIGKILL any survivor. Without this, a daemon shutdown that completes
- * before the kernel delivers SIGTERM can orphan the child — it reparents to
- * PID 1 and keeps running. Multiple daemon restarts then accumulate orphans.
+ * Stop a set of managed children: SIGTERM all, wait up to `timeoutMs` for them to
+ * exit, then SIGKILL any survivor, confirm they're gone, and drop them from
+ * `managed`. Without this, a daemon shutdown that completes before the kernel
+ * delivers SIGTERM can orphan the child — it reparents to PID 1 and keeps running.
+ * Shared by the global stopProcesses() and the per-vault stopProcessesForVault().
  */
-export async function stopProcesses(timeoutMs: number = 3000): Promise<void> {
-  const active = Array.from(managed.values()).filter((mp) => mp.proc?.pid)
+async function stopAndClear(entries: Array<[string, ManagedProcess]>, timeoutMs: number): Promise<void> {
+  const active = entries.filter(([, mp]) => mp.proc?.pid)
 
-  for (const mp of active) {
+  for (const [, mp] of active) {
     mp.stopping = true
     killProcessGroup(mp)
   }
@@ -453,13 +465,13 @@ export async function stopProcesses(timeoutMs: number = 3000): Promise<void> {
   // Poll until all children exit, or timeout hits
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const stillAlive = active.filter((mp) => mp.proc?.pid && isAlive(mp.proc.pid))
+    const stillAlive = active.filter(([, mp]) => mp.proc?.pid && isAlive(mp.proc.pid))
     if (stillAlive.length === 0) break
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
 
   // Escalate to SIGKILL for any survivors
-  for (const mp of active) {
+  for (const [, mp] of active) {
     if (mp.proc?.pid && isAlive(mp.proc.pid)) {
       console.warn(`[process] "${mp.def.name}" (PID ${mp.proc.pid}) did not exit on SIGTERM — sending SIGKILL`)
       forceKill(mp)
@@ -471,20 +483,34 @@ export async function stopProcesses(timeoutMs: number = 3000): Promise<void> {
   // clear too eagerly the next daemon boot can't tie pid file → managed.
   const hardDeadline = Date.now() + 2000
   while (Date.now() < hardDeadline) {
-    const stillAlive = active.filter((mp) => mp.proc?.pid && isAlive(mp.proc.pid))
+    const stillAlive = active.filter(([, mp]) => mp.proc?.pid && isAlive(mp.proc.pid))
     if (stillAlive.length === 0) break
     await new Promise((resolve) => setTimeout(resolve, 50))
   }
 
-  for (const mp of active) {
-    await removePidFile(mp.processesDir, mp.def.name)
+  for (const [, mp] of active) {
+    await removePidFile(mp.ctx, mp.def.name)
   }
 
-  managed.clear()
+  for (const [key] of entries) managed.delete(key)
 }
 
-export function startProcess(name: string): { ok: boolean; error?: string } {
-  const mp = managed.get(name)
+/** Stop EVERY managed child across all vaults. Used during full daemon shutdown. */
+export async function stopProcesses(timeoutMs: number = 3000): Promise<void> {
+  await stopAndClear(Array.from(managed.entries()), timeoutMs)
+}
+
+/**
+ * Stop only ONE vault's managed children (e.g. that vault's daemon was disabled
+ * at runtime). NEVER deletes on-disk state — just tears down the live processes.
+ */
+export async function stopProcessesForVault(ctx: VaultContext, timeoutMs: number = 3000): Promise<void> {
+  const entries = Array.from(managed.entries()).filter(([, mp]) => mp.ctx.root === ctx.root)
+  await stopAndClear(entries, timeoutMs)
+}
+
+export function startProcess(name: string, ctx: VaultContext): { ok: boolean; error?: string } {
+  const mp = managed.get(procKey(ctx, name))
   if (!mp) return { ok: false, error: `No process definition found for "${name}"` }
   if (mp.proc) return { ok: false, error: `"${name}" is already running` }
 
@@ -503,8 +529,8 @@ export function startProcess(name: string): { ok: boolean; error?: string } {
  * sent — callers (notably disableProcess) then proceeded as if the child
  * were dead while in reality it kept running for seconds.
  */
-export async function stopProcess(name: string, timeoutMs: number = 3000): Promise<{ ok: boolean; error?: string }> {
-  const mp = managed.get(name)
+export async function stopProcess(name: string, ctx: VaultContext, timeoutMs: number = 3000): Promise<{ ok: boolean; error?: string }> {
+  const mp = managed.get(procKey(ctx, name))
   if (!mp) return { ok: false, error: `No process definition found for "${name}"` }
   const proc = mp.proc
   if (!proc) return { ok: false, error: `"${name}" is not running` }
@@ -534,26 +560,27 @@ export async function stopProcess(name: string, timeoutMs: number = 3000): Promi
   }
 
   mp.proc = null
-  await removePidFile(mp.processesDir, name)
+  await removePidFile(ctx, name)
   return { ok: true }
 }
 
 /**
- * Returns the supervisor's view of managed processes plus any unmanaged
- * orphans matching a managed def's argv. Cross-references the in-memory
- * `managed` map against `ps` so:
+ * Returns one vault's view of managed processes plus any unmanaged orphans
+ * matching that vault's managed def's argv. Cross-references the in-memory
+ * `managed` map (filtered to this vault) against `ps` so:
  *   - a `mp.proc` entry whose pid is dead reports `status: "stale"` and
  *     gets cleared (so the next process_start can succeed)
  *   - a process in `ps` that matches a def's argv but isn't `mp.proc.pid`
  *     surfaces as an unmanaged_orphan, making the duplicate-process bug
  *     visible to operators instead of silent.
  */
-export async function listProcesses(): Promise<{ processes: ProcessInfo[]; orphans: OrphanInfo[] }> {
+export async function listProcesses(ctx: VaultContext): Promise<{ processes: ProcessInfo[]; orphans: OrphanInfo[] }> {
   const psRows = await scanPs()
   const processes: ProcessInfo[] = []
   const orphans: OrphanInfo[] = []
 
   for (const mp of managed.values()) {
+    if (mp.ctx.root !== ctx.root) continue
     let pid: number | null = null
     let running = false
     let status: ProcessInfo["status"] = "stopped"
@@ -569,7 +596,7 @@ export async function listProcesses(): Promise<{ processes: ProcessInfo[]; orpha
         console.warn(`[process] "${mp.def.name}" pid ${mp.proc.pid} no longer alive — clearing stale ref`)
         mp.proc = null
         status = "stale"
-        await removePidFile(mp.processesDir, mp.def.name)
+        await removePidFile(mp.ctx, mp.def.name)
       }
     }
 
@@ -596,8 +623,8 @@ export async function listProcesses(): Promise<{ processes: ProcessInfo[]; orpha
  * to the daemon. Does NOT spawn — caller must call startProcess to actually
  * run it. Idempotent: succeeds even if already enabled.
  */
-export async function enableProcess(name: string, dir: string = PROCESSES_DIR): Promise<{ ok: boolean; error?: string }> {
-  const filePath = join(dir, `${name}.md`)
+export async function enableProcess(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const filePath = join(ctx.processesDir, `${name}.md`)
   let content: string
   try {
     content = await readFile(filePath, "utf-8")
@@ -615,7 +642,7 @@ export async function enableProcess(name: string, dir: string = PROCESSES_DIR): 
     await writeProcessFile(filePath, frontmatter, body)
   }
 
-  registerDef({ ...def, enabled: true }, dir)
+  registerDef({ ...def, enabled: true }, ctx)
   return { ok: true }
 }
 
@@ -624,8 +651,8 @@ export async function enableProcess(name: string, dir: string = PROCESSES_DIR): 
  * first. Keeps the entry in `managed` so process_start still works at runtime.
  * Idempotent: succeeds even if already disabled.
  */
-export async function disableProcess(name: string, dir: string = PROCESSES_DIR): Promise<{ ok: boolean; error?: string }> {
-  const filePath = join(dir, `${name}.md`)
+export async function disableProcess(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+  const filePath = join(ctx.processesDir, `${name}.md`)
   let content: string
   try {
     content = await readFile(filePath, "utf-8")
@@ -642,9 +669,9 @@ export async function disableProcess(name: string, dir: string = PROCESSES_DIR):
   // CRITICAL: must `await` — the previous sync version sent SIGTERM and
   // returned, leaving the bash child to outlive the disable call (and keep
   // firing its inner loop) until something else killed it.
-  registerDef({ ...def, enabled: false }, dir)
-  const mp = managed.get(name)
-  if (mp?.proc) await stopProcess(name)
+  registerDef({ ...def, enabled: false }, ctx)
+  const mp = managed.get(procKey(ctx, name))
+  if (mp?.proc) await stopProcess(name, ctx)
 
   const isDisabled = frontmatter.enabled === "false"
   if (!isDisabled) {
@@ -665,17 +692,13 @@ export async function disableProcess(name: string, dir: string = PROCESSES_DIR):
 // trigger. Reuses the existing enable/disable/start functions — no duplicate
 // spawn/stop logic.
 
-let triggerInterval: ReturnType<typeof setInterval> | null = null
+// One interval per vault, keyed by ctx.root, so a single vault's trigger loop can
+// be torn down (on disable) without stopping the others.
+const triggerIntervals = new Map<string, ReturnType<typeof setInterval>>()
 
-// Use the configured trigger dir for the real processes dir; derive a sibling
-// .triggers for test/injected dirs (mirrors pidsDirFor).
-function triggerDirFor(processesDir: string): string {
-  return processesDir === PROCESSES_DIR ? PROCESS_TRIGGER_DIR : join(processesDir, ".triggers")
-}
-
-/** True when a managed process with this name has a live OS child. */
-function isRunning(name: string): boolean {
-  const mp = managed.get(name)
+/** True when a managed process with this name (in this vault) has a live OS child. */
+function isRunning(ctx: VaultContext, name: string): boolean {
+  const mp = managed.get(procKey(ctx, name))
   return !!(mp?.proc?.pid && isAlive(mp.proc.pid))
 }
 
@@ -684,33 +707,32 @@ function isRunning(name: string): boolean {
  * Symmetric counterpart of requestCronRun — used by the MCP server / external
  * tools (which may also just drop the file directly) as a first-class API.
  */
-export async function requestProcessRun(name: string, dir: string = PROCESSES_DIR): Promise<{ ok: boolean; error?: string }> {
+export async function requestProcessRun(name: string, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
   let content: string
   try {
-    content = await readFile(join(dir, `${name}.md`), "utf-8")
+    content = await readFile(join(ctx.processesDir, `${name}.md`), "utf-8")
   } catch {
     return { ok: false, error: `No process definition found for "${name}"` }
   }
   const def = parseProcessFrontmatter(name, parseFrontmatter(content).frontmatter)
   if (!def) return { ok: false, error: `Process "${name}" is missing required "command" field` }
 
-  const triggerDir = triggerDirFor(dir)
-  await mkdir(triggerDir, { recursive: true })
-  await writeFile(join(triggerDir, name), new Date().toISOString(), "utf-8")
+  await mkdir(ctx.processTriggerDir, { recursive: true })
+  await writeFile(join(ctx.processTriggerDir, name), new Date().toISOString(), "utf-8")
   return { ok: true }
 }
 
 /**
- * Check for trigger files dropped by an external program and reconcile each
- * named process's runtime to its on-disk frontmatter. Symmetric counterpart of
- * cron's processTriggers: owner-gated (non-owner consumes triggers without
- * acting), unlinks each trigger before acting, and never throws out of the loop.
+ * Check for trigger files dropped by an external program for one vault and
+ * reconcile each named process's runtime to its on-disk frontmatter. Symmetric
+ * counterpart of cron's processTriggers: owner-gated (non-owner consumes triggers
+ * without acting), unlinks each trigger before acting, and never throws out of
+ * the loop.
  */
-export async function processProcessTriggers(dir: string = PROCESSES_DIR, home: string = BOT_DIR): Promise<void> {
-  const triggerDir = triggerDirFor(dir)
+export async function processProcessTriggers(ctx: VaultContext): Promise<void> {
   let files: string[]
   try {
-    files = await readdir(triggerDir)
+    files = await readdir(ctx.processTriggerDir)
   } catch {
     return
   }
@@ -720,15 +742,15 @@ export async function processProcessTriggers(dir: string = PROCESSES_DIR, home: 
 
   // Not the owner device: idle. Consume the trigger files so they don't pile
   // up, but don't start/stop. Unclaimed => isOwner true => normal behavior.
-  if (!(await isOwner(home))) {
+  if (!(await isOwner())) {
     for (const name of triggers) {
-      try { await unlink(join(triggerDir, name)) } catch {}
+      try { await unlink(join(ctx.processTriggerDir, name)) } catch {}
     }
     return
   }
 
   for (const name of triggers) {
-    try { await unlink(join(triggerDir, name)) } catch {}
+    try { await unlink(join(ctx.processTriggerDir, name)) } catch {}
 
     // Defense-in-depth: the trigger filename addresses a .md file by basename,
     // so reject anything with path separators that could escape the dir.
@@ -741,7 +763,7 @@ export async function processProcessTriggers(dir: string = PROCESSES_DIR, home: 
     // disk so we see the fresh `enabled`). Tolerate unknown/removed defs.
     let content: string
     try {
-      content = await readFile(join(dir, `${name}.md`), "utf-8")
+      content = await readFile(join(ctx.processesDir, `${name}.md`), "utf-8")
     } catch {
       console.warn(`[process] Trigger for unknown process "${name}" — skipping`)
       continue
@@ -753,32 +775,41 @@ export async function processProcessTriggers(dir: string = PROCESSES_DIR, home: 
     }
 
     // Reconcile runtime ↔ disk using the existing enable/disable/start funcs.
-    const running = isRunning(def.name)
+    const running = isRunning(ctx, def.name)
     if (def.enabled && !running) {
       console.log(`[process] Trigger starting: ${name}`)
-      await enableProcess(name, dir)
-      startProcess(def.name)
+      await enableProcess(name, ctx)
+      startProcess(def.name, ctx)
     } else if (!def.enabled && running) {
       console.log(`[process] Trigger stopping: ${name}`)
-      await disableProcess(name, dir)
+      await disableProcess(name, ctx)
     }
     // else: runtime already matches disk — no-op
   }
 }
 
 /**
- * Start polling for process trigger files. Mirror of the cron trigger loop in
- * startCronScheduler — a single interval that reconciles triggered processes.
+ * Start polling for one vault's process trigger files. Mirror of the cron trigger
+ * loop in startCronScheduler — a single interval per vault that reconciles
+ * triggered processes. Idempotent per vault.
  */
-export function startProcessTriggers(dir: string = PROCESSES_DIR): void {
-  if (triggerInterval !== null) return
-  triggerInterval = setInterval(() => { processProcessTriggers(dir) }, TRIGGER_CHECK_INTERVAL_MS)
+export function startProcessTriggers(ctx: VaultContext): void {
+  if (triggerIntervals.has(ctx.root)) return
+  const interval = setInterval(() => { void processProcessTriggers(ctx) }, TRIGGER_CHECK_INTERVAL_MS)
+  triggerIntervals.set(ctx.root, interval)
 }
 
-/** Stop the process trigger poll loop. Mirror of stopCronScheduler's clear. */
+/** Stop ALL process trigger poll loops. Mirror of stopCronScheduler's clear. */
 export function stopProcessTriggers(): void {
-  if (triggerInterval !== null) {
-    clearInterval(triggerInterval)
-    triggerInterval = null
+  for (const interval of triggerIntervals.values()) clearInterval(interval)
+  triggerIntervals.clear()
+}
+
+/** Stop just ONE vault's process trigger poll loop (e.g. that vault was disabled). */
+export function stopProcessTriggersForVault(ctx: VaultContext): void {
+  const interval = triggerIntervals.get(ctx.root)
+  if (interval) {
+    clearInterval(interval)
+    triggerIntervals.delete(ctx.root)
   }
 }

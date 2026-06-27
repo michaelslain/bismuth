@@ -1,26 +1,6 @@
 import { homedir } from "os"
 import { join } from "path"
 
-// ── Root ────────────────────────────────────────────────────────────────────
-
-export const BOT_DIR = join(homedir(), ".claude-bot")
-
-// ── Subdirectories ──────────────────────────────────────────────────────────
-
-export const MEMORY_DIR = join(BOT_DIR, "memory")
-export const CRONS_DIR = join(BOT_DIR, "crons")
-export const PROCESSES_DIR = join(BOT_DIR, "processes")
-export const LOGS_DIR = join(BOT_DIR, "logs")
-
-// ── Files ───────────────────────────────────────────────────────────────────
-
-export const PID_FILE = join(BOT_DIR, "daemon.pid")
-export const SESSION_FILE = join(BOT_DIR, "session-id")
-export const LAST_FIRED_FILE = join(CRONS_DIR, ".last-fired.json")
-export const RUNNING_FILE = join(CRONS_DIR, ".running.json")
-export const TRIGGER_DIR = join(CRONS_DIR, ".triggers")
-export const PROCESS_TRIGGER_DIR = join(PROCESSES_DIR, ".triggers")
-
 // ── One runtime, many brains ──────────────────────────────────────────────────
 // The daemon is a single machine process that multiplexes per-vault brains. Machine-
 // level identity + runtime state live in MACHINE_DIR (one device, one owner, reachable
