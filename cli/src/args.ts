@@ -35,18 +35,18 @@ export function fail(msg: string): never {
 }
 
 /**
- * Resolve the vault dir: `--vault <dir>` flag wins, then `OA_VAULT` env, then
- * `BISMUTH_VAULT` env. Fails if none is set.
+ * Resolve the vault dir: `--vault <dir>` flag wins, then `BISMUTH_VAULT` env, then the
+ * legacy `OA_VAULT` env (kept as a fallback). Fails if none is set.
  */
 export function requireVault(args: string[]): string {
-  const v = flag(args, "vault") ?? process.env.OA_VAULT ?? process.env.BISMUTH_VAULT;
-  if (!v) fail("no vault — pass --vault <dir> or set OA_VAULT");
+  const v = flag(args, "vault") ?? process.env.BISMUTH_VAULT ?? process.env.OA_VAULT;
+  if (!v) fail("no vault — pass --vault <dir> or set BISMUTH_VAULT");
   return v;
 }
 
-/** Resolve the memory dir (optional): `--memory` flag, then OA_MEMORY/BISMUTH_MEMORY env. */
+/** Resolve the memory dir (optional): `--memory` flag, then BISMUTH_MEMORY, then legacy OA_MEMORY. */
 export function memoryDir(args: string[]): string | undefined {
-  return flag(args, "memory") ?? process.env.OA_MEMORY ?? process.env.BISMUTH_MEMORY;
+  return flag(args, "memory") ?? process.env.BISMUTH_MEMORY ?? process.env.OA_MEMORY;
 }
 
 /** Today's date as YYYY-MM-DD (local), for tasks/SRS/daily-note. */

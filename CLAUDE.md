@@ -8,28 +8,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install                                       # from repo root (all 5 workspaces)
-export OA_VAULT=/path/to/vault OA_MEMORY=/path/to/memory   # dev only; dirs must exist
+export BISMUTH_VAULT=/path/to/vault BISMUTH_MEMORY=/path/to/memory   # dev only; dirs must exist (legacy OA_VAULT/OA_MEMORY still read as a fallback)
 cd app && bun run dev                             # Tauri app + backend on :4321
 ```
 
 ## Project Overview
 
-**Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with five workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
+**Bismuth** is a personal knowledge management system inspired by Obsidian, built as a monorepo with seven workspaces using Bun's workspace feature (`package.json` with `workspaces` array):
 
-- **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with Claude-bot memory
+- **core**: Backend server that manages vaults, builds knowledge graphs, and integrates with the per-vault daemon's memory
 - **cli**: Command-line interface for managing vaults (`bismuth` binary)
 - **app**: Tauri + Solid + TypeScript desktop application with CodeMirror editor and 3D/2D graph visualizations
-- **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process registry, powering the "agents" graph (see Relay Integration)
-- **mcp**: A stdio MCP server (the `docs/` reference + `bismuth` CLI, token-frugal) — per-tab in dev, installed machine-wide by the bundled app (see MCP Integration)
+- **relay**: A tiny Claude Code plugin (hooks only) reporting each terminal-tab session + subagents to core's in-process registry (the "agents" graph) AND injecting the vault's memory into those sessions (recall/collect) when the daemon is enabled (see Relay + Daemon Integration)
+- **mcp**: A stdio MCP server (the `docs/` reference + `bismuth` CLI, token-frugal; plus `remember`/`recall`/`forget` when the daemon is enabled) — per-tab in dev, installed machine-wide by the bundled app (see MCP Integration)
+- **memory**: `@bismuth/memory` — the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL). Shared by the daemon, the relay recall/collect hooks, and the MCP memory tools; every entry point takes an explicit dir (`BISMUTH_MEMORY_DIR`)
+- **daemon**: `@bismuth/daemon` — the per-vault daemon runtime, absorbed from the former standalone `claude-bot`. ONE machine process multiplexes every enabled vault's brain (memory + crons + processes + a conversation session); ships as a bundled binary run by launchd/systemd (see Daemon Integration)
 
 The system treats knowledge as a "three-brain" model:
 - **You** (self node): Central hub representing the user
 - **2nd Brain** (vault): Personal knowledge base with wikilinks, tags, and YAML frontmatter
-- **3rd Brain** (memory): Claude-bot memory graph linked to vault notes
+- **3rd Brain** (memory): the daemon's memory graph, stored per-vault under `<vault>/.daemon/memory`, linked to vault notes. Shown in the graph (`mem:` nodes + `about` edges) only when the vault's daemon is enabled.
 
 ## Environment Setup
 
-`bun run dev` requires two env vars (errors if unset; both dirs must already exist): `OA_VAULT` (2nd-brain markdown vault) and `OA_MEMORY` (3rd-brain Claude-bot notes). These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
+`bun run dev` requires two env vars (errors if unset; both dirs must already exist): `BISMUTH_VAULT` (2nd-brain markdown vault) and `BISMUTH_MEMORY` (a memory dir for dev — note the live 3rd brain now sources from `<vault>/.daemon/memory`). Legacy `OA_VAULT`/`OA_MEMORY` are still read as a fallback. These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
 
 ## Documentation
 
@@ -371,12 +373,14 @@ A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` refere
 
 A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. Loads per-session inside app terminals (bundled via `OA_RELAY_BUNDLE`; nothing in `~/.claude`). `terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim so a bare `claude` auto-loads the plugin. Hooks POST `/relay/*` (`SessionStart`/`UserPromptSubmit` register, `SubagentStart`/`SubagentStop` add/finish). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions. App-local; registry lives only while core runs.
 
-### Daemon Integration (`core/src/daemon.ts` + `daemonGraph.ts` + `daemonViz.ts`)
+### Daemon Integration (`daemon/` workspace + `core/src/daemon.ts` + `daemonGraph.ts`)
 
-Bismuth reads (and minimally writes) the **claude-bot daemon's** shared on-disk state to power the "daemon" graph mode + sidebar (`app/src/DaemonList.tsx`, replaces `ClusterLegend` in daemon mode). The daemon is a separate process; Bismuth never starts/stops it.
-- `daemon.ts` reads `device-id`/`devices.json`/`owner.json`/`daemon.pid` + the crons/processes under the daemon home (`daemon.home`, default `~/.claude-bot`). `daemonGraph.ts` → hub+children graph with `supervises` edges; `daemonViz.ts` = pure node-visual encoder.
-- Endpoints: GET `/daemon/{status,devices,graph,install}`; POST `/daemon/owner` (vault mutation) + shared-state writes `/daemon/{setup,cron/toggle,cron/run,process/toggle}`. Right-click a cron/process in `DaemonList` to enable/disable/run.
-- Setup is **idempotent / adopt-only** (never clobbers/restarts a live daemon). `daemon.enabled` is a master switch gating daemon reads/writes + the boot auto-update (`daemon.autoUpdate`, default true → `runUpdate()` on boot when behind `origin`). The Bismuth **app** self-update is separate + opt-in via `update.autoUpdate` (`docs/overview/self-update.md`).
+The daemon was absorbed from the former standalone `claude-bot` into the **`@bismuth/daemon`** workspace. It's **one machine process that multiplexes per-vault brains**: machine-level identity (device-id/devices.json/owner.json/daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, env `BISMUTH_DAEMON_DIR`); each enabled vault's brain — memory, crons, processes, and a conversation session — lives under `<vault>/.daemon`. The cron scheduler fans out over every enabled vault each tick (vault-keyed state); a reconcile loop starts/pauses a vault's brain as `settings.daemon.enabled` flips. `sendMessage` passes the SDK per-call `cwd`=vault root, `env.BISMUTH_MEMORY_DIR`, `resume`=per-vault session-id, and the `daemon.name` identity, so concurrent vault sessions never race.
+
+- **Lifecycle**: ships as a bundled binary (`app/scripts/build-daemon-sidecar.ts` → `resources/daemon`), copied to `~/.bismuth/bin` and run as a launchd/systemd **service** (NOT a Tauri child — it must outlive the app to keep firing crons). `core/src/daemon.ts`/`daemonGraph.ts` are Bismuth's READ window onto its state for the "daemon" graph mode + sidebar (`app/src/DaemonList.tsx`). **NOTE: the Rust `lib.rs` install/spawn wiring is the one remaining piece — see the consolidation status.**
+- **Memory injection** is per-session + vault-scoped: `terminal.ts` injects `BISMUTH_MEMORY_DIR` into Bismuth terminal PTYs only when the daemon is enabled; the relay plugin's recall (UserPromptSubmit) + collect (SessionEnd) hooks and the MCP `remember`/`recall`/`forget` tools all gate on it. There is **no** global `~/.claude/settings.json` hook anymore.
+- **Migration**: on first enable per machine, `migrateDaemonState` COPIES a legacy `~/.claude-bot/{memory,crons,processes}` into `<vault>/.daemon` (copy-only — never deletes the source; machine-marker-gated to one vault).
+- `settings.daemon.enabled` is the master switch for the whole 3rd-brain/assistant surface (memory injection + `.daemon` folder visibility + 3rd-brain & daemon graph modes); `settings.daemon.name` names the per-vault daemon. (`daemon.home`/`daemon.autoUpdate` were removed.)
 
 ## Testing
 

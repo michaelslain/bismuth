@@ -21,8 +21,8 @@ function repoDir(args: string[]): string {
   const d =
     flag(args, "dir") ??
     flag(args, "vault") ??
-    process.env.OA_VAULT ??
-    process.env.BISMUTH_VAULT;
+    process.env.BISMUTH_VAULT ??
+    process.env.OA_VAULT;
   if (!d) fail("no dir — pass --dir <path> (the vault or memory repo)");
   return d;
 }

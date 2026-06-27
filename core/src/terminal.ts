@@ -62,7 +62,7 @@ function pushBuffer(s: Session, d: string): void {
 // resolved ONCE here using an augmented PATH so the shim can exec it without recursing;
 // null when `claude` isn't found (the zdotdir init then resolves it from the user's
 // rc-loaded PATH).
-const RELAY_PLUGIN_DIR = process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay");
+const RELAY_PLUGIN_DIR = process.env.BISMUTH_RELAY_BUNDLE ?? process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay");
 const SHIM_DIR = join(RELAY_PLUGIN_DIR, "shim");
 // zsh init dir: ZDOTDIR points here so we can define a `claude` shell function AFTER the
 // user's .zshrc loads — robust against a .zshrc that re-prepends PATH (which shadows a
