@@ -1,5 +1,6 @@
 import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk"
 import { readFile, writeFile, mkdir } from "fs/promises"
+import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 
@@ -48,8 +49,11 @@ export const DEFAULT_DAEMON_IDENTITY = [
 async function buildSystemPrompt(ctx: VaultContext): Promise<string> {
   let identity = DEFAULT_DAEMON_IDENTITY
   try {
-    const custom = (await readFile(ctx.identityFile, "utf-8")).trim()
-    if (custom) identity = custom
+    // identity.md carries the name in YAML frontmatter (read by the registry → ctx.name) and the
+    // personality in the body — use the body here; ctx.name supplies the "You are <name>" prefix.
+    const { body } = parseFrontmatter(await readFile(ctx.identityFile, "utf-8"))
+    const trimmed = body.trim()
+    if (trimmed) identity = trimmed
   } catch {
     // no identity.md (or unreadable) → default
   }

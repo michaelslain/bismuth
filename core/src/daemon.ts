@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
-import { pidAlive } from "./daemonState";
+import { pidAlive, readFrontmatter } from "./daemonState";
 import { AppError } from "./error";
 
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
@@ -38,6 +38,17 @@ export function daemonMachineDir(): string {
  */
 export function vaultDaemonDir(vault: string): string {
   return join(vault, ".daemon");
+}
+
+/**
+ * The daemon's name for a vault, read from <vault>/.daemon/identity.md's `name:` frontmatter.
+ * The name lives WITH the identity (not in settings.yaml), so this is the single source for the
+ * sidebar folder label + the daemon-graph hub. Defaults to "daemon" when identity.md is absent or
+ * has no name. Never throws.
+ */
+export function daemonIdentityName(vault: string): string {
+  const name = readFrontmatter(join(vaultDaemonDir(vault), "identity.md")).name;
+  return typeof name === "string" && name.trim() ? name.trim() : "daemon";
 }
 
 /**

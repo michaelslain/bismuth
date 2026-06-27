@@ -576,7 +576,7 @@ describe("reconcileSettings daemon migration (now a no-op)", () => {
     const res = await readSettings(vault);
     const daemon = (res!.data as any).daemon;
     expect(daemon.enabled).toBe(false);  // no adoption — the master switch stays as written
-    expect(daemon.name).toBe("");        // fillMissing adds the new `name` key
+    expect(daemon.name).toBeUndefined(); // name moved to .daemon/identity.md — not a settings key
     expect(daemon.home).toBeUndefined(); // home is gone — migration never re-adds it
   });
 });

@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises"
 import { join } from "path"
 import { parse } from "yaml"
+import { parseFrontmatter } from "./frontmatter.ts"
 import { VAULTS_FILE, vaultPaths, type VaultContext } from "./config.ts"
 
 // The set of vault brains the daemon runs. Bismuth core writes the list of known vault
@@ -23,21 +24,30 @@ interface DaemonSettings {
   name: string
 }
 
-/** Read a vault's daemon settings from <root>/.settings/settings.yaml. A missing or
- *  corrupt file reads as disabled — never throws. */
+/** A vault's daemon config: the `enabled` master switch from .settings/settings.yaml, and the
+ *  `name` from the .daemon/identity.md frontmatter (the name lives WITH the identity, not in
+ *  settings). A missing/corrupt settings reads as disabled; a missing identity → default name.
+ *  Never throws. */
 async function readDaemonSettings(root: string): Promise<DaemonSettings> {
+  let enabled = false
   try {
     const doc = parse(await readFile(join(root, ".settings", "settings.yaml"), "utf-8")) as
-      | { daemon?: { enabled?: unknown; name?: unknown } }
+      | { daemon?: { enabled?: unknown } }
       | null
-    const d = doc?.daemon
-    return {
-      enabled: d?.enabled === true,
-      name: typeof d?.name === "string" ? d.name : "",
-    }
+    enabled = doc?.daemon?.enabled === true
   } catch {
-    return { enabled: false, name: "" }
+    // no/corrupt settings → disabled
   }
+
+  let name = ""
+  try {
+    const { frontmatter } = parseFrontmatter(await readFile(join(root, ".daemon", "identity.md"), "utf-8"))
+    if (typeof frontmatter.name === "string") name = frontmatter.name
+  } catch {
+    // no identity.md → vaultPaths falls back to "daemon"
+  }
+
+  return { enabled, name }
 }
 
 /** Every known vault whose daemon is ENABLED, resolved to a VaultContext. The multiplex

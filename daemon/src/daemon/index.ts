@@ -38,9 +38,11 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
   await mkdir(ctx.processesDir, { recursive: true })
   await mkdir(ctx.logsDir, { recursive: true })
   // Seed the editable personality file so the user has something to shape (shows in the sidebar
-  // under .daemon, opens in the Bismuth editor). Only when absent — never clobber the user's edits.
+  // under .daemon, opens in the Bismuth editor). The `name` lives in its frontmatter — edit it to
+  // rename the daemon. Only when absent — never clobber the user's edits.
   if (!existsSync(ctx.identityFile)) {
-    try { await writeFile(ctx.identityFile, DEFAULT_DAEMON_IDENTITY + "\n", "utf-8") } catch { /* best-effort */ }
+    const seeded = `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n`
+    try { await writeFile(ctx.identityFile, seeded, "utf-8") } catch { /* best-effort */ }
   }
 }
 

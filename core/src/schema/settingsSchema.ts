@@ -178,8 +178,7 @@ export const SETTINGS_SCHEMA: Schema = {
   // files (device list + owner-device selection) under its home dir. The owner
   // device is the single source of truth in owner.json — NOT a setting here.
   daemon: object({
-    enabled: { type: "boolean", default: false, doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime." },
-    name: { type: "string", default: "", doc: "Name for this vault's daemon — like naming an assistant or pet (e.g. \"Atlas\"). Labels the .daemon folder in the sidebar, the daemon graph hub node, and the bot's own self-identity. Blank falls back to \"daemon\"." },
+    enabled: { type: "boolean", default: false, doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here." },
   }),
   // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
   // (see core/src/selfUpdate.ts); by default that's manual via the update banner.
