@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar",
+    "beforeBuildCommand": "bun run predmg:clean && bun run prebundle:relay && bun run build:bismuth-tools && bun run build && bun run build:core-sidecar && bun run build:daemon-sidecar",
     "frontendDist": "../dist"
   },
   "app": {
@@ -23,7 +23,8 @@
     ],
     "resources": [
       "resources/relay",
-      "resources/bismuth-tools"
+      "resources/bismuth-tools",
+      "resources/daemon"
     ],
     "icon": [
       "icons/32x32.png",
