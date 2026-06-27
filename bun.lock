@@ -141,6 +141,7 @@
       "name": "@bismuth/mcp",
       "version": "0.1.0",
       "dependencies": {
+        "@bismuth/memory": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.0.0",
       },
       "devDependencies": {
@@ -159,6 +160,9 @@
     "relay": {
       "name": "@bismuth/relay",
       "version": "0.1.0",
+      "dependencies": {
+        "@bismuth/memory": "workspace:*",
+      },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "~5.6.2",
