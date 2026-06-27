@@ -618,15 +618,10 @@ export default function App() {
   // "Update claude-bot daemon" command — POST /daemon/update (git pull + install + restart;
   // idempotent + fetch-gated, so it no-ops cleanly when already current). Reports via a toast.
   const updateDaemon = async () => {
-    const id = pushToast("Updating claude-bot daemon…", undefined, 0);
+    const id = pushToast("Re-registering the daemon service…", undefined, 0);
     try {
       const r = await api.daemonUpdate();
-      const msg =
-        r.action === "updated" ? `Daemon updated${r.to ? ` to ${r.to.slice(0, 7)}` : ""}${r.restarted ? " (restarted)" : ""}`
-        : r.action === "up-to-date" ? "Daemon is already up to date"
-        : r.action === "no-remote" ? "No daemon remote configured to update from"
-        : "Daemon update checked";
-      updateToast(id, msg);
+      updateToast(id, r.ok ? "Daemon service re-registered (it updates with the app)" : `Daemon update failed: ${r.error || "unknown error"}`);
     } catch {
       updateToast(id, "Couldn't update the daemon");
     }
@@ -1192,7 +1187,9 @@ export default function App() {
     // say "already installed" instead of falsely claiming a setup or showing an error.
     const ALREADY = new Set(["adopted", "up-to-date", "skipped-no-src"]);
     const runners: Record<string, { label: string; run: () => Promise<{ action?: string }> }> = {
-      "daemon-setup": { label: "claude-bot daemon", run: () => api.daemonSetup() },
+      // The bundled daemon installs the service rather than git-cloning, so map its {ok}
+      // result onto the {action} shape this generic installer-runner expects.
+      "daemon-setup": { label: "the daemon", run: async () => { const r = await api.daemonSetup(); return { action: r.ok ? "installed" : "failed" }; } },
       "bismuth-install": { label: "Bismuth CLI + MCP", run: () => api.bismuthInstall() },
     };
     setTimeout(() => {

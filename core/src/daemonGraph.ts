@@ -1,14 +1,16 @@
 // core/src/daemonGraph.ts
-// Reads the claude-bot daemon's on-disk cron/process state into a "DAEMON" graph snapshot,
-// then turns that snapshot into GraphData for the graph view's DAEMON mode.
+// Reads the daemon's on-disk cron/process state into a "DAEMON" graph snapshot, then turns
+// that snapshot into GraphData for the graph view's DAEMON mode.
 //
-// The daemon runs on the SAME machine and authors these files under its machine dir (default
-// ~/.bismuth/daemon, BISMUTH_DAEMON_DIR override) — Bismuth only READS them here (no writes, no
-// subprocess spawn). Every read tolerates missing/malformed files and NEVER throws: a daemon
-// that has never run, or a half-written JSON file, degrades to an empty/partial snapshot.
+// PER-VAULT: crons/processes live under the active vault's `.daemon` dir (vaultDaemonDir(vault)),
+// passed in as `home`. The daemon LIVENESS (the pid), by contrast, is MACHINE-level — read from
+// daemonMachineDir()/daemon.pid, NOT from `<home>` — because one machine process multiplexes
+// every vault's brain. Bismuth only READS here (no writes, no subprocess spawn). Every read
+// tolerates missing/malformed files and NEVER throws: a daemon that has never run, or a
+// half-written JSON file, degrades to an empty/partial snapshot.
 //
-// Layout on disk (the integration contract we read, authored by claude-bot):
-//   <home>/daemon.pid                  — running daemon's pid (presence + liveness ⇒ running)
+// Layout on disk (the integration contract we read, authored by the daemon):
+//   <machine-dir>/daemon.pid           — running daemon's pid (presence + liveness ⇒ running)
 //   <home>/crons/<name>.md             — cron def; frontmatter { name, schedule, enabled? }
 //   <home>/crons/.last-fired.json      — { "<name>": { timestamp, result } }
 //   <home>/crons/.running.json         — { "<name>": { startedAt } }
@@ -57,22 +59,26 @@ function listMarkdownNames(dir: string): string[] {
   }
 }
 
-/** Daemon liveness: <home>/daemon.pid exists AND that pid is alive (mirrors daemon.ts). */
-function daemonRunning(home: string): boolean {
+/** Daemon liveness is MACHINE-level: daemonMachineDir()/daemon.pid exists AND that pid is
+ *  alive (mirrors daemon.ts). One machine process serves every vault, so this is read from
+ *  the machine dir, never from the per-vault `<home>`. */
+function daemonRunning(): boolean {
   try {
-    return pidAlive(Number(readFileSync(join(home, "daemon.pid"), "utf8").trim()));
+    return pidAlive(Number(readFileSync(join(daemonMachineDir(), "daemon.pid"), "utf8").trim()));
   } catch {
     return false;
   }
 }
 
 /**
- * Read the claude-bot daemon's cron/process state into a snapshot. NEVER throws — any failure
- * degrades to `{ daemon, crons: [], processes: [] }`. `home` is injectable so tests point it at
- * a fixture dir instead of the real ~/.bismuth/daemon.
+ * Read a vault's daemon cron/process state into a snapshot. `home` is the vault's `.daemon`
+ * dir (vaultDaemonDir(vault)) — crons/processes are read from `<home>/crons` + `<home>/processes`;
+ * the daemon's `running` flag is read MACHINE-level (daemonMachineDir()/daemon.pid). NEVER throws —
+ * any failure degrades to `{ daemon, crons: [], processes: [] }`. `home` is injectable so tests
+ * point it at a fixture dir.
  */
 export function daemonSnapshot(home: string = daemonMachineDir(), name: string = "daemon"): DaemonSnapshot {
-  const daemon = { label: name, running: daemonRunning(home), home };
+  const daemon = { label: name, running: daemonRunning(), home };
   try {
     const cronsDir = join(home, "crons");
     const lastFired = readJsonObj(join(cronsDir, ".last-fired.json"));

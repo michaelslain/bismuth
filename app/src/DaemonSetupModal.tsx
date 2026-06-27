@@ -11,36 +11,15 @@ import { Modal } from "./ui/Modal";
 import { TextButton } from "./ui/TextButton";
 import { api } from "./api";
 import { pushToast } from "./Toast";
-import type { InstallStatus, UpdateResult } from "../../core/src/claudebot";
+import type { InstallStatus, SetupResult } from "../../core/src/daemonInstall";
 import type { Owner } from "../../core/src/daemon";
 import "./FolderPrompt.css";
 
-/** Human-friendly summary of a setup action for the toast. */
-function describeAction(action: string): string {
-  switch (action) {
-    case "adopted":
-      return "claude-bot daemon already installed — adopted existing install";
-    case "installed":
-      return "claude-bot daemon installed";
-    case "would-install":
-      return "claude-bot daemon would be installed (dry run)";
-    default:
-      return `claude-bot setup: ${action}`;
-  }
-}
-
-/** Human-friendly summary of an update result for the toast. */
-function describeUpdate(r: UpdateResult): string {
-  switch (r.action) {
-    case "updated":
-      return r.restarted ? "claude-bot updated + daemon restarted" : "claude-bot updated (restart it to apply)";
-    case "up-to-date":
-      return "claude-bot already up to date";
-    case "no-remote":
-      return "claude-bot update: no git remote configured";
-    default:
-      return `claude-bot update: ${r.action}`;
-  }
+/** Human-friendly summary of a daemon setup/update result for the toast. */
+function describeSetup(r: SetupResult): string {
+  return r.ok
+    ? "Daemon service registered — it runs in the background"
+    : `Daemon setup failed: ${r.error || "unknown error"}`;
 }
 
 export function DaemonSetupModal(props: { onClose: () => void }) {
@@ -71,14 +50,12 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
   const setup = async () => {
     if (running()) return;
     setRunning(true);
-    // First run clones claude-bot + installs deps, which takes a bit; tell the user.
-    setBusy(status()?.installed ? "Setting up…" : "Setting up — cloning + installing claude-bot, this can take a minute…");
+    setBusy("Registering the daemon service…");
     try {
       const result = await api.daemonSetup();
-      pushToast(describeAction(result.action));
-      // Reflect the post-setup status in the panel.
-      setStatus(result.status);
-      await refresh();
+      pushToast(describeSetup(result));
+      await refresh(); // reflect the post-setup status in the panel
+
     } catch (e) {
       pushToast(`Daemon setup failed: ${(e as Error).message}`);
     } finally {
@@ -90,11 +67,10 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
   const update = async () => {
     if (running()) return;
     setRunning(true);
-    setBusy("Updating claude-bot — pulling + reinstalling…");
+    setBusy("Re-registering the daemon service…");
     try {
       const result = await api.daemonUpdate();
-      pushToast(describeUpdate(result));
-      for (const w of result.warnings ?? []) pushToast(`claude-bot update: ${w}`);
+      pushToast(describeSetup(result));
       await refresh();
     } catch (e) {
       pushToast(`Daemon update failed: ${(e as Error).message}`);
@@ -129,8 +105,8 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
             Owner:{" "}
             {owner() ? owner()!.ownerLabel || owner()!.ownerDeviceId : "unclaimed"}
           </div>
-          <Show when={status()?.home}>
-            <div>Home: {status()!.home}</div>
+          <Show when={status()?.binPath}>
+            <div>Binary: {status()!.binPath}</div>
           </Show>
         </div>
       </Show>

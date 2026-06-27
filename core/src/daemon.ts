@@ -30,6 +30,17 @@ export function daemonMachineDir(): string {
 }
 
 /**
+ * A vault's daemon brain dir: `<vault>/.daemon`. This is where the daemon keeps the
+ * PER-VAULT state (crons, processes, memory, session) — distinct from the machine-level
+ * identity dir ({@link daemonMachineDir}). The cron/process accessors below read+write
+ * `<dir>/crons` + `<dir>/processes` under this dir; callers (routes, CLI) resolve it from
+ * the active vault.
+ */
+export function vaultDaemonDir(vault: string): string {
+  return join(vault, ".daemon");
+}
+
+/**
  * One-time, COPY-ONLY migration of a legacy standalone claude-bot brain
  * (~/.claude-bot/{memory,crons,processes}) into a vault's `.daemon/`.
  *
@@ -180,9 +191,11 @@ export function setOwner(deviceId: string): Owner {
 }
 
 // ── Daemon supervision: enable / disable / run ───────────────────────────────
-// Bismuth controls the daemon's crons + background processes by writing the SAME
-// shared files claude-bot reads (the read side lives in daemonGraph.ts). claude-bot
-// keys both crons and processes by their FILE basename (`<name>.md`) — its loader
+// Bismuth controls a vault's crons + background processes by writing the SAME shared
+// files the daemon reads under that vault's `.daemon` dir (the read side lives in
+// daemonGraph.ts). The `home` param these accessors take is the vault's `.daemon` dir
+// (vaultDaemonDir(vault)) — callers (routes/CLI) resolve it from the active vault. The
+// daemon keys both crons and processes by their FILE basename (`<name>.md`) — its loader
 // reads `<dir>/<name>.md` and its `requestCronRun` drops a trigger file named by that
 // basename. The graph node's label, though, is `frontmatter.name ?? basename` (see
 // daemonGraph.buildDaemonGraph), so we resolve the backing file by matching either.

@@ -108,9 +108,11 @@ fn mark_intro_seen(app: &tauri::AppHandle) {
     let _ = std::fs::write(path, "1");
 }
 
-fn default_memory_dir() -> String {
-    let home = std::env::var("HOME").unwrap_or_default();
-    format!("{home}/.claude-bot/memory")
+// The 3rd brain now lives inside the vault, under the daemon's per-vault brain dir. core
+// derives the live memory from this too (gated on daemon.enabled); we pass it as --memory so
+// the standalone server's required flag is satisfied with the right path.
+fn vault_memory_dir(vault: &str) -> String {
+    format!("{vault}/.daemon/memory")
 }
 
 // A valid saved vault + memory, or None when there's no usable config yet (first run,
@@ -121,7 +123,7 @@ fn read_valid_config(app: &tauri::AppHandle) -> Option<(String, String)> {
     if cfg.vault.is_empty() || !std::path::Path::new(&cfg.vault).is_dir() {
         return None;
     }
-    let memory = if cfg.memory.is_empty() { default_memory_dir() } else { cfg.memory };
+    let memory = vault_memory_dir(&cfg.vault);
     Some((cfg.vault, memory))
 }
 
@@ -169,7 +171,7 @@ async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) 
     };
     let vault = path.to_string_lossy().to_string();
     let _ = std::fs::create_dir_all(&vault);
-    let memory = default_memory_dir();
+    let memory = vault_memory_dir(&vault);
     let _ = std::fs::create_dir_all(&memory);
     seed_vault_settings(&vault, &theme, &icon);
     write_config(&app, &AppConfig { vault, memory });
@@ -192,10 +194,7 @@ fn set_last_vault(app: tauri::AppHandle, vault: String) {
     if vault.is_empty() || !std::path::Path::new(&vault).is_dir() {
         return;
     }
-    let memory = read_config(&app)
-        .map(|c| c.memory)
-        .filter(|m| !m.is_empty())
-        .unwrap_or_else(default_memory_dir);
+    let memory = vault_memory_dir(&vault);
     write_config(&app, &AppConfig { vault, memory });
 }
 
@@ -230,21 +229,25 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
     // Hold the bound listener through all the setup below so the port stays reserved; it's
     // released (dropped) right before spawn so the sidecar can claim it (see B53).
     let (listener, port) = pick_free_port();
+    // The server requires its --memory dir to exist; the per-vault memory lives in-vault now.
+    let _ = std::fs::create_dir_all(memory);
     let sidecar = match app.shell().sidecar("bismuth-core") {
         Ok(c) => c,
         Err(e) => { eprintln!("bismuth: sidecar resolve failed: {e}"); return None; }
     };
     let mut cmd = sidecar.args(["--vault", vault, "--memory", memory, "--port", &port.to_string()]);
-    // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach)
-    // and bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on boot). Tauri
-    // stages bundle.resources under <resource_dir>/resources/<path>, so prefer that; fall
-    // back to <resource_dir> directly for layout robustness.
+    // Point the sidecar at bundled resources: relay/ (terminal-tab shim → relay auto-attach +
+    // memory injection), bismuth-tools/ (compiled cli + mcp + docs → machine-wide install on
+    // boot), and daemon/ (the compiled per-vault daemon → core copies it to ~/.bismuth/bin +
+    // registers the launchd/systemd service). Tauri stages bundle.resources under
+    // <resource_dir>/resources/<path>, so prefer that; fall back to <resource_dir> directly.
     if let Ok(res) = app.path().resource_dir() {
         let staged = res.join("resources");
         let base = if staged.join("relay").is_dir() { staged } else { res };
         cmd = cmd
-            .env("OA_RELAY_BUNDLE", base.join("relay"))
-            .env("OA_BISMUTH_INSTALL_SRC", base.join("bismuth-tools"));
+            .env("BISMUTH_RELAY_BUNDLE", base.join("relay"))
+            .env("OA_BISMUTH_INSTALL_SRC", base.join("bismuth-tools"))
+            .env("BISMUTH_DAEMON_BUNDLE", base.join("daemon"));
     }
     // Self-update: tell the sidecar which .app is running + our pid, so the detached
     // updater can swap the bundle after we quit (core/src/selfUpdate.ts). Absent in dev.

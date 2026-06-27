@@ -1352,10 +1352,10 @@ test("GET /daemon/install returns a never-throwing install status", async () => 
 });
 
 test("POST /daemon/setup is a read-table system action (no vault mutation)", async () => {
-  // Setup is adopt-only. Depending on whether the claude-bot installer entrypoint
-  // is resolvable in this checkout, it either returns a parsed { action, status }
-  // (200) or surfaces a clear error (500) — but it must NOT 404 and must NOT bump
-  // the vault version (it is NOT a mutatingHandler route).
+  // Setup registers the bundled daemon service. Depending on whether the daemon binary is
+  // installed at ~/.bismuth/bin in this environment, it returns a { ok, binPath, error? }
+  // result (200) — but it must NOT 404 and must NOT bump the vault version (it is NOT a
+  // mutatingHandler route).
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -1365,8 +1365,8 @@ test("POST /daemon/setup is a read-table system action (no vault mutation)", asy
     expect(res.status).not.toBe(404);
     if (res.ok) {
       const result = await res.json();
-      expect(typeof result.action).toBe("string");
-      expect(result.status).toBeDefined();
+      expect(typeof result.ok).toBe("boolean");
+      expect(typeof result.binPath).toBe("string");
     }
     // Not a mutation: the vault version must be unchanged.
     const v1 = (await (await fetch(`${base}/version`)).json()).version;

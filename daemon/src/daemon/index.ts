@@ -1,10 +1,12 @@
 import { mkdir, writeFile, unlink } from "fs/promises"
+import { existsSync, readFileSync } from "fs"
 import { sendMessage } from "./session.ts"
 import { startCronScheduler, stopCronScheduler, recoverInterruptedCrons, waitForRunningJobs } from "./cron.ts"
 import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, startProcessTriggers, stopProcessTriggers, stopProcessTriggersForVault } from "./process.ts"
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
 import { loadEnabledVaults, loadAllVaults } from "../lib/registry.ts"
-import { MACHINE_DIR, MACHINE_PID_FILE, MACHINE_LOGS_DIR, SHUTDOWN_TIMEOUT_MS, CRON_CHECK_INTERVAL_MS, vaultPaths, type VaultContext } from "../lib/config.ts"
+import { daemonConfigPath, generateDaemonConfig, installDaemon, reloadDaemon } from "../lib/platform.ts"
+import { MACHINE_DIR, MACHINE_PID_FILE, MACHINE_LOGS_DIR, SHUTDOWN_TIMEOUT_MS, CRON_CHECK_INTERVAL_MS, LAUNCHD_LABEL, vaultPaths, type VaultContext } from "../lib/config.ts"
 
 // ONE machine process, many brains. Machine-level identity/runtime state lives in
 // MACHINE_DIR; each enabled vault's brain (crons, processes, session) is booted
@@ -185,7 +187,42 @@ async function main(): Promise<void> {
   process.on("SIGINT", () => shutdown("SIGINT"))
 }
 
-main().catch(async (err) => {
-  console.error(`Fatal error: ${err}`)
-  process.exit(1)
-})
+// ── CLI modes (invoked by core's install-on-boot) ───────────────────────────
+// `--ensure-installed`: (re)write the launchd/systemd service that runs THIS binary at its
+// stable installed path (~/.bismuth/bin/bismuth-daemon, via BISMUTH_DAEMON_BIN) and load it,
+// so the daemon keeps running while the app is closed. `--status`: report install + liveness.
+// Anything else runs the daemon loop (the service's normal launch).
+async function ensureInstalled(): Promise<void> {
+  const bin = process.env.BISMUTH_DAEMON_BIN || process.execPath
+  await mkdir(MACHINE_LOGS_DIR, { recursive: true })
+  const configPath = daemonConfigPath()
+  const config = generateDaemonConfig({
+    programArgs: [bin],
+    logsDir: MACHINE_LOGS_DIR,
+    workDir: MACHINE_DIR,
+    envPath: process.env.PATH || "/usr/bin:/bin:/usr/local/bin",
+  })
+  const res = existsSync(configPath) ? await reloadDaemon(configPath, config) : await installDaemon(configPath, config)
+  if (!res.ok) { console.error(`[daemon] install failed: ${res.error}`); process.exit(1) }
+  console.log(`[daemon] service installed: ${configPath} (${LAUNCHD_LABEL})`)
+}
+
+function printStatus(): void {
+  const installed = existsSync(daemonConfigPath())
+  let running = false
+  try { running = Boolean(readFileSync(MACHINE_PID_FILE, "utf8").trim()) } catch { /* not running */ }
+  console.log(JSON.stringify({ installed, running, label: LAUNCHD_LABEL }))
+}
+
+const mode = process.argv[2]
+if (mode === "--ensure-installed") {
+  ensureInstalled().then(() => process.exit(0)).catch((err) => { console.error(err); process.exit(1) })
+} else if (mode === "--status") {
+  printStatus()
+  process.exit(0)
+} else {
+  main().catch((err) => {
+    console.error(`Fatal error: ${err}`)
+    process.exit(1)
+  })
+}
