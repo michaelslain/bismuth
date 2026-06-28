@@ -1,6 +1,8 @@
 import { mkdir, writeFile, unlink } from "fs/promises"
 import { existsSync, readFileSync } from "fs"
+import { join } from "path"
 import { sendMessage, DEFAULT_DAEMON_IDENTITY } from "./session.ts"
+import { DEFAULT_CRONS } from "./defaultCrons.ts"
 import { startCronScheduler, stopCronScheduler, recoverInterruptedCrons, waitForRunningJobs } from "./cron.ts"
 import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, startProcessTriggers, stopProcessTriggers, stopProcessTriggersForVault } from "./process.ts"
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
@@ -43,6 +45,17 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
   if (!existsSync(ctx.identityFile)) {
     const seeded = `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n`
     try { await writeFile(ctx.identityFile, seeded, "utf-8") } catch { /* best-effort */ }
+  }
+
+  // Seed the default crons (dream + vault-review) so a fresh vault's daemon ships with the
+  // canonical background jobs — the bismuth equivalent of claude-bot's defaults/crons. Non-clobbering
+  // (skips files that exist), so it never overwrites a user's edits. To turn one off, DISABLE it
+  // (enabled: false in its frontmatter) rather than delete — a deleted default re-seeds on next boot.
+  for (const cron of DEFAULT_CRONS) {
+    const dest = join(ctx.cronsDir, `${cron.name}.md`)
+    if (!existsSync(dest)) {
+      try { await writeFile(dest, cron.content, "utf-8") } catch { /* best-effort */ }
+    }
   }
 }
 
