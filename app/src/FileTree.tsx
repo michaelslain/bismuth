@@ -56,7 +56,12 @@ function buildTree(entries: TreeEntry[]): TreeNode {
 }
 
 function sortedChildren(node: TreeNode): TreeNode[] {
+  // The system entries — the `.daemon` folder + the `.settings` file — always sink to the bottom
+  // of their level, after all the user's notes/folders.
+  const isSystem = (n: TreeNode) => !!n.isSystemFolder || n.path === SETTINGS_FILE;
   return [...(node.children?.values() ?? [])].sort((a, b) => {
+    const asys = isSystem(a), bsys = isSystem(b);
+    if (asys !== bsys) return asys ? 1 : -1;
     const af = !!a.children, bf = !!b.children;
     if (af !== bf) return af ? -1 : 1;
     return a.name.localeCompare(b.name);

@@ -67,6 +67,37 @@ test("migrateDaemonState copies a legacy claude-bot brain into the vault, COPY-O
   expect(existsSync(join(vaultB, ".daemon", "memory"))).toBe(false);
 });
 
+test("migrateDaemonState merges per-file — a pre-created empty .daemon/memory + a seeded cron don't block it", () => {
+  // Regression: the migration used to skip a whole subdir if it already existed, so the daemon
+  // pre-creating an empty .daemon/memory (or reconcileSeeds seeding a default cron) stranded the
+  // user's real memory/crons in ~/.claude-bot. Per-file merge fixes it.
+  makeHome({});
+  const legacy = mkdtempSync(join(tmpdir(), "legacy-cb-"));
+  created.push(legacy);
+  mkdirSync(join(legacy, "memory"), { recursive: true });
+  writeFileSync(join(legacy, "memory", "a.md"), "note a");
+  writeFileSync(join(legacy, "memory", "b.md"), "note b");
+  mkdirSync(join(legacy, "crons"), { recursive: true });
+  writeFileSync(join(legacy, "crons", "dream.md"), "LEGACY dream");
+  writeFileSync(join(legacy, "crons", "book-quotes.md"), "legacy custom cron");
+
+  const vault = mkdtempSync(join(tmpdir(), "vault-"));
+  created.push(vault);
+  // Simulate the daemon having already booted this vault: an EMPTY .daemon/memory + a SEEDED cron.
+  mkdirSync(join(vault, ".daemon", "memory"), { recursive: true });
+  mkdirSync(join(vault, ".daemon", "crons"), { recursive: true });
+  writeFileSync(join(vault, ".daemon", "crons", "dream.md"), "SEEDED dream");
+
+  expect(migrateDaemonState(vault, legacy)).toBe(true);
+  // Memory now migrates despite the pre-existing empty dir (the bug).
+  expect(readFileSync(join(vault, ".daemon", "memory", "a.md"), "utf8")).toBe("note a");
+  expect(readFileSync(join(vault, ".daemon", "memory", "b.md"), "utf8")).toBe("note b");
+  // The user's other legacy cron is brought over...
+  expect(existsSync(join(vault, ".daemon", "crons", "book-quotes.md"))).toBe(true);
+  // ...but the already-present (seeded) default is NOT clobbered.
+  expect(readFileSync(join(vault, ".daemon", "crons", "dream.md"), "utf8")).toBe("SEEDED dream");
+});
+
 test("migrateDaemonState is a no-op when there is no legacy claude-bot dir", () => {
   makeHome({});
   const vault = mkdtempSync(join(tmpdir(), "vaultC-"));

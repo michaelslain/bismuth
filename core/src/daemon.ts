@@ -85,10 +85,18 @@ export function migrateDaemonState(
     mkdirSync(daemonDir, { recursive: true });
     for (const sub of ["memory", "crons", "processes"] as const) {
       const src = join(legacy, sub);
+      if (!existsSync(src)) continue;
       const dst = join(daemonDir, sub);
-      // Copy only when the source exists and the target isn't already populated — never
-      // overwrite a brain the user has already started building in this vault.
-      if (existsSync(src) && !existsSync(dst)) cpSync(src, dst, { recursive: true });
+      mkdirSync(dst, { recursive: true });
+      // Per-FILE merge: bring over each legacy item that isn't already in the vault. The old
+      // per-DIRECTORY check (`!existsSync(dst)`) skipped the WHOLE brain whenever the daemon had
+      // already pre-created an empty `.daemon/memory` or reconcileSeeds had seeded default crons —
+      // stranding the user's real memory/crons in ~/.claude-bot. Per-file is race-proof and never
+      // clobbers what's already there (seeded defaults, the bot's own newer notes).
+      for (const name of readdirSync(src)) {
+        const d = join(dst, name);
+        if (!existsSync(d)) cpSync(join(src, name), d, { recursive: true });
+      }
     }
     mkdirSync(daemonMachineDir(), { recursive: true });
     writeFileSync(machineMarker, vault); // record the destination; gate future vaults

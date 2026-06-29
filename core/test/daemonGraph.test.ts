@@ -100,10 +100,20 @@ test("daemonSnapshot uses the provided daemon name as the hub label", () => {
 });
 
 test("daemonSnapshot on a nonexistent home degrades to empty (never throws)", () => {
-  const snap = daemonSnapshot(join(tmpdir(), "does-not-exist-claude-bot-xyz"));
-  expect(snap.crons).toEqual([]);
-  expect(snap.processes).toEqual([]);
-  expect(snap.daemon.running).toBe(false);
+  const ne = join(tmpdir(), "does-not-exist-claude-bot-xyz");
+  // `running` comes from daemonRunning() (the MACHINE dir), not the `home` arg — so isolate
+  // BISMUTH_DAEMON_DIR too, else a real daemon actually running on this machine flips it to true.
+  const prev = process.env.BISMUTH_DAEMON_DIR;
+  process.env.BISMUTH_DAEMON_DIR = ne;
+  try {
+    const snap = daemonSnapshot(ne);
+    expect(snap.crons).toEqual([]);
+    expect(snap.processes).toEqual([]);
+    expect(snap.daemon.running).toBe(false);
+  } finally {
+    if (prev === undefined) delete process.env.BISMUTH_DAEMON_DIR;
+    else process.env.BISMUTH_DAEMON_DIR = prev;
+  }
 });
 
 test("buildDaemonGraph: one hub + a node per cron/process, all edges from the hub, NO you-node", () => {

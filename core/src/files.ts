@@ -151,8 +151,8 @@ export async function listTree(
   for (const entry of entries) {
     if (!entry.isDir && entry.rel === ".settings") {
       // The single hidden settings file (YAML, no extension) — a FILE, not a folder: shown with a
-      // gear + "Settings" label, opens in the editor.
-      out.push({ path: entry.rel, kind: "file", label: "Settings", icon: "Settings2" });
+      // gear + lowercase "settings" label, opens in the editor.
+      out.push({ path: entry.rel, kind: "file", label: "settings", icon: "Settings2" });
     } else if (entry.isDir) {
       if (entry.rel === ".daemon") {
         out.push({ path: entry.rel, kind: "dir", isSystemFolder: true, label: daemonLabel });

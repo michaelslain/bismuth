@@ -256,7 +256,7 @@ test("listTree surfaces system folders: .settings always, .daemon only when enab
   expect(offPaths.some((p) => p.startsWith(".daemon"))).toBe(false);
   const settingsEntry = off.find((e) => e.path === ".settings");
   expect(settingsEntry?.kind).toBe("file"); // a file, not a folder
-  expect(settingsEntry?.label).toBe("Settings");
+  expect(settingsEntry?.label).toBe("settings");
 
   // Daemon ON: .daemon shown + labeled with the name; memory/crons/session-id surface;
   // internal dot-state (.last-fired.json) stays hidden; the normal note is unaffected.
