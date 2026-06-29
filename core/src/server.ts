@@ -5,7 +5,7 @@ import { createAsyncCache } from "./asyncCache";
 import { buildGraph } from "./engine";
 import { attachLayout, computeViewLayouts } from "./layout-cache";
 import { listTree, listTemplates, listMarkdown, readNote, writeNote, moveEntry, deleteEntry, createEntry, resolveAsset, writeBinary, uniqueAssetPath } from "./files";
-import { commitVault, snapshotMessage } from "./backup";
+import { commitVault, scheduleBackup, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { AppError } from "./error";
 import { buildAgentGraph } from "./agents";
@@ -372,8 +372,9 @@ export function createServer(cfg: CoreConfig) {
         if (memory) {
           dirty.graph = true;
           // Autosave the memory repo so it's revertable + gives the dream cron a commit
-          // history to diff against (refs/bismuth/dream). Best-effort; never blocks.
-          if (cfg.memory) void commitVault(cfg.memory, snapshotMessage(new Date(), "memory")).catch(() => {});
+          // history to diff against (refs/bismuth/dream). Coalesced so a burst of memory writes
+          // doesn't spam commits; best-effort, never blocks.
+          if (cfg.memory) scheduleBackup(cfg.memory, () => snapshotMessage(new Date(), "memory"));
         }
         applyDirty(unknown ? [] : vaultPaths, dirty);
       })();
@@ -692,8 +693,10 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "POST /backup": async (_, __) => {
-      const committed = await commitVault(cfg.vault, snapshotMessage());
-      return ok({ committed });
+      // Coalesced: editor autosave hits this on every save, so debounce into one commit per quiet
+      // window instead of committing on each keystroke-save (the .git-bloat / iCloud-conflict cause).
+      scheduleBackup(cfg.vault, () => snapshotMessage());
+      return ok({ scheduled: true });
     },
 
     // Open (or create) today's daily note. Lives in routes — NOT mutatingRoutes —
