@@ -43,10 +43,12 @@ test("ensureExclude does not throw when .git/info dir is absent (existing repo /
   expect(committed).toBe(true);
 });
 
-test("commitVault never tracks the .settings file", async () => {
+test("commitVault never tracks the .settings file or the .daemon brain", async () => {
   const vault = mkdtempSync(join(tmpdir(), "oa-backup-"));
   await writeNote(vault, "note.md", "# Note\n");
   await writeNote(vault, ".settings", "appearance:\n  theme: oxide-duotone\n");
+  await writeNote(vault, ".daemon/memory/m.md", "a memory note\n");
+  await writeNote(vault, ".daemon/daemon.pid", "12345\n");
 
   const committed = await commitVault(vault, "snapshot");
   expect(committed).toBe(true);
@@ -54,6 +56,7 @@ test("commitVault never tracks the .settings file", async () => {
   const tracked = (await $`git -C ${vault} ls-files`.text()).trim().split("\n");
   expect(tracked).toContain("note.md");
   expect(tracked).not.toContain(".settings");
+  expect(tracked.some((p) => p.startsWith(".daemon"))).toBe(false);
 });
 
 test("checkpoint: first run reports all files; advance + delta tracks only what changed since", async () => {

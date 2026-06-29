@@ -9,17 +9,24 @@ export function snapshotMessage(now: Date = new Date(), kind = "vault"): string 
   return `${kind} snapshot ${stamp}`;
 }
 
-const EXCLUDE_LINE = ".settings";
+// Keep the daemon's surfaces out of the vault snapshot: the `.settings` config file and the whole
+// `.daemon` brain. `.daemon` holds runtime junk (daemon.pid, session-id, logs, .last-fired.json,
+// .triggers) that must never be committed, plus memory the daemon already version-controls on its
+// own via `bismuth checkpoint` — so it has no business in the vault's git history.
+const EXCLUDE_LINES = [".settings", ".daemon"];
 
-/** Ensure .git/info/exclude ignores the per-vault settings file (idempotent). */
+/** Ensure .git/info/exclude ignores the daemon's config + brain dirs (idempotent — adds only the
+ *  rules that are missing, so existing vaults pick up a newly-added one on their next backup). */
 function ensureExclude(dir: string): void {
   const excludePath = join(dir, ".git", "info", "exclude");
   let current = "";
   try { current = readFileSync(excludePath, "utf8"); } catch { /* file may not exist yet */ }
-  if (current.split("\n").includes(EXCLUDE_LINE)) return;
+  const have = new Set(current.split("\n"));
+  const missing = EXCLUDE_LINES.filter((line) => !have.has(line));
+  if (missing.length === 0) return;
   try {
     mkdirSync(dirname(excludePath), { recursive: true });
-    appendFileSync(excludePath, `\n${EXCLUDE_LINE}\n`);
+    appendFileSync(excludePath, `\n${missing.join("\n")}\n`);
   } catch { /* non-standard .git layout (worktree, partial clone) — degrade gracefully */ }
 }
 
