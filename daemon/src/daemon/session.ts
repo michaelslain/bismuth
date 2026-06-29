@@ -3,6 +3,16 @@ import { readFile, writeFile, mkdir } from "fs/promises"
 import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
+import { whichClaude } from "../lib/claudeWhich.ts"
+
+// The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
+// a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
+// and pass it via pathToClaudeCodeExecutable. Cached: the path doesn't change within a run.
+let claudeBinPath: string | null | undefined
+function claudeBin(): string | undefined {
+  if (claudeBinPath === undefined) claudeBinPath = whichClaude()
+  return claudeBinPath ?? undefined
+}
 
 /** Messages emitted by the Claude Agent SDK query stream. */
 interface SdkMessage {
@@ -102,6 +112,10 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
     appendSystemPrompt: await buildSystemPrompt(ctx),
     model: opts?.model ?? "haiku",
   }
+
+  // Point the SDK at the user's installed claude binary (machine-login auth, no API key).
+  const bin = claudeBin()
+  if (bin) options.pathToClaudeCodeExecutable = bin
 
   if (opts?.effort) {
     options.thinkingBudget = opts.effort === "high" ? "high" : opts.effort === "low" ? "low" : "medium"

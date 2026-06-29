@@ -24,19 +24,25 @@ interface DaemonSettings {
   name: string
 }
 
-/** A vault's daemon config: the `enabled` master switch from .settings/settings.yaml, and the
+/** A vault's daemon config: the `enabled` master switch from the vault's `.settings` file, and the
  *  `name` from the .daemon/identity.md frontmatter (the name lives WITH the identity, not in
  *  settings). A missing/corrupt settings reads as disabled; a missing identity → default name.
  *  Never throws. */
 async function readDaemonSettings(root: string): Promise<DaemonSettings> {
   let enabled = false
-  try {
-    const doc = parse(await readFile(join(root, ".settings", "settings.yaml"), "utf-8")) as
-      | { daemon?: { enabled?: unknown } }
-      | null
-    enabled = doc?.daemon?.enabled === true
-  } catch {
-    // no/corrupt settings → disabled
+  // Settings live in the single `.settings` file. The daemon is a separate process that may read a
+  // vault BEFORE core migrates it, so fall back to the interim `.settings/settings.yaml` and the
+  // legacy root `settings.yaml` — first readable wins. (Reading a dir, e.g. an interim `.settings/`,
+  // throws → we just try the next shape.)
+  for (const rel of [".settings", join(".settings", "settings.yaml"), "settings.yaml"]) {
+    try {
+      const doc = parse(await readFile(join(root, rel), "utf-8")) as
+        | { daemon?: { enabled?: unknown } }
+        | null
+      if (doc !== null) { enabled = doc.daemon?.enabled === true; break }
+    } catch {
+      // unreadable/missing/dir → try the next shape
+    }
   }
 
   let name = ""
