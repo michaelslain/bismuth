@@ -52,6 +52,48 @@ export async function commitVault(dir: string, message: string): Promise<boolean
   return true;
 }
 
+// ── Coalesced autosave ────────────────────────────────────────────────────────
+// Editor saves and memory file-watch events each fire a backup; uncoalesced that's dozens of
+// commits PER MINUTE, which bloats `.git` (and, in an iCloud-synced vault, drives sync conflict
+// forks). scheduleBackup() debounces per-repo: a burst of saves collapses into ONE commit after a
+// quiet window, with a max-wait so a long continuous-editing session still snapshots periodically.
+// Checkpoint commits (dream/vault-review, via commitVault directly) stay IMMEDIATE — they need an
+// accurate diff base. Intervals are env-overridable for tests.
+// Read at call time so tests (and runtime tuning) can override via env.
+const debounceMs = (): number => Number(process.env.BISMUTH_BACKUP_DEBOUNCE_MS) || 30_000; // ~30s after the last save
+const maxWaitMs = (): number => Number(process.env.BISMUTH_BACKUP_MAX_WAIT_MS) || 300_000; // ...but at least every 5 min
+
+interface PendingBackup { timer: ReturnType<typeof setTimeout>; first: number; message: () => string }
+const pendingBackups = new Map<string, PendingBackup>();
+
+function fireBackup(dir: string): void {
+  const p = pendingBackups.get(dir);
+  if (!p) return;
+  pendingBackups.delete(dir);
+  void commitVault(dir, p.message()).catch(() => {});
+}
+
+/** Coalesce rapid autosave commits for `dir` into one (see above). `message` is a thunk so the
+ *  snapshot timestamp reflects when it actually commits, not when it was first scheduled. */
+export function scheduleBackup(dir: string, message: () => string): void {
+  const now = Date.now();
+  const existing = pendingBackups.get(dir);
+  if (existing) clearTimeout(existing.timer);
+  const first = existing?.first ?? now;
+  // Deferred too long already (continuous editing) → commit now instead of pushing it out further.
+  if (now - first >= maxWaitMs()) {
+    pendingBackups.delete(dir);
+    void commitVault(dir, message()).catch(() => {});
+    return;
+  }
+  pendingBackups.set(dir, { first, message, timer: setTimeout(() => fireBackup(dir), debounceMs()) });
+}
+
+/** Flush any pending coalesced backup for `dir` immediately (e.g. before shutdown / in tests). */
+export function flushBackup(dir: string): void {
+  fireBackup(dir);
+}
+
 // ── Checkpoints ──────────────────────────────────────────────────────────────
 // A checkpoint is a lightweight git ref (a "bookmark") under refs/bismuth/<name>
 // that marks how far a periodic consumer has processed the autosave history. It is

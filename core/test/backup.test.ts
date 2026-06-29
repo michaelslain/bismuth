@@ -3,8 +3,24 @@ import { mkdtempSync, rmSync, existsSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
-import { ensureRepo, commitVault, checkpointDelta, advanceCheckpoint, checkpointRef } from "../src/backup";
+import { ensureRepo, commitVault, scheduleBackup, checkpointDelta, advanceCheckpoint, checkpointRef } from "../src/backup";
 import { $ } from "bun";
+
+test("scheduleBackup coalesces a burst of autosaves into a single commit", async () => {
+  process.env.BISMUTH_BACKUP_DEBOUNCE_MS = "40"; // tiny debounce for the test
+  const vault = mkdtempSync(join(tmpdir(), "oa-coalesce-"));
+  // Three rapid saves (with real changes between) — uncoalesced this would be 3 commits.
+  await writeNote(vault, "a.md", "v1"); scheduleBackup(vault, () => "snap");
+  await writeNote(vault, "a.md", "v2"); scheduleBackup(vault, () => "snap");
+  await writeNote(vault, "b.md", "v3"); scheduleBackup(vault, () => "snap");
+  await new Promise((r) => setTimeout(r, 300)); // past the debounce + the async commit
+  const count = (await $`git -C ${vault} rev-list --count HEAD`.text()).trim();
+  expect(count).toBe("1"); // coalesced to ONE
+  // ...and that one commit captured the latest state of both files.
+  const tracked = (await $`git -C ${vault} ls-files`.text()).trim().split("\n").sort();
+  expect(tracked).toEqual(["a.md", "b.md"]);
+  delete process.env.BISMUTH_BACKUP_DEBOUNCE_MS;
+});
 
 test("ensureRepo inits a git repo; commitVault commits changes locally", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oa-bk-"));

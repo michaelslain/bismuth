@@ -367,14 +367,16 @@ test("PUT /file writes file and returns ok", async () => {
   }
 });
 
-test("POST /backup returns committed boolean", async () => {
+test("POST /backup schedules a coalesced snapshot", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });
   const base = `http://localhost:${server.port}`;
   try {
     const res = await fetch(`${base}/backup`, { method: "POST" });
     const data = await res.json();
-    expect(typeof data.committed).toBe("boolean");
+    // Backups are now debounced/coalesced (not committed synchronously), so the route just
+    // acknowledges it scheduled one.
+    expect(data.scheduled).toBe(true);
   } finally {
     server.stop(true);
   }
