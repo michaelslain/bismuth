@@ -57,12 +57,34 @@ console.log(`✓ docs staged → ${join(outDir, "docs")}`);
 
 // Record where this build came from so the installed app can git-fetch/pull + rebuild to
 // self-update (core/src/selfUpdate.ts reads ${BISMUTH_INSTALL_SRC}/build-origin.json).
+//
+// The recorded repoRoot must be the STABLE main-worktree clone — NOT the checkout this build ran
+// from. Building inside an ephemeral `.claude/worktrees/*` checkout (e.g. via the create/merge
+// worktree flow) would otherwise bake a repoRoot that DISAPPEARS when that worktree is cleaned up,
+// leaving the installed app git-probing a missing dir and reporting "update source unavailable"
+// forever. `git worktree list` always lists the main worktree first, so its path is the durable
+// clone that tracks origin/main — exactly where self-update's `git pull --ff-only origin main` +
+// rebuild belong. Compilation above intentionally still uses the current checkout (we ship the
+// code that was built); only the self-update origin is canonicalized.
+function canonicalRepoRoot(checkout: string): string {
+  const wl = spawnSync("git", ["-C", checkout, "worktree", "list", "--porcelain"], { encoding: "utf8" });
+  if (wl.status === 0) {
+    const m = wl.stdout.match(/^worktree (.+)$/m);
+    if (m?.[1]) return m[1].trim();
+  }
+  return checkout; // not a git repo / git unavailable → fall back to the checkout path
+}
+
 let sha = "";
 const rev = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
 if (rev.status === 0) sha = rev.stdout.trim();
+const originRepoRoot = canonicalRepoRoot(repoRoot);
+if (originRepoRoot !== repoRoot) {
+  console.log(`  build-origin repoRoot canonicalized: ${repoRoot} → ${originRepoRoot} (main worktree)`);
+}
 writeFileSync(
   join(outDir, "build-origin.json"),
-  JSON.stringify({ repoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
+  JSON.stringify({ repoRoot: originRepoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
 );
 console.log(`✓ build-origin → ${join(outDir, "build-origin.json")} (sha ${sha.slice(0, 7) || "unknown"})`);
 
