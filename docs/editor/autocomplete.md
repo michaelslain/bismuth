@@ -388,7 +388,7 @@ Modifier families: `mod` covers `Mod`/`Cmd`/`Ctrl`/`Meta`; `alt` covers `Alt`/`O
 
 **Behavior:**
 - `scope: "templates"` sources from `getTemplatePaths()` (template files only).
-- `scope: "fs"` sources from the **real filesystem** (for paths OUTSIDE the vault, e.g. `daemon.home`). See "Filesystem-Path Completion" below.
+- `scope: "fs"` sources from the **real filesystem** (for paths OUTSIDE the vault). See "Filesystem-Path Completion" below. No setting in the current schema declares `scope: "fs"`, so this branch is presently dormant — the mechanism exists for any future setting that names an out-of-vault path.
 - Otherwise sources from `getVaultPaths()` filtered by `only` (dirs, files, or both).
 - `rankPaths(candidates, query)` does case-insensitive ranking: full-path prefix matches first, then basename-prefix matches, then substring. Owns filtering (`filter: false`) so `"templates/"` finds `"Templates/"` folder.
 - Each option shows a `Folder` or `File` Lucide icon.
@@ -397,7 +397,7 @@ Modifier families: `mod` covers `Mod`/`Cmd`/`Ctrl`/`Meta`; `alt` covers `Alt`/`O
 
 ### Filesystem-Path Completion (`scope: "fs"`)
 
-The filesystem-rooted counterpart of vault-path completion, for settings naming a path outside the vault (e.g. `daemon.home`, default `~/.claude-bot`). Because the candidate set lives on disk, this is the one **async** settings completion: `fsPathCompletions` calls the injected `fsPaths(value, only)` (→ `api.listDir` → `POST /list-dir`) and returns a Promise the engine awaits.
+The filesystem-rooted counterpart of vault-path completion, for a setting naming a path outside the vault. No schema field currently uses `scope: "fs"` — the `daemon` object now has only `enabled` (the obsolete `daemon.home` setting, which defaulted to `~/.claude-bot`, was removed when the standalone claude-bot was absorbed into the in-repo `@bismuth/daemon` workspace and its machine-identity home was fixed at `~/.bismuth/daemon`). The completion path remains wired for any future out-of-vault setting. Because the candidate set lives on disk, this is the one **async** settings completion: `fsPathCompletions` calls the injected `fsPaths(value, only)` (→ `api.listDir` → `POST /list-dir`) and returns a Promise the engine awaits.
 
 - The backend helper `core/src/fsPaths.ts` `listFsPaths(value, only, home?)` splits the typed value into a `<dir>/` + basename, `readdir`s the parent, and returns matching children whose display path preserves the user's `~`/`/` form. No slash yet → interprets the text as a name under home and suggests absolute `~/<name>` rows. Tolerant: a missing/unreadable/non-dir parent or a dangling symlink yields `[]` (never throws). Dirs sort before files. Pure over an injectable `home` (tested with `mkdtemp`, never the real home).
 - Relative paths (no leading `~` or `/` and a slash present) are unsupported — there's no working dir to resolve them against — so they return `[]`.

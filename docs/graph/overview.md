@@ -1,6 +1,6 @@
 # Graph Overview
 
-This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, five graph modes (2nd/3rd/both/agents/daemon), the "you" self hub, backend-precomputed 2D/3D layout, and the daemon-mode node-visual encoding. The graph is a shared data structure built by backend modules in `core/src/` and rendered by the Three.js WebGL renderer in `app/src/graph/`.
+This document is the canonical reference for Bismuth's knowledge graph data model: the eight node kinds, six edge kinds, five graph modes (2nd/3rd/both/agents/daemon), the "you" self hub, backend-precomputed 2D/3D layout, and the daemon-mode node-visual encoding. The graph is a shared data structure built by backend modules in `core/src/` and rendered by the Canvas-2D `CanvasGraphRenderer` in `app/src/graph/` (a plain `getContext("2d")` canvas — not WebGL/GPU, not DOM nodes).
 
 ---
 
@@ -82,7 +82,7 @@ A hashtag that appears in frontmatter or note body. Created by `buildVaultGraph(
 
 ### `"memory"`
 
-A note from the Claude-bot memory directory. Created by `buildMemoryGraph()` in `memory.ts`.
+A note from the daemon's memory directory (`<vault>/.daemon/memory`). Created by `buildMemoryGraph()` in `memory.ts`.
 
 - **id**: `"mem:<basename>"` (e.g. `"mem:michael-profile"` for `michael-profile.md` in the memory dir).
 - **label**: the memory note's basename without `.md`.
@@ -109,15 +109,15 @@ A Claude Code session or subagent running inside one of Bismuth's terminal tabs.
 
 ### `"daemon"`
 
-The claude-bot daemon hub node. Created by `buildDaemonGraph()` in `daemonGraph.ts`. There is exactly one per daemon graph.
+The per-vault daemon hub node. Created by `buildDaemonGraph()` in `daemonGraph.ts`. There is exactly one per daemon graph.
 
 - **id**: `"::daemon"` (the exported constant `DAEMON_NODE_ID`).
-- **label**: `"claude-bot"`.
+- **label**: the daemon's name (`snap.daemon.label`), which defaults to `"daemon"` — read from `<vault>/.daemon/identity.md`'s `name:` frontmatter via `daemonIdentityName()`.
 - No `daemon` viz-state (that field is for `cron`/`process` children only).
 
 ### `"cron"`
 
-A cron job managed by the claude-bot daemon. One per `*.md` file under `<home>/crons/`.
+A cron job managed by the per-vault daemon. One per `*.md` file under `<home>/crons/` (where `<home>` = the vault's `.daemon` dir, `vaultDaemonDir(vault)`).
 
 - **id**: `"cron:<name>"` (e.g. `"cron:daily-briefing"`).
 - **label**: the cron's name from frontmatter (falls back to filename).
@@ -130,13 +130,13 @@ A cron job managed by the claude-bot daemon. One per `*.md` file under `<home>/c
 
 ### `"process"`
 
-A process managed by the claude-bot daemon. One per `*.md` file under `<home>/processes/`.
+A process managed by the per-vault daemon. One per `*.md` file under `<home>/processes/`.
 
 - **id**: `"process:<name>"` (e.g. `"process:file-watcher"`).
 - **label**: name from frontmatter.
 - **daemon** field is always present:
   - `enabled`: from frontmatter.
-  - `running`: always `false` (claude-bot does not expose a per-process liveness file).
+  - `running`: always `false` (the daemon does not expose a per-process liveness file).
   - `lastResult`: always `null`.
   - `lastFiredMs`: always `null`.
   - `schedule`: absent.
@@ -212,11 +212,11 @@ Completely separate graph from the vault/memory graph. Built by `buildAgentGraph
 
 **Node ids are stable** for a given session/subagent pair. Session nodes: `"agent:sess:<sessionId>"`. Subagent nodes: `"agent:sub:<agentId>"`.
 
-### Mode 5: `"daemon"` — Claude-Bot Daemon
+### Mode 5: `"daemon"` — Per-Vault Daemon
 
-Built by `daemonGraph()` in `daemonGraph.ts` from the daemon's on-disk state files. Never throws; degrades gracefully to an empty/partial snapshot on missing or malformed files.
+Built by `daemonGraph()` in `daemonGraph.ts` from the daemon's on-disk state files. Never throws; degrades gracefully to an empty/partial snapshot on missing or malformed files. Crons/processes are read from the active vault's `.daemon` dir (`<home>` = `vaultDaemonDir(vault)`); the daemon's liveness pid is **machine-level** (`daemonMachineDir()/daemon.pid` = `~/.bismuth/daemon/daemon.pid`), since one machine process multiplexes every vault's brain.
 
-1. Read `<home>/daemon.pid` and check PID liveness → hub node `running` flag.
+1. Read `daemonMachineDir()/daemon.pid` (machine-level) and check PID liveness → hub node `running` flag.
 2. Read each `<home>/crons/*.md` for cron definitions (name, schedule, enabled).
 3. Read `<home>/crons/.last-fired.json` and `.running.json` for runtime state.
 4. Read each `<home>/processes/*.md` for process definitions.
@@ -269,7 +269,7 @@ Two stages:
    - Projects all nodes onto the eigenvectors → `n×dim` coordinates.
    - Scales to a target RMS radius of 100 and adds a tiny deterministic jitter (LCG seeded at `0x85ebca6b`) to prevent coincident nodes.
 
-2. **d3-force-3d refinement** — short force simulation seeded from PivotMDS output (or `initialPositions` for warm starts), same constants as the WebGL renderer.
+2. **d3-force-3d refinement** — short force simulation seeded from PivotMDS output (or `initialPositions` for warm starts); its spacing constants are mirrored in `CanvasGraphRenderer` so the renderer reproduces the same spread without re-simulating.
 
 Default constants (the `DEFAULTS` object in `layout.ts`):
 ```
@@ -300,7 +300,7 @@ const linkDist   = o.linkDistance * smallBoost * (dim === 2 ? MODE_2D_SPACING : 
 const collideFloor = linkDist * COLLIDE_RATIO;
 ```
 
-The boost is ~8× at a few nodes and decays to 1× by ~400 nodes (large vaults unchanged). It is computed once in `prepareLayout` so the collide floor **and** the virtual-tether rest length share one spacing budget. This same formula is mirrored verbatim in the renderer's `WebGLRenderer.linkDist()` — both the precomputed layout and any live re-settle agree on spacing, so the renderer's warm-skip doesn't re-scramble the backend layout.
+The boost is ~8× at a few nodes and decays to 1× by ~400 nodes (large vaults unchanged). It is computed once in `prepareLayout` so the collide floor **and** the virtual-tether rest length share one spacing budget. The same backend spacing constants are mirrored in `CanvasGraphRenderer` (the `BACKEND_SMALL_BOOST`/`BACKEND_2D_SPACING` constants feeding `scaleToSpacing()`) — so the renderer reproduces the backend's spread with a plain uniform rescale instead of re-running a force sim, and never re-scrambles the backend layout.
 
 #### Reeling in disconnected components
 
@@ -326,7 +326,7 @@ Two-tier:
 1. **In-memory**: `Map<sig, Layout>` within a server run.
 2. **On-disk**: JSON files in `~/.bismuth/layout-cache/<sig>.json` (durable app dir, not `os.tmpdir()`; override with `BISMUTH_LAYOUT_CACHE_DIR`), versioned by `CACHE_VERSION` (currently `"v9"`).
 
-`CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the history: `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links.
+`CACHE_VERSION` **must be bumped whenever the layout output changes** (constants, the small-graph boost, the reel-in, the incremental-rebuild scheme) — a stale cached layout computed under different rules would mismatch what the renderer settles to. The version comments record the history: `v5` = collide iterations 3→6 + padding 1.25→1.55; `v6` = small-graph linkDist boost added; `v7` = stronger `400/n` (cap 8) boost; `v8` = reel disconnected components into the main mass via virtual tether links; `v9` = incremental "add-only" rebuilds pin pre-existing nodes (`layout.ts` `fixedIds`) so only newly-added nodes settle — different output than the old whole-graph warm re-settle.
 
 Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|kind" edges`. Retargeting a wikilink (same node set, same edge count, different endpoint) still busts the cache.
 
@@ -349,8 +349,11 @@ Cache key (`graphSig`): SHA-1 of `vaultKey + sorted node ids + sorted "from|to|k
 `GraphAtmosphere` is the shared CSS overlay that gives every graph its iridescent cluster-glow + depth vignette. It is extracted into one component so the main `GraphView` and the first-run intro graph render the same atmosphere instead of duplicating the divs + glow wiring.
 
 ```tsx
-export function GraphAtmosphere(props: { renderer: WebGLRenderer; mode?: string }): JSX.Element
+type GlowRenderer = { setGlowCallback(cb: (g: { lobes: { x: number; y: number }[] }) => void): void };
+export function GraphAtmosphere(props: { renderer: GlowRenderer; mode?: string }): JSX.Element
 ```
+
+The `renderer` prop is a **structural** type — any renderer exposing `setGlowCallback(...)` works (not tied to a concrete renderer class).
 
 - Render it as a **sibling after** the renderer's `<canvas>` inside a positioned container; it fills that container (`inset: 0`). Styling lives in `graphAtmosphere.css`.
 - It emits two divs: `.graph-glow` (carries the `data-mode` attribute, so a mode can theme its glow) and `.graph-vignette`.
@@ -456,7 +459,7 @@ Returns `{ nodes: [], edges: [] }`.
 
 ### `graphSig(graph, vaultKey)` (`layout-cache.ts`)
 
-Returns a string cache key `"v8-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
+Returns a string cache key `"v9-<16-char-sha1>"` from the node id set, edge `from|to|kind` triples, and vault path. Stable across content-only file edits (which don't change node/edge structure).
 
 ---
 
@@ -477,22 +480,23 @@ buildVaultGraph()    buildMemoryGraph()
       |
   withYouNode()   (app/src/graph/youNode.ts)  [frontend]
       |
-  WebGLRenderer + LabelLayer
+  CanvasGraphRenderer
 ```
 
-For daemon mode:
+For daemon mode (`<home>` = `<vault>/.daemon`, the per-vault brain; the pid is machine-level):
 
 ```
-~/.claude-bot/crons/*.md
-~/.claude-bot/processes/*.md
-~/.claude-bot/.last-fired.json
+<vault>/.daemon/crons/*.md
+<vault>/.daemon/processes/*.md
+<vault>/.daemon/crons/.last-fired.json
+~/.bismuth/daemon/daemon.pid   (machine-level liveness)
       |
   daemonSnapshot()   (daemonGraph.ts)
   buildDaemonGraph()
       |
   GET /daemon/graph
       |
-  DaemonList + WebGLRenderer  [frontend, no withYouNode()]
+  DaemonList + CanvasGraphRenderer  [frontend, no withYouNode()]
 ```
 
 For agents mode:
@@ -508,7 +512,7 @@ terminal tab (PTY) → relay plugin hooks
       |
   withYouNode()   [frontend, connects hub to root session nodes]
       |
-  WebGLRenderer + LabelLayer
+  CanvasGraphRenderer
 ```
 
 ---
@@ -527,4 +531,4 @@ terminal tab (PTY) → relay plugin hooks
 
 ---
 
-Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `core/src/agents.ts`, `app/src/graph/youNode.ts`, `app/src/graph/WebGLRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/agents.test.ts`, `core/test/engine.test.ts`
+Source: `core/src/graph.ts`, `core/src/layout.ts`, `core/src/layout-cache.ts`, `core/src/engine.ts`, `core/src/daemon.ts`, `core/src/daemonViz.ts`, `core/src/daemonGraph.ts`, `core/src/agents.ts`, `app/src/graph/youNode.ts`, `app/src/graph/CanvasGraphRenderer.ts`, `app/src/graph/GraphAtmosphere.tsx`, `core/src/relay.ts`, `core/src/vault.ts`, `core/test/graph.test.ts`, `core/test/daemonViz.test.ts`, `core/test/agents.test.ts`, `core/test/engine.test.ts`

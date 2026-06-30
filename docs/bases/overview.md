@@ -72,7 +72,7 @@ const rows = loaded.inlineRows ?? (loaded.spec ? await api.resolveRows(loaded.sp
 
 #### Skipping irrelevant re-resolves (`changeRelevance.ts`)
 
-Not every SSE change should re-resolve a view — a busy vault (e.g. the claude-bot daemon rewriting `DAEMON.md` every ~2s) would otherwise re-resolve *every* open base continuously and peg CPU. `changeAffectsView(c, deps)` (pure, unit-tested) decides whether a change can affect *this* view's membership, given the current resolution's `deps` (base/view filters, `spec`, and the `relevantPaths` set — its resolved row notes + base file + host note). The branch order is conservative-but-cheap:
+Not every SSE change should re-resolve a view — a busy vault (e.g. the `@bismuth/daemon` rewriting a vault file) would otherwise re-resolve *every* open base continuously and peg CPU. `changeAffectsView(c, deps)` (pure, unit-tested) decides whether a change can affect *this* view's membership, given the current resolution's `deps` (base/view filters, `spec`, and the `relevantPaths` set — its resolved row notes + base file + host note). The branch order is conservative-but-cheap:
 
 - No `dirty` (poll catch-up, unknown extent) → **affects** (be safe).
 - `dirty.tree` (a new/renamed/removed/icon note may newly match) → **affects**.

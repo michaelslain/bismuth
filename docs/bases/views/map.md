@@ -79,7 +79,7 @@ The view re-runs this framing logic reactively whenever `result` changes (e.g., 
 
 ## Settings Integration
 
-Two `settings.yaml` entries under `graph:` affect the map view:
+Two `settings.yaml` entries affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
 
 | Setting | Default | Range | Description |
 |---|---|---|---|

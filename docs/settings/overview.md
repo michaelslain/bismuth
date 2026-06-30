@@ -201,6 +201,10 @@ The graph's 2D/3D view mode is **intentionally absent** from this section. It is
 | `grammarCheck` | boolean | `false` | — | Grammar + style check the note body (Harper); independent of spellcheck, off by default. |
 | `autoSaveDelay` | number | `800` | 200–3000 | Milliseconds of idle before auto-saving. |
 | `lineHeight` | number | `1.65` | 1.3–2.0 | Editor prose line height multiplier. |
+| `defaultMode` | enum | `source` | `source`, `visual` | How every note opens: `source` (raw Markdown editor) or `visual` (the no-code, Notion-like editor). The only control; there is no per-note toggle. |
+| `mathMacros` | string | `""` | — | LaTeX preamble of `\newcommand`/`\def` definitions applied to ALL math (KaTeX), mirroring Obsidian's `preamble.sty`. Available in every `$...$` and `$$...$$` across the vault. |
+| `wrapSelection` | boolean | `true` | — | With text selected, typing a wrapping character surrounds the selection instead of replacing it (e.g. select a word, press `*` → `*word*`). |
+| `wrapSelectionChars` | list (string) | `["*", "_", "~", "`"]` | — | Characters that wrap the current selection when typed (each surrounds it with itself; `(` `[` `{` `<` pair to `)` `]` `}` `>`). Brackets and quotes already wrap via auto-close, so they're omitted by default. |
 
 ### `vault`
 
@@ -229,6 +233,19 @@ Embed resolution is always filename-first (like wikilinks), so moving an attachm
 | `timeGutterWidth` | number | `50` | 40–80 | Width of the hour-label gutter in week/day views in px. |
 | `defaultCategoryColor` | string | `#4a90e2` | — | Default color for a newly created event category (hex string). |
 
+### `googleCalendar`
+
+Two-way Google Calendar sync. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `settings.yaml` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only).
+
+| Key | Type | Default | Range | Description |
+|---|---|---|---|---|
+| `enabled` | boolean | `false` | — | Enable two-way Google Calendar sync. |
+| `calendarId` | string | `primary` | — | Which Google calendar to sync with (`primary` = your main calendar). |
+| `basePath` | string | `""` | — | Vault path to the calendar base (a `type: base` note with `view: calendar`) to sync. |
+| `conflictPolicy` | enum | `lastWriteWins` | `lastWriteWins`, `googleWins`, `bismuthWins` | How to resolve an event changed on BOTH sides since the last sync. |
+| `syncIntervalMinutes` | number | `15` | 1–1440 | Auto-sync cadence in minutes (manual sync is always available). |
+| `timeZone` | string | `""` | — | IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone). |
+
 ### `ui`
 
 | Key | Type | Default | Range | Description |
@@ -252,8 +269,15 @@ Embed resolution is always filename-first (like wikilinks), so moving an attachm
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | boolean | `false` | Supervise the claude-bot daemon and show the "daemon" graph mode. |
-| `home` | string | `""` | Override claude-bot home directory. Empty string = `~/.claude-bot`. |
+| `enabled` | boolean | `false` | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
+
+The daemon is **one machine process** (the in-repo `@bismuth/daemon` workspace, `daemon/src/**`) that multiplexes per-vault "brains". Machine identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`); each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. There is no `daemon.home` or `daemon.autoUpdate` setting (`enabled` is the only key); the daemon updates WITH the app (no git-pull self-update). Install/setup is `core/src/daemonInstall.ts` (`installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin`, then runs `<bin> --ensure-installed`); the service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon`.
+
+### `update`
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `autoUpdate` | boolean | `false` | Auto-apply Bismuth app updates on launch in the background, then relaunch when the rebuild is ready (off = manual via the update banner). |
 
 ### `terminal`
 
@@ -336,7 +360,7 @@ toolbar:
     tooltip: Note + terminal
 ```
 
-Default toolbar has three buttons: `new-note`, `new-folder`, `search`.
+Default toolbar has two buttons: `create-menu` (icon `Plus`) and `search` (icon `Search`).
 
 ### `dailyNotes`
 
@@ -374,23 +398,25 @@ A nested object (not a list), one string key per app-level action. Values are co
 
 ```yaml
 keybindings:
+  find: Mod+F
   command-palette: Mod+P
   quick-switcher: Mod+O
   terminal: "Mod+`, Mod+J"
-  split-right: Mod+Shift+L
+  split-right: Mod+D
   split-down: Mod+Shift+D
-  equalize-panes: Mod+Shift+E
-  close-pane: Mod+Shift+W
+  equalize-panes: Mod+Alt+=
+  close-pane: Mod+W
   new-tab: Mod+T
   reopen-tab: Mod+Shift+T
   history-back: Mod+[
   history-forward: Mod+]
-  focus-pane-left: Mod+Left
-  focus-pane-right: Mod+Right
-  focus-pane-up: Mod+Up
-  focus-pane-down: Mod+Down
+  focus-pane-left: Mod+Alt+ArrowLeft
+  focus-pane-right: Mod+Alt+ArrowRight
+  focus-pane-up: Mod+Alt+ArrowUp
+  focus-pane-down: Mod+Alt+ArrowDown
+  new-claude-chat: Mod+Shift+C
   insert-template: Alt+T
-  toggle-sidebar: Mod+Shift+S
+  toggle-sidebar: Alt+S
 ```
 
 The `keybindings` section is placed **last** in the schema so it appears at the bottom of a freshly generated `settings.yaml`.
@@ -436,7 +462,7 @@ The backend consumes settings at runtime via `loadAppConfig(vault): Promise<AppC
 ```typescript
 interface AppConfig {
   server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean; home: string };
+  daemon: { enabled: boolean };
   templates?: { folder: string };
   srs: SrsConfig;        // identity match for core/src/srs/scheduler.ts SrsConfig
   [section: string]: unknown;

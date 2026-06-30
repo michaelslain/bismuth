@@ -243,11 +243,11 @@ The resulting `due` date is `addDaysISO(today, clampedInterval)` from `core/src/
 
 ```ts
 export const BASE_EASE = 250;
-export const EASY_BONUS = 1.3;
-export const LAPSES_INTERVAL_CHANGE = 0.5;
-export const MAX_INTERVAL = 36525;  // 100 years
-export const MIN_EASE = 130;
-export const EASE_STEP = 20;
+const EASY_BONUS = 1.3;             // module-private
+const LAPSES_INTERVAL_CHANGE = 0.5; // module-private
+const MAX_INTERVAL = 36525;         // module-private; 100 years
+const MIN_EASE = 130;               // module-private
+const EASE_STEP = 20;               // module-private
 
 export const DEFAULT_SRS: SrsConfig = {
   baseEase: 250,

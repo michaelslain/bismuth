@@ -126,7 +126,11 @@ Vault file I/O with path-traversal protection. Key exports:
 `fileBasename(path)` — extracts the basename from a vault-relative path. Used in `search.ts`.
 
 #### `backup.ts`
-`commitVault(vault)` / `snapshotMessage()` — runs `git add -A && git commit -m "<message>"` in the vault directory. Called by `POST /backup`.
+Git-snapshot of a vault/memory dir + per-consumer checkpoints. Never adds a remote (local history only).
+- `commitVault(dir, message)` — `ensureRepo` + `git add -A` + commit; returns `false` when there was nothing to commit. `snapshotMessage(now?, kind?)` — a human label like `"vault snapshot 2026-05-27 14:30"` (the `kind` arg relabels it for memory/checkpoint snapshots).
+- `ensureRepo(dir)` — `git init` + a local `vault@local` identity if needed, then `ensureExclude` — idempotently appends `.settings` and `.daemon` to `.git/info/exclude` so the daemon's config file + whole `.daemon` brain (pid/session/logs/triggers, plus memory the daemon checkpoints itself) never land in vault history.
+- `scheduleBackup(dir, message)` / `flushBackup(dir)` — coalesced autosave: debounces a burst of editor/file-watch saves into ONE commit (`BISMUTH_BACKUP_DEBOUNCE_MS`, default 30 s) with a max-wait (`BISMUTH_BACKUP_MAX_WAIT_MS`, default 5 min) so long sessions still snapshot. Checkpoint commits stay immediate.
+- Checkpoints are lightweight refs under `refs/bismuth/<name>` (bookmarks, not branches) marking how far a periodic job has processed the linear autosave history. `checkpointRef(dir, ref)` (current SHA or null), `checkpointDelta(dir, ref, commitMessage?)` → `{ base, head, files: ChangedFile[] }` (files changed since the ref; first run = every tracked file as added), `advanceCheckpoint(dir, ref, commitMessage?)` (move the ref to HEAD). Used by background jobs (dream on the memory repo, vault-review on the vault repo). Called by `POST /backup`.
 
 ---
 
@@ -279,15 +283,17 @@ Obsidian-Tasks-compatible DSL parser + executor. `parseTaskQuery(text)` — erro
 
 ### Daemon Integration
 
+The former standalone `claude-bot` sibling repo was absorbed into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`): ONE machine process that multiplexes per-vault "brains". Machine-level identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon`. These core modules are Bismuth's READ/WRITE window onto that on-disk state.
+
 #### `daemon.ts`
-Reads (and minimally writes) the claude-bot daemon's shared on-disk state. Never throws. Key exports:
-- `claudeBotHome()` — resolves home: `BISMUTH_DAEMON_DIR` env > settings override > `~/.claude-bot`.
-- `setClaudeBotHomeOverride(home)` — called by `server.ts` on settings load.
-- `daemonStatus()` → `DaemonStatus { running, thisDeviceId, owner }`.
-- `listDevices()` → `DeviceList`.
-- `setOwner(deviceId, label)` — writes `owner.json`.
-- `setCronEnabled(name, enabled)` / `setProcessEnabled(name, enabled)` — frontmatter mutation on cron/process `.md` files.
-- `runCron(name)` — triggers a cron run by touching the run trigger file.
+Reads (and minimally writes) the daemon's shared on-disk state. Never throws. Key exports:
+- `daemonMachineDir()` — the machine-level identity dir: `BISMUTH_DAEMON_DIR` env, else `~/.bismuth/daemon`.
+- `vaultDaemonDir(vault)` — a vault's brain dir, `<vault>/.daemon` (where crons/processes/memory/session live).
+- `daemonIdentityName(vault)` — the daemon's name from `<vault>/.daemon/identity.md`'s `name:` frontmatter; drives the sidebar folder label + daemon-graph hub. Defaults to `"daemon"` (never `"claude-bot"`).
+- `migrateDaemonState(vault, legacy?)` — one-time, COPY-ONLY migration of a legacy `~/.claude-bot/{memory,crons,processes}` into `<vault>/.daemon` (per-file merge, never clobbers, never deletes the source). Machine-marker-gated (`.claude-bot-migrated`) so it lands in exactly ONE vault. `~/.claude-bot` survives only as this legacy migration source.
+- `daemonStatus()` → `DaemonStatus { running, thisDeviceId, owner }`; `listDevices()` → `DeviceList`; `setOwner(deviceId)` — writes `owner.json`.
+- `setCronEnabled(name, enabled, dir?)` / `setProcessEnabled(name, enabled, dir?)` — flip `enabled` frontmatter on a cron/process `.md` (the `dir` is a vault's `.daemon` dir; process also drops a reconcile trigger).
+- `runCron(name, dir?)` — request an out-of-schedule run by dropping a trigger file the daemon polls.
 
 #### `daemonGraph.ts`
 `daemonSnapshot(home?)` → `DaemonSnapshot { daemon, crons, processes }`. Reads `crons/*.md`, `.last-fired.json`, `.running.json`, `processes/*.md`. `buildDaemonGraph(snap)` → `GraphData` with daemon hub node + cron/process children connected by `supervises` edges. `daemonGraph(home?)` — convenience wrapper. `DAEMON_NODE_ID = "::daemon"`.
@@ -298,8 +304,12 @@ Reads (and minimally writes) the claude-bot daemon's shared on-disk state. Never
 #### `daemonState.ts`
 Shared low-level helpers: `pidAlive(pid)`, `readJsonObj(path)`, `readFrontmatter(path)`, `isEnabled(data)`. Used by `daemon.ts` and `daemonGraph.ts` to read state files.
 
-#### `claudebot.ts`
-`installStatus()` → `InstallStatus { installed, running, daemonLabel, home, plistPath }`. `runSetup(dryRun?)` → `SetupResult { action, status }`. Both spawn the `claude-bot` package's `bin/ensure-installed.ts` entrypoint as a subprocess (keeping daemon side effects quarantined). The entrypoint is adopt-only. `installStatus` never throws — degrades to `{ installed: false, running: false }` on any error.
+#### `daemonInstall.ts`
+Installs the bundled `@bismuth/daemon` runtime as a launchd/systemd **service** so it keeps running while the app is closed (replaces the old `claude-bot` git-clone provisioning — `core/src/claudebot.ts` no longer exists). The app stages the compiled binary at `resources/daemon` (path in `BISMUTH_DAEMON_BUNDLE`). Every function is best-effort and never throws — a failed daemon install must never block the app. Key exports:
+- `DAEMON_LABEL = "com.bismuth.daemon"`; `daemonBinPath()` — the stable installed path `~/.bismuth/bin/bismuth-daemon` (env override `BISMUTH_DAEMON_BIN`).
+- `installStatus()` → `InstallStatus { installed, running, binPath }` — runs `<bin> --status` and parses its JSON; degrades to `{ installed: false, running: false }` when the binary is absent or errors.
+- `runSetup()` → `SetupResult { ok, binPath, error? }` — runs `<bin> --ensure-installed` (idempotent; writes the plist/unit). Called by `POST /daemon/update` (the daemon updates WITH the app — there is no git-pull self-update).
+- `installDaemonFromBundle()` — boot-time: copies the staged binary to `~/.bismuth/bin` (temp-file + atomic rename to dodge ETXTBSY on the running service) and runs `runSetup`. Version-gated by a size+mtime marker; no-op in dev (no bundle env).
 
 ---
 
@@ -749,10 +759,10 @@ Dynamic `import('@univerjs/presets')` wrapper. Creates/destroys the Univer workb
 ### Export
 
 #### `export/formats.ts`
-`formatsFor(path)` / `isExportable(path)` — determines valid export formats by file extension. Matrix: `.md` → `["html", "pdf", "md"]`; `.sheet` → `["html", "pdf"]`; `.draw` → `["pdf", "png"]`.
+`formatsFor(path)` / `isExportable(path)` — determines valid export formats by file extension. Matrix: `.md` → `["html", "pdf", "png", "md"]`; `.sheet` → `["html", "pdf", "png"]`; `.draw` → `["pdf", "png"]`. `ext(path)` — the pure lowercase extension helper (kept here so `App.tsx`'s render-time gating doesn't drag in the export stack). `formatsForOptions(path, isBase, mode)` — contents-aware refinement for the export UI: a base (a `.md`) yields the data forms (`md`/`csv` added) in `"data"` mode and only the rendered forms (`html`/`pdf`/`png`) in `"visual"` mode.
 
 #### `export/exporters.ts`
-`exportFile(path, format, api)` — dispatches to the format-specific exporter. Tested.
+`renderPreview(path, format, deps, theme?, opts?)` — computes ONLY what the export tab displays (no bytes, no html→pdf) so flipping formats/options is instant. `renderExport(path, format, deps, theme?, opts?)` → `ExportResult` — the impure path that produces downloadable bytes, dispatching per format (md/csv text, html/pdf/png from the rendered body, drawings rasterized directly). A `type: base` md renders as its chosen view (`"visual"` → the view as its kind, `"data"` → a flat table); csv is base-only. Tested.
 
 #### `export/htmlTemplate.ts`
 HTML export template renderer for notes. Tested.
@@ -779,7 +789,7 @@ Markdown table utilities. Tested.
 Client-side drawing → PNG via Canvas 2D.
 
 #### `export/types.ts`
-`ExportFormat = "html" | "pdf" | "md" | "png"`.
+`ExportFormat = "html" | "pdf" | "md" | "png" | "csv"`; `RenderMode = "visual" | "data"`.
 
 #### `ExportView.tsx`
 Export options pane UI (format picker, preview, download button).
@@ -792,10 +802,10 @@ Export options pane UI (format picker, preview, download button).
 Sidebar panel shown in daemon graph mode. Lists crons and processes with enable/disable/run right-click actions.
 
 #### `DaemonOwnerModal.tsx`
-Modal for selecting which device owns the claude-bot daemon. Calls `POST /daemon/owner`.
+Modal for selecting which device owns the daemon. Calls `POST /daemon/owner`.
 
 #### `DaemonSetupModal.tsx`
-Modal for adopting/installing the claude-bot daemon. Calls `POST /daemon/setup`.
+Modal for installing/updating the daemon service. Calls `POST /daemon/setup`.
 
 ---
 
@@ -1007,7 +1017,7 @@ The `bismuth` binary (entry: `cli/src/index.ts`). Longest-match dispatch: tries 
 `settings get`, `settings set`, `settings schema`, `folder-icon` — read/write settings.yaml keys + the per-folder icon map.
 
 ### `commands/daemon.ts`
-`daemon status`, `daemon devices`, `daemon owner`, `daemon install`, `daemon setup`, `daemon update`, `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — read/write the claude-bot daemon's `~/.claude-bot` state (no `--vault`).
+`daemon status`, `daemon devices`, `daemon owner`, `daemon install`, `daemon setup`, `daemon update`, `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — read/write the daemon's machine-level state (`~/.bismuth/daemon`) + a vault's `.daemon` crons/processes (no `--vault`).
 
 ### `commands/draw.ts`
 `render` — render a `.draw` file to PNG (or `--pdf`) headless (filesystem path, no `--vault`).
@@ -1082,4 +1092,4 @@ zsh init dir (`.zshenv`, `.zshrc`). `ZDOTDIR` is set to this dir so the `claude`
 | New graph source type | Use `buildGraphFromNotes` from `core/src/graphBuilder.ts` |
 | New file type supported in panes | `app/src/tabIds.ts` (label/icon), `app/src/PaneContent.tsx` (routing) |
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/vault.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/memory.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/agents.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graphBuilder.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/layout.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/layout-cache.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/sse.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/asyncCache.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/changeClassifier.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/relay.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemon.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonGraph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonViz.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonState.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/claudebot.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/terminal.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/files.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/fileAccess.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/error.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/schema/settingsSchema.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/community.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/basesData.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/commands.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/keybindings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/sourceSpec.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/srs/scheduler.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/drawing/model.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/App.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/panes.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/tabIds.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/serverVersion.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/settingsCssVars.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/themes.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/commands.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/WebGLRenderer.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/LabelLayer.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/youNode.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/rowCache.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/flashcardsQueue.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/export/formats.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/mobile/bootMobile.ts, /Users/michaelslain/Documents/dev/bismuth/relay/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/cli/src/index.ts, /Users/michaelslain/Documents/dev/bismuth/cli/src/commands/note.ts, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/vault.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/memory.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/agents.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graphBuilder.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/layout.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/layout-cache.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/sse.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/asyncCache.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/changeClassifier.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/relay.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemon.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonGraph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonViz.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonState.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonInstall.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/backup.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/terminal.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/files.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/fileAccess.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/error.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/schema/settingsSchema.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/community.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/basesData.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/commands.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/keybindings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/sourceSpec.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/srs/scheduler.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/drawing/model.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/App.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/panes.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/tabIds.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/serverVersion.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/settingsCssVars.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/themes.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/commands.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/WebGLRenderer.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/LabelLayer.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/youNode.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/rowCache.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/flashcardsQueue.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/export/formats.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/export/exporters.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/mobile/bootMobile.ts, /Users/michaelslain/Documents/dev/bismuth/relay/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/cli/src/index.ts, /Users/michaelslain/Documents/dev/bismuth/cli/src/commands/note.ts, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json

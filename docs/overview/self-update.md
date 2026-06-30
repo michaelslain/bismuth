@@ -2,7 +2,7 @@
 
 The bundled Bismuth app updates itself in place: it detects when the installed `/Applications/Bismuth.app` is behind `origin/main`, and on one click it pulls the latest source, rebuilds the app, and hot-swaps the `.app` bundle — no re-download, no installer, no Homebrew. The whole mechanism is git + a local rebuild, because the app was built from a local clone and the build baked in where that clone lives.
 
-This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, and the two **on-launch background auto-updates** (the bundled sidecar updating the claude-bot daemon; the app optionally updating itself).
+This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, the **on-launch background install** of the bundled `@bismuth/daemon` service, and the **opt-in app self-update**.
 
 > **Self-disables outside a bundled source build.** In `bun run dev` (or any build with no `build-origin.json` / no `BISMUTH_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
 
@@ -35,13 +35,14 @@ run time     app/src/updateCheck.ts  ──poll──> GET /update/status   (cor
 `app/scripts/build-bismuth-tools.ts` runs as part of `tauri build` (wired into `beforeBuildCommand`). After compiling the `bismuth` + `bismuth-mcp` binaries and staging `docs/`, it records the build provenance:
 
 ```ts
+const originRepoRoot = canonicalRepoRoot(repoRoot);
 writeFileSync(
   join(outDir, "build-origin.json"),
-  JSON.stringify({ repoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
+  JSON.stringify({ repoRoot: originRepoRoot, sha, builtAt: new Date().toISOString() }, null, 2),
 );
 ```
 
-- `repoRoot` — the absolute path of the local clone that produced this build. This is the directory the self-updater will `git pull` + rebuild in.
+- `repoRoot` — the absolute path of the **stable main-worktree clone**, the directory the self-updater will `git pull --ff-only origin main` + rebuild in. `canonicalRepoRoot()` resolves this via `git worktree list --porcelain` (which always lists the main worktree first), **not** the checkout the build ran from. This matters when a build runs inside an ephemeral `.claude/worktrees/*` checkout: baking that path would point self-update at a directory that disappears when the worktree is cleaned up, leaving the installed app reporting "update source unavailable" forever. Compilation still ships the current checkout's code; only the recorded self-update origin is canonicalized. Falls back to the build checkout path if git is unavailable / not a repo.
 - `sha` — the `git rev-parse HEAD` at build time (`""` if git failed).
 - `builtAt` — ISO timestamp.
 
@@ -160,45 +161,33 @@ Shown only when `updateStatus()?.available` and not dismissed. Reads `behind` to
 
 ---
 
-## On-launch background auto-updates
+## On-launch daemon install + opt-in app self-update
 
-The bundled app fires up to two **fire-and-forget** updates on launch — neither blocks the server boot, and both are gated to the bundled app so dev / standalone / tests never touch a live daemon or rebuild themselves.
+The daemon updates **with the app** — there is no separate git-pull daemon auto-update. The bundled `@bismuth/daemon` runtime ships baked into the `.app` (staged at `resources/daemon`); a fresh app build means a fresh daemon binary, copied into place on the next boot.
 
-### 1. The claude-bot daemon — `core/src/server.ts`
+### 1. The `@bismuth/daemon` service — `core/src/daemonInstall.ts`
 
-When the sidecar boots, `BISMUTH_APP_PATH` is set only by the Tauri shell, so its presence flags a bundled-app launch. In that case the server kicks off (without awaiting) a best-effort daemon update:
+On every server boot the sidecar fires `installDaemonFromBundle()` (without awaiting) from `core/src/server.ts`:
 
 ```ts
-if (process.env.BISMUTH_APP_PATH) {
-  void (async () => {
-    try {
-      const cfg = await loadAppConfig(vault);
-      if (!cfg.daemon?.enabled) return;          // master switch off → don't touch the daemon
-      if (cfg.daemon?.autoUpdate === false) return;
-      const status = await installStatus();
-      if (!status.installed) return;             // nothing to update
-      const r = await runUpdate();               // claude-bot's bin/update.ts: git pull --ff-only + bun install + restart
-      if (r.action === "updated") {
-        console.log(`claude-bot: auto-updated ${r.from?.slice(0, 7)} → ${r.to?.slice(0, 7)}${r.restarted ? " (restarted)" : ""}`);
-      }
-    } catch (e) {
-      console.warn(`claude-bot auto-update skipped: ${(e as Error)?.message ?? e}`);
-    }
-  })();
-}
+// Boot-time: install/refresh the bundled daemon as a launchd/systemd service so it keeps
+// running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
+void installDaemonFromBundle();
 ```
 
-- Runs only when **both** `daemon.enabled` (the master integration switch) **and** `daemon.autoUpdate` (default `true`) are on, **and** the daemon is actually installed (`installStatus().installed`).
-- `runUpdate()` (`core/src/claudebot.ts` → claude-bot's `bin/update.ts`) is itself **idempotent + fetch-gated**: it only pulls/`bun install`/restarts when the daemon is behind `origin`, so an up-to-date daemon resolves to `action:"up-to-date"` and the log line is skipped. `UpdateResult.action` is `"updated" | "up-to-date" | "would-update" | "no-remote"` (with optional `from`/`to`/`restarted`).
-- Best-effort: any throw is caught and logged (`claude-bot auto-update skipped: …`), never crashing the server.
+There is **no `BISMUTH_APP_PATH` gate and no git pull** — it's a bundle-copy + service-register, not a self-update of the daemon's source:
 
-This is the only place Bismuth proactively touches the daemon — it never starts/stops/repoints a live daemon otherwise (see [Daemon Integration](../../CLAUDE.md)). The manual equivalent is `POST /daemon/update` (also `runUpdate()`).
+- No `BISMUTH_DAEMON_BUNDLE` env (dev / standalone) → no-op. Otherwise it reads the bundled binary at `${BISMUTH_DAEMON_BUNDLE}/bin/bismuth-daemon`.
+- **Version-gated by a marker** (`~/.bismuth/.daemon-installed`, holding the source binary's `size:mtime`): if the marker matches and the installed binary exists, it just re-ensures the service (`runSetup()`) and returns; otherwise it copies the binary to `~/.bismuth/bin/bismuth-daemon` (via a temp file + atomic `rename`, to dodge `ETXTBSY` when the running service holds the old inode), rewrites the marker, and runs `runSetup()`.
+- `runSetup()` runs `<bin> --ensure-installed`, which writes the launchd plist / systemd unit pointing at that stable installed path (service ids: launchd `com.bismuth.daemon`, systemd `bismuth-daemon`). `SetupResult` is `{ ok, binPath, error? }`.
+- `installStatus()` shells out to `<bin> --status` → `InstallStatus = { installed, running, binPath }`.
+- Best-effort throughout: every function catches and never throws, so a failed daemon install can never block the app.
+
+The daemon was absorbed from the former standalone **claude-bot** repo into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) — one machine process that multiplexes per-vault brains. Machine identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, `identity.md`) lives under `<vault>/.daemon`. There is **no `daemon.autoUpdate`/`daemon.home` setting** (the schema `daemon` object has only `enabled`) and **no git-pull self-update path** for it. The manual equivalent of the boot install is `POST /daemon/update`, which also just calls `runSetup()` (re-registers the service); it does not pull source.
 
 ### 2. The Bismuth app itself — `update.autoUpdate`
 
-The app's own background self-update lives on the **frontend**, driven by `maybeAutoUpdate()` in `app/src/updateCheck.ts` (detailed above). It is **opt-in via `update.autoUpdate`** (default `false`): when on and a status check reports an available update, it auto-applies the same `POST /update/apply` → poll-progress → `quit_app` pipeline and relaunches when the rebuild is ready; when off (the default), nothing happens automatically and the manual `UpdateBanner` is the only path.
-
-The two switches are independent: `daemon.autoUpdate` defaults **on** (a cheap fetch-gated daemon refresh), while `update.autoUpdate` defaults **off** (a multi-minute rebuild + relaunch you opt into).
+The app's own background self-update lives on the **frontend**, driven by `maybeAutoUpdate()` in `app/src/updateCheck.ts` (detailed above). It is **opt-in via `update.autoUpdate`** (default `false`): when on and a status check reports an available update, it auto-applies the same `POST /update/apply` → poll-progress → `quit_app` pipeline and relaunches when the rebuild is ready; when off (the default), nothing happens automatically and the manual `UpdateBanner` is the only path. It's a no-op in dev / non-source builds because the backend reports `available:false`.
 
 ---
 
@@ -239,4 +228,4 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 - [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
 - [Install & run](install.md) — building the bundled app from source.
 
-Source: core/src/selfUpdate.ts, app/src/updateCheck.ts, app/src/UpdateBanner.tsx, app/src-tauri/src/lib.rs, app/scripts/build-bismuth-tools.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/claudebot.ts, app/src/api.ts
+Source: core/src/selfUpdate.ts, app/src/updateCheck.ts, app/src/UpdateBanner.tsx, app/src-tauri/src/lib.rs, app/scripts/build-bismuth-tools.ts, core/src/server.ts, core/src/daemonInstall.ts, core/src/schema/settingsSchema.ts, app/src/api.ts

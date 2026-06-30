@@ -575,7 +575,7 @@ The handler (`core/src/server.ts`):
    changes that provably can't affect the view: memory-only (3rd-brain) changes, and
    content-only vault edits to notes the view doesn't depend on **when its filters are
    purely `file.*` (tag/folder/name) over an unscoped source**. This stops a busy vault
-   (e.g. the claude-bot daemon rewriting `DAEMON.md` every ~2s) from re-resolving every
+   (e.g. the `@bismuth/daemon` process rewriting `DAEMON.md` every ~2s) from re-resolving every
    open base continuously. Property-value filters (`note.status`, `due < today()`),
    `where` exprs, scoped `from:`, and composed `ref:` sources always re-resolve on a
    content edit (their membership is content-dependent and can't be skipped safely).

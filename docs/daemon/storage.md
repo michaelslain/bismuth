@@ -1,411 +1,207 @@
 # Daemon On-Disk Storage Layout
 
-Bismuth reads (and minimally writes) the claude-bot daemon's shared on-disk state to power the
-"daemon" graph mode and the `DaemonList` sidebar. The daemon is a separate process that authors
-these files; Bismuth never starts or stops it. Every reader in Bismuth tolerates missing or
-malformed files and never throws — a daemon that has never run, or a partially written file,
-degrades to empty/null/false. This document is the exhaustive reference for every file Bismuth
-reads, its exact byte-level shape, and the `daemon.home` setting that controls where Bismuth looks.
+This page documents the daemon's **two-tier** storage model — what the `@bismuth/daemon` runtime
+writes, where, and in what format. The daemon is **one machine process that multiplexes per-vault
+"brains"**: machine-level identity + runtime state live in a single home dir, and each enabled
+vault's brain (its crons, processes, memory, and conversation session) lives under that vault's own
+`.daemon` directory. Bismuth core reads the same tree to power the "daemon" graph mode and the
+`DaemonList` sidebar, and writes only a few control files (`owner.json`, the `enabled` frontmatter,
+and trigger files) — see [overview.md](overview.md).
 
-> This is the **consumer** view (what Bismuth reads). For the **producer** view — the same `~/.claude-bot` tree from claude-bot's own writers, plus every file claude-bot authors that Bismuth doesn't read (`session-id`, `CLAUDE.md`, `logs/`, process `.pids/`, etc.) — see [claude-bot storage](../claude-bot/storage.md). Note that the `daemon.home` / `BISMUTH_DAEMON_DIR` resolution below is **Bismuth-only**: claude-bot itself always writes to `~/.claude-bot` (no env override on its side).
-
----
-
-## Home Directory Resolution
-
-The root of the daemon's file tree is the **claude-bot home**. Bismuth resolves it with the
-following priority (highest wins):
-
-1. **`BISMUTH_DAEMON_DIR` environment variable** — ops/dev override, always wins.
-2. **`daemon.home` setting in `settings.yaml`** — set by the user; applied via
-   `setClaudeBotHomeOverride()` at server startup. Empty or whitespace is ignored.
-3. **`~/.claude-bot`** — the platform default (`os.homedir() + "/.claude-bot"`).
-
-The resolved path is returned by `claudeBotHome()` in `core/src/daemon.ts` and is passed through
-to all file readers.
-
-```yaml
-# settings.yaml — override example
-daemon:
-  home: /Users/alice/.my-claude-bot
-```
-
-All paths below use `<home>` as a placeholder for the resolved home directory.
+> **Heritage note.** The daemon was absorbed from the former standalone `claude-bot` sibling repo
+> into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). The old single-tier `~/.claude-bot`
+> tree no longer exists as a live layout — it survives only as a **one-time, copy-only migration
+> source** (see [Legacy migration](#legacy-claude-bot-migration) below). There is **no**
+> `daemon.home` / `BOT_DIR` setting anymore.
 
 ---
 
-## Top-Level Identity and Status Files
-
-### `<home>/device-id`
-
-A plain UTF-8 text file containing this machine's stable UUID, one per line (trailing newline and
-whitespace are trimmed). Written by the daemon on first boot and never changed.
+## The two tiers
 
 ```
-a3f7c812-09e1-4d2b-b945-1e6c8de70923
+~/.bismuth/daemon/                       # MACHINE_DIR — one per machine (identity + runtime)
+└── …                                    # device-id, devices.json, owner.json, daemon.pid, logs/, vaults.json
+
+<vault>/.daemon/                         # PER-VAULT brain — one per enabled vault
+└── …                                    # crons/, processes/, memory/, identity.md, session-id
 ```
 
-- **Read by**: `thisDeviceId()` in `daemon.ts`.
-- **Missing / empty**: returns `null`; the rest of Bismuth continues without a device identity.
-- **No JSON**: raw text, not JSON. Do not wrap it.
+| Tier | Root | Holds | Resolved by |
+| --- | --- | --- | --- |
+| **Machine** | `~/.bismuth/daemon` (env `BISMUTH_DAEMON_DIR`) | device identity, owner selection, device heartbeats, the daemon PID, daemon logs, and the `vaults.json` registry of known vault roots — **shared across all vaults** | `MACHINE_DIR` (`daemon/src/lib/config.ts`); core's `daemonMachineDir()` |
+| **Per-vault** | `<vault>/.daemon` | one vault's crons, processes, 3rd-brain memory, daemon identity/personality, conversation session id, and cron run-state | `vaultPaths(root, name)` → `VaultContext` (`daemon/src/lib/config.ts`); core's `vaultDaemonDir(vault)` |
 
-### `<home>/devices.json`
-
-A JSON object mapping each device UUID to its heartbeat record. Written by each device's daemon
-on a heartbeat interval.
-
-```json
-{
-  "a3f7c812-09e1-4d2b-b945-1e6c8de70923": {
-    "label": "laptop",
-    "lastSeenISO": "2026-06-01T00:00:00.000Z"
-  },
-  "f1e2d3c4-b5a6-7890-abcd-ef1234567890": {
-    "label": "desktop",
-    "lastSeenISO": "2026-06-02T00:00:00.000Z"
-  }
-}
-```
-
-**Fields per entry:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `label` | `string` | Human-readable device name (empty string when absent). |
-| `lastSeenISO` | `string` | ISO 8601 UTC timestamp of last heartbeat (empty string when absent). |
-
-- **Read by**: `listDevices()` in `daemon.ts`.
-- **Missing / malformed**: returns `{ devices: [], ownerDeviceId: null }`.
-- **Unknown extra fields**: ignored by Bismuth's reader.
-
-### `<home>/owner.json`
-
-A JSON object identifying which device is the "owner" — the one the daemon actively runs on.
-Absent when the vault is unclaimed.
-
-```json
-{
-  "ownerDeviceId": "f1e2d3c4-b5a6-7890-abcd-ef1234567890",
-  "ownerLabel": "desktop",
-  "updatedAt": "2026-06-02T00:00:00.000Z"
-}
-```
-
-**Fields (all required for a valid owner; extras are ignored):**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `ownerDeviceId` | `string` | UUID of the device claiming ownership. Must be non-empty. |
-| `ownerLabel` | `string` | Human-readable name of the owner device (empty string when absent). |
-| `updatedAt` | `string` | ISO 8601 UTC timestamp of when ownership was last set. |
-
-- **Read by**: `getOwner()` in `daemon.ts`. Returns `null` when the file is absent, malformed, or
-  `ownerDeviceId` is missing/empty.
-- **Written by Bismuth**: `setOwner(deviceId)` — the only file Bismuth writes other than `enabled`
-  frontmatter. Writes exactly `{ ownerDeviceId, ownerLabel, updatedAt }` with 2-space pretty
-  indentation. The `ownerLabel` is looked up from `devices.json`; throws if `deviceId` is not a
-  known, heartbeating device.
-- **Byte-compatible contract**: Bismuth writes exactly the three keys claude-bot expects; it never
-  adds extra keys.
-
-### `<home>/daemon.pid`
-
-A plain UTF-8 text file containing the PID of the running daemon process, as a decimal integer.
-
-```
-34817
-```
-
-- **Liveness check**: Bismuth calls `pidAlive(pid)` (signals the process with `kill(pid, 0)`)
-  after reading. Both conditions must hold: file exists **and** the pid is alive. If either fails,
-  `running = false`.
-- **Read by**: `daemonStatus()` in `daemon.ts` and `daemonRunning()` in `daemonGraph.ts`.
-- **Missing / malformed / dead pid**: `running = false` — no error.
+The machine dir is resolved as `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon` — the env var is the only
+override (ops/dev/tests), and core's `daemonMachineDir()` resolves the same way so both processes
+agree byte-for-byte. There is no per-user setting that moves it.
 
 ---
 
-## Crons Directory
+## Tier 1 — Machine directory (`~/.bismuth/daemon`)
 
-### `<home>/crons/<name>.md`
-
-One Markdown file per scheduled cron job. The filename's basename (without `.md`) is the canonical
-identifier claude-bot keys on internally. Files beginning with `.` are ignored.
-
-**Frontmatter fields** (parsed via `core/src/frontmatter.ts`):
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | `string` | No | filename basename | Display label / graph node label. Overrides the filename when present. |
-| `schedule` | `string` | Yes (functionally) | `""` | Cron expression, e.g. `"0 * * * *"`. Empty string when absent. |
-| `enabled` | `boolean` | No | `true` | `enabled: false` disables the cron. **Only explicit `false` disables** — absent, `null`, or any other value = enabled. |
-
-The Markdown body after the frontmatter block is not read by Bismuth (it is documentation for the
-human author or the daemon's executor).
-
-**Example file `<home>/crons/vault-review.md`:**
-
-```markdown
----
-name: vault-review
-schedule: 0 */4 * * *
-enabled: true
----
-
-Review vault notes and surface anything overdue.
-```
-
-**Name resolution**: when the graph node label (used by the UI) differs from the filename, Bismuth
-resolves the backing file by matching either the label against `<basename>.md` directly, or by
-scanning all `*.md` files for a `name` frontmatter key equal to the label. The trigger file (see
-below) is always named by the **file basename**, not the display label.
+Created on daemon boot by `ensureDirs()` (`daemon/src/daemon/index.ts`): it `mkdir -p`s `MACHINE_DIR`
+and `logs/`. The identity files are created lazily on first heartbeat/claim.
 
 ```
-# Graph node label "Pretty Name" backed by the file weird.md
-<home>/crons/weird.md        (frontmatter: name: "Pretty Name")
-<home>/crons/.triggers/weird (trigger written by Bismuth for "run now")
+~/.bismuth/daemon/                       # MACHINE_DIR (config.ts) — env BISMUTH_DAEMON_DIR overrides
+├── device-id                            # plain UTF-8 UUID for THIS machine (no JSON)
+├── devices.json                         # { "<deviceId>": { label, lastSeenISO } }
+├── owner.json                           # { ownerDeviceId, ownerLabel, updatedAt } (absent = unclaimed)
+├── daemon.pid                           # plain int (process.pid); presence + liveness ⇒ running
+├── vaults.json                          # JSON array of absolute vault roots (written by Bismuth core)
+├── .claude-bot-migrated                 # one-time legacy-migration marker (records the dest vault)
+├── .daemon-installed                    # bundle install marker (size:mtime of the staged binary)
+└── logs/                                # daemon stdout/stderr (launchd/systemd redirect here)
+    ├── bismuth-daemon.stdout.log
+    └── bismuth-daemon.stderr.log
 ```
 
-**Enable/disable writes**: `setCronEnabled(name, enabled)` flips only the `enabled` frontmatter
-key using `setFrontmatterKey()`, which preserves comments, key order, flow arrays, and the Markdown
-body. The daemon re-reads cron definitions on each scheduler tick, so no trigger file is needed.
+### Per-file reference (machine tier)
 
-### `<home>/crons/.last-fired.json`
+| Path | Format | Owning module | Written / created by |
+| --- | --- | --- | --- |
+| `~/.bismuth/daemon/` (`MACHINE_DIR`) | dir | `lib/config.ts` | `ensureDirs` (`daemon/index.ts`); also `getDeviceId` mkdir |
+| `device-id` | plain UTF-8 UUID, trimmed, no JSON | `lib/device.ts` | `getDeviceId` — generates+persists a `randomUUID()` on first read (atomic `<path>.<pid>.tmp` then rename), reused across restarts |
+| `devices.json` | JSON map `{ "<deviceId>": { label, lastSeenISO } }` | `lib/owner.ts` | `heartbeatDevice()` upserts this device's entry every tick (even idle / non-owner) with `label = os.hostname()` (`getDeviceLabel`) and a fresh ISO; atomic |
+| `owner.json` | JSON `{ ownerDeviceId, ownerLabel, updatedAt }`; absent = unclaimed | `lib/owner.ts` | `setOwnerDevice()` (atomic, pretty-printed); `getOwner()` / `isOwner()` read it. **`isOwner()` is true when absent** (unclaimed = single-device behavior). Bismuth core writes it byte-compatibly via `setOwner()` |
+| `daemon.pid` | plain int | `daemon/index.ts` | `writePid` (`String(process.pid)`) / `removePid` on graceful shutdown. Liveness via `process.kill(pid, 0)` — the pid file survives a crash/SIGKILL, so readers always re-check liveness |
+| `vaults.json` | JSON array of absolute vault roots | `lib/config.ts` (`VAULTS_FILE`), read by `lib/registry.ts` | **Written by Bismuth core** on vault open; the daemon only reads it (`knownVaultRoots()`) to discover which vaults exist. Each vault opts in via its own `.settings` (`daemon.enabled`) |
+| `.claude-bot-migrated` | plain text = the destination vault root | `core/src/daemon.ts` | `migrateDaemonState` — written once, machine-wide, to gate the legacy copy to exactly one vault (see below) |
+| `.daemon-installed` | plain text = `"<size>:<mtimeMs>"` of the staged binary | `core/src/daemonInstall.ts` | `installDaemonFromBundle` — version marker so the daemon binary is only re-copied when a new app build ships a new one |
+| `logs/bismuth-daemon.{stdout,stderr}.log` | plain text | `lib/platform.ts` | launchd `StandardOutPath`/`StandardErrorPath` (or systemd `StandardOutput=append:`) redirect the service's output here |
 
-A JSON object recording the last execution result for each cron, keyed by the cron's display name
-(i.e. `frontmatter.name ?? basename`).
+The launchd/systemd service definition itself lives **outside** `MACHINE_DIR` (`lib/platform.ts`):
 
-```json
-{
-  "vault-review": {
-    "timestamp": "2026-06-07T04:00:00.000Z",
-    "result": "success"
-  },
-  "nightly-backup": {
-    "timestamp": "2026-06-06T22:00:00.000Z",
-    "result": "failed"
-  }
-}
-```
+| Platform | Service file | Service id |
+| --- | --- | --- |
+| macOS | `~/Library/LaunchAgents/com.bismuth.daemon.plist` | launchd label `com.bismuth.daemon` |
+| Linux | `~/.config/systemd/user/bismuth-daemon.service` | systemd unit `bismuth-daemon` |
 
-**Fields per entry:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `timestamp` | `string` | ISO 8601 UTC timestamp of when the run completed. Empty string when absent. |
-| `result` | `string` | Execution outcome string — e.g. `"success"`, `"failed"`, `"unknown"`. |
-
-- **Read by**: `daemonSnapshot()` in `daemonGraph.ts`.
-- **Stale entries**: entries with no backing `*.md` file (e.g. a renamed or removed cron) are
-  silently dropped — they never appear in the graph or snapshot.
-- **Missing / malformed**: treated as `{}` — all `lastFired` fields become `null`.
-- **Key space**: keyed by the cron's `name` frontmatter value (or basename fallback), **not** by
-  the filename directly. This is the same key space the daemon writes.
-
-### `<home>/crons/.running.json`
-
-A JSON object listing crons that are currently mid-execution, keyed by the cron's display name.
-
-```json
-{
-  "vault-review": {
-    "startedAt": "2026-06-07T04:00:01.234Z"
-  }
-}
-```
-
-**Fields per entry:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `startedAt` | `string` | ISO 8601 UTC timestamp of when the run started. |
-
-- **Read by**: `daemonSnapshot()` in `daemonGraph.ts`.
-- A cron is considered `running: true` in the snapshot iff it has an entry here with a string
-  `startedAt`.
-- **Missing / malformed**: treated as `{}` — no crons are running.
-
-### `<home>/crons/.triggers/<basename>`
-
-Trigger files written by Bismuth to signal out-of-schedule runs to the daemon. The filename is the
-cron's **file basename** (not the display label). The content is a single ISO 8601 UTC timestamp.
-
-```
-2026-06-07T14:32:09.123Z
-```
-
-- **Written by**: `runCron(name)` in `daemon.ts` → `writeTrigger()`.
-- **Read by**: the daemon process (polls every ~5 s via `processTriggers()`). Bismuth never reads
-  these files.
-- The `.triggers/` directory is created with `mkdirSync({ recursive: true })` if absent.
-- **Cron enable/disable does NOT write a trigger** — crons are re-read each scheduler tick, so the
-  daemon picks up the frontmatter change on its own.
+The daemon **binary** is installed at `~/.bismuth/bin/bismuth-daemon` (env override `BISMUTH_DAEMON_BIN`)
+by core's `installDaemonFromBundle()`, which then runs `<bin> --ensure-installed` to write+load the
+service. See [lifecycle.md](lifecycle.md) and [install](../overview/install.md).
 
 ---
 
-## Processes Directory
+## Tier 2 — Per-vault brain (`<vault>/.daemon`)
 
-### `<home>/processes/<name>.md`
-
-One Markdown file per supervised background process. Same conventions as cron files.
-
-**Frontmatter fields:**
-
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `name` | `string` | No | filename basename | Display label / graph node label. |
-| `enabled` | `boolean` | No | `true` | `enabled: false` stops the process on next reconcile. |
-| Other keys (e.g. `command`) | any | No | — | Ignored by Bismuth; read by the daemon. |
-
-**Example file `<home>/processes/engage-loop.md`:**
-
-```markdown
----
-name: engage-loop
-command: bun run loop.ts
-enabled: true
----
-
-The main engagement loop process.
-```
-
-- Bismuth reads `name` and `enabled` only. Any other frontmatter key (`command`, etc.) passes
-  through unmodified when Bismuth writes back.
-- `running` state for processes is **always `false`** in the snapshot — unlike crons, there is no
-  per-process liveness file Bismuth can reliably read. The graph renders processes as
-  enabled-idle or disabled, never as actively running.
-
-**Enable/disable writes**: `setProcessEnabled(name, enabled)` does two things:
-1. Flips the `enabled` frontmatter key in the file (same `setFrontmatterKey()` mechanism as crons,
-   preserving comments and body).
-2. Drops a **reconcile trigger** at `<home>/processes/.triggers/<basename>` — unlike crons, the
-   daemon does not re-read process definitions on each tick, so the trigger nudges the running
-   daemon to bring the process runtime in line with the new `enabled` value immediately.
-
-### `<home>/processes/.triggers/<basename>`
-
-Trigger files written by Bismuth to signal the daemon to reconcile a process's runtime to its
-on-disk `enabled` value (start it or stop it).
-
-- **Written by**: `setProcessEnabled()` in `daemon.ts` → `writeTrigger()`.
-- **Content**: a single ISO 8601 UTC timestamp (same format as cron triggers).
-- **Consumed by**: the daemon's general process-trigger port. If the daemon is not running, the
-  disk `enabled` flip still takes effect on next daemon boot; the trigger is simply never consumed.
-
----
-
-## File-System Invariants Bismuth Relies On
-
-| Invariant | Details |
-|-----------|---------|
-| Hidden files are ignored | Any file beginning with `.` inside `crons/` or `processes/` is not treated as a cron/process definition. This excludes `.last-fired.json`, `.running.json`, and `.triggers/` automatically. |
-| Alphabetical iteration order | `listMarkdownNames()` sorts results with `.sort()` for deterministic graph node ordering, since `readdir` order is filesystem-dependent. |
-| Stale JSON entries are dropped | Entries in `.last-fired.json` or `.running.json` with no matching `*.md` file are silently discarded — they never appear in the snapshot or graph. |
-| `enabled` defaults to `true` | Only an explicit `enabled: false` in frontmatter disables a cron/process. Absent, `null`, `0`, or any non-`false` value all mean enabled. |
-| Trigger filename = file basename | The `.triggers/<basename>` file is named by the `*.md` file's basename (without extension), NOT the display label from frontmatter. This is the key claude-bot's `processTriggers()` loads. |
-
----
-
-## TypeScript Interfaces
-
-```typescript
-// From core/src/daemon.ts
-
-interface Owner {
-  ownerDeviceId: string;
-  ownerLabel: string;
-  updatedAt: string;
-}
-
-interface DeviceEntry {
-  deviceId: string;
-  label: string;
-  lastSeenISO: string;
-  isOwner: boolean;  // true if this device is the current owner
-  isThis: boolean;   // true if this device is the local machine
-}
-
-interface DeviceList {
-  devices: DeviceEntry[];
-  ownerDeviceId: string | null;
-}
-
-interface DaemonStatus {
-  running: boolean;
-  thisDeviceId: string | null;
-  owner: Owner | null;
-}
-
-// From core/src/daemonGraph.ts
-
-interface DaemonCron {
-  name: string;
-  schedule: string;
-  enabled: boolean;
-  lastFired: { timestamp: string; result: string } | null;
-  running: boolean;
-  startedAt: string | null;
-}
-
-interface DaemonProcess {
-  name: string;
-  enabled: boolean;
-  running: boolean;  // always false; no per-process liveness file
-}
-
-interface DaemonSnapshot {
-  daemon: { label: string; running: boolean; home: string };
-  crons: DaemonCron[];
-  processes: DaemonProcess[];
-}
-```
-
----
-
-## Complete Directory Tree
+`vaultPaths(root, name)` resolves every path the runtime touches for one vault into a `VaultContext`.
+On each brain-start (`startVault` → `ensureVaultDirs`, `daemon/src/daemon/index.ts`) the daemon
+`mkdir -p`s `daemonDir`, `memory/`, `crons/`, `processes/`, and `logs/`, then runs `reconcileSeeds()`
+(below) to write any missing seeded defaults.
 
 ```
-~/.claude-bot/                         (or BISMUTH_DAEMON_DIR / daemon.home)
-├── device-id                          plain text UUID for this machine
-├── devices.json                       { "<uuid>": { label, lastSeenISO } }
-├── owner.json                         { ownerDeviceId, ownerLabel, updatedAt } (absent = unclaimed)
-├── daemon.pid                         running daemon PID (plain text integer)
+<vault>/.daemon/                         # vaultPaths(root).daemonDir
+├── identity.md                          # name (frontmatter) + personality (body) — user-editable, SEEDED
+├── session-id                           # this vault's persistent SDK session id
+├── memory/                              # 3rd-brain markdown notes (single-level folders allowed)
+│   └── <name>.md
+├── logs/                                # per-process stdout/stderr for THIS vault's processes
+│   ├── <process>.stdout.log
+│   └── <process>.stderr.log
 ├── crons/
-│   ├── <name>.md                      cron def: frontmatter { name?, schedule, enabled? } + body
-│   ├── <name>.md                      (one per cron job)
-│   ├── .last-fired.json               { "<name>": { timestamp, result } }
-│   ├── .running.json                  { "<name>": { startedAt } }
+│   ├── <name>.md                        # cron def (frontmatter + body = prompt) — defaults SEEDED
+│   ├── .last-fired.json                 # { "<name>": { timestamp, result } }
+│   ├── .running.json                    # { "<name>": { startedAt } }
 │   └── .triggers/
-│       └── <basename>                 ISO timestamp; signals "run now" to daemon
+│       └── <name>                       # ISO-timestamp file (presence = "run now"; no .md)
 └── processes/
-    ├── <name>.md                      process def: frontmatter { name?, enabled?, command?, ... }
-    ├── <name>.md                      (one per process)
+    ├── <name>.md                        # process def (frontmatter; command required)
+    ├── .pids/
+    │   └── <name>.pid                   # plain int — the cross-restart orphan-reap link
     └── .triggers/
-        └── <basename>                 ISO timestamp; signals "reconcile runtime" to daemon
+        └── <name>                       # ISO-timestamp file (presence = "reconcile runtime"; no .md)
 ```
+
+### Per-file reference (per-vault tier)
+
+| Path | Format | Owning module | Written / created by |
+| --- | --- | --- | --- |
+| `<vault>/.daemon/` | dir | `lib/config.ts` (`vaultPaths`) | `ensureVaultDirs` (`daemon/index.ts`) |
+| `identity.md` | markdown: `name:` frontmatter + personality body | `daemon/seeds.ts`, read by `session.ts` + `lib/registry.ts` | Seeded with `name: daemon` + `DEFAULT_DAEMON_IDENTITY` when absent (`reconcileSeeds`). The `name:` drives the sidebar label + daemon-graph hub (`daemonIdentityName()` in core, `readDaemonSettings()` in the daemon); the body is the bot's system prompt, read fresh per session via `buildSystemPrompt` (`You are <name>.\n\n<body>`). User-editable; never clobbered. See [memory.md](memory.md) |
+| `session-id` | plain text SDK session id | `daemon/session.ts` | `saveSessionId(ctx, id)` / `getSessionId(ctx)` — per-vault, so the one runtime `resume`s the right thread for each concurrent vault |
+| `memory/<name>.md` | markdown note: frontmatter `{ type, tags, created, updated }` + body with `[[backlinks]]`; single-level folders allowed | `@bismuth/memory` (`memory/src/graph.ts`) | The 3rd brain. Written by the daemon's bot, the relay collect hook, and the MCP `remember` tool — all against `<vault>/.daemon/memory` via `BISMUTH_MEMORY_DIR`. Full note format: [memory.md](memory.md) |
+| `crons/<name>.md` | cron def frontmatter `{ name?, schedule, enabled?(default true), catchup?(default true), notify?, model?, effort?, timeout?, waitFor? }` + body (= prompt) | `daemon/cron.ts` | `daemon/cron.ts` CRUD; the two defaults (`dream`, `vault-review`) are seeded. Full model: [crons-and-processes.md](crons-and-processes.md) |
+| `crons/.last-fired.json` | `{ "<name>": { timestamp: ISO, result: "success"\|"failed"\|"unknown"\|"killed" } }`, keyed by job name | `daemon/cron.ts` | `updateLastFired` (unique-tmp atomic write under a per-file serial queue). `loadLastFired` migrates a legacy plain-string value to `{ timestamp, result: "success" }` |
+| `crons/.running.json` | `{ "<name>": { startedAt: ISO } }`, keyed by job name | `daemon/cron.ts` | `markRunning` / `markDone` (same serial-queue + atomic write) |
+| `crons/.triggers/<name>` | ISO-timestamp file (content unused; presence is the signal); filename = job name, **no** `.md` | `daemon/cron.ts` | `requestCronRun` (or core's `runCron`); consumed (unlinked) by `processTriggers` every 5s. Owner-gated — a non-owner daemon unlinks without firing |
+| `processes/<name>.md` | process def frontmatter `{ command(required), name?, args?, cwd?, env?, restart?(default on-failure), restartDelay?(default 1000), enabled?(default true) }` | `daemon/process.ts` | `daemon/process.ts`. Full model: [crons-and-processes.md](crons-and-processes.md) |
+| `processes/.pids/<name>.pid` | plain int (`PIDS_SUBDIR = ".pids"`) | `daemon/process.ts` | `writePidFile` — the cross-restart link a fresh daemon reads (`reapOrphans`) to kill children orphaned by a previous instance. Removed on confirmed exit. No `.running.json` for processes; liveness is in-memory + this pid file |
+| `processes/.triggers/<name>` | ISO-timestamp file; filename = process file basename, **no** `.md` | `daemon/process.ts` | `requestProcessRun` (or core's `setProcessEnabled`); consumed by `processProcessTriggers` every 5s, which reconciles that process's runtime to its on-disk `enabled` flag |
+| `logs/<process>.{stdout,stderr}.log` | plain text | `daemon/process.ts` | `spawnProcess` opens these append-mode and wires the child's stdio to them |
+
+### Seeded defaults (`reconcileSeeds`)
+
+`reconcileSeeds(ctx)` (`daemon/src/daemon/seeds.ts`) is the daemon's analog of core's
+`reconcileSettings`: one declarative, **incremental, non-clobbering** pass run on every brain-start.
+It writes each registered seed only when its file is MISSING, so a fresh vault gets the full set, an
+already-set-up vault that predates a newly-added default gets just that new piece on next boot, and
+user edits (or a deliberate `enabled: false`) are never overwritten. `seedsFor(ctx)` currently seeds:
+
+- **`identity.md`** — `---\nname: daemon\n---` + `DEFAULT_DAEMON_IDENTITY`.
+- **The default crons** (`daemon/src/daemon/defaultCrons.ts`, embedded as string constants so they
+  survive `bun build --compile`):
+  - **`dream`** — `schedule: 0 * * * *` (hourly), `timeout: 1800`: consolidates this vault's
+    `memory/` graph into an atomic, densely-linked zettelkasten.
+  - **`vault-review`** — `schedule: 0 */4 * * *` (every 4h), `timeout: 900`, `notify: true`:
+    reviews the vault to maintain a living model-of-the-user in memory.
+
+Add a future seedable by appending one entry to `seedsFor()`.
 
 ---
 
-## Relationship to the Graph
+## Invariants
 
-`daemonSnapshot()` reads the entire tree above and returns a `DaemonSnapshot`. `buildDaemonGraph()`
-turns it into `GraphData`:
+- **`enabled` defaults to `true`.** Only an explicit `enabled: false` disables a cron/process — the
+  daemon's parsers check `frontmatter.enabled !== "false"`, and core's reader checks `data.enabled !== false`.
+- **Keying differs.** A cron's runtime/display name is `frontmatter.name ?? filename`; a process's
+  is likewise `frontmatter.name ?? filename`. Trigger files and `.pids/` files, however, are always
+  named by the **file basename**. In-memory runtime state is keyed `${ctx.root}::${name}` so two
+  vaults can each own an identically-named cron/process without colliding.
+- **Trigger files: unlink-first, then act.** Dotfiles are excluded from the trigger scan; a non-owner
+  daemon consumes a trigger without acting on it.
+- **All identity/owner writes are atomic** (tmp + rename). Cron state writes additionally go through a
+  per-file serial queue (keyed by the absolute, already-vault-unique path).
+- **Memory has no on-disk index or DB** — the graph is recomputed from the `.md` files on demand by
+  `@bismuth/memory` (see [memory.md](memory.md)). The memory dir is always supplied explicitly (the
+  daemon passes `<vault>/.daemon/memory`; the MCP + relay hooks set `BISMUTH_MEMORY_DIR`) — there is
+  no machine-global default.
+- **Disable = pause, never delete.** Disabling a vault's daemon (or dropping it from `vaults.json`)
+  tears down its live processes/session but never touches its on-disk `.daemon` state.
 
-- One `daemon` hub node (`id: "::daemon"`, `kind: "daemon"`).
-- One `cron` node per cron (`id: "cron:<name>"`, `kind: "cron"`), carrying a `daemon` viz-state
-  field for `nodeVisualState()`.
-- One `process` node per process (`id: "process:<name>"`, `kind: "process"`), same `daemon` field.
-- One `supervises` edge from the hub to each cron/process node.
-- No `self`/you node — the daemon hub is the center of the daemon graph.
+---
 
-See [daemonViz](../daemon/overview.md) for how `{ enabled, running }` maps to visual fill/border tokens.
+## Legacy `~/.claude-bot` migration
 
-`GET /daemon/graph` serves this graph (polled by the frontend only while daemon mode is active).
-`GET /daemon/status` and `GET /daemon/devices` return `DaemonStatus` and `DeviceList` respectively.
+The pre-absorption standalone tree at `~/.claude-bot` is no longer a live layout. It survives only as
+a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault, legacy?)` in
+`core/src/daemon.ts`:
 
-## See Also
+- **Copy-only — never deletes or moves the source.** `~/.claude-bot` stays in place as a permanent
+  backup, so the migration can never lose the user's memory graph.
+- **Machine-wide, gated to ONE vault.** A `~/.bismuth/daemon/.claude-bot-migrated` marker records the
+  destination vault root; once present, no other vault ever migrates. The brain lands in the first
+  vault whose daemon is enabled after upgrade.
+- **Per-file merge.** For each of `memory/`, `crons/`, `processes/`, it copies only legacy items not
+  already present in `<vault>/.daemon/<sub>` — so seeded defaults and the bot's own newer notes are
+  never clobbered.
+- **Best-effort; never throws.** Any failure leaves `~/.claude-bot` untouched as the source of truth.
+- **Source override.** The legacy root defaults to `~/.claude-bot` but is overridable via
+  `BISMUTH_LEGACY_CLAUDE_BOT_DIR` (or the `legacy` arg) so tests never read the user's real dir.
 
-- [claude-bot storage](../claude-bot/storage.md) — the producer view of this exact tree.
-- [claude-bot crons & processes](../claude-bot/crons-and-processes.md) — the full cron/process file model + trigger semantics Bismuth writes into.
-- [Daemon integration overview](overview.md) — the graph mode, controls, and `/daemon/*` routes.
+---
 
-Source: core/src/daemon.ts, core/src/daemonGraph.ts, core/src/daemonState.ts, core/test/daemon.test.ts, core/test/daemonGraph.test.ts
+## Relationship to Bismuth
+
+Bismuth core reads this tree to power the "daemon" graph mode and `DaemonList` sidebar. It writes only:
+`owner.json` (`setOwner`), a cron/process's `enabled` frontmatter (`setCronEnabled`/`setProcessEnabled`),
+and trigger files (`runCron`/`setProcessEnabled`). Crucially, daemon **liveness** is read MACHINE-level
+(`daemonMachineDir()/daemon.pid`) while crons/processes are read PER-VAULT (`vaultDaemonDir(vault)/{crons,processes}`),
+because one machine process multiplexes every vault's brain. Every reader tolerates missing/malformed
+files and never throws.
+
+See also: [overview.md](overview.md), [lifecycle.md](lifecycle.md),
+[crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md),
+[communication.md](communication.md), and the docs [README](../README.md).
+
+Source: daemon/src/lib/config.ts, daemon/src/lib/device.ts, daemon/src/lib/owner.ts, daemon/src/lib/platform.ts, daemon/src/lib/registry.ts, daemon/src/daemon/index.ts, daemon/src/daemon/cron.ts, daemon/src/daemon/process.ts, daemon/src/daemon/session.ts, daemon/src/daemon/seeds.ts, daemon/src/daemon/defaultCrons.ts, core/src/daemon.ts, core/src/daemonState.ts, core/src/daemonGraph.ts, core/src/daemonInstall.ts, memory/src/graph.ts, mcp/src/memory.ts, relay/lib/memory.ts

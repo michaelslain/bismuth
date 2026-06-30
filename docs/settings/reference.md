@@ -23,7 +23,7 @@ Every key's `type` is one of the `PropertyType` kinds (`core/src/schema/types.ts
 - `"file"` — a file reference.
 - `"icon"` — a Lucide icon name (e.g. `"FilePlus"`) **or** an emoji.
 - `"keybind"` — a keyboard combo string (drives order-free shortcut autocomplete + a "record shortcut" option).
-- `{ kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }` — a path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (e.g. `daemon.home`). Validated leniently (any string) — the path need not exist yet.
+- `{ kind: "path"; only?: "dir" | "file"; scope?: "templates" | "fs" }` — a path. `only` narrows completion to directories or files. `scope` selects the completion root: omitted = the vault tree; `"templates"` = the configured templates folder (files only); `"fs"` = the **real filesystem** (absolute or `~`-relative), for paths outside the vault (no current settings key uses `scope: "fs"`, but the kind is supported for filesystem paths). Validated leniently (any string) — the path need not exist yet.
 - `{ kind: "enum"; values: string[]; caseInsensitive?; allowPrefixes? }` — one of a fixed value list. `allowPrefixes` lets values beginning with a listed prefix (e.g. `daily-note:`) also pass.
 - `{ kind: "list"; item?: PropertyType }` — an array of items.
 - `{ kind: "object"; fields: Schema }` — a nested object (a section, or a free-form map when `fields` is empty `{}`).
@@ -273,23 +273,21 @@ server:
 
 ## `daemon`
 
-claude-bot daemon integration. When `enabled`, Bismuth shows the daemon graph mode, reads/writes the daemon's shared state files (device list + owner-device selection) under its home dir, and (if `autoUpdate`) updates the daemon on app launch when it's behind.
+Per-vault daemon integration. The daemon is the in-repo `@bismuth/daemon` workspace (the former standalone "claude-bot" sibling repo, now absorbed) — **one machine process that multiplexes per-vault "brains"**. When `enabled`, Bismuth runs this vault's brain (crons/processes/memory + a Claude session), injects the vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes; when off the brain is dormant (state is preserved on disk and the `.daemon` folder is hidden).
 
-> **Note** — the owner device is the single source of truth in `owner.json`, **not** a setting here. See [daemon integration](../daemon/overview.md) (if present) and the Daemon Integration section of `CLAUDE.md`.
+Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`). Each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. The daemon updates **with** the app (no git-pull self-update); install/setup is `core/src/daemonInstall.ts`.
+
+> **Note** — the owner device is the single source of truth in `owner.json`, **not** a setting here. The daemon's NAME lives in its identity file (`<vault>/.daemon/identity.md` frontmatter), not in settings. See the Daemon Integration section of `CLAUDE.md`.
 
 | Key | Type | Default | Doc |
 |-----|------|---------|-----|
-| `enabled` | boolean | `false` | Integrate with the claude-bot daemon — show its graph mode and auto-update it. Set automatically from the first-run intro (on if you opt into the daemon, off otherwise); toggle anytime. |
-| `home` | path (`only: "dir"`, `scope: "fs"`) | `~/.claude-bot` | claude-bot home dir — holds its device-id, crons, and memory. `~` expands to your home folder. Filesystem autocompletes (absolute or `~`-relative). |
-| `autoUpdate` | boolean | `true` | When the daemon is enabled and installed, auto-update it on app launch (git pull + bun install + restart) if it's behind — in the background. |
+| `enabled` | boolean | `false` | Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the `.daemon` folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (`.daemon/identity.md` frontmatter), not here. |
 
 Example:
 
 ```yaml
 daemon:
   enabled: true
-  home: ~/.claude-bot
-  autoUpdate: true
 ```
 
 ---
@@ -461,14 +459,21 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `open-graph` | Open graph view | `Share2` |
 | `open-folder` | Open folder… | `FolderOpen` |
 | `new-window` | New window | `AppWindow` |
+| `create-menu` | Create new… | `Plus` |
 | `new-note` | New note | `FilePlus` |
 | `new-folder` | New folder | `FolderPlus` |
+| `new-base` | New base | `Database` |
 | `new-spreadsheet` | New spreadsheet | `Table` |
 | `new-drawing` | New drawing | `PenTool` |
+| `new-claude-chat` | New Claude Chat | `MessageSquare` |
 | `export` | Export current file… | `Download` |
+| `archive-tasks` | Archive completed tasks (this note) | `Archive` |
+| `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` |
+| `detect-ai` | Detect AI text | `Bot` |
 | `terminal` | Open Terminal | `SquareTerminal` |
 | `search` | Search | `Search` |
 | `settings` | Open Settings | `Settings` |
+| `edit-dictionary` | Edit custom dictionary… | `BookOpen` |
 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` |
 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` |
 | `graph-both` | Graph: Both Brains | `Network` |
@@ -477,6 +482,12 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
 | `daemon-setup` | Set up claude-bot daemon… | `Download` |
+| `daemon-update` | Update claude-bot daemon… | `RefreshCw` |
+| `bismuth-install` | Install Bismuth CLI + MCP… | `Download` |
+| `update-app` | Update Bismuth… | `RefreshCw` |
+| `gcal-connect` | Connect Google Calendar… | `Calendar` |
+| `gcal-sync` | Sync Google Calendar | `RefreshCw` |
+| `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` |
 
 Example — a custom toolbar with a multi-command button, an emoji icon, and a daily-note button:
 
@@ -565,6 +576,7 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 
 | id | Default combo | Doc |
 |----|---------------|-----|
+| `find` | `Mod+F` | Open the in-note find bar in the focused editor (searches the current note). |
 | `command-palette` | `Mod+P` | Open/close the command palette. |
 | `quick-switcher` | `Mod+O` | Open/close the quick file switcher. |
 | `terminal` | `Mod+\`, Mod+J` | Open a terminal tab (comma-separated alternatives allowed). |
@@ -580,6 +592,7 @@ Each key's value is a `keybind`; the default equals the previously hardcoded com
 | `focus-pane-right` | `Mod+Alt+ArrowRight` | Move focus to the pane on the right. |
 | `focus-pane-up` | `Mod+Alt+ArrowUp` | Move focus to the pane above. |
 | `focus-pane-down` | `Mod+Alt+ArrowDown` | Move focus to the pane below. |
+| `new-claude-chat` | `Mod+Shift+C` | Open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Show/hide the left sidebar (ignored while typing in a form field). |
 

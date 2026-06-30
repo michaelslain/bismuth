@@ -45,6 +45,8 @@ interface CalendarEvent {
   description?: string  // markdown-enabled (rendered in EventModal on blur)
   category?: string     // name of a Category; absent = no tint (ghost chip)
   recurrence?: Recurrence
+  localUpdated?: string // ISO timestamp stamped on every local create/edit (EventStore);
+                        // Google Calendar sync's last-write-wins tiebreaker vs. remote `updated`
 }
 ```
 

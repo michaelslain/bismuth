@@ -179,7 +179,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /daemon/status`
 - **Params:** none.
-- **Response:** `DaemonStatus` = `{ running: boolean, thisDeviceId: string|null, owner: Owner|null }`. `running` = `daemon.pid` exists AND that pid is alive. `owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` or `null` (unclaimed). Reads claude-bot shared state under `BISMUTH_DAEMON_DIR` (env wins) / `daemon.home` setting / `~/.claude-bot`. **Never throws** (degrades to defaults).
+- **Response:** `DaemonStatus` = `{ running: boolean, thisDeviceId: string|null, owner: Owner|null }`. `running` = `daemon.pid` exists AND that pid is alive. `owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` or `null` (unclaimed). Reads the daemon's machine-level identity state under `daemonMachineDir()` = `BISMUTH_DAEMON_DIR` (env wins) else `~/.bismuth/daemon` (device-id/devices.json/owner.json/daemon.pid). **Never throws** (degrades to defaults).
 
 ### `GET /daemon/devices`
 - **Params:** none.
@@ -187,11 +187,11 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /daemon/graph`
 - **Params:** none.
-- **Response:** the daemon-mode `GraphData` (`attachLayout(daemonGraph(), "daemon")`): a `kind:"daemon"` hub node (always present, even with zero crons/processes) → `cron`/`process` child nodes, `supervises` edges. Positions (`position`/`position2d`) are attached so the WebGL renderer can place nodes; layout is cached by graph signature so polled state changes keep stable positions. **Never emits a `self` node.** Never throws (degrades to the bare hub).
+- **Response:** the daemon-mode `GraphData` (`attachLayout(daemonGraph(vaultDaemonDir(cfg.vault), daemonIdentityName(cfg.vault)), "daemon")` — **PER-VAULT**: crons/processes are read from THIS vault's `<vault>/.daemon/{crons,processes}` dir, while daemon liveness stays machine-level (`daemonMachineDir()/daemon.pid`)): a `kind:"daemon"` hub node (always present, even with zero crons/processes; label defaults to `"daemon"`, or the `name:` frontmatter of `<vault>/.daemon/identity.md`) → `cron`/`process` child nodes, `supervises` edges. Positions (`position`/`position2d`) are attached so the WebGL renderer can place nodes; layout is cached by graph signature so polled state changes keep stable positions. **Never emits a `self` node.** Never throws (degrades to the bare hub).
 
 ### `GET /daemon/install`
 - **Params:** none.
-- **Response:** `InstallStatus` = `{ installed: boolean, running: boolean, daemonLabel?: string, home?: string, plistPath?: string }`. Read-only install probe bridged to the claude-bot package (`installStatus`). **Never throws / never 500** — degrades to `{ installed:false, running:false }` (the `UNKNOWN_STATUS` default) when the entrypoint can't be reached.
+- **Response:** `InstallStatus` = `{ installed: boolean, running: boolean, binPath: string }`. Read-only install probe (`installStatus`, `core/src/daemonInstall.ts`) — queries the installed daemon binary (`<binPath> --status`, where `binPath` = `BISMUTH_DAEMON_BIN` else `~/.bismuth/bin/bismuth-daemon`). **Never throws / never 500** — degrades to `{ installed:false, running:false, binPath }` when the binary is absent or doesn't respond.
 
 ### `GET /bismuth/install`
 - **Params:** none.
@@ -229,7 +229,7 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 
 ### `POST /list-dir`
 - **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
-- **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (e.g. `daemon.home`).
+- **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (filesystem-path settings).
 - **Response:** `{ entries: { path: string, kind: "file" | "dir" }[] }` (dirs first, then alpha; capped client-side at 50). A missing/unreadable parent or relative `path` → `{ entries: [] }`.
 - **Cache/SSE:** none (read-only despite POST).
 
@@ -255,13 +255,13 @@ Posted by the relay plugin's hooks loaded per-session inside app terminals. They
 - **`POST /relay/subagent/stop`** — body `{ agentId?, lastMessage? }`. `stopSubagent(...)`. `400 "missing agentId"` if absent.
 
 ### Daemon system actions / writes (read table)
-These mutate the claude-bot daemon's shared on-disk files (NOT the vault), so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/graph`).
+These mutate the daemon's shared on-disk files (NOT the vault) — either the machine-level install state or the active vault's `<vault>/.daemon/{crons,processes}` defs — so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/graph`).
 
-- **`POST /daemon/setup`** — body none. `runSetup()` (idempotent, adopt-only). Response `SetupResult` = `{ action, status: InstallStatus }` (`action` is a string like `"adopted"`). Surfaces a real error (500) if the entrypoint can't be resolved or the subprocess fails — but it must NOT 404 and must NOT bump the vault version.
-- **`POST /daemon/update`** — body none. `runUpdate()` spawns claude-bot's `bin/update.ts` (no flag): `git pull --ff-only` + `bun install` + restart the daemon (claude-bot's own `restartDaemon` — Bismuth never calls launchctl). Idempotent — `"up-to-date"` when already at `origin/main`. Response `UpdateResult` = `{ action: "updated"|"up-to-date"|"would-update"|"no-remote", from?, to?, restarted?, warnings? }`. System action, not a vault mutation. See [claude-bot install](../claude-bot/install.md).
-- **`POST /daemon/cron/toggle`** — body `{ name?, enabled? }`. `setCronEnabled(name, enabled)` (rewrites the `enabled` frontmatter in `<home>/crons/<name>.md`). Response `{ ok: true }`. `400 "missing name/enabled"` if `name` absent or `enabled` not a boolean. Unknown name → `setCronEnabled` throws `AppError("ENOENT")` → `404` via the dispatch catch.
-- **`POST /daemon/cron/run`** — body `{ name? }`. `runCron(name)` (drops a trigger file the daemon polls). Response `{ ok: true }`. `400 "missing name"` if absent. Unknown name → `404`.
-- **`POST /daemon/process/toggle`** — body `{ name?, enabled? }`. `setProcessEnabled(name, enabled)`. Response `{ ok: true }`. `400 "missing name/enabled"` on bad input; unknown name → `404`.
+- **`POST /daemon/setup`** — body none. `runSetup()` (`core/src/daemonInstall.ts`) — runs the bundled daemon binary's self-install (`<binPath> --ensure-installed`, which writes the launchd/systemd unit pointing at the stable `~/.bismuth/bin/bismuth-daemon` path). Idempotent. Response `SetupResult` = `{ ok: boolean, binPath: string, error?: string }` — `ok:false` (with `error`) when the binary isn't staged or the subprocess fails. **Never throws** (best-effort); must NOT 404 and must NOT bump the vault version.
+- **`POST /daemon/update`** — body none. The daemon ships as a bundled binary that updates **WITH the app** (there is no git-pull self-update path), so "update" just re-runs the idempotent, adopt-only `runSetup()` to (re-)register the service. Response `SetupResult` = `{ ok, binPath, error? }`. System action, not a vault mutation.
+- **`POST /daemon/cron/toggle`** — body `{ name?, enabled? }`. `setCronEnabled(name, enabled, vaultDaemonDir(cfg.vault))` (rewrites the `enabled` frontmatter in `<vault>/.daemon/crons/<name>.md`). Response `{ ok: true }`. `400 "missing name/enabled"` if `name` absent or `enabled` not a boolean. Unknown name → `setCronEnabled` throws `AppError("ENOENT")` → `404` via the dispatch catch.
+- **`POST /daemon/cron/run`** — body `{ name? }`. `runCron(name, vaultDaemonDir(cfg.vault))` (drops a trigger file under `<vault>/.daemon/crons/.triggers/` the daemon polls). Response `{ ok: true }`. `400 "missing name"` if absent. Unknown name → `404`.
+- **`POST /daemon/process/toggle`** — body `{ name?, enabled? }`. `setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault))`. Response `{ ok: true }`. `400 "missing name/enabled"` on bad input; unknown name → `404`.
 
 ### Machine-wide install / self-update (read table)
 These run system actions (filesystem + git + `claude mcp` + a rebuild) but are **not** vault mutations, so they live in the read table with no vault-cache invalidation. All never throw.
@@ -479,7 +479,7 @@ On `close`, the live sink is detached (`detachSink` — output resumes buffering
 The server also pre-warms one login shell on boot (`prewarmPool(vault, server.port)`, cwd = vault) so the first tab paints instantly; best-effort (a spawn failure never takes the server down).
 
 ### `idleTimeout`
-`Bun.serve` is configured with `idleTimeout: 255` (Bun's max). Bun's default 10s would drop a connection mid-request for the few slow handlers (notably `POST /daemon/setup`, which git-clones + bun-installs claude-bot on first run).
+`Bun.serve` is configured with `idleTimeout: 255` (Bun's max). Bun's default 10s would drop a connection mid-request for the few slow handlers (notably `POST /daemon/setup`, which copies the bundled daemon binary into `~/.bismuth/bin` and registers the launchd/systemd service on first run).
 
 ---
 
@@ -559,4 +559,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/terminal` | (WS upgrade) | n/a |
 | GET | `/chat` | (WS upgrade) | n/a |
 
-Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/search.ts, core/src/claudebot.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts
+Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/search.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts

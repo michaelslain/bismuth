@@ -112,6 +112,8 @@ interface CalendarEvent {
   description?: string
   category?: string
   recurrence?: Recurrence
+  localUpdated?: string // ISO timestamp stamped on every local create/edit (EventStore);
+                        // the Google Calendar last-write-wins tiebreaker against the remote `updated`
 }
 ```
 
@@ -350,6 +352,18 @@ The dropdown for each field lists: the standard columns (`date`, `startTime`, `e
 
 ---
 
+## Google Calendar Two-Way Sync
+
+A calendar base can be two-way-synced with Google Calendar (`core/src/gcal/`). One sync pass (`syncEvents` in `core/src/gcal/sync.ts`) does three phases:
+
+- **Pull** — reconcile every remote event into the base (create / update / delete-local).
+- **Push** — insert new local events and patch locally-changed ones (`If-Match` etag → 412 conflict handling).
+- **Delete** — events removed locally (gone from the base but still linked) are deleted on Google.
+
+Change detection is timestamp-free where possible: a per-event content signature in an external (non-vault) manifest flags local edits, while the remote `updated` time flags remote edits. Only a genuine conflict (both sides changed) consults the conflict policy (`lastWriteWins` | `googleWins` | `bismuthWins`). `lastWriteWins` compares the row's `localUpdated` stamp against the remote `updated` time. The base file itself stays clean — all sync state lives in the external manifest. See `docs/gcal/overview.md` for the full OAuth/sync detail.
+
+---
+
 ## Reactive State
 
 All calendar state is module-level reactive boxes in `calendar/state.ts` (Solid `createSignal` wrappers). Because these are global, only one calendar can render at a time (mounting two `CalendarView` instances would share the same `currentView`/`currentDate` signals).
@@ -416,4 +430,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Bases overview](../overview.md)
 - [Base file format](../../calendar/overview.md)
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
