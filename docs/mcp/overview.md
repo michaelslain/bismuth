@@ -18,7 +18,7 @@ The compiled binary reads `BISMUTH_DOCS_DIR` for the docs (`mcp/src/server.ts`) 
 
 ## Tools (token-frugal by design)
 
-The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers five tools. Docs are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
+The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers five always-on tools (plus three daemon-gated memory tools — see below). Docs are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -30,10 +30,23 @@ The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` 
 
 Typical flow: `docs_search` → read only the top hit with `docs_read`; act with `bismuth_cli`.
 
+## Memory tools (daemon-gated, per-vault)
+
+When the [daemon](../daemon/overview.md) is enabled for the active vault, the server **conditionally** exposes three more tools — the vault's 3rd-brain memory graph. The gate is `memoryDir()` (`mcp/src/memory.ts`), which just returns `process.env.BISMUTH_MEMORY_DIR || null`. `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` into a Bismuth tab's PTY **only** when `settings.daemon.enabled` is on for that vault (pointing at `<vault>/.daemon/memory`), and the MCP child inherits it. So `ListTools` returns `memoryDir() ? [...tools, ...memoryTools] : tools` — outside a daemon-enabled Bismuth session the bot never even sees `remember`/`recall`/`forget`. (If one is somehow called with no `memoryDir()`, the handler returns an `isError` "Memory is unavailable" message.)
+
+| Tool | Args | Returns |
+|---|---|---|
+| `remember` | `name`, `content`, `type?`, `tags?`, `folder?` | saves/overwrites a note in the vault's memory graph (preserves an existing note's `type`/`created`) → `{ok, name}` |
+| `recall` | `query`, `folder?` | searches the graph (supports `tag:`/`type:`/`keyword:`/`link:`/`after:`/`before:` filters) → `{ok, count, notes}` |
+| `forget` | `name` (may be folder-prefixed) | removes a note → `{ok, name}` |
+
+These delegate to the shared `@bismuth/memory` graph, so the MCP tools, the daemon writer, and the relay collect-hook all read/write **one** note format against `<vault>/.daemon/memory`.
+
 ## Modules
 
 - `mcp/src/docs.ts` — pure index/search/read over `docs/` (`listDocs`/`searchDocs`/`readDoc`); section-level scoring, path-traversal-guarded. Unit-tested (`docs.test.ts`).
 - `mcp/src/cli.ts` — runs the CLI: the `BISMUTH_CLI` compiled binary when set (machine-wide install), else `bun run cli/src/index.ts` (dev). Passes `BISMUTH_VAULT`/`BISMUTH_MEMORY` through; `runCli`/`cliHelp`, never throws.
-- `mcp/src/server.ts` — registers the tools and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
+- `mcp/src/memory.ts` — the daemon-gated memory tools (`remember`/`recall`/`forget`) + the `memoryDir()` gate; delegates to `@bismuth/memory` against `BISMUTH_MEMORY_DIR`.
+- `mcp/src/server.ts` — registers the tools and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). `ListTools` appends the memory tools only when `memoryDir()` resolves. Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
 
-Source: mcp/src/server.ts, mcp/src/docs.ts, mcp/src/cli.ts, relay/.mcp.json, core/src/bismuthInstall.ts, core/src/terminal.ts, app/scripts/build-bismuth-tools.ts
+Source: mcp/src/server.ts, mcp/src/memory.ts, mcp/src/docs.ts, mcp/src/cli.ts, relay/.mcp.json, core/src/bismuthInstall.ts, core/src/terminal.ts, app/scripts/build-bismuth-tools.ts

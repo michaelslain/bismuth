@@ -51,7 +51,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
-| `BISMUTH_DAEMON_DIR` | (daemon only, read by `core/src/daemon.ts`) overrides the claude-bot home dir (default `~/.claude-bot`). Wins over the `daemon.home` setting. Not a CLI flag; an env var. |
+| `BISMUTH_DAEMON_DIR` | (daemon only, read by `core/src/daemon.ts`) overrides the daemon's **machine-level** identity dir (default `~/.bismuth/daemon` — device-id, devices.json, owner.json, daemon.pid). Not a CLI flag; an env var. Per-vault crons/processes live under `<vault>/.daemon` and are addressed via `--vault`, not this var. |
 
 ### Argument-parsing semantics (gotchas)
 
@@ -365,7 +365,12 @@ bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ign
 
 ## Daemon commands (`commands/daemon.ts`)
 
-Reads/writes the **claude-bot daemon's** shared on-disk state under `~/.claude-bot` (override with the `BISMUTH_DAEMON_DIR` env var, which wins over the `daemon.home` setting) — **NOT the vault**, so **none of these take `--vault`**. Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read shared files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup spawn the claude-bot entrypoint. Bismuth never starts/stops the daemon.
+Reads/writes the **`@bismuth/daemon`** runtime's on-disk state. The daemon is ONE machine process that multiplexes per-vault "brains"; its state is split in two:
+
+- **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update` — **take no `--vault`**.
+- **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
+
+Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. Bismuth never starts/stops the daemon. (`~/.claude-bot` survives only as a one-time, copy-only legacy migration source.)
 
 ### `daemon status`
 Print the daemon's liveness, this device id, and current owner (`daemonStatus()`).
@@ -387,47 +392,47 @@ bismuth daemon owner my-laptop-abc123         # claim
 ```
 
 ### `daemon install`
-Print the claude-bot install status (read-only, never throws) (`installStatus()` from `core/src/claudebot`).
+Print the bundled daemon's install status (read-only, never throws) (`installStatus()` from `core/src/daemonInstall.ts`): `{ installed, running, binPath }`. Probes the installed binary at `~/.bismuth/bin/bismuth-daemon` (env override `BISMUTH_DAEMON_BIN`).
 ```bash
 bismuth daemon install --pretty
 ```
 
 ### `daemon setup`
-Run the idempotent, **adopt-only** claude-bot setup and print the result (`runSetup()`). Never clobbers, restarts, or repoints a live daemon.
+Run the daemon's idempotent self-install (`runSetup()` → `<bin> --ensure-installed`), registering the launchd/systemd service that points at the bundled binary. Result: `{ ok, binPath, error? }`.
 ```bash
 bismuth daemon setup --pretty
 ```
 
 ### `daemon update`
-Update claude-bot end-to-end (`runUpdate()` → claude-bot's `bin/update.ts`): `git pull --ff-only` + `bun install` + **restart the daemon**. Idempotent — `"up-to-date"` when already at `origin/main`. Result: `{ action, from?, to?, restarted?, warnings? }`. (Also surfaced in-app as the "Update claude-bot daemon…" command.)
+Re-register the bundled daemon service. The daemon ships with the app and updates **with** it (no git pull / no self-update) — so "update" just calls the same `runSetup()` as `daemon setup` to (re)write the service definition pointing at the freshly-staged binary. Result: `{ ok, binPath, error? }`.
 ```bash
 bismuth daemon update --pretty
 ```
 
-### `daemon graph`
-Build the daemon-mode graph (daemon hub → crons + processes, `supervises` edges) and print it as JSON (`daemonGraph()`).
+### `daemon graph` — **requires `--vault`**
+Build this vault's daemon-mode graph (daemon hub → crons + processes, `supervises` edges) and print it as JSON (`daemonGraph(vaultDaemonDir(vault))`).
 ```bash
-bismuth daemon graph --pretty
+bismuth daemon graph --vault ~/vault --pretty
 ```
 
-### `daemon cron toggle <name> [--off]`
-Enable (default) or, with `--off`, disable a cron by flipping its `enabled` frontmatter (`setCronEnabled(name, !off)`). Prints `ok`. Missing name → `usage: daemon cron toggle <name> [--off]`.
+### `daemon cron toggle <name> [--off]` — **requires `--vault`**
+Enable (default) or, with `--off`, disable a cron in this vault's `.daemon` dir by flipping its `enabled` frontmatter (`setCronEnabled(name, !off, vaultDaemonDir(vault))`). Prints `ok`. Missing name → `usage: daemon cron toggle <name> --vault <dir> [--off]`.
 ```bash
-bismuth daemon cron toggle nightly-summary
-bismuth daemon cron toggle nightly-summary --off
+bismuth daemon cron toggle dream --vault ~/vault
+bismuth daemon cron toggle dream --off --vault ~/vault
 ```
 
-### `daemon cron run <name>`
-Request the daemon to run a cron NOW by dropping a trigger file the daemon polls (`runCron(name)`). Prints `ok`. Missing name → `usage: daemon cron run <name>`.
+### `daemon cron run <name>` — **requires `--vault`**
+Request the daemon to run a cron in this vault NOW by dropping a trigger file the daemon polls (`runCron(name, vaultDaemonDir(vault))`). Prints `ok`. Missing name → `usage: daemon cron run <name> --vault <dir>`.
 ```bash
-bismuth daemon cron run nightly-summary
+bismuth daemon cron run dream --vault ~/vault
 ```
 
-### `daemon process toggle <name> [--off]`
-Enable (default) or, with `--off`, disable a background process by flipping its `enabled` frontmatter (`setProcessEnabled(name, !off)`). Prints `ok`. Missing name → `usage: daemon process toggle <name> [--off]`.
+### `daemon process toggle <name> [--off]` — **requires `--vault`**
+Enable (default) or, with `--off`, disable a background process in this vault's `.daemon` dir by flipping its `enabled` frontmatter (`setProcessEnabled(name, !off, vaultDaemonDir(vault))`). Prints `ok`. Missing name → `usage: daemon process toggle <name> --vault <dir> [--off]`.
 ```bash
-bismuth daemon process toggle watcher
-bismuth daemon process toggle watcher --off
+bismuth daemon process toggle watcher --vault ~/vault
+bismuth daemon process toggle watcher --off --vault ~/vault
 ```
 
 ---
@@ -526,12 +531,12 @@ Removes the machine-wide CLI symlink (if it's ours), the global MCP registration
 
 ## Checkpoint commands (`commands/checkpoint.ts`)
 
-A **checkpoint** is a lightweight git ref (`refs/bismuth/<name>`) marking how far a periodic consumer has processed a repo's autosave history — a *bookmark*, not a branch. Every consumer reads the same linear history and remembers its own position, so they advance independently, side by side (invisible to normal git, never pushed). This lets background jobs process only "what changed since I last ran": the **dream** cron over `~/.claude-bot/memory` (`refs/bismuth/dream`), **vault-review** over the vault (`refs/bismuth/vault-review`). Headless; generic over any git-tracked dir via `--dir` (falls back to `--vault`/`BISMUTH_VAULT`). By default each op commits pending changes first so the delta reflects the latest on-disk state — pass `--no-commit` to diff against existing history only (e.g. a protected vault).
+A **checkpoint** is a lightweight git ref (`refs/bismuth/<name>`) marking how far a periodic consumer has processed a repo's autosave history — a *bookmark*, not a branch. Every consumer reads the same linear history and remembers its own position, so they advance independently, side by side (invisible to normal git, never pushed). This lets background jobs process only "what changed since I last ran": the **dream** cron over a vault's memory repo `<vault>/.daemon/memory` (`refs/bismuth/dream`), **vault-review** over the vault (`refs/bismuth/vault-review`). Headless; generic over any git-tracked dir via `--dir` (falls back to `--vault`/`BISMUTH_VAULT`). By default each op commits pending changes first so the delta reflects the latest on-disk state — pass `--no-commit` to diff against existing history only (e.g. a protected vault).
 
 ### `checkpoint diff <ref> --dir <path> [--no-commit]`
 Lists files changed since `refs/bismuth/<ref>`: `{ base, head, files: [{status, path}] }`. First run (ref unset) → `base: null` and every tracked file at HEAD is reported as added (`status: "A"`).
 ```bash
-bismuth checkpoint diff dream --dir ~/.claude-bot/memory --pretty
+bismuth checkpoint diff dream --dir "$HOME/Documents/library of alexandria/.daemon/memory" --pretty
 bismuth checkpoint diff vault-review --dir "$HOME/Documents/library of alexandria" --no-commit
 ```
 
@@ -556,7 +561,8 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
-| `daemon status/devices/owner/install/setup/update/graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **no** (uses `~/.claude-bot`) | JSON / `ok` |
+| `daemon status/devices/owner/install/setup/update` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
+| `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
@@ -564,4 +570,4 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts
+Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts

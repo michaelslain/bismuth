@@ -55,24 +55,29 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 12 | `new-base` | New base | `Database` | `h.newBase` |
 | 13 | `new-spreadsheet` | New spreadsheet | `Table` | `h.newSpreadsheet` |
 | 14 | `new-drawing` | New drawing | `PenTool` | `h.newDrawing` |
-| 15 | `export` | Export current file… | `Download` | `h.exportActive` |
-| 16 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
-| 17 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
-| 18 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
-| 19 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 20 | `search` | Search | `Search` | `h.openSearch` |
-| 21 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 22 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
-| 23 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 24 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 25 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 26 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
-| 27 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 28 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 29 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 30 | `daemon-setup` | Set up claude-bot daemon… | `Download` | `h.openDaemonSetup` |
-| 31 | `daemon-update` | Update claude-bot daemon… | `RefreshCw` | `h.openDaemonSetup` |
-| 32 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 15 | `new-claude-chat` | New Claude Chat | `MessageSquare` | `h.newClaudeChat` |
+| 16 | `export` | Export current file… | `Download` | `h.exportActive` |
+| 17 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
+| 18 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
+| 19 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
+| 20 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
+| 21 | `search` | Search | `Search` | `h.openSearch` |
+| 22 | `settings` | Open Settings | `Settings` | `h.openSettings` |
+| 23 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
+| 24 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
+| 25 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
+| 26 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
+| 27 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
+| 28 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 29 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 30 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 31 | `daemon-setup` | Set up claude-bot daemon… | `Download` | `h.openDaemonSetup` |
+| 32 | `daemon-update` | Update claude-bot daemon… | `RefreshCw` | `h.updateDaemon` |
+| 33 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 34 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 36 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 37 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
 
 Notes on individual commands:
 
@@ -84,14 +89,16 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-agents`): each calls `h.setMode(...)` with the corresponding graph mode string.
-- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the claude-bot daemon owner-picker modal, the install/repair (adopt) panel, and the update panel respectively. `daemon-update` is a distinct catalog id but **binds to the same handler** as `daemon-setup` (`actions["daemon-update"] = h.openDaemonSetup`) — see Daemon Integration in the project CLAUDE.md.
+- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. The "claude-bot daemon" wording in the `daemon-setup`/`daemon-update` labels is verbatim from the catalog. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
+- **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
+- **`new-claude-chat`**: opens a fresh Claude Code chat session in its own tab (`h.newClaudeChat`).
+- **`gcal-connect` / `gcal-sync` / `gcal-disconnect`**: open the "Connect Google Calendar" OAuth panel (`h.gcalConnect`), pull events from Google Calendar into the configured base (`h.gcalSync`), and disconnect Google Calendar — revoke + wipe stored tokens (`h.gcalDisconnect`).
 
 ### Notable absences / gotchas
 
 - **There is no `graph-daemon` command** in the catalog, even though the renderer has a `"daemon"` graph mode. `setMode`'s type accepts `"2nd" | "3rd" | "both" | "agents" | "daemon"`, but only the first four have catalog commands. Daemon mode is reached via the daemon sidebar/UI, not a toolbar command.
-- **Three commands share the `Download` icon** (`open-folder`'s neighbor `export`, plus `daemon-setup` and `bismuth-install`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
-- **`daemon-update` and `daemon-setup` bind to the same handler** (`h.openDaemonSetup`); they are distinct ids with distinct labels/icons but the same action.
+- **Several commands share an icon**: `Download` (`export`, `daemon-setup`, `bismuth-install`), `RefreshCw` (`daemon-update`, `update-app`, `gcal-sync`), and **`new-tab` shares `Plus` with `create-menu`**. That is intentional and allowed — icon uniqueness is not an invariant (only `id` uniqueness is).
 - Icons are **Lucide icon names** by convention (matched against the icon registry on the frontend), but toolbar/daily-note `icon` fields may also be a literal emoji (see "Button fields").
 
 ### The `create-menu` chooser
@@ -191,21 +198,37 @@ export interface CommandHandlers {
   exportActive: () => void;
   // Estimate how AI-generated the active page reads (local, offline) and toast the score.
   detectAiActive: () => void | Promise<void>;
+  // Open the modal to pick which device owns the claude-bot daemon.
   openDaemonOwner: () => void;
+  // Open the panel to install/repair (adopt) the claude-bot daemon.
   openDaemonSetup: () => void;
+  // Update the claude-bot daemon to the latest version (POST /daemon/update, idempotent +
+  // fetch-gated) — toasts progress. Distinct from openDaemonSetup, which only installs/adopts.
+  updateDaemon: () => void | Promise<void>;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;
+  // Manually update the Bismuth app (same pipeline as the UpdateBanner button) — for when
+  // the banner was dismissed or missed. No-op-with-toast when already up to date / in dev.
+  updateApp: () => void | Promise<void>;
   // Open the modal to view/remove the user's custom spellcheck dictionary words.
   openEditDictionary: () => void;
   // Permanently remove completed/cancelled tasks — from the active note, or all notes.
   archiveTasks: () => void | Promise<void>;
   archiveAllTasks: () => void | Promise<void>;
+  // Open the "Connect Google Calendar" panel (OAuth connect/disconnect/status).
+  gcalConnect: () => void;
+  // Pull events from Google Calendar into the configured base (one-way sync).
+  gcalSync: () => void | Promise<void>;
+  // Disconnect Google Calendar (revoke + wipe stored tokens).
+  gcalDisconnect: () => void | Promise<void>;
+  // Open a fresh Claude Code chat session in its own tab.
+  newClaudeChat: () => void;
 }
 ```
 
 Because actions may anchor a popover or run async, `BoundCommand.action` is `(e?: MouseEvent) => void` (most actions ignore the event; `create-menu` uses it to anchor its chooser to the clicked button).
 
-`App.tsx` (around line 678) constructs the bound map reactively:
+`App.tsx` (around line 793) constructs the bound map reactively:
 
 ```ts
 const commands = () => bindCommands(
@@ -213,7 +236,9 @@ const commands = () => bindCommands(
     newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes,
     toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab,
     closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner,
-    openDaemonSetup, openBismuthInstall, openEditDictionary, archiveTasks, archiveAllTasks },
+    openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary,
+    archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect,
+    newClaudeChat },
   settings.dailyNotes,
 );
 ```
@@ -427,4 +452,4 @@ toolbar:
 - [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 
-Source: core/src/commands.ts, app/src/commands.ts, app/src/baseViews.ts, app/src/ai/aiDetect.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/test/commands.test.ts, app/src/commands.test.ts, app/src/App.tsx, app/src/editor/settingsComplete.ts
+Source: core/src/commands.ts, app/src/commands.ts, app/src/baseViews.ts, app/src/ai/aiDetect.ts, core/src/daemonInstall.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, core/src/schema/validate.ts, core/test/commands.test.ts, app/src/commands.test.ts, app/src/App.tsx, app/src/editor/settingsComplete.ts

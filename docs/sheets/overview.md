@@ -343,10 +343,10 @@ Tab label: the filename without the `.sheet` extension (from `tabIds.ts`). Tab i
 
 ## Export
 
-`.sheet` files export to **HTML** and **PDF** (from `export/formats.ts`):
+`.sheet` files export to **HTML**, **PDF**, and **PNG** (from `export/formats.ts`):
 
 ```ts
-formatsFor("budget.sheet") // → ["html", "pdf"]
+formatsFor("budget.sheet") // → ["html", "pdf", "png"]
 ```
 
 Export to HTML uses `sheetHtml.ts`'s `snapshotToHtmlTable(snap)`, which reads the first sheet in `sheetOrder` (falling back to `Object.keys(sheets)`) and renders a plain `<table>` from the sparse `cellData` map (rows × cols, null cells become empty `<td>`). Only raw cell values (`v` field) are exported — formatting, formulas, and multi-sheet tabs beyond the first are not reflected in the HTML export.

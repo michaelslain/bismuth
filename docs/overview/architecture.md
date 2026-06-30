@@ -1,6 +1,6 @@
 # Bismuth Architecture Overview
 
-Bismuth is a personal knowledge management system built as a Bun monorepo with five workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (Claude-bot memory notes). These three data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
+Bismuth is a personal knowledge management system built as a Bun monorepo with five workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
 
 ---
 
@@ -28,9 +28,9 @@ Install all workspaces at once with `bun install` from the repo root. To add a p
 
 `core/src/server.ts` is the entry point. It starts a `Bun.serve` HTTP server (default port `:4321`) that:
 
-- Accepts `--vault <dir>` and `--memory <dir>` CLI flags (both required when run standalone).
+- Accepts `--vault <dir>` and `--memory <dir>` CLI flags (both required when run standalone; the bundled app passes `<vault>/.daemon/memory` as `--memory`).
 - Exposes a REST API consumed by both the app and the CLI.
-- Watches the vault and memory directories for file changes, debounces them at 250 ms, selectively invalidates caches, bumps a version counter, and pushes SSE events to connected frontend clients.
+- Watches the vault (including its in-vault `.daemon/memory`) for file changes, debounces them at 250 ms, selectively invalidates caches, bumps a version counter, and pushes SSE events to connected frontend clients.
 
 `core` exports `@bismuth/core` (via `"module": "src/index.ts"`) so app and cli can import its pure functions and types.
 
@@ -93,9 +93,9 @@ The vault graph is exposed by `GET /graph`.
 
 ### 3rd Brain (memory)
 
-The memory graph is built from Claude-bot memory notes living in a separate directory (`BISMUTH_MEMORY`). `core/src/memory.ts` builds a graph of `"memory"` nodes with ids prefixed `mem:` (e.g. `mem:project-xyz`). The constant `THIRD_BRAIN_KINDS = new Set(["memory"])` is what the frontend mode filter applies.
+The 3rd brain is the per-vault daemon's memory, living **inside the vault** at `<vault>/.daemon/memory`. It is **gated on `settings.daemon.enabled`**: the server computes `effectiveMemoryDir()` (`core/src/server.ts`) as `join(cfg.vault, ".daemon", "memory")` only when `appConfig.daemon?.enabled`, otherwise `undefined`. When the daemon is disabled there is **no 3rd brain** at all (and no error). The bundled app derives the same path Rust-side (`vault_memory_dir(vault)` → `<vault>/.daemon/memory` in `app/src-tauri/src/lib.rs`) and passes it as the sidecar's `--memory`; core then ignores it unless the daemon is enabled. There is **no** separate top-level memory directory.
 
-If `BISMUTH_MEMORY` is unset or the directory is empty, the 3rd brain is empty — no error.
+When a `memoryDir` is in effect, `core/src/memory.ts` builds a graph of `"memory"` nodes with ids prefixed `mem:` (e.g. `mem:project-xyz`). The constant `THIRD_BRAIN_KINDS = new Set(["memory"])` is what the frontend mode filter applies.
 
 ---
 
@@ -110,7 +110,7 @@ export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<
 Steps:
 
 1. `buildVaultGraph(vaultDir)` — returns `{ graph, byBase, byPath }`. `byBase` is a map from filename-without-extension (e.g. `"Another Note"`) to node id; `byPath` is a map from the full vault-relative path (e.g. `"reading/Another Note"`) to node id. Both are needed for wikilink resolution.
-2. If no `memoryDir`, stamp Louvain communities onto the vault graph and return.
+2. If no `memoryDir` (the daemon is disabled, so there's no 3rd brain), stamp Louvain communities onto the vault graph and return.
 3. If `memoryDir` is provided, `buildMemoryGraph(memoryDir)` returns `{ nodes, edges, links }` where `links` is a map from memory node base name to the wikilink targets it references.
 4. **"About" edges** are created for each memory→vault cross-reference: for each entry in `memory.links`, `resolveLinkTarget(target, vaultByBase, vaultByPath)` is called — it tries path-qualified resolution first (`vaultByPath`), then falls back to basename resolution (`vaultByBase`). A successful resolution produces an `{ from: "mem:<base>", to: <vaultNodeId>, kind: "about" }` edge.
 5. `mergeGraphs([vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }])` deduplicates nodes by id (first-seen wins) and concatenates edges.
@@ -140,10 +140,10 @@ Over the renderer's canvas sits a shared **`GraphAtmosphere`** overlay (`app/src
 |------|-------|--------|-------------|
 | `"note"` | 2nd | `vault.ts` | A vault markdown file |
 | `"tag"` | 2nd | `vault.ts` | A `#tag` extracted from notes |
-| `"memory"` | 3rd | `memory.ts` | A Claude-bot memory note |
+| `"memory"` | 3rd | `memory.ts` | A daemon memory note (from `<vault>/.daemon/memory`) |
 | `"self"` | All | Frontend only | The "you" hub; id always `"::you"` |
 | `"agent"` | agents | `agents.ts` | A Claude Code session or subagent in an app terminal |
-| `"daemon"` | daemon | `daemonGraph.ts` | The claude-bot daemon hub node |
+| `"daemon"` | daemon | `daemonGraph.ts` | The daemon hub node (id `"::daemon"`, label defaults to `"daemon"`) |
 | `"cron"` | daemon | `daemonGraph.ts` | A daemon-supervised cron job |
 | `"process"` | daemon | `daemonGraph.ts` | A daemon-supervised process |
 
@@ -200,7 +200,7 @@ The frontend switches between five graph modes. Each mode determines which node/
 | `"3rd"` | `GET /graph` (subset) | `self`, `memory` |
 | `"both"` | `GET /graph` (full) | All of 2nd + 3rd |
 | `"agents"` | `GET /agent-graph` | `self`, `agent` |
-| `"daemon"` | `GET /daemon/graph` | `daemon`, `cron`, `process` |
+| `"daemon"` | `GET /daemon/graph` | `daemon`, `cron`, `process` (hub built by `daemonGraph.ts` from `<vault>/.daemon`; liveness read machine-level) |
 
 For `"2nd"` and `"3rd"` modes the frontend requests `GET /graph/views` on first mode switch to obtain per-brain precomputed layouts (`ViewLayout`). These are computed lazily by `computeViewLayouts()` and cached on the live `GraphData` object in memory. Subsequent `GET /graph` calls return the cached graph with `.views` populated.
 
@@ -268,11 +268,12 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `GET /cards/all` | All flashcards |
 | `GET /cards/note?path=` | Cards for a specific note |
 | `GET /cards/due?deck=` | Due cards (optional deck filter) |
-| `GET /daemon/status` | claude-bot daemon status |
+| `GET /daemon/status` | Daemon status (machine-level, from `daemonMachineDir()`) |
 | `GET /daemon/devices` | Known devices list |
-| `GET /daemon/graph` | Daemon supervision graph (daemon mode) |
-| `GET /daemon/install` | Daemon install probe |
-| `POST /daemon/setup` | Idempotent daemon setup (adopt-only) |
+| `GET /daemon/graph` | Daemon supervision graph (daemon mode), from this vault's `.daemon` dir |
+| `GET /daemon/install` | Daemon install probe (`installStatus()`) |
+| `POST /daemon/setup` | Idempotent, adopt-only daemon setup (`runSetup()`) |
+| `POST /daemon/update` | Re-run the adopt-only install (the daemon updates WITH the app; no git pull) |
 | `POST /daemon/cron/toggle {name, enabled}` | Enable/disable a cron |
 | `POST /daemon/cron/run {name}` | Trigger a cron immediately |
 | `POST /daemon/process/toggle {name, enabled}` | Enable/disable a process |
@@ -346,4 +347,4 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/GraphAtmosphere.tsx
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemon.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonGraph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/GraphAtmosphere.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs

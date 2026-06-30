@@ -53,6 +53,7 @@ These two forms are mutually exclusive — the presence of any base-config key f
 A flat block is a tiny `key: value` list (one per line). `parseQueryBlock(src)` (`core/src/bases/queryBlock.ts`) parses it:
 
 - It splits on newlines, trims each line, skips blank lines, and for each line splits on the **first** `:` (index `> 0`) into `key` → `value` (both trimmed). Later duplicate keys overwrite earlier ones.
+- **YAML block scalars** (`tasks: |-`, also `|`/`>`/`|+`/`>+`): when a value is exactly a block-scalar indicator, the parser gathers the following *more-indented* lines (relative to the key's indent) as a multi-line value, strips the common leading indent, and trims trailing newlines. This lets the Tasks DSL carry a `sort by …` clause on its own line (`runTaskQuery` only honors a whole-line sort, never one inside an ` AND `-joined single line). A dedent back to the key's indent ends the block.
 - A query references a base (`of:`) or runs a task query (`tasks:`). **It does not iterate notes itself** — that is a base's job (`source: notes`). A flat block with neither `of:` nor `tasks:` resolves to **no source** and the host renders an empty state.
 
 ### Keys
@@ -284,7 +285,7 @@ Each entry in `views:` is a `ViewConfig` (`core/src/bases/types.ts`). The full s
 - `sort` — array of `{ property, direction: "ASC"|"DESC" }` (a bare string → `ASC`; `column` accepted as an alias for `property`).
 - `groupBy` — `{ property, direction }` (a bare string → `ASC`).
 - `summaries` — `{ propertyId: summaryName }`.
-- `cardContent` — `"properties"` or `"body"` (cards view).
+- `cardContent` — `"properties"`, `"body"`, or `"tasks"` (cards view; `"tasks"` = body filtered to checklist lines).
 - `image`, `imageFit` (`cover`/`contain`), `imageAspectRatio` — cards cover image.
 - `columns` — explicit group order / kanban columns.
 - `columnWidths` — `{ propertyId: px }` (table).

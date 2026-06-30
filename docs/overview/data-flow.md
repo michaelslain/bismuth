@@ -483,11 +483,18 @@ POST /create { path, kind }
    ```ts
    void loadAppConfig(cfg.vault).then(c => {
      appConfig = c;
-     setClaudeBotHomeOverride(c.daemon?.home);
+     // Enabling this vault's daemon triggers the one-time, copy-only migration of any
+     // legacy ~/.claude-bot brain into <vault>/.daemon (machine-marker-gated).
+     if (c.daemon?.enabled) migrateDaemonState(cfg.vault);
+     treeCache.invalidate();
+     graphCache.invalidate();
+     setPoolMemoryDir(effectiveMemoryDir());
+     version++;
+     sse.publish({ version, paths: [], dirty: { graph: true, tree: true } });
    }).catch(() => {});
    ```
 
-2. This makes debounce interval and SSE heartbeat changes take effect without restarting the server.
+2. This makes debounce interval and SSE heartbeat changes take effect without restarting the server. It also picks up a `daemon.enabled` toggle live: the daemon-gated caches (the `.daemon` tree folder + the 3rd-brain graph) are re-invalidated after `appConfig` lands, and connected clients are nudged to refetch. `settings.daemon` carries only `enabled` (the master switch); there is no `daemon.home` key, so the reload no longer overrides any claude-bot home.
 
 3. The frontend's `GET /settings` is a separate read (not cached by the server — it reads `settings.yaml` fresh on each request), so UI settings update on the next SSE event.
 
@@ -506,4 +513,4 @@ POST /create { path, kind }
 
 ---
 
-Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/schema/settingsSchema.ts`
+Source: `core/src/server.ts`, `core/src/sse.ts`, `core/src/changeClassifier.ts`, `app/src/serverVersion.ts`, `core/src/layout-cache.ts`, `core/src/asyncCache.ts`, `core/src/settings.ts`, `core/src/schema/settingsSchema.ts`, `core/src/daemon.ts`

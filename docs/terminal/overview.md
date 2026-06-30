@@ -87,10 +87,36 @@ Other session management functions:
 | `getSession(id)` | Look up a session by id |
 | `getSessionByTermId(termId)` | Look up a live session by its stable client term id (reattach) |
 | `scheduleSessionKill(id, ms)` / `cancelSessionKill(id)` | Arm / disarm the post-disconnect grace kill |
-| `listSessionIds()` | Return all live ids (used by relay pruning) |
-| `sessionCount()` | Count of open sessions |
+| `attachSink(id, send)` / `detachSink(id)` | Wire / unwire the live socket output sink (see _Output buffering & the warm pool_) |
+| `listSessionIds()` | Return all live ids backing a real tab — **excludes unclaimed warm-pool shells** (used by relay pruning) |
+| `sessionCount()` | Count of open sessions (includes pooled shells) |
 
-All PTY children are killed synchronously on `process.exit` via a `process.on("exit")` handler, so orphaned shells don't outlive backend restarts or hot-reload cycles.
+All PTY children are killed synchronously on `process.exit` via a `process.on("exit")` handler, so orphaned shells don't outlive backend restarts or hot-reload cycles. (The handler walks the full `sessions` map — not `listSessionIds`, which omits unclaimed warm-pool shells that still need killing.)
+
+### Output buffering & the warm pool
+
+A session is **decoupled from any one socket**. Every session installs a single permanent `pty.onData` reader (`dataSub`) for the PTY's whole life: if a live socket sink is attached it forwards each chunk straight to it, otherwise it accumulates the output into a capped replay `buffer` (most-recent-wins; trimmed from the front past `MAX_BUFFER_BYTES`, 256 KiB). This buys two things: a shell can render its prompt **before any client connects** (the buffer holds it), and output produced while a tab is briefly disconnected (reload / network blip, during the reattach grace window) is buffered, not lost.
+
+The socket plumbing is two functions:
+
+| Function | Purpose |
+|----------|---------|
+| `attachSink(id, send)` | Drain the buffer to `send` **first** (so the client sees the pre-warmed prompt / missed output before live bytes), then make `send` the live sink |
+| `detachSink(id)` | Clear the sink; output resumes buffering (capped) for a later reattach |
+
+Order is preserved because the buffered bytes are flushed before the sink goes live.
+
+**Warm pool.** To make opening a tab feel instant, the backend keeps `POOL_SIZE` (currently **1**) login shells spawned-and-rc-loaded ahead of demand. A pooled shell runs its full (often 100s-of-ms) login-shell startup chain up front, renders its prompt into the buffer, and waits. Pool functions:
+
+| Function | Purpose |
+|----------|---------|
+| `prewarmPool(cwd, relayPort?, memoryDir?)` | Start (and keep) the warm pool; idempotent, safe to call once at server start. Records the cwd/port/memoryDir used to spawn pooled shells and tops the pool up to `POOL_SIZE`. Until called, no pre-warming happens. |
+| `claimPooledSession({ termId?, cols, rows })` | Hand out a pre-warmed session (or `undefined` if the pool is empty), key it to the client's `termId`, resize it to the real viewport, then asynchronously refill the pool so the next tab is also instant. Its already-rendered prompt sits in the buffer and is replayed by `attachSink` on ws open. |
+| `setPoolMemoryDir(memoryDir)` | Re-bake the pool's injected `BISMUTH_MEMORY_DIR` when `settings.daemon.enabled` toggles. Pooled shells cache their env at spawn, so this flushes the idle ones and re-warms, so the next claimed tab gets the new daemon state. No-op if unchanged. |
+
+A pooled shell installs a `poolExitSub` that drops it from the pool (and re-warms) if a still-unclaimed warm shell dies (e.g. a bad rc). `claimPooledSession` disposes that subscription and flips `pooled` to `false` as it converts the shell into a real tab. Unclaimed pooled shells are kept out of `listSessionIds()` (so they never prune the "agents" relay registry) but are still counted by `sessionCount()` and killed on process exit.
+
+So serving a tab has two paths: claim a warm shell via `claimPooledSession` when one is ready, else cold-spawn via `createTerminalSession`. Both return a `Session`; the server then `attachSink`s the WebSocket to it.
 
 ### WebSocket Origin Policy
 

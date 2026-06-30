@@ -84,25 +84,21 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog
 - [Themes](settings/themes.md) — theme/palette/fonts
 
-## Graph, terminal, daemon
+## Graph & terminal
 
 - [Graph](graph/overview.md) — node/edge kinds, the 5 modes, layout
 - [Terminal & relay](terminal/overview.md) — in-app terminals, the agents graph
-- [Daemon integration](daemon/overview.md) — the claude-bot daemon graph + controls (Bismuth's consumer side)
-- [Daemon storage](daemon/storage.md) — the `~/.claude-bot` on-disk layout Bismuth reads
 
-## claude-bot
+## Daemon (`@bismuth/daemon`)
 
-The persistent AI daemon Bismuth integrates with — a **separate project** (sibling repo) documented here from its own (producer) side, alongside Bismuth's integration seams.
+The in-repo background runtime — **one machine process that multiplexes per-vault "brains"**, absorbed from the former standalone `claude-bot` sibling repo. Machine identity lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session, `identity.md`) lives under `<vault>/.daemon`.
 
-- [Overview](claude-bot/overview.md) — what claude-bot is, the three layers, how it relates to Bismuth, section index
-- [Daemon supervisor](claude-bot/daemon.md) — `daemon/index.ts` + `session.ts`: boot/shutdown, the persistent session, owner gating
-- [Crons & processes](claude-bot/crons-and-processes.md) — file-based crons + background processes: frontmatter, scheduling, state files, triggers
-- [Memory store](claude-bot/memory.md) — the markdown memory graph: note format, backlinks, query vs search, the dream cycle
-- [MCP server](claude-bot/mcp.md) — claude-bot's own stdio MCP server + full 26-tool catalog (distinct from Bismuth's MCP)
-- [Communication & hooks](claude-bot/communication.md) — the recall/collect hooks + single-owner device gating (no cross-machine messaging)
-- [Installation](claude-bot/install.md) — `bin/ensure-installed.ts` (adopt-only), launchd/systemd, the relocatable bundle, how Bismuth invokes it
-- [Storage](claude-bot/storage.md) — the `~/.claude-bot` on-disk tree from claude-bot's writer view
+- [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon graph mode
+- [Lifecycle](daemon/lifecycle.md) — the supervisor: boot order, reconcile loop, per-vault session, single-owner gating, install/service (launchd/systemd)
+- [Crons & processes](daemon/crons-and-processes.md) — per-vault crons + background processes: `VaultContext` keying, default crons, triggers, state files
+- [Memory store](daemon/memory.md) — the per-vault markdown memory graph: note format, backlinks, query vs search, the dream cycle
+- [Communication & hooks](daemon/communication.md) — the relay recall/collect hooks + single-owner device gating (no cross-machine messaging)
+- [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy `~/.claude-bot` migration
 
 ## Interfaces
 
