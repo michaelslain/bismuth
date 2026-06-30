@@ -52,10 +52,10 @@ onServerChange((c) => {
 
 // Re-key the cached body across a rename/move so the renamed note stays an
 // instant cache hit instead of refetching (or briefly painting empty). The
-// title-rename + tree-rename flows dispatch `oa-moved {from,to}` BEFORE awaiting
+// title-rename + tree-rename flows dispatch `bismuth-moved {from,to}` BEFORE awaiting
 // api.move, so by the time the editor remounts at `to` the body is already here.
 if (typeof window !== "undefined") {
-  window.addEventListener("oa-moved", (e) => {
+  window.addEventListener("bismuth-moved", (e) => {
     const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
     const body = cache.get(from);
     if (body !== undefined) {

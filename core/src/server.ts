@@ -76,9 +76,9 @@ const dec = new TextDecoder();
 // drop) before being killed — the window in which a reconnecting client can
 // reattach by termId and keep its running shell. Clean closes (code 1000) kill
 // immediately, so this never delays teardown of a deliberately-closed tab.
-// Overridable via OA_TERMINAL_GRACE_MS (tests use a short window).
+// Overridable via BISMUTH_TERMINAL_GRACE_MS (tests use a short window).
 const reattachGraceMs = (): number =>
-  Number(process.env.OA_TERMINAL_GRACE_MS) || 30_000;
+  Number(process.env.BISMUTH_TERMINAL_GRACE_MS) || 30_000;
 
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,PUT,POST,OPTIONS", "Access-Control-Allow-Headers": "Content-Type" };
 
@@ -382,9 +382,11 @@ export function createServer(cfg: CoreConfig) {
   }
 
   async function readNoteOrEmpty(vault: string, path: string): Promise<string> {
-    const fullPath = join(vault, path);
-    const exists = await Bun.file(fullPath).exists();
-    return exists ? await readNote(vault, path) : "";
+    // Single fs op on the hot open path: read directly and treat a missing file
+    // as empty. The old exists()+readNote pair did two round-trips (stat then
+    // open+read) per GET /file, doubling syscall latency for no benefit — and it
+    // had a TOCTOU window between the two. readNoteOrNull catches ENOENT for us.
+    return (await readNoteOrNull(vault, path)) ?? "";
   }
 
   // Like readNote, but returns null for a missing file instead of throwing.
@@ -832,7 +834,7 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "POST /bismuth/install": async (_, __) => {
-      return ok(await ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC));
+      return ok(await ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC));
     },
 
     // Git-based self-update (core/src/selfUpdate.ts). Auto-detects when the source build is
@@ -1538,8 +1540,8 @@ export function createServer(cfg: CoreConfig) {
 }
 
 if (import.meta.main) {
-  const vault = cliArg("vault") ?? process.env.BISMUTH_VAULT ?? process.env.OA_VAULT;
-  const memory = cliArg("memory") ?? process.env.BISMUTH_MEMORY ?? process.env.OA_MEMORY;
+  const vault = cliArg("vault") ?? process.env.BISMUTH_VAULT;
+  const memory = cliArg("memory") ?? process.env.BISMUTH_MEMORY;
   if (!vault || !memory) {
     console.error("usage: server --vault <2nd-brain dir> --memory <3rd-brain dir> [--port n]");
     process.exit(1);
@@ -1551,10 +1553,10 @@ if (import.meta.main) {
   // Self-terminate when the owning desktop app process is gone, so we never leave an
   // orphaned core behind a crashed / force-quit app (Tauri's RunEvent::Exit doesn't fire
   // then) or after the window owning an open-folder sibling backend closes. The Tauri shell
-  // passes OA_APP_PID; open-folder siblings inherit it via Bun.spawn's env. Absent in dev
+  // passes BISMUTH_APP_PID; open-folder siblings inherit it via Bun.spawn's env. Absent in dev
   // (`bun run dev`) → no-op. signal 0 only probes liveness; the timer is unref'd so it never
   // keeps the process alive on its own.
-  const ownerPid = Number(process.env.OA_APP_PID);
+  const ownerPid = Number(process.env.BISMUTH_APP_PID);
   if (Number.isInteger(ownerPid) && ownerPid > 0) {
     setInterval(() => {
       try {
@@ -1567,10 +1569,10 @@ if (import.meta.main) {
   }
 
   // Bundled app: ensure the machine-wide bismuth CLI + MCP are installed/current from the
-  // staged tools resource (OA_BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
+  // staged tools resource (BISMUTH_INSTALL_SRC). Version-gated → no-op when unchanged.
   // Best-effort + non-blocking; never crashes the server.
-  if (process.env.OA_BISMUTH_INSTALL_SRC) {
-    ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC)
+  if (process.env.BISMUTH_INSTALL_SRC) {
+    ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC)
       .then((r) => {
         console.log(`bismuth tools: ${r.action}`);
         for (const w of r.warnings) console.warn(`bismuth tools: ${w}`);

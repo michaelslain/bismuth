@@ -51,7 +51,7 @@ export function CardsView(props: { result: ViewResult; config: BaseConfig }) {
 
   // Click anywhere on a (non-body) card opens its note in a NEW tab.
   const openCard = (row: Row) =>
-    window.dispatchEvent(new CustomEvent("oa-open", { detail: { path: row.file.path, newTab: true } }));
+    window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: row.file.path, newTab: true } }));
 
   return (
     <div class={styles.cards}>

@@ -2,15 +2,11 @@ import { For, type JSX } from "solid-js";
 import { resolveProperty } from "../../../core/src/bases/query";
 import type { Row } from "../../../core/src/bases/types";
 import { isLink, type Link } from "../../../core/src/bases/values";
-import { columnLabel } from "./columnLabel";
 import { renderInline, hasInlineMarkup } from "./markdown";
 import { Icon } from "../icons/Icon";
 import { Stars } from "../ui/Stars";
 import { StatusText } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
-
-// Re-export so existing bases imports of statusColor from renderValue keep working.
-export { statusColor } from "../ui/StatusDot";
 
 export function capitalize(s: string): string {
   return s.length ? s[0].toUpperCase() + s.slice(1) : s;
@@ -53,7 +49,7 @@ export function renderStatus(s: string): JSX.Element {
 /** Plain mono #tag list in teal — no chips. */
 export function renderTags(v: unknown): JSX.Element {
   const tags = Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)];
-  if (tags.length === 0) return <span class="oa-empty">—</span>;
+  if (tags.length === 0) return <span class="bismuth-empty">—</span>;
   return (
     <span class={styles.tagRow}>
       <For each={tags}>{(t) => <span>{t.startsWith("#") ? t : `#${t}`}</span>}</For>
@@ -79,7 +75,7 @@ export function renderTitle(id: string, row: Row): JSX.Element {
   // its own target; otherwise stringify and open this row's note.
   const label = isLink(v) ? linkLabel(v as Link) : v == null ? "" : String(v);
   const target = isLink(v) ? (v as Link).path : row.file.path;
-  const open = () => window.dispatchEvent(new CustomEvent("oa-open", { detail: target }));
+  const open = () => window.dispatchEvent(new CustomEvent("bismuth-open", { detail: target }));
   return (
     <span class={styles.cellTitle}>
       <Icon value="Book" size={14} />
@@ -107,12 +103,9 @@ export function renderCell(id: string, row: Row): JSX.Element {
   return renderValue(id, row);
 }
 
-// Re-export so existing bases imports of columnLabel from renderValue keep working.
-export { columnLabel };
-
 export function renderValue(id: string, row: Row): JSX.Element {
   const v = resolveProperty(id, row);
-  if (v === null || v === undefined) return <span class="oa-empty">—</span>;
+  if (v === null || v === undefined) return <span class="bismuth-empty">—</span>;
 
   // A Link value (from file.asLink(...), the link() function, or a link-typed column)
   // renders as a clickable note link, not "[object Object]".
@@ -124,7 +117,7 @@ export function renderValue(id: string, row: Row): JSX.Element {
         href="#"
         onClick={(e) => {
           e.preventDefault();
-          window.dispatchEvent(new CustomEvent("oa-open", { detail: link.path }));
+          window.dispatchEvent(new CustomEvent("bismuth-open", { detail: link.path }));
         }}
       >
         {label}
@@ -138,7 +131,7 @@ export function renderValue(id: string, row: Row): JSX.Element {
         href="#"
         onClick={(e) => {
           e.preventDefault();
-          window.dispatchEvent(new CustomEvent("oa-open", { detail: row.file.path }));
+          window.dispatchEvent(new CustomEvent("bismuth-open", { detail: row.file.path }));
         }}
       >
         {String(v)}
@@ -163,6 +156,6 @@ export function renderValue(id: string, row: Row): JSX.Element {
   // shows the same formatting + math as the rest of the app; otherwise keep it literal
   // (cheap, and avoids surprises on plain values).
   const s = String(v);
-  if (hasInlineMarkup(s)) return <span class="oa-cell-md" innerHTML={renderInline(s)} />;
+  if (hasInlineMarkup(s)) return <span class="bismuth-cell-md" innerHTML={renderInline(s)} />;
   return <span>{s}</span>;
 }

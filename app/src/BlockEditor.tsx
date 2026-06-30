@@ -17,7 +17,7 @@
 //   • flushSave on unmount and a beforeunload keepalive PUT so a debounced edit can't drop;
 //   • normalizeFrontmatterSpacing applied on open AND in the save path, byte-identically to
 //     Editor.tsx, so the two surfaces don't fight (one normalising what the other wrote).
-import { createEffect, createMemo, createRenderEffect, createSignal, For, Show, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createRenderEffect, createResource, createSignal, For, Show, onCleanup, onMount } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
@@ -44,7 +44,8 @@ import {
 } from "./editor/slashMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import { type NoteCandidate } from "./editor/wikilink";
+import { resolveNotePath, parseHeadings, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
+import { clearPendingAnchor } from "./pendingAnchor";
 import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
 import { BaseView } from "./bases/BaseView";
 import { QueryBuilder } from "./bases/QueryBuilder";
@@ -567,19 +568,47 @@ export function BlockEditor(props: {
   const [auto, setAuto] = createSignal<{
     blockId: string;
     handle: BlockEditorHandle;
-    kind: "wikilink" | "tag";
+    kind: "wikilink" | "tag" | "heading";
     query: string;
-    from: number; // markdown offset where the query starts (after `[[` / `#`)
+    from: number; // markdown offset where the query starts (after `[[` for wikilink/heading, `#` for tag)
+    target?: string; // heading kind only: the note whose headings to list
     x: number;
     y: number;
   } | null>(null);
 
+  // Headings of the target note for `[[Note#…` completion. No client-side heading index exists,
+  // so fetch the target's body (async) and parse its ATX headings. Keyed on the target note path
+  // (only while in heading mode) → refetches when the target changes, not on every keystroke.
+  const [headingList] = createResource(
+    () => {
+      const a = auto();
+      return a && a.kind === "heading" && a.target ? a.target : undefined;
+    },
+    async (target): Promise<HeadingItem[]> => {
+      const path = resolveNotePath(target, props.noteNames());
+      if (!path) return [];
+      try {
+        return parseHeadings(await api.read(path));
+      } catch {
+        return [];
+      }
+    },
+  );
+
   /** Candidate strings (the raw insert text) for the active autocomplete, ranked by a simple
-   *  prefix-then-substring match — note basenames for `[[`, tag names for `#`. */
+   *  prefix-then-substring match — note basenames for `[[`, headings for `[[Note#`, tags for `#`. */
   const autoCandidates = createMemo<{ label: string; detail?: string }[]>(() => {
     const a = auto();
     if (!a) return [];
-    const q = a.query.toLowerCase();
+    // Trim for headings (matchWikilinkHeadingPrefix returns the heading UNtrimmed, so a space right
+    // after the `#` would otherwise fail to match) — mirrors the CodeMirror heading source.
+    const q = a.kind === "heading" ? a.query.trim().toLowerCase() : a.query.toLowerCase();
+    if (a.kind === "heading") {
+      return (headingList() ?? [])
+        .filter((h) => h.text.toLowerCase().includes(q))
+        .slice(0, 50)
+        .map((h) => ({ label: h.text, detail: "#".repeat(h.level) }));
+    }
     if (a.kind === "wikilink") {
       const notes = props.noteNames();
       const ranked = notes
@@ -605,7 +634,7 @@ export function BlockEditor(props: {
   const autoRows = createMemo<PopoverRow[]>(() =>
     autoCandidates().map((c) => ({
       label: c.label,
-      icon: auto()?.kind === "tag" ? "Hash" : "FileText",
+      icon: auto()?.kind === "tag" || auto()?.kind === "heading" ? "Hash" : "FileText",
       detail: c.detail,
     })),
   );
@@ -622,7 +651,11 @@ export function BlockEditor(props: {
     // bridge's inline re-parse tokenizes it into a live wikilink/tag CHIP — anchoring after the
     // delimiter (and inserting just the tail) leaves `[[Label]]` as raw text until an external reload.
     // Caret lands past the atom (applyAutocomplete defaults to the parsed content size).
-    if (a.kind === "wikilink") {
+    if (a.kind === "heading") {
+      // Replace the whole `[[target#partial` token (anchored at the `[[`, a.from - 2) with the
+      // complete `[[target#Heading]]` so the bridge's inline re-parse tokenizes it into a chip.
+      a.handle.applyAutocomplete(a.from - 2, `[[${a.target ?? ""}#${cand.label}]]`);
+    } else if (a.kind === "wikilink") {
       a.handle.applyAutocomplete(a.from - 2, `[[${cand.label}]]`);
     } else {
       a.handle.applyAutocomplete(a.from - 1, `#${cand.label}`);
@@ -781,6 +814,44 @@ export function BlockEditor(props: {
     return `block-row block-row--${block.type}${over}`;
   };
 
+  // Wikilink chip navigation. The block surface renders `[[…]]` as a contenteditable=false
+  // chip but has no built-in click handler — a click did nothing. Delegate one on `host` so a
+  // click on any chip opens its target (with the `#heading` anchor), mirroring the CodeMirror
+  // editor's wikilink mousedown nav. Resolution is filename-based, same as that path.
+  onMount(() => {
+    const onChipClick = (e: MouseEvent): void => {
+      // `span.` scopes this to the LIVE Milkdown chip (a <span> whose data-href is the bare target,
+      // no `.md`), excluding the static-preview <a> rendered by renderNoteBody while a block mounts
+      // — that anchor's data-href is already `.md`-suffixed, so navigating it would double the
+      // extension (`Note.md.md`) and drop the heading.
+      const chipEl = (e.target as HTMLElement | null)?.closest?.("span.bismuth-wikilink[data-href]") as HTMLElement | null;
+      if (!chipEl) return;
+      const target = chipEl.getAttribute("data-href") ?? "";
+      if (!target) return;
+      e.preventDefault();
+      const heading = chipEl.getAttribute("data-heading") ?? undefined;
+      const resolved = resolveNotePath(target, props.noteNames());
+      window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }));
+    };
+    host.addEventListener("click", onChipClick);
+    onCleanup(() => host.removeEventListener("click", onChipClick));
+  });
+
+  // The block surface can't scroll to a heading, so any pending anchor for the note it shows is
+  // dead weight that would otherwise fire a spurious scroll on a LATER CodeMirror (source-mode)
+  // open of that note. Clear it reactively for every displayed path (covers in-pane switches
+  // regardless of remount) AND on the live reveal event (covers a self-link where props.path is
+  // unchanged, so the effect wouldn't re-run).
+  createEffect(() => { if (props.path) clearPendingAnchor(props.path); });
+  onMount(() => {
+    const onReveal = (e: Event): void => {
+      const d = (e as CustomEvent).detail as { path?: string };
+      if (d?.path && d.path === props.path) clearPendingAnchor(d.path);
+    };
+    window.addEventListener("bismuth-reveal-heading", onReveal);
+    onCleanup(() => window.removeEventListener("bismuth-reveal-heading", onReveal));
+  });
+
   return (
     <div class="block-editor" ref={host}>
       <div class="block-editor-col">
@@ -861,7 +932,7 @@ export function BlockEditor(props: {
           >
             <Show
               when={slashRows().length > 0}
-              fallback={<div class="oa-popover block-slash-empty">No blocks</div>}
+              fallback={<div class="bismuth-popover block-slash-empty">No blocks</div>}
             >
               <PopoverList
                 items={slashRows()}
@@ -884,8 +955,8 @@ export function BlockEditor(props: {
             <Show
               when={autoRows().length > 0}
               fallback={
-                <div class="oa-popover block-slash-empty">
-                  {a().kind === "wikilink" ? "No notes" : "No tags"}
+                <div class="bismuth-popover block-slash-empty">
+                  {a().kind === "wikilink" ? "No notes" : a().kind === "heading" ? "No headings" : "No tags"}
                 </div>
               }
             >
@@ -1062,11 +1133,11 @@ export function BlockEditor(props: {
             }
             return false;
           },
-          onAutocomplete: (kind, query, from, rect) => {
+          onAutocomplete: (kind, query, from, rect, target) => {
             const open = auto();
             const h = handle();
             if (!h) return;
-            setAuto({ blockId: id, handle: h, kind, query, from, x: rect.left, y: rect.bottom + 4 });
+            setAuto({ blockId: id, handle: h, kind, query, from, target, x: rect.left, y: rect.bottom + 4 });
             if (!open || open.blockId !== id) autoNav.setActive(0); // reset only on (re)open
           },
           onAutocompleteDismiss: () => {

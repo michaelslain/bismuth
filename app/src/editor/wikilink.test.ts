@@ -1,6 +1,15 @@
 // app/src/editor/wikilink.test.ts
 import { test, expect } from "bun:test";
-import { matchWikilinkPrefix, buildInsert, parseWikilink, resolveNotePath, wikilinkVisibleRange } from "./wikilink";
+import {
+  matchWikilinkPrefix,
+  matchWikilinkHeadingPrefix,
+  parseHeadings,
+  findHeadingLineIndex,
+  buildInsert,
+  parseWikilink,
+  resolveNotePath,
+  wikilinkVisibleRange,
+} from "./wikilink";
 
 // `start` is the document offset of the opening "[[". With start=0, "[[" occupies 0-1,
 // the inner text starts at offset 2, and "]]" follows the inner.
@@ -117,4 +126,105 @@ test("buildInsert appends closing brackets when none ahead", () => {
 
 test("buildInsert skips closing brackets when already ahead", () => {
   expect(buildInsert("Foo", true)).toEqual({ insert: "Foo", cursorOffset: 5 });
+});
+
+// --- heading-anchor wikilinks: `[[File#Heading]]` ---------------------------------------
+
+test("matchWikilinkHeadingPrefix: null with no open wikilink", () => {
+  expect(matchWikilinkHeadingPrefix("just text")).toBeNull();
+});
+
+test("matchWikilinkHeadingPrefix: null while the target has no # yet", () => {
+  // Plain note-name completion territory — heading source must stay quiet.
+  expect(matchWikilinkHeadingPrefix("[[My Note")).toBeNull();
+});
+
+test("matchWikilinkHeadingPrefix: splits target and heading at the #", () => {
+  // "see [[My Note#Sec" — the `#` is at query index 7, so the heading query starts at
+  // doc offset 4(=`[[` start "[[" begins at index 4) → from = 6(query start) + 7 + 1 = 14.
+  expect(matchWikilinkHeadingPrefix("see [[My Note#Sec")).toEqual({
+    target: "My Note",
+    heading: "Sec",
+    from: 14,
+  });
+});
+
+test("matchWikilinkHeadingPrefix: empty heading right after the #", () => {
+  expect(matchWikilinkHeadingPrefix("[[Note#")).toEqual({ target: "Note", heading: "", from: 7 });
+});
+
+test("matchWikilinkHeadingPrefix: a heading with spaces is kept verbatim (untrimmed query)", () => {
+  expect(matchWikilinkHeadingPrefix("[[Note#My Sec")).toEqual({
+    target: "Note",
+    heading: "My Sec",
+    from: 7,
+  });
+});
+
+test("matchWikilinkHeadingPrefix: ignores a closed wikilink", () => {
+  expect(matchWikilinkHeadingPrefix("[[a#b]] ")).toBeNull();
+});
+
+test("parseHeadings: extracts ATX headings with level + text", () => {
+  const md = "# Title\n\nintro\n\n## Section One\ntext\n### Deep\n";
+  expect(parseHeadings(md)).toEqual([
+    { level: 1, text: "Title" },
+    { level: 2, text: "Section One" },
+    { level: 3, text: "Deep" },
+  ]);
+});
+
+test("parseHeadings: strips trailing closing #s", () => {
+  expect(parseHeadings("## Closed ##")).toEqual([{ level: 2, text: "Closed" }]);
+});
+
+test("parseHeadings: skips # lines inside fenced code", () => {
+  const md = "# Real\n```\n# not a heading\n```\n## Also Real";
+  expect(parseHeadings(md)).toEqual([
+    { level: 1, text: "Real" },
+    { level: 2, text: "Also Real" },
+  ]);
+});
+
+test("parseHeadings: requires a space after the #s (not a #tag)", () => {
+  expect(parseHeadings("#tag is not a heading\n# Heading")).toEqual([{ level: 1, text: "Heading" }]);
+});
+
+test("parseHeadings: skips a leading YAML frontmatter block (its # lines aren't headings)", () => {
+  const md = "---\ntitle: x\n# a yaml comment\n---\n# Real Heading\n";
+  expect(parseHeadings(md)).toEqual([{ level: 1, text: "Real Heading" }]);
+});
+
+test("parseHeadings: an UNTERMINATED frontmatter is treated as body (no crash, scans all)", () => {
+  // No closing `---`: bodyStartLine falls back to 0, so the `# H` line is still found.
+  expect(parseHeadings("---\nkey: v\n# H")).toEqual([{ level: 1, text: "H" }]);
+});
+
+test("findHeadingLineIndex: returns the ABSOLUTE line index past frontmatter", () => {
+  const lines = ["---", "title: x", "---", "intro", "## Target"];
+  expect(findHeadingLineIndex(lines, "Target")).toBe(4);
+});
+
+test("findHeadingLineIndex: does not match a # comment inside frontmatter", () => {
+  const lines = ["---", "# Target", "---", "body"];
+  expect(findHeadingLineIndex(lines, "Target")).toBe(-1);
+});
+
+test("findHeadingLineIndex: matches case- and whitespace-insensitively", () => {
+  const lines = ["# Top", "", "## My  Section", "body"];
+  expect(findHeadingLineIndex(lines, "my section")).toBe(2);
+});
+
+test("findHeadingLineIndex: returns the first match line", () => {
+  const lines = ["## Dup", "x", "## Dup"];
+  expect(findHeadingLineIndex(lines, "Dup")).toBe(0);
+});
+
+test("findHeadingLineIndex: -1 when no heading matches", () => {
+  expect(findHeadingLineIndex(["# A", "# B"], "C")).toBe(-1);
+});
+
+test("findHeadingLineIndex: ignores a matching # line inside a fence", () => {
+  const lines = ["```", "## Fenced", "```", "## Fenced"];
+  expect(findHeadingLineIndex(lines, "Fenced")).toBe(3);
 });

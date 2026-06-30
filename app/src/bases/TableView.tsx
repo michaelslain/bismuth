@@ -1,7 +1,8 @@
 import { For, Index, Show, createSignal, createEffect, on } from "solid-js";
 import type { ViewResult, BaseConfig } from "../../../core/src/bases/types";
 import { canonicalId } from "../../../core/src/bases/query";
-import { renderCell, renderTitle, columnLabel, isTagColumn, isRatingColumn } from "./renderValue";
+import { renderCell, renderTitle, isTagColumn, isRatingColumn } from "./renderValue";
+import { columnLabel } from "./columnLabel";
 import { settings } from "../settings";
 import styles from "./BaseView.module.css";
 

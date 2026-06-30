@@ -102,7 +102,7 @@ Also exports: `pathParts(rel)` (decompose a vault-relative path into name/ext/fo
 Pure, DOM-free layout computation. `computeLayoutAsync(input, opts?)` — runs PivotMDS (Brandes & Pich, O(k·(V+E))) to get a global seed, then refines with a d3-force-3d simulation. `LayoutOptions`: `dimensions` (2 or 3), `numPivots` (default 50), `refineTicks` (default 150), `repulsion`, `linkDistance`, `centering`, `initialPositions` (skip PivotMDS and warm-start from these coordinates). The force constants (`COLLIDE_RATIO = 1.25`, `COLLIDE_ITERATIONS = 6`, `MANYBODY_THETA = 1.5`) are kept in sync with `WebGLRenderer.ts` so a precomputed layout matches what the renderer would settle to. Also runs in a browser Worker.
 
 #### `layout-cache.ts`
-Two-tier layout cache (in-memory Map + JSON file in `~/.bismuth/layout-cache`, durable; override `OA_LAYOUT_CACHE_DIR`). `attachLayout(graph, vaultKey)` — computes both 3D and 2D layouts and attaches `position`/`position2d` to every node. 2D layout is seeded from flattened 3D so the morph flattens in place rather than scrambling. Peek-attaches brain-view layouts when already cached; otherwise they're computed lazily on `GET /graph/views`. `computeViewLayouts(graph, vaultKey)` — computes 2nd/3rd subgraph layouts on demand. `graphSig(graph, vaultKey)` — SHA-1 content hash of sorted node ids + edge endpoints. Cache version `v9` bakes current constants + the persisted warm-seed; bump `CACHE_VERSION` if force constants or cache shape change.
+Two-tier layout cache (in-memory Map + JSON file in `~/.bismuth/layout-cache`, durable; override `BISMUTH_LAYOUT_CACHE_DIR`). `attachLayout(graph, vaultKey)` — computes both 3D and 2D layouts and attaches `position`/`position2d` to every node. 2D layout is seeded from flattened 3D so the morph flattens in place rather than scrambling. Peek-attaches brain-view layouts when already cached; otherwise they're computed lazily on `GET /graph/views`. `computeViewLayouts(graph, vaultKey)` — computes 2nd/3rd subgraph layouts on demand. `graphSig(graph, vaultKey)` — SHA-1 content hash of sorted node ids + edge endpoints. Cache version `v9` bakes current constants + the persisted warm-seed; bump `CACHE_VERSION` if force constants or cache shape change.
 
 ---
 
@@ -281,7 +281,7 @@ Obsidian-Tasks-compatible DSL parser + executor. `parseTaskQuery(text)` — erro
 
 #### `daemon.ts`
 Reads (and minimally writes) the claude-bot daemon's shared on-disk state. Never throws. Key exports:
-- `claudeBotHome()` — resolves home: `OA_CLAUDEBOT_HOME` env > settings override > `~/.claude-bot`.
+- `claudeBotHome()` — resolves home: `BISMUTH_DAEMON_DIR` env > settings override > `~/.claude-bot`.
 - `setClaudeBotHomeOverride(home)` — called by `server.ts` on settings load.
 - `daemonStatus()` → `DaemonStatus { running, thisDeviceId, owner }`.
 - `listDevices()` → `DeviceList`.
@@ -453,7 +453,7 @@ Entry point. Mounts `<App />` into `#root`. Desktop entry — does not import `m
 #### `App.tsx`
 Root component. Owns: tab + pane tree state (via `panes.ts` model), active file routing, graph mode (`GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon"`), sidebar visibility, settings persistence, global keyboard handling (reads `settings.keybindings`), command binding (via `bindCommands`), toast/gallery hosts, all modal triggers. Lazily imports `GraphView` and `TerminalTab` to keep the entry bundle small. Seeds a `::graph` tab on first boot and reopens one if all tabs close.
 
-Key logic: `applyView(graph, view)` overwrites node positions with a brain-view's precomputed layout for 2nd/3rd modes. Storage keys: `"oa-tabs-v1"`, `"oa-sidebar-visible-v1"`, `"oa-graph-cache-v1"`, `"oa-theme-vars-v1"`.
+Key logic: `applyView(graph, view)` overwrites node positions with a brain-view's precomputed layout for 2nd/3rd modes. Storage keys: `"bismuth-tabs-v1"`, `"bismuth-sidebar-visible-v1"`, `"bismuth-graph-cache-v1"`, `"bismuth-theme-vars-v1"`.
 
 #### `panes.ts`
 Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts`.

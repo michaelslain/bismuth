@@ -9,13 +9,13 @@ import { renderNoteBody } from "./markdown";
 describe("renderNoteBody — wikilinks/tags vs code", () => {
   test("a wikilink in prose becomes an anchor", () => {
     const html = renderNoteBody("see [[Another Note]] here");
-    expect(html).toContain('class="oa-wikilink"');
+    expect(html).toContain('class="bismuth-wikilink"');
     expect(html).toContain('data-href="Another Note.md"');
   });
 
   test("a wikilink inside an INLINE code span stays literal (no anchor)", () => {
     const html = renderNoteBody("use `[[x]]` to link");
-    expect(html).not.toContain("oa-wikilink");
+    expect(html).not.toContain("bismuth-wikilink");
     expect(html).toContain("<code>");
     // The literal text survives (escaped) inside the code element.
     expect(html).toContain("[[x]]");
@@ -23,13 +23,13 @@ describe("renderNoteBody — wikilinks/tags vs code", () => {
 
   test("a wikilink inside a FENCED code block stays literal", () => {
     const html = renderNoteBody("```\n[[x]]\n```");
-    expect(html).not.toContain("oa-wikilink");
+    expect(html).not.toContain("bismuth-wikilink");
     expect(html).toContain("[[x]]");
   });
 
   test("a #tag in prose becomes a styled span, but stays literal in code", () => {
-    expect(renderNoteBody("a #book here")).toContain('class="oa-tag"');
-    expect(renderNoteBody("the `#book` macro")).not.toContain("oa-tag");
+    expect(renderNoteBody("a #book here")).toContain('class="bismuth-tag"');
+    expect(renderNoteBody("the `#book` macro")).not.toContain("bismuth-tag");
   });
 
   test("masking code never corrupts a bare space-delimited number", () => {
@@ -40,6 +40,6 @@ describe("renderNoteBody — wikilinks/tags vs code", () => {
     const html = renderNoteBody("[[Real]] vs `[[Fake]]`");
     expect(html).toContain('data-href="Real.md"');
     // Exactly one anchor — the code one is not linkified.
-    expect(html.match(/oa-wikilink/g)?.length).toBe(1);
+    expect(html.match(/bismuth-wikilink/g)?.length).toBe(1);
   });
 });

@@ -22,10 +22,10 @@ describe("windowIdFromSearch", () => {
 
 describe("tabsStorageKey", () => {
   test("main window keeps the historical key (backward compatible)", () => {
-    expect(tabsStorageKey(MAIN_WINDOW_ID)).toBe("oa-tabs-v1");
+    expect(tabsStorageKey(MAIN_WINDOW_ID)).toBe("bismuth-tabs-v1");
   });
   test("other windows are namespaced by id", () => {
-    expect(tabsStorageKey("abc123")).toBe("oa-tabs-v1:abc123");
+    expect(tabsStorageKey("abc123")).toBe("bismuth-tabs-v1:abc123");
   });
   test("distinct windows get distinct keys", () => {
     expect(tabsStorageKey("a")).not.toBe(tabsStorageKey("b"));
@@ -60,11 +60,11 @@ describe("resolveWindowId (reads live location)", () => {
     // @ts-expect-error minimal location stub
     globalThis.location = { search: "?w=win-7" };
     expect(resolveWindowId()).toBe("win-7");
-    expect(tabsStorageKey(resolveWindowId())).toBe("oa-tabs-v1:win-7");
+    expect(tabsStorageKey(resolveWindowId())).toBe("bismuth-tabs-v1:win-7");
 
     // @ts-expect-error minimal location stub
     globalThis.location = { search: "?api=http://x" };
     expect(resolveWindowId()).toBe(MAIN_WINDOW_ID);
-    expect(tabsStorageKey(resolveWindowId())).toBe("oa-tabs-v1");
+    expect(tabsStorageKey(resolveWindowId())).toBe("bismuth-tabs-v1");
   });
 });

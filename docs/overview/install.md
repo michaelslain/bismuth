@@ -36,7 +36,7 @@ you opt into **Set up claude-bot daemon** in the app, Bismuth clones claude-bot 
 `~/.bismuth/claude-bot`, `bun install`s it, and runs its in-place installer (see
 [Self-update](self-update.md) for the related app updater, and `core/src/claudebot.ts`
 `provisionClaudeBot()`). claude-bot stays fully standalone — that clone is just one way to obtain
-its source. Overrides: `OA_CLAUDEBOT_SRC` (clone location), `OA_CLAUDEBOT_REPO` (git remote).
+its source. Overrides: `BISMUTH_CLAUDEBOT_SRC` (clone location), `BISMUTH_CLAUDEBOT_REPO` (git remote).
 
 ---
 
@@ -74,12 +74,12 @@ The backend server refuses to start without both variables. Both directories mus
 
 | Variable | Purpose |
 |---|---|
-| `OA_VAULT` | Absolute path to your 2nd-brain markdown vault directory |
-| `OA_MEMORY` | Absolute path to your 3rd-brain Claude-bot memory directory |
+| `BISMUTH_VAULT` | Absolute path to your 2nd-brain markdown vault directory |
+| `BISMUTH_MEMORY` | Absolute path to your 3rd-brain Claude-bot memory directory |
 
 ```bash
-export OA_VAULT="/path/to/your/vault"
-export OA_MEMORY="/path/to/your/memory"
+export BISMUTH_VAULT="/path/to/your/vault"
+export BISMUTH_MEMORY="/path/to/your/memory"
 ```
 
 ### First-time / empty vault
@@ -89,8 +89,8 @@ If you have no existing vault, create placeholder directories before starting:
 ```bash
 mkdir -p /tmp/test-vault /tmp/test-memory
 echo "# Hello" > /tmp/test-vault/example.md
-export OA_VAULT="/tmp/test-vault"
-export OA_MEMORY="/tmp/test-memory"
+export BISMUTH_VAULT="/tmp/test-vault"
+export BISMUTH_MEMORY="/tmp/test-memory"
 ```
 
 ### What happens if they are unset
@@ -100,8 +100,8 @@ The `bun run dev` script uses Bash's `${VAR:?message}` expansion, which immediat
 ```
 # From app/package.json "dev" script:
 bun run ../core/src/server.ts \
-  --vault "${OA_VAULT:?set OA_VAULT to your 2nd-brain vault dir}" \
-  --memory "${OA_MEMORY:?set OA_MEMORY to your 3rd-brain memory dir}"
+  --vault "${BISMUTH_VAULT:?set BISMUTH_VAULT to your 2nd-brain vault dir}" \
+  --memory "${BISMUTH_MEMORY:?set BISMUTH_MEMORY to your 3rd-brain memory dir}"
 ```
 
 The standalone server (`bun run core/src/server.ts ...`) checks the CLI flags directly and prints:
@@ -127,7 +127,7 @@ bun run dev
 
 What this launches (from `app/package.json` "dev" script):
 
-1. `bun run ../core/src/server.ts --vault "$OA_VAULT" --memory "$OA_MEMORY"` — backend on port **4321**
+1. `bun run ../core/src/server.ts --vault "$BISMUTH_VAULT" --memory "$BISMUTH_MEMORY"` — backend on port **4321**
 2. `vite` — Vite dev server on port **1420** (strict — fails if 1420 is taken)
 
 Open the app at `http://localhost:1420/` in a browser, or let the Tauri window open automatically if you are running inside the Tauri shell.
@@ -155,7 +155,7 @@ bun run core:serve
 This maps to `bun run core/src/server.ts` with no flags — it will error immediately because `--vault` and `--memory` are required. You must provide them:
 
 ```bash
-OA_VAULT="/your/vault" OA_MEMORY="/your/memory" bun run core:serve
+BISMUTH_VAULT="/your/vault" BISMUTH_MEMORY="/your/memory" bun run core:serve
 # or with explicit flags:
 bun run core/src/server.ts --vault /your/vault --memory /your/memory
 ```
@@ -241,8 +241,8 @@ cd app && bun run tauri build
 Unlike dev (where `bun run dev` launches `core` via `concurrently`), the **bundled app runs its own backend**:
 
 - `app/scripts/build-core-sidecar.ts` compiles `core/src/server.ts` into a standalone binary via `bun build --compile`, output to `app/src-tauri/binaries/bismuth-core-<target-triple>` (gitignored, ~58 MB). `tauri.conf.json` lists it under `bundle.externalBin` so it ships inside the `.app`.
-- At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__OA_API__ = "http://localhost:<free>"` before any app JS runs; `api.ts` `resolveBase` reads it (precedence: `?api=` > `__OA_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
-- **Vault resolution**: a Finder-launched app has no shell env, so `OA_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.bismuth.app/config.json`); when a valid saved vault exists (`read_valid_config` — the path is set and is a real directory), it spawns the backend against it, defaulting memory to `~/.claude-bot/memory` when unset. A one-time startup migration (`migrate_legacy_config_dir`, run before any config read) renames the legacy config dir (`…/com.michael.obsidian` → `…/com.bismuth.app`) when it exists, so users upgrading across the bundle-id rename keep their saved vault.
+- At launch, `app/src-tauri/src/lib.rs` (release builds only — gated on `!cfg!(debug_assertions)`) picks a **free port**, spawns the sidecar as `bismuth-core --vault <V> --memory <M> --port <free>` via `tauri-plugin-shell`, and kills it on `RunEvent::Exit` (no orphaned process). The main window is created in Rust (not in `tauri.conf.json`) with an initialization script setting `window.__BISMUTH_API__ = "http://localhost:<free>"` before any app JS runs; `api.ts` `resolveBase` reads it (precedence: `?api=` > `__BISMUTH_API__` > `VITE_API_BASE` > `:4321`). "Open folder" windows still pin their own backend via `?api=`.
+- **Vault resolution**: a Finder-launched app has no shell env, so `BISMUTH_VAULT` is unset. The app reads `config.json` from the app config dir (`~/Library/Application Support/com.bismuth.app/config.json`); when a valid saved vault exists (`read_valid_config` — the path is set and is a real directory), it spawns the backend against it, defaulting memory to `~/.claude-bot/memory` when unset. A one-time startup migration (`migrate_legacy_config_dir`, run before any config read) renames the legacy config dir (`…/com.michael.obsidian` → `…/com.bismuth.app`) when it exists, so users upgrading across the bundle-id rename keep their saved vault.
 - **No vault yet → the intro, not a bare picker**: when there is no usable vault, `lib.rs` does **not** jump straight to a folder picker. Instead it builds the window with **no backend** and renders a full-window onboarding takeover (see [First-run intro](#first-run-intro-the-vault-takeover) below). The native folder picker is only opened later, by the intro's final CTA.
 
 #### First-run intro (the vault takeover)
@@ -257,11 +257,11 @@ let has_vault = valid.is_some();
 let first_run = !cfg!(debug_assertions) && (!has_seen_intro(&app.handle()) || !has_vault);
 ```
 
-So the intro shows when **either** the user has never finished it (`intro-seen` marker absent) **or** there is no usable vault. When `first_run`, `injected` is `None` (no backend is spawned — the intro is backend-free), and `build_main_window` writes an init script setting `window.__OA_FIRST_RUN__ = true` (plus `window.__OA_HAS_VAULT__ = true` when a vault is already configured, i.e. a replay). `app/src/index.tsx` reads that flag and code-splits the root so first-run loads `intro/VaultIntro` instead of `App`:
+So the intro shows when **either** the user has never finished it (`intro-seen` marker absent) **or** there is no usable vault. When `first_run`, `injected` is `None` (no backend is spawned — the intro is backend-free), and `build_main_window` writes an init script setting `window.__BISMUTH_FIRST_RUN__ = true` (plus `window.__BISMUTH_HAS_VAULT__ = true` when a vault is already configured, i.e. a replay). `app/src/index.tsx` reads that flag and code-splits the root so first-run loads `intro/VaultIntro` instead of `App`:
 
 ```ts
 const firstRun =
-  (isTauri() && window.__OA_FIRST_RUN__ === true) ||
+  (isTauri() && window.__BISMUTH_FIRST_RUN__ === true) ||
   new URLSearchParams(window.location.search).has("intro");
 const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));
 ```
@@ -289,13 +289,13 @@ The theme picker only recolors live; it commits **nothing** until the CTA. On co
 2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
 3. on a pick: `create_dir_all` the folder, default memory to `~/.claude-bot/memory` (also created), `seed_vault_settings` writes a minimal `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (the sidecar's `reconcileSettings` fills the rest on boot, preserving those keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
 
-In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `OA_VAULT` regardless) — the frontend just navigates to `/` itself.
+In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `BISMUTH_VAULT` regardless) — the frontend just navigates to `/` itself.
 
-**Power-ups (queued for after the vault opens):** The `powerups` slide offers optional setups (`POWER_UPS` in `VaultIntro.tsx`), both default-on: **DAEMON** (command `daemon-setup`) and **CLI + MCP** (command `bismuth-install`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["oa-first-run-powerups"]` (and caches the theme CSS vars under `oa-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, daemon auto-updates on launch), so leaving them checked is safe even when already installed.
+**Power-ups (queued for after the vault opens):** The `powerups` slide offers optional setups (`POWER_UPS` in `VaultIntro.tsx`), both default-on: **DAEMON** (command `daemon-setup`) and **CLI + MCP** (command `bismuth-install`). The intro has no backend, so it can't run them itself — `enterVault` writes the chosen command-palette ids to `localStorage["bismuth-first-run-powerups"]` (and caches the theme CSS vars under `bismuth-theme-vars-v1` for the post-restart first paint). The restarted app reads that key and runs the chosen commands against the real backend. Re-running either is idempotent (CLI+MCP re-syncs on boot, daemon auto-updates on launch), so leaving them checked is safe even when already installed.
 
 **Replay (secret keybind):** The frontend can replay the onboarding via two Tauri commands:
 - `reset_first_run` — removes **only** the `intro-seen` marker (leaving `config.json` intact) and relaunches; with a vault still configured this re-shows the intro and then drops the user back into their current vault. Bound to a secret keybind.
-- `finish_intro` — used when replaying with a vault already configured: marks the intro seen and relaunches **into the existing vault without re-picking** (the intro's CTA continues here instead of `choose_first_vault` when `window.__OA_HAS_VAULT__` is set).
+- `finish_intro` — used when replaying with a vault already configured: marks the intro seen and relaunches **into the existing vault without re-picking** (the intro's CTA continues here instead of `choose_first_vault` when `window.__BISMUTH_HAS_VAULT__` is set).
 
 `set_last_vault(vault)` is the related "open another folder as a new brain" persist — it writes the new vault into `config.json` (preserving the existing memory dir, ignoring an empty/nonexistent path) so the next cold launch reopens it.
 
@@ -303,8 +303,8 @@ In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart 
 
 `beforeBuildCommand` also stages two more resources alongside the core sidecar, and `lib.rs` points the sidecar at them via env vars:
 
-- **`resources/relay`** (`app/scripts/bundle-relay.ts`, hooks-only — no `node_modules`/`.mcp.json`) → `OA_RELAY_BUNDLE`. `core/src/terminal.ts` resolves the relay shim from it so app terminal tabs auto-load the agent-graph relay plugin (the source-relative `relay/` doesn't exist inside the compiled sidecar). The shim's zdotdir sources the user's `~/.zshrc` first, so oh-my-zsh + their `PATH` + their `claude` all still work — the `claude` function is added on top.
-- **`resources/bismuth-tools`** (`app/scripts/build-bismuth-tools.ts` — compiled `bismuth` + `bismuth-mcp` binaries + the `docs/` tree) → `OA_BISMUTH_INSTALL_SRC`. On boot the sidecar runs `ensureBismuthInstalled` (`core/src/bismuthInstall.ts`): a **version-gated, idempotent** machine-wide install — copies the tools to `~/.bismuth/`, symlinks `bismuth` onto `PATH`, and registers the MCP in the user's global `~/.claude.json` (`claude mcp add -s user`). No-op when the bundled binaries are unchanged (hash at `~/.bismuth/.version`). See [MCP server](../mcp/overview.md).
+- **`resources/relay`** (`app/scripts/bundle-relay.ts`, hooks-only — no `node_modules`/`.mcp.json`) → `BISMUTH_RELAY_BUNDLE`. `core/src/terminal.ts` resolves the relay shim from it so app terminal tabs auto-load the agent-graph relay plugin (the source-relative `relay/` doesn't exist inside the compiled sidecar). The shim's zdotdir sources the user's `~/.zshrc` first, so oh-my-zsh + their `PATH` + their `claude` all still work — the `claude` function is added on top.
+- **`resources/bismuth-tools`** (`app/scripts/build-bismuth-tools.ts` — compiled `bismuth` + `bismuth-mcp` binaries + the `docs/` tree) → `BISMUTH_INSTALL_SRC`. On boot the sidecar runs `ensureBismuthInstalled` (`core/src/bismuthInstall.ts`): a **version-gated, idempotent** machine-wide install — copies the tools to `~/.bismuth/`, symlinks `bismuth` onto `PATH`, and registers the MCP in the user's global `~/.claude.json` (`claude mcp add -s user`). No-op when the bundled binaries are unchanged (hash at `~/.bismuth/.version`). See [MCP server](../mcp/overview.md).
 
 > **DMG build hygiene**: tauri's `bundle_dmg.sh` can fail if a prior failed build left a `/Volumes/dmg.*` scratch volume mounted. `beforeBuildCommand` runs `app/scripts/predmg-clean.ts` first to detach stale volumes + remove `rw.*.dmg` scratch, so re-running `tauri build` self-heals.
 
@@ -335,8 +335,8 @@ bun run core/src/server.ts \
   --port 4322
 
 # Full-stack dev (PORT env var threads through to the dev script):
-OA_VAULT="/path/to/second-vault" \
-OA_MEMORY="/path/to/second-memory" \
+BISMUTH_VAULT="/path/to/second-vault" \
+BISMUTH_MEMORY="/path/to/second-memory" \
 PORT=4322 \
 cd app && bun run dev
 ```
@@ -406,8 +406,8 @@ This allows the Vite dev server (any port) and the Tauri webview to reach the ba
 
 | Error | Cause | Fix |
 |---|---|---|
-| `set OA_VAULT to your 2nd-brain vault dir` | `OA_VAULT` is unset or empty | `export OA_VAULT="/absolute/path"` |
-| `set OA_MEMORY to your 3rd-brain memory dir` | `OA_MEMORY` is unset or empty | `export OA_MEMORY="/absolute/path"` |
+| `set BISMUTH_VAULT to your 2nd-brain vault dir` | `BISMUTH_VAULT` is unset or empty | `export BISMUTH_VAULT="/absolute/path"` |
+| `set BISMUTH_MEMORY to your 3rd-brain memory dir` | `BISMUTH_MEMORY` is unset or empty | `export BISMUTH_MEMORY="/absolute/path"` |
 | `usage: server --vault ... --memory ...` | Running `bun run core:serve` without flags | Supply both `--vault` and `--memory` |
 | `Port 1420 is already in use` | Another Vite instance is running | Kill it or start with `vite --port 1421` |
 | `Port 4321 is already in use` | Another backend is running | Use `--port 4322` |

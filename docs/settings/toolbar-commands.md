@@ -102,7 +102,7 @@ Notes on individual commands:
 
 1. `new-note`
 2. `new-folder`
-3. **`New base ▸`** — a submenu (icon `Database`), **not** the flat `new-base` command. It maps over `BASE_VIEW_KINDS` (`app/src/baseViews.ts`), one entry per Bases view kind; each entry dispatches an `oa-new` event (`{ kind: "base", view }`) that seeds a `type: base` file with that view via the same `oa-new` → `FileTree.doCreate` path.
+3. **`New base ▸`** — a submenu (icon `Database`), **not** the flat `new-base` command. It maps over `BASE_VIEW_KINDS` (`app/src/baseViews.ts`), one entry per Bases view kind; each entry dispatches an `bismuth-new` event (`{ kind: "base", view }`) that seeds a `type: base` file with that view via the same `bismuth-new` → `FileTree.doCreate` path.
 4. `new-spreadsheet`
 5. `new-drawing`
 6. Then each **resolving** `daily-note:<id>` command (a config with a blank id is skipped), with a separator before the first daily-note entry when any static entry preceded it.

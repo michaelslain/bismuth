@@ -3,7 +3,7 @@ import { buildTaskCardParts, isResolvedStatus } from "./taskCardMarkup";
 
 // Pull the data-line / data-status off every rendered marker, in document order.
 function markers(html: string): Array<{ line: number; status: string }> {
-  return [...html.matchAll(/<span class="oa-task-box" data-status="([^"]*)" data-line="(\d+)">/g)].map(
+  return [...html.matchAll(/<span class="bismuth-task-box" data-status="([^"]*)" data-line="(\d+)">/g)].map(
     (m) => ({ status: m[1], line: Number(m[2]) }),
   );
 }

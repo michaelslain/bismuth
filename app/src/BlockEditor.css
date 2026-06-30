@@ -272,18 +272,18 @@
 
 /* --- Inline atom chips (wikilink / tag / math / embed / bare url) -------- */
 /* contenteditable=false spans the bridge renders; styled to read as chips, no markdown symbols. */
-.block-rich .oa-wikilink {
+.block-rich .bismuth-wikilink {
   color: var(--accent);
   cursor: pointer;
   border-radius: 4px;
   padding: 0 1px;
   text-decoration: none;
 }
-.block-rich .oa-wikilink:hover {
+.block-rich .bismuth-wikilink:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.block-rich .oa-tag {
+.block-rich .bismuth-tag {
   color: color-mix(in srgb, var(--accent) 80%, var(--fg));
   background: color-mix(in srgb, var(--accent) 14%, transparent);
   border-radius: 6px;
@@ -291,17 +291,17 @@
   font-size: 0.88em;
   cursor: pointer;
 }
-.block-rich .oa-tag:hover {
+.block-rich .bismuth-tag:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
-.block-rich .oa-math {
+.block-rich .bismuth-math {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 0.95em;
   background: color-mix(in srgb, var(--fg) 6%, transparent);
   border-radius: 4px;
   padding: 0 4px;
 }
-.block-rich .oa-embed {
+.block-rich .bismuth-embed {
   display: inline-flex;
   align-items: baseline;
   gap: 2px;
@@ -312,7 +312,7 @@
   padding: 0 6px;
   font-size: 0.9em;
 }
-.block-rich .oa-bareurl {
+.block-rich .bismuth-bareurl {
   color: var(--accent);
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -424,7 +424,7 @@
 
 /* --- Slash menu popover -------------------------------------------------- */
 .block-slash-popover {
-  /* The PopoverList inside brings its own .oa-popover chrome; this just positions it. */
+  /* The PopoverList inside brings its own .bismuth-popover chrome; this just positions it. */
 }
 .block-slash-empty {
   padding: 8px 12px;

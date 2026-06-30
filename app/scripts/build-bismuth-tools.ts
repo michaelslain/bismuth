@@ -1,7 +1,7 @@
 // Prebuild step: compile the bismuth CLI + MCP server into standalone binaries and stage
 // them (plus the docs/ reference) as a Tauri resource at resources/bismuth-tools/.
 //
-// At runtime the core sidecar points OA_BISMUTH_INSTALL_SRC here, and
+// At runtime the core sidecar points BISMUTH_INSTALL_SRC here, and
 // core/src/bismuthInstall.ts copies these into ~/.bismuth and registers them MACHINE-WIDE
 // (the `bismuth` CLI on PATH + the bismuth MCP in the user's global ~/.claude.json), so
 // every terminal + every Claude session gets them — not just Bismuth app tabs.
@@ -46,7 +46,7 @@ function compile(entry: string, outName: string): void {
 compile(join(repoRoot, "cli", "src", "index.ts"), "bismuth");
 compile(join(repoRoot, "mcp", "src", "server.ts"), "bismuth-mcp");
 
-// Stage docs/ for the MCP docs tools (the installer sets OA_DOCS_DIR → ~/.bismuth/docs).
+// Stage docs/ for the MCP docs tools (the installer sets BISMUTH_DOCS_DIR → ~/.bismuth/docs).
 const docsSrc = join(repoRoot, "docs");
 if (!existsSync(docsSrc)) {
   console.error(`docs/ not found at ${docsSrc}`);
@@ -56,7 +56,7 @@ cpSync(docsSrc, join(outDir, "docs"), { recursive: true });
 console.log(`✓ docs staged → ${join(outDir, "docs")}`);
 
 // Record where this build came from so the installed app can git-fetch/pull + rebuild to
-// self-update (core/src/selfUpdate.ts reads ${OA_BISMUTH_INSTALL_SRC}/build-origin.json).
+// self-update (core/src/selfUpdate.ts reads ${BISMUTH_INSTALL_SRC}/build-origin.json).
 let sha = "";
 const rev = spawnSync("git", ["-C", repoRoot, "rev-parse", "HEAD"], { encoding: "utf8" });
 if (rev.status === 0) sha = rev.stdout.trim();

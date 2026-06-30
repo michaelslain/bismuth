@@ -11,7 +11,7 @@
 // The id comes from the `?w=<id>` query param, which is stamped onto every
 // programmatically-opened window (see appWindow.ts `openAppWindow`). The primary /
 // cold-launch window has no `?w=` and is treated as "main" — and "main" keeps using the
-// historical `oa-tabs-v1` key, so an existing user's saved layout is preserved with no
+// historical `bismuth-tabs-v1` key, so an existing user's saved layout is preserved with no
 // migration. Each opened window carries its `?w=` in its own URL, so reloading that window
 // restores its own tabs.
 //
@@ -19,7 +19,7 @@
 // derivation are unit-testable without a DOM.
 
 export const MAIN_WINDOW_ID = "main";
-const TABS_KEY = "oa-tabs-v1";
+const TABS_KEY = "bismuth-tabs-v1";
 
 /** Resolve a window id from a `location.search` string. Absent/blank `?w=` → "main". */
 export function windowIdFromSearch(search: string | undefined): string {

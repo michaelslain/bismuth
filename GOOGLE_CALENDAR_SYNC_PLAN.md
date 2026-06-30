@@ -148,7 +148,7 @@ keychain / app‑config (§6).
 ### Tauri shell (`app/src-tauri/`, Tauri **v2**)
 - Present plugins: `opener`, `fs`, `dialog`, `shell`. **Missing:** http, deep‑link, keyring.
 - Bundle id: **`com.bismuth.app`**. Sidecar is spawned on a **free port** and injected as
-  `window.__OA_API__` (`lib.rs` `start_backend`/`build_main_window`).
+  `window.__BISMUTH_API__` (`lib.rs` `start_backend`/`build_main_window`).
 - **Open the consent URL** with the existing `openExternalUrl()` (`app/src/appWindow.ts` →
   `@tauri-apps/plugin-opener` `openUrl`). `tauri-plugin-shell.open()` is deprecated since 2.1.0.
 - **Add one Tauri command** only if we use the keychain: `gcal_store_token` / `gcal_read_token`

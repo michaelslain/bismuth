@@ -179,7 +179,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /daemon/status`
 - **Params:** none.
-- **Response:** `DaemonStatus` = `{ running: boolean, thisDeviceId: string|null, owner: Owner|null }`. `running` = `daemon.pid` exists AND that pid is alive. `owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` or `null` (unclaimed). Reads claude-bot shared state under `OA_CLAUDEBOT_HOME` (env wins) / `daemon.home` setting / `~/.claude-bot`. **Never throws** (degrades to defaults).
+- **Response:** `DaemonStatus` = `{ running: boolean, thisDeviceId: string|null, owner: Owner|null }`. `running` = `daemon.pid` exists AND that pid is alive. `owner` = `{ ownerDeviceId, ownerLabel, updatedAt }` or `null` (unclaimed). Reads claude-bot shared state under `BISMUTH_DAEMON_DIR` (env wins) / `daemon.home` setting / `~/.claude-bot`. **Never throws** (degrades to defaults).
 
 ### `GET /daemon/devices`
 - **Params:** none.
@@ -199,7 +199,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /update/status`
 - **Params:** none.
-- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `OA_BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
+- **Response:** `UpdateStatus` = `{ available: boolean, behind: number, localSha: string|null, remoteSha: string|null, builtSha: string|null, dirty: boolean, reason?: string }` — the git-based self-update probe (`getUpdateStatus`, `core/src/selfUpdate.ts`). Best-effort `git fetch origin main`, then compares `HEAD..origin/main`. `available` = `behind > 0`. **Self-disables** (returns `available:false` + a `reason`) when this isn't a bundled source build: `"not-a-source-build"` (no `build-origin.json` / `BISMUTH_INSTALL_SRC` unset — e.g. `bun run dev`), `"not-a-git-repo"`, or `"no-upstream"`. **Never throws.** See [self-update](../overview/self-update.md).
 
 ### `GET /update/progress`
 - **Params:** none.
@@ -266,7 +266,7 @@ These mutate the claude-bot daemon's shared on-disk files (NOT the vault), so th
 ### Machine-wide install / self-update (read table)
 These run system actions (filesystem + git + `claude mcp` + a rebuild) but are **not** vault mutations, so they live in the read table with no vault-cache invalidation. All never throw.
 
-- **`POST /bismuth/install`** — body none. `ensureBismuthInstalled(process.env.OA_BISMUTH_INSTALL_SRC)` — the idempotent, version-gated machine-wide install of the `bismuth` CLI + MCP from the bundled tools resource (`core/src/bismuthInstall.ts`). Response `InstallResult` = `{ action, status: BismuthStatus, warnings: string[] }`, where `action` ∈ `"up-to-date"` | `"installed"` | `"updated"` | `"would-install"` | `"would-update"` | `"skipped-no-src"`. A no-op (`"up-to-date"`) when the bundled-binary content hash matches `~/.bismuth/.version` AND the CLI symlink + MCP registration are present; `"skipped-no-src"` when `OA_BISMUTH_INSTALL_SRC` is unset / incomplete (the dev case). See [machine-wide install](../mcp/overview.md).
+- **`POST /bismuth/install`** — body none. `ensureBismuthInstalled(process.env.BISMUTH_INSTALL_SRC)` — the idempotent, version-gated machine-wide install of the `bismuth` CLI + MCP from the bundled tools resource (`core/src/bismuthInstall.ts`). Response `InstallResult` = `{ action, status: BismuthStatus, warnings: string[] }`, where `action` ∈ `"up-to-date"` | `"installed"` | `"updated"` | `"would-install"` | `"would-update"` | `"skipped-no-src"`. A no-op (`"up-to-date"`) when the bundled-binary content hash matches `~/.bismuth/.version` AND the CLI symlink + MCP registration are present; `"skipped-no-src"` when `BISMUTH_INSTALL_SRC` is unset / incomplete (the dev case). See [machine-wide install](../mcp/overview.md).
 - **`POST /update/apply`** — body none. `startUpdate()` (`core/src/selfUpdate.ts`) — starts the git self-update and **returns immediately** with the initial `UpdateProgress` (the heavy `git pull` + `bun run tauri build` runs in the background; poll `GET /update/progress`). Idempotent while a run is in flight (returns the current `state`). Guards: returns `phase:"error"` when not a bundled source build, when the repo has uncommitted changes (`dirty`), and `phase:"idle"` when already up to date. See [self-update](../overview/self-update.md).
 
 ### Google Calendar OAuth (read table)
@@ -474,7 +474,7 @@ On `open`, the server attaches a switchable sink (`attachSink`) that first flush
 ### Lifecycle
 On `close`, the live sink is detached (`detachSink` — output resumes buffering for a possible reattach) and the exit listener disposed. Then:
 - **Clean close** (code `1000`) — the shell process exited (server-side close after `pty.onExit`) or the client intentionally disposed the tab. The PTY is killed now (`killSession`).
-- **Abnormal close** (reload → `1001`, network drop → `1006`, etc.) — the PTY is kept alive for a grace window (`scheduleSessionKill(sessionId, reattachGraceMs())`, default **30000ms**, overridable via `OA_TERMINAL_GRACE_MS`) so a reconnecting client can reattach by `termId` and keep its running process.
+- **Abnormal close** (reload → `1001`, network drop → `1006`, etc.) — the PTY is kept alive for a grace window (`scheduleSessionKill(sessionId, reattachGraceMs())`, default **30000ms**, overridable via `BISMUTH_TERMINAL_GRACE_MS`) so a reconnecting client can reattach by `termId` and keep its running process.
 
 The server also pre-warms one login shell on boot (`prewarmPool(vault, server.port)`, cwd = vault) so the first tab paints instantly; best-effort (a spawn failure never takes the server down).
 

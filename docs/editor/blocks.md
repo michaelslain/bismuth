@@ -127,12 +127,12 @@ The Obsidian-flavoured inline syntax CommonMark doesn't model is rendered as Pro
 
 The concrete atoms (registered in this order so longer/prefixed patterns tokenize first — embeds before wikilinks/images):
 
-- **`oaEmbedWiki`** — `![[Embed]]` / `![[image.png]]`, an opaque `▦ name` chip.
-- **`oaEmbedImg`** — `![alt](url)`, an opaque `▦ alt` chip.
-- **`oaWikilink`** — `[[target#heading|alias]]`, displayed as `alias || basename` (`wikilinkDisplay`, the same rule as the CodeMirror live preview + `renderNoteBody`), carrying `data-href` (`wikilinkTarget`).
-- **`oaTag`** — `#tag` (incl. nested `#a/b`), requiring start-of-line or whitespace before `#` so it doesn't match a heading or `C#` (matches `editor/tag.ts`); `raw`/chip cover only the `#tag` token.
-- **`oaMath`** — inline `$math$`, rendered via the **same shared KaTeX** renderer (`renderMath`/`onMathReady`) the CodeMirror live-preview + `renderNoteBody` use, so the chip shows typeset math. KaTeX loads lazily (~280 KB); until it lands the chip paints the raw `$…$` as a `.oa-math[data-math]` placeholder and `scheduleMathUpgrade` fills every still-empty placeholder (scoped to `.oa-block-milkdown span.oa-math[data-math]`) once the chunk resolves.
-- **`oaUrl`** — bare `https://…` URLs (mirrors `editor/urls.ts`), a `.oa-bareurl` chip with `data-href`.
+- **`bismuthEmbedWiki`** — `![[Embed]]` / `![[image.png]]`, an opaque `▦ name` chip.
+- **`bismuthEmbedImg`** — `![alt](url)`, an opaque `▦ alt` chip.
+- **`bismuthWikilink`** — `[[target#heading|alias]]`, displayed as `alias || basename` (`wikilinkDisplay`, the same rule as the CodeMirror live preview + `renderNoteBody`), carrying `data-href` (`wikilinkTarget`).
+- **`bismuthTag`** — `#tag` (incl. nested `#a/b`), requiring start-of-line or whitespace before `#` so it doesn't match a heading or `C#` (matches `editor/tag.ts`); `raw`/chip cover only the `#tag` token.
+- **`bismuthMath`** — inline `$math$`, rendered via the **same shared KaTeX** renderer (`renderMath`/`onMathReady`) the CodeMirror live-preview + `renderNoteBody` use, so the chip shows typeset math. KaTeX loads lazily (~280 KB); until it lands the chip paints the raw `$…$` as a `.bismuth-math[data-math]` placeholder and `scheduleMathUpgrade` fills every still-empty placeholder (scoped to `.bismuth-block-milkdown span.bismuth-math[data-math]`) once the chunk resolves.
+- **`bismuthUrl`** — bare `https://…` URLs (mirrors `editor/urls.ts`), a `.bismuth-bareurl` chip with `data-href`.
 
 ## Orchestration (`BlockEditor.tsx`)
 

@@ -96,7 +96,7 @@ export async function openAppWindow(url: string, title = "Bismuth"): Promise<boo
   if (isTauri()) {
     try {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      const label = `oa-${crypto.randomUUID()}`;
+      const label = `bismuth-${crypto.randomUUID()}`;
       const w = new WebviewWindow(label, { url, title, width: 1200, height: 800 });
       // Creation is async; a missing capability / nav block surfaces as an error event
       // rather than a throw — surface it instead of failing silently.

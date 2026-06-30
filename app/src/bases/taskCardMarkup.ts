@@ -1,5 +1,5 @@
 // Builds the HTML for a BodyCard's note body, rendering EVERY checkbox task line as a
-// uniform status-bearing marker (`<span class="oa-task-box" data-line data-status>`) instead
+// uniform status-bearing marker (`<span class="bismuth-task-box" data-line data-status>`) instead
 // of relying on marked's GFM checkbox. marked only emits an <input> for `[ ]`/`[x]` — `[/]`
 // (in progress) and `[-]` (cancelled) render as plain text with no checkbox — so a positional
 // checkbox→line mapping silently misaligns the moment those statuses appear. Emitting our own
@@ -38,7 +38,7 @@ export function isResolvedStatus(status: string): boolean {
 }
 
 function markerFor(status: string, line: number): string {
-  return `<span class="oa-task-box" data-status="${escapeAttr(status)}" data-line="${line}"></span>`;
+  return `<span class="bismuth-task-box" data-status="${escapeAttr(status)}" data-line="${line}"></span>`;
 }
 
 export interface TaskCardParts {

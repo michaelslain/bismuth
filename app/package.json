@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "vite",
-    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault \\\"${OA_VAULT:?set OA_VAULT to your 2nd-brain vault dir}\\\" --memory \\\"${OA_MEMORY:?set OA_MEMORY to your 3rd-brain memory dir}\\\"\" \"vite\"",
+    "dev": "concurrently -k \"bun run ../core/src/server.ts --vault \\\"${BISMUTH_VAULT:?set BISMUTH_VAULT to your 2nd-brain vault dir}\\\" --memory \\\"${BISMUTH_MEMORY:?set BISMUTH_MEMORY to your 3rd-brain memory dir}\\\"\" \"vite\"",
     "build": "vite build",
     "serve": "vite preview",
     "prebundle:relay": "bun run scripts/bundle-relay.ts",

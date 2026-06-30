@@ -24,7 +24,7 @@ class NoteTitleWidget extends SolidWidget {
   private resizeObs?: ResizeObserver;
 
   constructor(private readonly path: string) {
-    super("oa-note-title");
+    super("bismuth-note-title");
   }
 
   eq(other: NoteTitleWidget): boolean {

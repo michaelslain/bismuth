@@ -189,7 +189,7 @@ export function scanFoldables(doc: Text, mode: FoldMode = "markdown"): FoldBlock
 
 // --- persistence (localStorage, per note path) -------------------------------
 
-const storeKey = (path: string): string => `oa-folds:${path}`;
+const storeKey = (path: string): string => `bismuth-folds:${path}`;
 
 function loadLocked(path: string): Set<string> {
   try {
@@ -281,7 +281,7 @@ function buildDeco(doc: Text, mode: FoldMode, folded: Set<string>, locked: Set<s
     // hiding it and stealing the click. Pull those past the gutter (measured width, so it's
     // robust to digit count) so the collapser sits clearly to the LEFT of the numbers and
     // stays clickable. Deeper (indented) anchors already clear the gutter, so leave them put.
-    const left = hasGutter && b.depth === 0 ? `calc(-1 * var(--oa-fold-gutter-w, 0px) - 18px)` : base;
+    const left = hasGutter && b.depth === 0 ? `calc(-1 * var(--bismuth-fold-gutter-w, 0px) - 18px)` : base;
     ranges.push(foldableLine.range(b.anchorFrom));
     ranges.push(
       Decoration.widget({
@@ -552,7 +552,7 @@ export function foldBlocks(
     }
   };
 
-  // Keep `--oa-fold-gutter-w` (read by the depth-0 triangle's `left` calc above) in sync
+  // Keep `--bismuth-fold-gutter-w` (read by the depth-0 triangle's `left` calc above) in sync
   // with the live line-number gutter width, so the collapser always parks just left of the
   // numbers regardless of how many digits they grow to. Only needed when a gutter exists.
   const gutterWidthSync = ViewPlugin.fromClass(
@@ -566,12 +566,12 @@ export function foldBlocks(
       }
       measure(view: EditorView): void {
         view.requestMeasure({
-          key: "oa-fold-gutter-w",
+          key: "bismuth-fold-gutter-w",
           read: (v) => (v.dom.querySelector(".cm-gutters") as HTMLElement | null)?.offsetWidth ?? 0,
           write: (w, v) => {
             if (w === this.lastWidth) return;
             this.lastWidth = w;
-            v.dom.style.setProperty("--oa-fold-gutter-w", `${w}px`);
+            v.dom.style.setProperty("--bismuth-fold-gutter-w", `${w}px`);
           },
         });
       }

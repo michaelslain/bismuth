@@ -71,16 +71,16 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
   function buildPicker(view: EditorView, kind: DateKind, initial: string): TooltipView {
     const prefill = parseDateValue(initial);
     const dom = document.createElement("div");
-    // `.oa-popover` supplies the menu chrome; datePicker.css restores the themed surface
+    // `.bismuth-popover` supplies the menu chrome; datePicker.css restores the themed surface
     // (CM stamps `cm-tooltip` onto this element, whose default light bg would otherwise win).
-    dom.className = "oa-popover oa-datepicker";
+    dom.className = "bismuth-popover bismuth-datepicker";
 
     // header — native date (+ time) inputs, defaulting to today / now.
     const head = document.createElement("div");
-    head.className = "oa-datepicker-head";
+    head.className = "bismuth-datepicker-head";
     const dateInput = document.createElement("input");
     dateInput.type = "date";
-    dateInput.className = "ui-input oa-datepicker-date";
+    dateInput.className = "ui-input bismuth-datepicker-date";
     dateInput.value = prefill.date || todayISO();
     head.appendChild(dateInput);
 
@@ -88,7 +88,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
     if (kind === "datetime") {
       timeInput = document.createElement("input");
       timeInput.type = "time";
-      timeInput.className = "ui-input oa-datepicker-time";
+      timeInput.className = "ui-input bismuth-datepicker-time";
       timeInput.value = prefill.time || nowHHMM();
       head.appendChild(timeInput);
     }
@@ -96,7 +96,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
 
     // relative-date quick options.
     const list = document.createElement("div");
-    list.className = "oa-datepicker-list";
+    list.className = "bismuth-datepicker-list";
     dom.appendChild(list);
 
     const options = relativeDateOptions();
@@ -126,7 +126,7 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
       index: -1,
       setHighlight(i: number) {
         this.index = i;
-        this.rows.forEach((r, idx) => r.classList.toggle("oa-popover-row--selected", idx === i));
+        this.rows.forEach((r, idx) => r.classList.toggle("bismuth-popover-row--selected", idx === i));
       },
       pick(i: number) {
         const opt = options[i];
@@ -136,13 +136,13 @@ export function datePropertyPicker(getSchema: () => Schema): Extension {
 
     options.forEach((opt, i) => {
       const row = document.createElement("div");
-      row.className = "oa-popover-row";
+      row.className = "bismuth-popover-row";
       const label = document.createElement("span");
-      label.className = "oa-popover-label";
+      label.className = "bismuth-popover-label";
       label.textContent = opt.label;
       row.appendChild(label);
       const detail = document.createElement("span");
-      detail.className = "oa-popover-detail";
+      detail.className = "bismuth-popover-detail";
       detail.textContent = opt.date;
       row.appendChild(detail);
       // mousedown + preventDefault → applying a row never blurs the editor.

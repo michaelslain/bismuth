@@ -34,7 +34,7 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
   const openSub = (i: number) => {
     const item = props.items[i];
     if (!item?.submenu?.length) return;
-    const rowEl = rootEl?.querySelectorAll(".oa-popover-row")[i] as HTMLElement | undefined;
+    const rowEl = rootEl?.querySelectorAll(".bismuth-popover-row")[i] as HTMLElement | undefined;
     const pr = rootEl?.getBoundingClientRect();
     const rr = rowEl?.getBoundingClientRect();
     const right = pr ? pr.right : props.x;

@@ -253,7 +253,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test("collectVaultTasks scans every markdown file in the vault", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-tasks-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-tasks-"));
   await writeNote(vault, "a.md", "# A\n- [ ] task a 📅 2026-06-01\n");
   await writeNote(vault, "sub/b.md", "- [x] task b ✅ 2026-05-01\nprose\n- [ ] task c\n");
   const tasks = await collectVaultTasks(vault);
@@ -268,7 +268,7 @@ test("collectVaultTasks scans every markdown file in the vault", async () => {
 import { collectTasksFromPaths } from "../src/tasks";
 
 test("collectTasksFromPaths only scans the given paths", async () => {
-  const root = mkdtempSync(join(tmpdir(), "oa-scoped-"));
+  const root = mkdtempSync(join(tmpdir(), "bismuth-scoped-"));
   await writeNote(root, "keep/a.md", "- [ ] inside keep");
   await writeNote(root, "keep/b.md", "no tasks here");
   await writeNote(root, "other/c.md", "- [ ] outside keep");
@@ -278,7 +278,7 @@ test("collectTasksFromPaths only scans the given paths", async () => {
 });
 
 test("collectTasksFromPaths skips unreadable paths", async () => {
-  const root = mkdtempSync(join(tmpdir(), "oa-scoped2-"));
+  const root = mkdtempSync(join(tmpdir(), "bismuth-scoped2-"));
   await writeNote(root, "keep/a.md", "- [ ] real task");
   const tasks = await collectTasksFromPaths(root, ["keep/a.md", "keep/missing.md"]);
   expect(tasks.map((t) => t.description)).toEqual(["real task"]);

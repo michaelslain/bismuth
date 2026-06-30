@@ -68,7 +68,7 @@ function makeAtom(def: AtomDef): MilkdownPlugin[] {
         // Recurse into inline containers that wrap free prose (emphasis/strong), but NOT into
         // other atoms — and NOT into LINK-like nodes. A `link`/`image`'s text child is the
         // link LABEL (and its url lives in `node.url`), not free prose: tokenizing it would (a)
-        // turn a bare-url label into an `oaUrl` chip, which breaks mdast's autolink detection
+        // turn a bare-url label into an `bismuthUrl` chip, which breaks mdast's autolink detection
         // (`formatLinkAsAutolink` requires the sole child to be a `text` node) so an explicit
         // `<https://x>` would be rewritten to `[https://x](https://x)`, and (b) is semantically
         // wrong — the label isn't a standalone wikilink/tag/math token. So skip them entirely.
@@ -123,12 +123,12 @@ function makeAtom(def: AtomDef): MilkdownPlugin[] {
     attrs: { raw: { default: "" }, attrs: { default: {} } },
     parseDOM: [
       {
-        tag: `span[data-oa-atom="${id}"]`,
+        tag: `span[data-bismuth-atom="${id}"]`,
         getAttrs: (dom: unknown) => {
           const el = dom as HTMLElement;
           return {
-            raw: el.getAttribute("data-oa-raw") ?? el.textContent ?? "",
-            attrs: safeParseAttrs(el.getAttribute("data-oa-attrs")),
+            raw: el.getAttribute("data-bismuth-raw") ?? el.textContent ?? "",
+            attrs: safeParseAttrs(el.getAttribute("data-bismuth-attrs")),
           };
         },
       },
@@ -139,8 +139,8 @@ function makeAtom(def: AtomDef): MilkdownPlugin[] {
       const extra = (node.attrs.attrs as Record<string, string>) ?? {};
       const m = new RegExp(pattern.source, pattern.flags.replace("g", "")).exec(raw);
       const span = def.dom(m ?? ([raw] as unknown as RegExpExecArray), extra);
-      span.setAttribute("data-oa-atom", id);
-      span.setAttribute("data-oa-raw", raw);
+      span.setAttribute("data-bismuth-atom", id);
+      span.setAttribute("data-bismuth-raw", raw);
       span.setAttribute("contenteditable", "false");
       return span;
     },
@@ -209,13 +209,17 @@ function chip(className: string, text: string): HTMLSpanElement {
 // same display rule the CodeMirror live preview + renderNoteBody use). Round-trips verbatim.
 const WIKILINK_RE = /\[\[([^\]\n]+)\]\]/;
 const wikilink = makeAtom({
-  id: "oaWikilink",
+  id: "bismuthWikilink",
   pattern: WIKILINK_RE,
   dom: (m) => {
     const inner = m[1] ?? "";
     const display = wikilinkDisplay(inner);
-    const span = chip("oa-wikilink", display);
+    const span = chip("bismuth-wikilink", display);
     span.setAttribute("data-href", wikilinkTarget(inner));
+    // Carry the `#heading` anchor so a click on the chip can scroll to that heading
+    // (BlockEditor's delegated click handler reads data-href + data-heading).
+    const heading = wikilinkHeading(inner);
+    if (heading) span.setAttribute("data-heading", heading);
     span.title = inner;
     return span;
   },
@@ -226,11 +230,11 @@ const wikilink = makeAtom({
 // tested before the wikilink/markdown-image patterns since `![[` starts with `!`.
 const EMBED_WIKI_RE = /!\[\[([^\]\n]+)\]\]/;
 const embedWiki = makeAtom({
-  id: "oaEmbedWiki",
+  id: "bismuthEmbedWiki",
   pattern: EMBED_WIKI_RE,
   dom: (m) => {
     const inner = m[1] ?? "";
-    const span = chip("oa-embed", "▦ " + (inner.split("|")[0].split("#")[0] || inner));
+    const span = chip("bismuth-embed", "▦ " + (inner.split("|")[0].split("#")[0] || inner));
     span.title = m[0];
     return span;
   },
@@ -238,11 +242,11 @@ const embedWiki = makeAtom({
 
 const EMBED_IMG_RE = /!\[([^\]\n]*)\]\(([^)\n]*)\)/;
 const embedImg = makeAtom({
-  id: "oaEmbedImg",
+  id: "bismuthEmbedImg",
   pattern: EMBED_IMG_RE,
   dom: (m) => {
     const alt = m[1] || m[2] || "";
-    const span = chip("oa-embed", "▦ " + alt);
+    const span = chip("bismuth-embed", "▦ " + alt);
     span.title = m[0];
     return span;
   },
@@ -252,28 +256,28 @@ const embedImg = makeAtom({
 // doesn't match a markdown heading (`# `, which has a space) or `C#`. Matches editor/tag.ts.
 const TAG_RE = /(?:^|\s)#[\w/-]+/;
 const tag = makeAtom({
-  id: "oaTag",
+  id: "bismuthTag",
   pattern: TAG_RE,
   // The match may include a leading space; the chip + raw cover only the `#tag` token.
   raw: (m) => m[0].slice(m[0].indexOf("#")),
-  dom: (m) => chip("oa-tag", m[0].slice(m[0].indexOf("#"))),
+  dom: (m) => chip("bismuth-tag", m[0].slice(m[0].indexOf("#"))),
 });
 
 // Inline `$math$` (single `$`, non-empty, no embedded `$` or newline; not `$$`). Rendered via
 // the SAME shared KaTeX renderer the CodeMirror live-preview + renderNoteBody use (renderMath /
 // onMathReady), so the chip shows typeset math — not a raw `$…$` placeholder. KaTeX loads
-// lazily (~280KB), so if it isn't ready yet we paint the source as a `.oa-math` placeholder
+// lazily (~280KB), so if it isn't ready yet we paint the source as a `.bismuth-math` placeholder
 // carrying `data-math` and schedule an upgrade pass that fills every still-empty placeholder the
 // moment the chunk lands (mirrors bases/markdown.ts). The atom's `raw` is the verbatim `$…$`, so
 // it round-trips byte-stable regardless of whether KaTeX has rendered.
 const MATH_RE = /\$(?!\s)([^$\n]+?)(?<!\s)\$/;
 const math = makeAtom({
-  id: "oaMath",
+  id: "bismuthMath",
   pattern: MATH_RE,
   dom: (m) => {
     const expr = m[1] ?? "";
     const span = document.createElement("span");
-    span.className = "oa-math";
+    span.className = "bismuth-math";
     const html = renderMath(expr, false); // inline (non-display) — KaTeX if loaded, else ""
     if (html) {
       span.innerHTML = sanitizeHtml(html);
@@ -287,7 +291,7 @@ const math = makeAtom({
   },
 });
 
-// Once KaTeX lands, fill every still-empty `.oa-math[data-math]` chip this surface painted.
+// Once KaTeX lands, fill every still-empty `.bismuth-math[data-math]` chip this surface painted.
 // Scoped to OUR chips (cleared `data-math` once upgraded so it runs at most once per chip);
 // idempotent + cheap (skips chips that already have rendered children). One shared schedule flag
 // dedupes concurrent block surfaces; the callback resets it so later renders re-schedule. No-op when
@@ -299,7 +303,7 @@ function scheduleMathUpgrade(): void {
   mathUpgradeScheduled = true;
   onMathReady(() => {
     mathUpgradeScheduled = false;
-    for (const el of document.querySelectorAll<HTMLElement>(".oa-block-milkdown span.oa-math[data-math]")) {
+    for (const el of document.querySelectorAll<HTMLElement>(".bismuth-block-milkdown span.bismuth-math[data-math]")) {
       if (el.childElementCount > 0) continue; // already upgraded
       const rendered = renderMath(el.getAttribute("data-math") ?? "", false);
       if (!rendered) continue;
@@ -313,10 +317,10 @@ function scheduleMathUpgrade(): void {
 // whitespace + delimiters; trailing sentence punctuation isn't captured by the pattern itself.
 const BARE_URL_RE = /https?:\/\/[^\s<>"'`\])}]+/;
 const bareUrl = makeAtom({
-  id: "oaUrl",
+  id: "bismuthUrl",
   pattern: BARE_URL_RE,
   dom: (m) => {
-    const span = chip("oa-bareurl", m[0]);
+    const span = chip("bismuth-bareurl", m[0]);
     span.setAttribute("data-href", m[0]);
     return span;
   },
@@ -355,6 +359,15 @@ export function wikilinkTarget(inner: string): string {
   const beforeAlias = pipe === -1 ? inner : inner.slice(0, pipe);
   const hash = beforeAlias.indexOf("#");
   return (hash === -1 ? beforeAlias : beforeAlias.slice(0, hash)).trim();
+}
+
+/** The heading anchor (`#section`, before any `|alias`) of a `[[inner]]` wikilink, or "" when
+ *  none. The chip carries this as `data-heading` so a click navigates to that heading. */
+export function wikilinkHeading(inner: string): string {
+  const pipe = inner.indexOf("|");
+  const beforeAlias = pipe === -1 ? inner : inner.slice(0, pipe);
+  const hash = beforeAlias.indexOf("#");
+  return hash === -1 ? "" : beforeAlias.slice(hash + 1).trim();
 }
 
 // Re-export the patterns so the round-trip test + the editor host can reuse the exact regexes.

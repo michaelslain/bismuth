@@ -297,7 +297,7 @@ Sizes are persisted (`persist()`) on `mouseup` after a drag.
 
 ## Context Menu and Structural Edits
 
-Right-clicking a cell dispatches a `CustomEvent("oa-context-menu")` with `{ x, y, items }` on `window`. App's shared `<ContextMenu>` component listens for this event. The menu items and their behaviors:
+Right-clicking a cell dispatches a `CustomEvent("bismuth-context-menu")` with `{ x, y, items }` on `window`. App's shared `<ContextMenu>` component listens for this event. The menu items and their behaviors:
 
 | Label                  | Icon      | Behavior                                              | Disabled when        |
 | :--------------------- | :-------- | :---------------------------------------------------- | :------------------- |

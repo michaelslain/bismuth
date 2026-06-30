@@ -1,6 +1,6 @@
 // Prebuild step: stage relay/ as a Tauri resource so the bundled app's terminal tabs can
 // auto-load the agent-graph relay plugin. At runtime the compiled core sidecar resolves
-// OA_RELAY_BUNDLE to this staged dir (core/src/terminal.ts) — import.meta.dir is a virtual
+// BISMUTH_RELAY_BUNDLE to this staged dir (core/src/terminal.ts) — import.meta.dir is a virtual
 // path in the compiled binary, so the source-relative relay/ wouldn't exist.
 //
 // Excludes:
@@ -17,6 +17,7 @@ import { dirname, join, basename } from "node:path";
 const here = dirname(new URL(import.meta.url).pathname);
 const appDir = join(here, ".."); // app/
 const relayDir = join(appDir, "..", "relay"); // repo/relay
+const memoryDir = join(appDir, "..", "memory"); // repo/memory (@bismuth/memory)
 const stagedDir = join(appDir, "src-tauri", "resources", "relay");
 
 if (!existsSync(relayDir)) {
@@ -35,4 +36,21 @@ cpSync(relayDir, stagedDir, {
   },
 });
 
-console.log(`staged relay (hooks-only) -> ${stagedDir}`);
+// Stage @bismuth/memory into the bundle's node_modules so the recall/collect hooks'
+// `import "@bismuth/memory"` resolves at runtime. In dev this comes from the Bun workspace
+// symlink (relay/node_modules/@bismuth/memory -> ../../memory), but bundle-relay drops
+// node_modules entirely, so we ship a real copy here. The memory package is pure
+// (node-builtin imports only, no transitive workspace deps), so a flat copy suffices.
+if (!existsSync(memoryDir)) {
+  console.error(`memory/ not found at ${memoryDir}`);
+  process.exit(1);
+}
+const stagedMemoryDir = join(stagedDir, "node_modules", "@bismuth", "memory");
+cpSync(memoryDir, stagedMemoryDir, {
+  recursive: true,
+  // Skip the package's own dev-only node_modules (@types/*) — the source uses only
+  // Bun/node builtins, so nothing else is needed at runtime.
+  filter: (src) => basename(src) !== "node_modules",
+});
+
+console.log(`staged relay (hooks-only) + @bismuth/memory -> ${stagedDir}`);

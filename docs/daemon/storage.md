@@ -7,7 +7,7 @@ malformed files and never throws — a daemon that has never run, or a partially
 degrades to empty/null/false. This document is the exhaustive reference for every file Bismuth
 reads, its exact byte-level shape, and the `daemon.home` setting that controls where Bismuth looks.
 
-> This is the **consumer** view (what Bismuth reads). For the **producer** view — the same `~/.claude-bot` tree from claude-bot's own writers, plus every file claude-bot authors that Bismuth doesn't read (`session-id`, `CLAUDE.md`, `logs/`, process `.pids/`, etc.) — see [claude-bot storage](../claude-bot/storage.md). Note that the `daemon.home` / `OA_CLAUDEBOT_HOME` resolution below is **Bismuth-only**: claude-bot itself always writes to `~/.claude-bot` (no env override on its side).
+> This is the **consumer** view (what Bismuth reads). For the **producer** view — the same `~/.claude-bot` tree from claude-bot's own writers, plus every file claude-bot authors that Bismuth doesn't read (`session-id`, `CLAUDE.md`, `logs/`, process `.pids/`, etc.) — see [claude-bot storage](../claude-bot/storage.md). Note that the `daemon.home` / `BISMUTH_DAEMON_DIR` resolution below is **Bismuth-only**: claude-bot itself always writes to `~/.claude-bot` (no env override on its side).
 
 ---
 
@@ -16,7 +16,7 @@ reads, its exact byte-level shape, and the `daemon.home` setting that controls w
 The root of the daemon's file tree is the **claude-bot home**. Bismuth resolves it with the
 following priority (highest wins):
 
-1. **`OA_CLAUDEBOT_HOME` environment variable** — ops/dev override, always wins.
+1. **`BISMUTH_DAEMON_DIR` environment variable** — ops/dev override, always wins.
 2. **`daemon.home` setting in `settings.yaml`** — set by the user; applied via
    `setClaudeBotHomeOverride()` at server startup. Empty or whitespace is ignored.
 3. **`~/.claude-bot`** — the platform default (`os.homedir() + "/.claude-bot"`).
@@ -364,7 +364,7 @@ interface DaemonSnapshot {
 ## Complete Directory Tree
 
 ```
-~/.claude-bot/                         (or OA_CLAUDEBOT_HOME / daemon.home)
+~/.claude-bot/                         (or BISMUTH_DAEMON_DIR / daemon.home)
 ├── device-id                          plain text UUID for this machine
 ├── devices.json                       { "<uuid>": { label, lastSeenISO } }
 ├── owner.json                         { ownerDeviceId, ownerLabel, updatedAt } (absent = unclaimed)

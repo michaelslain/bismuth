@@ -155,7 +155,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
 
-const dir = mkdtempSync(join(tmpdir(), "oa-vault-"));
+const dir = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
 await writeNote(dir, "note.md", "---\ntags: [book]\n---\n# Title\n\nBody");
 ```
 
@@ -258,7 +258,7 @@ Tests `nodeVisualState()` from `core/src/daemonViz.ts`, the pure encoder for dae
 
 ### `core/test/daemonGraph.test.ts` and `core/test/daemon.test.ts`
 
-`daemon.test.ts` sets `OA_CLAUDEBOT_HOME` to a fresh tmp dir per test (via `makeHome(files)`) and cleans up in `afterEach`. Tests degrade-gracefully behavior with missing files, `listDevices`/`getOwner`/`setOwner` contract shapes, `setCronEnabled`/`setProcessEnabled` writes, and `daemonStatus.running` detection via `daemon.pid`.
+`daemon.test.ts` sets `BISMUTH_DAEMON_DIR` to a fresh tmp dir per test (via `makeHome(files)`) and cleans up in `afterEach`. Tests degrade-gracefully behavior with missing files, `listDevices`/`getOwner`/`setOwner` contract shapes, `setCronEnabled`/`setProcessEnabled` writes, and `daemonStatus.running` detection via `daemon.pid`.
 
 ### `core/test/changeClassifier.test.ts`
 

@@ -109,7 +109,7 @@ Both faces call into two functions, parameterized by an injected `ExportDeps` so
 Inside, a file's HTML body is built by `bodyHtml` → `renderedBody` → `wrapBody`:
 
 - `bodyHtml` picks the body by file kind: a sheet → `snapshotToHtmlTable`; a base → visual (`baseViewHtml`) or data table; any other `md` → `renderMarkdown`; otherwise it throws ("No HTML body").
-- `renderedBody` guards math: if the first render leaves an unrendered KaTeX placeholder (`/<span class="oa-math[^"]*" data-math=/`), it `await whenMathReady()` and re-renders, so exported math isn't blank.
+- `renderedBody` guards math: if the first render leaves an unrendered KaTeX placeholder (`/<span class="bismuth-math[^"]*" data-math=/`), it `await whenMathReady()` and re-renders, so exported math isn't blank.
 - `wrapBody` wraps the body in a standalone document (`wrapHtmlDocument`), inlining a self-contained KaTeX stylesheet (fonts as `data:` URIs, via `deps.katexCss()`) **only when** the body contains rendered math (`class="katex`), plus any view-specific CSS. The `.html` download and the off-screen rasterizer iframe can't reach the app's loaded stylesheets, so everything must be inlined.
 
 `md`/`csv` exports bypass HTML entirely: `markdownText` returns a base's view-table as a Markdown table or any other note's own text; `csvText` enforces base-ness (throws "CSV export is only available for bases").

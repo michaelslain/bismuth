@@ -277,11 +277,14 @@ class MathWidget extends WidgetType {
 /** Hide the delimiters of an inline token (off the cursor line) and style the inner text. */
 function pushInline(
   deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean,
-  re: RegExp, markLen: number, mark: Decoration,
+  re: RegExp, markLen: number, mark: Decoration, skip?: (from: number, to: number) => boolean,
 ) {
   for (const m of text.matchAll(re)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
+    // Skip tokens overlapping a protected span (e.g. inline/block math): markdown
+    // emphasis must never touch `*`/`_`/`~` that live inside `$…$` (those are LaTeX).
+    if (skip && skip(s, end)) continue;
     // Reveal raw syntax only when the caret/selection touches THIS token — not the
     // whole line. So `**bold** *italic*` reveals only the span the cursor is inside.
     const onCursor = reveals(s, end);
@@ -737,12 +740,15 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // UNLESS the caret/selection touches it (per-token, not line-wide) — then that one token
       // shows its raw source with the LaTeX syntax-highlighted ($ delimiters dimmed, \commands /
       // braces / ^_ etc. marked), the same per-token reveal the inline **/`` ` `` tokens use.
+      const mathSpans: { from: number; to: number }[] = [];
+      const inMathSpan = (s: number, e: number) => mathSpans.some((h) => s < h.to && e > h.from);
       {
         // block math: $$...$$  (single-line, non-empty inner)
         for (const m of text.matchAll(/\$\$([^$]+)\$\$/g)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
+          mathSpans.push({ from: s, to: end });
           if (revealsRange(s, end)) {
             // Cover the whole revealed inner range in mono FIRST (layered under the color
             // token marks) so the gaps between LaTeX tokens don't fall back to the body serif.
@@ -765,6 +771,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
+          mathSpans.push({ from: s, to: end });
           if (revealsRange(s, end)) {
             // Cover the whole revealed inner range in mono FIRST (under the color marks) so
             // letters/operators between tokens read as code, not the body serif.
@@ -778,10 +785,10 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // inline tokens
-      pushInline(deco, text, line.from, revealsRange, /\*\*([^*]+)\*\*/g, 2, strong);
-      pushInline(deco, text, line.from, revealsRange, /__([^_]+)__/g, 2, strong);
-      pushInline(deco, text, line.from, revealsRange, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em);
-      pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike);
+      pushInline(deco, text, line.from, revealsRange, /\*\*([^*]+)\*\*/g, 2, strong, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, /__([^_]+)__/g, 2, strong, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike, inMathSpan);
       // inline code: run-length-aware so a backtick can live INSIDE a span. A run of N
       // backticks opens a span that closes only on the next run of EXACTLY N backticks
       // (mirrors core/src/wikilinks.ts stripCode + CommonMark). The single-backtick regex

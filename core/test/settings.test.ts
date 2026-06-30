@@ -9,7 +9,7 @@ import { keySuggestions } from "../src/schema/suggest";
 import { validateDocument } from "../src/schema/validate";
 
 async function emptyVault(): Promise<string> {
-  return mkdtempSync(join(tmpdir(), "oa-settings-"));
+  return mkdtempSync(join(tmpdir(), "bismuth-settings-"));
 }
 
 test("readSettings returns null when settings.yaml is absent", async () => {
@@ -285,7 +285,7 @@ test("loadAppConfig returns file values merged over defaults, typed", async () =
 // --- toolbar serialization ---
 
 function freshVault(): string {
-  return mkdtempSync(join(tmpdir(), "oa-toolbar-"));
+  return mkdtempSync(join(tmpdir(), "bismuth-toolbar-"));
 }
 
 describe("toolbar serialization", () => {
@@ -370,7 +370,7 @@ describe("toolbar serialization", () => {
 
 describe("dailyNotes serialization", () => {
   it("seeds the default journal config into a fresh settings.yaml", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
     await reconcileSettings(vault);
     const out = await serializeSettingsForFrontend(vault);
     expect(out.dailyNotes).toEqual([
@@ -379,7 +379,7 @@ describe("dailyNotes serialization", () => {
   });
 
   it("drops malformed items and fills field defaults", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
     await Bun.write(join(vault, SETTINGS_FILE), [
       "dailyNotes:",
       "  - id: work",
@@ -394,7 +394,7 @@ describe("dailyNotes serialization", () => {
   });
 
   it("honors an explicit empty list", async () => {
-    const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+    const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
     await Bun.write(join(vault, SETTINGS_FILE), "dailyNotes: []\n");
     const out = await serializeSettingsForFrontend(vault);
     expect(out.dailyNotes).toEqual([]);

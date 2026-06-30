@@ -3,7 +3,7 @@
 // top of a `.md` editor. The title is a pure function of the file path (see
 // noteTitle.ts) and is NEVER written into the markdown body. Editing it and
 // committing (Enter or blur) renames the file, reusing the same flow the file
-// tree uses: dispatch an `oa-moved` event (App.tsx retargets open tabs) and
+// tree uses: dispatch an `bismuth-moved` event (App.tsx retargets open tabs) and
 // call `api.move`. On failure / empty / unchanged the field reverts.
 //
 // The `#` glyph lives in its own DOM node, separate from the editable input, so
@@ -70,13 +70,13 @@ export function NoteTitle(props: { path: string }) {
     await flushFocusedEditor();
     // Reuse the file-tree rename flow: retarget open tabs immediately, then
     // persist. On failure, revert the field and surface the error like the tree.
-    window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
+    window.dispatchEvent(new CustomEvent("bismuth-moved", { detail: { from, to } }));
     try {
       await api.move(from, to);
     } catch (e) {
       // Reverse the optimistic retarget so panes pointing at the now-nonexistent
       // `to` path are rewritten back to `from` (App.tsx's renamePath).
-      window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from: to, to: from } }));
+      window.dispatchEvent(new CustomEvent("bismuth-moved", { detail: { from: to, to: from } }));
       revert();
       pushToast(`Rename failed: ${(e as Error).message}`);
     }

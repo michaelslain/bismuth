@@ -118,8 +118,8 @@ Task description text is parsed by `renderTaskText`, which handles a subset of i
 
 | Pattern | Rendered as |
 |---|---|
-| `[[Target]]` or `[[Target\|Alias]]` | Clickable wikilink (fires `oa-open` custom event with the `.md` path). Display = alias or last path segment. |
-| `[Label](url)` | External `http(s)://` links open in `_blank`; bare paths open in-app via `oa-open`. |
+| `[[Target]]` or `[[Target\|Alias]]` | Clickable wikilink (fires `bismuth-open` custom event with the `.md` path). Display = alias or last path segment. |
+| `[Label](url)` | External `http(s)://` links open in `_blank`; bare paths open in-app via `bismuth-open`. |
 | `#tag` (preceded by whitespace or start) | `<span class="taskTag">#tag</span>` (teal). Leading whitespace is preserved. |
 | `**bold**` | `<strong>` |
 | `*italic*` | `<em>` |
@@ -128,7 +128,7 @@ Text between matches is emitted as plain strings. The regex is global with stick
 
 ### Open-On-Click
 
-Non-task rows fire `window.dispatchEvent(new CustomEvent("oa-open", { detail: row.file.path }))` on click. This is the same mechanism used by wikilinks in the editor and all other note-opening interactions in the app.
+Non-task rows fire `window.dispatchEvent(new CustomEvent("bismuth-open", { detail: row.file.path }))` on click. This is the same mechanism used by wikilinks in the editor and all other note-opening interactions in the app.
 
 ### Embedded Query Block Usage
 
@@ -220,7 +220,7 @@ view: bullets
 |---|---|
 | `null` / `undefined` | `—` (faint em-dash) |
 | `Link` object (from `file.asLink()`, `link()`, or link-typed schema) | Clickable `<a>` tag; display = `link.display` or path stem |
-| `"file.name"` specifically | Clickable `<a>` that opens the note via `oa-open` |
+| `"file.name"` specifically | Clickable `<a>` that opens the note via `bismuth-open` |
 | `Array` | Comma-joined string |
 | `boolean` | Checkmark icon if true, empty if false |
 | `Date` | ISO date string `YYYY-MM-DD` |

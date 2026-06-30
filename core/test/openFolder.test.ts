@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { validateVaultFolder, findFreePort, spawnVaultBackend } from "../src/openFolder";
 
-const tmp = () => mkdtempSync(join(tmpdir(), "oa-of-"));
-const missing = () => join(tmpdir(), `oa-missing-${Math.random().toString(36).slice(2)}`);
+const tmp = () => mkdtempSync(join(tmpdir(), "bismuth-of-"));
+const missing = () => join(tmpdir(), `bismuth-missing-${Math.random().toString(36).slice(2)}`);
 
 describe("validateVaultFolder", () => {
   it("accepts an existing directory", () => {

@@ -27,7 +27,7 @@ function scheduleMathUpgrade(): void {
   upgradeScheduled = true;
   onMathReady(() => {
     upgradeScheduled = false;
-    for (const el of document.querySelectorAll<HTMLElement>("span.oa-math[data-math]")) {
+    for (const el of document.querySelectorAll<HTMLElement>("span.bismuth-math[data-math]")) {
       if (el.childElementCount > 0) continue; // already upgraded
       // Sanitize like the initial render path — these are non-editor (reading) surfaces,
       // where rendered output goes through DOMPurify as a second layer (KaTeX output is
@@ -40,7 +40,7 @@ function scheduleMathUpgrade(): void {
 /** Render one math span: full KaTeX if loaded, else a source-carrying placeholder that
  *  `scheduleMathUpgrade` fills in once the lazy KaTeX chunk lands. */
 function mathHtml(expr: string, display: boolean): string {
-  const cls = display ? "oa-math oa-math-display" : "oa-math";
+  const cls = display ? "bismuth-math bismuth-math-display" : "bismuth-math";
   const html = renderMath(expr, display);
   if (html) return `<span class="${cls}">${html}</span>`;
   scheduleMathUpgrade();
@@ -48,19 +48,19 @@ function mathHtml(expr: string, display: boolean): string {
 }
 
 const mathBlockExt: TokenizerAndRendererExtension = {
-  name: "oaMathBlock",
+  name: "bismuthMathBlock",
   level: "block",
   start(src) { const i = src.indexOf("$$"); return i < 0 ? undefined : i; },
   tokenizer(src) {
     const m = /^\$\$([\s\S]+?)\$\$/.exec(src);
     if (!m) return undefined;
-    return { type: "oaMathBlock", raw: m[0], text: m[1].trim() };
+    return { type: "bismuthMathBlock", raw: m[0], text: m[1].trim() };
   },
   renderer(token) { return mathHtml(String(token.text), true); },
 };
 
 const mathInlineExt: TokenizerAndRendererExtension = {
-  name: "oaMathInline",
+  name: "bismuthMathInline",
   level: "inline",
   start(src) { const i = src.indexOf("$"); return i < 0 ? undefined : i; },
   tokenizer(src) {
@@ -68,7 +68,7 @@ const mathInlineExt: TokenizerAndRendererExtension = {
     // `\$` escapes a literal dollar — same rule as the editor's inlineMarkdown.
     const m = /^\$(?![\s$])((?:\\.|[^\n$])*?)(?<!\s)\$(?!\$)/.exec(src);
     if (!m) return undefined;
-    return { type: "oaMathInline", raw: m[0], text: m[1] };
+    return { type: "bismuthMathInline", raw: m[0], text: m[1] };
   },
   renderer(token) { return mathHtml(String(token.text), false); },
 };
@@ -82,7 +82,7 @@ export function renderMarkdown(src: string): string {
 
 // Obsidian `[[wikilinks]]` aren't standard markdown, so `marked` would emit them
 // verbatim (`[[Note]]`). Pre-convert them to anchors carrying the resolved path in
-// `data-href`; a host (BodyCard) opens them via the global `oa-open` event — the
+// `data-href`; a host (BodyCard) opens them via the global `bismuth-open` event — the
 // same in-app navigation ListView uses. Done on the raw source, BEFORE marked, so
 // the surrounding markdown (lists, headings, links) still renders normally and the
 // anchor passes through marked's raw-HTML passthrough.
@@ -93,7 +93,7 @@ function wikilinksToAnchors(src: string): string {
     const target = rawTarget.split("#")[0].trim();
     const label = (alias ?? target.split("/").pop() ?? target).trim();
     const path = target.endsWith(".md") ? target : `${target}.md`;
-    return `<a class="oa-wikilink" data-href="${escapeAttr(path)}">${escapeHtml(label)}</a>`;
+    return `<a class="bismuth-wikilink" data-href="${escapeAttr(path)}">${escapeHtml(label)}</a>`;
   });
 }
 
@@ -106,7 +106,7 @@ function wikilinksToAnchors(src: string): string {
 // has a space, and bare `#123` never match).
 const TAG_RE = /(^|[\s(])#([A-Za-zÀ-ɏ][\w/-]*)/g;
 function tagsToSpans(src: string): string {
-  return src.replace(TAG_RE, (_m, pre: string, tag: string) => `${pre}<span class="oa-tag">#${escapeHtml(tag)}</span>`);
+  return src.replace(TAG_RE, (_m, pre: string, tag: string) => `${pre}<span class="bismuth-tag">#${escapeHtml(tag)}</span>`);
 }
 
 // `wikilinksToAnchors`/`tagsToSpans` run on the RAW source before marked, so on their own they'd

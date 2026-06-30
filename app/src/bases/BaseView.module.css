@@ -1,11 +1,11 @@
 /* Outer shell: holds the local theme vars + a thin toolbar over a flex-filling body. */
 .host {
-  --oa-muted: color-mix(in srgb, var(--fg) 55%, transparent);
-  --oa-surface: color-mix(in srgb, var(--fg) 5%, transparent);
-  --oa-surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
-  --oa-surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
-  --oa-accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
-  --oa-accent-border: color-mix(in srgb, var(--accent) 55%, var(--border));
+  --bismuth-muted: color-mix(in srgb, var(--fg) 55%, transparent);
+  --bismuth-surface: color-mix(in srgb, var(--fg) 5%, transparent);
+  --bismuth-surface-2: color-mix(in srgb, var(--fg) 9%, transparent);
+  --bismuth-surface-3: color-mix(in srgb, var(--fg) 14%, transparent);
+  --bismuth-accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --bismuth-accent-border: color-mix(in srgb, var(--accent) 55%, var(--border));
 
   display: flex;
   flex-direction: column;
@@ -248,20 +248,20 @@
 .cardMd :global(ul) { list-style: disc; }
 .cardMd :global(ol) { list-style: decimal; }
 .cardMd :global(li::marker) { color: var(--text-muted); }
-/* Task lines render an `.oa-task-box` marker (taskCardMarkup.ts) instead of a raw checkbox, so
+/* Task lines render an `.bismuth-task-box` marker (taskCardMarkup.ts) instead of a raw checkbox, so
    EVERY status ([ ]/[x]/[/]/[-]) gets one clickable, right-clickable, status-aware glyph. Detect
-   the line via :has(> .oa-task-box): the marker IS the bullet, so drop the list marker and pull
+   the line via :has(> .bismuth-task-box): the marker IS the bullet, so drop the list marker and pull
    it flush by cancelling the <ul>'s 1.5em padding — so it sits like the editor's `- [ ]` lines.
    The negative margin (not zeroing the <ul> padding) keeps plain bullets in a mixed list
    correctly indented, and avoids nesting :has() (invalid CSS — silently dropped by browsers). */
-.cardMd :global(li:has(> .oa-task-box)) { list-style: none; margin-left: -1.5em; }
+.cardMd :global(li:has(> .bismuth-task-box)) { list-style: none; margin-left: -1.5em; }
 .cardMd :global(li) { padding: 1px 0; }
 .cardMd :global(li p) { display: inline; margin: 0; }
 .cardMd :global(p) { margin: 4px 0; }
 /* Task marker: mirror the editor's `.cm-task-checkbox` glyph (bordered box → accent fill +
    white check when done) so a card task looks like a note task. Unlike a native <input>, the
    marker also shows the in-progress (diagonal) + cancelled (struck) glyphs Obsidian uses. */
-.cardMd :global(.oa-task-box) {
+.cardMd :global(.bismuth-task-box) {
   appearance: none; -webkit-appearance: none;
   display: inline-block; position: relative;
   width: 1.05em; height: 1.05em;
@@ -274,27 +274,27 @@
   cursor: pointer;
   transition: background-color 160ms ease, border-color 160ms ease;
 }
-.cardMd :global(.oa-task-box:hover) { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
+.cardMd :global(.bismuth-task-box:hover) { border-color: color-mix(in srgb, var(--accent) 70%, transparent); }
 /* Done [x]: accent fill + white check. */
-.cardMd :global(.oa-task-box[data-status="x"]),
-.cardMd :global(.oa-task-box[data-status="X"]) {
+.cardMd :global(.bismuth-task-box[data-status="x"]),
+.cardMd :global(.bismuth-task-box[data-status="X"]) {
   background-color: var(--accent);
   border-color: var(--accent);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: center; background-size: 0.78em;
 }
 /* In progress [/]: accent-bordered box with a diagonal half-fill. */
-.cardMd :global(.oa-task-box[data-status="/"]) { border-color: var(--accent); }
-.cardMd :global(.oa-task-box[data-status="/"])::after {
+.cardMd :global(.bismuth-task-box[data-status="/"]) { border-color: var(--accent); }
+.cardMd :global(.bismuth-task-box[data-status="/"])::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
   background: linear-gradient(135deg, transparent 0 50%, var(--accent) 50% 100%);
 }
 /* Cancelled [-]: muted, faintly filled box crossed by a horizontal bar. */
-.cardMd :global(.oa-task-box[data-status="-"]) {
+.cardMd :global(.bismuth-task-box[data-status="-"]) {
   border-color: var(--text-muted);
   background: color-mix(in srgb, var(--fg) 8%, transparent);
 }
-.cardMd :global(.oa-task-box[data-status="-"])::after {
+.cardMd :global(.bismuth-task-box[data-status="-"])::after {
   content: ""; position: absolute; left: 18%; right: 18%; top: calc(50% - 0.9px); height: 1.8px;
   background: var(--text-muted);
 }
@@ -302,7 +302,7 @@
    default text-decoration, so they read identically to a note. */
 .cardMd :global(a) { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-soft); cursor: pointer; }
 /* #tags styled like the editor's `.cm-tag` (teal, mono). */
-.cardMd :global(.oa-tag) { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
+.cardMd :global(.bismuth-tag) { color: var(--teal); font-family: "Monaspace Xenon", ui-monospace, monospace; }
 /* Inline code gets the editor's faint pill; fenced code blocks stay plain. */
 .cardMd :global(code) { font-family: "Monaspace Xenon", ui-monospace, monospace; }
 .cardMd :global(:not(pre) > code) {
@@ -462,7 +462,7 @@
   flex: 1 1 auto;
   overflow: hidden;
   cursor: grab;
-  background: var(--oa-surface);
+  background: var(--bismuth-surface);
   border: 1px solid var(--border);
   border-radius: 12px;
   user-select: none;
@@ -618,11 +618,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--oa-muted);
+  color: var(--bismuth-muted);
   pointer-events: none;
   font-size: 13px;
 }
-.mapEmpty code { background: var(--oa-surface-2); padding: 1px 4px; border-radius: 4px; }
+.mapEmpty code { background: var(--bismuth-surface-2); padding: 1px 4px; border-radius: 4px; }
 
 /* ---- Kanban ---- */
 .kanban { display: flex; gap: 14px; overflow-x: auto; align-items: flex-start; padding: 18px; }
@@ -639,9 +639,9 @@
   transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 .kanbanColumnOver {
-  border-color: var(--oa-accent-border);
-  background: var(--oa-surface-2);
-  box-shadow: 0 0 0 1px var(--oa-accent-border) inset;
+  border-color: var(--bismuth-accent-border);
+  background: var(--bismuth-surface-2);
+  box-shadow: 0 0 0 1px var(--bismuth-accent-border) inset;
 }
 .kanbanColHeader { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 11.5px; color: var(--fg); padding: 11px 13px; }
 .kanbanColHeader .dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: currentColor; }
@@ -676,8 +676,8 @@
   height: 46px;
   opacity: 1;
   margin-bottom: 8px;
-  border-color: var(--oa-accent-border);
-  background: var(--oa-accent-soft);
+  border-color: var(--bismuth-accent-border);
+  background: var(--bismuth-accent-soft);
 }
 
-.kanbanHint { padding: 40px 24px; text-align: center; color: var(--oa-muted); line-height: 1.6; }
+.kanbanHint { padding: 40px 24px; text-align: center; color: var(--bismuth-muted); line-height: 1.6; }

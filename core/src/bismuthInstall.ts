@@ -1,7 +1,7 @@
 // Machine-wide install of the bismuth CLI + MCP server.
 //
 // The bundled app ships compiled `bismuth` + `bismuth-mcp` binaries and the docs/ tree as
-// a Tauri resource; the sidecar gets its path in OA_BISMUTH_INSTALL_SRC. On boot (and via
+// a Tauri resource; the sidecar gets its path in BISMUTH_INSTALL_SRC. On boot (and via
 // `bismuth install` / an in-app command) we ensure that source is installed under
 // ~/.bismuth, the CLI is symlinked onto PATH, and the MCP is registered in the user's
 // GLOBAL Claude config (`claude mcp add -s user`) — so every terminal + every Claude
@@ -210,8 +210,8 @@ export const defaultIO: InstallIO = {
     await runClaude(claude, ["mcp", "remove", "-s", "user", "bismuth"]); // ignore if absent
     const add = await runClaude(claude, [
       "mcp", "add", "-s", "user", "bismuth",
-      "-e", `OA_DOCS_DIR=${DOCS_DIR}`,
-      "-e", `OA_BISMUTH_CLI=${CLI_DEST}`,
+      "-e", `BISMUTH_DOCS_DIR=${DOCS_DIR}`,
+      "-e", `BISMUTH_CLI=${CLI_DEST}`,
       "--", MCP_DEST,
     ]);
     if (add.code !== 0) return { ok: false, warning: `claude mcp add failed: ${add.stderr.trim() || add.stdout.trim()}` };
@@ -234,7 +234,7 @@ export async function getBismuthStatus(io: InstallIO = defaultIO): Promise<Bismu
 
 /**
  * Version-gated, idempotent ensure. `src` = the install source dir (bin/ + docs/), normally
- * OA_BISMUTH_INSTALL_SRC. No-op when the bundled-binary hash matches the stored marker AND
+ * BISMUTH_INSTALL_SRC. No-op when the bundled-binary hash matches the stored marker AND
  * the CLI symlink + MCP registration are present. Never throws — failures surface as warnings.
  */
 export async function ensureBismuthInstalled(

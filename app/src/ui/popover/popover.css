@@ -4,7 +4,7 @@
  *   1. context menu   — Solid <PopoverList>/<MenuRow>           (shares components)
  *   2. autocomplete   — CodeMirror's own <ul><li>, restyled     (Editor.tsx theme;
  *                       CM owns that DOM, so it shares TOKENS, not components)
- *   3. yaml hover-fix — vanilla .oa-popover DOM (rowDom.ts)      (shares the CSS)
+ *   3. yaml hover-fix — vanilla .bismuth-popover DOM (rowDom.ts)      (shares the CSS)
  *   4. command/file palette — shares font/selected/shadow tokens (its own modal chrome)
  * Change a token here and every surface changes together. Colors reuse theme vars. */
 :root {
@@ -25,7 +25,7 @@
 }
 
 /* chrome */
-.oa-popover {
+.bismuth-popover {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--popover-radius);
@@ -39,7 +39,7 @@
 }
 
 /* row */
-.oa-popover-row {
+.bismuth-popover-row {
   display: flex;
   align-items: center;
   gap: var(--popover-row-gap);
@@ -49,26 +49,26 @@
   user-select: none;
   white-space: nowrap;
 }
-.oa-popover-row--selected { background: var(--popover-selected-bg); }
-.oa-popover-row--danger { color: var(--danger); }
-.oa-popover-row--disabled { opacity: 0.55; cursor: default; }
+.bismuth-popover-row--selected { background: var(--popover-selected-bg); }
+.bismuth-popover-row--danger { color: var(--danger); }
+.bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
 
-.oa-popover-icon { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
-.oa-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
-.oa-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
+.bismuth-popover-icon { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
+.bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
-.oa-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: 4px; }
+.bismuth-popover-chev { display: inline-flex; flex-shrink: 0; opacity: 0.5; margin-left: 4px; }
 
-.oa-popover-sep {
+.bismuth-popover-sep {
   height: 1px;
   background: var(--border);
   margin: 4px 2px;
 }
 
-/* When an .oa-popover is hosted inside a CodeMirror hover tooltip (the YAML
+/* When an .bismuth-popover is hosted inside a CodeMirror hover tooltip (the YAML
    quick-fix on hover), strip CM's default tooltip chrome so the border/background
-   isn't doubled — the .oa-popover supplies its own. */
-.cm-tooltip:has(> .oa-popover) {
+   isn't doubled — the .bismuth-popover supplies its own. */
+.cm-tooltip:has(> .bismuth-popover) {
   border: none;
   background: transparent;
 }

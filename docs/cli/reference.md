@@ -16,7 +16,7 @@ Once installed/linked, it is the `bismuth` binary:
 bismuth <command> [args] [--vault <dir>] [--memory <dir>] [--pretty]
 ```
 
-> Note on naming: the `package.json` `bin` name is **`bismuth`**, matching the `@bismuth/` workspace namespace (the `OA_*` env vars are a legacy prefix, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
+> Note on naming: the `package.json` `bin` name is **`bismuth`**, matching the `@bismuth/` workspace namespace (the `BISMUTH_*` env vars are a legacy prefix, not the binary name). The lone CLI test (`cli/test/cli.test.ts`) describes `bismuth graph` while actually spawning `bun run cli/src/index.ts`. Examples below use `bismuth`.
 
 ### Help
 
@@ -27,7 +27,7 @@ bismuth -h
 bismuth help
 ```
 
-Any of these prints the usage banner plus an alphabetically sorted table of every registered command (`<key>  <summary> <usage>`), then the reminder: "most commands need a vault: pass --vault <dir> or set OA_VAULT." Exits `0`.
+Any of these prints the usage banner plus an alphabetically sorted table of every registered command (`<key>  <summary> <usage>`), then the reminder: "most commands need a vault: pass --vault <dir> or set BISMUTH_VAULT." Exits `0`.
 
 ### Dispatch model (longest-match)
 
@@ -42,16 +42,16 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 
 | Flag / env | Meaning |
 |---|---|
-| `--vault <dir>` | Vault directory. **Required by most commands.** Resolution order: `--vault` flag → `OA_VAULT` env → `BISMUTH_VAULT` env. If none set, the command fails with `error: no vault — pass --vault <dir> or set OA_VAULT` and exits `1`. |
-| `OA_VAULT` / `BISMUTH_VAULT` | Env fallbacks for the vault dir (see above). |
-| `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `OA_MEMORY` env → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
-| `OA_MEMORY` / `BISMUTH_MEMORY` | Env fallbacks for the memory dir. |
+| `--vault <dir>` | Vault directory. **Required by most commands.** Resolution order: `--vault` flag → `BISMUTH_VAULT` env. If none set, the command fails with `error: no vault — pass --vault <dir> or set BISMUTH_VAULT` and exits `1`. |
+| `BISMUTH_VAULT` | Env fallback for the vault dir (see above). |
+| `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
+| `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (api/agent-graph only) Base URL of a running server. Resolution: `--api` flag → `BISMUTH_API` env → `OA_API` env → `http://localhost:4321`. |
+| `--api <url>` | (api/agent-graph only) Base URL of a running server. Resolution: `--api` flag → `BISMUTH_API` env → `http://localhost:4321`. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
-| `OA_CLAUDEBOT_HOME` | (daemon only, read by `core/src/daemon.ts`) overrides the claude-bot home dir (default `~/.claude-bot`). Wins over the `daemon.home` setting. Not a CLI flag; an env var. |
+| `BISMUTH_DAEMON_DIR` | (daemon only, read by `core/src/daemon.ts`) overrides the claude-bot home dir (default `~/.claude-bot`). Wins over the `daemon.home` setting. Not a CLI flag; an env var. |
 
 ### Argument-parsing semantics (gotchas)
 
@@ -365,7 +365,7 @@ bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ign
 
 ## Daemon commands (`commands/daemon.ts`)
 
-Reads/writes the **claude-bot daemon's** shared on-disk state under `~/.claude-bot` (override with the `OA_CLAUDEBOT_HOME` env var, which wins over the `daemon.home` setting) — **NOT the vault**, so **none of these take `--vault`**. Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read shared files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup spawn the claude-bot entrypoint. Bismuth never starts/stops the daemon.
+Reads/writes the **claude-bot daemon's** shared on-disk state under `~/.claude-bot` (override with the `BISMUTH_DAEMON_DIR` env var, which wins over the `daemon.home` setting) — **NOT the vault**, so **none of these take `--vault`**. Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read shared files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup spawn the claude-bot entrypoint. Bismuth never starts/stops the daemon.
 
 ### `daemon status`
 Print the daemon's liveness, this device id, and current owner (`daemonStatus()`).
@@ -488,7 +488,7 @@ bismuth export "Notes/Essay.md" --format pdf --vault ~/vault     # ERRORS — pd
 
 ## Server-passthrough commands (`commands/api.ts`)
 
-These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (notably the in-memory relay/agent graph). API base resolution: `--api <url>` → `BISMUTH_API` env → `OA_API` env → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
+These reach a **running** bismuth server for capabilities that live in the server process's memory and can't be computed headlessly (notably the in-memory relay/agent graph). API base resolution: `--api <url>` → `BISMUTH_API` env → `http://localhost:4321`. If the server is unreachable, the command fails with *"could not reach a running server at <base> — start one with `bismuth serve` (or pass --api <url>)"*. Non-2xx responses fail with `<METHOD> <path> → <status>: <body…>` (body truncated to 200 chars). JSON responses are parsed; non-JSON bodies are returned as text.
 
 ### `agent-graph [--api <url>]`
 Fetch the live agents graph (terminal sessions + subagents) from a running server (`GET /agent-graph`). See the [agents/relay integration](../terminal/overview.md).
@@ -515,7 +515,7 @@ This is the escape hatch for any endpoint without a dedicated CLI command (see t
 Install the `bismuth` CLI + MCP server **machine-wide** from a built tools source (the bundled app's `bismuth-tools` resource, or `--src <dir>`). Idempotent + version-gated — a no-op when the bundled binaries are unchanged. Doesn't touch the vault. See [self-update](../overview/self-update.md) and the [MCP server](../mcp/overview.md).
 
 ### `install [--src <dir>] [--status] [--dry-run]`
-With `--status`, prints the `BismuthStatus` (CLI on PATH? MCP registered? installed version). Otherwise copies the compiled `bismuth`/`bismuth-mcp` + docs into `~/.bismuth`, symlinks the CLI onto PATH (`/usr/local/bin`, fallback `~/.local/bin`), and registers the MCP in the user's global Claude config (`claude mcp add -s user`). `--dry-run` reports the action with no side effects. Source dir: `--src` → `OA_BISMUTH_INSTALL_SRC`.
+With `--status`, prints the `BismuthStatus` (CLI on PATH? MCP registered? installed version). Otherwise copies the compiled `bismuth`/`bismuth-mcp` + docs into `~/.bismuth`, symlinks the CLI onto PATH (`/usr/local/bin`, fallback `~/.local/bin`), and registers the MCP in the user's global Claude config (`claude mcp add -s user`). `--dry-run` reports the action with no side effects. Source dir: `--src` → `BISMUTH_INSTALL_SRC`.
 ```bash
 bismuth install --status --pretty
 bismuth install --src /path/to/bismuth-tools
@@ -526,7 +526,7 @@ Removes the machine-wide CLI symlink (if it's ours), the global MCP registration
 
 ## Checkpoint commands (`commands/checkpoint.ts`)
 
-A **checkpoint** is a lightweight git ref (`refs/bismuth/<name>`) marking how far a periodic consumer has processed a repo's autosave history — a *bookmark*, not a branch. Every consumer reads the same linear history and remembers its own position, so they advance independently, side by side (invisible to normal git, never pushed). This lets background jobs process only "what changed since I last ran": the **dream** cron over `~/.claude-bot/memory` (`refs/bismuth/dream`), **vault-review** over the vault (`refs/bismuth/vault-review`). Headless; generic over any git-tracked dir via `--dir` (falls back to `--vault`/`OA_VAULT`). By default each op commits pending changes first so the delta reflects the latest on-disk state — pass `--no-commit` to diff against existing history only (e.g. a protected vault).
+A **checkpoint** is a lightweight git ref (`refs/bismuth/<name>`) marking how far a periodic consumer has processed a repo's autosave history — a *bookmark*, not a branch. Every consumer reads the same linear history and remembers its own position, so they advance independently, side by side (invisible to normal git, never pushed). This lets background jobs process only "what changed since I last ran": the **dream** cron over `~/.claude-bot/memory` (`refs/bismuth/dream`), **vault-review** over the vault (`refs/bismuth/vault-review`). Headless; generic over any git-tracked dir via `--dir` (falls back to `--vault`/`BISMUTH_VAULT`). By default each op commits pending changes first so the delta reflects the latest on-disk state — pass `--no-commit` to diff against existing history only (e.g. a protected vault).
 
 ### `checkpoint diff <ref> --dir <path> [--no-commit]`
 Lists files changed since `refs/bismuth/<ref>`: `{ base, head, files: [{status, path}] }`. First run (ref unset) → `base: null` and every tracked file at HEAD is reported as added (`status: "A"`).

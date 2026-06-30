@@ -39,7 +39,7 @@ function renderTaskText(text: string): JSX.Element[] {
       const label = display ?? target.split("/").pop() ?? target;
       const path = target.endsWith(".md") ? target : `${target}.md`;
       out.push(
-        <span class={styles.taskLink} onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("oa-open", { detail: path })); }}>
+        <span class={styles.taskLink} onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("bismuth-open", { detail: path })); }}>
           {label}
         </span>,
       );
@@ -51,7 +51,7 @@ function renderTaskText(text: string): JSX.Element[] {
         <span class={styles.taskLink} title={url} onClick={(e) => {
           e.stopPropagation();
           if (external) window.open(url, "_blank", "noopener");
-          else window.dispatchEvent(new CustomEvent("oa-open", { detail: url.endsWith(".md") ? url : `${url}.md` }));
+          else window.dispatchEvent(new CustomEvent("bismuth-open", { detail: url.endsWith(".md") ? url : `${url}.md` }));
         }}>
           {m[2]}
         </span>,
@@ -116,7 +116,7 @@ export function ListView(props: { result: ViewResult; config: BaseConfig; onChan
   const authorCol = (): string | undefined => props.result.columns[1];
   const rightCol = (): string | undefined => props.result.columns[2];
 
-  const open = (row: Row) => window.dispatchEvent(new CustomEvent("oa-open", { detail: row.file.path }));
+  const open = (row: Row) => window.dispatchEvent(new CustomEvent("bismuth-open", { detail: row.file.path }));
 
   // A checkbox line: toggle the underlying markdown task, then refetch. The checkbox
   // click is isolated from the row's open-on-click so ticking a task doesn't navigate.

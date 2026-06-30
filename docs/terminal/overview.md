@@ -74,7 +74,7 @@ server.upgrade(req, { data: { sessionId: session.id } as TermWsData });
 The `websocket` handler on the server:
 - **`open`**: subscribes to `pty.onData` (pipes PTY output → `ws.send`) and `pty.onExit` (closes the socket with code **1000** when the shell exits, so the client knows it was a real exit rather than a dropped connection).
 - **`message`**: routes tag `0x00` (stdin) or `0x01` (resize) to the PTY.
-- **`close`**: disposes listeners, then decides by close code. A **clean close (1000)** — the shell exited, or the client deliberately disposed the tab via `ws.close(1000)` — kills the session immediately. An **abnormal close** (reload `1001`, network drop `1006`, …) keeps the PTY alive for a grace window (`OA_TERMINAL_GRACE_MS`, default 30 s) so a reconnecting client can **reattach by `termId`** and keep its running shell.
+- **`close`**: disposes listeners, then decides by close code. A **clean close (1000)** — the shell exited, or the client deliberately disposed the tab via `ws.close(1000)` — kills the session immediately. An **abnormal close** (reload `1001`, network drop `1006`, …) keeps the PTY alive for a grace window (`BISMUTH_TERMINAL_GRACE_MS`, default 30 s) so a reconnecting client can **reattach by `termId`** and keep its running shell.
 
 **Session reattach.** Each client passes a stable `termId` (its `::term:<uuid>` content id) as `/terminal?…&termId=…`. On connect the server looks it up via `getSessionByTermId`: if a live session exists (within the grace window) it cancels the pending kill and pipes to that **same PTY** — preserving the running process, cwd, and env across a reconnect or a webview reload. Otherwise it creates a fresh session keyed by that `termId`.
 
@@ -117,7 +117,7 @@ export interface PtyEnvParams {
   terminalId: string;     // UUID for this tab (becomes CLAUDE_TERMINAL_ID)
   shimAvailable: boolean;  // relay shim files exist (dev repo or bundled) → activate the zsh shim
   realClaude: string | null;  // resolved real `claude` binary, or null (zdotdir resolves from PATH)
-  pluginDir: string;      // relay/ dir — OA_RELAY_BUNDLE in the bundle, else ../../relay
+  pluginDir: string;      // relay/ dir — BISMUTH_RELAY_BUNDLE in the bundle, else ../../relay
   shimDir: string;        // path to relay/shim/
   zdotDir: string;        // path to relay/shim/zdotdir/ (zsh-only init)
 }
@@ -155,7 +155,7 @@ The decoupling matters in the bundled app: the sidecar's minimal launchd `PATH` 
 
 ### Relay dir + claude binary resolution
 
-`RELAY_PLUGIN_DIR` is `process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay")` — the Tauri-staged relay resource in the bundle (where `import.meta.dir` is a virtual path), the source `relay/` in dev. `SHIM_AVAILABLE = existsSync(<zdotdir>)`.
+`RELAY_PLUGIN_DIR` is `process.env.BISMUTH_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay")` — the Tauri-staged relay resource in the bundle (where `import.meta.dir` is a virtual path), the source `relay/` in dev. `SHIM_AVAILABLE = existsSync(<zdotdir>)`.
 
 `REAL_CLAUDE` is resolved **once at module load** via `whichClaude()` (`core/src/claudeWhich.ts`) — `Bun.which("claude", …)` against a `PATH` augmented with `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.local/bin`, and the nvm node bins (`$NVM_DIR/versions/node/<version>/bin`, default-alias version first then the rest newest-first — `nvmBinPaths()`), so it resolves a `claude` installed via Homebrew *or* nvm even from a packaged GUI app's minimal `PATH`. Resolved before the shim dir is on `PATH`, so the shim's `exec` never recurses. Null when not found — see the zdotdir fallback above.
 

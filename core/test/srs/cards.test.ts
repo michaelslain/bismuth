@@ -6,7 +6,7 @@ import { writeNote, readNote } from "../../src/files";
 import { collectCards, collectDecks, dueCards, applyReview, noteCards } from "../../src/srs/cards";
 
 async function vaultWith(files: Record<string, string>): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "oa-srs-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-srs-"));
   for (const [path, contents] of Object.entries(files)) {
     await writeNote(dir, path, contents);
   }

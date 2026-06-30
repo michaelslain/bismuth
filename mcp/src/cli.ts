@@ -1,6 +1,6 @@
 // Bridge to the bismuth CLI (cli/src/index.ts). Spawns it via `bun run` and
 // captures stdout/stderr/exit code. The CLI is a thin wrapper over @bismuth/core and
-// reads OA_VAULT/OA_MEMORY from the environment, so we pass process.env through.
+// reads BISMUTH_VAULT/BISMUTH_MEMORY from the environment, so we pass process.env through.
 // Never throws — every failure mode resolves to a CliResult.
 
 export interface CliResult {
@@ -12,10 +12,10 @@ export interface CliResult {
 const DEFAULT_TIMEOUT_MS = 30_000;
 
 /**
- * Run the bismuth CLI. In a machine-wide install, OA_BISMUTH_CLI points at the compiled
+ * Run the bismuth CLI. In a machine-wide install, BISMUTH_CLI points at the compiled
  * `bismuth` binary (no Bun/repo on disk), so we exec it directly; otherwise fall back to
  * `bun run <repoRoot>/cli/src/index.ts` (the dev repo). Inherits process.env (so
- * OA_VAULT/OA_MEMORY carry through). On timeout the child is killed and the result has
+ * BISMUTH_VAULT/BISMUTH_MEMORY carry through). On timeout the child is killed and the result has
  * code -1 plus a stderr note. Never throws.
  */
 export async function runCli(
@@ -24,7 +24,7 @@ export async function runCli(
   opts?: { cwd?: string; timeoutMs?: number },
 ): Promise<CliResult> {
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const cliBin = process.env.OA_BISMUTH_CLI;
+  const cliBin = process.env.BISMUTH_CLI;
   const cmd = cliBin ? [cliBin, ...args] : ["bun", "run", `${repoRoot}/cli/src/index.ts`, ...args];
 
   try {

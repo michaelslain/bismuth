@@ -35,7 +35,7 @@ import type { Command } from "@milkdown/prose/state";
 import { inlineAtoms } from "./inlineNodes";
 import { preserveAffixWhitespace } from "./preserveWhitespace";
 import { markerAwareEmphasis, markerAwareStrong } from "./emphasisMarker";
-import { matchWikilinkPrefix } from "../editor/wikilink";
+import { matchWikilinkPrefix, matchWikilinkHeadingPrefix } from "../editor/wikilink";
 import { matchTagPrefix } from "../editor/tag";
 
 /** Where the caret should land after a programmatic focus. */
@@ -71,7 +71,7 @@ export interface BlockEditorCallbacks {
    *  typed so far; `from` is the markdown offset where the QUERY starts (so applyAutocomplete
    *  can replace `[query → label]`); `rect` is the caret rect for popover placement. Mirrors the
    *  CodeMirror wikilink/tag autocomplete trigger (matchWikilinkPrefix / matchTagPrefix). */
-  onAutocomplete?: (kind: "wikilink" | "tag", query: string, from: number, rect: DOMRect) => void;
+  onAutocomplete?: (kind: "wikilink" | "tag" | "heading", query: string, from: number, rect: DOMRect, target?: string) => void;
   /** The caret left any wikilink/tag trigger — the caller should close the autocomplete popover. */
   onAutocompleteDismiss?: () => void;
   /** Whether the caller's autocomplete popover is open for THIS block. While true the keymap
@@ -166,7 +166,7 @@ const STRINGIFY_OPTIONS = {
   handlers: { text: verbatimText, emphasis: markerAwareEmphasis, strong: markerAwareStrong },
 } as const;
 
-const onChangeKey = new PluginKey("oa-block-onchange");
+const onChangeKey = new PluginKey("bismuth-block-onchange");
 
 /**
  * Create a Milkdown WYSIWYG surface bound to one block. Async because Editor.create() is async;
@@ -302,7 +302,12 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
     }
     const wl = matchWikilinkPrefix(text);
     if (wl) {
-      opts.onAutocomplete("wikilink", wl.query, wl.from, caretRect(v));
+      // `[[target#…` → heading mode: keep the anchor at the `[[` (wl.from) so the host's
+      // chooseAuto can replace the WHOLE token with `[[target#Heading]]` (which re-parses into a
+      // chip), and pass the target + partial heading so it can fetch + filter that note's headings.
+      const wh = matchWikilinkHeadingPrefix(text);
+      if (wh) opts.onAutocomplete("heading", wh.heading, wl.from, caretRect(v), wh.target);
+      else opts.onAutocomplete("wikilink", wl.query, wl.from, caretRect(v));
       return;
     }
     const tg = matchTagPrefix(text);
@@ -414,7 +419,7 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
         ...prev,
         editable: () => opts.editable !== false,
         attributes: {
-          class: "oa-block-milkdown",
+          class: "bismuth-block-milkdown",
           spellcheck: opts.spellcheck ? "true" : "false",
         },
       }));
@@ -533,7 +538,7 @@ function textUpToCaret(v: EditorView): string {
   v.state.doc.nodesBetween(start, head, (node, pos) => {
     if (node.isText) {
       text += (node.text ?? "").slice(Math.max(0, start - pos));
-    } else if (node.isAtom && node.type.name.startsWith("oa")) {
+    } else if (node.isAtom && node.type.name.startsWith("bismuth")) {
       text += (node.attrs.raw as string) ?? "";
     }
   });
@@ -573,7 +578,7 @@ function mdOffsetToDocPos(v: EditorView, offset: number): number {
         acc += 1;
         result = pos + i + 1; // PM pos just after this character
       }
-    } else if (node.isAtom && node.type.name.startsWith("oa")) {
+    } else if (node.isAtom && node.type.name.startsWith("bismuth")) {
       const rawLen = ((node.attrs.raw as string) ?? "").length;
       acc += rawLen; // the whole atom is consumed as one unit
       result = pos + node.nodeSize; // PM pos just after the atom

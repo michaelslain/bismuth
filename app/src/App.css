@@ -735,5 +735,5 @@ html.view-dragging .graph-floater { pointer-events: none; }
 /* Math rendered into note HTML on reading surfaces (cards, transclusion, calendar,
    export) by bases/markdown.ts. Display math ($$…$$) is a full-width block so KaTeX's
    equation tags / numbers sit flush right; inline math ($…$) flows with the prose. */
-.oa-math-display { display: block; }
-.oa-math-display .katex-display { margin: 0.4em 0; }
+.bismuth-math-display { display: block; }
+.bismuth-math-display .katex-display { margin: 0.4em 0; }

@@ -52,7 +52,7 @@ const ICONS = {
 function iconButton(svgPath: string, label: string): HTMLButtonElement {
   const b = document.createElement("button");
   b.type = "button";
-  b.className = "oa-find-btn";
+  b.className = "bismuth-find-btn";
   b.title = label;
   b.setAttribute("aria-label", label);
   b.innerHTML = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${svgPath}</svg>`;
@@ -63,14 +63,14 @@ function iconButton(svgPath: string, label: string): HTMLButtonElement {
  *  openSearchPanel/closeSearchPanel manage its lifecycle. */
 export function createFindPanel(view: EditorView): Panel {
   const dom = document.createElement("div");
-  dom.className = "oa-find";
+  dom.className = "bismuth-find";
   // Keys typed in the bar are the bar's business — don't let them bubble to the
   // editor's keymap or App.tsx's global shortcut handler.
   dom.addEventListener("keydown", (e) => e.stopPropagation());
   dom.addEventListener("mousedown", (e) => e.stopPropagation());
 
   const input = document.createElement("input");
-  input.className = "oa-find-input";
+  input.className = "bismuth-find-input";
   input.placeholder = "Find";
   input.setAttribute("aria-label", "Find in note");
   // NOTE: intentionally NOT tagged `main-field`. CM's findNext/findPrevious end by
@@ -80,14 +80,14 @@ export function createFindPanel(view: EditorView): Panel {
   // Editor.tsx's onFindKey), so opting out of CM's field auto-management is what we want.
 
   const count = document.createElement("span");
-  count.className = "oa-find-count";
+  count.className = "bismuth-find-count";
 
   const prevBtn = iconButton(ICONS.prev, "Previous match (Shift+Enter)");
   const nextBtn = iconButton(ICONS.next, "Next match (Enter)");
 
   const caseBtn = document.createElement("button");
   caseBtn.type = "button";
-  caseBtn.className = "oa-find-btn oa-find-case";
+  caseBtn.className = "bismuth-find-btn bismuth-find-case";
   caseBtn.textContent = "Aa";
   caseBtn.title = "Match case";
   caseBtn.setAttribute("aria-label", "Match case");
@@ -102,12 +102,12 @@ export function createFindPanel(view: EditorView): Panel {
     const q = getSearchQuery(view.state);
     if (!q.search) {
       count.textContent = "";
-      count.classList.remove("oa-find-empty");
+      count.classList.remove("bismuth-find-empty");
       return;
     }
     const { total, current } = matchStats(view, q);
     count.textContent = total === 0 ? "No results" : `${current || "–"}/${total}`;
-    count.classList.toggle("oa-find-empty", total === 0);
+    count.classList.toggle("bismuth-find-empty", total === 0);
   };
 
   // Move the editor selection to the nearest match at/after `pos` (wrapping to the top),
@@ -166,7 +166,7 @@ export function createFindPanel(view: EditorView): Panel {
   });
   caseBtn.addEventListener("click", () => {
     caseSensitive = !caseSensitive;
-    caseBtn.classList.toggle("oa-find-active", caseSensitive);
+    caseBtn.classList.toggle("bismuth-find-active", caseSensitive);
     runQuery();
     input.focus();
   });
@@ -184,7 +184,7 @@ export function createFindPanel(view: EditorView): Panel {
       const q = getSearchQuery(view.state);
       if (q.search) input.value = q.search;
       caseSensitive = q.caseSensitive;
-      caseBtn.classList.toggle("oa-find-active", caseSensitive);
+      caseBtn.classList.toggle("bismuth-find-active", caseSensitive);
       updateCount();
       input.focus();
       input.select();

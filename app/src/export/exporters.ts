@@ -59,7 +59,7 @@ async function bodyHtml(
 // render left unrendered math placeholders (`data-math=`), wait for KaTeX and re-render.
 // Matches an UNRENDERED math placeholder span (precise — a bare "data-math=" substring
 // would also trip on prose/code that mentions the attribute).
-const UNRENDERED_MATH = /<span class="oa-math[^"]*" data-math=/;
+const UNRENDERED_MATH = /<span class="bismuth-math[^"]*" data-math=/;
 async function renderedBody(
   path: string,
   deps: ExportDeps,

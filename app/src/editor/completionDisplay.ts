@@ -44,7 +44,7 @@ export const completionDisplayConfig = {
 // the card editor (CardEditor.tsx) include it, so any editor that wires up `autocompletion()`
 // gets the identical, themed popup rather than CodeMirror's bare default.
 export const completionTheme = EditorView.theme({
-  // Match .oa-popover exactly: same radius, padding, shadow, and UI font tokens —
+  // Match .bismuth-popover exactly: same radius, padding, shadow, and UI font tokens —
   // CodeMirror owns this <ul><li> DOM, so we can't share the component, only the tokens.
   ".cm-tooltip.cm-tooltip-autocomplete": {
     border: "1px solid var(--border)",

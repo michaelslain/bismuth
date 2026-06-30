@@ -172,7 +172,7 @@ All writes are atomic (`writeJsonAtomic`) and pretty-printed. Owner gating is co
 BOT_DIR = join(homedir(), ".claude-bot")
 ```
 
-**There is no env-var override on the claude-bot side.** `BOT_DIR` is hard-derived from `os.homedir()`; tests inject a `home` argument instead of an env var. (Bismuth's `OA_CLAUDEBOT_HOME` / `daemon.home` setting only changes where **Bismuth** looks, not where claude-bot writes — see [../daemon/storage.md](../daemon/storage.md).)
+**There is no env-var override on the claude-bot side.** `BOT_DIR` is hard-derived from `os.homedir()`; tests inject a `home` argument instead of an env var. (Bismuth's `BISMUTH_DAEMON_DIR` / `daemon.home` setting only changes where **Bismuth** looks, not where claude-bot writes — see [../daemon/storage.md](../daemon/storage.md).)
 
 Service names: `LAUNCHD_LABEL = "com.claude-bot.daemon"`, `SYSTEMD_SERVICE_NAME = "claude-bot"`.
 
@@ -200,11 +200,11 @@ Relevant because Bismuth bundles claude-bot. `scripts/bundle.ts` assembles a rel
 
 ## How Bismuth provisions + invokes it (the integration seam)
 
-Bismuth does **not** bundle claude-bot. It obtains the source at **runtime, on opt-in**: when the user runs **Set up claude-bot daemon** and no daemon is installed/provisioned yet, Bismuth's `provisionClaudeBot()` (`core/src/claudebot.ts`) `git clone`s claude-bot to `~/.bismuth/claude-bot` (override `OA_CLAUDEBOT_SRC`; remote `OA_CLAUDEBOT_REPO`) and `bun install`s it, then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` keeps working and claude-bot stays fully standalone — this is just one way to obtain its source. (claude-bot's `scripts/bundle.ts` relocatable bundle still exists for standalone use; Bismuth no longer consumes it.)
+Bismuth does **not** bundle claude-bot. It obtains the source at **runtime, on opt-in**: when the user runs **Set up claude-bot daemon** and no daemon is installed/provisioned yet, Bismuth's `provisionClaudeBot()` (`core/src/claudebot.ts`) `git clone`s claude-bot to `~/.bismuth/claude-bot` (override `BISMUTH_CLAUDEBOT_SRC`; remote `BISMUTH_CLAUDEBOT_REPO`) and `bun install`s it, then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` keeps working and claude-bot stays fully standalone — this is just one way to obtain its source. (claude-bot's `scripts/bundle.ts` relocatable bundle still exists for standalone use; Bismuth no longer consumes it.)
 
 Bismuth then:
 
-1. Resolves the installer entrypoint (`resolveEntrypoint`) with precedence: (1) an **already-installed** claude-bot on this machine (parsed from the launchd plist / systemd unit → its own `bin/ensure-installed.ts`); (2) the **provisioned** clone `~/.bismuth/claude-bot/bin/ensure-installed.ts` (or `$OA_CLAUDEBOT_SRC`).
+1. Resolves the installer entrypoint (`resolveEntrypoint`) with precedence: (1) an **already-installed** claude-bot on this machine (parsed from the launchd plist / systemd unit → its own `bin/ensure-installed.ts`); (2) the **provisioned** clone `~/.bismuth/claude-bot/bin/ensure-installed.ts` (or `$BISMUTH_CLAUDEBOT_SRC`).
 2. Spawns that entrypoint with `--status` (read-only probe, behind `GET /daemon/install`) or no flag (adopt-only setup, behind `POST /daemon/setup`), parsing the single JSON line.
 
 Because the entrypoint is **adopt-only**, it never clobbers, restarts, or repoints a live daemon. Full Bismuth-side detail is in [../daemon/overview.md](../daemon/overview.md) (the "Adopt-Only Setup" section + `resolveEntrypoint`) and [../daemon/storage.md](../daemon/storage.md); Bismuth's HTTP route docs are not duplicated here.
@@ -226,6 +226,6 @@ Bismuth drives this with the same `resolveEntrypoint` precedence (resolving `bin
 - [daemon.md](daemon.md) — launchd/systemd service + boot
 - [storage.md](storage.md) — on-disk file shapes
 - [communication.md](communication.md) — owner gating
-- [../daemon/overview.md](../daemon/overview.md), [../daemon/storage.md](../daemon/storage.md) — Bismuth's adopt-only bridge + `OA_CLAUDEBOT_HOME`
+- [../daemon/overview.md](../daemon/overview.md), [../daemon/storage.md](../daemon/storage.md) — Bismuth's adopt-only bridge + `BISMUTH_DAEMON_DIR`
 
 Source: bin/ensure-installed.ts, bin/update.ts, lib/install.ts, lib/update.ts, lib/platform.ts, lib/device.ts, lib/owner.ts, lib/config.ts, scripts/bundle.ts, package.json

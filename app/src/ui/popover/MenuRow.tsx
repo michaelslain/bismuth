@@ -20,24 +20,24 @@ export function MenuRow(props: {
 }): JSX.Element {
   return (
     <div
-      class="oa-popover-row"
+      class="bismuth-popover-row"
       classList={{
-        "oa-popover-row--selected": props.selected,
-        "oa-popover-row--danger": props.danger,
-        "oa-popover-row--disabled": props.disabled,
+        "bismuth-popover-row--selected": props.selected,
+        "bismuth-popover-row--danger": props.danger,
+        "bismuth-popover-row--disabled": props.disabled,
       }}
       onMouseEnter={() => props.onMouseEnter?.()}
       onClick={(e) => !props.disabled && props.onClick?.(e)}
     >
       <Show when={props.icon}>
-        <span class="oa-popover-icon"><Icon value={props.icon!} size={14} /></span>
+        <span class="bismuth-popover-icon"><Icon value={props.icon!} size={14} /></span>
       </Show>
-      <span class="oa-popover-label">{props.label}</span>
+      <span class="bismuth-popover-label">{props.label}</span>
       <Show when={props.detail}>
-        <span class="oa-popover-detail">{props.detail}</span>
+        <span class="bismuth-popover-detail">{props.detail}</span>
       </Show>
       <Show when={props.hasSubmenu}>
-        <span class="oa-popover-chev"><Icon value="ChevronRight" size={13} /></span>
+        <span class="bismuth-popover-chev"><Icon value="ChevronRight" size={13} /></span>
       </Show>
     </div>
   );

@@ -8,7 +8,7 @@ import { writeNote } from "../src/files";
  * tmpdir (parent dirs created as needed). Returns the vault root. Shared by the
  * search/replace tests so the fixture lives in one place.
  */
-export function makeVault(files: Record<string, string>, prefix = "oa-vault-"): string {
+export function makeVault(files: Record<string, string>, prefix = "bismuth-vault-"): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   for (const [rel, content] of Object.entries(files)) {
     const abs = join(dir, rel);
@@ -24,8 +24,8 @@ export function makeVault(files: Record<string, string>, prefix = "oa-vault-"): 
  * the vault (writes, backups) can't bleed into one another.
  */
 export async function makeSampleVault(): Promise<{ vault: string; memory: string }> {
-  const vault = mkdtempSync(join(tmpdir(), "oa-vault-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-memory-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-vault-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-memory-"));
 
   await writeNote(vault, "essay.md", "# Essay\n\nReligion and historical materialism.\n");
   await writeNote(

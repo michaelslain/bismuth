@@ -7,7 +7,7 @@
    the standalone horizontal padding + max-width + auto-centering the title used
    when it was a sibling above the scroller; otherwise the title would be inset an
    extra 40px and misalign with the body text. Vertical rhythm is kept. */
-.oa-note-title .note-title {
+.bismuth-note-title .note-title {
   max-width: none;
   width: auto;
   margin: 0;

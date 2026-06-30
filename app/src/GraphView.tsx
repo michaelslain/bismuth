@@ -48,7 +48,7 @@ function fpsColor(fps: number): string {
 // it to the top). It's a module-level signal so every GraphView instance (the home
 // tab + the sidebar mini-graph) shares one value, seeded from localStorage so the
 // preference survives reload without touching the vault.
-const VIEW_MODE_KEY = "oa:graph:viewMode";
+const VIEW_MODE_KEY = "bismuth:graph:viewMode";
 const readStoredViewMode = (): "2d" | "3d" => {
   try {
     const v = localStorage.getItem(VIEW_MODE_KEY);

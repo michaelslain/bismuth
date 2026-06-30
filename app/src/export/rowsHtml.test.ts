@@ -18,9 +18,9 @@ describe("tableToHtml", () => {
   test("renders inline markdown + math in cells (same as the live Base view)", () => {
     const t: TableData = { columns: ["c"], rows: [["$x^2$"]] };
     const out = tableToHtml(t);
-    // The math cell goes through the shared inline renderer (a KaTeX/oa-math span),
+    // The math cell goes through the shared inline renderer (a KaTeX/bismuth-math span),
     // NOT a literal `$x^2$` — matching what renderValue.tsx shows on screen.
-    expect(out).toContain("oa-math");
+    expect(out).toContain("bismuth-math");
     expect(out).not.toContain("<td>$x^2$</td>");
   });
 });

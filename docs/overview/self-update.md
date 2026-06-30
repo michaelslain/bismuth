@@ -4,7 +4,7 @@ The bundled Bismuth app updates itself in place: it detects when the installed `
 
 This page covers the full pipeline: how a build records its origin, how the backend detects + applies updates, how the frontend banner drives it, the Tauri/env plumbing that lets a detached script swap the bundle after the app quits, and the two **on-launch background auto-updates** (the bundled sidecar updating the claude-bot daemon; the app optionally updating itself).
 
-> **Self-disables outside a bundled source build.** In `bun run dev` (or any build with no `build-origin.json` / no `OA_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
+> **Self-disables outside a bundled source build.** In `bun run dev` (or any build with no `build-origin.json` / no `BISMUTH_APP_PATH`) the whole feature is a no-op: `GET /update/status` returns `available:false` with a `reason`, and the banner never appears.
 
 ---
 
@@ -45,7 +45,7 @@ writeFileSync(
 - `sha` — the `git rev-parse HEAD` at build time (`""` if git failed).
 - `builtAt` — ISO timestamp.
 
-The file is staged at `resources/bismuth-tools/build-origin.json`, the same resource dir the machine-wide install reads (see [machine-wide install](../mcp/overview.md)). At runtime the core sidecar receives that dir as `OA_BISMUTH_INSTALL_SRC`, and `readBuildOrigin()` reads `${OA_BISMUTH_INSTALL_SRC}/build-origin.json`. No `OA_BISMUTH_INSTALL_SRC` or no file → `readBuildOrigin()` returns `null` → the updater self-disables.
+The file is staged at `resources/bismuth-tools/build-origin.json`, the same resource dir the machine-wide install reads (see [machine-wide install](../mcp/overview.md)). At runtime the core sidecar receives that dir as `BISMUTH_INSTALL_SRC`, and `readBuildOrigin()` reads `${BISMUTH_INSTALL_SRC}/build-origin.json`. No `BISMUTH_INSTALL_SRC` or no file → `readBuildOrigin()` returns `null` → the updater self-disables.
 
 ---
 
@@ -81,7 +81,7 @@ Steps (all best-effort, injectable `GitRunner` for tests):
 Validates, sets `phase:"pulling"`, and fires the pipeline **without awaiting** so the HTTP request returns immediately; the frontend then polls progress. Idempotent while a run is in flight (returns the current `state` if already `pulling`/`building`).
 
 Guard rails before kicking off:
-- Not a bundled source build (no `build-origin.json` or no `OA_APP_PATH`) → `phase:"error"`, `"self-update unavailable (not a bundled source build)"`.
+- Not a bundled source build (no `build-origin.json` or no `BISMUTH_APP_PATH`) → `phase:"error"`, `"self-update unavailable (not a bundled source build)"`.
 - `getUpdateStatus().available === false` → `phase:"idle"`, `"already up to date"`.
 - `dirty` working tree → `phase:"error"`, `"the Bismuth repo has uncommitted changes — won't overwrite"`.
 
@@ -109,8 +109,8 @@ interface UpdateProgress { phase: UpdatePhase; message?: string; log?: string }
 
 ```bash
 NEW="<repoRoot>/app/src-tauri/target/release/bundle/macos/Bismuth.app"
-DEST="<OA_APP_PATH>"          # the running /Applications/Bismuth.app
-APP_PID="<OA_APP_PID>"
+DEST="<BISMUTH_APP_PATH>"          # the running /Applications/Bismuth.app
+APP_PID="<BISMUTH_APP_PID>"
 [[ -d "$NEW" ]] || exit 1
 # wait up to 120s for the app to actually quit
 if [[ -n "$APP_PID" ]]; then
@@ -166,10 +166,10 @@ The bundled app fires up to two **fire-and-forget** updates on launch — neithe
 
 ### 1. The claude-bot daemon — `core/src/server.ts`
 
-When the sidecar boots, `OA_APP_PATH` is set only by the Tauri shell, so its presence flags a bundled-app launch. In that case the server kicks off (without awaiting) a best-effort daemon update:
+When the sidecar boots, `BISMUTH_APP_PATH` is set only by the Tauri shell, so its presence flags a bundled-app launch. In that case the server kicks off (without awaiting) a best-effort daemon update:
 
 ```ts
-if (process.env.OA_APP_PATH) {
+if (process.env.BISMUTH_APP_PATH) {
   void (async () => {
     try {
       const cfg = await loadAppConfig(vault);
@@ -206,9 +206,9 @@ The two switches are independent: `daemon.autoUpdate` defaults **on** (a cheap f
 
 The env the self-updater depends on is injected here when the bundled app spawns its core sidecar (`start_backend`):
 
-- **`OA_BISMUTH_INSTALL_SRC`** — set to the bundled `resources/bismuth-tools` dir (which contains `build-origin.json`). Also drives the machine-wide install. `readBuildOrigin()` reads from here.
-- **`OA_APP_PATH`** — the running `…/Bismuth.app` path, derived from `current_exe()` by walking ancestors for the `.app` extension (`running_app_path()`). `None` in dev (the binary isn't inside a `.app`), which self-disables the updater.
-- **`OA_APP_PID`** — `std::process::id()` of the Tauri app, so the relauncher knows which pid to wait on.
+- **`BISMUTH_INSTALL_SRC`** — set to the bundled `resources/bismuth-tools` dir (which contains `build-origin.json`). Also drives the machine-wide install. `readBuildOrigin()` reads from here.
+- **`BISMUTH_APP_PATH`** — the running `…/Bismuth.app` path, derived from `current_exe()` by walking ancestors for the `.app` extension (`running_app_path()`). `None` in dev (the binary isn't inside a `.app`), which self-disables the updater.
+- **`BISMUTH_APP_PID`** — `std::process::id()` of the Tauri app, so the relauncher knows which pid to wait on.
 
 The **`quit_app`** Tauri command is a one-liner registered in the invoke handler:
 
@@ -217,7 +217,7 @@ The **`quit_app`** Tauri command is a one-liner registered in the invoke handler
 fn quit_app(app: tauri::AppHandle) { app.exit(0); }
 ```
 
-The frontend invokes it once `phase:"ready"`; the app exits, the detached relauncher (waiting on `OA_APP_PID`) swaps the bundle and reopens it.
+The frontend invokes it once `phase:"ready"`; the app exits, the detached relauncher (waiting on `BISMUTH_APP_PID`) swaps the bundle and reopens it.
 
 ---
 
@@ -225,7 +225,7 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 
 | Condition | Effect |
 |---|---|
-| `bun run dev` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `OA_APP_PATH`/`OA_BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
+| `bun run dev` | The Tauri setup only spawns its own backend when `!cfg!(debug_assertions)`; the dev backend has no `BISMUTH_APP_PATH`/`BISMUTH_INSTALL_SRC` injected → `getUpdateStatus()` → `reason:"not-a-source-build"`. |
 | Build with no `build-origin.json` | `readBuildOrigin()` → `null` → `reason:"not-a-source-build"`. |
 | `repoRoot` isn't a git checkout | `reason:"not-a-git-repo"`. |
 | No `origin/main` upstream | `reason:"no-upstream"`. |
@@ -235,7 +235,7 @@ The frontend invokes it once `phase:"ready"`; the app exits, the detached relaun
 
 ## Related
 
-- [Machine-wide install (CLI + MCP)](../mcp/overview.md) — the sibling install path that shares `OA_BISMUTH_INSTALL_SRC` and the bundled tools resource.
+- [Machine-wide install (CLI + MCP)](../mcp/overview.md) — the sibling install path that shares `BISMUTH_INSTALL_SRC` and the bundled tools resource.
 - [HTTP API reference](../api/http-reference.md) — exact shapes of `/update/status`, `/update/apply`, `/update/progress`, `/bismuth/install`.
 - [Install & run](install.md) — building the bundled app from source.
 

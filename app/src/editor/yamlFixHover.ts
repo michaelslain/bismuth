@@ -27,10 +27,10 @@ export function yamlFixHover() {
       end: hit.to,
       above: false,
       create() {
-        // Same `.oa-popover` DOM the right-click menu renders (built via the shared
+        // Same `.bismuth-popover` DOM the right-click menu renders (built via the shared
         // rowDom helper), so the hover quick-fix is pixel-identical to the menu.
         const dom = document.createElement("div");
-        dom.className = "oa-popover";
+        dom.className = "bismuth-popover";
 
         if (hit.actions.length) {
           for (const a of hit.actions) {

@@ -94,7 +94,7 @@ class QueryBlockWidget extends WidgetType {
   toDOM(view: EditorView): HTMLElement {
     this.view = view;
     const container = document.createElement("div");
-    container.className = "oa-query-block";
+    container.className = "bismuth-query-block";
     this.dom = container;
     const embeddedSource = { onReveal: this.reveal };
     if (looksLikeBaseConfig(this.source)) {
@@ -194,7 +194,7 @@ const preserveScrollOnTaskToggle = ViewPlugin.fromClass(
     constructor(readonly view: EditorView) {
       this.onDown = (e: MouseEvent) => {
         const target = e.target as HTMLElement | null;
-        if (!target?.closest?.(".oa-query-block")) return;
+        if (!target?.closest?.(".bismuth-query-block")) return;
         const sc = view.scrollDOM;
         const want = sc.scrollTop;
         if (want === 0) return; // already at top — nothing to preserve

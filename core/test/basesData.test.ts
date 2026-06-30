@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 test("buildVaultRows returns a row per note with file meta + frontmatter", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-rows-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-rows-"));
   await writeNote(vault, "housing.md", "---\nstatus: open\ntags: [logistics]\nprice: 10\n---\n# Housing\n[[internship]] #urgent");
   await writeNote(vault, "reading/book.md", "---\ntitle: A Book\n---\nbody");
 

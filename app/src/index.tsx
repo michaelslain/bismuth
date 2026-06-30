@@ -12,12 +12,12 @@ import "@fontsource/monaspace-xenon/700.css";
 import { isTauri } from "./nativeMenu";
 
 // First-run takeover: when the bundled app launches with no vault yet, lib.rs injects
-// `window.__OA_FIRST_RUN__` and does NOT start a backend — so we render the intro instead
+// `window.__BISMUTH_FIRST_RUN__` and does NOT start a backend — so we render the intro instead
 // of App (which would fire API calls against a backend that isn't there). `?intro=1` forces
 // it in dev/browser for previewing. The two branches are code-split so first-run never
 // loads App, and a normal launch never loads the intro.
 const firstRun =
-  (isTauri() && (window as unknown as { __OA_FIRST_RUN__?: boolean }).__OA_FIRST_RUN__ === true) ||
+  (isTauri() && (window as unknown as { __BISMUTH_FIRST_RUN__?: boolean }).__BISMUTH_FIRST_RUN__ === true) ||
   new URLSearchParams(window.location.search).has("intro");
 
 const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));

@@ -62,8 +62,8 @@ function baseName(path: string): string {
 
 // Remember the last-chosen output folder + calendar span across sessions (browser
 // localStorage; no schema).
-const DEST_KEY = "oa.export.destFolder";
-const SPAN_KEY = "oa.export.calSpan";
+const DEST_KEY = "bismuth.export.destFolder";
+const SPAN_KEY = "bismuth.export.calSpan";
 const loadLs = (k: string): string => {
   try { return localStorage.getItem(k) ?? ""; } catch { return ""; }
 };

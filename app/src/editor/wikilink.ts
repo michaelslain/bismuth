@@ -46,6 +46,91 @@ export function parseWikilink(inner: string): {
   return result;
 }
 
+// The caret sits inside an open `[[target#…` — i.e. a wikilink whose target is followed by
+// a `#` (the heading separator). Returns the `target` (note name before the `#`), the partial
+// `heading` text typed after it, and `from` (the offset into `textBefore` where the heading
+// query starts, just past the `#`). Returns null when the caret is NOT inside an open wikilink
+// or there is no `#` yet — that case is plain note-name completion (matchWikilinkPrefix).
+// `#` is split on its FIRST occurrence so a heading containing a stray `#` still resolves.
+export function matchWikilinkHeadingPrefix(
+  textBefore: string,
+): { target: string; heading: string; from: number } | null {
+  const open = matchWikilinkPrefix(textBefore);
+  if (!open) return null;
+  const hash = open.query.indexOf("#");
+  if (hash === -1) return null;
+  return {
+    target: open.query.slice(0, hash).trim(),
+    heading: open.query.slice(hash + 1),
+    from: open.from + hash + 1,
+  };
+}
+
+export type HeadingItem = { text: string; level: number };
+
+// Normalize a heading for comparison: trim, collapse internal whitespace, lowercase. Used so
+// a `[[File#My Heading]]` anchor matches the document's `## My  Heading` regardless of case or
+// spacing (Obsidian-style display-text matching, NOT a GitHub slug).
+function normalizeHeading(s: string): string {
+  return s.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+// True for a fence opener/closer line (``` or ~~~, any indent). Toggling on these lets the
+// heading scanners skip `#` lines that are really code, mirroring core's stripCode masking.
+function isFence(line: string): boolean {
+  return /^\s*(```|~~~)/.test(line);
+}
+
+// ATX heading line → its level + trimmed display text (closing `#`s stripped), else null.
+function parseHeadingLine(line: string): HeadingItem | null {
+  const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+  return m ? { level: m[1].length, text: m[2].trim() } : null;
+}
+
+// Index of the first BODY line, skipping a leading `---`…`---` YAML frontmatter block so a YAML
+// `# comment` (or a `key: '# value'`) inside it isn't mistaken for a heading. 0 when there's no
+// frontmatter (or it's unterminated — then we treat the whole doc as body).
+function bodyStartLine(lines: string[]): number {
+  if (lines[0]?.trim() !== "---") return 0;
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") return i + 1;
+  }
+  return 0;
+}
+
+// Extract the ATX headings (`# …` … `###### …`) from markdown, in document order, skipping the
+// YAML frontmatter block and fenced code. Pure + DOM-free so it powers `[[File#` heading
+// autocomplete from a fetched note body and is unit-testable without a browser.
+export function parseHeadings(md: string): HeadingItem[] {
+  const lines = md.split("\n");
+  const out: HeadingItem[] = [];
+  let inFence = false;
+  for (let i = bodyStartLine(lines); i < lines.length; i++) {
+    const line = lines[i];
+    if (isFence(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const h = parseHeadingLine(line);
+    if (h) out.push(h);
+  }
+  return out;
+}
+
+// Find the 0-based index of the first line that is an ATX heading whose text matches `heading`
+// (normalized: case/whitespace-insensitive), skipping frontmatter + fenced code. Returns -1 when
+// none match — the caller then leaves the scroll position alone rather than jumping somewhere wrong.
+export function findHeadingLineIndex(lines: string[], heading: string): number {
+  const want = normalizeHeading(heading);
+  let inFence = false;
+  for (let i = bodyStartLine(lines); i < lines.length; i++) {
+    const line = lines[i];
+    if (isFence(line)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const h = parseHeadingLine(line);
+    if (h && normalizeHeading(h.text) === want) return i;
+  }
+  return -1;
+}
+
 // Given a `[[…]]` match — `inner` is the text between the brackets, `start` is the
 // document offset of the opening "[[" — return the [from, to) document slice to *reveal*
 // in live preview: the alias if present, else the target's basename. Everything else

@@ -194,7 +194,7 @@ Both the user's messages and the assistant's replies render through `renderNoteB
 <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
 ```
 
-`[[wikilinks]]` in a rendered bubble (emitted as `a.oa-wikilink` with a `data-href`) open in-app via a delegated click that dispatches the global `oa-open` event. An assistant turn is an ordered list of **parts** — prose (`TextBubble`), collapsible thinking (`ThinkingBlock`, raw `<pre>`, not markdown), tool chips (`ToolChip`, with input/result detail and a pending spinner), and permission cards (`PermissionCard`) — plus an optional muted footer with the turn count and (only on API-key billing) the cost. A streaming turn with no parts yet shows a three-dot thinking indicator.
+`[[wikilinks]]` in a rendered bubble (emitted as `a.bismuth-wikilink` with a `data-href`) open in-app via a delegated click that dispatches the global `bismuth-open` event. An assistant turn is an ordered list of **parts** — prose (`TextBubble`), collapsible thinking (`ThinkingBlock`, raw `<pre>`, not markdown), tool chips (`ToolChip`, with input/result detail and a pending spinner), and permission cards (`PermissionCard`) — plus an optional muted footer with the turn count and (only on API-key billing) the cost. A streaming turn with no parts yet shows a three-dot thinking indicator.
 
 ## Tab routing, command, and keybinding
 
