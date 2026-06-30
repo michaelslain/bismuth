@@ -1,6 +1,6 @@
 # claude-bot On-Disk Storage Layout
 
-This page documents the `~/.claude-bot` storage tree from the **producer** (daemon-owner) side — what claude-bot itself writes, where, and in what format. Bismuth reads this same tree to power its "daemon" graph mode and `DaemonList` sidebar; for the **consumer**-side read contract (which files Bismuth reads, how it degrades on missing/partial files, and the `daemon.home` / `OA_CLAUDEBOT_HOME` resolution Bismuth uses to find this tree), see [../daemon/storage.md](../daemon/storage.md) and [../daemon/overview.md](../daemon/overview.md). This page does not duplicate that — it is the claude-bot view.
+This page documents the `~/.claude-bot` storage tree from the **producer** (daemon-owner) side — what claude-bot itself writes, where, and in what format. Bismuth reads this same tree to power its "daemon" graph mode and `DaemonList` sidebar; for the **consumer**-side read contract (which files Bismuth reads, how it degrades on missing/partial files, and the `daemon.home` / `BISMUTH_DAEMON_DIR` resolution Bismuth uses to find this tree), see [../daemon/storage.md](../daemon/storage.md) and [../daemon/overview.md](../daemon/overview.md). This page does not duplicate that — it is the claude-bot view.
 
 ## Home directory
 
@@ -11,7 +11,7 @@ The root is `BOT_DIR`:
 export const BOT_DIR = join(os.homedir(), ".claude-bot")
 ```
 
-On the claude-bot side this path is **hard-coded** — there is **no env-var override**. Tests inject an alternate directory by passing a `dir` function argument instead of reading an env var. (Bismuth, the consumer, additionally honors `OA_CLAUDEBOT_HOME` and a `daemon.home` setting to choose where *it* looks — but that only changes Bismuth's read path, never where claude-bot itself writes. See [../daemon/storage.md](../daemon/storage.md).)
+On the claude-bot side this path is **hard-coded** — there is **no env-var override**. Tests inject an alternate directory by passing a `dir` function argument instead of reading an env var. (Bismuth, the consumer, additionally honors `BISMUTH_DAEMON_DIR` and a `daemon.home` setting to choose where *it* looks — but that only changes Bismuth's read path, never where claude-bot itself writes. See [../daemon/storage.md](../daemon/storage.md).)
 
 `ensureDirs()` in `daemon/index.ts` creates `BOT_DIR`, `logs/`, `crons/`, `memory/`, and `processes/` on boot. `lib/install.ts` deliberately does **not** create these state dirs — the daemon self-creates them on first run (so an install without a daemon launch leaves no state behind).
 
@@ -84,7 +84,7 @@ Service-config files live **outside** `BOT_DIR` (`lib/platform.ts`):
 
 ## Relationship to Bismuth
 
-Bismuth reads this same tree to power its "daemon" graph mode and `DaemonList` sidebar, and writes only `owner.json`, the `enabled` frontmatter, and trigger files. For the consumer-side, byte-level read contract — which files Bismuth reads, how it degrades on missing/partial files, and the `daemon.home` / `OA_CLAUDEBOT_HOME` resolution Bismuth uses to locate this tree — see [../daemon/storage.md](../daemon/storage.md) and [../daemon/overview.md](../daemon/overview.md). This page is the producer (claude-bot) view and does not duplicate that contract.
+Bismuth reads this same tree to power its "daemon" graph mode and `DaemonList` sidebar, and writes only `owner.json`, the `enabled` frontmatter, and trigger files. For the consumer-side, byte-level read contract — which files Bismuth reads, how it degrades on missing/partial files, and the `daemon.home` / `BISMUTH_DAEMON_DIR` resolution Bismuth uses to locate this tree — see [../daemon/storage.md](../daemon/storage.md) and [../daemon/overview.md](../daemon/overview.md). This page is the producer (claude-bot) view and does not duplicate that contract.
 
 See also: [crons-and-processes.md](crons-and-processes.md), [memory.md](memory.md), [install.md](install.md), [daemon.md](daemon.md).
 

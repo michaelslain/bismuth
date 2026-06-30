@@ -18,7 +18,7 @@ type TreeNode = { name: string; path: string; icon?: string; label?: string; isS
 
 // Every artifact the file tree can create in place. "base" is a `.md` seeded with
 // BASE_TEMPLATE; the rest map onto the backend's blank file/dir create. Shared with
-// the toolbar "+" chooser via the `oa-new` event (see App.tsx).
+// the toolbar "+" chooser via the `bismuth-new` event (see App.tsx).
 export type CreateKind = "file" | "dir" | "base" | "sheet" | "draw";
 
 // Extensions hidden in the tree's display labels (and re-applied on rename),
@@ -26,7 +26,7 @@ export type CreateKind = "file" | "dir" | "base" | "sheet" | "draw";
 const STRIP_EXT = /\.(md|yaml|yml)$/i;
 const displayName = (name: string) => name.replace(STRIP_EXT, "");
 
-const TREE_CACHE_KEY = "oa-tree-cache-v1";
+const TREE_CACHE_KEY = "bismuth-tree-cache-v1";
 
 function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
@@ -108,6 +108,16 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       setPendingOps((n) => n - 1);
     }
   };
+  // In-flight create requests keyed by the freshly-created path. A new file drops
+  // straight into tree-rename mode, but `api.create` is still round-tripping; if the
+  // user types a name and hits Enter fast, the rename's `api.move(from,…)` could reach
+  // the server BEFORE the create lands (move 404s → spurious "Rename failed" + revert).
+  // `awaitCreate(path)` lets the rename commit wait for the matching create first.
+  const pendingCreate = new Map<string, Promise<unknown>>();
+  const awaitCreate = async (path: string) => {
+    const p = pendingCreate.get(path);
+    if (p) { try { await p; } catch { /* create failure is handled by doCreate */ } }
+  };
   // Persist the last good tree so the sidebar paints instantly next launch. Skip while an
   // optimistic op is in flight (pendingOps > 0) so we never cache un-confirmed state; the
   // effect re-runs and writes the settled tree once pendingOps drops back to 0.
@@ -140,6 +150,90 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       n.has(p) ? n.delete(p) : n.add(p);
       return n;
     });
+
+  // Multi-select for batch actions (delete). cmd/ctrl-click toggles a row; shift-click
+  // extends a contiguous range from the last-clicked anchor (in visible display order);
+  // a plain click clears the selection. Kept as a path set so it survives tree refreshes.
+  const [selected, setSelected] = createSignal<Set<string>>(new Set());
+  const [anchor, setAnchor] = createSignal<string | null>(null);
+
+  // Flattened visible row order (honoring open folders), for shift-click range select.
+  const visibleOrder = (): string[] => {
+    const out: string[] = [];
+    const walk = (node: TreeNode) => {
+      for (const c of sortedChildren(node)) {
+        out.push(c.path);
+        if (c.children && open().has(c.path)) walk(c);
+      }
+    };
+    walk(buildTree(files() ?? []));
+    return out;
+  };
+
+  // Returns true if the click was consumed by selection (so the row skips open/toggle).
+  const onRowClick = (node: TreeNode, e: MouseEvent): boolean => {
+    if (node.isSystemFolder || node.path === SETTINGS_FILE) return false;
+    if (e.metaKey || e.ctrlKey) {
+      e.stopPropagation();
+      setSelected((prev) => {
+        const n = new Set(prev);
+        n.has(node.path) ? n.delete(node.path) : n.add(node.path);
+        return n;
+      });
+      setAnchor(node.path);
+      return true;
+    }
+    if (e.shiftKey && (anchor() || selected().size > 0)) {
+      e.stopPropagation();
+      const order = visibleOrder();
+      const a = order.indexOf(anchor() ?? node.path);
+      const b = order.indexOf(node.path);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelected((prev) => {
+          const n = new Set(prev);
+          for (let i = lo; i <= hi; i++) n.add(order[i]);
+          return n;
+        });
+      }
+      return true;
+    }
+    if (selected().size > 0) setSelected(new Set<string>());
+    setAnchor(node.path);
+    return false;
+  };
+
+  // Drop any selected path whose ancestor folder is also selected — deleting the
+  // ancestor already removes it, so a separate api.del would 404 on a gone child.
+  const pruneNested = (paths: string[]): string[] =>
+    paths.filter((p) => !paths.some((q) => q !== p && p.startsWith(q + "/")));
+
+  async function doDeleteMany(paths: string[]) {
+    const targets = pruneNested(paths);
+    for (const p of targets) {
+      optimisticRemove(p);
+      window.dispatchEvent(new CustomEvent("bismuth-deleted", { detail: p }));
+    }
+    setSelected(new Set<string>());
+    try {
+      const entries = await trackPending(() =>
+        Promise.all(
+          targets.map(async (p) => {
+            const { trashPath } = await api.del(p);
+            return { trashPath, to: p, name: p.split("/").pop()! };
+          }),
+        ),
+      );
+      setUndoStack((s) => [...entries, ...s]);
+      pushToast(`Deleted ${entries.length} items`, {
+        label: "Undo",
+        onClick: () => entries.forEach((en) => restoreDeleted(en)),
+      });
+    } catch (e) {
+      await refetch();
+      pushToast(`Delete failed: ${(e as Error).message}`);
+    }
+  }
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [iconPicker, setIconPicker] = createSignal<{ node: TreeNode; isDir: boolean } | null>(null);
@@ -199,6 +293,12 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
       e.preventDefault();
       undoLastDelete();
+      return;
+    }
+    // Delete/Backspace removes the current multi-selection (undoable via the toast / Cmd+Z).
+    if (!typing && (e.key === "Delete" || e.key === "Backspace") && selected().size > 0) {
+      e.preventDefault();
+      doDeleteMany([...selected()]);
     }
   };
   window.addEventListener("keydown", onKey);
@@ -211,13 +311,13 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     if (kind === "file" || kind === "dir" || kind === "base" || kind === "sheet" || kind === "draw")
       doCreate("", kind, detail.view);
   };
-  window.addEventListener("oa-new", onNew);
-  onCleanup(() => window.removeEventListener("oa-new", onNew));
+  window.addEventListener("bismuth-new", onNew);
+  onCleanup(() => window.removeEventListener("bismuth-new", onNew));
 
   async function doDelete(node: TreeNode) {
     optimisticRemove(node.path); // instant; reverted via refresh() on failure
     // Close any open tab for the deleted file (or files under a deleted folder).
-    window.dispatchEvent(new CustomEvent("oa-deleted", { detail: node.path }));
+    window.dispatchEvent(new CustomEvent("bismuth-deleted", { detail: node.path }));
     try {
       const { trashPath } = await trackPending(() => api.del(node.path));
       const entry = { trashPath, to: node.path, name: node.name };
@@ -252,7 +352,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       try {
         await trackPending(() => api.create(path, "file"));
         await trackPending(() => api.write(path, baseTemplate(view ?? "table")));
-        window.dispatchEvent(new CustomEvent("oa-open", { detail: { path, newTab: true } }));
+        window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path, newTab: true } }));
       } catch (e) {
         optimisticRemove(path);
         await refetch();
@@ -261,20 +361,33 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       return;
     }
     setEditing(path);
+    // Seed the cache with the (empty) body BEFORE the round-trip so an immediate open
+    // is a guaranteed instant cache hit instead of a GET /file that could race the
+    // create (briefly flashing a spinner or 404). Dirs have no body; only prime files.
+    if (fsKind === "file") primeNoteCache(path, "");
+    const createP = trackPending(() => api.create(path, fsKind));
+    // Expose the in-flight create so a fast rename-on-Enter can wait for it (see awaitCreate).
+    pendingCreate.set(path, createP);
     try {
-      await trackPending(() => api.create(path, fsKind));
-      // Seed the cache with the freshly-created empty body so the first open is an
-      // instant cache hit instead of a GET /file round-trip (which would briefly
-      // flash a spinner). Dirs have no body; only prime real files.
-      if (fsKind === "file") primeNoteCache(path, "");
+      await createP;
     } catch (e) {
       setEditing(null);
       await refetch();
       pushToast(`Create failed: ${(e as Error).message}`);
+    } finally {
+      pendingCreate.delete(path);
     }
   }
 
   function buildMenuItems(node: TreeNode): MenuItem[] {
+    // Right-clicking inside a multi-selection offers a single batch delete for the lot.
+    const sel = selected();
+    if (sel.size > 1 && sel.has(node.path)) {
+      const paths = [...sel];
+      return [
+        { label: `Delete ${paths.length} items`, icon: "Trash2", danger: true, onSelect: () => doDeleteMany(paths) },
+      ];
+    }
     const isDir = !!node.children;
     const items: MenuItem[] = [];
     if (isDir) {
@@ -319,7 +432,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     const to = joinPath(targetDir, from.split("/").pop()!);
     optimisticRename(from, to); // instant; reverted via refresh() on failure
     // Keep any open tab pointing at the moved path (incl. files under a moved folder).
-    window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
+    window.dispatchEvent(new CustomEvent("bismuth-moved", { detail: { from, to } }));
     if (targetDir) setOpen((prev) => new Set(prev).add(targetDir));
     try {
       await trackPending(() => api.move(from, to));
@@ -346,7 +459,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       e.stopPropagation();
       setDragPath(path);
       if (isFile) {
-        e.dataTransfer?.setData("application/x-oa-path", path);
+        e.dataTransfer?.setData("application/x-bismuth-path", path);
       }
     };
   }
@@ -354,6 +467,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
   return (
     <div
       class="ft-root"
+      onClick={(e) => { if (e.target === e.currentTarget && selected().size > 0) setSelected(new Set<string>()); }}
       onDragOver={(e) => { e.preventDefault(); setDropTarget(""); }}
       onDrop={(e) => { e.preventDefault(); moveInto(""); }}
     >
@@ -370,6 +484,9 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
         refresh={refetch}
         optimisticRename={optimisticRename}
         trackPending={trackPending}
+        awaitCreate={awaitCreate}
+        selected={selected()}
+        onRowClick={onRowClick}
         dragPath={dragPath()}
         setDragPath={setDragPath}
         dropTarget={dropTarget()}
@@ -401,6 +518,7 @@ function EditableLabel(props: {
   node: TreeNode; isDir: boolean; setEditing: (p: string | null) => void; refresh: () => void;
   optimisticRename: (from: string, to: string) => void;
   trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
+  awaitCreate: (path: string) => Promise<void>;
 }) {
   let inputRef: HTMLInputElement | undefined;
   const initial = props.node.name;
@@ -428,8 +546,11 @@ function EditableLabel(props: {
     const to = joinPath(parentOf(from), newName);
     props.optimisticRename(from, to); // instant; reverted via refresh() on failure
     // Keep any open tab pointing at the renamed path.
-    window.dispatchEvent(new CustomEvent("oa-moved", { detail: { from, to } }));
+    window.dispatchEvent(new CustomEvent("bismuth-moved", { detail: { from, to } }));
     try {
+      // If this row was just created, its `api.create` may still be in flight —
+      // wait for it so the move never races ahead of the file's existence on disk.
+      await props.awaitCreate(from);
       await props.trackPending(() => api.move(from, to));
     } catch (e) {
       props.refresh();
@@ -504,6 +625,8 @@ function Level(props: {
   editing: string | null; setEditing: (p: string | null) => void; refresh: () => void;
   optimisticRename: (from: string, to: string) => void;
   trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
+  awaitCreate: (path: string) => Promise<void>;
+  selected: Set<string>; onRowClick: (node: TreeNode, e: MouseEvent) => boolean;
   dragPath: string | null; setDragPath: (p: string | null) => void;
   dropTarget: string | null; setDropTarget: (p: string | null) => void;
   moveInto: (targetDir: string) => void; endDrag: () => void;
@@ -521,20 +644,20 @@ function Level(props: {
           <div>
             <div
               class="ft-row"
-              classList={{ "drop-target": props.dropTarget === child.path, system: !!child.isSystemFolder }}
+              classList={{ "drop-target": props.dropTarget === child.path, system: !!child.isSystemFolder, selected: props.selected.has(child.path) }}
               style={{ "padding-left": indent }}
               draggable={props.editing !== child.path && !child.isSystemFolder}
               onDragStart={props.makeDragStart(child.path, false)}
               onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
               onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
               onDragEnd={() => props.endDrag()}
-              onClick={() => { if (props.editing !== child.path) props.toggle(child.path); }}
+              onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
               <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
               <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
-                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
+                <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
               </Show>
             </div>
             <Collapsible open={props.open.has(child.path)}>
@@ -542,6 +665,7 @@ function Level(props: {
                 onOpen={props.onOpen} activeFile={props.activeFile} onMenu={props.onMenu}
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
                 optimisticRename={props.optimisticRename} trackPending={props.trackPending}
+                awaitCreate={props.awaitCreate} selected={props.selected} onRowClick={props.onRowClick}
                 dragPath={props.dragPath} setDragPath={props.setDragPath}
                 dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
                 moveInto={props.moveInto} endDrag={props.endDrag} makeDragStart={props.makeDragStart} />
@@ -550,17 +674,17 @@ function Level(props: {
         ) : (
           <div
             class="ft-row file"
-            classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE }}
+            classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE, selected: props.selected.has(child.path) }}
             style={{ "padding-left": fileIndent }}
             draggable={props.editing !== child.path && child.path !== SETTINGS_FILE}
             onDragStart={props.makeDragStart(child.path, true)}
             onDragEnd={() => props.endDrag()}
-            onClick={() => { if (props.editing !== child.path) props.onOpen(child.path); }}
+            onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
-              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} />
+              <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
             </Show>
           </div>
         );

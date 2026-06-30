@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install                                       # from repo root (all 5 workspaces)
-export BISMUTH_VAULT=/path/to/vault BISMUTH_MEMORY=/path/to/memory   # dev only; dirs must exist (legacy OA_VAULT/OA_MEMORY still read as a fallback)
+export BISMUTH_VAULT=/path/to/vault BISMUTH_MEMORY=/path/to/memory   # dev only; dirs must exist
 cd app && bun run dev                             # Tauri app + backend on :4321
 ```
 
@@ -31,7 +31,7 @@ The system treats knowledge as a "three-brain" model:
 
 ## Environment Setup
 
-`bun run dev` requires two env vars (errors if unset; both dirs must already exist): `BISMUTH_VAULT` (2nd-brain markdown vault) and `BISMUTH_MEMORY` (a memory dir for dev — note the live 3rd brain now sources from `<vault>/.daemon/memory`). Legacy `OA_VAULT`/`OA_MEMORY` are still read as a fallback. These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
+`bun run dev` requires two env vars (errors if unset; both dirs must already exist): `BISMUTH_VAULT` (2nd-brain markdown vault) and `BISMUTH_MEMORY` (a memory dir for dev — note the live 3rd brain now sources from `<vault>/.daemon/memory`). These env vars are **dev/standalone only** — the bundled `/Applications` app self-spawns its own core backend and resolves its vault from a saved `config.json` or a first-run native folder picker (see Desktop app & core sidecar).
 
 ## Documentation
 
@@ -40,7 +40,7 @@ The system treats knowledge as a "three-brain" model:
 ## Key Commands
 
 ### Development
-- `bun run dev` (in `app/`) — Run Tauri app + backend server concurrently with hot reload. Requires `OA_VAULT` (2nd-brain vault dir) and `OA_MEMORY` (3rd-brain memory dir) env vars; there is no default vault
+- `bun run dev` (in `app/`) — Run Tauri app + backend server concurrently with hot reload. Requires `BISMUTH_VAULT` (2nd-brain vault dir) and `BISMUTH_MEMORY` (3rd-brain memory dir) env vars; there is no default vault
 - `bun start` — Start Vite dev server only (app/)
 - `bun run core/src/server.ts --vault /path/to/vault --memory /path/to/memory` — Run backend server standalone (both flags required)
 
@@ -56,7 +56,7 @@ The system treats knowledge as a "three-brain" model:
 
 ### Infrastructure
 - `bun install` — Install dependencies for all workspaces
-- `bun run core:serve` — Standalone core server (pass `--vault`/`--memory` or set `OA_VAULT`/`OA_MEMORY`)
+- `bun run core:serve` — Standalone core server (pass `--vault`/`--memory` or set `BISMUTH_VAULT`/`BISMUTH_MEMORY`)
 
 ### Running Multiple Agents Concurrently
 
@@ -137,7 +137,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override the port: `
 
 ### CLI (`cli/`)
 
-The `bismuth` binary (thin wrapper over `@bismuth/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`OA_VAULT`.
+The `bismuth` binary (thin wrapper over `@bismuth/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`BISMUTH_VAULT`.
 
 - `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase, then one-word), `--help`, error-wrap.
 - `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`out`/`fail`…) + `src/types.ts` (`Command`/`CommandMap`) — the shared seam every group imports.
@@ -231,7 +231,7 @@ The bar above the file tree is configured by `toolbar:` in `settings.yaml`. Each
 
 **File-menu commands**: `new-folder`/`new-note`, `export`, `new-window` (`?api=`), `open-folder` (`POST /open-folder` → sibling core server → `?api=` window).
 
-**Runtime backend base** (`app/src/api.ts`): `resolveBase` picks the backend (`?api=<url>` > `window.__OA_API__` > `VITE_API_BASE` > `:4321`), so one build serves multiple windows; `apiBase()` builds `?api=` URLs.
+**Runtime backend base** (`app/src/api.ts`): `resolveBase` picks the backend (`?api=<url>` > `window.__BISMUTH_API__` > `VITE_API_BASE` > `:4321`), so one build serves multiple windows; `apiBase()` builds `?api=` URLs.
 
 ### Keybindings
 
@@ -363,7 +363,7 @@ Debounced file-watch + version-gated refetch + backend-precomputed layouts (see 
 
 ### Desktop app & core sidecar (`app/src-tauri/` + `app/scripts/build-core-sidecar.ts`)
 
-The bundled `/Applications` app **spawns its own `core` backend** (not `bun run dev`). `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary (`bun build --compile`, via `externalBin`); on launch `src/lib.rs` picks a free port, spawns the sidecar, kills it on exit, injects `window.__OA_API__` (read by `api.ts` `resolveBase`). A Finder-launched app has no shell env, so `lib.rs` resolves the vault from `config.json`; on **first run** (or a missing vault) it sets `window.__OA_FIRST_RUN__` and `index.tsx` renders the **Vault Intro** takeover (`app/src/intro/`): theme-picker + power-ups slideshow whose CTA invokes the Tauri `choose_first_vault` command (writes config + seeds `settings.yaml` → relaunch). The build stages `resources/relay` + `resources/bismuth-tools` (machine-wide install on boot). Deep detail: `docs/overview/install.md`.
+The bundled `/Applications` app **spawns its own `core` backend** (not `bun run dev`). `build-core-sidecar.ts` compiles `core/src/server.ts` to a standalone binary (`bun build --compile`, via `externalBin`); on launch `src/lib.rs` picks a free port, spawns the sidecar, kills it on exit, injects `window.__BISMUTH_API__` (read by `api.ts` `resolveBase`). A Finder-launched app has no shell env, so `lib.rs` resolves the vault from `config.json`; on **first run** (or a missing vault) it sets `window.__OA_FIRST_RUN__` and `index.tsx` renders the **Vault Intro** takeover (`app/src/intro/`): theme-picker + power-ups slideshow whose CTA invokes the Tauri `choose_first_vault` command (writes config + seeds `settings.yaml` → relaunch). The build stages `resources/relay` + `resources/bismuth-tools` (machine-wide install on boot). Deep detail: `docs/overview/install.md`.
 
 ### MCP Integration (`mcp/` workspace)
 
@@ -371,7 +371,7 @@ A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` refere
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
-A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. Loads per-session inside app terminals (bundled via `OA_RELAY_BUNDLE`; nothing in `~/.claude`). `terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim so a bare `claude` auto-loads the plugin. Hooks POST `/relay/*` (`SessionStart`/`UserPromptSubmit` register, `SubagentStart`/`SubagentStop` add/finish). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions. App-local; registry lives only while core runs.
+A small Claude Code plugin (`relay/`) reports each terminal-tab Claude session + its subagents to an **in-process registry** (`core/src/relay.ts`), powering the "agents" graph. Loads per-session inside app terminals (bundled via `BISMUTH_RELAY_BUNDLE`; nothing in `~/.claude`). `terminal.ts` injects `CLAUDE_TERMINAL_ID`/`CLAUDE_RELAY_URL` + a zsh shim so a bare `claude` auto-loads the plugin. Hooks POST `/relay/*` (`SessionStart`/`UserPromptSubmit` register, `SubagentStart`/`SubagentStop` add/finish). `agents.ts` builds the graph; `/agent-graph` prunes closed-tab sessions. App-local; registry lives only while core runs.
 
 ### Daemon Integration (`daemon/` workspace + `core/src/daemon.ts` + `daemonGraph.ts`)
 

@@ -38,7 +38,7 @@ function printHelp(): void {
     const usage = c.usage ? ` ${c.usage}` : "";
     console.log(`  ${k.padEnd(width)}  ${c.summary}${usage}`);
   }
-  console.log("\nmost commands need a vault: pass --vault <dir> or set OA_VAULT.");
+  console.log("\nmost commands need a vault: pass --vault <dir> or set BISMUTH_VAULT.");
 }
 
 const argv = Bun.argv.slice(2);

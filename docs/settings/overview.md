@@ -409,7 +409,7 @@ The frontend re-exports `DEFAULTS` from the schema spine — there is one copy, 
 
 ## Frontend Settings Store (`app/src/settings.ts`)
 
-The Solid.js store is initialized **synchronously** from `mergeServerSettings(readCache("oa-settings-cache-v1"))` — reading the last hydrated settings from `localStorage`. This ensures the correct theme/fonts/sizes paint on the first frame without a flash of defaults.
+The Solid.js store is initialized **synchronously** from `mergeServerSettings(readCache("bismuth-settings-cache-v1"))` — reading the last hydrated settings from `localStorage`. This ensures the correct theme/fonts/sizes paint on the first frame without a flash of defaults.
 
 ### Hydration Lifecycle
 
@@ -417,7 +417,7 @@ The Solid.js store is initialized **synchronously** from `mergeServerSettings(re
 2. **Boot hydrate**: `GET /settings` is fetched; result is `mergeServerSettings`'d and reconciled into the store via `solid-js/store` `reconcile`.
 3. **SSE re-hydrate**: when `settings.yaml` appears in an SSE change event, `GET /settings` is refetched. If the merged result equals the live store (own write echo), the update is a no-op.
 4. **Persist on change**: a 600ms debounced effect diffs the live store against `lastSnapshot` using `diffLeaves` and fires one `POST /set-setting` per changed leaf. Persistence only starts after the first hydrate, so the synchronous seed is never persisted over the user's file.
-5. **localStorage mirror**: a separate effect mirrors the live store to `localStorage` (key `oa-settings-cache-v1`) on every change, enabling the fast first-paint seed on next launch.
+5. **localStorage mirror**: a separate effect mirrors the live store to `localStorage` (key `bismuth-settings-cache-v1`) on every change, enabling the fast first-paint seed on next launch.
 
 ### `mergeServerSettings(parsed)`
 

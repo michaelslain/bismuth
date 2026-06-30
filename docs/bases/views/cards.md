@@ -24,7 +24,7 @@ The grid is a CSS `display: grid; grid-template-columns: repeat(5, 1fr)` — alw
 - The first column value as the card title chip (`renderValue(firstCol, row)`).
 - The **whole note body**, opened in a live `CardEditor` you can edit directly. The frontmatter and a leading `# Title` heading that merely repeats the card title are sliced off (`splitCard`, see "Inline Editing") so the title isn't shown twice and the YAML never appears in the card.
 - Editor-style task glyphs via `livePreview`: left-click toggles, right-click sets an explicit status — but here the line is also fully editable as text.
-- Clickable wikilinks/links that navigate (`oa-open` / external open).
+- Clickable wikilinks/links that navigate (`bismuth-open` / external open).
 
 Body cards take their natural height; the CSS masonry keeps short notes short rather than stretching them to fill rows.
 
@@ -128,10 +128,10 @@ The generated text cover has a 4px colored spine bar on the left edge and a grad
 
 ## Click-to-Open
 
-In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in a **new tab**. The card dispatches `new CustomEvent("oa-open", { detail: { path, newTab: true } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
+In **properties mode**, clicking anywhere on a card (or pressing Enter when the card has focus) opens the note in a **new tab**. The card dispatches `new CustomEvent("bismuth-open", { detail: { path, newTab: true } })`. The whole card is a `role="button"` with `tabindex={0}` for keyboard accessibility.
 
 In **body/tasks mode**, the card body is an editor, not a click-to-open target — a click places the cursor. Navigation happens only through inline links (`navigateOnLinkClick`):
-- Clicking a `[[wikilink]]` dispatches `oa-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).
+- Clicking a `[[wikilink]]` dispatches `bismuth-open` with the resolved path (`Note.md`, alias/`#heading` stripped via `m[1].split("|")[0].split("#")[0]`).
 - Clicking a `[text](url)` markdown link or a bare URL opens it externally (`openExternalUrl`).
 - Any other click falls through to `livePreview`, which places the cursor or toggles a task box.
 

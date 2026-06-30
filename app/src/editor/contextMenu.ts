@@ -1,7 +1,7 @@
 // app/src/editor/contextMenu.ts
 // ONE context-menu path for every editor mark — spelling, grammar, and
 // property/settings validation. Right-clicking a diagnostic emits a single
-// `oa-context-menu` event that App renders with the shared <ContextMenu>
+// `bismuth-context-menu` event that App renders with the shared <ContextMenu>
 // component, so all menus look and behave identically. Right-clicking off a mark
 // returns false, so the normal pane context menu opens instead.
 import { forEachDiagnostic, type Action } from "@codemirror/lint";
@@ -55,7 +55,7 @@ export function editorContextMenu(): Extension {
       // non-clickable (disabled) row, not a fake action.
       if (!items.length) items.push({ label: hit.message, onSelect: () => {}, disabled: true });
 
-      window.dispatchEvent(new CustomEvent<EditorMenuEvent>("oa-context-menu", { detail: { x: event.clientX, y: event.clientY, items } }));
+      window.dispatchEvent(new CustomEvent<EditorMenuEvent>("bismuth-context-menu", { detail: { x: event.clientX, y: event.clientY, items } }));
       return true;
     },
   });

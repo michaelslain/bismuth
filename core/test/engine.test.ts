@@ -6,8 +6,8 @@ import { writeNote } from "../src/files";
 import { buildGraph } from "../src/engine";
 
 test("merges vault + memory and adds cross-brain about edges", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-v-"));
-  const mem = mkdtempSync(join(tmpdir(), "oa-eng-m-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-v-"));
+  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-m-"));
   await writeNote(vault, "internship.md", "# Internship");
   await writeNote(mem, "michael-profile.md", "He is working on [[internship]].");
   const g = await buildGraph(vault, mem);
@@ -19,8 +19,8 @@ test("merges vault + memory and adds cross-brain about edges", async () => {
 });
 
 test("path-style memory reference [[folder/Note]] creates an about edge", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-pathabout-"));
-  const mem = mkdtempSync(join(tmpdir(), "oa-eng-pathabout-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-pathabout-"));
+  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-pathabout-mem-"));
   await writeNote(vault, "reading/Deep Note.md", "# Deep Note");
   await writeNote(mem, "profile.md", "About [[reading/Deep Note]].");
   const g = await buildGraph(vault, mem);
@@ -30,21 +30,21 @@ test("path-style memory reference [[folder/Note]] creates an about edge", async 
 });
 
 test("works with no memory dir", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-v2-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-v2-"));
   await writeNote(vault, "a.md", "# A");
   const g = await buildGraph(vault);
   expect(g.nodes.some((n) => n.id === "a")).toBe(true);
 });
 
 test("empty vault produces an empty graph", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-empty-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-empty-"));
   const g = await buildGraph(vault);
   expect(g.nodes).toEqual([]);
 });
 
 test("about edges only created for vault basenames", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-about-"));
-  const mem = mkdtempSync(join(tmpdir(), "oa-eng-about-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-about-"));
+  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-about-mem-"));
   await writeNote(vault, "real.md", "");
   await writeNote(mem, "memory.md", "Reference to [[real]] and [[fake]]");
   const g = await buildGraph(vault, mem);
@@ -55,8 +55,8 @@ test("about edges only created for vault basenames", async () => {
 });
 
 test("memory references without vault match are ignored", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-nomatch-"));
-  const mem = mkdtempSync(join(tmpdir(), "oa-eng-nomatch-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-nomatch-"));
+  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-nomatch-mem-"));
   await writeNote(vault, "exists.md", "");
   await writeNote(mem, "memory.md", "References [[missing1]] and [[missing2]]");
   const g = await buildGraph(vault, mem);
@@ -65,7 +65,7 @@ test("memory references without vault match are ignored", async () => {
 });
 
 test("two disconnected clusters get distinct community ids", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-comm-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-comm-"));
   // Cluster 1: a <-> b <-> c (linked). Cluster 2: x <-> y <-> z (linked). No cross-links.
   await writeNote(vault, "a.md", "[[b]] [[c]]");
   await writeNote(vault, "b.md", "[[a]] [[c]]");
@@ -84,8 +84,8 @@ test("two disconnected clusters get distinct community ids", async () => {
 });
 
 test("multiple memory notes can link to same vault note", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-eng-multi-"));
-  const mem = mkdtempSync(join(tmpdir(), "oa-eng-multi-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-eng-multi-"));
+  const mem = mkdtempSync(join(tmpdir(), "bismuth-eng-multi-mem-"));
   await writeNote(vault, "target.md", "");
   await writeNote(mem, "memory1.md", "[[target]]");
   await writeNote(mem, "memory2.md", "Also [[target]]");

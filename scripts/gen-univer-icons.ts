@@ -81,7 +81,7 @@ for (const [univer, lucide] of Object.entries(MAP)) {
     continue;
   }
   const uri = `data:image/svg+xml,${encodeURIComponent(svg)}`;
-  const sel = `.oa-sheet svg.univerjs-icon-${univer}-icon`;
+  const sel = `.bismuth-sheet svg.univerjs-icon-${univer}-icon`;
   css +=
     `${sel}{-webkit-mask:url("${uri}") center/contain no-repeat;` +
     `mask:url("${uri}") center/contain no-repeat;background-color:currentColor!important}\n` +

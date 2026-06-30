@@ -9,7 +9,7 @@
 //
 // Usage:
 //   class MyWidget extends SolidWidget {
-//     constructor(private src: string) { super("oa-my-block"); }
+//     constructor(private src: string) { super("bismuth-my-block"); }
 //     eq(other: MyWidget) { return other.src === this.src; }
 //     protected renderSolid(container: HTMLElement): void {
 //       render(() => <MyComponent src={this.src} />, container);

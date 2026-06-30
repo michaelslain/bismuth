@@ -31,6 +31,8 @@ import { UpdateBanner } from "./UpdateBanner";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { pushClosedSession, popClosedSession } from "./closedSession";
+import { setPendingAnchor } from "./pendingAnchor";
+import { installNativeDrop, uninstallNativeDrop } from "./nativeDrop";
 import { isReloadNavigation } from "./navType";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
@@ -81,11 +83,11 @@ function applyView(graph: GraphData, view: ViewLayout | undefined): GraphData {
 // instead: the primary window ("main") keeps the historical key, so an existing saved
 // layout still loads; opened windows carry a distinct id via `?w=`. See windowId.ts.
 const TABS_STORAGE_KEY = tabsStorageKey(resolveWindowId());
-const SIDEBAR_STORAGE_KEY = "oa-sidebar-visible-v1";
-const GRAPH_CACHE_KEY = "oa-graph-cache-v1";
+const SIDEBAR_STORAGE_KEY = "bismuth-sidebar-visible-v1";
+const GRAPH_CACHE_KEY = "bismuth-graph-cache-v1";
 // Mirrors the key the inline <head> script in index.html reads to apply the theme before
 // the bundle loads. Bump both together if the var map shape changes.
-const THEME_VARS_KEY = "oa-theme-vars-v1";
+const THEME_VARS_KEY = "bismuth-theme-vars-v1";
 // Max width of the floating drag-ghost. A pane header spans the whole pane, which
 // looked oversized as a ghost; cap it to a tab-like chip.
 const GHOST_MAX_W = 200;
@@ -112,7 +114,7 @@ export default function App() {
 
   // Restore persisted tab/pane layout at setup (before any persist effect runs, so we never
   // clobber storage with the initial empty state). The graph/vault list isn't loaded yet, so we
-  // keep every leaf here; the oa-deleted reconciliation prunes any gone file once edits occur.
+  // keep every leaf here; the bismuth-deleted reconciliation prunes any gone file once edits occur.
   //
   // Reload vs. cold launch: a RELOAD (Cmd+R / dev hot-reload) restores the tabs as they were. A
   // COLD launch — the window/app having been closed and reopened — does NOT auto-restore: the prior
@@ -295,7 +297,7 @@ export default function App() {
   const leafIdForContent = (content: string): string | undefined =>
     activeTab() ? leaves(activeTab()!.root).find((l) => l.content === content)?.id : undefined;
   // Right-click menu for an editor mark (spelling / grammar / property suggestions),
-  // emitted by editor/contextMenu.ts as an 'oa-context-menu' event. Rendered with the
+  // emitted by editor/contextMenu.ts as an 'bismuth-context-menu' event. Rendered with the
   // SAME <ContextMenu> component as the pane menu — one menu style across the app.
   const [editorMenu, setEditorMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   // The "+" toolbar create-chooser menu (same <ContextMenu> surface as the others).
@@ -305,8 +307,8 @@ export default function App() {
       const d = (e as CustomEvent<{ x: number; y: number; items: MenuItem[] }>).detail;
       openContextMenu(d.x, d.y, d.items, setEditorMenu);
     };
-    window.addEventListener("oa-context-menu", onCtx);
-    onCleanup(() => window.removeEventListener("oa-context-menu", onCtx));
+    window.addEventListener("bismuth-context-menu", onCtx);
+    onCleanup(() => window.removeEventListener("bismuth-context-menu", onCtx));
   });
 
   // Warm the lazy editor chunk (FileView → Editor → @codemirror/* + harper glue,
@@ -512,11 +514,11 @@ export default function App() {
   };
   const openSearch = () => openInNewTab(SEARCH_TAB);
   const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
-  const newNote = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "file" } }));
-  const newFolder = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "dir" } }));
+  const newNote = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "file" } }));
+  const newFolder = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "dir" } }));
   // A base is a `.md` seeded with `type: base` frontmatter — FileTree.doCreate handles
   // the template + inline rename, same path as New note (just a different `kind`).
-  const newBase = () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "base" } }));
+  const newBase = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "base" } }));
   // Export the current tab: open the export tab for the focused file. Falls back to the
   // active tab's content for single-pane tabs, so "export" acts on whatever you're on.
   // Only real, exportable documents (note/base/sheet/drawing) qualify — sentinels like the
@@ -716,13 +718,13 @@ export default function App() {
     pushCmd("new-note");
     pushCmd("new-folder");
     // "New base" expands to a submenu — one entry per Bases view kind — each seeding a
-    // base with that view via the same oa-new → FileTree.doCreate path.
+    // base with that view via the same bismuth-new → FileTree.doCreate path.
     items.push({
       label: "New base",
       icon: "Database",
       submenu: BASE_VIEW_KINDS.map((v) => ({
         label: v.label, icon: v.icon,
-        onSelect: () => window.dispatchEvent(new CustomEvent("oa-new", { detail: { kind: "base", view: v.view } })),
+        onSelect: () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "base", view: v.view } })),
       })),
     });
     pushCmd("new-spreadsheet");
@@ -862,7 +864,18 @@ export default function App() {
       if (!tab) return;
       setTabs((ts) => [...ts, tab]);
       setActiveTabId(tab.id);
-      for (const l of leaves(tab.root)) recordNav(l.id, l.content);
+      // Carry the closed tab's navigation history across the id-reviving round-trip so Cmd+[ /
+      // Cmd+] still walk it. The revive assigns fresh leaf ids, but closeTabById never deleted the
+      // old leaves' history entries — so map old→new leaf (leaves() walks in the same stable order
+      // pre/post round-trip) and copy each stack onto the new id. Falls back to a fresh single-entry
+      // history for any leaf that had none.
+      const oldLeaves = leaves(last.root);
+      const newLeaves = leaves(tab.root);
+      newLeaves.forEach((nl, i) => {
+        const prev = oldLeaves[i] ? histories.get(oldLeaves[i].id) : undefined;
+        if (prev) histories.set(nl.id, { stack: [...prev.stack], idx: prev.idx });
+        else recordNav(nl.id, nl.content);
+      });
       return;
     }
     // Nothing closed in THIS window's session — fall back to the most recently closed WINDOW
@@ -1137,29 +1150,49 @@ export default function App() {
     onCleanup(() => clearInterval(t));
   });
   const registerFileEvents = () => {
-    // detail is either a path string (open in the active pane) or { path, newTab } —
-    // a card click passes { path, newTab: true } to open the note in its own tab.
+    // detail is either a path string (open in the active pane) or { path, newTab, heading } —
+    // a card click passes { path, newTab: true } to open the note in its own tab; a
+    // `[[File#Heading]]` wikilink click passes { path, heading } to scroll to that heading.
     const onOpen = (e: Event) => {
-      const d = (e as CustomEvent).detail as string | { path: string; newTab?: boolean };
-      if (typeof d === "string") openFile(d);
-      else if (d && typeof d.path === "string") (d.newTab ? openInNewTab : openFile)(d.path);
+      const d = (e as CustomEvent).detail as string | { path: string; newTab?: boolean; heading?: string };
+      if (typeof d === "string") { openFile(d); return; }
+      if (!d || typeof d.path !== "string") return;
+      if (d.heading) {
+        // Stash for the fresh-open case (a newly-created editor view consumes it), AND fire an
+        // event for the already-open case (the view exists, so openFile early-returns and never
+        // rebuilds — the live editor scrolls in response to the event instead).
+        setPendingAnchor(d.path, d.heading);
+        (d.newTab ? openInNewTab : openFile)(d.path);
+        window.dispatchEvent(new CustomEvent("bismuth-reveal-heading", { detail: { path: d.path, heading: d.heading } }));
+        return;
+      }
+      (d.newTab ? openInNewTab : openFile)(d.path);
     };
     const onDeleted = (e: Event) => closeDeleted((e as CustomEvent).detail as string);
     const onMoved = (e: Event) => {
       const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
       renamePath(from, to);
     };
-    window.addEventListener("oa-open", onOpen);
-    window.addEventListener("oa-deleted", onDeleted);
-    window.addEventListener("oa-moved", onMoved);
+    window.addEventListener("bismuth-open", onOpen);
+    window.addEventListener("bismuth-deleted", onDeleted);
+    window.addEventListener("bismuth-moved", onMoved);
     onCleanup(() => {
-      window.removeEventListener("oa-open", onOpen);
-      window.removeEventListener("oa-deleted", onDeleted);
-      window.removeEventListener("oa-moved", onMoved);
+      window.removeEventListener("bismuth-open", onOpen);
+      window.removeEventListener("bismuth-deleted", onDeleted);
+      window.removeEventListener("bismuth-moved", onMoved);
     });
   };
 
   onMount(registerFileEvents);
+
+  // Bridge Tauri's native OS file drag-drop into `bismuth-native-drag` events (no-op in the
+  // browser). Lets the terminal insert a dragged file's REAL path and the editor embed a real
+  // file, instead of round-tripping bytes through the vault. See nativeDrop.ts. Tear down on
+  // cleanup so an HMR/remount doesn't leave a second Tauri subscription firing each drop twice.
+  onMount(() => {
+    void installNativeDrop();
+    onCleanup(() => uninstallNativeDrop());
+  });
 
   // Run the power-ups the user chose on the first-run intro (persisted to localStorage there,
   // since the intro has no backend). Fires once after the vault opens, then clears the flag.
@@ -1167,9 +1200,9 @@ export default function App() {
   onMount(() => {
     // Only a post-intro launch carries this key. A normal launch has none — and an ABSENT
     // key must not be read as "deselected everything", or we'd PATCH settings on every boot.
-    const raw = localStorage.getItem("oa-first-run-powerups");
+    const raw = localStorage.getItem("bismuth-first-run-powerups");
     if (raw === null) return;
-    localStorage.removeItem("oa-first-run-powerups");
+    localStorage.removeItem("bismuth-first-run-powerups");
     let chosen: string[];
     try {
       chosen = JSON.parse(raw);

@@ -21,7 +21,7 @@ Run \`bun install\` to set up every workspace at once.
 
 ## Configuration
 
-Set the OA_VAULT environment variable before launching the dev server.
+Set the BISMUTH_VAULT environment variable before launching the dev server.
 The flux-capacitor must be calibrated for time travel to work.
 `;
 
@@ -52,7 +52,7 @@ A nested h3 heading whose depth must round-trip through readDoc unchanged.
 `;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), "oa-mcp-docs-"));
+  root = mkdtempSync(join(tmpdir(), "bismuth-mcp-docs-"));
   writeFileSync(join(root, "getting-started.md"), GETTING_STARTED);
   writeFileSync(join(root, "graph-guide.md"), GRAPH_GUIDE);
   mkdirSync(join(root, "internals"), { recursive: true });
@@ -131,7 +131,7 @@ test("readDoc returns the full document content", () => {
 
 test("readDoc with a section returns only that section", () => {
   const section = readDoc(root, "getting-started.md", "Configuration");
-  expect(section).toContain("OA_VAULT");
+  expect(section).toContain("BISMUTH_VAULT");
   expect(section).toContain("flux-capacitor");
   // Scoped to the requested section — earlier sections are excluded.
   expect(section).not.toContain("bun install");
@@ -150,10 +150,10 @@ test("readDoc preserves the source heading depth (### stays ###)", () => {
 
 test("readDoc rejects a path-traversal attempt", () => {
   // A secret living outside the docs root must stay unreachable.
-  const secret = join(root, "..", "oa-mcp-secret.md");
+  const secret = join(root, "..", "bismuth-mcp-secret.md");
   writeFileSync(secret, "# Secret\ntop secret payload");
   try {
-    expect(() => readDoc(root, "../oa-mcp-secret.md")).toThrow();
+    expect(() => readDoc(root, "../bismuth-mcp-secret.md")).toThrow();
   } finally {
     rmSync(secret, { force: true });
   }

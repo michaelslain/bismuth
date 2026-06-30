@@ -15,6 +15,7 @@ import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
 import { primeNoteCache } from "./noteCache";
 import { livePreview } from "./editor/livePreview";
+import { enterKeymap } from "./editor/enterKeymap";
 import { requestRelint } from "./editor/relint";
 import { notePathFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
@@ -37,7 +38,9 @@ import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
-import { parseWikilink, resolveNotePath, type NoteCandidate } from "./editor/wikilink";
+import { parseWikilink, resolveNotePath, findHeadingLineIndex, type NoteCandidate } from "./editor/wikilink";
+import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
+import type { NativeDragDetail } from "./nativeDrop";
 import { findBareUrls } from "./editor/urls";
 import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
@@ -248,6 +251,54 @@ async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, n
   }
 }
 
+/** Embeddable by file extension (a dragged OS path has no MIME). Mirrors isEmbeddableFile's
+ *  extension fallback for the native-drop path, where we only have a filesystem path string. */
+const isEmbeddablePath = (path: string): boolean => {
+  const base = path.split("/").pop() ?? path;
+  const dot = base.lastIndexOf(".");
+  return dot !== -1 && EMBEDDABLE_EXT.has(base.slice(dot + 1).toLowerCase());
+};
+
+/** Read each dragged OS file's bytes (Tauri fs plugin — paths are real on-disk paths from the
+ *  native drag-drop handler) and embed it through the SAME copy-into-attachments + insert flow as
+ *  an HTML5 image drop. Only reached under Tauri (the `bismuth-native-drag` event never fires in a
+ *  browser), so the dynamic fs-plugin import is desktop-only. */
+async function embedNativePaths(view: EditorView, paths: string[], notePath: string | null): Promise<void> {
+  let readFile: (p: string) => Promise<Uint8Array>;
+  try {
+    ({ readFile } = await import("@tauri-apps/plugin-fs"));
+  } catch (e) {
+    pushToast("Couldn't read dropped file — see console");
+    console.error("fs plugin import failed", e);
+    return;
+  }
+  for (const p of paths) {
+    try {
+      const bytes = await readFile(p);
+      const name = p.split("/").pop() ?? p;
+      await uploadAndInsert(view, new Blob([bytes as BlobPart]), name, notePath);
+    } catch (e) {
+      pushToast(`Couldn't read ${p.split("/").pop() ?? p}`);
+      console.error("native drop read failed", e);
+    }
+  }
+}
+
+/** Scroll a CodeMirror view to the ATX heading whose text matches `heading` (the anchor of a
+ *  `[[File#Heading]]` link), placing the caret at its line start. Reuses the same dispatch +
+ *  EditorView.scrollIntoView primitive the find bar (findPanel.revealFrom) uses. Returns false
+ *  when no heading matches, so the caller can fall through to the normal scroll-restore. */
+function revealHeading(view: EditorView, heading: string): boolean {
+  const idx = findHeadingLineIndex(view.state.doc.toString().split("\n"), heading);
+  if (idx < 0) return false;
+  const pos = view.state.doc.line(idx + 1).from;
+  view.dispatch({
+    selection: { anchor: pos },
+    effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }),
+  });
+  return true;
+}
+
 export function Editor(props: { path: string | null; initialText?: string; onSaved: () => void; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   let host!: HTMLDivElement;
   let wrapper!: HTMLDivElement;
@@ -337,7 +388,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     e.preventDefault();
     e.stopPropagation();
     if (searchPanelOpen(view.state)) {
-      const inp = view.dom.querySelector<HTMLInputElement>(".oa-find-input");
+      const inp = view.dom.querySelector<HTMLInputElement>(".bismuth-find-input");
       inp?.focus();
       inp?.select();
     } else {
@@ -347,6 +398,46 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   onMount(() => {
     wrapper.addEventListener("keydown", onFindKey, true);
     onCleanup(() => wrapper.removeEventListener("keydown", onFindKey, true));
+  });
+
+  // Scroll to a heading when a `[[File#Heading]]` link targets a note THIS editor already
+  // shows (App early-returns from openFile without rebuilding the view, so the creation-time
+  // anchor never fires — this event is the live path). Gated to our current buffer.
+  onMount(() => {
+    const onReveal = (e: Event): void => {
+      const d = (e as CustomEvent).detail as { path: string; heading: string };
+      if (!view || !d?.heading || d.path !== activePath) return;
+      // Already-open note: the view isn't rebuilt, so consume the pending anchor here too — else a
+      // later unrelated rebuild (e.g. a settings toggle) would re-fire this scroll out of nowhere.
+      clearPendingAnchor(d.path);
+      revealHeading(view, d.heading);
+    };
+    window.addEventListener("bismuth-reveal-heading", onReveal);
+    onCleanup(() => window.removeEventListener("bismuth-reveal-heading", onReveal));
+  });
+
+  // Tauri native OS file drop onto the editor. Under the native drag-drop handler the CM `drop`
+  // event no longer fires for external files (and a browser File only ever exposes a basename), so
+  // we embed from the REAL path nativeDrop.ts forwards — handled only when the cursor is over THIS
+  // editor's scroller. No-op in the browser (the event never fires; the CM `drop` handler serves it).
+  onMount(() => {
+    const onNativeDrag = (e: Event): void => {
+      const d = (e as CustomEvent<NativeDragDetail>).detail;
+      if (!view || !d || d.type !== "drop" || d.paths.length === 0) return;
+      const r = view.scrollDOM.getBoundingClientRect();
+      // A hidden (display:none) pane has a 0×0 rect at (0,0); without this guard a drop forwarded
+      // at the viewport corner (0,0) would hit-test true for EVERY backgrounded editor at once.
+      if (r.width === 0 && r.height === 0) return;
+      if (d.x < r.left || d.x > r.right || d.y < r.top || d.y > r.bottom) return;
+      const embeddable = d.paths.filter(isEmbeddablePath);
+      if (embeddable.length === 0) return;
+      const v = view;
+      const pos = v.posAtCoords({ x: d.x, y: d.y });
+      if (pos != null) v.dispatch({ selection: { anchor: pos } });
+      void embedNativePaths(v, embeddable, activePath);
+    };
+    window.addEventListener("bismuth-native-drag", onNativeDrag);
+    onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
   });
 
   // Re-validate the open buffer when the property registry changes — e.g. you add
@@ -372,6 +463,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       clearTimeout(reorderTimer); // drop any pending B12 reorder for the buffer being torn down
       if (view) unregisterEditor(view);
       view?.destroy();
+      // Null it after destroy so any in-flight rAF closures (e.g. the heading-reveal re-assert,
+      // which dispatches) become no-ops on full unmount — `view === v` would otherwise still hold
+      // for the destroyed instance and dispatch on a destroyed view throws.
+      view = undefined;
     });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
     pendingSave = false;
@@ -568,6 +663,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             { key: "Mod-i", run: toggleItalic },
           ])),
           markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
+          // Enter: continue list/blockquote markup, else a PLAIN newline (no auto-indent
+          // that would leak a stray leading space / split a ``` fence). Notes only.
+          enterKeymap,
           syntaxHighlighting(codeHighlightStyle),
           queryBlock(() => path),
           embedBlock(props.noteNames),
@@ -577,6 +675,8 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             getSchema: propertyRegistry,
             getIconNames: iconNames,
             inFrontmatter: isInFrontmatter,
+            // `[[Note#heading]]` completion fetches the target note's body to list its headings.
+            readNote: (p) => api.read(p),
           }),
           yamlSchema({
             getSchema: propertyRegistry,
@@ -679,12 +779,14 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               for (const m of line.text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
                 const s = line.from + (m.index ?? 0), en = s + m[0].length;
                 if (pos >= s && pos <= en) {
-                  const { target } = parseWikilink(m[1]);
+                  const { target, heading } = parseWikilink(m[1]);
                   // Wikilinks are filename-based: resolve the basename to its real vault
                   // path so subfolder notes open (and highlight) correctly. An unresolved
                   // target opens as a new note at the typed name (read falls back to "").
                   const resolved = resolveNotePath(target, props.noteNames());
-                  window.dispatchEvent(new CustomEvent("oa-open", { detail: (resolved ?? target) + ".md" }));
+                  // Object detail (not a bare string) so a `#heading` anchor rides along —
+                  // App routes it through pendingAnchor → the opened editor scrolls to it.
+                  window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }));
                   return true;
                 }
               }
@@ -715,13 +817,42 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     trackEditor(view);
     setEditorFlush(view, flushSaveAsync); // so a rename can persist this buffer before moving (B6)
 
+    // A pending `[[File#Heading]]` anchor (set by App when this buffer was opened via a
+    // heading link) wins over the saved scroll position: jump to the heading instead of
+    // restoring the last reader position. One-shot (take-and-clear) so an unrelated view
+    // rebuild — e.g. flipping an editor setting — doesn't re-hijack the scroll. Re-assert
+    // across a couple of frames because the same async line-height measure that resets
+    // scrollTop (see below) can also undo a scrollIntoView applied at creation time.
+    // revealHeading returns false when the heading isn't in the doc (renamed / typo / stale
+    // autocomplete); only a SUCCESSFUL reveal suppresses the scroll-restore below — otherwise we'd
+    // strand the reader at the top instead of returning them to their saved position.
+    const anchor = takePendingAnchor(path);
+    let revealed = false;
+    if (anchor && view) {
+      const v = view;
+      revealed = revealHeading(v, anchor);
+      if (revealed) {
+        // Re-assert across the next several frames: CM's async line-height measure (block widgets,
+        // wrapping) can scroll back to the top after the initial reveal — the same race the
+        // scroll-restore below hardens against. rAF (not requestMeasure) so re-dispatch is legal.
+        let frames = 0;
+        const repin = () => {
+          if (view !== v || frames++ >= 6) return;
+          revealHeading(v, anchor);
+          requestAnimationFrame(repin);
+        };
+        requestAnimationFrame(repin);
+      }
+    }
+
     // Restore the reader's scroll position for this buffer (saved when its previous
     // view was torn down on a tab switch). A plain scrollTop set right after creation
     // doesn't stick: CodeMirror measures line heights asynchronously (line wrapping +
     // live-preview block widgets), and that pass resets scrollTop to 0. Re-assert inside
     // requestMeasure across a few cycles so it survives the layout — same approach the
-    // external-reload reconcile above uses.
-    const restore = loadScroll(path);
+    // external-reload reconcile above uses. Skipped when a heading anchor already claimed
+    // the scroll.
+    const restore = revealed ? undefined : loadScroll(path);
     if (restore != null && restore > 0) {
       const v = view;
       v.scrollDOM.scrollTop = restore;

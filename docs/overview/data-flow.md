@@ -380,7 +380,7 @@ Running a PivotMDS + force simulation in the browser on a main-thread `requestAn
 Layout results are cached at two levels:
 
 1. **In-memory** (`memCache: Map<string, Layout>`) — survives for the lifetime of the server process.
-2. **On-disk** (`~/.bismuth/layout-cache/<sig>.json`, override `OA_LAYOUT_CACHE_DIR`) — survives server restarts. It lives in a **durable** app dir, not `os.tmpdir()` (which macOS purges), so reopens stay cache hits; and **not** inside the vault or memory directories — writing inside the vault would trip the file watcher and create an infinite invalidate → rebuild → recompute → rewrite loop.
+2. **On-disk** (`~/.bismuth/layout-cache/<sig>.json`, override `BISMUTH_LAYOUT_CACHE_DIR`) — survives server restarts. It lives in a **durable** app dir, not `os.tmpdir()` (which macOS purges), so reopens stay cache hits; and **not** inside the vault or memory directories — writing inside the vault would trip the file watcher and create an infinite invalidate → rebuild → recompute → rewrite loop.
 
 Cache keys are derived from `graphSig(graph, vaultKey)`:
 

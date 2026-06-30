@@ -2,12 +2,12 @@
 // server process's memory and therefore can't be computed by a standalone CLI
 // process: the relay/agent graph (in-memory registry) and any route you want to
 // hit directly. Everything else in the CLI works headlessly without a server; these
-// don't. API base: --api <url> → BISMUTH_API/OA_API env → http://localhost:4321.
+// don't. API base: --api <url> → BISMUTH_API env → http://localhost:4321.
 import type { CommandMap } from "../types";
 import { flag, positionals, fail, out } from "../args";
 
 function apiBase(args: string[]): string {
-  return flag(args, "api") ?? process.env.BISMUTH_API ?? process.env.OA_API ?? "http://localhost:4321";
+  return flag(args, "api") ?? process.env.BISMUTH_API ?? "http://localhost:4321";
 }
 
 async function call(base: string, method: string, path: string, body?: unknown): Promise<unknown> {

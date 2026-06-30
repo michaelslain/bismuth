@@ -1,5 +1,5 @@
 // app/src/ui/popover/PopoverList.tsx
-// The popover SURFACE: the .oa-popover container + a list of <MenuRow>s with
+// The popover SURFACE: the .bismuth-popover container + a list of <MenuRow>s with
 // separators. Pure presentation — no positioning, no dismiss, no keyboard (the
 // parent owns those, e.g. ContextMenu adds cursor placement + outside-click +
 // createMenuNav). This is the one Solid surface every menu-style popover renders,
@@ -33,11 +33,11 @@ export function PopoverList(props: {
   ref?: (el: HTMLDivElement) => void;
 }) {
   return (
-    <div ref={props.ref} class={`oa-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
+    <div ref={props.ref} class={`bismuth-popover ${props.class ?? ""}`} style={props.style} onClick={(e) => e.stopPropagation()}>
       <For each={props.items}>
         {(item, i) => (
           <>
-            {item.separatorBefore && <div class="oa-popover-sep" />}
+            {item.separatorBefore && <div class="bismuth-popover-sep" />}
             <MenuRow
               label={item.label}
               icon={item.icon}

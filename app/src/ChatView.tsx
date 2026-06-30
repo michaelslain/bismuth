@@ -28,8 +28,8 @@ import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest } from "../../core/src/chat";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
-// honors ?api= > window.__OA_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
-// sidecar (injected as __OA_API__) and ?api= windows are reached too — never hardcode a host.
+// honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
+// sidecar (injected as __BISMUTH_API__) and ?api= windows are reached too — never hardcode a host.
 const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 
 // The permission modes Claude Code supports, surfaced as a header selector. These are the
@@ -186,8 +186,23 @@ export function ChatView(props: { chatId: string }) {
     return true;
   };
 
-  // Keep the view pinned to the latest content. Called after each appended/streamed chunk.
-  const scrollToBottom = () => {
+  // Whether the view is "following" the bottom of the transcript. True while pinned to the latest
+  // content; flips to false the moment the user scrolls up to read earlier output, and back to true
+  // when they return to (near) the bottom. We can't reliably read scroll position right before each
+  // append — Solid reconciles the new row synchronously, so scrollHeight has already grown by the
+  // time a mutation helper runs — so we track it from a scroll listener instead (mirrors Terminal).
+  let following = true;
+  const onListScroll = () => {
+    if (!list) return;
+    following = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  };
+
+  // Keep the view pinned to the latest content, but ONLY if the user is still following the bottom.
+  // If they've scrolled up to read, leave their position alone instead of yanking them down on every
+  // streamed chunk. `force` (used when the user sends a message) re-pins regardless.
+  const scrollToBottom = (force = false) => {
+    if (force) following = true;
+    if (!following) return;
     queueMicrotask(() => {
       if (list) list.scrollTop = list.scrollHeight;
     });
@@ -359,7 +374,7 @@ export function ChatView(props: { chatId: string }) {
     setDraft("");
     setStreaming(true);
     closeSlash();
-    scrollToBottom();
+    scrollToBottom(true); // sending always re-pins to the bottom
     queueMicrotask(() => autoGrow());
   };
 
@@ -466,7 +481,7 @@ export function ChatView(props: { chatId: string }) {
     // If the socket isn't open yet, stash it so onopen flushes the resume instead of dropping it.
     clearTimeout(reconnectTimer);
     if (!sendJson({ type: "resume", sessionId })) pendingResume = sessionId;
-    scrollToBottom();
+    scrollToBottom(true); // jump to the latest turn of the resumed conversation
     ta?.focus();
   };
 
@@ -542,16 +557,16 @@ export function ChatView(props: { chatId: string }) {
     autoGrow();
   });
 
-  // A rendered prose bubble can carry `[[wikilinks]]` (as `.oa-wikilink` anchors with a
-  // `data-href`) — open them in-app via the global `oa-open` event, the same navigation the
+  // A rendered prose bubble can carry `[[wikilinks]]` (as `.bismuth-wikilink` anchors with a
+  // `data-href`) — open them in-app via the global `bismuth-open` event, the same navigation the
   // rest of the app uses. Delegated on the list so it covers every (re-rendered) bubble.
   const onListClick = (e: MouseEvent) => {
-    const a = (e.target as HTMLElement)?.closest?.("a.oa-wikilink") as HTMLElement | null;
+    const a = (e.target as HTMLElement)?.closest?.("a.bismuth-wikilink") as HTMLElement | null;
     if (!a) return;
     const href = a.getAttribute("data-href");
     if (!href) return;
     e.preventDefault();
-    window.dispatchEvent(new CustomEvent("oa-open", { detail: href }));
+    window.dispatchEvent(new CustomEvent("bismuth-open", { detail: href }));
   };
 
   onMount(() => {
@@ -633,7 +648,7 @@ export function ChatView(props: { chatId: string }) {
           </div>
         }
       >
-        <div class="chat-list" ref={list!} onClick={onListClick}>
+        <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll}>
           <Show when={transcript.length === 0}>
             <div class="chat-empty">
               <p>Ask Claude anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.</p>

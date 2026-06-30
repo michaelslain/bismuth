@@ -62,7 +62,7 @@ function lineIndentWidth(text: string): number {
 // them — a block-replace would also swallow the surrounding line breaks and confuse the caret,
 // so we keep each line in the layout but collapse it to zero height with `display:none`.
 const hideNonTaskTheme = EditorView.theme({
-  ".cm-line.oa-card-hidden": { display: "none" },
+  ".cm-line.bismuth-card-hidden": { display: "none" },
 });
 // `focused` gates the caret-line exception: only protect the line the caret sits on while the
 // editor is FOCUSED (so editing a heading/prose doesn't make it vanish mid-edit). An UNFOCUSED
@@ -88,7 +88,7 @@ function hiddenLineDecorations(state: EditorState, focused: boolean): Decoration
   }
   return Decoration.set(ranges.map((r) => r.deco.range(r.from, r.from)));
 }
-const hiddenLineClass = Decoration.line({ class: "oa-card-hidden" });
+const hiddenLineClass = Decoration.line({ class: "bismuth-card-hidden" });
 // A ViewPlugin (not decorations.compute) so we can read view.hasFocus + recompute on focus change.
 const hideNonTaskLines = [
   ViewPlugin.fromClass(
@@ -185,7 +185,7 @@ class DoneFoldWidget extends WidgetType {
   }
   toDOM(view: EditorView): HTMLElement {
     const el = document.createElement("button");
-    el.className = "oa-card-done-toggle";
+    el.className = "bismuth-card-done-toggle";
     el.textContent = `${this.expanded ? "▾" : "▸"} ${this.count} completed`;
     el.addEventListener("mousedown", (e) => {
       e.preventDefault(); // don't move the caret into the (possibly hidden) run first
@@ -214,7 +214,7 @@ function doneFoldDecorations(state: EditorState): DecorationSet {
 }
 
 const doneFoldTheme = EditorView.theme({
-  ".oa-card-done-toggle": {
+  ".bismuth-card-done-toggle": {
     display: "inline-flex",
     alignItems: "center",
     marginTop: "6px",
@@ -226,7 +226,7 @@ const doneFoldTheme = EditorView.theme({
     fontSize: "12px",
     color: "var(--text-muted)",
   },
-  ".oa-card-done-toggle:hover": { color: "var(--fg)" },
+  ".bismuth-card-done-toggle:hover": { color: "var(--fg)" },
 });
 
 function cardDoneFold(path: string) {
@@ -446,7 +446,7 @@ function navigateOnLinkClick(e: MouseEvent, view: EditorView): boolean {
     const s = line.from + (m.index ?? 0);
     if (pos >= s && pos <= s + m[0].length) {
       const target = m[1].split("|")[0].split("#")[0].trim();
-      window.dispatchEvent(new CustomEvent("oa-open", { detail: target.endsWith(".md") ? target : `${target}.md` }));
+      window.dispatchEvent(new CustomEvent("bismuth-open", { detail: target.endsWith(".md") ? target : `${target}.md` }));
       return true;
     }
   }

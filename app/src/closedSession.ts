@@ -11,7 +11,7 @@
 //
 // Values are opaque serializeTabs() blobs (panes.ts) — this module never parses them.
 
-const KEY = "oa-closed-sessions-v1";
+const KEY = "bismuth-closed-sessions-v1";
 const CAP = 10;
 
 /** Pure stack push with a cap (oldest dropped). Exported for unit testing. */

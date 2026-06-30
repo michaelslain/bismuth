@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createTerminalSession, killSession, sessionCount, resizeSession, buildPtyEnv, loginShellArgs } from "../src/terminal";
 
 function tmp() {
-  return mkdtempSync(join(tmpdir(), "oa-term-"));
+  return mkdtempSync(join(tmpdir(), "bismuth-term-"));
 }
 
 const ENV_BASE = { base: { PATH: "/usr/bin" }, relayUrl: "http://localhost:4321", terminalId: "tab-1", shimAvailable: true, pluginDir: "/repo/relay", shimDir: "/repo/relay/shim", zdotDir: "/repo/relay/shim/zdotdir" };

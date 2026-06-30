@@ -35,12 +35,12 @@ export function LineView(props: { result: ViewResult; config: BaseConfig }) {
           <div class={styles.svgWrap}>
             <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet">
               <defs>
-                <linearGradient id="oa-line-fill" x1="0" y1="0" x2="0" y2="1">
+                <linearGradient id="bismuth-line-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="var(--blue)" stop-opacity="0.35" />
                   <stop offset="100%" stop-color="var(--blue)" stop-opacity="0" />
                 </linearGradient>
               </defs>
-              <polygon points={g().area} fill="url(#oa-line-fill)" />
+              <polygon points={g().area} fill="url(#bismuth-line-fill)" />
               <polyline points={g().line} fill="none" stroke="var(--blue)" stroke-width="2" />
               <For each={g().dots}>{(c) => <circle cx={c.x} cy={c.y} r="2.4" fill="var(--teal)" />}</For>
             </svg>

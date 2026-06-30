@@ -143,7 +143,7 @@ async function openWsTerm(base: string, termId: string): Promise<WebSocket> {
 
 test("reconnecting with the same termId reattaches to the live shell", async () => {
   // A grace window long enough that the abnormal-close path keeps the PTY alive to reattach.
-  process.env.OA_TERMINAL_GRACE_MS = "8000";
+  process.env.BISMUTH_TERMINAL_GRACE_MS = "8000";
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
@@ -177,12 +177,12 @@ test("reconnecting with the same termId reattaches to the live shell", async () 
     ws2.close(1000);
   } finally {
     server.stop(true);
-    delete process.env.OA_TERMINAL_GRACE_MS;
+    delete process.env.BISMUTH_TERMINAL_GRACE_MS;
   }
 }, 15000);
 
 test("a clean close (1000) kills immediately; an abnormal close waits the grace window", async () => {
-  process.env.OA_TERMINAL_GRACE_MS = "600";
+  process.env.BISMUTH_TERMINAL_GRACE_MS = "600";
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
   const base = `ws://localhost:${server.port}`;
@@ -206,7 +206,7 @@ test("a clean close (1000) kills immediately; an abnormal close waits the grace 
     expect(listSessionIds()).not.toContain(dropId); // past grace
   } finally {
     server.stop(true);
-    delete process.env.OA_TERMINAL_GRACE_MS;
+    delete process.env.BISMUTH_TERMINAL_GRACE_MS;
   }
 }, 10000);
 

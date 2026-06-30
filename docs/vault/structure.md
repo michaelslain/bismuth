@@ -8,7 +8,7 @@ This document covers how Bismuth models a vault: the markdown file tree that con
 
 A vault is an ordinary directory of files on disk — no database, no sidecar index. The primary content is `.md` (Markdown) files. The backend also recognizes `.draw`, `.sheet`, `.yaml`/`.yml` as first-class vault files, and silently ignores everything else (images, PDFs, `.txt`, etc.) when building the sidebar tree.
 
-The path to the vault is supplied via the `OA_VAULT` environment variable or the `--vault` CLI flag. There is no default; the server refuses to start without it.
+The path to the vault is supplied via the `BISMUTH_VAULT` environment variable or the `--vault` CLI flag. There is no default; the server refuses to start without it.
 
 ---
 

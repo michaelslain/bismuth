@@ -38,11 +38,11 @@ Install all workspaces at once with `bun install` from the repo root. To add a p
 
 A Tauri app wrapping a Vite + Solid.js SPA. Launched with `cd app && bun run dev`, which runs both `bun run ../core/src/server.ts` and `vite` concurrently via `concurrently`. The app talks to the core server at a URL resolved at runtime from (in priority order): `?api=<url>` query param → `VITE_API_BASE` build env → default `http://localhost:4321`. This resolution is in `app/src/api.ts`.
 
-The entry point `app/src/index.tsx` code-splits two roots. On **first run** the bundled app's `lib.rs` injects `window.__OA_FIRST_RUN__` (and does **not** start a backend); `index.tsx` then renders the full-window **Vault Intro** takeover (`app/src/intro/VaultIntro.tsx`) instead of `App` — a short slideshow ending in a native folder picker that creates the vault, with `?intro=1` forcing it in dev/browser for preview. A normal launch never loads the intro, and first-run never loads `App` (which would fire API calls against a backend that isn't there). Full detail in [install](./install.md).
+The entry point `app/src/index.tsx` code-splits two roots. On **first run** the bundled app's `lib.rs` injects `window.__BISMUTH_FIRST_RUN__` (and does **not** start a backend); `index.tsx` then renders the full-window **Vault Intro** takeover (`app/src/intro/VaultIntro.tsx`) instead of `App` — a short slideshow ending in a native folder picker that creates the vault, with `?intro=1` forcing it in dev/browser for preview. A normal launch never loads the intro, and first-run never loads `App` (which would fire API calls against a backend that isn't there). Full detail in [install](./install.md).
 
 ### `cli/` — the `bismuth` binary
 
-A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `OA_VAULT` env var.
+A thin dispatcher over `@bismuth/core`. Most file-based operations (list notes, read/write, tasks, bases, drawing export) run **headlessly** with no running server. Operations that require the in-memory relay registry (e.g., `agent-graph`) go through the generic `api <METHOD> <path>` passthrough that hits a running server. Vault is specified via `--vault` flag or `BISMUTH_VAULT` env var.
 
 ### `relay/` — the agent-graph plugin
 
@@ -93,9 +93,9 @@ The vault graph is exposed by `GET /graph`.
 
 ### 3rd Brain (memory)
 
-The memory graph is built from Claude-bot memory notes living in a separate directory (`OA_MEMORY`). `core/src/memory.ts` builds a graph of `"memory"` nodes with ids prefixed `mem:` (e.g. `mem:project-xyz`). The constant `THIRD_BRAIN_KINDS = new Set(["memory"])` is what the frontend mode filter applies.
+The memory graph is built from Claude-bot memory notes living in a separate directory (`BISMUTH_MEMORY`). `core/src/memory.ts` builds a graph of `"memory"` nodes with ids prefixed `mem:` (e.g. `mem:project-xyz`). The constant `THIRD_BRAIN_KINDS = new Set(["memory"])` is what the frontend mode filter applies.
 
-If `OA_MEMORY` is unset or the directory is empty, the 3rd brain is empty — no error.
+If `BISMUTH_MEMORY` is unset or the directory is empty, the 3rd brain is empty — no error.
 
 ---
 

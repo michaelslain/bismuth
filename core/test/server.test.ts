@@ -14,8 +14,8 @@ import { makeSampleVault } from "./helpers";
 // the debounced settings-change handler that fires ~250ms after reconcile rewrites settings.yaml
 // — the latter can outlive a per-test env restore. Set these at module scope (never restored)
 // so neither path can ever touch the real ~/.claude-bot or write the real ~/.bismuth/daemon.
-process.env.BISMUTH_DAEMON_DIR = mkdtempSync(join(tmpdir(), "oa-srv-machine-"));
-process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(tmpdir(), "oa-no-legacy-claude-bot-xyz");
+process.env.BISMUTH_DAEMON_DIR = mkdtempSync(join(tmpdir(), "bismuth-srv-machine-"));
+process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(tmpdir(), "bismuth-no-legacy-claude-bot-xyz");
 
 test("GET /graph returns the merged brain graph", async () => {
   const { vault, memory } = await makeSampleVault();
@@ -225,7 +225,7 @@ test("GET /tree returns array of { path } entries", async () => {
 });
 
 test("GET /tree surfaces a note's `icon` frontmatter", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-tree-icon-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-icon-"));
   await writeNote(dir, "fire.md", "---\nicon: 🔥\n---\nhot");
   await writeNote(dir, "plain.md", "no frontmatter");
   const server = createServer({ vault: dir, port: 0 });
@@ -240,7 +240,7 @@ test("GET /tree surfaces a note's `icon` frontmatter", async () => {
 });
 
 test("POST /folder-icon sets a directory icon surfaced on GET /tree", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-icon-"));
   await writeNote(dir, "projects/a.md", "x");
   const server = createServer({ vault: dir, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -260,7 +260,7 @@ test("POST /folder-icon sets a directory icon surfaced on GET /tree", async () =
 });
 
 test("POST /folder-icon with empty icon removes a previously-set directory icon", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-clear-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-icon-clear-"));
   await writeNote(dir, "projects/a.md", "x");
   const server = createServer({ vault: dir, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -280,7 +280,7 @@ test("POST /folder-icon with empty icon removes a previously-set directory icon"
 });
 
 test("POST /folder-icon persists folderIcons into settings.yaml", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-persist-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-icon-persist-"));
   await writeNote(dir, "projects/a.md", "x");
   const server = createServer({ vault: dir, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -299,7 +299,7 @@ test("POST /folder-icon persists folderIcons into settings.yaml", async () => {
 });
 
 test("POST /folder-icon bumps the version so the sidebar refetches", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-ver-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-icon-ver-"));
   await writeNote(dir, "projects/a.md", "x");
   const server = createServer({ vault: dir, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -318,7 +318,7 @@ test("POST /folder-icon bumps the version so the sidebar refetches", async () =>
 });
 
 test("POST /folder-icon rejects a path that escapes the vault", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-folder-icon-esc-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-icon-esc-"));
   await writeNote(dir, "projects/a.md", "x");
   const server = createServer({ vault: dir, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -611,8 +611,8 @@ test("POST /move bumps the version so the sidebar refetches", async () => {
 });
 
 test("GET /cards/decks returns decks with due counts", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-srs-srv-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-srs-mem-"));
   await writeNote(vault, "m.md", "#flashcards/math\n\n2+2::4");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -625,8 +625,8 @@ test("GET /cards/decks returns decks with due counts", async () => {
 });
 
 test("GET /cards/due returns due cards; POST /cards/review schedules them", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-srs-srv2-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-srs-mem2-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-srs-srv2-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-srs-mem2-"));
   await writeNote(vault, "m.md", "#flashcards\n\n2+2::4");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -648,8 +648,8 @@ test("GET /cards/due returns due cards; POST /cards/review schedules them", asyn
 });
 
 test("GET /cards/all returns every card regardless of due date", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-srs-all-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-srs-all-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-srs-all-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-srs-all-mem-"));
   await writeNote(vault, "m.md", "#flashcards\n\na::b\n\nc::d <!--SR:!2099-01-01,5,250-->");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -662,8 +662,8 @@ test("GET /cards/all returns every card regardless of due date", async () => {
 });
 
 test("POST /cards/review with an unknown card id returns 404", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-srs-bad-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-srs-bad-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-srs-bad-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-srs-bad-mem-"));
   await writeNote(vault, "m.md", "#flashcards\n\na::b");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -680,8 +680,8 @@ test("POST /cards/review with an unknown card id returns 404", async () => {
 });
 
 test("GET /cards/note returns all cards for one note (tagless ok)", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-srs-note-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-srs-note-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-srs-note-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-srs-note-mem-"));
   await writeNote(vault, "n.md", "a::b\n\nc::d");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -951,8 +951,8 @@ test("POST /cards/review (row-based) advances a flashcard base row", async () =>
 });
 
 test("POST /rows resolves a scoped-tasks spec via base composition", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-rows-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-rows-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-rows-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-rows-mem-"));
   await writeNote(vault, "Keep.md", '---\ntype: base\nsource: notes\nwhere: file.hasTag("keep")\n---\n');
   await writeNote(vault, "keep/x.md", "---\ntags: [keep]\n---\n- [ ] scoped task");
   await writeNote(vault, "other/y.md", "- [ ] unscoped task");
@@ -973,8 +973,8 @@ test("POST /rows resolves a scoped-tasks spec via base composition", async () =>
 });
 
 test("POST /rows notes source serves cached vault rows that a file edit invalidates", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-rows-cache-"));
-  const memory = mkdtempSync(join(tmpdir(), "oa-rows-cache-mem-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-rows-cache-"));
+  const memory = mkdtempSync(join(tmpdir(), "bismuth-rows-cache-mem-"));
   await writeNote(vault, "a.md", "---\ntags: [book]\n---\n");
   const server = createServer({ vault, memory, port: 0 });
   const base = `http://localhost:${server.port}`;
@@ -1072,7 +1072,7 @@ test("GET /templates returns [] when the folder is absent", async () => {
 });
 
 test("POST /daily-note creates today's note from the template, then reopens it without clobbering", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-daily-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-"));
   await writeNote(vault, ".settings", [
     "dailyNotes:",
     "  - id: journal",
@@ -1108,7 +1108,7 @@ test("POST /daily-note creates today's note from the template, then reopens it w
 });
 
 test("POST /daily-note bumps version only on create (SSE carries the new path), not on the no-op reopen", async () => {
-  const vault = mkdtempSync(join(tmpdir(), "oa-daily-version-"));
+  const vault = mkdtempSync(join(tmpdir(), "bismuth-daily-version-"));
   await writeNote(vault, ".settings", [
     "dailyNotes:",
     "  - id: journal",

@@ -31,7 +31,7 @@ type PaneTreeProps = {
   terminalLabel?: (content: string) => string;
 };
 
-const DRAG_MIME = "application/x-oa-path"; // a file dragged from the tree
+const DRAG_MIME = "application/x-bismuth-path"; // a file dragged from the tree
 
 // A single pane: renders its content, reports focus/right-click, accepts a file
 // dragged from the tree (HTML5 drag → split), and is a drop target for the
@@ -144,7 +144,7 @@ export function PaneTree(props: PaneTreeProps) {
         const [resizing, setResizing] = createSignal(false);
         // Teardown for an in-flight divider drag. Hoisted to the split-branch scope so
         // onCleanup can detach the window listeners if this node unmounts mid-drag
-        // (e.g. an external oa-deleted/oa-moved/close event rewrites the tab tree before
+        // (e.g. an external bismuth-deleted/bismuth-moved/close event rewrites the tab tree before
         // pointerup fires), avoiding leaked listeners + setResizing on a disposed scope.
         let endDrag: (() => void) | null = null;
         const startDrag = (e: PointerEvent) => {

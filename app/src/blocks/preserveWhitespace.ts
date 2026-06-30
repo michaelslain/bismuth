@@ -104,7 +104,7 @@ function restore(para: MdNode, source: string): void {
 
 /** The `$remark` plugin pair: recover paragraph affix whitespace from the source vfile. */
 export const preserveAffixWhitespace: MilkdownPlugin[] = $remark(
-  "oaPreserveAffixWhitespace",
+  "bismuthPreserveAffixWhitespace",
   () => () => (tree: unknown, file: unknown) => {
     const source = (file as VFileLike | undefined)?.value;
     if (typeof source !== "string") return; // no source (shouldn't happen) → no-op

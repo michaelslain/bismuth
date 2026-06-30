@@ -4,7 +4,7 @@ import { syntaxTree } from "@codemirror/language";
 import { completionDisplayConfig, completionTheme, type IconedCompletion } from "./completionDisplay";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { matchWikilinkPrefix, buildInsert, type NoteCandidate } from "./wikilink";
+import { matchWikilinkPrefix, matchWikilinkHeadingPrefix, parseHeadings, resolveNotePath, buildInsert, type NoteCandidate } from "./wikilink";
 import { matchTagPrefix } from "./tag";
 import { matchEmojiPrefix, searchEmoji } from "./emoji";
 import { keySuggestions, valueSuggestions } from "../../../core/src/schema/suggest";
@@ -41,6 +41,13 @@ function inInlineCode(textBefore: string): boolean {
   return ((textBefore.match(/`/g) || []).length % 2) === 1;
 }
 
+// Cheap textual check for an *open* inline `$…$` math span on the current line: an odd
+// number of unescaped `$` before the caret means we're inside it. `:` is a real LaTeX
+// character (e.g. `\colon`, `a:b`) so the `:emoji:` trigger must not fire inside math.
+function inInlineMath(textBefore: string): boolean {
+  return ((textBefore.match(/(?<!\\)\$/g) || []).length % 2) === 1;
+}
+
 // Shared shape for the prefix-triggered body sources (wikilink, tag): extract the
 // text before the caret, match a trigger prefix, map items to options, and return a
 // result anchored at `from` with a `validFor` re-query pattern. Only the trigger
@@ -67,9 +74,17 @@ function prefixSource<T>(opts: {
 
 // `[[wikilink]]` completion. Inserts `[[Name]]`, cursor after the `]]` (avoids
 // double `]]` when one is already ahead). `getNotes` is read lazily per popup open.
+// Yields to `wikilinkHeadingSource` once the open link contains a `#` AND the text before that
+// `#` resolves to a real note — i.e. genuine `[[Note#heading]]` territory. If the part before
+// `#` does NOT resolve (e.g. a note literally named `C# Notes`), we stay in note mode so the
+// full name (`C# Notes`) still completes, rather than leaving an empty popup.
 function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
   return prefixSource<NoteCandidate>({
-    match: matchWikilinkPrefix,
+    match: (textBefore) => {
+      const h = matchWikilinkHeadingPrefix(textBefore);
+      if (h && resolveNotePath(h.target, getNotes())) return null; // heading source owns it
+      return matchWikilinkPrefix(textBefore);
+    },
     items: getNotes,
     toOption: (n) => ({
       label: n.label,
@@ -82,6 +97,58 @@ function wikilinkSource(getNotes: () => NoteCandidate[]): CompletionSource {
     }),
     validFor: /^[^\]\n]*$/,
   });
+}
+
+// `[[Note#heading]]` completion: once the caret is inside an open `[[…` that already has a
+// `#`, offer the target note's headings. ASYNC — there is no client-side heading index, so
+// it resolves the target to a real note path and fetches the body via `readNote` (cached per
+// path for the editor's lifetime so per-keystroke re-queries don't re-hit the backend), then
+// parses ATX headings. The completion engine awaits the returned Promise (same as the settings
+// editor's fs-path source). Bails when the target doesn't resolve to an existing note. We rank
+// ourselves (substring on the typed heading) so `filter: false`; no `validFor` re-queries each
+// keystroke. Apply inserts the heading text after the `#`, appending `]]` when not already ahead.
+function wikilinkHeadingSource(
+  getNotes: () => NoteCandidate[],
+  readNote: (path: string) => Promise<string>,
+): CompletionSource {
+  const headingsCache = new Map<string, Promise<ReturnType<typeof parseHeadings>>>();
+  const headingsFor = (path: string) => {
+    let p = headingsCache.get(path);
+    if (!p) {
+      // Evict on failure so a transient read error (offline blip, save/rename race) isn't cached
+      // as "no headings" for the whole session — the next keystroke retries instead.
+      p = readNote(path).then(parseHeadings).catch(() => { headingsCache.delete(path); return []; });
+      headingsCache.set(path, p);
+    }
+    return p;
+  };
+  return (context: CompletionContext): Promise<CompletionResult | null> | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    if (inCode(context) || inInlineCode(textBefore)) return null;
+    const m = matchWikilinkHeadingPrefix(textBefore);
+    if (!m) return null;
+    const notePath = resolveNotePath(m.target, getNotes());
+    if (!notePath) return null; // unknown target — nothing to complete against
+    const from = line.from + m.from;
+    const q = m.heading.trim().toLowerCase();
+    return headingsFor(notePath).then((headings) => {
+      const options: Completion[] = headings
+        .filter((h) => h.text.toLowerCase().includes(q))
+        .map((h) => ({
+          label: h.text,
+          detail: "#".repeat(h.level),
+          type: "keyword",
+          apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+            const after = view.state.doc.sliceString(applyTo, applyTo + 2);
+            const insert = after === "]]" ? h.text : h.text + "]]";
+            applyInsert(view, completion, applyFrom, applyTo, insert, h.text.length + 2);
+          },
+        }));
+      if (options.length === 0) return null;
+      return { from, options, filter: false };
+    });
+  };
 }
 
 // `#tag` completion. Inserts the bare tag name after the `#`. `getTags` returns
@@ -245,6 +312,8 @@ function emojiSource(): CompletionSource {
     // `:emoji:` is a prose trigger — suppress it inside code (B22). Note `:` is common in
     // code (slices, ternaries, dict literals) so this matters even more than for `[[`/`#`.
     if (inCode(context) || inInlineCode(textBefore)) return null;
+    // `:` is a LaTeX character — suppress the emoji popup inside an open `$…$` math span.
+    if (inInlineMath(textBefore)) return null;
     // Inside an open `[[wikilink`, let the wikilink source own the popup — wikilink names
     // can contain spaces, so the emoji rule (`:` after whitespace) would otherwise
     // double-fire and mix note + emoji suggestions in one list.
@@ -304,7 +373,9 @@ export function taskCompletion(): Extension {
 // wikilink source bails per B22), so it's safe to fire optimistically.
 const wikilinkAutoTrigger = EditorView.updateListener.of((update) => {
   if (!update.docChanged) return;
-  if (!update.transactions.some((tr) => tr.isUserEvent("input.type"))) return;
+  // Fire on typing AND deletion: deleting the `#` of `[[File#` back to `[[File` must re-open the
+  // NOTE popup (the heading source stops matching), which a type-only gate would miss.
+  if (!update.transactions.some((tr) => tr.isUserEvent("input.type") || tr.isUserEvent("delete"))) return;
   const pos = update.state.selection.main.head;
   const line = update.state.doc.lineAt(pos);
   const textBefore = line.text.slice(0, pos - line.from);
@@ -322,6 +393,9 @@ export function vaultCompletion(opts: {
   getSchema: () => Schema;
   getIconNames: () => string[];
   inFrontmatter: (ctx: CompletionContext) => boolean;
+  // Async note-body reader (api.read). Powers `[[Note#heading]]` heading completion, which
+  // has no client-side index and must fetch the target note's body to list its headings.
+  readNote: (path: string) => Promise<string>;
 }): Extension {
   return [autocompletion({
     ...completionDisplayConfig,
@@ -336,6 +410,9 @@ export function vaultCompletion(opts: {
       querySource(),          // inside a ```query block: keys / view / tasks-DSL / group
       taskSource(),           // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
       templateTokenSource(),
+      // Heading source BEFORE the note source: inside `[[Note#…` the note source bails and this
+      // one owns the popup (it's also async, so ordering keeps the sync note source from racing it).
+      wikilinkHeadingSource(opts.getNotes, opts.readNote),
       wikilinkSource(opts.getNotes),
       tagSource(opts.getTags),
       emojiSource(),

@@ -8,7 +8,7 @@
 //   - on request, `git pull --ff-only` + `bun run tauri build`, then hand off to a detached
 //     script that waits for the app to quit, swaps the .app bundle, and relaunches.
 //
-// Self-disables when there's no source build (no build-origin.json or no OA_APP_PATH) — e.g.
+// Self-disables when there's no source build (no build-origin.json or no BISMUTH_APP_PATH) — e.g.
 // dev (`bun run dev`). Never throws; failures surface as an "error" phase / a reason.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -99,7 +99,7 @@ interface BuildOrigin {
 }
 
 export function readBuildOrigin(): BuildOrigin | null {
-  const src = process.env.OA_BISMUTH_INSTALL_SRC;
+  const src = process.env.BISMUTH_INSTALL_SRC;
   if (!src) return null;
   const file = join(src, "build-origin.json");
   if (!existsSync(file)) return null;
@@ -189,7 +189,7 @@ export async function startUpdate(): Promise<UpdateProgress> {
   // await gap, so two callers could otherwise both pass it).
   state = { phase: "pulling", message: "checking for update…" };
   const origin = readBuildOrigin();
-  const appPath = process.env.OA_APP_PATH;
+  const appPath = process.env.BISMUTH_APP_PATH;
   if (!origin?.repoRoot || !appPath) {
     state = { phase: "error", message: "self-update unavailable (not a bundled source build)" };
     return state;
@@ -242,7 +242,7 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
 // the app exits. The frontend calls the Tauri `quit_app` command once phase=ready.
 function spawnRelauncher(repoRoot: string, appPath: string): void {
   const builtApp = join(repoRoot, "app", "src-tauri", "target", "release", "bundle", "macos", "Bismuth.app");
-  const appPid = process.env.OA_APP_PID ?? "";
+  const appPid = process.env.BISMUTH_APP_PID ?? "";
   const logPath = join(tmpdir(), "bismuth-update.log");
   // Self-deleting + atomic swap: move DEST aside to a backup first, then ditto into place;
   // restore the backup if ditto fails so a failed copy never leaves the user with no app.

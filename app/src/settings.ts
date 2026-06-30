@@ -242,7 +242,7 @@ export function loadSettings(raw: string | null): Settings {
 // localStorage key for the last hydrated settings, used to seed the store on the next
 // launch so the real theme/fonts/sizes paint on the FIRST frame instead of flashing
 // DEFAULTS until GET /settings resolves. Reconciled to server truth on hydrate.
-const SETTINGS_CACHE_KEY = "oa-settings-cache-v1";
+const SETTINGS_CACHE_KEY = "bismuth-settings-cache-v1";
 
 // --- Synchronous seed: never empty at first paint (consumers deref two levels deep with
 // no optional chaining, so the store must always be fully shaped). Seeded from the last
@@ -316,7 +316,7 @@ if (typeof window !== "undefined") {
   // failed fetches + a "connection lost" toast behind the takeover. The synchronous
   // DEFAULTS seed (createStore above) is all the intro needs to render + re-theme.
   const introMode =
-    (window as unknown as { __OA_FIRST_RUN__?: boolean }).__OA_FIRST_RUN__ === true ||
+    (window as unknown as { __BISMUTH_FIRST_RUN__?: boolean }).__BISMUTH_FIRST_RUN__ === true ||
     new URLSearchParams(window.location.search).has("intro");
   // Dynamic import so pure `bun test` runs never load serverVersion.ts, which
   // instantiates an EventSource at module scope (undefined outside the browser).

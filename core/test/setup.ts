@@ -6,4 +6,4 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-process.env.OA_LAYOUT_CACHE_DIR ||= join(tmpdir(), `oa-layout-test-${randomUUID()}`);
+process.env.BISMUTH_LAYOUT_CACHE_DIR ||= join(tmpdir(), `bismuth-layout-test-${randomUUID()}`);

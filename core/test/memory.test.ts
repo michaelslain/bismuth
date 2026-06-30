@@ -6,7 +6,7 @@ import { writeNote } from "../src/files";
 import { buildMemoryGraph } from "../src/memory";
 
 test("memory nodes are kind=memory with mem: ids; internal links resolved", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-mem-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-mem-"));
   await writeNote(dir, "michael-profile.md", "Profile. See [[michael-preferences]].");
   await writeNote(dir, "michael-preferences.md", "# Prefs");
   const g = await buildMemoryGraph(dir);
@@ -21,7 +21,7 @@ test("memory nodes are kind=memory with mem: ids; internal links resolved", asyn
 });
 
 test("same-basename notes in different subdirs get distinct ids", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-mem-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-mem-"));
   await writeNote(dir, "subdir-a/note.md", "# A");
   await writeNote(dir, "subdir-b/note.md", "# B");
   const g = await buildMemoryGraph(dir);

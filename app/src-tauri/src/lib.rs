@@ -177,7 +177,7 @@ async fn choose_first_vault(app: tauri::AppHandle, theme: String, icon: String) 
     write_config(&app, &AppConfig { vault, memory });
     mark_intro_seen(&app); // global flag: don't replay the intro on future launches
     // In dev (tauri dev), app.restart() tears down the beforeDevCommand backend → white screen,
-    // and the vault comes from OA_VAULT env anyway. So skip the restart in debug builds; the
+    // and the vault comes from BISMUTH_VAULT env anyway. So skip the restart in debug builds; the
     // frontend navigates into the app instead. Release does the real relaunch into the new vault.
     if !cfg!(debug_assertions) {
         app.restart();
@@ -223,7 +223,7 @@ fn pick_free_port() -> (Option<std::net::TcpListener>, u16) {
 
 // Spawn the bundled `bismuth-core` sidecar on a free port for the given vault + memory.
 // Returns the port on success so the caller can point the webview at it (via
-// window.__OA_API__). Stores the child so it's killed on exit. Best-effort: returns None
+// window.__BISMUTH_API__). Stores the child so it's killed on exit. Best-effort: returns None
 // if the spawn fails (the app still opens, against the frontend's default / "disconnected").
 fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u16> {
     // Hold the bound listener through all the setup below so the port stays reserved; it's
@@ -246,15 +246,15 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
         let base = if staged.join("relay").is_dir() { staged } else { res };
         cmd = cmd
             .env("BISMUTH_RELAY_BUNDLE", base.join("relay"))
-            .env("OA_BISMUTH_INSTALL_SRC", base.join("bismuth-tools"))
+            .env("BISMUTH_INSTALL_SRC", base.join("bismuth-tools"))
             .env("BISMUTH_DAEMON_BUNDLE", base.join("daemon"));
     }
     // Self-update: tell the sidecar which .app is running + our pid, so the detached
     // updater can swap the bundle after we quit (core/src/selfUpdate.ts). Absent in dev.
     if let Some(app_path) = running_app_path() {
         cmd = cmd
-            .env("OA_APP_PATH", &app_path)
-            .env("OA_APP_PID", std::process::id().to_string());
+            .env("BISMUTH_APP_PATH", &app_path)
+            .env("BISMUTH_APP_PID", std::process::id().to_string());
     }
     // Release the reserved port immediately before spawning so the sidecar can bind it.
     drop(listener);
@@ -271,30 +271,32 @@ fn start_backend(app: &tauri::AppHandle, vault: &str, memory: &str) -> Option<u1
 }
 
 // Build the main window. `injected` (Some when we spawned a backend on a known port) is
-// set as `window.__OA_API__` before any app JS runs, so the frontend talks to our spawned
+// set as `window.__BISMUTH_API__` before any app JS runs, so the frontend talks to our spawned
 // core. In dev (no spawn) it's None → the frontend uses its :4321 default. `first_run`
-// sets `window.__OA_FIRST_RUN__`, telling index.tsx to render the intro instead of App
+// sets `window.__BISMUTH_FIRST_RUN__`, telling index.tsx to render the intro instead of App
 // (there's no backend yet — the intro's CTA picks the vault and relaunches).
 fn build_main_window(app: &tauri::AppHandle, injected: Option<String>, first_run: bool, has_vault: bool) -> tauri::Result<()> {
+    // NOTE: we intentionally KEEP Tauri v2's native file drag-drop handler ENABLED (its default).
+    // It is the ONLY source of a dragged OS file's REAL absolute path — a browser/webview `drop`
+    // DataTransfer exposes only a basename. The frontend's nativeDrop.ts subscribes to it and
+    // re-broadcasts dropped paths + cursor position as a `bismuth-native-drag` DOM event, which the
+    // terminal (insert the real path at the prompt, B20) and the editor (embed the real file) handle
+    // by hit-testing the cursor against their own element. Internal HTML5 drags (file-tree / pane /
+    // block reorder via the custom `application/x-bismuth-path` MIME) never produce an OS file drop,
+    // so they are unaffected and keep using the webview's HTML5 DnD.
     let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::default())
         .title("Bismuth")
-        .inner_size(1200.0, 800.0)
-        // Tauri v2 enables a NATIVE file drag-drop handler by default, which intercepts OS
-        // file drops at the window level and SUPPRESSES the webview's HTML5 `drop` DOM event.
-        // We rely on the DOM event (B20: dragging an image onto the in-app terminal uploads it
-        // into the vault and writes its path to the PTY), so disable the native handler and let
-        // the webview's own HTML5 DnD receive the drop instead.
-        .disable_drag_drop_handler();
+        .inner_size(1200.0, 800.0);
     let mut script = String::new();
     if let Some(api) = injected {
-        script.push_str(&format!("window.__OA_API__={api:?};"));
+        script.push_str(&format!("window.__BISMUTH_API__={api:?};"));
     }
     if first_run {
-        script.push_str("window.__OA_FIRST_RUN__=true;");
+        script.push_str("window.__BISMUTH_FIRST_RUN__=true;");
         // On replay a vault is already configured, so the intro's CTA continues into it
         // (finish_intro) instead of forcing a re-pick (choose_first_vault).
         if has_vault {
-            script.push_str("window.__OA_HAS_VAULT__=true;");
+            script.push_str("window.__BISMUTH_HAS_VAULT__=true;");
         }
     }
     if !script.is_empty() {
@@ -330,13 +332,13 @@ fn mark_png(name: &str) -> Option<&'static [u8]> {
     })
 }
 
-// Read `appearance.icon` from the active vault's settings.yaml. The vault is OA_VAULT
+// Read `appearance.icon` from the active vault's settings.yaml. The vault is BISMUTH_VAULT
 // (dev) or, in a Finder-launched bundle (no shell env), the one saved in config.json.
 // Returns None if unset/absent. Tiny scoped scan rather than a YAML dependency: the
 // `icon:` key inside the top-level `appearance:` block.
 #[cfg(target_os = "macos")]
 fn vault_icon_name(app: &tauri::AppHandle) -> Option<String> {
-    let vault = std::env::var("OA_VAULT")
+    let vault = std::env::var("BISMUTH_VAULT")
         .ok()
         .filter(|v| !v.is_empty())
         .or_else(|| read_config(app).map(|c| c.vault).filter(|v| !v.is_empty()))?;

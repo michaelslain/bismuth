@@ -10,7 +10,7 @@
 // invalidate → rebuild → recompute → rewrite loop. It used to live in os.tmpdir(), but macOS purges
 // /tmp periodically (and it's empty on every fresh process), so a meaningful fraction of cold boots
 // recomputed the whole (multi-second) layout from scratch; a durable dir makes a normal close/reopen a
-// reliable cache hit. Override with OA_LAYOUT_CACHE_DIR (used by tests to isolate/redirect the cache).
+// reliable cache hit. Override with BISMUTH_LAYOUT_CACHE_DIR (used by tests to isolate/redirect the cache).
 import { mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -23,7 +23,7 @@ interface Layout { pos3d: Positions; pos2d: Positions }
 /** Drop the trailing z from a Positions triple — pos2d entries are [x,y,z] with z=0. */
 const to2d = (p: number[]): [number, number] => [p[0], p[1]];
 
-const CACHE_DIR = process.env.OA_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
+const CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache");
 // v9: incremental "add-only" rebuilds pin pre-existing nodes (layout.ts fixedIds) so only new nodes
 //     settle — different output than the old whole-graph warm re-settle for newly-added structures.
 // v8: reel disconnected components into the main mass via virtual tether links (layout.ts) — orphan

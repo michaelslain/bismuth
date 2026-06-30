@@ -10,13 +10,13 @@
 }
 
 /* Shimmer: a soft opacity pulse on every block (cheap, reduced-motion-friendly). */
-@keyframes oa-skel-pulse {
+@keyframes bismuth-skel-pulse {
   0%, 100% { opacity: 0.55; }
   50% { opacity: 0.9; }
 }
 .skeleton .head,
 .skeleton .row,
-.skeleton .card { animation: oa-skel-pulse 1.4s ease-in-out infinite; }
+.skeleton .card { animation: bismuth-skel-pulse 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .skeleton .head,
   .skeleton .row,

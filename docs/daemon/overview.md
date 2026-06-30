@@ -21,7 +21,7 @@ Bismuth reads the daemon's on-disk shared state files (the "integration contract
 
 The daemon's shared state lives under a configurable home directory. Resolution order (first match wins):
 
-1. `OA_CLAUDEBOT_HOME` environment variable (ops/dev override; always wins).
+1. `BISMUTH_DAEMON_DIR` environment variable (ops/dev override; always wins).
 2. `daemon.home` setting in `settings.yaml` (per-vault, user-configurable).
 3. `~/.claude-bot` (default).
 
@@ -38,7 +38,7 @@ daemon:
 
 - **`daemon.enabled`** (default `false`) — the master switch. When off, Bismuth does not integrate with the daemon: the "daemon" graph mode is hidden and the boot-time daemon auto-update (below) is skipped entirely. It is set automatically from the first-run intro (on if you opt into the daemon, off otherwise), and also flipped on by the adopt-on-detect migration (below); toggle it anytime. (NOTE: the `/daemon/*` read endpoints themselves still degrade gracefully and return safe defaults regardless of this flag — the switch gates the integration surfaces, not the file readers.)
 - **`daemon.home`** (default `~/.claude-bot`) — the claude-bot home dir holding its `device-id`, crons, and memory. `~`/`~/` is tilde-expanded. The default is the portable `~/.claude-bot` string, **not** an empty string.
-- **`daemon.autoUpdate`** (default `true`) — when the daemon is enabled and installed, auto-update it on app launch (git pull + bun install + restart) if it's behind, in the background. Gated to the bundled app (`OA_APP_PATH` is set only by the Tauri shell) so dev/standalone/tests never touch a live daemon; further gated by `daemon.enabled` (master switch off → no update) and `installStatus().installed`. claude-bot's `runUpdate()` is idempotent + fetch-gated — an up-to-date daemon is a no-op. See `core/src/server.ts` (the `OA_APP_PATH` block).
+- **`daemon.autoUpdate`** (default `true`) — when the daemon is enabled and installed, auto-update it on app launch (git pull + bun install + restart) if it's behind, in the background. Gated to the bundled app (`BISMUTH_APP_PATH` is set only by the Tauri shell) so dev/standalone/tests never touch a live daemon; further gated by `daemon.enabled` (master switch off → no update) and `installStatus().installed`. claude-bot's `runUpdate()` is idempotent + fetch-gated — an up-to-date daemon is a no-op. See `core/src/server.ts` (the `BISMUTH_APP_PATH` block).
 
 ### Adopt-on-detect migration
 
@@ -410,11 +410,11 @@ The install/setup path is deliberately conservative:
 - **`GET /daemon/install`** is read-only. It spawns `ensure-installed.ts --status` to probe what is already on disk. Never modifies anything.
 - **`POST /daemon/setup`** runs `ensure-installed.ts` (no flag). This is the claude-bot package's idempotent entrypoint: if the daemon is already installed and running, it reports `"adopted"` and does nothing. It never clobbers a live daemon, never repoints a running daemon at a different home, and never restarts it.
 
-Bismuth does **not** bundle claude-bot. When `POST /daemon/setup` runs and claude-bot isn't installed/provisioned yet, `runSetup()` first calls `provisionClaudeBot()` — a `git clone` of claude-bot to `~/.bismuth/claude-bot` (override `OA_CLAUDEBOT_SRC`; remote `OA_CLAUDEBOT_REPO`) plus a `bun install` so the daemon has its `node_modules` — then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` (git pull + bun install + restart) keeps working, and claude-bot stays standalone.
+Bismuth does **not** bundle claude-bot. When `POST /daemon/setup` runs and claude-bot isn't installed/provisioned yet, `runSetup()` first calls `provisionClaudeBot()` — a `git clone` of claude-bot to `~/.bismuth/claude-bot` (override `BISMUTH_CLAUDEBOT_SRC`; remote `BISMUTH_CLAUDEBOT_REPO`) plus a `bun install` so the daemon has its `node_modules` — then runs the installer from there. The clone is a normal git checkout, so claude-bot's own `bin/update.ts` (git pull + bun install + restart) keeps working, and claude-bot stays standalone.
 
 The entrypoint is resolved via a two-step lookup (`resolveEntrypoint` in `core/src/claudebot.ts`):
 1. An already-installed claude-bot on this machine (parsed from the launchd plist or systemd unit — `installedEntrypoint()` matches the absolute path ending in `daemon/index.ts` and derives `../bin/ensure-installed.ts`).
-2. Bismuth's provisioned clone at `~/.bismuth/claude-bot` (or `$OA_CLAUDEBOT_SRC`).
+2. Bismuth's provisioned clone at `~/.bismuth/claude-bot` (or `$BISMUTH_CLAUDEBOT_SRC`).
 
 The entrypoint itself — its exact flags, the single-JSON-line output (`{installed,running,daemonLabel,home,plistPath}` for `--status`; `{action,status}` for the default `ensureInstalled()` path), and why it's adopt-only — is the claude-bot project's; see [claude-bot installation](../claude-bot/install.md).
 

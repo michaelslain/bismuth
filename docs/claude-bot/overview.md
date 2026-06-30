@@ -116,7 +116,7 @@ claude-bot has its **own** stdio MCP server (`server.ts`) exposing `mcp__claude-
 - [memory.md](memory.md) — the memory store (`memory/graph,query,search,dream`): note format, backlinks, query vs search, the dream consolidation cycle.
 - [mcp.md](mcp.md) — claude-bot's own stdio MCP server (`server.ts`) and its full tool catalog, vs Bismuth's MCP.
 - [communication.md](communication.md) — hooks (`recall-hook` UserPromptSubmit, `collect-hook` SessionEnd) + what device coordination actually exists (and that cross-machine messaging does **not** exist).
-- [install.md](install.md) — installation: `lib/install.ts` (`getInstallStatus`/`ensureInstalled`, adopt-only), `lib/platform.ts` (launchd/systemd), `lib/device.ts`, `bin/ensure-installed.ts`, and how Bismuth bundles + invokes it (`OA_CLAUDEBOT_BUNDLE`).
+- [install.md](install.md) — installation: `lib/install.ts` (`getInstallStatus`/`ensureInstalled`, adopt-only), `lib/platform.ts` (launchd/systemd), `lib/device.ts`, `bin/ensure-installed.ts`, and how Bismuth bundles + invokes it (`BISMUTH_CLAUDEBOT_BUNDLE`).
 - [storage.md](storage.md) — the `~/.claude-bot` on-disk layout (cross-links to Bismuth's `../daemon/storage.md`).
 
 ---

@@ -6,7 +6,7 @@ This document exhaustively covers every on-disk and in-browser location that Bis
 
 ## 1. The Vault Directory
 
-The vault is an arbitrary directory on the local file system, passed via the `OA_VAULT` environment variable (required; server refuses to start without it). All vault-relative paths are resolved with a path-traversal guard (`resolveInVault` in `core/src/files.ts`): any attempt to escape the vault root with `..`, absolute paths, or symlink chains throws `EINVAL` with the message `path escapes vault: <rel>`.
+The vault is an arbitrary directory on the local file system, passed via the `BISMUTH_VAULT` environment variable (required; server refuses to start without it). All vault-relative paths are resolved with a path-traversal guard (`resolveInVault` in `core/src/files.ts`): any attempt to escape the vault root with `..`, absolute paths, or symlink chains throws `EINVAL` with the message `path escapes vault: <rel>`.
 
 ### 1.1 Markdown Notes
 
@@ -159,7 +159,7 @@ Everything staged by `git add -A` except `settings.yaml` (excluded via `.git/inf
 ~/.bismuth/layout-cache/
 ```
 
-The constant `CACHE_DIR = process.env.OA_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache")`. It lives under a **durable** app dir, not `os.tmpdir()` — macOS periodically purges `/tmp`, which was wiping the cache between sessions and forcing a cold rebuild on every reopen. Override with `OA_LAYOUT_CACHE_DIR` (tests redirect it to an isolated temp dir).
+The constant `CACHE_DIR = process.env.BISMUTH_LAYOUT_CACHE_DIR || join(homedir(), ".bismuth", "layout-cache")`. It lives under a **durable** app dir, not `os.tmpdir()` — macOS periodically purges `/tmp`, which was wiping the cache between sessions and forcing a cold rebuild on every reopen. Override with `BISMUTH_LAYOUT_CACHE_DIR` (tests redirect it to an isolated temp dir).
 
 **Why not the vault?** Writing into the vault would trip the file-system watcher and create an infinite invalidate → rebuild → recompute → rewrite loop. The cache dir is intentionally outside any watched directory.
 
@@ -213,7 +213,7 @@ File contents:
 
 Priority order:
 
-1. `OA_CLAUDEBOT_HOME` environment variable (ops/dev override)
+1. `BISMUTH_DAEMON_DIR` environment variable (ops/dev override)
 2. `daemon.home` setting in `settings.yaml` (runtime override, set via `setClaudeBotHomeOverride`)
 3. `~/.claude-bot` (default)
 
@@ -346,21 +346,21 @@ All `localStorage` access is guarded against unavailability and quota errors; fa
 
 | Key | File | Purpose |
 |-----|------|---------|
-| `oa-tabs-v1` | `App.tsx` | Serialized tab/pane layout (restored on next launch) |
-| `oa-sidebar-visible-v1` | `App.tsx` | Sidebar visible/hidden boolean (`"1"` / `"0"`) |
-| `oa-graph-cache-v1` | `App.tsx` | Last fetched `GraphData` (structure only, no `views` layouts); seeds the graph on boot so it paints instantly |
-| `oa-theme-vars-v1` | `App.tsx` | CSS variable map for the active theme; also read by an inline `<head>` script in `index.html` to apply the theme before the bundle loads |
-| `oa-settings-cache-v1` | `app/src/settings.ts` | Last hydrated `Settings` object; seeds the reactive store on the next launch |
+| `bismuth-tabs-v1` | `App.tsx` | Serialized tab/pane layout (restored on next launch) |
+| `bismuth-sidebar-visible-v1` | `App.tsx` | Sidebar visible/hidden boolean (`"1"` / `"0"`) |
+| `bismuth-graph-cache-v1` | `App.tsx` | Last fetched `GraphData` (structure only, no `views` layouts); seeds the graph on boot so it paints instantly |
+| `bismuth-theme-vars-v1` | `App.tsx` | CSS variable map for the active theme; also read by an inline `<head>` script in `index.html` to apply the theme before the bundle loads |
+| `bismuth-settings-cache-v1` | `app/src/settings.ts` | Last hydrated `Settings` object; seeds the reactive store on the next launch |
 | `three-brains.settings` | `app/src/settings.ts` | **Legacy key** — read once for first-launch migration, then removed |
 | `oa:graph:viewMode` | `app/src/GraphView.tsx` | 2D / 3D toggle (`"2d"` or `"3d"`); **not** in `settings.yaml` |
-| `oa-graphpos:v5:2d` | `app/src/graph/WebGLRenderer.ts` | Settled 2D node positions (id → `[x, y, z]` with `z=0`); merged on save |
-| `oa-graphpos:v5:3d` | `app/src/graph/WebGLRenderer.ts` | Settled 3D node positions (id → `[x, y, z]`); merged on save |
-| `oa-folds:<vault-relative-path>` | `app/src/editor/foldBlocks.ts` | Set of locked-open fold block ids per note; absent = no locks |
+| `bismuth-graphpos:v5:2d` | `app/src/graph/WebGLRenderer.ts` | Settled 2D node positions (id → `[x, y, z]` with `z=0`); merged on save |
+| `bismuth-graphpos:v5:3d` | `app/src/graph/WebGLRenderer.ts` | Settled 3D node positions (id → `[x, y, z]`); merged on save |
+| `bismuth-folds:<vault-relative-path>` | `app/src/editor/foldBlocks.ts` | Set of locked-open fold block ids per note; absent = no locks |
 | `three-brains.harper` | `app/src/editor/harperStore.ts` | Harper spell-checker personal dictionary and ignored lints (`{ words, ignoredLints }`) |
 
 ### Notes on graph position keys
 
-The graph position keys are versioned (`v5`). The version is bumped whenever the layout algorithm changes so stale cached positions are dropped and a fresh settle runs. On quota overflow, `evictOtherPositionCaches` removes all `oa-graphpos:*` keys except the one being saved, then retries. If the retry also fails, the save is silently skipped.
+The graph position keys are versioned (`v5`). The version is bumped whenever the layout algorithm changes so stale cached positions are dropped and a fresh settle runs. On quota overflow, `evictOtherPositionCaches` removes all `bismuth-graphpos:*` keys except the one being saved, then retries. If the retry also fails, the save is silently skipped.
 
 The positions are merged (not overwritten) on save: the existing blob is parsed and current node positions are overlaid by id. This means a large-but-slowly-changing vault reuses ~99% of cached positions across loads instead of cold-starting every time.
 
@@ -373,7 +373,7 @@ The Bases row cache (`app/src/bases/rowCache.ts`) is a **pure in-memory** `Map` 
 ## 9. Summary of Paths at a Glance
 
 ```
-$OA_VAULT/                         # vault root (required)
+$BISMUTH_VAULT/                         # vault root (required)
   **/*.md                            # notes (indexed, graph nodes)
   **/*.draw                          # drawing documents (JSON DrawingDoc)
   **/*.sheet                         # Univer workbook snapshots
@@ -387,13 +387,13 @@ $OA_VAULT/                         # vault root (required)
   .git/                              # local-only git repo for vault snapshots
     info/exclude                     # contains "settings.yaml" entry (added by backup.ts)
 
-$OA_MEMORY/                          # 3rd-brain memory dir (required; may be empty)
+$BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may be empty)
   *.md                               # Claude-bot memory notes (mem: namespace in graph)
 
 ~/.bismuth/layout-cache/      # backend layout cache (durable; outside vault to avoid watcher loop)
   v5-<16hex>.json                    # precomputed pos3d + pos2d per graph signature
 
-~/.claude-bot/  (or $OA_CLAUDEBOT_HOME or daemon.home)
+~/.claude-bot/  (or $BISMUTH_DAEMON_DIR or daemon.home)
   device-id                          # this machine's UUID
   devices.json                       # all heartbeating devices
   owner.json                         # claimed owner device (absent = unclaimed)
@@ -406,15 +406,15 @@ $OA_MEMORY/                          # 3rd-brain memory dir (required; may be em
   processes/.triggers/<basename>     # process reconcile trigger files (written by Bismuth)
 
 Browser localStorage:
-  oa-tabs-v1                         # tab/pane layout
-  oa-sidebar-visible-v1              # sidebar state
-  oa-graph-cache-v1                  # last GraphData for instant boot paint
-  oa-theme-vars-v1                   # CSS variable map for pre-bundle theme apply
-  oa-settings-cache-v1               # last Settings object for instant boot seed
+  bismuth-tabs-v1                         # tab/pane layout
+  bismuth-sidebar-visible-v1              # sidebar state
+  bismuth-graph-cache-v1                  # last GraphData for instant boot paint
+  bismuth-theme-vars-v1                   # CSS variable map for pre-bundle theme apply
+  bismuth-settings-cache-v1               # last Settings object for instant boot seed
   oa:graph:viewMode                  # "2d" or "3d" toggle (not in settings.yaml)
-  oa-graphpos:v5:2d                  # settled 2D node positions
-  oa-graphpos:v5:3d                  # settled 3D node positions
-  oa-folds:<path>                    # per-note locked fold block ids
+  bismuth-graphpos:v5:2d                  # settled 2D node positions
+  bismuth-graphpos:v5:3d                  # settled 3D node positions
+  bismuth-folds:<path>                    # per-note locked fold block ids
   three-brains.harper                # Harper spell-checker state
   three-brains.settings              # legacy key (imported once, then deleted)
 

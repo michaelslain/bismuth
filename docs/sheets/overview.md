@@ -126,7 +126,7 @@ Univer **cannot** be disposed and re-created into the same DOM node — attempti
 
 ```ts
 const root = document.createElement("div");
-root.className = "oa-sheet"; // scopes univer-theme.css
+root.className = "bismuth-sheet"; // scopes univer-theme.css
 root.style.width = "100%";
 root.style.height = "100%";
 opts.container.appendChild(root);
@@ -270,7 +270,7 @@ isExternalChange({ ..., lastWrittenText: null, diskText: "B" }) // true
 
 ### `univer-theme.css`
 
-Scoped entirely to `.oa-sheet` (the child div created by `mountSheet`). Never leaks to the rest of the app.
+Scoped entirely to `.bismuth-sheet` (the child div created by `mountSheet`). Never leaks to the rest of the app.
 
 **Strategy**: Univer's chrome uses `var(--univer-*)` CSS custom properties with `!important`. Re-theming is done by overriding these variables (not fighting specificity), mapping them onto Bismuth's own design tokens (`--accent`, `--fg`, `--border`, `--rail`, `--surface-1`, `--surface-2`, `--border-soft`, `--text-muted`, `--faint`, `--danger`). Since Bismuth's tokens already flip between light and dark, the sheet chrome tracks the app theme automatically.
 
@@ -289,9 +289,9 @@ Scoped entirely to `.oa-sheet` (the child div created by `mountSheet`). Never le
 | `--univer-gray-600` (dark only) | `var(--border)` | Strong borders / hover |
 | `--univer-gray-500` (dark only) | `var(--border-soft)` | Hairline dividers |
 
-The gray-token remaps are scoped to `.oa-sheet .univer-dark` so light mode (Univer's white surfaces) is left untouched.
+The gray-token remaps are scoped to `.bismuth-sheet .univer-dark` so light mode (Univer's white surfaces) is left untouched.
 
-**Font**: `.oa-sheet, .oa-sheet *` forces `font-family: "Monaspace Xenon", ui-monospace, monospace !important` across all chrome elements. Cell text is canvas-rendered by Univer and unaffected by this rule — that is intentional (canvas text is set separately via `ws.setDefaultStyle({ ff: "Monaspace Xenon" })`).
+**Font**: `.bismuth-sheet, .bismuth-sheet *` forces `font-family: "Monaspace Xenon", ui-monospace, monospace !important` across all chrome elements. Cell text is canvas-rendered by Univer and unaffected by this rule — that is intentional (canvas text is set separately via `ws.setDefaultStyle({ ff: "Monaspace Xenon" })`).
 
 **Ribbon tabs**: restyled to match Bismuth's `SegmentedToggle` (the 2D/3D graph control): a faint track, muted inactive tabs with small uppercase text, and a neutral "pill" for the active tab rather than an accent-colored one.
 

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { listMarkdown, listTree, moveEntry, readNote, writeNote, deleteEntry, createEntry } from "../src/files";
 
 test("lists markdown relative paths, reads and writes notes", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-files-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-"));
   mkdirSync(join(dir, "projects"));
   await writeNote(dir, "a.md", "# A");
   await writeNote(dir, "projects/b.md", "# B");
@@ -16,13 +16,13 @@ test("lists markdown relative paths, reads and writes notes", async () => {
 });
 
 test("empty directory returns empty list", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-files-empty-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-empty-"));
   const files = await listMarkdown(dir);
   expect(files).toEqual([]);
 });
 
 test("ignores non-markdown files", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-files-mixed-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-mixed-"));
   await writeNote(dir, "note.md", "content");
   Bun.file(join(dir, "image.png")).writer().write("binary");
   Bun.file(join(dir, "doc.txt")).writer().write("text");
@@ -31,7 +31,7 @@ test("ignores non-markdown files", async () => {
 });
 
 test("handles filenames with special characters", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-special-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-special-"));
   await writeNote(dir, "note-with-dashes.md", "content");
   await writeNote(dir, "note_with_underscores.md", "content");
   await writeNote(dir, "note (1).md", "content");
@@ -40,7 +40,7 @@ test("handles filenames with special characters", async () => {
 });
 
 test("markdown listing ignores non-markdown files", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-md-only-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-md-only-"));
   await writeNote(dir, "note.md", "");
   await writeNote(dir, "another.md", "");
   const files = await listMarkdown(dir);
@@ -49,7 +49,7 @@ test("markdown listing ignores non-markdown files", async () => {
 });
 
 test("readNote preserves exact file content", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-exact-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-exact-"));
   const content = "Line 1\nLine 2\nLine 3\n\nWith blank lines";
   await writeNote(dir, "exact.md", content);
   const read = await readNote(dir, "exact.md");
@@ -57,7 +57,7 @@ test("readNote preserves exact file content", async () => {
 });
 
 test("multiple writes to same file overwrite", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-overwrite-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-overwrite-"));
   await writeNote(dir, "file.md", "First");
   await writeNote(dir, "file.md", "Second");
   const read = await readNote(dir, "file.md");
@@ -65,7 +65,7 @@ test("multiple writes to same file overwrite", async () => {
 });
 
 test("handles unicode content in markdown", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-unicode-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-unicode-"));
   const content = "Unicode: 你好世界 🚀 مرحبا";
   await writeNote(dir, "unicode.md", content);
   const read = await readNote(dir, "unicode.md");
@@ -73,14 +73,14 @@ test("handles unicode content in markdown", async () => {
 });
 
 test("deeply nested directories work", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-deep-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-deep-"));
   await writeNote(dir, "a/b/c/d/e/f.md", "deep content");
   const files = await listMarkdown(dir);
   expect(files).toContain("a/b/c/d/e/f.md");
 });
 
 test("listTree surfaces the `icon` frontmatter property", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-tree-icon-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-icon-"));
   await writeNote(dir, "plain.md", "# Plain");
   await writeNote(dir, "fancy.md", "---\nicon: 🚀\n---\n# Fancy");
   const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
@@ -91,14 +91,14 @@ test("listTree surfaces the `icon` frontmatter property", async () => {
 });
 
 test("listTree ignores a non-string icon value", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-tree-badicon-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-badicon-"));
   await writeNote(dir, "note.md", "---\nicon: [not, a, string]\n---\n# Note");
   const entries = await listTree(dir);
   expect(entries).toEqual([{ path: "note.md", kind: "file" }]);
 });
 
 test("listTree includes directories and excludes dot-dirs like .trash", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-tree-dirs-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-dirs-"));
   await writeNote(dir, "top.md", "# Top");
   await writeNote(dir, "projects/inner.md", "# Inner");
   mkdirSync(join(dir, "empty-folder"));
@@ -111,7 +111,7 @@ test("listTree includes directories and excludes dot-dirs like .trash", async ()
 });
 
 test("listTree omits non-markdown files", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-tree-nonmd-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-nonmd-"));
   await writeNote(dir, "note.md", "# Note");
   await Bun.write(join(dir, "image.png"), "binary");
   const paths = (await listTree(dir)).map((e) => e.path);
@@ -119,7 +119,7 @@ test("listTree omits non-markdown files", async () => {
 });
 
 test("moveEntry renames a file within the same folder", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-rename-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-rename-"));
   await writeNote(dir, "old.md", "# Content");
   moveEntry(dir, "old.md", "new.md");
   expect(await readNote(dir, "new.md")).toBe("# Content");
@@ -127,14 +127,14 @@ test("moveEntry renames a file within the same folder", async () => {
 });
 
 test("moveEntry moves a file into another folder, creating it", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-into-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-into-"));
   await writeNote(dir, "note.md", "# N");
   moveEntry(dir, "note.md", "archive/note.md");
   expect(await readNote(dir, "archive/note.md")).toBe("# N");
 });
 
 test("moveEntry moves a whole folder with its children", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-folder-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-folder-"));
   await writeNote(dir, "proj/a.md", "# A");
   await writeNote(dir, "proj/b.md", "# B");
   moveEntry(dir, "proj", "archive/proj");
@@ -143,7 +143,7 @@ test("moveEntry moves a whole folder with its children", async () => {
 });
 
 test("moveEntry rejects an existing destination (no overwrite)", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-collide-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-collide-"));
   await writeNote(dir, "a.md", "# A");
   await writeNote(dir, "b.md", "# B");
   expect(() => moveEntry(dir, "a.md", "b.md")).toThrow();
@@ -151,18 +151,18 @@ test("moveEntry rejects an existing destination (no overwrite)", async () => {
 });
 
 test("moveEntry rejects moving a folder into its own descendant", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-cycle-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-cycle-"));
   await writeNote(dir, "parent/x.md", "# X");
   expect(() => moveEntry(dir, "parent", "parent/child")).toThrow();
 });
 
 test("moveEntry rejects a missing source", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-move-missing-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-move-missing-"));
   expect(() => moveEntry(dir, "nope.md", "yep.md")).toThrow();
 });
 
 test("deleteEntry moves a file into .trash and returns its trash path", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-del-file-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-del-file-"));
   await writeNote(dir, "note.md", "# Bye");
   const { trashPath } = deleteEntry(dir, "note.md");
   expect(existsSync(join(dir, "note.md"))).toBe(false);
@@ -171,7 +171,7 @@ test("deleteEntry moves a file into .trash and returns its trash path", async ()
 });
 
 test("deleteEntry moves a whole folder into .trash", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-del-folder-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-del-folder-"));
   await writeNote(dir, "proj/a.md", "# A");
   const { trashPath } = deleteEntry(dir, "proj");
   expect(existsSync(join(dir, "proj"))).toBe(false);
@@ -179,7 +179,7 @@ test("deleteEntry moves a whole folder into .trash", async () => {
 });
 
 test("deleted entries do not appear in listTree (trash is hidden)", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-del-hidden-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-del-hidden-"));
   await writeNote(dir, "note.md", "# N");
   deleteEntry(dir, "note.md");
   const paths = (await listTree(dir)).map((e) => e.path);
@@ -187,32 +187,32 @@ test("deleted entries do not appear in listTree (trash is hidden)", async () => 
 });
 
 test("deleteEntry rejects a missing path", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-del-missing-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-del-missing-"));
   expect(() => deleteEntry(dir, "nope.md")).toThrow();
 });
 
 test("createEntry creates an empty markdown file", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-create-file-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-create-file-"));
   createEntry(dir, "Untitled.md", "file");
   expect(existsSync(join(dir, "Untitled.md"))).toBe(true);
   expect(await readNote(dir, "Untitled.md")).toBe("");
 });
 
 test("createEntry creates a directory", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-create-dir-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-create-dir-"));
   createEntry(dir, "New Folder", "dir");
   const entry = (await listTree(dir)).find((e) => e.path === "New Folder");
   expect(entry).toEqual({ path: "New Folder", kind: "dir" });
 });
 
 test("createEntry rejects an existing path", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-create-collide-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-create-collide-"));
   await writeNote(dir, "exists.md", "# E");
   expect(() => createEntry(dir, "exists.md", "file")).toThrow();
 });
 
 test("file ops reject path traversal outside the vault", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-traversal-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-traversal-"));
   await writeNote(dir, "real.md", "# Real");
   expect(() => createEntry(dir, "../escape.md", "file")).toThrow(/escape|vault/i);
   expect(() => createEntry(dir, "/etc/whatever.md", "file")).toThrow(/escape|vault/i);
@@ -223,7 +223,7 @@ test("file ops reject path traversal outside the vault", async () => {
 });
 
 test("file ops still allow legitimate nested paths", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oa-nested-ok-"));
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-nested-ok-"));
   createEntry(dir, "sub/folder", "dir");
   createEntry(dir, "sub/folder/note.md", "file");
   expect((await listTree(dir)).map((e) => e.path).sort()).toContain("sub/folder/note.md");

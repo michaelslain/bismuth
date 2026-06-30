@@ -1,17 +1,18 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and app-spawned (oa-*) windows",
-  "windows": ["main", "oa-*"],
+  "description": "Capability for the main window and app-spawned (bismuth-*) windows",
+  "windows": ["main", "bismuth-*"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
     "dialog:default",
     "opener:default",
     "fs:allow-write-file",
+    "fs:allow-read-file",
     {
       "identifier": "fs:scope",
-      "allow": [{ "path": "$DOWNLOAD/*" }, { "path": "$HOME/**" }]
+      "allow": [{ "path": "$HOME/**" }, { "path": "/Volumes/**" }]
     },
     {
       "identifier": "shell:allow-execute",

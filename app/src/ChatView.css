@@ -93,8 +93,8 @@
   padding: 4px;
 }
 /* The PopoverList inside the panel fills the width (its default min-width is narrower);
-   each row's summary ellipsizes (the shared .oa-popover-label rule) with the time on the right. */
-.chat-history-panel .chat-history-list.oa-popover {
+   each row's summary ellipsizes (the shared .bismuth-popover-label rule) with the time on the right. */
+.chat-history-panel .chat-history-list.bismuth-popover {
   border: none;
   box-shadow: none;
   background: transparent;
@@ -103,7 +103,7 @@
   width: 100%;
 }
 /* The relative-time detail: a touch dimmer + monospace so the times line up. */
-.chat-history-panel .oa-popover-detail {
+.chat-history-panel .bismuth-popover-detail {
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: 11px;
   white-space: nowrap;
@@ -217,7 +217,7 @@
 }
 .chat-bubble.user a { color: #fff; border-bottom-color: rgba(255, 255, 255, 0.55); }
 .chat-bubble a:hover { border-bottom-color: currentColor; }
-.chat-bubble a.oa-wikilink { cursor: pointer; }
+.chat-bubble a.bismuth-wikilink { cursor: pointer; }
 /* Inline code + fences: Monaspace at the editor's mono-scale, semi-transparent grey fill
    (the same rgba the editor uses, so it reads on both the dark and the accent bubble). */
 .chat-bubble code {
@@ -266,12 +266,12 @@
   background: var(--surface-1);
   font-weight: 600;
 }
-.chat-bubble .oa-tag {
+.chat-bubble .bismuth-tag {
   color: var(--accent);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
   font-size: calc(1em * var(--mono-scale, 0.85));
 }
-.chat-bubble.user .oa-tag { color: #fff; }
+.chat-bubble.user .bismuth-tag { color: #fff; }
 .chat-bubble img {
   max-width: 100%;
   border-radius: 8px;

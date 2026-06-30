@@ -21,6 +21,14 @@ function isFile(e: TreeEntry & { kind?: string }): boolean {
   return e.kind !== "dir" && OPENABLE_EXTS.some((ext) => e.path.endsWith(ext));
 }
 
+// The vault's daemon "brain" (`.daemon/`, holding the 3rd-brain memory notes) is part of
+// the vault tree and legitimately shows in the sidebar, but its files are internal state
+// — not user notes — so cmd+O must not surface them. Exclude any path inside a `.daemon`
+// directory (top-level `.daemon/…` or nested `…/.daemon/…`).
+function isDaemonPath(path: string): boolean {
+  return path.startsWith(".daemon/") || path.includes("/.daemon/");
+}
+
 // Reuse the tab seam so the switcher row matches the tab/pane label + icon exactly:
 // settings.yaml → "settings" with a gear, apps get their type icon, notes their own icon.
 function toItem(e: TreeEntry): PaletteItem {
@@ -37,7 +45,11 @@ function toItem(e: TreeEntry): PaletteItem {
 export function QuickSwitcher(props: Props) {
   // Derive items reactively from the pre-warmed cache: the list paints immediately
   // off the last-known tree (no per-open fetch), and re-renders if a refresh lands.
-  const items = createMemo<PaletteItem[]>(() => vaultTree().filter(isFile).map(toItem));
+  const items = createMemo<PaletteItem[]>(() =>
+    vaultTree()
+      .filter((e) => isFile(e) && !isDaemonPath(e.path))
+      .map(toItem),
+  );
 
   // Still kick a refresh on open so a missed SSE corrects fast — but we render the
   // cache right now rather than waiting on it (the await would re-introduce the flash).

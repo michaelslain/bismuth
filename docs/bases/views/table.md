@@ -239,7 +239,7 @@ Supported summary names (case-sensitive):
 ## Cell Rendering
 
 The first column (`ci() === 0`) renders as a **title cell** (`renderTitle`):
-- Accent book icon + an `<a>` link that dispatches a custom `oa-open` event to open the note.
+- Accent book icon + an `<a>` link that dispatches a custom `bismuth-open` event to open the note.
 - If the value is a `Link` object (e.g. from `file.asLink(...)` or the `link()` function), the link's display text and target path are used; otherwise the row's `file.path` is opened.
 
 All other columns render as **data cells** (`renderCell`), with special handling for heuristically detected column names:

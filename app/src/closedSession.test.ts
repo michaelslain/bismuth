@@ -44,7 +44,7 @@ test("survives a fresh module read of the same storage (cross-window/relaunch)",
 });
 
 test("tolerates malformed stored JSON", () => {
-  (globalThis as any).localStorage.setItem("oa-closed-sessions-v1", "{not json");
+  (globalThis as any).localStorage.setItem("bismuth-closed-sessions-v1", "{not json");
   expect(popClosedSession()).toBeNull();
   pushClosedSession("ok");
   expect(popClosedSession()).toBe("ok");

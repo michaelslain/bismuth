@@ -2,19 +2,19 @@
    Make Univer's DOM chrome (ribbon, toolbar, menus, dialogs) feel native to the
    app. Univer's chrome is Tailwind utilities that reference `var(--univer-*)`
    color tokens with !important, so we recolor by overriding the VARIABLES (not the
-   properties) — no specificity fight. Everything is scoped to `.oa-sheet` (the
+   properties) — no specificity fight. Everything is scoped to `.bismuth-sheet` (the
    adapter's container) so it never leaks to the rest of the app. The mapped values
    read the app's own `--accent` / `--fg` / `--border` / etc., which already flip
    with the app's light/dark theme, so the sheet chrome follows the app theme. */
 
 /* Use the app's monospace everywhere in the chrome (the single biggest cohesion
    win). Cell text is canvas-rendered by Univer and unaffected — that's intended. */
-.oa-sheet,
-.oa-sheet * {
+.bismuth-sheet,
+.bismuth-sheet * {
   font-family: "Monaspace Xenon", ui-monospace, monospace !important;
 }
 
-.oa-sheet {
+.bismuth-sheet {
   /* Accent ramp → the app accent (active ribbon tab, primary buttons, focus ring,
      selection chrome). Light stops become translucent accent tints; mid/strong
      stops become the accent itself. */
@@ -40,13 +40,13 @@
    the ACTIVE tab as a neutral "pill" (fg text on a subtle fill), NOT accent text.
    We can't embed the Solid <SegmentedToggle> inside Univer's DOM, so this mirrors
    its CSS. The ribbon header is the `select-none h-9` row; tabs carry `px-2`. */
-.oa-sheet .univer-select-none.univer-h-9 > div {
+.bismuth-sheet .univer-select-none.univer-h-9 > div {
   background: color-mix(in srgb, var(--fg) 4%, transparent) !important; /* faint track */
   border-radius: 5px !important;
   padding: 2px !important;
   gap: 2px !important;
 }
-.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"] {
   background: transparent !important;
   box-shadow: none !important;
   border-radius: 3px !important;
@@ -57,11 +57,11 @@
   padding: 2px 8px !important;
   color: var(--text-muted) !important;
 }
-.oa-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-px-2"]:hover {
   color: var(--fg) !important;
 }
 /* the active tab carries a `text-primary*` utility → neutral pill (graph-seg active) */
-.oa-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
+.bismuth-sheet .univer-select-none.univer-h-9 [class*="univer-text-primary"] {
   color: var(--fg) !important;
   background: color-mix(in srgb, var(--fg) 16%, transparent) !important;
 }
@@ -75,7 +75,7 @@
    the outer toolbar/formula-bar rail is `--rail` (slightly darker than the editor
    body), raised surfaces step through `--surface-1/-2`, and hairlines are
    `--border-soft` with strong borders at `--border`. */
-.oa-sheet .univer-dark {
+.bismuth-sheet .univer-dark {
   --univer-gray-900: var(--rail);        /* toolbar + formula-bar outer rail (darker chrome) */
   --univer-gray-800: var(--surface-1);   /* popovers, menus, dropdowns */
   --univer-gray-700: var(--surface-2);   /* inputs, subtle hover */
@@ -91,12 +91,12 @@
    full `--fg`. Selectors are defensive (`:where`, attribute hooks) so a Univer
    re-render never breaks them; if a hook misses, the row simply falls back to the
    `--univer-gray-*` remap above — no visual regression. */
-.oa-sheet .univer-dark :where([data-u-comp="formula-bar"], .univer-formula-bar) {
+.bismuth-sheet .univer-dark :where([data-u-comp="formula-bar"], .univer-formula-bar) {
   background: var(--rail) !important;
   border-bottom: 1px solid var(--border-soft) !important;
   color: var(--text-muted) !important;
 }
 /* The fx (function) toggle reads as the design's faint `function-square` glyph. */
-.oa-sheet .univer-dark .univerjs-icon-fx-icon {
+.bismuth-sheet .univer-dark .univerjs-icon-fx-icon {
   color: var(--faint) !important;
 }

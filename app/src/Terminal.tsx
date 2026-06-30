@@ -9,6 +9,7 @@ import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { api, apiBase } from "./api";
+import type { NativeDragDetail } from "./nativeDrop";
 
 // The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
 function activePaletteInts(): number[] {
@@ -97,9 +98,9 @@ function buildExtendedAnsi(paletteInts: number[]): string[] {
 }
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses.
-// apiBase() honors ?api= > window.__OA_API__ > VITE_API_BASE > :4321, so the bundled
-// app's free-port sidecar (injected as __OA_API__) is reached too — not just :4321.
-// Computed at connect time, since __OA_API__/?api= are only known at runtime.
+// apiBase() honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled
+// app's free-port sidecar (injected as __BISMUTH_API__) is reached too — not just :4321.
+// Computed at connect time, since __BISMUTH_API__/?api= are only known at runtime.
 const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 
 // Fix 3: Hoist TextEncoder to module scope — avoids a per-keystroke allocation.
@@ -152,7 +153,7 @@ async function uploadDroppedFile(file: File): Promise<string> {
 // dataTransfer field readable during dragover; getData is blocked there).
 function dragHasPath(e: DragEvent): boolean {
   const t = e.dataTransfer?.types;
-  return !!t && (t.includes("application/x-oa-path") || t.includes("Files") || t.includes("text/uri-list"));
+  return !!t && (t.includes("application/x-bismuth-path") || t.includes("Files") || t.includes("text/uri-list"));
 }
 
 // Extract droppable paths. Reads dataTransfer SYNCHRONOUSLY (valid only during the event)
@@ -166,7 +167,7 @@ async function pathsFromDrop(e: DragEvent): Promise<string[]> {
   if (!dt) return [];
   // Snapshot the FileList synchronously, before any await invalidates dataTransfer.
   const files = dt.files ? [...dt.files] : [];
-  const rel = dt.getData("application/x-oa-path");
+  const rel = dt.getData("application/x-bismuth-path");
   if (rel) {
     const root = (await vaultRoot()).replace(/\/+$/, "");
     return [root ? `${root}/${rel}` : rel];
@@ -241,6 +242,8 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
   let dragOverHandler: ((e: DragEvent) => void) | undefined;
   let dragLeaveHandler: ((e: DragEvent) => void) | undefined;
   let dropHandler: ((e: DragEvent) => void) | undefined;
+  // Tauri native OS-file drop (window-level event; removed on cleanup).
+  let nativeDragHandler: ((e: Event) => void) | undefined;
   // Reconnection state — exponential backoff, cleared on successful open.
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectAttempt = 0;
@@ -340,6 +343,7 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       if (dragOverHandler) try { container.removeEventListener("dragover", dragOverHandler); } catch {}
       if (dragLeaveHandler) try { container.removeEventListener("dragleave", dragLeaveHandler); } catch {}
       if (dropHandler) try { container.removeEventListener("drop", dropHandler); } catch {}
+      if (nativeDragHandler) try { window.removeEventListener("bismuth-native-drag", nativeDragHandler); } catch {}
       // Close with code 1000 so the backend treats this as an intentional teardown
       // and kills the PTY immediately (vs. keeping it alive for reattach on a drop).
       try { ws?.close(1000, "dispose"); } catch {}
@@ -501,6 +505,35 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     container.addEventListener("dragover", dragOverHandler);
     container.addEventListener("dragleave", dragLeaveHandler);
     container.addEventListener("drop", dropHandler);
+
+    // Tauri native OS file drop: nativeDrop.ts forwards real absolute paths + cursor position as a
+    // window-level `bismuth-native-drag` event (the HTML5 drop above only sees a basename under
+    // Tauri). Insert the real path(s) at the prompt — like a native terminal — when the cursor is
+    // over THIS terminal. No-op in the browser (the event never fires there). Coexists with the
+    // HTML5 handlers, which still serve the browser build and internal file-tree drags.
+    nativeDragHandler = (e: Event) => {
+      const d = (e as CustomEvent<NativeDragDetail>).detail;
+      if (!d) return;
+      const r = container.getBoundingClientRect();
+      // A hidden (display:none) terminal tab has a 0×0 rect at (0,0); the `width||height` guard
+      // keeps a drop forwarded at the viewport corner (0,0) from writing to every backgrounded PTY.
+      const inside =
+        (r.width !== 0 || r.height !== 0) &&
+        d.x >= r.left && d.x <= r.right && d.y >= r.top && d.y <= r.bottom;
+      if (d.type === "drop") {
+        container.classList.remove("term-drop-active");
+        if (!inside || d.paths.length === 0 || !ws || ws.readyState !== WebSocket.OPEN) return;
+        // Trailing space so the next path/arg (or a command typed after) stays separated.
+        ws.send(stdinFrame(enc.encode(d.paths.map(shellQuote).join(" ") + " ")));
+        term?.focus();
+      } else if (d.type === "leave") {
+        container.classList.remove("term-drop-active");
+      } else {
+        // enter / over: show the drop affordance only while the cursor is over this terminal.
+        container.classList.toggle("term-drop-active", inside);
+      }
+    };
+    window.addEventListener("bismuth-native-drag", nativeDragHandler);
 
     // Wire up the WebSocket to the backend PTY. We pass our stable term id so that on
     // an ABNORMAL close (reload / network drop) the reconnect REATTACHES to the same

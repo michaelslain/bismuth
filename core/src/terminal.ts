@@ -57,12 +57,12 @@ function pushBuffer(s: Session, d: string): void {
 
 // The relay plugin dir (relay/) and its PATH shim. In dev it's resolved relative to this
 // source file (core/src/terminal.ts → ../../relay); in the bundled app the compiled
-// sidecar sets OA_RELAY_BUNDLE to the Tauri-staged relay resource (import.meta.dir is a
+// sidecar sets BISMUTH_RELAY_BUNDLE to the Tauri-staged relay resource (import.meta.dir is a
 // virtual path there, so the source-relative path wouldn't exist). REAL_CLAUDE is
 // resolved ONCE here using an augmented PATH so the shim can exec it without recursing;
 // null when `claude` isn't found (the zdotdir init then resolves it from the user's
 // rc-loaded PATH).
-const RELAY_PLUGIN_DIR = process.env.BISMUTH_RELAY_BUNDLE ?? process.env.OA_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay");
+const RELAY_PLUGIN_DIR = process.env.BISMUTH_RELAY_BUNDLE ?? resolve(import.meta.dir, "..", "..", "relay");
 const SHIM_DIR = join(RELAY_PLUGIN_DIR, "shim");
 // zsh init dir: ZDOTDIR points here so we can define a `claude` shell function AFTER the
 // user's .zshrc loads — robust against a .zshrc that re-prepends PATH (which shadows a
@@ -74,7 +74,7 @@ const ZDOTDIR_DIR = join(SHIM_DIR, "zdotdir");
 const REAL_CLAUDE = whichClaude();
 
 // Activate the relay shim only when its files are actually present — the dev repo, or the
-// bundled app via OA_RELAY_BUNDLE (the staged relay resource). If absent, skip it so the
+// bundled app via BISMUTH_RELAY_BUNDLE (the staged relay resource). If absent, skip it so the
 // tab still runs the user's normal login shell (oh-my-zsh, their PATH, their `claude`)
 // rather than pointing ZDOTDIR at a nonexistent dir.
 const SHIM_AVAILABLE = existsSync(ZDOTDIR_DIR);

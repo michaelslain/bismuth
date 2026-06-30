@@ -80,7 +80,7 @@ const SLIDES: Slide[] = [
 ];
 
 // localStorage key the post-restart app reads to run the chosen power-ups against the real backend.
-const POWERUPS_KEY = "oa-first-run-powerups";
+const POWERUPS_KEY = "bismuth-first-run-powerups";
 
 // All themes (dark + light) in one list for the selector dropdown.
 const THEME_OPTIONS = THEME_NAMES.map((n) => ({ value: n, label: THEME_LABELS[n] }));
@@ -126,7 +126,7 @@ const BIG_GRAPH = makeCloud(1874, 760, 987654321);
 // The renderer caches settled node positions in localStorage under these keys (shared with
 // the app's GraphView). The intro's dummy graphs must NOT read stale cached positions (they'd
 // restore nodes off-screen) or persist their own into the app — so we wipe them on enter+exit.
-const GRAPHPOS_KEYS = ["oa-graphpos:v5:2d", "oa-graphpos:v5:3d"];
+const GRAPHPOS_KEYS = ["bismuth-graphpos:v5:2d", "bismuth-graphpos:v5:3d"];
 const clearGraphPosCache = () => {
   try {
     for (const k of GRAPHPOS_KEYS) localStorage.removeItem(k);
@@ -256,7 +256,7 @@ export default function VaultIntro() {
     if (busy()) return;
     // Dev: still open the native picker to test it, but choose_first_vault skips app.restart() in
     // debug (it would kill the tauri-dev backend → white screen). After it returns, navigate into
-    // the app ourselves (the dev vault comes from OA_VAULT env regardless of what's picked).
+    // the app ourselves (the dev vault comes from BISMUTH_VAULT env regardless of what's picked).
     if (import.meta.env.DEV && isTauri()) {
       setBusy(true);
       try {
@@ -280,7 +280,7 @@ export default function VaultIntro() {
           .filter((c): c is string => !!c);
         localStorage.setItem(POWERUPS_KEY, JSON.stringify(cmds));
         // Cache the chosen theme vars for the post-restart first paint.
-        localStorage.setItem("oa-theme-vars-v1", JSON.stringify(varsFor(theme())));
+        localStorage.setItem("bismuth-theme-vars-v1", JSON.stringify(varsFor(theme())));
       } catch {
         /* private mode — non-fatal */
       }
