@@ -69,7 +69,7 @@ const setViewModePersisted = (m: "2d" | "3d") => {
 // glyph in both so the little and big toolbars read as one control at two sizes.
 const MODE_ICON: Record<GraphMode, string> = {
   "2nd": "Brain",         // your vault — the 2nd brain
-  "3rd": "BrainCircuit",  // claude-bot memory — the 3rd brain
+  "3rd": "BrainCircuit",  // the daemon's memory — the 3rd brain
   both: "Blend",          // the two brains blended into one graph
   agents: "Network",      // terminal-tab sessions + their subagents
   daemon: "Bot",          // the background daemon's crons + processes

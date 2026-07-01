@@ -21,14 +21,14 @@ import { installStatus, runSetup } from "../../../core/src/daemonInstall";
 
 export const commands: CommandMap = {
   "daemon status": {
-    summary: "Print the claude-bot daemon's liveness, this device id, and current owner",
+    summary: "Print the daemon's liveness, this device id, and current owner",
     usage: "[--pretty]",
     run: (args) => {
       out(daemonStatus(), args);
     },
   },
   "daemon devices": {
-    summary: "List all heartbeating claude-bot devices (each flagged owner/this)",
+    summary: "List all heartbeating devices (each flagged owner/this)",
     usage: "[--pretty]",
     run: (args) => {
       out(listDevices(), args);
@@ -47,14 +47,14 @@ export const commands: CommandMap = {
     },
   },
   "daemon install": {
-    summary: "Print the claude-bot install status (read-only; never throws)",
+    summary: "Print the daemon's install status (read-only; never throws)",
     usage: "[--pretty]",
     run: async (args) => {
       out(await installStatus(), args);
     },
   },
   "daemon setup": {
-    summary: "Run the idempotent, adopt-only claude-bot setup and print the result",
+    summary: "Run the idempotent, adopt-only daemon setup and print the result",
     usage: "[--pretty]",
     run: async (args) => {
       out(await runSetup(), args);

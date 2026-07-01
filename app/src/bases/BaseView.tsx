@@ -196,7 +196,7 @@ export function BaseView(props: {
 
   // Revalidate on a server version bump, but ONLY when the change can actually affect this
   // view's rows. Otherwise a busy vault re-resolves + re-renders every open base continuously
-  // and pegs CPU — e.g. the claude-bot daemon rewrites DAEMON.md every ~2s, which bumps the
+  // and pegs CPU — e.g. the daemon rewrites DAEMON.md every ~2s, which bumps the
   // version with { paths:[DAEMON.md], dirty:{graph:false,tree:false} } even though no base
   // cares about it. Safe-by-default: anything we can't rule out triggers a refetch. Accepted
   // revalidations run in a transition (stale-while-revalidate: prior rows stay painted, no

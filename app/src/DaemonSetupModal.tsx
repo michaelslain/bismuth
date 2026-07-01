@@ -1,11 +1,13 @@
 // app/src/DaemonSetupModal.tsx
-// "Set up claude-bot daemon" panel. Shows whether the claude-bot daemon is
-// installed + running (GET /daemon/install) and who owns it (GET /daemon/status),
-// and offers a single "Set up / repair" button that runs the idempotent,
-// ADOPT-ONLY installer (POST /daemon/setup). Setup is safe to run even when the
-// daemon is already live — claude-bot adopts the existing install (no clobber,
-// no restart) and reports action "adopted". Reuses the shared Modal + TextButton
-// chrome, same as DaemonOwnerModal / FolderPrompt.
+// "Set up daemon" panel. Shows whether the daemon is installed + running
+// (GET /daemon/install) and who owns it (GET /daemon/status), and offers a
+// single "Set up / repair" button that runs the idempotent, ADOPT-ONLY
+// installer (POST /daemon/setup). The daemon binary ships bundled with the app
+// (core/src/daemonInstall.ts stages it at boot) — Set up/Update never download
+// anything; they just (re-)register the launchd/systemd service pointing at
+// that already-staged binary. Safe to run even when the daemon is already
+// live (no clobber, no restart of a running service). Reuses the shared Modal
+// + TextButton chrome, same as DaemonOwnerModal / FolderPrompt.
 import { createSignal, onMount, Show } from "solid-js";
 import { Modal } from "./ui/Modal";
 import { TextButton } from "./ui/TextButton";
@@ -84,12 +86,14 @@ export function DaemonSetupModal(props: { onClose: () => void }) {
 
   return (
     <Modal onClose={props.onClose} class="folder-prompt" closeOnBackdrop={false}>
-      <div class="folder-prompt-title">Set up claude-bot daemon</div>
+      <div class="folder-prompt-title">Set up daemon</div>
       <div class="folder-prompt-hint">
-        The claude-bot daemon runs crons and the persistent bot session in the background.
-        <strong> Set up</strong> is idempotent — on first run it downloads claude-bot and installs
-        the daemon; if already installed, it adopts the existing install without changing anything.
-        <strong> Update</strong> pulls the latest claude-bot, reinstalls deps, and restarts the daemon.
+        The daemon runs crons and the persistent bot session in the background.
+        <strong> Set up</strong> is idempotent — it registers the background service for the
+        daemon binary bundled with this app; if already installed, it adopts the existing
+        install without changing anything.
+        <strong> Update</strong> re-registers that service (the daemon binary itself updates
+        with the app, not here).
       </div>
       <Show when={busy()}>
         <div class="folder-prompt-hint">{busy()}</div>

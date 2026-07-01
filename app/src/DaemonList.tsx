@@ -198,7 +198,7 @@ export function DaemonList(props: {
 
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
-  /** The name claude-bot keys on = the node label (frontmatter name ?? filename). */
+  /** The name the daemon keys on = the node label (frontmatter name ?? filename). */
   const nameOf = (node: GraphNode) => node.label;
 
   async function toggleEnabled(node: GraphNode) {
@@ -236,7 +236,7 @@ export function DaemonList(props: {
         {
           label: "Run now",
           icon: "Play",
-          // claude-bot ignores a run trigger for an already-running job.
+          // The daemon ignores a run trigger for an already-running job.
           disabled: node.daemon?.running === true,
           onSelect: () => void runNow(node),
         },

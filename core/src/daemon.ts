@@ -18,8 +18,8 @@
 // Every function tolerates missing/malformed files and NEVER throws (a daemon
 // that has never run yet, or a partially-written file, degrades to empty/null).
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
 import { pidAlive, readFrontmatter } from "./daemonState";
 import { AppError } from "./error";
@@ -38,6 +38,36 @@ export function daemonMachineDir(): string {
  */
 export function vaultDaemonDir(vault: string): string {
   return join(vault, ".daemon");
+}
+
+/**
+ * Register this vault's absolute root in the machine-level `vaults.json` registry — the
+ * list the daemon's `loadEnabledVaults()` (daemon/src/lib/registry.ts) iterates every cron
+ * tick to discover which vaults exist at all. Each vault still opts in via its OWN
+ * `.settings` (`daemon.enabled`); this just makes the vault DISCOVERABLE so that check ever
+ * runs. Idempotent (dedupes on the resolved path) and best-effort — a failed read/write
+ * here must never block server boot, and must never crash the daemon's own read of a
+ * mid-write file, so the write goes through a temp-then-rename swap.
+ */
+export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
+  const root = resolve(vault);
+  const file = join(home, "vaults.json");
+  try {
+    let known: string[] = [];
+    try {
+      const parsed = JSON.parse(readFileSync(file, "utf8"));
+      if (Array.isArray(parsed)) known = parsed.filter((v): v is string => typeof v === "string");
+    } catch {
+      // absent/malformed → start fresh
+    }
+    if (known.includes(root)) return;
+    mkdirSync(home, { recursive: true });
+    const tmp = join(home, `vaults.json.${process.pid}.tmp`);
+    writeFileSync(tmp, JSON.stringify([...known, root], null, 2));
+    renameSync(tmp, file);
+  } catch {
+    // best-effort — never blocks boot
+  }
 }
 
 /**
@@ -198,7 +228,7 @@ export function listDevices(): DeviceList {
 
 /**
  * Claim a device as the owner: write owner.json with that device's label (looked
- * up in devices.json). Byte-compatible with what claude-bot reads — a plain object
+ * up in devices.json). Byte-compatible with what the daemon reads — a plain object
  * with exactly { ownerDeviceId, ownerLabel, updatedAt }. Throws (via the caller's
  * mutating handler) if the deviceId isn't a known, heartbeating device.
  */
@@ -230,7 +260,7 @@ export function setOwner(deviceId: string): Owner {
 /**
  * Resolve which `<dir>/<*.md>` file backs a cron/process referred to by `name`
  * (a graph node's label). Returns the file BASENAME (no extension) — the canonical
- * id claude-bot keys on — or null when no file matches. Only ever returns a real
+ * id the daemon keys on — or null when no file matches. Only ever returns a real
  * entry from `dir`, so callers can safely `join(dir, base + ".md")` (no traversal).
  */
 function resolveDaemonFile(dir: string, name: string): string | null {
@@ -254,7 +284,7 @@ function resolveDaemonFile(dir: string, name: string): string | null {
   return null;
 }
 
-/** Drop a trigger file the daemon polls (`<dir>/.triggers/<base>`). This is claude-bot's
+/** Drop a trigger file the daemon polls (`<dir>/.triggers/<base>`). This is the daemon's
  *  general file-based control port — for crons it means "run now", for processes "reconcile
  *  runtime to disk `enabled`". Best-effort: only the running, owner daemon consumes it. */
 function writeTrigger(dir: string, base: string): void {
@@ -290,7 +320,7 @@ export function setCronEnabled(name: string, enabled: boolean, home: string = da
  * drops a reconcile trigger at `<home>/processes/.triggers/<basename>`. Unlike crons,
  * the daemon doesn't re-read process defs per tick, so the trigger nudges the running
  * daemon to bring this process's RUNTIME in line with its new on-disk `enabled` (start
- * it / stop it) via claude-bot's general process-trigger port. No-op vs the live process
+ * it / stop it) via the daemon's general process-trigger port. No-op vs the live process
  * if the daemon isn't running; the disk flip still takes effect on next boot.
  */
 export function setProcessEnabled(name: string, enabled: boolean, home: string = daemonMachineDir()): void {
@@ -299,8 +329,8 @@ export function setProcessEnabled(name: string, enabled: boolean, home: string =
 }
 
 /**
- * Request claude-bot to run a cron NOW, out of schedule: drop a trigger file at
- * `<home>/crons/.triggers/<basename>` — the exact contract claude-bot's daemon polls
+ * Request the daemon to run a cron NOW, out of schedule: drop a trigger file at
+ * `<home>/crons/.triggers/<basename>` — the exact contract the daemon polls
  * (~5s) via processTriggers(). Fires only if the daemon is running AND this device is
  * the owner; otherwise the file is consumed without firing. Throws AppError("ENOENT")
  * if no cron matches `name`.

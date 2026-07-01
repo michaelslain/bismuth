@@ -17,6 +17,7 @@ import {
   runCron,
   daemonMachineDir,
   migrateDaemonState,
+  registerVaultRoot,
 } from "../src/daemon";
 import { daemonSnapshot } from "../src/daemonGraph";
 
@@ -104,6 +105,46 @@ test("migrateDaemonState is a no-op when there is no legacy claude-bot dir", () 
   created.push(vault);
   expect(migrateDaemonState(vault, join(tmpdir(), "does-not-exist-claude-bot"))).toBe(false);
   expect(existsSync(join(vault, ".daemon"))).toBe(false);
+});
+
+test("registerVaultRoot writes an absolute path into vaults.json, creating it if absent", () => {
+  const home = makeHome({});
+  const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(vault);
+  registerVaultRoot(vault, home);
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+  expect(written).toEqual([vault]);
+});
+
+test("registerVaultRoot is idempotent — dedupes on the resolved path, doesn't duplicate", () => {
+  const home = makeHome({});
+  const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(vault);
+  registerVaultRoot(vault, home);
+  registerVaultRoot(vault, home);
+  registerVaultRoot(join(vault, ".", "."), home); // same root, spelled differently
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+  expect(written).toEqual([vault]);
+});
+
+test("registerVaultRoot appends to an existing registry without clobbering other vaults", () => {
+  const home = makeHome({});
+  const vaultA = mkdtempSync(join(tmpdir(), "vaultA-"));
+  const vaultB = mkdtempSync(join(tmpdir(), "vaultB-"));
+  created.push(vaultA, vaultB);
+  registerVaultRoot(vaultA, home);
+  registerVaultRoot(vaultB, home);
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+  expect(written.sort()).toEqual([vaultA, vaultB].sort());
+});
+
+test("registerVaultRoot never throws against a malformed vaults.json", () => {
+  const home = makeHome({ "vaults.json": "not json{{{" });
+  const vault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+  created.push(vault);
+  expect(() => registerVaultRoot(vault, home)).not.toThrow();
+  const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+  expect(written).toEqual([vault]);
 });
 
 test("daemonMachineDir honors BISMUTH_DAEMON_DIR, else falls back to ~/.bismuth/daemon", () => {

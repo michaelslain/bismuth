@@ -1,6 +1,6 @@
 // Decides whether an SSE server change can affect a given base view's rows — so BaseView
 // can skip re-resolving + re-rendering on changes that provably don't matter. Without this,
-// a busy vault (e.g. the claude-bot daemon rewriting DAEMON.md every ~2s) re-resolves every
+// a busy vault (e.g. the daemon rewriting DAEMON.md every ~2s) re-resolves every
 // open base continuously and pegs CPU.
 //
 // Pure + dependency-free (only types) so it's unit-tested in isolation. BaseView calls
