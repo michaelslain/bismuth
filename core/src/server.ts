@@ -52,7 +52,7 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
-import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName } from "./daemon";
+import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName, registerVaultRoot } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
@@ -163,6 +163,13 @@ export function createServer(cfg: CoreConfig) {
   // running while the app is closed. No-op in dev (no BISMUTH_DAEMON_BUNDLE); best-effort.
   void installDaemonFromBundle();
 
+  // Boot-time: make this vault DISCOVERABLE to the daemon by registering its root in the
+  // machine-level vaults.json registry (daemon/src/lib/registry.ts's loadEnabledVaults()
+  // iterates this every cron tick — a vault absent from it never fires a single cron, no
+  // matter how its own daemon.enabled is set). Unconditional (not gated on daemon.enabled):
+  // the daemon re-checks each vault's own .settings itself. Idempotent; best-effort.
+  registerVaultRoot(cfg.vault);
+
   // Backend runtime config (settings.yaml merged over defaults). Seeded synchronously
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
   // boot and whenever settings.yaml changes (see classifyVault).
@@ -240,7 +247,7 @@ export function createServer(cfg: CoreConfig) {
   // couple of seconds.
   const tracker = createChangeTracker();
   const isHidden = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
-  // The claude-bot daemon rewrites its status file (DAEMON.md) into the vault root every
+  // The daemon rewrites its status file (DAEMON.md) into the vault root every
   // ~2s (daemon-status-updater). It's a status artifact, not knowledge — reacting to its
   // churn (version bump → cache invalidation → every content-dependent base re-resolving
   // over the whole vault) needlessly pegs CPU. Drop its changes in the watcher so they never
@@ -869,7 +876,7 @@ export function createServer(cfg: CoreConfig) {
 
     // Daemon supervision WRITES: enable/disable a cron or process (edits the `enabled`
     // frontmatter in the shared <home>/{crons,processes}/<name>.md), and run a cron on
-    // command (drops a trigger file the daemon polls). These mutate the claude-bot
+    // command (drops a trigger file the daemon polls). These mutate the
     // daemon's shared files, NOT the vault — so, like POST /daemon/setup and the /relay/*
     // hooks, they live in the READ routes (no vault-cache invalidation; the frontend
     // re-polls /daemon/graph). Unknown name → setCronEnabled/runCron throw AppError
@@ -1250,7 +1257,7 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
 
-    // Claim a device as the claude-bot daemon owner: write owner.json (byte-compatible
+    // Claim a device as the daemon owner: write owner.json (byte-compatible
     // with what the daemon reads). owner.json lives outside the vault, so there's
     // nothing in the graph/tree caches to invalidate — pass a stable constant scope
     // (no vault path) so the mutating handler's path-derived invalidation is a no-op.
@@ -1291,8 +1298,7 @@ export function createServer(cfg: CoreConfig) {
   const server = Bun.serve<WsData>({
     port: cfg.port ?? 4321,
     // Bun's default idleTimeout is 10s, which would drop a connection mid-request for the
-    // few slow handlers we have (notably POST /daemon/setup, which git-clones + bun-installs
-    // claude-bot on first run — see core/src/claudebot.ts provisionClaudeBot). 255s is Bun's
+    // few slow handlers we have (notably long export/GCal-sync requests). 255s is Bun's
     // max; long enough for those, harmless for everything else.
     idleTimeout: 255,
     async fetch(req, server) {

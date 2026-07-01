@@ -173,7 +173,7 @@ export const api = {
   graph: () => getJson<GraphData>("/graph"),
   agentGraph: () => getJson<GraphData>("/agent-graph"),
   daemonGraph: () => getJson<GraphData>("/daemon/graph"),
-  // Daemon supervision writes (claude-bot crons + processes). Enable/disable edits the
+  // Daemon supervision writes (crons + processes). Enable/disable edits the
   // shared `enabled` frontmatter; runCron drops a trigger the daemon fires. Return the
   // raw Response so the caller can surface a toast on failure (404 = unknown name).
   setCronEnabled: (name: string, enabled: boolean) => post("/daemon/cron/toggle", { name, enabled }),
@@ -192,7 +192,7 @@ export const api = {
   uploadAsset: (targetPath: string, bytes: ArrayBuffer): Promise<string> =>
     transport.uploadAsset(targetPath, bytes),
   // The server exposes file writes as PUT /file (POST /file 404s) — use PUT so
-  // editor autosave + settings.yaml persistence actually reach disk.
+  // editor autosave + .settings persistence actually reach disk.
   write: (path: string, contents: string) =>
     put("/file", { path, contents }).then(() => {}),
   backup: () => post("/backup", {}).then(() => {}),
@@ -279,10 +279,10 @@ export const api = {
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
   deleteProperty: (path: string, key: string) => post("/delete-property", { path, key }),
-  // Folders have no frontmatter — their icon override lives in settings.yaml.
+  // Folders have no frontmatter — their icon override lives in .settings.
   // An empty icon clears the override (back to the default folder icon).
   setFolderIcon: (path: string, icon: string) => post("/folder-icon", { path, icon }),
-  // Persist a single setting by path (the backend merges it into settings.yaml in
+  // Persist a single setting by path (the backend merges it into .settings in
   // place, preserving comments + the property registry + unknown keys).
   setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),
   // Drawings persist as plain `.draw` files (serialized JSON) via the same PUT /file
@@ -290,16 +290,16 @@ export const api = {
   saveDrawing: (path: string, doc: DrawingDoc) =>
     put("/file", { path, contents: serializeDoc(doc) }).then(() => {}),
 
-  // claude-bot daemon supervision. Status (running + this device + owner), the list
+  // Daemon supervision. Status (running + this device + owner), the list
   // of heartbeating devices, and claiming a device as the owner (writes owner.json).
   daemonStatus: () => getJson<DaemonStatus>("/daemon/status"),
   daemonDevices: () => getJson<DeviceList>("/daemon/devices"),
   setDaemonOwner: (deviceId: string) => postJson<Owner>("/daemon/owner", { deviceId }),
-  // claude-bot daemon install probe (read-only) + the idempotent, adopt-only setup
-  // action (bridged to the claude-bot package's installer entrypoint server-side).
+  // Daemon install probe (read-only) + the idempotent, adopt-only setup action
+  // (core/src/daemonInstall.ts registers the launchd/systemd service server-side).
   daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
   daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
-  // Update the claude-bot daemon: git pull + bun install + restart (the whole thing).
+  // Re-register the daemon service — no git pull; the binary updates WITH the app.
   daemonUpdate: () => postJson<SetupResult>("/daemon/update", {}),
   // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.
   bismuthInstallStatus: () => getJson<BismuthStatus>("/bismuth/install"),

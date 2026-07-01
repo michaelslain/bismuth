@@ -7,7 +7,7 @@ import { COMMAND_CATALOG } from "../../core/src/commands";
 import type { DailyNoteConfig } from "../../core/src/dailyNote";
 
 /** Graph view mode: 2nd=vault notes, 3rd=memory, both=vault+memory, agents=relay network,
- *  daemon=claude-bot cron/process supervision graph */
+ *  daemon=the daemon's cron/process supervision graph */
 export type GraphMode = "2nd" | "3rd" | "both" | "agents" | "daemon";
 
 export interface CommandHandlers {
@@ -42,12 +42,13 @@ export interface CommandHandlers {
   exportActive: () => void;
   // Estimate how AI-generated the active page reads (local, offline) and toast the score.
   detectAiActive: () => void | Promise<void>;
-  // Open the modal to pick which device owns the claude-bot daemon.
+  // Open the modal to pick which device owns the daemon.
   openDaemonOwner: () => void;
-  // Open the panel to install/repair (adopt) the claude-bot daemon.
+  // Open the panel to install/repair (adopt) the daemon.
   openDaemonSetup: () => void;
-  // Update the claude-bot daemon to the latest version (POST /daemon/update, idempotent +
-  // fetch-gated) — toasts progress. Distinct from openDaemonSetup, which only installs/adopts.
+  // Re-register the daemon's launchd/systemd service (POST /daemon/update, idempotent +
+  // adopt-only — it does NOT pull a newer daemon; the binary updates WITH the app) — toasts
+  // progress. Distinct from openDaemonSetup only in label; both call the same runSetup().
   updateDaemon: () => void | Promise<void>;
   // Open the panel to install the bismuth CLI + MCP machine-wide.
   openBismuthInstall: () => void;

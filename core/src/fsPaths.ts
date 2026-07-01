@@ -11,7 +11,7 @@ import { join } from "node:path";
 export type FsEntry = { path: string; kind: "file" | "dir" };
 
 /**
- * Complete a filesystem path the user is typing (e.g. "~/.cl" → "~/.claude-bot").
+ * Complete a filesystem path the user is typing (e.g. "~/.co" → "~/.config").
  * Splits the typed value into a parent directory + a partial basename, lists the
  * parent, and returns matching children whose display path preserves the user's
  * "~" / leading-"/" form (so accepting a row drops a usable path back in). Tolerant:

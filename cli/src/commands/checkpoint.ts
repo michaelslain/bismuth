@@ -4,9 +4,9 @@
 // changed since I last ran" instead of re-scanning everything. Generic over any tracked
 // dir: vault-review → the vault repo, the dream cron → the memory repo. Headless (no server).
 //
-//   bismuth checkpoint diff dream --dir ~/.claude-bot/memory      # changed files since last dream
+//   bismuth checkpoint diff dream --dir <vault>/.daemon/memory      # changed files since last dream
 //   …process the delta…
-//   bismuth checkpoint advance dream --dir ~/.claude-bot/memory   # move the bookmark to HEAD
+//   bismuth checkpoint advance dream --dir <vault>/.daemon/memory   # move the bookmark to HEAD
 import type { CommandMap } from "../types";
 import { flag, bool, positionals, out, fail } from "../args";
 import {

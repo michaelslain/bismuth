@@ -1,5 +1,5 @@
 // app/src/DaemonOwnerModal.tsx
-// Pick which device owns the claude-bot daemon. Lists every heartbeating device
+// Pick which device owns the daemon. Lists every heartbeating device
 // (from GET /daemon/devices), marks the current owner and this machine, and on
 // confirm writes owner.json via POST /daemon/owner (the single source of truth —
 // Bismuth does NOT store the owner as a setting). Reuses the shared Modal +
@@ -67,7 +67,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
     <Modal onClose={props.onClose} class="folder-prompt" closeOnBackdrop={false}>
       <div class="folder-prompt-title">Set daemon owner device</div>
       <div class="folder-prompt-hint">
-        The owner device runs the claude-bot daemon (crons + the persistent bot session).
+        The owner device runs the daemon (crons + the persistent bot session).
         Other devices idle but stay selectable.
       </div>
       <Show
@@ -78,7 +78,7 @@ export function DaemonOwnerModal(props: { onClose: () => void }) {
           when={devices().length > 0}
           fallback={
             <div class="folder-prompt-hint">
-              No devices have checked in yet. Start the claude-bot daemon, then reopen this.
+              No devices have checked in yet. Start the daemon, then reopen this.
             </div>
           }
         >

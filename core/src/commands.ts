@@ -5,7 +5,7 @@
 // action (see app/src/commands.ts). Single source of truth for command ids.
 
 export interface CommandSpec {
-  /** Stable id referenced by settings.yaml `toolbar` entries and the palette. */
+  /** Stable id referenced by `.settings`'s `toolbar` entries and the palette. */
   id: string;
   /** Human label shown in the palette and as a button's default tooltip. */
   label: string;
@@ -44,8 +44,8 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "equalize-panes",  label: "Equalize panes",            icon: "Columns3" },
   { id: "toggle-sidebar",  label: "Toggle sidebar",            icon: "PanelLeft" },
   { id: "daemon-owner",    label: "Set daemon owner device…",  icon: "Server" },
-  { id: "daemon-setup",    label: "Set up claude-bot daemon…", icon: "Download" },
-  { id: "daemon-update",   label: "Update claude-bot daemon…", icon: "RefreshCw" },
+  { id: "daemon-setup",    label: "Set up daemon…",            icon: "Download" },
+  { id: "daemon-update",   label: "Update daemon…",            icon: "RefreshCw" },
   { id: "bismuth-install", label: "Install Bismuth CLI + MCP…", icon: "Download" },
   { id: "update-app",      label: "Update Bismuth…",            icon: "RefreshCw" },
   { id: "gcal-connect",    label: "Connect Google Calendar…",  icon: "Calendar" },

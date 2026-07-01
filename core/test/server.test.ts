@@ -16,6 +16,16 @@ import { makeSampleVault } from "./helpers";
 // so neither path can ever touch the real ~/.claude-bot or write the real ~/.bismuth/daemon.
 process.env.BISMUTH_DAEMON_DIR = mkdtempSync(join(tmpdir(), "bismuth-srv-machine-"));
 process.env.BISMUTH_LEGACY_CLAUDE_BOT_DIR = join(tmpdir(), "bismuth-no-legacy-claude-bot-xyz");
+// BISMUTH_DAEMON_BIN must ALSO be faked: daemonInstall.ts's daemonBinPath() falls back to the
+// real installed ~/.bismuth/bin/bismuth-daemon when this is unset, and the "POST /daemon/setup"
+// test below calls runSetup(), which spawns whatever daemonBinPath() resolves to. On a machine
+// with the app installed, that's the REAL daemon binary's `--ensure-installed` — which rewrites
+// the REAL, hardcoded ~/Library/LaunchAgents/com.bismuth.daemon.plist (daemonConfigPath() in
+// daemon/src/lib/platform.ts is NOT derived from BISMUTH_DAEMON_DIR) with logsDir/workDir
+// pointing at this test's throwaway tmp dir, and reloads (SIGTERMs + restarts) the live service.
+// Pointing BISMUTH_DAEMON_BIN at a path that can't exist makes every daemonInstall.ts call a
+// pure no-op (existsSync(bin) is false), so nothing is ever spawned.
+process.env.BISMUTH_DAEMON_BIN = join(tmpdir(), "bismuth-no-real-daemon-binary-xyz");
 
 test("GET /graph returns the merged brain graph", async () => {
   const { vault, memory } = await makeSampleVault();

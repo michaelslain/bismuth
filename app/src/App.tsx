@@ -463,7 +463,7 @@ export default function App() {
       case "agents":
         return agents(); // raw sessions/subagents; GraphView lays it out (you hub, pyramid/molecule, channels)
       case "daemon":
-        return daemon(); // daemon mode centers on the claude-bot hub node — no "you" injection
+        return daemon(); // daemon mode centers on the daemon hub node — no "you" injection
       case "both":
         return withYouNode(graph(), open); // full brain + the you hub linking the open working set
     }
@@ -648,16 +648,16 @@ export default function App() {
       pushToast(`Open folder failed: ${(e as Error).message}`);
     }
   };
-  // claude-bot daemon owner picker. A small modal that lists heartbeating devices and
+  // Daemon owner picker. A small modal that lists heartbeating devices and
   // writes owner.json via POST /daemon/owner (owner.json is the single source of truth).
   const [daemonOwnerOpen, setDaemonOwnerOpen] = createSignal(false);
   const openDaemonOwner = () => setDaemonOwnerOpen(true);
-  // claude-bot daemon install/repair panel. Idempotent, adopt-only setup: shows
+  // Daemon install/repair panel. Idempotent, adopt-only setup: shows
   // installed/running/owner and runs POST /daemon/setup (does nothing if already installed).
   const [daemonSetupOpen, setDaemonSetupOpen] = createSignal(false);
   const openDaemonSetup = () => setDaemonSetupOpen(true);
-  // "Update claude-bot daemon" command — POST /daemon/update (git pull + install + restart;
-  // idempotent + fetch-gated, so it no-ops cleanly when already current). Reports via a toast.
+  // "Update daemon" command — POST /daemon/update (re-registers the launchd/systemd service;
+  // idempotent, no git pull — the daemon binary updates WITH the app). Reports via a toast.
   const updateDaemon = async () => {
     const id = pushToast("Re-registering the daemon service…", undefined, 0);
     try {

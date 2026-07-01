@@ -114,7 +114,7 @@ export function daemonSnapshot(home: string = daemonMachineDir(), name: string =
     const processes: DaemonProcess[] = listMarkdownNames(procDir).map((name) => {
       const data = readFrontmatter(join(procDir, `${name}.md`));
       const fm = (typeof data.name === "string" && data.name) || name;
-      // `running` is best-effort: claude-bot doesn't expose a per-process liveness file we can
+      // `running` is best-effort: the daemon doesn't expose a per-process liveness file we can
       // trust, so default false (unknown) rather than guess.
       return { name: fm, enabled: isEnabled(data), running: false };
     });

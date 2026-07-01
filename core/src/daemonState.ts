@@ -1,5 +1,5 @@
 // core/src/daemonState.ts
-// Shared low-level readers for the claude-bot daemon's on-disk state, factored out of
+// Shared low-level readers for the daemon's on-disk state, factored out of
 // daemon.ts and daemonGraph.ts so the genuinely identical helpers live in one place.
 // Each helper is a pure file read that NEVER throws — missing/malformed input degrades
 // to a safe default. (daemon.ts keeps its own name-based, null-returning JSON reader,
