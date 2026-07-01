@@ -29,3 +29,31 @@ export function addEntry(entries: TreeEntry[], path: string, kind: "file" | "dir
   if (entries.some((e) => e.path === path)) return entries;
   return [...entries, { path, kind }];
 }
+
+/**
+ * Pick a non-colliding name for a new child of `parentDir` ("" = vault root), given the
+ * current tree `entries`. Mirrors the server's uniqueAssetPath: appends " 1", " 2", … to the
+ * STEM (before the extension) until the resulting vault-relative path is free — e.g.
+ * "Untitled.md" → "Untitled 1.md", "New Folder" → "New Folder 1". `name` is the full default
+ * name including any extension; returns just the chosen name (not the joined path).
+ *
+ * This lets two fast "New note" / "New Folder" creates land as DISTINCT rows: without it both
+ * resolve to the same path, so the 2nd optimistic add dedups to a no-op and the 2nd POST /create
+ * 409s (EEXIST) — tearing down the 1st row's inline-rename box. Because the 1st create's optimistic
+ * add is already reflected in `entries`, the 2nd call deterministically picks the next free name.
+ */
+export function uniqueChildName(entries: TreeEntry[], parentDir: string, name: string): string {
+  const taken = new Set(entries.map((e) => e.path));
+  const at = (n: string) => (parentDir ? `${parentDir}/${n}` : n);
+  if (!taken.has(at(name))) return name;
+  // Split stem/ext the way uniqueAssetPath does: a leading-dot or no-dot name has no ext, so
+  // the whole name is the stem (folders and dotfiles get the suffix appended at the end).
+  const dot = name.lastIndexOf(".");
+  const stem = dot <= 0 ? name : name.slice(0, dot);
+  const ext = dot <= 0 ? "" : name.slice(dot);
+  for (let i = 1; i < 10000; i++) {
+    const cand = `${stem} ${i}${ext}`;
+    if (!taken.has(at(cand))) return cand;
+  }
+  return `${stem} ${Date.now()}${ext}`; // pathological fallback
+}

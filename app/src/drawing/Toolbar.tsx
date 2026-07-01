@@ -56,6 +56,7 @@ export function Toolbar(props: {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onResetZoom: () => void;
+  onImportImage: () => void;
 }) {
   const t = props.tools;
   // Fixed 7-swatch Bismuth ink palette. The first swatch ("fg") is the theme
@@ -83,6 +84,10 @@ export function Toolbar(props: {
       <div class="draw-row">
         <div class="draw-group">
           <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
+          {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
+          <Button kind="text" state="unselected" class="draw-iconseg" title="Import image" aria-label="Import image" onClick={() => props.onImportImage()}>
+            <Icon value="ImagePlus" size={17} />
+          </Button>
         </div>
         {/* Colors on top, line-weight directly below — same box size + spacing. */}
         <div class="draw-group">

@@ -6,7 +6,7 @@ import { lastChange } from "./serverVersion";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu } from "./nativeMenu";
 import { pushToast } from "./Toast";
-import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
+import { renameEntries, removeEntries, addEntry, uniqueChildName } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
 import { SETTINGS_FILE } from "./tabIds";
 import { Icon } from "./icons/Icon";
@@ -108,15 +108,18 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       setPendingOps((n) => n - 1);
     }
   };
-  // In-flight create requests keyed by the freshly-created path. A new file drops
-  // straight into tree-rename mode, but `api.create` is still round-tripping; if the
-  // user types a name and hits Enter fast, the rename's `api.move(from,…)` could reach
-  // the server BEFORE the create lands (move 404s → spurious "Rename failed" + revert).
-  // `awaitCreate(path)` lets the rename commit wait for the matching create first.
-  const pendingCreate = new Map<string, Promise<unknown>>();
+  // In-flight create requests. A new file drops straight into tree-rename mode, but
+  // `api.create` is still round-tripping; if the user types a name and hits Enter fast, the
+  // rename's `api.move(from,…)` could reach the server BEFORE the create lands (move 404s →
+  // spurious "Rename failed" + revert). `awaitCreate(path)` lets the rename commit wait for the
+  // matching create first. Keyed by a per-invocation token (a fresh Symbol), NOT the path, so two
+  // concurrent creates never share a key — one's finally-cleanup can't drop the other's promise.
+  // awaitCreate resolves by matching the in-flight path (now unique per uniqueChildName).
+  const pendingCreate = new Map<symbol, { path: string; promise: Promise<unknown> }>();
   const awaitCreate = async (path: string) => {
-    const p = pendingCreate.get(path);
-    if (p) { try { await p; } catch { /* create failure is handled by doCreate */ } }
+    for (const { path: p, promise } of pendingCreate.values()) {
+      if (p === path) { try { await promise; } catch { /* create failure is handled by doCreate */ } return; }
+    }
   };
   // Persist the last good tree so the sidebar paints instantly next launch. Skip while an
   // optimistic op is in flight (pendingOps > 0) so we never cache un-confirmed state; the
@@ -340,7 +343,12 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       : kind === "sheet" ? "Untitled.sheet"
       : kind === "draw" ? "Untitled.draw"
       : "Untitled.md";
-    const path = joinPath(parentDir, defaultName);
+    // Disambiguate against the (optimistic) tree so two fast creates don't both resolve to the
+    // same path — a collision dedups the 2nd optimistic add to a no-op and 409s the 2nd POST
+    // /create, yanking the 1st row's inline-rename box. The 1st create's optimisticAdd already
+    // shows in files(), so the 2nd call here deterministically picks the next free name.
+    const name = uniqueChildName(files() ?? [], parentDir, defaultName);
+    const path = joinPath(parentDir, name);
     optimisticAdd(path, fsKind); // instant; reverted via refresh() on failure
     if (parentDir) setOpen((prev) => new Set(prev).add(parentDir));
     // A base must carry `type: base` frontmatter to render as a base, so create the
@@ -367,15 +375,19 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     if (fsKind === "file") primeNoteCache(path, "");
     const createP = trackPending(() => api.create(path, fsKind));
     // Expose the in-flight create so a fast rename-on-Enter can wait for it (see awaitCreate).
-    pendingCreate.set(path, createP);
+    // Keyed by a fresh per-invocation token so a concurrent create can't clobber this entry.
+    const token = Symbol();
+    pendingCreate.set(token, { path, promise: createP });
     try {
       await createP;
     } catch (e) {
-      setEditing(null);
+      // Only tear down THIS create's own inline-rename box — a concurrent fast create now yields a
+      // distinct row that may be mid-edit, and an unconditional setEditing(null) would blur-commit it.
+      if (editing() === path) setEditing(null);
       await refetch();
       pushToast(`Create failed: ${(e as Error).message}`);
     } finally {
-      pendingCreate.delete(path);
+      pendingCreate.delete(token);
     }
   }
 

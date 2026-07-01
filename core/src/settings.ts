@@ -4,7 +4,7 @@
 // registry is parsed by the shared pure schema engine so frontmatter and
 // settings validation share one source of truth.
 import { join } from "node:path";
-import { existsSync, renameSync, copyFileSync, statSync, rmSync } from "node:fs";
+import { existsSync, renameSync, copyFileSync, statSync, rmSync, readFileSync } from "node:fs";
 import { parse, parseDocument, Document, YAMLMap, isMap } from "yaml";
 import { readNote, writeNote } from "./files";
 import { loadRegistry, BUILTIN_PROPERTIES } from "./schema/registry";
@@ -106,6 +106,30 @@ export async function readSettings(vault: string): Promise<ReadSettingsResult | 
     data = {}; // corrupt file degrades to empty — callers fall back to defaults
   }
   return { raw, data };
+}
+
+/**
+ * Synchronously read just `daemon.enabled` from the vault's `.settings` file. Needed on the
+ * NARROW boot window before the async {@link loadAppConfig} resolves: the tree gates the
+ * `.daemon` folder and the graph gates the 3rd brain on this flag, so the FIRST cached /tree +
+ * /graph build must already see the real value — otherwise `.daemon` (and the 3rd brain) pop in a
+ * beat late once the async load lands. Mirrors the sync identity.md read in daemonIdentityName.
+ * Degrades to the schema default (false) on a missing/corrupt/partial file; never throws.
+ */
+export function readDaemonEnabledSync(vault: string): boolean {
+  const fallback = (DEFAULTS as { daemon?: { enabled?: boolean } }).daemon?.enabled === true;
+  try {
+    const full = join(vault, SETTINGS_FILE);
+    if (!existsSync(full)) return fallback;
+    const parsed = parse(readFileSync(full, "utf8")) as Record<string, unknown> | null;
+    const daemon = parsed && typeof parsed === "object" ? parsed.daemon : undefined;
+    if (daemon && typeof daemon === "object" && typeof (daemon as Record<string, unknown>).enabled === "boolean") {
+      return (daemon as { enabled: boolean }).enabled;
+    }
+  } catch {
+    // missing/corrupt/unreadable → fall through to the schema default
+  }
+  return fallback;
 }
 
 /** Parse the `properties:` section of settings.yaml into a validation Schema,

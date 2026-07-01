@@ -65,6 +65,45 @@ export type ChatFrame =
 
 export type ChatSink = (frame: ChatFrame) => void;
 
+/** A base64 image the user attached to a chat turn. `media_type` must be one of the SDK-accepted
+ *  image MIME types (image/png | image/jpeg | image/gif | image/webp); `data` is the raw base64
+ *  payload WITHOUT the `data:<mime>;base64,` prefix. Threaded client → /chat WS → chatSend →
+ *  sendMessage → makeUserMessage, where it becomes an SDK image content block. */
+export interface ChatImage {
+  media_type: string;
+  data: string;
+}
+
+/**
+ * Build ONE SDKUserMessage for a turn. The content SHAPE is load-bearing:
+ *  - NO images → a PLAIN STRING. The spawned `claude` CLI only runs slash-command detection/
+ *    expansion for a string prompt; an array-of-blocks shape is forwarded to the model as literal
+ *    text, so "/compact", "/clear", and custom commands would never execute. String content also
+ *    replays fine (userMessageText handles it), so a plain string is safe for ordinary prose too.
+ *  - images present → an ARRAY of content blocks: an optional leading text block, then one base64
+ *    image block per attachment. MessageParam.content accepts ImageBlockParam, so no query()/preset
+ *    change is needed — only this shape.
+ */
+export function makeUserMessage(text: string, images?: ChatImage[]): SDKUserMessage {
+  const content = (
+    images && images.length
+      ? [
+          ...(text ? [{ type: "text", text }] : []),
+          ...images.map((im) => ({
+            type: "image",
+            source: { type: "base64", media_type: im.media_type, data: im.data },
+          })),
+        ]
+      : text
+  ) as SDKUserMessage["message"]["content"];
+  return {
+    type: "user",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+    session_id: "",
+  };
+}
+
 // --- Permission plumbing --------------------------------------------------------------------
 
 /** How the client answers a "permission" frame; resolves the pending canUseTool promise. */
@@ -86,7 +125,7 @@ type SdkPermissionResult =
  * promise that push()/close() later settles.
  */
 interface InputQueue extends AsyncIterable<SDKUserMessage> {
-  push(text: string): void;
+  push(text: string, images?: ChatImage[]): void;
   close(): void;
 }
 
@@ -95,19 +134,10 @@ function makeInputQueue(): InputQueue {
   let waiting: ((r: IteratorResult<SDKUserMessage>) => void) | null = null;
   let closed = false;
 
-  function makeUserMessage(text: string): SDKUserMessage {
-    return {
-      type: "user",
-      message: { role: "user", content: [{ type: "text", text }] },
-      parent_tool_use_id: null,
-      session_id: "",
-    };
-  }
-
   return {
-    push(text: string) {
+    push(text: string, images?: ChatImage[]) {
       if (closed) return;
-      const msg = makeUserMessage(text);
+      const msg = makeUserMessage(text, images);
       if (waiting) {
         const resolve = waiting;
         waiting = null;
@@ -206,12 +236,24 @@ function stringifyToolContent(content: unknown): string {
   }
 }
 
+/** The visual chat prepends a `<editor-context>…</editor-context>` preamble (active file / open
+ *  tabs / selection) to the WIRE message only — it's grounding context for Claude, never user prose.
+ *  The live bubble is pushed raw client-side, but on HISTORY RESUME the bubble is reconstructed from
+ *  the SDK-persisted content, which still carries the preamble — so strip a leading preamble block
+ *  here so a replayed bubble shows only what the user actually typed. Kept in sync with
+ *  ChatView.buildEditorContext (a lone `<editor-context>` line … `</editor-context>` then a blank line). */
+export function stripEditorContext(text: string): string {
+  return text.replace(/^<editor-context>\n[\s\S]*?\n<\/editor-context>\n\n/, "");
+}
+
 /** Coerce a user message's `content` (string | block array) into its plain prose. Used when
  *  replaying history: pulls the `text` out of `{role:"user", content}` (the raw Anthropic shape),
  *  joining the text blocks and ignoring tool_result/non-text blocks (those become tool-result frames). */
 function userMessageText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
+  let text = "";
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
     const parts: string[] = [];
     for (const block of content) {
       if (block && typeof block === "object") {
@@ -219,9 +261,9 @@ function userMessageText(content: unknown): string {
         if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
       }
     }
-    return parts.join("");
+    text = parts.join("");
   }
-  return "";
+  return stripEditorContext(text);
 }
 
 /**
@@ -304,7 +346,7 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
  * pushes `text` into the queue so the CLI runs it as the next turn. If `claude` isn't installed,
  * pushes {error, code:"no-claude"} and returns — NEVER calls any API.
  */
-export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink): void {
+export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[]): void {
   const existing = sessions.get(chatId);
   if (existing) {
     // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
@@ -315,7 +357,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     }
     existing.sink = sink;
     existing.cwd = cwd;
-    existing.input.push(text);
+    existing.input.push(text, images);
     return;
   }
 
@@ -323,7 +365,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
   // Send the first turn, then drain the generator forever (until the queue closes / session ends).
-  session.input.push(text);
+  session.input.push(text, images);
   void drain(session);
 }
 
@@ -517,6 +559,16 @@ async function drain(session: ChatSession): Promise<void> {
             mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
           },
         });
+        continue;
+      }
+
+      if (msg.type === "system" && msg.subtype === "local_command_output") {
+        // A slash command whose output is produced LOCALLY (e.g. /compact, /context, or a custom
+        // command that only prints) arrives solely as this system message — it never becomes an
+        // assistant turn. Surface its text as assistant prose so the command's output is visible
+        // instead of the turn appearing to do nothing.
+        const out = msg.content;
+        if (typeof out === "string" && out.length) session.sink({ type: "assistant-text", text: out });
         continue;
       }
 

@@ -5,6 +5,7 @@
 // (e.g. editing the custom dictionary) can re-lint every open editor.
 import type { EditorView } from "@codemirror/view";
 import { requestRelint } from "./editor/relint";
+import { notePathFacet } from "./editor/tableState";
 
 let focusedView: EditorView | null = null;
 const liveViews = new Set<EditorView>();
@@ -51,6 +52,21 @@ export async function flushFocusedEditor(): Promise<void> {
  *  dictionary word — since CM only re-lints on doc changes or an explicit request. */
 export function relintAllEditors(): void {
   for (const view of liveViews) requestRelint(view);
+}
+
+/** The last-focused editor's note path + its current selection text (empty string when the
+ *  caret is collapsed). Returns null when no editor is registered (the active pane isn't a note).
+ *  Read by the visual chat to inject "what the user is looking at" onto the wire — never into the
+ *  visible message. focusedView persists across blur (see top), so the returned `path` lets the
+ *  caller attribute a still-live selection to the note it came from. */
+export function getFocusedSelection(): { path: string | null; selection: string } | null {
+  const view = focusedView;
+  if (!view) return null;
+  const { from, to } = view.state.selection.main;
+  return {
+    path: view.state.facet(notePathFacet) ?? null,
+    selection: from === to ? "" : view.state.sliceDoc(from, to),
+  };
 }
 
 /** Insert text at the focused editor's selection; caret lands at cursorOffset.

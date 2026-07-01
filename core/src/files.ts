@@ -136,8 +136,13 @@ export async function listTree(
 
     // Include supported file types; .draw files get special icon marker.
     // (A base is a `type: base` md file — no separate `.base` extension.)
+    // Images AND PDFs open as an annotatable markup surface (a sidecar `<file>.draw`), so they
+    // surface as openable rows too. (Their `.draw` sidecars match `.draw` above; export
+    // sidecars `*.draw.png`/`*.draw.pdf` were already excluded near the top, so a plain `.pdf`
+    // still surfaces while the drawing-export artifact stays hidden.)
     if (name.endsWith(".md") || name.endsWith(".draw") ||
-        name.endsWith(".sheet") || name.endsWith(".yaml") || name.endsWith(".yml")) {
+        name.endsWith(".sheet") || name.endsWith(".yaml") || name.endsWith(".yml") ||
+        /\.(png|jpe?g|gif|webp|svg|pdf)$/i.test(name)) {
       return name.endsWith(".draw") ? { data: "PenTool" } : true;
     }
 

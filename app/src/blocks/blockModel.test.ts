@@ -54,6 +54,13 @@ const CORPUS: Record<string, string> = {
   trailingBlanks: "Paragraph.\n\n\n\n",
   consecutiveStructures: "# H\n## H2\n- x\n> q\n---\ntext\n",
   unclosedFence: "```js\nnever closed\nstill code\n",
+  calloutBasic: "> [!note] Heads up\n> Body line one.\n> Body line two.\n\nAfter.\n",
+  calloutNoTitle: "> [!tip]\n> Just a tip.\n",
+  calloutFoldable: "> [!warning]+ Expanded\n> hidden when collapsed\n",
+  calloutCollapsed: "> [!danger]- Collapsed danger\n> body\n",
+  calloutAlias: "> [!info] aliased to note\n> body\n",
+  calloutHeaderOnly: "> [!bug]\n\nNext.\n",
+  calloutThenQuote: "> [!note] A\n> body\n\n> a plain quote\n> still plain\n",
 };
 
 describe("identity corpus", () => {
@@ -240,6 +247,51 @@ describe("classification", () => {
   });
 });
 
+describe("callouts", () => {
+  test("a callout header parses to a `callout` block, not a `quote`", () => {
+    const { blocks } = parseMarkdownToBlocks("> [!note] Title\n> body\n");
+    expect(blocks[0].type).toBe("callout");
+    expect(blocks[0].calloutType).toBe("note");
+    expect(blocks[0].calloutTitle).toBe("Title");
+    expect(blocks[0].text).toBe("body");
+  });
+
+  test("an alias folds to its canonical type but the header line stays verbatim", () => {
+    const { blocks } = parseMarkdownToBlocks("> [!info] x\n> y\n");
+    expect(blocks[0].calloutType).toBe("note"); // info → note
+    expect(blocks[0].calloutHeaderRaw).toBe("> [!info] x"); // verbatim, un-normalised
+  });
+
+  test("fold markers are captured", () => {
+    expect(parseMarkdownToBlocks("> [!warning]+ e\n> b\n").blocks[0]).toMatchObject({ foldable: true, collapsed: false });
+    expect(parseMarkdownToBlocks("> [!warning]- c\n> b\n").blocks[0]).toMatchObject({ foldable: true, collapsed: true });
+    expect(parseMarkdownToBlocks("> [!warning] n\n> b\n").blocks[0]).toMatchObject({ foldable: false });
+  });
+
+  test("a plain blockquote is still a `quote` block", () => {
+    expect(parseMarkdownToBlocks("> just a quote\n> line two\n").blocks[0].type).toBe("quote");
+  });
+
+  test("editing a callout body re-emits a callout of the same type (surgical edit)", () => {
+    const md = "> [!warning]+ Heads up\n> old body\n\nAfter.\n";
+    const { blocks } = parseMarkdownToBlocks(md);
+    const { reparsed } = assertSurgicalEdit(md, 0, (b) => setBlockText(b, "new body"));
+    expect(reparsed.blocks[0].type).toBe("callout");
+    expect(reparsed.blocks[0].calloutType).toBe("warning");
+    expect(reparsed.blocks[0].text).toBe("new body");
+    // Header preserved byte-for-byte through the edit.
+    expect(reparsed.blocks[0].raw.startsWith("> [!warning]+ Heads up\n")).toBe(true);
+  });
+
+  test("emptying a callout body leaves just the header line", () => {
+    const { blocks } = parseMarkdownToBlocks("> [!note] T\n> body\n");
+    const r = reconcileEditedBlock(setBlockText(blocks[0], ""));
+    expect(r.length).toBe(1);
+    expect(r[0].type).toBe("callout");
+    expect(r[0].raw.replace(/\n+$/, "")).toBe("> [!note] T");
+  });
+});
+
 describe("slash-item mapping", () => {
   test("known ids map to expected block types", () => {
     expect(blockTypeForSlashItem("h1")).toBe("heading");
@@ -247,6 +299,7 @@ describe("slash-item mapping", () => {
     expect(blockTypeForSlashItem("ol")).toBe("orderedItem");
     expect(blockTypeForSlashItem("task")).toBe("task");
     expect(blockTypeForSlashItem("quote")).toBe("quote");
+    expect(blockTypeForSlashItem("callout")).toBe("callout");
     expect(blockTypeForSlashItem("table")).toBe("table");
     expect(blockTypeForSlashItem("code")).toBe("code");
     expect(blockTypeForSlashItem("query")).toBe("code");

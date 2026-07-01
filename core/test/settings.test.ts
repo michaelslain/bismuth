@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeNote } from "../src/files";
-import { readSettings, getVaultSchema, reconcileSettings } from "../src/settings";
+import { readSettings, getVaultSchema, reconcileSettings, readDaemonEnabledSync } from "../src/settings";
 import { keySuggestions } from "../src/schema/suggest";
 import { validateDocument } from "../src/schema/validate";
 
@@ -578,5 +578,45 @@ describe("reconcileSettings daemon migration (now a no-op)", () => {
     expect(daemon.enabled).toBe(false);  // no adoption — the master switch stays as written
     expect(daemon.name).toBeUndefined(); // name moved to .daemon/identity.md — not a settings key
     expect(daemon.home).toBeUndefined(); // home is gone — migration never re-adds it
+  });
+});
+
+describe("readDaemonEnabledSync", () => {
+  it("returns the schema default (false) when there is no settings file", async () => {
+    const vault = await emptyVault();
+    expect(readDaemonEnabledSync(vault)).toBe(false);
+  });
+
+  it("reads daemon.enabled: true from the .settings file", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, ".settings", "daemon:\n  enabled: true\n");
+    expect(readDaemonEnabledSync(vault)).toBe(true);
+  });
+
+  it("reads daemon.enabled: false from the .settings file", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, ".settings", "daemon:\n  enabled: false\n");
+    expect(readDaemonEnabledSync(vault)).toBe(false);
+  });
+
+  it("degrades to false on a missing daemon section or non-boolean value", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, ".settings", "appearance:\n  theme: light\n");
+    expect(readDaemonEnabledSync(vault)).toBe(false);
+    await writeNote(vault, ".settings", "daemon:\n  enabled: yep\n");
+    expect(readDaemonEnabledSync(vault)).toBe(false);
+  });
+
+  it("degrades to false on a corrupt file rather than throwing", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, ".settings", ": : : not yaml\n[[[");
+    expect(readDaemonEnabledSync(vault)).toBe(false);
+  });
+
+  it("matches the value a full loadAppConfig resolves (sync seed == async load)", async () => {
+    const vault = await emptyVault();
+    await writeNote(vault, ".settings", "daemon:\n  enabled: true\n");
+    const cfg = await loadAppConfig(vault);
+    expect(readDaemonEnabledSync(vault)).toBe((cfg.daemon as { enabled: boolean }).enabled);
   });
 });

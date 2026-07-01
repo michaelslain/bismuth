@@ -1,7 +1,8 @@
-import { marked, type TokenizerAndRendererExtension } from "marked";
+import { marked, type Token, type TokenizerAndRendererExtension } from "marked";
 import { sanitizeHtml } from "../sanitizeHtml";
 import { escapeHtml, escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
+import { parseCalloutHeader, renderCalloutHtml, type CalloutHeader } from "../editor/callout";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -59,25 +60,104 @@ const mathBlockExt: TokenizerAndRendererExtension = {
   renderer(token) { return mathHtml(String(token.text), true); },
 };
 
+// Cap on how many source lines a multi-line inline `$…$` may cross before we treat it as two
+// stray `$` (e.g. prices "$5 … $9") rather than one soft-wrapped equation. Mirrors the editor's
+// MAX_INLINE_MATH_LINES (mathBlock.ts) so reading mode and live preview agree.
+const MAX_INLINE_MATH_NEWLINES = 10;
+
 const mathInlineExt: TokenizerAndRendererExtension = {
   name: "bismuthMathInline",
   level: "inline",
   start(src) { const i = src.indexOf("$"); return i < 0 ? undefined : i; },
   tokenizer(src) {
-    // Single `$…$` (not `$$`), single line, no whitespace just inside either delimiter,
-    // `\$` escapes a literal dollar — same rule as the editor's inlineMarkdown.
-    const m = /^\$(?![\s$])((?:\\.|[^\n$])*?)(?<!\s)\$(?!\$)/.exec(src);
+    // Single `$…$` (not `$$`), no whitespace just inside either delimiter, `\$` escapes a
+    // literal dollar — same rule as the editor's inlineMarkdown. Content MAY span newlines
+    // (Obsidian parity: a `$…$` that soft-wrapped renders as one inline KaTeX widget); the
+    // inline lexer already keeps `src` within one paragraph, so this can't cross a blank
+    // line, and the newline cap below keeps two stray `$` (a "$5 … $9" pair) literal.
+    // NB: the content alternation MUST disambiguate the backslash — `(?:\\[\s\S]|[^$\\])` consumes a
+    // `\x` escape ONLY via the first branch and every other char via the second. The naive
+    // `(?:\\.|[^$])` lets a `\` match either branch, which with `[^$]` spanning newlines backtracks
+    // exponentially (ReDoS) on a long unclosed `$…` paragraph of LaTeX. This form is linear.
+    const m = /^\$(?![\s$])((?:\\[\s\S]|[^$\\])*?)(?<!\s)\$(?!\$)/.exec(src);
     if (!m) return undefined;
+    if ((m[1].match(/\n/g)?.length ?? 0) > MAX_INLINE_MATH_NEWLINES) return undefined;
     return { type: "bismuthMathInline", raw: m[0], text: m[1] };
   },
   renderer(token) { return mathHtml(String(token.text), false); },
 };
 
-marked.use({ extensions: [mathBlockExt, mathInlineExt] });
+// ── Callouts: Obsidian `> [!type] Title` blockquote admonitions ───────────────
+// A block-level extension that claims a blockquote run whose first line is a callout header
+// (`> [!note] …`), renders the inner body + title recursively (so nested markdown / nested
+// callouts work), and emits the shared `.callout` markup (editor/callout.ts). Registered before
+// marked's default blockquote tokenizer (extension tokenizers win), so a callout never renders as
+// a plain <blockquote>. This lights up callouts on EVERY renderMarkdown surface: card faces,
+// `.md` transclusion, calendar descriptions, and html/pdf export. The icon SVG + accent class
+// survive sanitize (DOMPurify svg profile, see sanitizeHtml.ts).
+interface CalloutToken {
+  type: "bismuthCallout";
+  raw: string;
+  header: CalloutHeader;
+  titleTokens: Token[];
+  bodyTokens: Token[];
+}
+const calloutBlockExt: TokenizerAndRendererExtension = {
+  name: "bismuthCallout",
+  level: "block",
+  start(src) {
+    const m = /(?:^|\n)[ \t]{0,3}>[ \t]?\[!/.exec(src);
+    return m ? m.index : undefined;
+  },
+  tokenizer(src) {
+    // Block tokenizers run at a block boundary, so `src` starts at the candidate blockquote.
+    const m = /^((?:[ \t]{0,3}>[^\n]*(?:\n|$))+)/.exec(src);
+    if (!m) return undefined;
+    const block = m[0];
+    const rawLines = block.replace(/\n$/, "").split("\n");
+    const header = parseCalloutHeader(rawLines[0]);
+    if (!header) return undefined; // a plain blockquote — let marked's default tokenizer handle it
+    const bodyMd = rawLines
+      .slice(1)
+      .map((l) => l.replace(/^[ \t]{0,3}>[ \t]?/, ""))
+      .join("\n");
+    const token: CalloutToken = {
+      type: "bismuthCallout",
+      raw: block,
+      header,
+      titleTokens: this.lexer.inlineTokens(header.title),
+      bodyTokens: this.lexer.blockTokens(bodyMd),
+    };
+    return token;
+  },
+  renderer(token) {
+    const t = token as unknown as CalloutToken;
+    const titleHtml = this.parser.parseInline(t.titleTokens);
+    const bodyHtml = this.parser.parse(t.bodyTokens);
+    return renderCalloutHtml(t.header, bodyHtml, titleHtml);
+  },
+};
+
+marked.use({ extensions: [mathBlockExt, mathInlineExt, calloutBlockExt] });
+
+// A lone `<!-- pagebreak -->` comment line marks a PDF page boundary (invisible on screen + in
+// Obsidian). DOMPurify STRIPS HTML comments, so convert the marker into a real, zero-height
+// <div class="bismuth-page-break"> BEFORE sanitize — the div survives, the PDF rasterizer
+// (htmlToPdf) slices a new page at it, and `height:0` (htmlTemplate.ts) makes it a no-op on every
+// other surface. Masked like wikilinks/tags so a marker inside a code fence/span stays literal.
+const PAGEBREAK_RE = /^[ \t]*<!--[ \t]*pagebreak[ \t]*-->[ \t]*$/gm;
+function pageBreaksToDivs(src: string): string {
+  const { masked, codes } = maskCode(src);
+  // Surround the injected div with blank lines: a bare `<div>` starts a CommonMark type-6 HTML
+  // block that swallows the following lines as raw HTML until the next blank line, so content
+  // right after the marker (e.g. a `# Heading` from the `<!-- pagebreak -->\n$0` snippet) would
+  // stop being parsed as markdown. The blank lines close the HTML block so the rest renders normally.
+  return unmaskCode(masked.replace(PAGEBREAK_RE, '\n\n<div class="bismuth-page-break"></div>\n\n'), codes);
+}
 
 /** Render a markdown string to sanitized HTML (synchronous). */
 export function renderMarkdown(src: string): string {
-  return sanitizeHtml(marked.parse(src ?? "", { async: false }) as string);
+  return sanitizeHtml(marked.parse(pageBreaksToDivs(src ?? ""), { async: false }) as string);
 }
 
 // Obsidian `[[wikilinks]]` aren't standard markdown, so `marked` would emit them

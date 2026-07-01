@@ -1,6 +1,6 @@
 // app/src/fileTreeOps.test.ts
 import { test, expect } from "bun:test";
-import { renameEntries, removeEntries, addEntry } from "./fileTreeOps";
+import { renameEntries, removeEntries, addEntry, uniqueChildName } from "./fileTreeOps";
 import type { TreeEntry } from "../../core/src/graph";
 
 const sample = (): TreeEntry[] => [
@@ -73,4 +73,46 @@ test("addEntry appends a new dir entry", () => {
 test("addEntry is a no-op when the path already exists", () => {
   const out = addEntry(sample(), "a.md", "file");
   expect(out.filter((e) => e.path === "a.md").length).toBe(1);
+});
+
+test("uniqueChildName returns the name unchanged when nothing collides", () => {
+  expect(uniqueChildName(sample(), "", "Untitled.md")).toBe("Untitled.md");
+  expect(uniqueChildName(sample(), "notes", "Untitled.md")).toBe("Untitled.md");
+});
+
+test("uniqueChildName appends ' 1' to the stem (before the extension) on a collision", () => {
+  const entries: TreeEntry[] = [{ path: "Untitled.md", kind: "file" }];
+  expect(uniqueChildName(entries, "", "Untitled.md")).toBe("Untitled 1.md");
+});
+
+test("uniqueChildName walks ' 1', ' 2', … past consecutive collisions", () => {
+  const entries: TreeEntry[] = [
+    { path: "Untitled.md", kind: "file" },
+    { path: "Untitled 1.md", kind: "file" },
+    { path: "Untitled 2.md", kind: "file" },
+  ];
+  expect(uniqueChildName(entries, "", "Untitled.md")).toBe("Untitled 3.md");
+});
+
+test("uniqueChildName scopes collisions to the parent dir", () => {
+  // "Untitled.md" exists only at the root → free inside "notes".
+  const entries: TreeEntry[] = [{ path: "Untitled.md", kind: "file" }];
+  expect(uniqueChildName(entries, "notes", "Untitled.md")).toBe("Untitled.md");
+  // …and a root create steps to " 1" while a notes/ create stays free.
+  expect(uniqueChildName(entries, "", "Untitled.md")).toBe("Untitled 1.md");
+});
+
+test("uniqueChildName suffixes a folder (no extension) at the end of the name", () => {
+  const entries: TreeEntry[] = [{ path: "New Folder", kind: "dir" }];
+  expect(uniqueChildName(entries, "", "New Folder")).toBe("New Folder 1");
+});
+
+test("uniqueChildName treats a leading-dot name as all-stem (suffix at the end)", () => {
+  const entries: TreeEntry[] = [{ path: ".env", kind: "file" }];
+  expect(uniqueChildName(entries, "", ".env")).toBe(".env 1");
+});
+
+test("uniqueChildName preserves a multi-dot extension split (only the last segment is the ext)", () => {
+  const entries: TreeEntry[] = [{ path: "Untitled.sheet", kind: "file" }];
+  expect(uniqueChildName(entries, "", "Untitled.sheet")).toBe("Untitled 1.sheet");
 });

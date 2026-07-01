@@ -32,6 +32,10 @@ export default defineConfig(async () => ({
           // AI-text detector (transformers.js + onnxruntime-web): heavy + only used when the
           // "Detect AI" command runs, so keep it in its own lazy chunk out of the boot path.
           if (id.includes("@huggingface/transformers") || id.includes("onnxruntime")) return "transformers";
+          // pdfjs-dist (PDF markup rasterizer): only pulled in when a PDF is opened for markup,
+          // so keep it in its own lazy chunk off the boot path. The worker is a separate `?url`
+          // asset, so it stays out of this chunk regardless.
+          if (id.includes("pdfjs-dist")) return "pdfjs";
           if (id.includes("/three/") || id.includes("d3-force-3d")) return "three";
           if (id.includes("@xterm/")) return "xterm";
           if (id.includes("/katex/")) return "katex";

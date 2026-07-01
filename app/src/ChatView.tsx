@@ -26,6 +26,8 @@ import { Icon } from "./icons/Icon";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest } from "../../core/src/chat";
+import { getFocusedSelection } from "./editorRegistry";
+import { getEditorTabs } from "./chatContext";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -41,6 +43,39 @@ const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "acceptEdits", label: "Accept edits" },
   { value: "bypassPermissions", label: "Bypass" },
 ];
+
+// The image MIME types the Claude Agent SDK accepts as base64 image blocks. Deliberately NARROWER
+// than the editor's attachment set (no svg/pdf) — those aren't valid `image` content blocks. A
+// dropped/pasted file outside this set is rejected rather than sent.
+const CHAT_IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+// A single screenshot rides one JSON WS frame (base64-inflated ~33%), so cap attachments to keep a
+// multi-MB paste from wedging the socket. Generous enough for ordinary screenshots.
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
+// Combined base64 payload cap for ONE turn's attachments. Bun silently drops a WS frame over ~16 MB
+// ("message too big"), which would wedge the turn in streaming() forever — so keep the total well
+// under that (base64 chars ≈ wire bytes). Several 5 MB images each pass MAX_IMAGE_BYTES but together
+// would blow the frame; this catches that.
+const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024; // ~12 MB of base64
+
+/** A base64 image staged in the composer, before it's sent as an SDK image content block. */
+interface Attachment { name: string; mediaType: string; data: string /* base64, no data: prefix */ }
+
+/** Read an image File → base64 (stripping the `data:<mime>;base64,` prefix). Resolves null on a
+ *  non-accepted MIME type or a read error, so callers can surface a friendly message. */
+function readImageFile(file: File): Promise<Attachment | null> {
+  if (!CHAT_IMAGE_MIME.has(file.type)) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = typeof reader.result === "string" ? reader.result : "";
+      const comma = res.indexOf(",");
+      const data = comma >= 0 ? res.slice(comma + 1) : "";
+      resolve(data ? { name: file.name || "image", mediaType: file.type, data } : null);
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
 
 // ── Transcript model ──────────────────────────────────────────────────────────────────────
 // The transcript is an ordered list of turn ITEMS. A `user` item is one sent message. An
@@ -72,7 +107,7 @@ interface PermissionPart {
 }
 type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart;
 
-interface UserItem { role: "user"; text: string }
+interface UserItem { role: "user"; text: string; images?: string[] /* data: URLs, shown in the bubble */ }
 interface AssistantItem {
   role: "assistant";
   parts: AssistantPart[];
@@ -146,9 +181,34 @@ function relativeTime(ms: number): string {
   return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+/** Build a compact `<editor-context>` preamble describing what the user is looking at right now —
+ *  the active file, the open editor tabs, and (only when non-empty) the current editor selection
+ *  with the file it came from. Read CLIENT-SIDE from editorRegistry + chatContext at send time and
+ *  prepended to the WIRE message only (never the visible transcript bubble), so Claude grounds its
+ *  reply in the user's editor without the user having to paste anything. Returns "" when there's
+ *  no active file and no selection — nothing worth telling Claude. */
+function buildEditorContext(): string {
+  const sel = getFocusedSelection();
+  const { openFiles, activeFile } = getEditorTabs();
+  const selection = sel?.selection ?? "";
+  if (!activeFile && !selection) return "";
+  const lines: string[] = ["<editor-context>"];
+  if (activeFile) lines.push(`Active file: ${activeFile}`);
+  if (openFiles.length) lines.push(`Open tabs: ${openFiles.map((f) => f.path).join(", ")}`);
+  if (selection) {
+    lines.push(`Current selection${sel?.path ? ` (from ${sel.path})` : ""}:`);
+    lines.push("```", selection, "```");
+  }
+  lines.push("</editor-context>");
+  return lines.join("\n");
+}
+
 export function ChatView(props: { chatId: string }) {
   const [transcript, setTranscript] = createStore<TurnItem[]>([]);
   const [draft, setDraft] = createSignal("");
+  // Base64 images staged in the composer (dropped or pasted), sent as SDK image content blocks on
+  // the next turn and cleared on send. Rendered as removable thumbnail chips above the textarea.
+  const [attachments, setAttachments] = createSignal<Attachment[]>([]);
   const [streaming, setStreaming] = createSignal(false);
   const [manifest, setManifest] = createSignal<ChatManifest | null>(null);
   // A fatal setup state (claude not installed) — replaces the transcript with guidance.
@@ -359,19 +419,89 @@ export function ChatView(props: { chatId: string }) {
     };
   };
 
+  // --- Image attachments (drop / paste) --------------------------------------
+  // Stage each accepted image File as a base64 attachment, rejecting oversized / unsupported ones
+  // with an inline notice. Preserves drop/paste order (sequential awaits append in turn).
+  const addImageFiles = async (files: File[]) => {
+    for (const f of files) {
+      if (!f.type.startsWith("image/")) continue;
+      if (f.size > MAX_IMAGE_BYTES) {
+        setTurnError(`Image "${f.name || "attachment"}" is too large (max 10 MB).`);
+        continue;
+      }
+      const att = await readImageFile(f);
+      if (att) setAttachments((a) => [...a, att]);
+      else setTurnError(`Unsupported image type ${f.type || "(unknown)"} — use PNG, JPEG, GIF, or WebP.`);
+    }
+  };
+  // Allow the drop by cancelling the browser default the moment a file drag is over the composer —
+  // this alone stops the OS file PATH from being inserted as text into the textarea.
+  const onComposerDragOver = (e: DragEvent) => {
+    if (e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files")) e.preventDefault();
+  };
+  const onComposerDrop = (e: DragEvent) => {
+    const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
+    if (!files.some((f) => f.type.startsWith("image/"))) return; // not an image drop — leave default text handling
+    e.preventDefault();
+    void addImageFiles(files);
+  };
+  // Mirror Editor.tsx: pull image Files out of the clipboard items (a pasted screenshot) and attach
+  // them instead of letting the browser insert their path/blob text.
+  const onComposerPaste = (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const files: File[] = [];
+    for (const it of items) {
+      if (it.kind === "file" && it.type.startsWith("image/")) {
+        const f = it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+    if (!files.length) return;
+    e.preventDefault();
+    void addImageFiles(files);
+  };
+  const removeAttachment = (i: number) => setAttachments((a) => a.filter((_, idx) => idx !== i));
+
   // --- Sending ---------------------------------------------------------------
   const send = () => {
     const text = draft().trim();
-    if (!text || streaming() || setupError()) return;
+    const atts = attachments();
+    // A message needs SOMETHING to send — text or at least one image attachment.
+    if ((!text && atts.length === 0) || streaming() || setupError()) return;
+    // A slash command can't carry images: the CLI only expands a leading "/command" for a plain
+    // STRING turn, but attachments force an array-of-blocks shape, so the command would be silently
+    // sent to the model as literal text. Refuse rather than degrade it.
+    if (text.startsWith("/") && atts.length > 0) {
+      setTurnError("Slash commands can't include image attachments — remove the image or the command.");
+      return;
+    }
+    // Bound the combined attachment payload: a WS frame over ~16 MB is silently dropped by Bun,
+    // which would leave the turn wedged in streaming() with no reply. Reject before we commit.
+    if (atts.reduce((n, a) => n + a.data.length, 0) > MAX_TOTAL_IMAGE_BYTES) {
+      setTurnError("Those images are too large to send together — remove one or attach a smaller image.");
+      return;
+    }
+    // Prepend the user's editor context (active file / open tabs / current selection) to the WIRE
+    // message ONLY — the transcript bubble below stays the raw typed text, so the injected context
+    // never clutters what the user sees. Empty when nothing's open/selected (see buildEditorContext).
+    // Skipped for slash commands: Claude Code only recognises a `/command` at the START of the
+    // message, so a preamble would silently break it.
+    const preamble = text.startsWith("/") ? "" : buildEditorContext();
+    const wire = preamble ? `${preamble}\n\n${text}` : text;
+    const images = atts.map((a) => ({ media_type: a.mediaType, data: a.data }));
     // Socket not open (backend down / mid-reconnect): tell the user instead of silently dropping the
     // message. The draft is preserved (setDraft("") only runs on success) so they can retry.
-    if (!sendJson({ type: "user", text })) {
+    if (!sendJson({ type: "user", text: wire, ...(images.length ? { images } : {}) })) {
       setTurnError("Not connected to the backend — message not sent. Reconnecting…");
       return;
     }
     setTurnError(null);
-    setTranscript(produce((m) => m.push({ role: "user", text })));
+    // Show the sent images in the user bubble (data URLs) so an image-only turn isn't an empty bubble.
+    const bubbleImages = atts.map((a) => `data:${a.mediaType};base64,${a.data}`);
+    setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined })));
     setDraft("");
+    setAttachments([]);
     setStreaming(true);
     closeSlash();
     scrollToBottom(true); // sending always re-pins to the bottom
@@ -662,7 +792,22 @@ export function ChatView(props: { chatId: string }) {
                   <div class="chat-msg user">
                     {/* The user's own message renders through the SAME note markdown pipeline
                         (renderNoteBody) so it looks like a note too — not just Claude's replies. */}
-                    <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
+                    <Show when={(item as UserItem).text.trim()}>
+                      <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
+                    </Show>
+                    <Show when={(item as UserItem).images?.length}>
+                      <div class="chat-user-images" style={{ display: "flex", "flex-wrap": "wrap", gap: "6px", "justify-content": "flex-end", "margin-top": "4px" }}>
+                        <For each={(item as UserItem).images}>
+                          {(src) => (
+                            <img
+                              src={src}
+                              alt="attachment"
+                              style={{ "max-width": "180px", "max-height": "180px", "border-radius": "8px", border: "1px solid var(--border, rgba(128,128,128,0.3))" }}
+                            />
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                   </div>
                 }
               >
@@ -693,15 +838,50 @@ export function ChatView(props: { chatId: string }) {
               />
             </div>
           </Show>
-          <TextInput
-            multiline
-            ref={((el: HTMLTextAreaElement) => { ta = el; }) as unknown as HTMLInputElement}
-            class="chat-input"
-            value={draft()}
-            onInput={setDraft}
-            onKeyDown={onKeyDown}
-            placeholder="Message Claude…  ( / for commands · Enter to send · Shift+Enter for newline )"
-          />
+          {/* Column wrapper so the attachment chips stack ABOVE the textarea (the composer itself is
+              a flex ROW: [this column][send button]). Takes the textarea's place as the flex-grow child. */}
+          <div style={{ display: "flex", "flex-direction": "column", gap: "6px", flex: "1 1 auto", "min-width": "0" }}>
+            <Show when={attachments().length > 0}>
+              <div class="chat-attachments" style={{ display: "flex", "flex-wrap": "wrap", gap: "6px" }}>
+                <For each={attachments()}>
+                  {(att, i) => (
+                    <div
+                      class="chat-attachment"
+                      style={{ position: "relative", width: "56px", height: "56px", "border-radius": "8px", overflow: "hidden", border: "1px solid var(--border, rgba(128,128,128,0.3))" }}
+                    >
+                      <img
+                        src={`data:${att.mediaType};base64,${att.data}`}
+                        alt={att.name}
+                        title={att.name}
+                        style={{ width: "100%", height: "100%", "object-fit": "cover", display: "block" }}
+                      />
+                      <button
+                        type="button"
+                        class="chat-attachment-remove"
+                        title="Remove attachment"
+                        onClick={() => removeAttachment(i())}
+                        style={{ position: "absolute", top: "2px", right: "2px", display: "flex", "align-items": "center", "justify-content": "center", width: "18px", height: "18px", padding: "0", border: "none", "border-radius": "50%", background: "rgba(0,0,0,0.6)", color: "#fff", cursor: "pointer" }}
+                      >
+                        <Icon value="X" size={12} />
+                      </button>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <TextInput
+              multiline
+              ref={((el: HTMLTextAreaElement) => { ta = el; }) as unknown as HTMLInputElement}
+              class="chat-input"
+              value={draft()}
+              onInput={setDraft}
+              onKeyDown={onKeyDown}
+              onDragOver={onComposerDragOver}
+              onDrop={onComposerDrop}
+              onPaste={onComposerPaste}
+              placeholder="Message Claude…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )"
+            />
+          </div>
           <Show
             when={streaming()}
             fallback={
@@ -710,7 +890,7 @@ export function ChatView(props: { chatId: string }) {
                 label="Send message"
                 variant="selected"
                 onClick={send}
-                disabled={!draft().trim()}
+                disabled={!draft().trim() && attachments().length === 0}
               />
             }
           >

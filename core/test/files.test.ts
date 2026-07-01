@@ -110,12 +110,13 @@ test("listTree includes directories and excludes dot-dirs like .trash", async ()
   expect(entries.find((e) => e.path === "empty-folder")).toEqual({ path: "empty-folder", kind: "dir" });
 });
 
-test("listTree omits non-markdown files", async () => {
+test("listTree omits unsupported files but surfaces images as openable rows", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-nonmd-"));
   await writeNote(dir, "note.md", "# Note");
-  await Bun.write(join(dir, "image.png"), "binary");
-  const paths = (await listTree(dir)).map((e) => e.path);
-  expect(paths).toEqual(["note.md"]);
+  await Bun.write(join(dir, "data.txt"), "text");   // unsupported → omitted
+  await Bun.write(join(dir, "photo.png"), "binary"); // image → annotatable markup surface
+  const paths = (await listTree(dir)).map((e) => e.path).sort();
+  expect(paths).toEqual(["note.md", "photo.png"]);
 });
 
 test("moveEntry renames a file within the same folder", async () => {
@@ -238,6 +239,17 @@ test("listTree shows .draw files but hides .draw.png/.pdf sidecars", async () =>
   expect(paths).toContain("a.draw");
   expect(paths).not.toContain("a.draw.png");
   expect(paths).not.toContain("a.draw.pdf");
+});
+
+test("listTree surfaces a plain .pdf (markup source) + its sidecar, hides the .draw.pdf export", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pdf-tree-"));
+  await Bun.write(join(root, "paper.pdf"), "%PDF-1.4"); // openable markup source
+  await Bun.write(join(root, "paper.pdf.draw"), "{}");   // its annotation sidecar → matches .draw
+  await Bun.write(join(root, "sketch.draw.pdf"), "x");   // a drawing's PDF export artifact → hidden
+  const paths = (await listTree(root)).map((e) => e.path).sort();
+  expect(paths).toContain("paper.pdf");
+  expect(paths).toContain("paper.pdf.draw");
+  expect(paths).not.toContain("sketch.draw.pdf");
 });
 
 test("listTree surfaces system folders: .settings always, .daemon only when enabled", async () => {

@@ -14,7 +14,16 @@ export interface Ctx2D {
   arc(x: number, y: number, r: number, a0: number, a1: number): void;
   fillRect(x: number, y: number, w: number, h: number): void;
   clearRect(x: number, y: number, w: number, h: number): void;
+  // `image` is a pre-decoded handle (a browser HTMLImageElement or a @napi-rs/canvas
+  // Image) — render2d stays synchronous, so callers pre-decode and hand it back via
+  // the `resolveImage` resolver below.
+  drawImage(image: unknown, dx: number, dy: number, dw: number, dh: number): void;
 }
+
+/** Maps a stored `ImageEl.src` (data URL) to a pre-decoded image handle, or undefined
+ *  when it isn't decoded yet. Frontend: a closure-cached HTMLImageElement; headless
+ *  export: a Map populated by `await loadImage(src)`. */
+export type ResolveImage = (src: string) => unknown;
 
 function drawBackground(ctx: Ctx2D, paper: Paper, t: ThemeColors, w: number, h: number) {
   ctx.save();
@@ -60,8 +69,18 @@ export function drawStroke(ctx: Ctx2D, s: Stroke, t: ThemeColors) {
   ctx.restore();
 }
 
-export function renderPage(ctx: Ctx2D, page: Page, paper: Paper, t: ThemeColors, w: number, h: number) {
+export function renderPage(
+  ctx: Ctx2D, page: Page, paper: Paper, t: ThemeColors, w: number, h: number,
+  resolveImage?: ResolveImage,
+) {
   drawBackground(ctx, paper, t, w, h);
+  // Images sit between the paper and the ink: ON TOP of the background (so the theme wash
+  // never tints them) but UNDER the strokes (so annotations land on top). A src that hasn't
+  // decoded yet resolves to undefined and is skipped — the caller repaints once it loads.
+  for (const im of page.images ?? []) {
+    const h2 = resolveImage?.(im.src);
+    if (h2) ctx.drawImage(h2, im.x, im.y, im.w, im.h);
+  }
   for (const s of page.strokes) drawStroke(ctx, s, t);
 }
 
@@ -73,6 +92,7 @@ export function renderDocStacked(
   w: number,
   h: number,
   translate: (ctx: Ctx2D, dx: number, dy: number, body: () => void) => void,
+  resolveImage?: ResolveImage,
 ) {
-  doc.pages.forEach((pg, i) => translate(ctx, 0, i * h, () => renderPage(ctx, pg, doc.paper, t, w, h)));
+  doc.pages.forEach((pg, i) => translate(ctx, 0, i * h, () => renderPage(ctx, pg, doc.paper, t, w, h, resolveImage)));
 }
