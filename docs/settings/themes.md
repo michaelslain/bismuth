@@ -6,7 +6,7 @@ This document covers every named Bismuth theme, how the `appearance` settings se
 
 ## Theme Names
 
-The setting is `appearance.theme` in `settings.yaml`. The schema enum lists 12 names; the first is the default.
+The setting is `appearance.theme` in `.settings` (the vault's hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`). The schema enum lists 12 names; the first is the default.
 
 ```yaml
 appearance:

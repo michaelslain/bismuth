@@ -79,7 +79,7 @@ The view re-runs this framing logic reactively whenever `result` changes (e.g., 
 
 ## Settings Integration
 
-Two `settings.yaml` entries affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
+Two `.settings` entries affect the map view — `mapDefaultZoom` lives under `graph:`, and `mapMinHeight` lives under `ui:`:
 
 | Setting | Default | Range | Description |
 |---|---|---|---|
@@ -163,4 +163,4 @@ views:
 - **No tile network dependency**: the basemap is entirely self-contained vector geometry hardcoded in the component. Markers will render correctly in air-gapped environments.
 - **ResizeObserver drives the map size**: the component observes its container and re-projects on resize. Initial SSR/static size assumptions (800×600) are replaced once the element mounts.
 
-Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/MapView.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/test/bases/parse.test.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/schema/settingsSchema.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css
+Source: /Users/michaelslain/Documents/dev/bismuth/app/src/bases/MapView.tsx, /Users/michaelslain/Documents/dev/bismuth/core/src/bases/types.ts, /Users/michaelslain/Documents/dev/bismuth/core/test/bases/parse.test.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/schema/settingsSchema.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/bases/BaseView.module.css

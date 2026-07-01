@@ -1,8 +1,8 @@
 # Settings Reference
 
-This is the canonical, exhaustive reference for Bismuth's vault `settings.yaml` file. It documents **every** top-level section and **every** key in the settings schema (`core/src/schema/settingsSchema.ts`), including each key's name, type, default value, min/max bounds or enum values, and its in-app documentation string. The schema is the single source of truth: the first-launch writer authors a fully commented `settings.yaml` from it, the editor's autocomplete and linter validate against it, and the frontend store seeds from the derived `DEFAULTS`. Defaults always equal the previously hardcoded values, so a fresh install behaves identically to an unconfigured one.
+This is the canonical, exhaustive reference for Bismuth's vault `.settings` file (a single hidden, extensionless YAML file at the vault root — `SETTINGS_FILE` in `core/src/settings.ts`). It documents **every** top-level section and **every** key in the settings schema (`core/src/schema/settingsSchema.ts`), including each key's name, type, default value, min/max bounds or enum values, and its in-app documentation string. The schema is the single source of truth: the first-launch writer authors a fully commented `.settings` from it, the editor's autocomplete and linter validate against it, and the frontend store seeds from the derived `DEFAULTS`. Defaults always equal the previously hardcoded values, so a fresh install behaves identically to an unconfigured one.
 
-There is **no settings GUI** in Bismuth — the "settings page" is literally `settings.yaml` opened in the editor, with schema-aware autocomplete (each key's doc + valid range) and lint. To change a setting, edit the YAML; the backend is the single writer and merges one key in place via `POST /set-setting` (preserving comments and key order). Editing `settings.yaml` does not require a server restart — it is re-read per request.
+There is **no settings GUI** in Bismuth — the "settings page" is literally `.settings` opened in the editor, with schema-aware autocomplete (each key's doc + valid range) and lint. To change a setting, edit the YAML; the backend is the single writer and merges one key in place via `POST /set-setting` (preserving comments and key order). Editing `.settings` does not require a server restart — it is re-read per request. (A legacy vault-root `settings.yaml` — or the interim `.settings/settings.yaml` folder from an earlier build — is migrated into the `.settings` file automatically on first open; see `migrateSettingsLocation` in `core/src/settings.ts`.)
 
 ## Schema overview
 
@@ -10,7 +10,7 @@ The schema is a nested object. Top-level keys, in canonical alphabetical-set mem
 
 `appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `googleCalendar`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `settings.yaml`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -67,7 +67,7 @@ appearance:
 
 Knowledge-graph rendering and force-layout behavior.
 
-> **Gotcha — the 2D/3D dimension is NOT a setting.** It is a transient, per-window UI toggle (localStorage-backed in `app/src/GraphView.tsx`). There is no `graph.viewMode` key (a test asserts its absence) — switching dimension never rewrites `settings.yaml`. Likewise the old color keys `graph.palette`, `graph.edgeColor`, `graph.backgroundColor` are gone (graph color is derived from `appearance.theme`).
+> **Gotcha — the 2D/3D dimension is NOT a setting.** It is a transient, per-window UI toggle (localStorage-backed in `app/src/GraphView.tsx`). There is no `graph.viewMode` key (a test asserts its absence) — switching dimension never rewrites `.settings`. Likewise the old color keys `graph.palette`, `graph.edgeColor`, `graph.backgroundColor` are gone (graph color is derived from `appearance.theme`).
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
@@ -558,7 +558,7 @@ To surface a daily-note type as a button, add a `toolbar` entry with `command: d
 
 ## `keybindings`
 
-Global keyboard shortcuts. One key per app-level action; the value is a `keybind` combo string. Placed **last** in the schema (a test enforces this) so it sits at the end of a fresh `settings.yaml`. The section is a nested object (not a list), derived from `KEYBINDING_CATALOG` (`core/src/keybindings.ts`) — the single source of truth for ids + default combos. `App.tsx` reads `settings.keybindings.<id>`; nothing is hardcoded.
+Global keyboard shortcuts. One key per app-level action; the value is a `keybind` combo string. Placed **last** in the schema (a test enforces this) so it sits at the end of a fresh `.settings` file. The section is a nested object (not a list), derived from `KEYBINDING_CATALOG` (`core/src/keybindings.ts`) — the single source of truth for ids + default combos. `App.tsx` reads `settings.keybindings.<id>`; nothing is hardcoded.
 
 ### Combo syntax
 

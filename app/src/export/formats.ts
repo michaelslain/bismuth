@@ -1,5 +1,6 @@
 // app/src/export/formats.ts
 import type { ExportFormat, RenderMode } from "./types";
+import { SETTINGS_FILE } from "../tabIds";
 
 // Defined here (the pure leaf), not in ./exporters, and re-used by exporters.ts.
 // exporters.ts statically pulls in `marked` (../bases/markdown) + jspdf, and App.tsx
@@ -21,7 +22,7 @@ const MATRIX: Record<string, ExportFormat[]> = {
 /** Formats valid for a path's file type, in display order. Empty if not exportable. */
 export function formatsFor(path: string): ExportFormat[] {
   if (path.startsWith("::")) return [];
-  if (path === "settings.yaml") return [];   // settings is config, not a document
+  if (path === SETTINGS_FILE) return [];   // settings is config, not a document
   return MATRIX[ext(path)] ?? [];
 }
 

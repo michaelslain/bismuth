@@ -52,6 +52,11 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Response:** `{ "version": <number> }`. Monotonically non-decreasing; bumped on every mutation/file-change. The dropped-SSE fallback poll hits this.
 - **Cache/SSE:** none.
 
+### `GET /terminal/info`
+- **Params:** none.
+- **Response:** `{ vault: <absolute vault path> }`. The frontend uses it to turn a file dragged from the tree (a vault-relative path) into an absolute path to insert at the shell prompt.
+- **Cache/SSE:** none.
+
 ### `GET /events`
 - **Params:** none.
 - **Response:** an SSE stream (`Content-Type: text/event-stream`, `Cache-Control: no-store`, `Connection: keep-alive`). On subscribe, if `version > 0` it immediately enqueues a snapshot frame `data: {"version":<n>,"paths":[]}\n\n` so a fresh client learns the current version without waiting. A `: keepalive\n\n` comment is sent every `server.sseHeartbeatMs` to keep the TCP connection past Bun's idle timeout.
@@ -78,7 +83,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /tree`
 - **Params:** none.
-- **Response:** `TreeEntry[]` — `{ path, icon?, kind: "file"|"dir" }`. Files carry their `icon` frontmatter if present; directories get an `icon` overlaid from `settings.yaml`'s `folderIcons` map (applied per-request on a shallow copy so a folder-icon change shows without a structural tree change). Examples: `{ path: "fire.md", icon: "🔥", kind: "file" }`, `{ path: "plain.md", kind: "file" }`, `{ path: "projects", icon: "Folder", kind: "dir" }`.
+- **Response:** `TreeEntry[]` — `{ path, icon?, kind: "file"|"dir" }`. Files carry their `icon` frontmatter if present; directories get an `icon` overlaid from `.settings`'s `folderIcons` map (applied per-request on a shallow copy so a folder-icon change shows without a structural tree change). Examples: `{ path: "fire.md", icon: "🔥", kind: "file" }`, `{ path: "plain.md", kind: "file" }`, `{ path: "projects", icon: "Folder", kind: "dir" }`.
 - Served from `treeCache`.
 
 ### `GET /vault-data`
@@ -92,7 +97,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /file`
 - **Params:** `?path=<vault-relative path>` (required).
-- **Response:** the raw file text (`200`, plain body). A missing file returns an empty string with `200` (not 404). Special case: requesting `path === settings.yaml` (`SETTINGS_FILE`) first runs `reconcileSettings(vault)` so a never-initialized settings file is materialized from schema defaults before the read (so the editor never shows a blank settings page).
+- **Response:** the raw file text (`200`, plain body). A missing file returns an empty string with `200` (not 404). Special case: requesting `path === .settings` (`SETTINGS_FILE`) first runs `reconcileSettings(vault)` so a never-initialized settings file is materialized from schema defaults before the read (so the editor never shows a blank settings page).
 - **Errors:** `400` if `path` is missing.
 
 ### `PUT /file`
@@ -100,7 +105,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 - **Body:** `{ path: string, contents: string }`.
 - **Action:** `writeNote(vault, path, contents)` then `invalidate(path)`.
 - **Response:** `"ok"`.
-- **Cache/SSE:** invalidates (bumps version, publishes SSE with the changed path) — equivalent to a mutation. Used by the frontend to save settings.yaml and arbitrary notes.
+- **Cache/SSE:** invalidates (bumps version, publishes SSE with the changed path) — equivalent to a mutation. Used by the frontend to save .settings and arbitrary notes.
 
 ### `GET /asset`
 - **Params:** `?path=<filename or vault-relative path>` (required).
@@ -123,7 +128,7 @@ These do not touch caches or SSE unless noted. All return `200` on success.
 
 ### `GET /schema`
 - **Params:** none.
-- **Response:** the property registry parsed from `settings.yaml`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `settings.yaml` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
+- **Response:** the property registry parsed from `.settings`'s `properties:` block (`getVaultSchema`), for note validation + autocomplete. Read fresh on demand — editing `.settings` (via `PUT /file`) refreshes this without a restart. Example: `{ due: { type: "date" }, rating: { type: "number" } }`.
 
 ### `GET /chat/sessions`
 - **Params:** none.
@@ -235,8 +240,8 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 
 ### `POST /backup`
 - **Body:** none.
-- **Action:** `commitVault(vault, snapshotMessage())` — a git snapshot of the vault.
-- **Response:** `{ committed: boolean }` (`false` when there was nothing to commit).
+- **Action:** `scheduleBackup(vault, () => snapshotMessage())` (`core/src/backup.ts`) — **debounced/coalesced**, not a synchronous commit. The editor's autosave hits this on every save, so committing on each keystroke-save would bloat `.git` (and, in an iCloud-synced vault, drive sync-conflict forks). `scheduleBackup` resets a per-vault debounce timer (`BISMUTH_BACKUP_DEBOUNCE_MS`, default ~30s after the last call); a burst of saves collapses into one `commitVault(vault, message())` call once the quiet window elapses. A `BISMUTH_BACKUP_MAX_WAIT_MS` ceiling (default 5 min) forces a commit even under continuous editing so long sessions still snapshot periodically. (Checkpoint commits — e.g. daemon `dream`/`vault-review` — call `commitVault` directly and stay immediate; only this autosave path is coalesced.)
+- **Response:** `{ scheduled: true }` — the route only acknowledges scheduling; it does not report whether/when a commit actually happens.
 - **Cache/SSE:** none.
 
 ### `POST /open-folder`
@@ -272,7 +277,7 @@ These run system actions (filesystem + git + `claude mcp` + a rebuild) but are *
 ### Google Calendar OAuth (read table)
 These drive the Google Calendar OAuth flow + connection lifecycle. All secrets and tokens live **outside** the vault (`~/.bismuth/gcal`), so these are SYSTEM actions, not vault mutations — they live in the read table with **no** cache-invalidation. The single requested OAuth scope is `calendar.events` (events read+write only; no Gmail/Drive/contacts). The two-way *sync* itself (`POST /gcal/sync`) IS a vault mutation — see below.
 
-- **`POST /gcal/credentials`** — body `{ clientId, clientSecret }`. `gcalSetCredentials(...)` stores the OAuth client id + secret in the durable store outside the vault (the secret never enters `settings.yaml`/git). Sent once from the connect modal. Response `{ ok: true }`. `400 "missing clientId/clientSecret"` if either is absent.
+- **`POST /gcal/credentials`** — body `{ clientId, clientSecret }`. `gcalSetCredentials(...)` stores the OAuth client id + secret in the durable store outside the vault (the secret never enters `.settings`/git). Sent once from the connect modal. Response `{ ok: true }`. `400 "missing clientId/clientSecret"` if either is absent.
 - **`POST /gcal/auth/start`** — body none. Builds `redirectUri = http://127.0.0.1:<server.port>/gcal/callback` (Google desktop clients accept any 127.0.0.1 port, so the callback lands back on THIS backend) and returns `gcalStartAuth(redirectUri)`. Response `{ url: <Google consent URL> }` for the frontend to open in the system browser. A thrown error (e.g. credentials not set) → `400` with the message.
 - **`POST /gcal/disconnect`** — body none. `gcalDisconnect()` clears the stored tokens. Response `{ ok: true }`.
 
@@ -324,10 +329,10 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **`pathOf`:** `path`.
 
 ### `POST /set-setting`
-- **Body:** `{ path: string[], value: unknown }` — `path` is an **array** of key segments (e.g. `["appearance", "editorFont"]`). The single backend write path for `settings.yaml`: merges one value in place, preserving comments, the `properties` registry, and unknown keys. Serialized via a per-vault write mutex (concurrent writes to different keys don't clobber each other).
+- **Body:** `{ path: string[], value: unknown }` — `path` is an **array** of key segments (e.g. `["appearance", "editorFont"]`). The single backend write path for `.settings`: merges one value in place, preserving comments, the `properties` registry, and unknown keys. Serialized via a per-vault write mutex (concurrent writes to different keys don't clobber each other).
 - **Response:** `{ ok: true }`.
 - **Errors:** `400 "bad path"` if `path` is not an array of strings (e.g. passing the dotted string `"appearance.theme"` → 400).
-- **`pathOf`:** constant `SETTINGS_FILE` (`"settings.yaml"`) so subscribers re-hydrate.
+- **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) so subscribers re-hydrate.
 
 ### `POST /set-property`
 - **Body:** `{ path: string, key: string, value: unknown }`.
@@ -362,11 +367,11 @@ Every route here is wrapped by `mutatingHandler`. After the handler runs, the wr
 - **`pathOf`:** `file`.
 
 ### `POST /folder-icon`
-- **Body:** `{ path: string, icon?: string | null }`. Folders have no frontmatter, so the mapping lives in `settings.yaml`'s `folderIcons` and is overlaid onto `/tree` dir entries.
+- **Body:** `{ path: string, icon?: string | null }`. Folders have no frontmatter, so the mapping lives in `.settings`'s `folderIcons` and is overlaid onto `/tree` dir entries.
 - **Action:** `setFolderIcon(vault, path, icon ?? "")`. An empty/`null` icon **removes** a previously-set folder icon.
 - **Response:** `"ok"`.
 - **Errors:** `400 "missing path"` if `path` is empty/non-string; `400 "invalid path"` for absolute or traversal paths (`startsWith("/")`, or a `..`/`.` segment).
-- **`pathOf`:** constant `"settings.yaml"` → `classifyVault` marks both graph & tree dirty (so the sidebar refetches).
+- **`pathOf`:** constant `SETTINGS_FILE` (`".settings"`) → `classifyVault` marks both graph & tree dirty (so the sidebar refetches).
 
 ### `POST /tasks/toggle`
 - **Body:** `{ path: string, line: number, status?: string }` (`line` is 0-based). With an explicit `status` (the right-click status menu) the line's box char is set to exactly that value (`setTaskLineStatus(line, status, today)`); without it, it's the plain binary toggle (checkbox click — `toggleTaskLine(line, today)`).
@@ -391,7 +396,7 @@ Dual-mode SRS review.
 - **`pathOf`:** `file` — row-based reviews invalidate the base file; legacy markdown reviews leave `pathOf` returning `undefined` → full invalidation.
 
 ### `POST /daily-note`
-- **Body:** `{ id: string }` — the id of a daily-note config in `settings.yaml`'s `dailyNotes:` list.
+- **Body:** `{ id: string }` — the id of a daily-note config in `.settings`'s `dailyNotes:` list.
 - **Action:** computes today's path (`dailyNotePath(config, now)`). If it already exists, returns it **without** clobbering; otherwise creates it from the configured template (`dailyNoteContent`).
 - **Response:** `{ path: string, created: boolean }` — `created: true` on first creation, `false` when reopening an existing note. Example created path: `Journal/2026-06-07 journal.md`.
 - **Errors:** `400 "unknown daily note: <id>"` for an unknown id.
@@ -406,7 +411,7 @@ Dual-mode SRS review.
 
 ### `POST /gcal/sync`
 > Unlike the other `/gcal/*` routes (read table, system actions), the actual two-way sync **rewrites the calendar base file**, so it IS a vault mutation and lives in `mutatingRoutes`.
-- **Body:** `{ basePath?: string }` (missing/non-JSON body tolerated → `{}`). A manual "Sync now" from the per-calendar modal may pass an explicit `basePath` so it targets the right calendar immediately, without waiting for the debounced `settings.yaml` write to round-trip into `appConfig`.
+- **Body:** `{ basePath?: string }` (missing/non-JSON body tolerated → `{}`). A manual "Sync now" from the per-calendar modal may pass an explicit `basePath` so it targets the right calendar immediately, without waiting for the debounced `.settings` write to round-trip into `appConfig`.
 - **Action:** resolves sync args from `appConfig.googleCalendar` (`gcalSyncArgs`): `basePath` (override or `googleCalendar.basePath`), `calendarId` (default `"primary"`), `policy` (`conflictPolicy`, default `"lastWriteWins"`), `timeZone`, and the appearance `theme`. Then `gcalSync(...)` reconciles the configured Google calendar with the configured calendar base in **both directions** (last-write-wins). A thrown sync error → `400` with the message.
 - **Response:** the `gcalSync` result JSON.
 - **Errors:** `400 "set googleCalendar.basePath to the calendar base you want to sync"` when no base path is configured (neither body override nor `appConfig.googleCalendar.basePath`).
@@ -459,7 +464,7 @@ A special-cased upgrade handled before the route tables. Backs the in-app termin
 - **Session resolution (reattach / pool / spawn):**
   - **Reattach** — if `termId` names a still-alive PTY (`getSessionByTermId`, within the post-disconnect grace window), the upgrade pipes to the SAME shell — preserving the running process, cwd, and env. Its pending kill timer is cancelled (`cancelSessionKill`) and it's resized to the new `cols`/`rows`.
   - **Pooled** — otherwise a pre-warmed shell is claimed from the pool (`claimPooledSession`) so the tab paints its already-rendered prompt instantly.
-  - **Fresh** — falling back to `createTerminalSession({ cwd: vault, cols, rows, relayPort: server.port, termId })` (the session reports relay provenance to THIS server's port so in-tab Claude sessions reach the right core).
+  - **Fresh** — falling back to `createTerminalSession({ cwd: vault, cols, rows, relayPort: server.port, termId, memoryDir: effectiveMemoryDir() })` (the session reports relay provenance to THIS server's port so in-tab Claude sessions reach the right core; `memoryDir` is injected as `BISMUTH_MEMORY_DIR` into the PTY's env only when the vault's daemon is enabled — see Daemon Integration).
 - On a failed `server.upgrade`, a freshly-created session is killed immediately; a reattached live shell is never hard-killed (its grace timer reclaims it if no socket reconnects) — either way `400 "upgrade failed"` is returned. Success returns the Bun-managed `101`.
 
 ### Message protocol (client → server)
@@ -488,6 +493,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | Method | Path | Table | Invalidates / SSE |
 |---|---|---|---|
 | GET | `/version` | read | no |
+| GET | `/terminal/info` | read | no |
 | GET | `/events` | read | (is the SSE stream) |
 | GET | `/graph` | read | no |
 | GET | `/graph/views` | read | no (mutates cached graph in place) |
@@ -543,13 +549,13 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/delete` | mutating | yes |
 | POST | `/restore` | mutating | yes (to) |
 | POST | `/create` | mutating | yes |
-| POST | `/set-setting` | mutating | yes (settings.yaml) |
+| POST | `/set-setting` | mutating | yes (.settings) |
 | POST | `/set-property` | mutating | yes |
 | POST | `/delete-property` | mutating | yes |
 | POST | `/row/update` | mutating | yes |
 | POST | `/row/delete` | mutating | yes |
 | POST | `/row/reorder` | mutating | yes |
-| POST | `/folder-icon` | mutating | yes (settings.yaml) |
+| POST | `/folder-icon` | mutating | yes (.settings) |
 | POST | `/tasks/toggle` | mutating | yes |
 | POST | `/tasks/archive` | mutating | yes |
 | POST | `/cards/review` | mutating | yes |
@@ -559,4 +565,4 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | GET | `/terminal` | (WS upgrade) | n/a |
 | GET | `/chat` | (WS upgrade) | n/a |
 
-Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/search.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts
+Source: core/src/server.ts, core/src/sse.ts, core/test/server.test.ts, core/src/graph.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/search.ts, core/src/files.ts, core/src/tasks.ts, core/src/fsPaths.ts, core/src/selfUpdate.ts, core/src/backup.ts, core/src/terminal.ts, core/src/chat.ts, core/src/gcal/index.ts, core/src/gcal/sync.ts

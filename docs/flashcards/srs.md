@@ -260,7 +260,7 @@ export const DEFAULT_SRS: SrsConfig = {
 };
 ```
 
-All of these are tunable via `settings.yaml` `srs:` section (see [Settings](#settings--tunable-parameters)).
+All of these are tunable via `.settings` `srs:` section (see [Settings](#settings--tunable-parameters)).
 
 ---
 
@@ -545,9 +545,9 @@ Behavior:
 
 ## Settings / Tunable Parameters
 
-Source: `core/src/schema/settingsSchema.ts`, `core/src/srs/scheduler.ts`
+Source: `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/srs/scheduler.ts`
 
-All SM-2 constants are configurable under `srs:` in `settings.yaml`. The backend passes `appConfig.srs` (a `SrsConfig`) to every `schedule()` / `applyReview()` / `applyReviewToRow()` call.
+All SM-2 constants are configurable under `srs:` in `.settings`. The backend passes `appConfig.srs` (a `SrsConfig`) to every `schedule()` / `applyReview()` / `applyReviewToRow()` call.
 
 ```yaml
 srs:
@@ -560,7 +560,7 @@ srs:
   goodGraduatingInterval: 1  # Days for new card rated "good"/"hard". Range: 1–3.
 ```
 
-Changes take effect immediately on the next review (no restart needed; `settings.yaml` is re-read per request).
+Changes take effect immediately on the next review (no restart needed; `.settings` is re-read per request).
 
 ---
 
@@ -608,4 +608,4 @@ Cram mode is entirely client-side. No `POST /cards/review` calls are made during
 
 ---
 
-Source: `core/src/srs/scheduler.ts`, `core/src/srs/cards.ts`, `core/src/srs/reviewRow.ts`, `core/src/srs/parser.ts`, `core/src/srs/types.ts`, `core/src/server.ts`, `core/src/schema/settingsSchema.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/FlashcardsView.tsx`, `app/src/api.ts`, `core/test/srs/scheduler.test.ts`, `core/test/srs/parser.test.ts`, `core/test/srs/cards.test.ts`, `core/test/srs/reviewRow.test.ts`
+Source: `core/src/srs/scheduler.ts`, `core/src/srs/cards.ts`, `core/src/srs/reviewRow.ts`, `core/src/srs/parser.ts`, `core/src/srs/types.ts`, `core/src/server.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `app/src/bases/flashcardsQueue.ts`, `app/src/bases/FlashcardsView.tsx`, `app/src/api.ts`, `core/test/srs/scheduler.test.ts`, `core/test/srs/parser.test.ts`, `core/test/srs/cards.test.ts`, `core/test/srs/reviewRow.test.ts`

@@ -204,7 +204,7 @@ The frontend switches between five graph modes. Each mode determines which node/
 
 For `"2nd"` and `"3rd"` modes the frontend requests `GET /graph/views` on first mode switch to obtain per-brain precomputed layouts (`ViewLayout`). These are computed lazily by `computeViewLayouts()` and cached on the live `GraphData` object in memory. Subsequent `GET /graph` calls return the cached graph with `.views` populated.
 
-The 2D/3D toggle is a transient `localStorage` value, not a `settings.yaml` key — it persists across sessions but does not appear in the settings file.
+The 2D/3D toggle is a transient `localStorage` value, not a `.settings` key — it persists across sessions but does not appear in the settings file.
 
 ---
 
@@ -218,7 +218,7 @@ Vault .md file written
   → classifyVault(paths): re-fingerprints changed notes via changeClassifier.ts
       - content-only edit (no link/tag/icon change) → dirty={graph:false, tree:false}
       - structural change → dirty={graph:true} or dirty={tree:true} or both
-      - settings.yaml change → dirty={graph:true, tree:true}
+      - `.settings` change → dirty={graph:true, tree:true}
   → applyDirty(paths, dirty):
       - graphCache.invalidate() if dirty.graph
       - treeCache.invalidate() if dirty.tree
@@ -259,8 +259,8 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `POST /rows {spec}` | Resolve a `SourceSpec` → `Row[]` (base composition, scoped tasks) |
 | `GET /meta?path=` | Parsed frontmatter of a single file |
 | `GET /config` | Runtime config: `{vault, memory}` |
-| `GET /settings` | Parsed app settings (settings.yaml merged over defaults) |
-| `GET /schema` | Property registry from settings.yaml |
+| `GET /settings` | Parsed app settings (`.settings` merged over defaults) |
+| `GET /schema` | Property registry from `.settings` |
 | `GET /templates` | List template files |
 | `GET /agent-graph` | Live Claude Code agent tree (agents mode) |
 | `GET /tasks` | All vault tasks |
@@ -297,7 +297,7 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 | `POST /replace {query, replacement, opts, scope}` | Find-and-replace in vault |
 | `POST /set-property {path, key, value}` | Set a single frontmatter key |
 | `POST /delete-property {path, key}` | Remove a frontmatter key |
-| `POST /set-setting {path[], value}` | Merge one settings.yaml key in place |
+| `POST /set-setting {path[], value}` | Merge one `.settings` key in place |
 | `POST /folder-icon` | Set/clear a folder icon |
 | `POST /daily-note` | Create or open today's daily note |
 | `POST /tasks/toggle` | Toggle a checkbox task in-place |
@@ -311,13 +311,13 @@ All routes are served by `core/src/server.ts`. Mutating routes go through `mutat
 
 ## Settings Architecture
 
-`settings.yaml` lives inside the vault directory. It is the single source of truth for all user-configurable behavior. The backend is the **only writer** — the frontend never writes the file directly, it always calls `POST /set-setting`.
+`.settings` (`SETTINGS_FILE` in `core/src/settings.ts`) is a single hidden, extensionless YAML file at the vault root. It is the single source of truth for all user-configurable behavior. The backend is the **only writer** — the frontend never writes the file directly, it always calls `POST /set-setting`. A one-time `migrateSettingsLocation()` relocates two legacy layouts into it on first open: a vault-root `settings.yaml`, and an interim `.settings/settings.yaml` folder from an earlier build; both are idempotent, best-effort, and preserve the user's values via filesystem rename (falling back to copy).
 
 - **Schema**: `core/src/schema/settingsSchema.ts` — defines all keys with type, default, min/max or enum, and doc string.
-- **Reconciliation**: On server boot (and on every `GET /file?path=settings.yaml`), `reconcileSettings()` adds any missing keys to the file without clobbering existing values or comments.
+- **Reconciliation**: On server boot (and on every `GET /file?path=.settings`), `reconcileSettings()` adds any missing keys to the file without clobbering existing values or comments.
 - **Frontend hydration**: `GET /settings` returns the parsed file merged over defaults. `app/src/settings.ts` stores these as a reactive Solid signal.
 - **CSS variables**: `app/src/settingsCssVars.ts` projects appearance/ui settings into `:root` CSS custom properties; component stylesheets use `var(--name, fallback)`.
-- **Schema-aware editor**: Opening `settings.yaml` in the editor activates `editor/settingsComplete.ts` (autocomplete showing doc + valid range) and `editor/yamlSchema.ts` (lint).
+- **Schema-aware editor**: Opening `.settings` in the editor activates `editor/settingsComplete.ts` (autocomplete showing doc + valid range) and `editor/yamlSchema.ts` (lint).
 
 ---
 
@@ -347,4 +347,4 @@ The `asyncCache` abstraction (`core/src/asyncCache.ts`) ensures concurrent first
 - [Settings schema](../settings/reference.md)
 - [HTTP API reference](../api/http-reference.md)
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemon.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonGraph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/GraphAtmosphere.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/engine.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemon.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonGraph.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/graph.ts, /Users/michaelslain/Documents/dev/bismuth/relay/package.json, /Users/michaelslain/Documents/dev/bismuth/relay/hooks/hooks.json, /Users/michaelslain/Documents/dev/bismuth/relay/lib/report.ts, /Users/michaelslain/Documents/dev/bismuth/core/package.json, /Users/michaelslain/Documents/dev/bismuth/cli/package.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/graph/GraphAtmosphere.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs

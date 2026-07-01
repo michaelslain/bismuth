@@ -331,7 +331,7 @@ bismuth prop delete "Books/Dune.md" status --vault ~/vault
 
 ## Settings & folder-icon commands (`commands/settings.ts`)
 
-Reads the merged settings feed + schema; mutates `settings.yaml` and the per-folder icon map in place (preserving comments/key order). All require a vault.
+Reads the merged settings feed + schema; mutates `.settings` and the per-folder icon map in place (preserving comments/key order). All require a vault.
 
 ### `settings get [--key a.b.c]`
 Print the merged settings feed (`serializeSettingsForFrontend`). With `--key`, walks the dotted path and prints just that subtree/value (`undefined` printed as nothing if a segment is missing).
@@ -341,7 +341,7 @@ bismuth settings get --key appearance.theme --vault ~/vault
 ```
 
 ### `settings set <key.path> <value>`
-Set a `settings.yaml` value at a dotted path. The path is split on `.`; the value is coerced via `JSON.parse` (falling back to raw string, same rule as `prop set`). Calls `setSettingInFile(vault, keyPath.split("."), value)`. Prints `{ ok: true }`.
+Set a `.settings` value at a dotted path. The path is split on `.`; the value is coerced via `JSON.parse` (falling back to raw string, same rule as `prop set`). Calls `setSettingInFile(vault, keyPath.split("."), value)`. Prints `{ ok: true }`.
 ```bash
 bismuth settings set appearance.theme dark --vault ~/vault
 bismuth settings set ui.sidebarWidth 320 --vault ~/vault
@@ -355,7 +355,7 @@ bismuth settings schema --vault ~/vault --pretty
 ```
 
 ### `folder-icon <folder> <icon> [--clear]`
-Set (or, with `--clear`, clear) a folder's icon in `settings.yaml` (`setFolderIcon(vault, folder, clear ? null : icon)`). Prints `{ ok: true }`. The args are validated: a missing `<folder>` always fails (`usage: folder-icon <folder> <icon> [--clear]`), and a missing `<icon>` fails the same way **unless** `--clear` is passed (clearing needs no icon).
+Set (or, with `--clear`, clear) a folder's icon in `.settings` (`setFolderIcon(vault, folder, clear ? null : icon)`). Prints `{ ok: true }`. The args are validated: a missing `<folder>` always fails (`usage: folder-icon <folder> <icon> [--clear]`), and a missing `<icon>` fails the same way **unless** `--clear` is passed (clearing needs no icon).
 ```bash
 bismuth folder-icon "Projects" Folder --vault ~/vault
 bismuth folder-icon "Projects" anything --clear --vault ~/vault   # icon arg ignored when --clear
@@ -570,4 +570,4 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts
+Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts, core/src/settings.ts
