@@ -16,10 +16,10 @@ export const EXPORT_PREFIX = "::export:";
 The pane is a two-column layout: a live **preview** on the left (an `<iframe srcdoc>` for HTML/MD/CSV, an `<img>` for image previews) and a **control panel** on the right. The panel exposes:
 
 - **Input path** — which vault-relative file to export. Defaults to the file the tab was opened for, re-pointable by typing a path or (in the desktop app) the `BROWSE` button (`pickFile`, filtered to `md`/`sheet`/`draw`). The committed `srcPath` (which drives the preview resource) is kept separate from the live `srcDraft` text so typing doesn't refetch on every keystroke and drop input focus mid-word; the draft commits on blur/Enter.
-- **Output path** — the destination folder. Empty = the browser/OS Downloads dir. A chosen folder (desktop only, via `pickFolder`) is remembered in `localStorage` under `oa.export.destFolder`.
+- **Output path** — the destination folder. Empty = the browser/OS Downloads dir. A chosen folder (desktop only, via `pickFolder`) is remembered in `localStorage` under `bismuth.export.destFolder`.
 - **View** (bases with >1 view) — a chip per base view, picking `viewIndex`.
 - **Content** (bases only) — the `Visual` / `Data` `RenderMode` toggle.
-- **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `oa.export.calSpan`.
+- **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `bismuth.export.calSpan`.
 - **Format** — the valid format chips for the current file/mode (see Formats below).
 - **Theme** — `dark` or `light`.
 
@@ -43,7 +43,7 @@ const MATRIX: Record<string, ExportFormat[]> = {
 };
 ```
 
-`formatsFor(path)` returns `[]` for sentinels (`::…`) and for `settings.yaml` (config, not a document), so those are never exportable; `isExportable(path)` is the boolean App.tsx uses to gate the export command at render time.
+`formatsFor(path)` returns `[]` for sentinels (`::…`) and for `SETTINGS_FILE` (`.settings`, config not a document); `isExportable(path)` is the boolean App.tsx uses to gate the export command at render time.
 
 `ExportFormat` is `"html" | "pdf" | "md" | "png" | "csv"`. CSV is **not** in the static matrix — it's base-only and bolted on by the contents-aware refinement below.
 
@@ -120,7 +120,16 @@ The split is entirely about *who supplies `deps`*. The pure renderers (markdown,
 
 - **`md` / `html`** — fully headless. Pure string output; the CLI writes them directly.
 - **`png` / `pdf` of a note / base / sheet** — **browser-only**. These rasterize the rendered HTML body through `deps.htmlToPng` / `deps.htmlToPdf`, implemented by `htmlToPdf.ts`: the HTML document is written into an isolated off-screen `<iframe>`, snapshotted with **`html2canvas`**, then (for PDF) sliced across US-Letter pages via **`jsPDF`**. This requires a DOM, so the CLI's `htmlToPdf`/`htmlToPng` deps simply throw a clear message ("pdf/png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app …").
-- **`png` / `pdf` of a drawing** — headless. Drawings rasterize through `deps.drawingToPng`. In the app this is `drawingRaster.ts` (browser-safe `render2d` on a `<canvas>`); in the CLI it's the **core headless renderer** `renderDocToPng`/`renderDocToPdf` (`@napi-rs/canvas` + `pdf-lib`). The PDF path for a drawing wraps the rasterized PNG data-URL in an `<img>` document and runs it through `htmlToPdf` (in the app) — but the CLI special-cases `.draw` *before* reaching the app exporter and renders both formats straight through the core renderer, so drawing PNG **and** PDF both work headlessly there.
+- **`png` / `pdf` of a drawing** — headless-capable. Drawings rasterize through `deps.drawingToPng`. In the app this is `drawingRaster.ts` (a browser Canvas2D `drawingToPng`); in the CLI it's the **core headless renderer** `renderDocToPng`/`renderDocToPdf` (`@napi-rs/canvas` + `pdf-lib`). The PDF path for a drawing wraps the rasterized PNG data-URL in an `<img>` document and runs it through `htmlToPdf` (in the app) — but the CLI special-cases `.draw` *before* reaching the app exporter and renders both formats straight through the core renderer, so drawing PNG **and** PDF both work headlessly there. See the next section for how the two rasterizers relate.
+
+### Drawing rasterization: browser (`drawingRaster.ts`) vs headless (`core/src/drawing/export.ts`)
+
+A `.draw` doc is rasterized by two independent implementations that share the same pure pixel logic (`core/src/drawing/render2d.ts`'s `renderPage`/`renderDocStacked`) but a different canvas backend and page-assembly strategy — this is the split referenced above:
+
+- **Browser** — `app/src/export/drawingRaster.ts`'s `drawingToPng(docText, theme)`: parses the doc (`parseDoc`, falling back to `emptyDoc()` on a parse error), pre-decodes every distinct image `src` referenced by placed images / backgrounds into `HTMLImageElement`s (`decodeImages`; an undecodable src is skipped rather than failing the export), creates a real DOM `<canvas>` sized `PAGE_W*SCALE` × `PAGE_H*pages.length*SCALE` (`SCALE = 2`), and calls `renderDocStacked` to draw every page into **one tall canvas** (pages stacked vertically), returning `{ bytes, dataUrl }` via `canvas.toDataURL("image/png")`. This is wired in as `ExportView.tsx`'s `ExportDeps.drawingToPng` and — unlike `htmlToPdf`/`htmlToPng` — is imported statically, not lazily, since it doesn't pull in `jspdf`/`html2canvas`. It backs **both** the instant preview (`renderPreview`'s `previewImg`) and the real downloadable PNG bytes (`renderExport`'s `png` case) — there's no separate preview-only rasterizer, so what you see in the pane is pixel-for-pixel what gets written to disk.
+- **Headless** — `core/src/drawing/export.ts`'s `renderDocToPng`/`renderDocToPdf`: same pre-decode step (`decodeImages`, but via `@napi-rs/canvas`'s `loadImage` instead of `Image()`) into a **non-DOM** `createCanvas`. `renderDocToPng` mirrors the browser path exactly — one call to `renderDocStacked` over a single tall (`PAGE_H * pages.length`) canvas at the same 2x `SCALE` — so app and CLI PNG output agree pixel-for-pixel. `renderDocToPdf` does **not** stack: it rasterizes each page separately at its native `PAGE_W`×`PAGE_H` (`pageToPng` → `renderPage`, one call per page index) and embeds each page's PNG into its own `pdf-lib` `PDFDocument` page sized to the drawing's own dimensions — no Letter-page slicing.
+
+Because `renderDocToPdf` doesn't stack while the app's PDF path does, a multi-page drawing's PDF differs in shape depending on which face produced it: the **app** rasterizes the whole (stacked) drawing to one PNG, wraps it in an `<img>` document, and slices *that* through `htmlToPdf` (html2canvas + jsPDF) onto US-Letter pages, so the app's drawing PDF is Letter-paginated rather than one-drawing-page-per-PDF-page. The **CLI**'s PDF (`renderDocToPdf`, used directly — see below) instead emits exactly one PDF page per drawing page, each sized to the drawing's own `PAGE_W`(816)/`PAGE_H`(1056) — no Letter slicing at all.
 
 ## The CLI: `bismuth export`
 

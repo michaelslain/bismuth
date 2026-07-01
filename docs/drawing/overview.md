@@ -1,6 +1,6 @@
 # Drawing: `.draw` Format, Tools, and Export
 
-This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, rendering architecture, and headless PNG/PDF export. The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM.
+This document is the canonical reference for Bismuth's vector drawing system: the on-disk `.draw` JSON format, the smoothing pipeline, the drawing tools and color palette, paper background options, placed/markup images, rendering architecture, and PNG/PDF export (both headless and browser-side). The drawing subsystem is deliberately split between a headless backend (`core/src/drawing/`) and a browser frontend (`app/src/drawing/`); all rendering primitives are pure and tested independently of the DOM. A `.draw` file also backs **image and PDF markup** — opening a raster image or a PDF auto-creates a `.draw` sidecar so it can be annotated with the same pen/highlighter tools (see **Images**).
 
 ---
 
@@ -36,10 +36,19 @@ interface Paper {
 ```ts
 interface Page {
   strokes: Stroke[];
+  images?: ImageEl[];   // optional; omitted entirely on pages with no placed images
 }
 ```
 
-Pages are zero-indexed. `doc.pages[0]` is always present; additional pages are appended with `store.addPage()`. Each page has its own independent stroke list; the paper background is shared.
+Pages are zero-indexed. `doc.pages[0]` is always present; additional pages are appended with `store.addPage()`. Each page has its own independent stroke list; the paper background is shared. `images` is optional and omitted on ordinary pages — see **Images** below.
+
+### ImageEl
+
+```ts
+interface ImageEl { src: string; x: number; y: number; w: number; h: number; }
+```
+
+A placed raster image, in the page's 816×1056 logical coordinate space. `src` is a self-contained `data:image/...;base64,...` URL so the `.draw` file stays fully portable (the headless CLI export needs zero asset resolution). `x`/`y`/`w`/`h` are the image's bounding box in logical page pixels. Images are drawn UNDER the ink (background-ish) — see **Images** below.
 
 ### Stroke
 
@@ -77,6 +86,8 @@ pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n)))
 ```
 
 This means raw float coordinates from the pointer events are quantized on save. The live in-memory representation may have floats; only the written file is integer-quantized.
+
+`roundDoc` rounds a page's `images` the same way — `x`/`y`/`w`/`h` are rounded to integers — but NEVER touches `src` (rounding a data URL would corrupt the image bytes). A page with no `images` array stays image-less after `roundDoc` (old files round-trip unchanged, since the field is spread in conditionally rather than defaulted to `[]`).
 
 ### Constants
 
@@ -356,6 +367,59 @@ The default background for new drawings is `"grid"` (set by `emptyDoc()`).
 
 ---
 
+## Images
+
+A page can carry zero or more placed raster images (`Page.images?: ImageEl[]`), stored inline as self-contained `data:` URLs so a `.draw` file (and any sidecar built from it — see **Image / PDF Markup** below) stays fully portable and headlessly exportable with zero asset resolution.
+
+### Z-order
+
+`renderPage()` (`core/src/drawing/render2d.ts`) draws in this order: paper background → images → strokes. Images sit ON TOP of the paper wash (so the background tint never bleeds through them) but UNDER the ink (so annotations drawn over a placed image land on top of it, not behind it).
+
+### Placing images (import / paste / drag-drop)
+
+`DrawingPage.tsx` supports adding an image to the current drawing itself (independent of the markup-sidecar flow below):
+
+- **Toolbar import button** — opens a hidden `<input type=file accept=image/*>`; the picked file is placed on page 0.
+- **Paste** — a clipboard image item (`ClipboardEvent`) is placed on page 0.
+- **Drag-drop** — a dropped image file is placed on whichever page element (`[data-page-index]`) it was dropped over.
+
+All three funnel through `imageElFromSrc(src, maxScale)`, which decodes the image's natural size (`decodeSize()`, via a throwaway `Image`) and centers it on the page with `fitImage()`, preserving aspect ratio. An **imported** image is capped at `maxScale = 1` (never upscaled past its natural size); a **markup background** (see below) uses `maxScale = Infinity` (scaled up or down to fill the page). Placed images are stored as data URLs via `blobToDataUrl()` (a `FileReader.readAsDataURL` wrapper) and added with `store.addImage(pageIndex, imageEl)`; the whole-document undo stack covers the insert (selecting/moving/deleting an individual placed image is not yet implemented).
+
+### Image / PDF Markup (`ImageMarkupPage`)
+
+Opening an image file (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`) or a `.pdf` file does **not** show a plain image/PDF viewer — `PaneContent.tsx` routes both extensions to `ImageMarkupPage` (`app/src/drawing/DrawingPage.tsx`), which lets the file be annotated exactly like a drawing:
+
+- A sidecar `<file>.draw` is created next to the source file (e.g. `photo.png` → `photo.png.draw`, `report.pdf` → `report.pdf.draw`).
+- **First open (seeding)**: `seedMarkupDoc()` branches on extension.
+  - An **image** seeds a single blank page (`paper.bg = "blank"`, no grid wash — the photo itself is the surface) whose one `ImageEl` is the full image, fetched via `GET /asset` and converted to a data URL. Placed at natural aspect ratio, scaled to fill the page (`maxScale = Infinity`).
+  - A **PDF** seeds **one page per PDF page**: the PDF's bytes are fetched via `GET /asset`, then rasterized client-side page-by-page (`rasterizePdf()`, see below); each raster becomes its own page's full-page background image.
+  - A failed fetch/decode/rasterize still yields a usable blank page (the error is toasted, not thrown) so the pane always mounts.
+- **Reopening is idempotent**: `ImageMarkupPage` checks the sidecar via a raw `GET /file` fetch before seeding — `GET /file` returns 200 with an empty body for a missing file (it never 404s a read), so an empty/whitespace body means "no sidecar yet, seed it"; any non-empty body (even one that fails `parseDoc`) is treated as an existing sidecar and reused untouched, and a non-2xx/non-404 HTTP error or network failure also leaves it alone rather than risk clobbering prior annotations. Once seeded/found, the sidecar path is handed to the ordinary `DrawingPage`.
+- The loading placeholder reads "Rasterizing PDF…" for `.pdf` sources and "Loading image…" otherwise, since PDF rasterization can take noticeably longer.
+
+### Client-side PDF rasterization (`app/src/drawing/pdfRaster.ts`)
+
+`rasterizePdf(bytes, opts?)` turns a PDF's raw bytes into an array of image data URLs (one JPEG per page, in order), entirely in the browser via `pdfjs-dist`. This is intentionally a browser-only concern — core's headless `.draw` export never touches `pdfjs`; it only ever sees the resulting self-contained `data:` URLs baked into the sidecar.
+
+```ts
+interface RasterizeOpts {
+  targetWidth?: number; // default 1600 — target raster width (page is 816 logical px wide; ~2× gives zoom headroom)
+  maxDim?: number;      // default 4000 — hard cap on either raster dimension (guards a poster-size/rotated page)
+  quality?: number;     // default 0.85 — JPEG quality (JPEG keeps the sidecar far smaller than a PNG data URL)
+  maxPages?: number;    // default 100 — hard cap on pages rasterized (an unbounded page count could produce a
+                        // multi-hundred-MB sidecar); pages beyond the cap are dropped with a toast
+}
+```
+
+Implementation notes:
+- `pdfjs.GlobalWorkerOptions.workerSrc` is wired to a Vite `?url` import of the shipped worker `.mjs` so it stays a separate emitted asset; `manualChunks` keeps pdfjs off the app's boot bundle.
+- `getDocument()` transfers (detaches) the input `ArrayBuffer` to the worker, so `rasterizePdf` hands it a sliced copy rather than the caller's original buffer.
+- Each page is rendered to an off-DOM `<canvas>` scaled so its width is ~`targetWidth` (clamped so neither dimension exceeds `maxDim`, never scaled below 1×), filled white first (a transparent PDF page would otherwise composite to black once flattened to JPEG), then encoded via `canvas.toDataURL("image/jpeg", quality)`.
+- A single page that fails to render is skipped with a toast rather than aborting the whole document; only a PDF that can't be opened at all throws. The `loadingTask` is `destroy()`ed in a `finally` once every page has been captured, freeing the worker's page/font caches.
+- If the PDF has more pages than `maxPages`, only the first `maxPages` are rasterized and a toast explains the truncation.
+
+---
+
 ## Rendering Architecture
 
 ### Dual-canvas model
@@ -366,6 +430,16 @@ The default background for new drawings is `"grid"` (set by `emptyDoc()`).
 - **`live` canvas**: The in-progress stroke draft. Cleared and redrawn per pointer-move event via `drawStroke()`. Cleared on pointer-up after the stroke is committed.
 
 This separation eliminates the need to repaint all committed strokes on every pointer-move event. The DPR (device pixel ratio) is capped at 2 to avoid oversized buffers on 3× displays.
+
+### Image decode cache
+
+`renderPage()` needs a pre-decoded image handle to draw a page's `images` synchronously, but decoding a data URL (`new Image(); img.src = ...`) is asynchronous. `DrawingCanvas.tsx` keeps a **module-level cache** — `const imageCache = new Map<string, HTMLImageElement>()` — shared across every `DrawingCanvas` instance (so a split pane or a reopened tab showing the same image src reuses the already-decoded handle instead of re-decoding it):
+
+- `resolveImage(src)` looks up (or lazily creates) the cached `Image` for a src. While it hasn't finished decoding (`!img.complete`), it returns `undefined` — `renderPage` simply skips that image for this paint.
+- Each live canvas instance tracks its own `hooked` set of srcs it has already attached a `load` listener for, so a still-decoding image gets at most one pending listener per canvas, not one per repaint call. Because the `Image` itself is shared, every canvas instance awaiting the same src attaches its own listener (`addEventListener`, which stacks, rather than `.onload =`, which would clobber a sibling's) so all of them repaint once the shared decode completes.
+- Once `.complete`, the handle is returned and the image is blitted on every subsequent paint with no further decode cost.
+
+The equivalent headless (`core/src/drawing/export.ts`) and browser-export (`app/src/export/drawingRaster.ts`) paths don't need this incremental-repaint dance — they `await` every image's decode up front (`loadImage()` / a `Promise`-wrapped `Image.onload`) into a plain `Map` before rendering synchronously.
 
 ### Coordinate system
 
@@ -428,7 +502,9 @@ Coalesced pointer events (`e.getCoalescedEvents()`) are processed during `onMove
 
 ## Headless Export
 
-The `export.ts` module renders a `DrawingDoc` to PNG or PDF without a browser DOM, using `@napi-rs/canvas` for rasterization and `pdf-lib` for PDF assembly.
+The `export.ts` module renders a `DrawingDoc` to PNG or PDF without a browser DOM, using `@napi-rs/canvas` for rasterization and `pdf-lib` for PDF assembly. This is the path used by the CLI/server (headless), but it is **not the only rasterizer** — see **Browser-side export** below for the separate in-browser path used by the export-pane live preview.
+
+Before rendering, `decodeImages(doc)` pre-decodes every distinct `ImageEl.src` referenced across the doc's pages into a handle map via `@napi-rs/canvas`'s `loadImage()` (since `src` is always a self-contained data URL, no asset resolution is needed); an undecodable src is left out of the map and simply skipped when `renderPage` draws that page, rather than aborting the whole export.
 
 ### Scale
 
@@ -470,6 +546,17 @@ const pdf = await renderDocToPdf(doc, "light");
 | `"light"` | `#fbfbfa` | `#1b1b1f` |
 | `"dark"` | `#0e0e11` | `#e8e8ea` |
 
+### Browser-side export (`app/src/export/drawingRaster.ts`)
+
+The export pane needs an instant PNG preview while the user is still interacting with the app, so it does **not** round-trip through the headless `export.ts`/`@napi-rs/canvas` path. `drawingToPng(docText, theme)` rasterizes a `.draw` document to a PNG entirely in the browser, reusing the same pure `core/src/drawing/render2d.ts` renderer (`renderDocStacked`) that both the headless export and `DrawingCanvas` use:
+
+- Parses `docText` via `parseDoc()`, falling back to `emptyDoc()` on a parse failure.
+- Pre-decodes every distinct `ImageEl.src` into an `HTMLImageElement` (`decodeImages()`, a browser-side analog of `export.ts`'s `decodeImages` — an undecodable src is skipped rather than failing the export).
+- Renders into an off-DOM `<canvas>` sized `PAGE_W * SCALE × PAGE_H * n * SCALE` (`SCALE = 2`, `n = doc.pages.length`), using the DOM `CanvasRenderingContext2D` directly (no `@napi-rs/canvas`).
+- Returns `{ bytes: Uint8Array; dataUrl: string }` — the raw PNG bytes (for saving/uploading) and a ready-to-`<img src>` data URL (for the instant preview), decoded from the canvas's own `toDataURL("image/png")`.
+
+Because it shares `render2d.ts` with the headless exporter, the two rasterizations are visually identical (same background wash, stroke outlines, image z-order); only the canvas backend and image-decode mechanism differ.
+
 ---
 
 ## Toolbar Layout
@@ -510,5 +597,10 @@ Saves are triggered immediately on every mutation (no debounce), since `DrawingC
 - **Page dimensions are fixed**: `PAGE_W = 816` and `PAGE_H = 1056` are compile-time constants. There is no per-document or per-page size setting.
 - **DPR cap**: `DrawingCanvas` caps DPR at 2 (`Math.min(window.devicePixelRatio || 1, 2)`) to prevent excessively large canvas buffers on 3× displays.
 - **Export uses theme colors, not CSS vars**: The headless export cannot read CSS custom properties. It uses the hardcoded `themeColors()` function from `theme.ts`. Pass the correct theme (`"dark"` or `"light"`) to get the right background and ink color.
+- **Two rasterizers, one renderer**: `core/src/drawing/export.ts` (headless, `@napi-rs/canvas`, for the CLI/server) and `app/src/export/drawingRaster.ts` (browser, DOM `<canvas>`, for the instant export-pane preview) both delegate to the same pure `render2d.ts`/`renderDocStacked`, so their output is pixel-equivalent modulo canvas-backend rounding — only image decoding and the canvas host differ.
+- **`.draw` sidecars are opaque siblings**: `ImageMarkupPage` names a sidecar by simple suffix (`<file>.draw`), so annotating `report.pdf` produces `report.pdf.draw` and annotating `photo.png` produces `photo.png.draw` — both sort next to their source in the file tree. `PaneContent`'s `.draw` route is matched before its `.pdf` route specifically so a `<name>.draw.pdf` (a drawing exported to PDF) isn't mistaken for a still-markup-eligible PDF.
+- **Image markup never overwrites an existing sidecar**: `ImageMarkupPage` only seeds when the sidecar's `GET /file` body is empty/whitespace (never on parse failure, HTTP error, or network failure) — reopening a previously-annotated image/PDF always preserves prior strokes, even if the sidecar is corrupt (it's still mounted as-is and only rewritten on the next actual edit).
+- **PDF rasterization is JPEG, not PNG**: `rasterizePdf()` encodes each page as a JPEG (`quality` default 0.85) rather than a lossless PNG, trading a little fidelity for a much smaller `.draw` sidecar (a multi-page PDF embeds one raster per page as a base64 data URL in the JSON).
+- **Image cache is module-level, not per-canvas**: `DrawingCanvas.tsx`'s `imageCache` is shared across every mounted canvas in the process, so decoding a given image src is a one-time cost no matter how many pages/panes reference it — but it also means the cache is never evicted (an in-session memory tradeoff, not a per-session-persisted one).
 
-Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`
+Source: `core/src/drawing/model.ts`, `core/src/drawing/geometry.ts`, `core/src/drawing/smooth.ts`, `core/src/drawing/paper.ts`, `core/src/drawing/theme.ts`, `core/src/drawing/export.ts`, `core/src/drawing/render2d.ts`, `app/src/drawing/Toolbar.tsx`, `app/src/drawing/DrawingCanvas.tsx`, `app/src/drawing/DrawingPage.tsx`, `app/src/drawing/pdfRaster.ts`, `app/src/drawing/input.ts`, `app/src/drawing/store.ts`, `app/src/export/drawingRaster.ts`, `app/src/PaneContent.tsx`, `core/test/drawing/model.test.ts`, `core/test/drawing/smooth.test.ts`, `core/test/drawing/geometry.test.ts`, `core/test/drawing/export.test.ts`

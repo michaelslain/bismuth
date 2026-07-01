@@ -1,6 +1,6 @@
 # Frontmatter: Parsing, Mutation, Property Registry, and Bases Integration
 
-This document covers everything Bismuth does with YAML frontmatter: how it is parsed (tolerantly) from markdown files, how individual keys are set or deleted while preserving formatting, how the property registry in `settings.yaml` maps frontmatter keys to typed schemas, and how parsed frontmatter flows into the Bases query engine as the `note` namespace of every `Row`.
+This document covers everything Bismuth does with YAML frontmatter: how it is parsed (tolerantly) from markdown files, how individual keys are set or deleted while preserving formatting, how the property registry in `.settings` maps frontmatter keys to typed schemas, and how parsed frontmatter flows into the Bases query engine as the `note` namespace of every `Row`.
 
 ---
 
@@ -192,7 +192,7 @@ Both functions delegate to the private `mutateFrontmatter(md, mutate)` helper. I
 
 ---
 
-## Property Registry: `properties:` in `settings.yaml`
+## Property Registry: `properties:` in `.settings`
 
 ### Purpose
 
@@ -203,7 +203,7 @@ The property registry tells Bismuth the *declared type* of each frontmatter key 
 - **Bases query engine** (type coercion for filters and comparisons).
 - **Schema endpoint** (`GET /schema`) — the frontend reads this to build the autocomplete and linter.
 
-### Location in `settings.yaml`
+### Location in `.settings`
 
 ```yaml
 properties:
@@ -265,7 +265,7 @@ All valid type values accepted in `properties:`:
 | `datetime` | ISO-8601 string or `Date` | Parsed via `Date.parse`; any valid ISO string passes |
 | `file` | `string` (note path or `[[WikiLink]]`) | Resolved via wikilink extraction; a missing link produces a **warning** (not an error) |
 | `icon` | `string` | Any string passes — a Lucide icon name or emoji; never flagged |
-| `keybind` | `string` | Any string passes (validated leniently); used only in `settings.yaml` |
+| `keybind` | `string` | Any string passes (validated leniently); used only in `.settings` |
 
 #### Composite types (object form)
 
@@ -278,7 +278,7 @@ status:
 ```
 - Unknown values produce an error with up to 3 nearest-match suggestions (Levenshtein distance).
 - `caseInsensitive: true` makes the check case-insensitive but preserves the configured value casing in suggestions.
-- In `settings.yaml` only, `allowPrefixes` lets values starting with a given prefix pass without being in the enum list (used internally for `daily-note:` command IDs).
+- In `.settings` only, `allowPrefixes` lets values starting with a given prefix pass without being in the enum list (used internally for `daily-note:` command IDs).
 
 **List:**
 ```yaml
@@ -301,7 +301,7 @@ metadata:
 - Nested objects validate their child keys recursively.
 - Open-map objects (empty `fields: {}`) accept arbitrary keys — used by `properties:` and `folderIcons:` themselves.
 
-**Path** (used in `settings.yaml`, not in user `properties:` entries):
+**Path** (used in `.settings`, not in user `properties:` entries):
 ```yaml
 folder:
   type:
@@ -405,7 +405,7 @@ Key points:
 
 ### Type coercion in the query engine
 
-The Bases expression evaluator and filter engine work with the raw JS values from `note`. The property registry (from `properties:` in `settings.yaml`) is used for autocomplete and lint, but not for automatic coercion in query evaluation — filters compare values as-is. The `parseList` coerce function is applied at validation time for `list`-typed properties when the stored value is a comma-separated string.
+The Bases expression evaluator and filter engine work with the raw JS values from `note`. The property registry (from `properties:` in `.settings`) is used for autocomplete and lint, but not for automatic coercion in query evaluation — filters compare values as-is. The `parseList` coerce function is applied at validation time for `list`-typed properties when the stored value is a comma-separated string.
 
 ### `file` namespace fields
 
@@ -425,7 +425,7 @@ For completeness — the `file` namespace is also available in Bases and filters
 
 ---
 
-## Settings: `settings.yaml` Lifecycle
+## Settings: `.settings` Lifecycle
 
 This section covers the settings file management in `core/src/settings.ts` as it relates to the property registry.
 
@@ -435,7 +435,7 @@ This section covers the settings file management in `core/src/settings.ts` as it
 async function getVaultSchema(vault: string): Promise<Schema>
 ```
 
-Returns the merged schema: built-in properties (`tags`, `aliases`, `cssclasses`, `icon`) overridden by user entries from `settings.yaml`'s `properties:` section. Used by `GET /schema` and the editor autocomplete.
+Returns the merged schema: built-in properties (`tags`, `aliases`, `cssclasses`, `icon`) overridden by user entries from `.settings`'s `properties:` section. Used by `GET /schema` and the editor autocomplete.
 
 ### Mutation: `setSettingInFile`
 
@@ -443,7 +443,7 @@ Returns the merged schema: built-in properties (`tags`, `aliases`, `cssclasses`,
 async function setSettingInFile(vault: string, path: string[], value: unknown): Promise<void>
 ```
 
-Merges a single value at a JSON-pointer-style path (e.g. `["appearance", "theme"]`) into `settings.yaml` in place, via the YAML Document API. Preserves all other keys, their comments, and key order. Protected by a per-vault mutex (a `Promise` chain keyed on vault path) to prevent TOCTOU races from concurrent `POST /set-setting` requests.
+Merges a single value at a JSON-pointer-style path (e.g. `["appearance", "theme"]`) into `.settings` in place, via the YAML Document API. Preserves all other keys, their comments, and key order. Protected by a per-vault mutex (a `Promise` chain keyed on vault path) to prevent TOCTOU races from concurrent `POST /set-setting` requests.
 
 ### Reconciliation: `reconcileSettings`
 
@@ -456,7 +456,7 @@ On every vault open, `reconcileSettings` adds any schema keys missing from the f
 
 ### Frontend serialization: `serializeSettingsForFrontend`
 
-Merges `settings.yaml` over `DEFAULTS` with a per-key `typeof` check — a stored value with a wrong type is silently ignored and the default is used instead. Also enforces schema `min`/`max` and `enum` constraints at merge time. The `properties:` section is excluded from the serialized result (it is delivered separately via `GET /schema`).
+Merges `.settings` over `DEFAULTS` with a per-key `typeof` check — a stored value with a wrong type is silently ignored and the default is used instead. Also enforces schema `min`/`max` and `enum` constraints at merge time. The `properties:` section is excluded from the serialized result (it is delivered separately via `GET /schema`).
 
 ---
 

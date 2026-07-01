@@ -145,7 +145,7 @@ Grab the right edge of any header (within `RESIZE_GRAB_PX = 10px` of the cell's 
 Behavior:
 - While resizing, the table switches to `table-layout: fixed` with `width = sum(all column widths)px` — this stops the browser from redistributing space to other columns (spreadsheet semantics: only the grabbed column changes).
 - Columns before the grabbed column are pinned exactly; columns after shift as a block.
-- The minimum column width is controlled by `settings.ui.tableMinColWidth` (default `60`, range `30–150`, configured in `settings.yaml`).
+- The minimum column width is controlled by `settings.ui.tableMinColWidth` (default `60`, range `30–150`, configured in `.settings`).
 - On release, `api.setProperty(basePath, "columnWidths", widths)` writes the full widths map back to the base file.
 
 The `fixed` layout is only active when **every visible column has a known width**. Adding a new column after widths were saved causes fallback to fluid layout until the next resize.

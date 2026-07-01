@@ -1,6 +1,8 @@
 # Settings Overview
 
-Bismuth's settings system is entirely schema-driven: there is no settings GUI page. The file `settings.yaml` at the root of every vault IS the settings page — it is opened as a normal note in the editor, where schema-aware autocomplete (Ctrl-Space) and inline lint provide discovery and validation. All settings changes go through the backend as the single writer, ensuring the YAML document structure (comments, unknown keys, the `properties:` registry) is never clobbered by a frontend toggle. The schema (`core/src/schema/settingsSchema.ts`) is the single source of truth for field names, types, defaults, numeric bounds, and documentation strings; the frontend `Settings` interface (`app/src/settings.ts`) and the CSS custom-property projection (`app/src/settingsCssVars.ts`) are kept in lockstep with it by parity tests.
+Bismuth's settings system is entirely schema-driven: there is no settings GUI page. The file `.settings` — a single hidden, extensionless YAML file at the root of every vault — IS the settings page — it is opened as a normal note in the editor, where schema-aware autocomplete (Ctrl-Space) and inline lint provide discovery and validation. All settings changes go through the backend as the single writer, ensuring the YAML document structure (comments, unknown keys, the `properties:` registry) is never clobbered by a frontend toggle. The schema (`core/src/schema/settingsSchema.ts`) is the single source of truth for field names, types, defaults, numeric bounds, and documentation strings; the frontend `Settings` interface (`app/src/settings.ts`) and the CSS custom-property projection (`app/src/settingsCssVars.ts`) are kept in lockstep with it by parity tests.
+
+> **Historical note**: the vault settings file used to be named `settings.yaml` at the vault root. It is now `.settings` (still YAML, just hidden and extensionless) — see [Filename History and Migration](#filename-history-and-migration) below. This doc uses `.settings` throughout; older docs/discussions may still say `settings.yaml`.
 
 ---
 
@@ -18,19 +20,29 @@ SETTINGS_SCHEMA (core)      ← single source of truth
     └── settingsCssVars.ts   ← projects appearance/ui/terminal/calendar → CSS :root vars
 ```
 
-The 2D/3D graph dimension is intentionally **not** a setting — it is a transient per-window localStorage toggle in `GraphView.tsx` and never rewrites `settings.yaml`.
+The 2D/3D graph dimension is intentionally **not** a setting — it is a transient per-window localStorage toggle in `GraphView.tsx` and never rewrites `.settings`.
 
 ---
 
-## The `settings.yaml` File
+## The `.settings` File
 
 ### Location
 
-Always at `<vault-root>/settings.yaml` (the constant `SETTINGS_FILE = "settings.yaml"`). There is no global settings file; every vault has its own.
+Always at `<vault-root>/.settings` (the constant `SETTINGS_FILE = ".settings"`, `core/src/settings.ts:17`). There is no global settings file; every vault has its own. It's a single hidden, extensionless file — still plain YAML underneath, just without a `.yaml` extension or a visible name, so it doesn't clutter the file tree as an ordinary note.
+
+### Filename History and Migration
+
+The settings file was originally named `settings.yaml` at the vault root (constant `LEGACY_SETTINGS_FILE = "settings.yaml"`, `core/src/settings.ts:19`). It was later renamed to the current hidden `.settings` file. `migrateSettingsLocation(vault)` (`core/src/settings.ts:29-60`) runs at the top of every `reconcileSettings` call and does a one-time, idempotent, best-effort relocation in three stages:
+
+1. **Already migrated**: if `.settings` exists AND is a regular file, it's a no-op — return immediately.
+2. **Interim half-migration**: if a `.settings/settings.yaml` *directory* exists (an earlier build of this feature briefly used `.settings/` as a folder containing `settings.yaml`), collapse it into the `.settings` *file* — rename the inner file out to a temp name (`.settings.migrating`), remove the now-empty `.settings/` directory, then rename the temp file to `.settings`. (A file and a directory can't share the same name mid-move, hence the temp hop.)
+3. **Legacy vault-root file**: if a vault-root `settings.yaml` exists and `.settings` doesn't, `renameSync` it to `.settings`. A rename (not a copy) preserves the user's comments and values verbatim. If the rename fails (a lock, an odd filesystem), it falls back to `copyFileSync` so `.settings` still ends up populated (the legacy file is left behind as a backup); if even that fails, the vault silently reverts to defaults via the normal reconcile/seed path.
+
+All of this is best-effort and silent — a vault that has never used `settings.yaml` (freshly created) or that's already on `.settings` is completely unaffected.
 
 ### First Launch
 
-On first open of a vault `initializeSettings` is called. If `settings.yaml` is absent, a clean, **comment-free** file is written from the schema's materialized defaults. The file ships without comments by design — discoverability is via the editor's Ctrl-Space autocomplete, which shows each key's `doc` string and valid range. Example of the generated file:
+On first open of a vault `initializeSettings` is called. If `.settings` is absent, a clean, **comment-free** file is written from the schema's materialized defaults. The file ships without comments by design — discoverability is via the editor's Ctrl-Space autocomplete, which shows each key's `doc` string and valid range. Example of the generated file:
 
 ```yaml
 appearance:
@@ -53,12 +65,13 @@ keybindings:
 ### On Every Vault Open: `reconcileSettings`
 
 `reconcileSettings(vault)` runs on vault open. It:
-1. If `settings.yaml` is absent, calls `initializeSettings` to write full defaults.
-2. If the file exists, parses it via the YAML CST (`parseDocument`).
-3. If the file has YAML parse errors, leaves it **completely untouched** (avoids clobbering a half-edited file).
-4. If the top-level value is not a YAML map (empty/scalar/corrupt), leaves it untouched.
-5. Otherwise calls `fillMissing` recursively: for every schema key absent from the file, inserts the default. **Does not remove unknown keys.**
-6. Writes back only if something actually changed (no spurious writes/SSE churn).
+1. First calls `migrateSettingsLocation` (see [Filename History and Migration](#filename-history-and-migration) above) to relocate any legacy `settings.yaml`/interim `.settings/` layout into the `.settings` file.
+2. If `.settings` is absent, calls `initializeSettings` to write full defaults.
+3. If the file exists, parses it via the YAML CST (`parseDocument`).
+4. If the file has YAML parse errors, leaves it **completely untouched** (avoids clobbering a half-edited file).
+5. If the top-level value is not a YAML map (empty/scalar/corrupt), leaves it untouched.
+6. Otherwise calls `fillMissing` recursively: for every schema key absent from the file, inserts the default. **Does not remove unknown keys.**
+7. Writes back only if something actually changed (no spurious writes/SSE churn).
 
 Key properties of `reconcileSettings`:
 - Preserves all user-written comments (including inline `# ...` after values).
@@ -69,7 +82,7 @@ Key properties of `reconcileSettings`:
 
 ```typescript
 // Real test demonstrating preservation:
-await writeNote(vault, "settings.yaml",
+await writeNote(vault, SETTINGS_FILE, // ".settings"
   "# my notes\nappearance:\n  theme: oxide-duotone # inline\n");
 await reconcileSettings(vault);
 // Raw file still contains "# my notes" and "# inline"
@@ -102,7 +115,7 @@ await setSettingInFile(vault, ["graph", "nodeSize"], 12);
 
 `GET /settings` returns `serializeSettingsForFrontend(vault)`:
 1. Starts from `structuredClone(DEFAULTS)`.
-2. Reads and parses `settings.yaml` (tolerates malformed YAML → `data = {}`).
+2. Reads and parses `.settings` (tolerates malformed YAML → `data = {}`).
 3. For each known section:
    - `folderIcons` — passed through as a free-form string map via `readFolderIconsFrom`.
    - `toolbar` — parsed via `readToolbarFrom` (validates item structure, drops malformed items).
@@ -110,7 +123,7 @@ await setSettingInFile(vault, ["graph", "nodeSize"], 12);
    - All other sections: per-key `typeof` check; wrong-type values are silently dropped back to defaults. Numeric keys with out-of-range values (below `min` or above `max`) are dropped. Enum keys with unknown values are dropped.
 4. Strips the `properties` section (delivered separately by `GET /schema`).
 
-This means a corrupt or partial `settings.yaml` degrades gracefully to defaults — nothing explodes.
+This means a corrupt or partial `.settings` degrades gracefully to defaults — nothing explodes.
 
 ---
 
@@ -188,7 +201,7 @@ There are **no per-color override keys** in `appearance` — the theme is the si
 | `mapDefaultZoom` | number | `2` | 1–18 | Default zoom for the Bases map view when it can't fit all markers. |
 | `refreshDebounceMs` | number | `300` | 100–1000 | Delay before rebuilding the graph after an edit burst in ms. |
 
-The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `settings.yaml`.
+The graph's 2D/3D view mode is **intentionally absent** from this section. It is a transient `localStorage` toggle in `GraphView.tsx` and never writes `.settings`.
 
 ### `editor`
 
@@ -235,7 +248,7 @@ Embed resolution is always filename-first (like wikilinks), so moving an attachm
 
 ### `googleCalendar`
 
-Two-way Google Calendar sync. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `settings.yaml` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only).
+Two-way Google Calendar sync. **Non-secret operational config only** — the OAuth client credentials and tokens live OUTSIDE the vault (`~/.bismuth/gcal`), never in `.settings` or git. Connect via the "Connect Google Calendar…" command. The single OAuth scope is `calendar.events` (read+write events only).
 
 | Key | Type | Default | Range | Description |
 |---|---|---|---|---|
@@ -419,7 +432,7 @@ keybindings:
   toggle-sidebar: Alt+S
 ```
 
-The `keybindings` section is placed **last** in the schema so it appears at the bottom of a freshly generated `settings.yaml`.
+The `keybindings` section is placed **last** in the schema so it appears at the bottom of a freshly generated `.settings`.
 
 ---
 
@@ -441,7 +454,7 @@ The Solid.js store is initialized **synchronously** from `mergeServerSettings(re
 
 1. **Synchronous seed**: store seeded from `localStorage` cache (or `DEFAULTS` on cold cache).
 2. **Boot hydrate**: `GET /settings` is fetched; result is `mergeServerSettings`'d and reconciled into the store via `solid-js/store` `reconcile`.
-3. **SSE re-hydrate**: when `settings.yaml` appears in an SSE change event, `GET /settings` is refetched. If the merged result equals the live store (own write echo), the update is a no-op.
+3. **SSE re-hydrate**: when `.settings` appears in an SSE change event, `GET /settings` is refetched. If the merged result equals the live store (own write echo), the update is a no-op.
 4. **Persist on change**: a 600ms debounced effect diffs the live store against `lastSnapshot` using `diffLeaves` and fires one `POST /set-setting` per changed leaf. Persistence only starts after the first hydrate, so the synchronous seed is never persisted over the user's file.
 5. **localStorage mirror**: a separate effect mirrors the live store to `localStorage` (key `bismuth-settings-cache-v1`) on every change, enabling the fast first-paint seed on next launch.
 
@@ -511,7 +524,7 @@ Additionally, all color/theme tokens are projected from the selected Bismuth the
 
 ## Autocomplete and Lint in the Editor
 
-When `settings.yaml` is open in the Bismuth editor:
+When `.settings` is open in the Bismuth editor:
 
 - **Autocomplete** (`editor/settingsComplete.ts`): Ctrl-Space suggests setting keys (scoped to the current section) and values (enum members, `true`/`false`, property type names, Lucide icon names, keybind combos with a "Record shortcut…" option). Each suggestion shows the key's `doc` string and a compact range label (e.g. `11–28` for bounded numbers, `option1 | option2 | …` for enums). The autocomplete is nested-schema-aware (knows which section the cursor is in).
 - **Lint** (`editor/yamlSchema.ts`): inline diagnostics highlight wrong types, out-of-range numbers, and unknown enum values.
@@ -525,9 +538,9 @@ The `doc` field on each `SchemaEntry` is the text shown in the autocomplete. A p
 | Endpoint | Description |
 |---|---|
 | `GET /settings` | Returns `serializeSettingsForFrontend(vault)` — file merged over defaults, `properties` section stripped. |
-| `GET /schema` | Returns the vault property registry (from `settings.yaml` `properties:` section) for note validation and autocomplete. |
+| `GET /schema` | Returns the vault property registry (from `.settings` `properties:` section) for note validation and autocomplete. |
 | `GET /config` | Read-only launch config: `{ vault, memory }`. |
-| `POST /set-setting` | Merges one value at `path` into `settings.yaml` in place. Body: `{ path: string[], value: unknown }`. Goes through `mutatingHandler` — invalidates caches and broadcasts an SSE event with `paths: ["settings.yaml"]`. |
+| `POST /set-setting` | Merges one value at `path` into `.settings` in place. Body: `{ path: string[], value: unknown }`. Goes through `mutatingHandler` — invalidates caches and broadcasts an SSE event with `paths: [".settings"]`. |
 
 The `POST /set-setting` endpoint validates that `body.path` is a non-empty `string[]`. A non-array or array with non-string elements returns HTTP 400. An empty path is a no-op (returns success without writing).
 
@@ -553,7 +566,7 @@ editor: object({
 }),
 ```
 
-After this change, `DEFAULTS` is automatically updated (derived from the schema). `reconcileSettings` will add the key to existing `settings.yaml` files on next vault open. The autocomplete and lint pick it up automatically. The `settings.parity.test.ts` parity tests enforce that the default and doc are present.
+After this change, `DEFAULTS` is automatically updated (derived from the schema). `reconcileSettings` will add the key to existing `.settings` files on next vault open. The autocomplete and lint pick it up automatically. The `settings.parity.test.ts` parity tests enforce that the default and doc are present.
 
 ### 2. Add to the Frontend `Settings` Interface (`app/src/settings.ts`)
 
@@ -583,7 +596,7 @@ editor: {
 
 **Backend logic setting** (read in the server or a backend module):
 - Call `loadAppConfig(vault)` and read `cfg.editor.myNewToggle`.
-- The backend re-reads `loadAppConfig` per-request (it is not cached indefinitely); `settings.yaml` changes are reflected within the next request after an SSE cycle.
+- The backend re-reads `loadAppConfig` per-request (it is not cached indefinitely); `.settings` changes are reflected within the next request after an SSE cycle.
 
 **Adding a new top-level section** additionally requires updating the hardcoded key list in `core/test/schema/settingsSchema.test.ts` (the test asserting `Object.keys(SETTINGS_SCHEMA).sort()` — this is a guard, not a source of truth).
 
@@ -591,7 +604,8 @@ editor: {
 
 ## Edge Cases and Gotchas
 
-- **Corrupt `settings.yaml`**: if the file has YAML parse errors or the top-level value is not a map, `reconcileSettings` leaves it untouched. The user must fix it manually. Reading a corrupt file via `readSettings` returns `{ raw, data: {} }` — callers fall back to defaults.
+- **Corrupt `.settings`**: if the file has YAML parse errors or the top-level value is not a map, `reconcileSettings` leaves it untouched. The user must fix it manually. Reading a corrupt file via `readSettings` returns `{ raw, data: {} }` — callers fall back to defaults.
+- **Migration is best-effort and silent**: `migrateSettingsLocation` (run at the top of every `reconcileSettings`) never throws; a failed rename falls back to a copy, and total failure just means the vault reconciles fresh defaults into a new `.settings` file (the legacy `settings.yaml` is left on disk untouched in every failure case).
 - **`properties:` is stripped from `GET /settings`**: the property registry is delivered by `GET /schema`, not `GET /settings`. A `properties` key in the parsed server data is never forwarded to the frontend settings store.
 - **Unknown keys survive reconcile AND `setSettingInFile`**: custom YAML keys not in the schema are never removed by any of the backend write operations. The parity-test and `serializeSettingsForFrontend` simply ignore them.
 - **`toolbar` and `dailyNotes` are list sections**: they are validated item-by-item; malformed items are silently dropped (not errored). In `mergeServerSettings` on the frontend, array-typed top-level sections are replaced wholesale — the default is only used if the server sends a non-array.

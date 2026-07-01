@@ -1,6 +1,6 @@
 # Calendar View
 
-The calendar view is a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colours) that runs entirely inside a `type: base` markdown file. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in a GFM pipe table in the base file body; categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `settings.yaml` under the `calendar` section.
+The calendar view is a full-featured event calendar (month / week / 3-day / day modes, drag-to-create, drag-to-move, recurrence, and category colours) that runs entirely inside a `type: base` markdown file. There is no standalone calendar page and no separate file extension: any base can become a calendar by declaring `view: calendar` (shorthand) or `views: [{ type: calendar }]` in its YAML frontmatter. Events are stored as rows in a GFM pipe table in the base file body; categories are stored as a YAML list under the `categories` key in frontmatter. All calendar settings (default view, week-start, time format) live in the unified `.settings` under the `calendar` section.
 
 ---
 
@@ -293,7 +293,7 @@ When deleting, the UI looks for a stable fallback: the first category named `"Un
 
 ## Calendar Settings
 
-Global calendar display settings live in `settings.yaml` under `calendar:`. They are edited by clicking "Settings" in the toolbar, which opens `CalendarSettings.tsx` — a modal specific to the per-base field mapping — or changed directly in `settings.yaml`.
+Global calendar display settings live in `.settings` under `calendar:`. They are edited by clicking "Settings" in the toolbar, which opens `CalendarSettings.tsx` — a modal specific to the per-base field mapping — or changed directly in `.settings`.
 
 ### `settings.calendar` keys
 
@@ -306,7 +306,7 @@ Global calendar display settings live in `settings.yaml` under `calendar:`. They
 
 ### Default view hydration
 
-There is a known timing issue: `state.ts` seeds `currentView` from the synchronous `DEFAULTS` (`"week"`) at module-load time, before `settings.yaml` has been fetched. `CalendarView.tsx` runs a one-shot reactive effect that reconciles `currentView` with the hydrated `settings.value.defaultView` once settings arrive, using the pure helper:
+There is a known timing issue: `state.ts` seeds `currentView` from the synchronous `DEFAULTS` (`"week"`) at module-load time, before `.settings` has been fetched. `CalendarView.tsx` runs a one-shot reactive effect that reconciles `currentView` with the hydrated `settings.value.defaultView` once settings arrive, using the pure helper:
 
 ```ts
 reconcileDefaultView(savedDefault: ViewType, current: ViewType, switched: boolean): ViewType | null
@@ -430,4 +430,4 @@ Recurring events are expanded over this range by `getEventsForRange`, which call
 - [Bases overview](../overview.md)
 - [Base file format](../../calendar/overview.md)
 
-Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`
+Source: `app/src/bases/CalendarView.tsx`, `app/src/calendar/EventStore.ts`, `app/src/calendar/state.ts`, `app/src/calendar/types.ts`, `app/src/bases/calendarBase.ts`, `app/src/bases/calendarSerialize.ts`, `app/src/calendar/refresh.ts`, `app/src/calendar/dates.ts`, `app/src/calendar/categoryColor.ts`, `app/src/calendar/components/Toolbar.tsx`, `app/src/calendar/components/EventModal.tsx`, `app/src/calendar/components/RecurrenceDialog.tsx`, `app/src/calendar/components/CategoryPanel.tsx`, `app/src/calendar/components/CalendarSettings.tsx`, `app/src/calendar/components/views/MonthView.tsx`, `app/src/calendar/components/views/WeekView.tsx`, `app/src/calendar/components/views/TimeGrid.tsx`, `app/src/calendar/components/EventChip.tsx`, `core/src/bases/parse.ts`, `core/src/schema/settingsSchema.ts`, `core/src/settings.ts`, `core/src/gcal/sync.ts`, `app/src/calendar/EventStore.test.ts`, `app/src/calendar/state.defaultView.test.ts`, `app/src/calendar/dates.test.ts`, `app/src/bases/calendarSerialize.test.ts`, `app/src/settings.calendar.test.ts`

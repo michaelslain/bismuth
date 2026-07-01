@@ -1,6 +1,6 @@
 # Editor Autocomplete
 
-All editor autocompletion in Bismuth is implemented as a single CodeMirror `autocompletion()` extension registered in `app/src/editor/autocomplete.ts`. Because multiple `autocompletion()` extensions conflict, every source — wikilinks, tags, emoji, frontmatter properties, task metadata, `query` block keys, and settings.yaml fields — lives in one `override` array. The settings.yaml editor uses a separate extension (`settingsComplete.ts`) registered only on the `.settings.yaml` file. Each source is a pure `CompletionSource` function with a matching pure helper (in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`) that can be unit-tested without a browser.
+All editor autocompletion in Bismuth is implemented as a single CodeMirror `autocompletion()` extension registered in `app/src/editor/autocomplete.ts`. Because multiple `autocompletion()` extensions conflict, every source — wikilinks, tags, emoji, frontmatter properties, task metadata, `query` block keys, and `.settings` fields — lives in one `override` array. The `.settings` editor uses a separate extension (`settingsComplete.ts`) registered only on the vault's `.settings` file. Each source is a pure `CompletionSource` function with a matching pure helper (in `wikilink.ts`, `tag.ts`, `emoji.ts`, `templateToken.ts`) that can be unit-tested without a browser.
 
 ---
 
@@ -323,7 +323,7 @@ Each has a brief doc tooltip (e.g. `table` → "Rows × columns grid.").
 
 **File:** `app/src/editor/settingsComplete.ts`
 
-A fully separate `autocompletion()` extension registered only on the `settings.yaml` file. Schema-aware, nested-structure-aware completion for every key and value in Bismuth's settings file.
+A fully separate `autocompletion()` extension. `Editor.tsx` only wires it in (alongside `yamlSchema({ mode: "settings" })`) when `isSettingsBuffer(path)` is true — `isSettingsBuffer` (`app/src/editor/settingsBuffer.ts`) does an exact-path match against `SETTINGS_FILE` (`app/src/tabIds.ts`, `".settings"`), the vault's single hidden, extensionless settings file — not a filename pattern or extension check. Schema-aware, nested-structure-aware completion for every key and value in Bismuth's settings file.
 
 ### Nesting / Scope Resolution
 
@@ -447,4 +447,4 @@ Inside the `properties:` section the key completion is suppressed (property name
 - Keybinding catalog: `core/src/keybindings.ts`
 - Template expansion: `core/src/templates.ts`
 
-Source: app/src/editor/autocomplete.ts, app/src/editor/applyCompletion.ts, app/src/editor/taskComplete.ts, app/src/editor/queryComplete.ts, app/src/editor/settingsComplete.ts, app/src/editor/wikilink.ts, app/src/editor/tag.ts, app/src/editor/emoji.ts, app/src/editor/templateToken.ts, app/src/editor/completionDisplay.ts, app/src/keybindings.ts, core/src/templates.ts, core/src/schema/types.ts, core/src/schema/suggest.ts, core/src/schema/settingsSchema.ts, core/src/bases/types.ts
+Source: app/src/editor/autocomplete.ts, app/src/editor/applyCompletion.ts, app/src/editor/taskComplete.ts, app/src/editor/queryComplete.ts, app/src/editor/settingsComplete.ts, app/src/editor/settingsBuffer.ts, app/src/tabIds.ts, app/src/Editor.tsx, app/src/editor/wikilink.ts, app/src/editor/tag.ts, app/src/editor/emoji.ts, app/src/editor/templateToken.ts, app/src/editor/completionDisplay.ts, app/src/keybindings.ts, core/src/templates.ts, core/src/schema/types.ts, core/src/schema/suggest.ts, core/src/schema/settingsSchema.ts, core/src/bases/types.ts

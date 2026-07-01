@@ -1,13 +1,14 @@
 # Keybindings
 
-Bismuth's global keyboard shortcuts are configured entirely from the `keybindings:` section of `settings.yaml` — **nothing is hardcoded in the app**. Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts` `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`. This file documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
+Bismuth's global keyboard shortcuts are configured entirely from the `keybindings:` section of `.settings` — **nothing is hardcoded in the app**. Every action id, its default combo, and its doc string come from a single source of truth (`core/src/keybindings.ts` `KEYBINDING_CATALOG`); the settings schema derives one `keybind`-typed YAML key per action from it, and `App.tsx`'s global `keydown` handler matches each `KeyboardEvent` against the configured combo via the pure matcher in `app/src/keybindings.ts`. This file documents the combo syntax (`"Mod"`, exact modifier matching, key aliases, comma-separated alternatives, `event.code` physical-key matching), the full catalog of every action id + default, and the `keybind` PropertyType (autocomplete + the "Record shortcut…" recorder).
 
 ## The `keybindings:` section
 
-In `settings.yaml`, `keybindings:` is a nested object — one key per app-level action, whose value is a `keybind` combo string. It is authored last in a freshly generated `settings.yaml` (it "sits at the end of the file"), and is a regular nested object (not a list) so the per-key merge — autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` — work without any special-casing.
+In `.settings`, `keybindings:` is a nested object — one key per app-level action, whose value is a `keybind` combo string. It is authored last in a freshly generated `.settings` file (it "sits at the end of the file"), and is a regular nested object (not a list) so the per-key merge — autocomplete, lint, the schema↔interface parity test, and `POST /set-setting` — work without any special-casing.
 
 ```yaml
 keybindings:
+  find: Mod+F
   command-palette: Mod+P
   quick-switcher: Mod+O
   terminal: Mod+`, Mod+J
@@ -23,6 +24,7 @@ keybindings:
   focus-pane-right: Mod+Alt+ArrowRight
   focus-pane-up: Mod+Alt+ArrowUp
   focus-pane-down: Mod+Alt+ArrowDown
+  new-claude-chat: Mod+Shift+C
   insert-template: Alt+T
   toggle-sidebar: Alt+S
 ```
@@ -190,6 +192,7 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 
 | id | Default | Label / behavior |
 |----|---------|------------------|
+| `find` | `Mod+F` | Find in note — open the in-note find bar in the focused editor (searches the current note). |
 | `command-palette` | `Mod+P` | Toggle command palette — open/close the command palette. |
 | `quick-switcher` | `Mod+O` | Toggle quick switcher — open/close the quick file switcher. |
 | `terminal` | `` Mod+`, Mod+J `` | Open terminal — open a terminal tab (comma-separated alternatives allowed). |
@@ -205,10 +208,11 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `focus-pane-right` | `Mod+Alt+ArrowRight` | Focus pane right — move focus to the pane on the right. |
 | `focus-pane-up` | `Mod+Alt+ArrowUp` | Focus pane up — move focus to the pane above. |
 | `focus-pane-down` | `Mod+Alt+ArrowDown` | Focus pane down — move focus to the pane below. |
+| `new-claude-chat` | `Mod+Shift+C` | New Claude chat — open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Insert template — open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Toggle sidebar — show/hide the left sidebar (ignored while typing in a form field). |
 
-`KEYBINDING_IDS` exports these ids in catalog order.
+`KEYBINDING_CATALOG` is an ordered array (`KeybindingSpec[]`) — iterating it in order yields these ids.
 
 ### How `App.tsx` consumes them
 
@@ -237,7 +241,7 @@ keybindings: object(keybindingFields),
 
 Because the schema is the single source of truth, the catalog drives:
 - **`DEFAULTS`** — `deriveDefaults` materializes each field's `default`, so `settings.keybindings.<id>` is seeded synchronously on boot.
-- **`reconcileSettings`** — adds any missing key to an existing `settings.yaml`, preserving comments.
+- **`reconcileSettings`** — adds any missing key to an existing `.settings`, preserving comments.
 - **The `keybind`-typed autocomplete + linter** (next section).
 - **The schema↔`Settings`-interface parity test** (`app/src/settings.ts` must mirror the schema).
 
@@ -323,7 +327,7 @@ Because both the catalog (ids + defaults) and the matcher are pure, both are uni
 
 ## See also
 
-- [Settings overview](./overview.md) — `settings.yaml` lifecycle, schema, `POST /set-setting`.
+- [Settings overview](./overview.md) — `.settings` lifecycle, schema, `POST /set-setting`.
 - [Commands & toolbar](./toolbar-commands.md) — the parallel split-data pattern for commands (`COMMAND_CATALOG` + `bindCommands`).
 
 Source: core/src/keybindings.ts, app/src/keybindings.ts, app/src/keybindings.test.ts, core/src/schema/settingsSchema.ts, core/src/schema/types.ts, app/src/editor/settingsComplete.ts, app/src/App.tsx

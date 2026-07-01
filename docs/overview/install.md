@@ -142,7 +142,7 @@ Open the app at `http://localhost:1420/` in a browser, or let the Tauri window o
 **Hot reload behaviour:**
 - `.tsx` / `.css` changes in `app/src/` → Vite HMR, no page reload, editor/graph state preserved
 - Changes under `core/src/` → the backend process restarts; the frontend reconnects automatically via its fallback version-poll
-- `settings.yaml` in the vault → re-read on the next request; no restart needed
+- `.settings` in the vault → re-read on the next request; no restart needed
 
 ### Vite frontend only (no backend)
 
@@ -197,8 +197,8 @@ if (import.meta.main) {
 ```
 
 On boot the server:
-1. Reconciles `settings.yaml` (writes defaults if absent, fills missing keys; fire-and-forget).
-2. Loads runtime config (`AppConfig`) from `settings.yaml` merged over defaults.
+1. Reconciles `.settings` (the vault's single hidden, extensionless settings file — `SETTINGS_FILE` in `core/src/settings.ts:17`; migrates any legacy `settings.yaml` or interim `.settings/settings.yaml` into it first via `migrateSettingsLocation()`, then writes defaults if absent, fills missing keys; fire-and-forget).
+2. Loads runtime config (`AppConfig`) from `.settings` merged over defaults.
 3. Starts a file watcher on the vault (and memory directory if provided) with a debounce of `appConfig.server.fileWatchDebounceMs` (default 250 ms).
 4. Binds `Bun.serve` on the configured port with WebSocket upgrade support for `/terminal`.
 
@@ -294,7 +294,7 @@ The theme picker only recolors live; it commits **nothing** until the CTA. On co
 **The CTA → `choose_first_vault`:** "Enter your vault" (`enterVault`) invokes the Tauri command `choose_first_vault(theme, icon)`, which:
 1. opens the **native folder picker** ("Open or create your Bismuth vault");
 2. on cancel returns `Ok(false)` → the intro stays put (`busy` cleared);
-3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (the sidecar's `reconcileSettings` fills the rest on boot, preserving those keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
+3. on a pick: `create_dir_all` the folder, derive memory as `<vault>/.daemon/memory` (also created), `seed_vault_settings` writes a minimal legacy-path `settings.yaml` (`appearance: { theme, icon }`) **only if none exists** (Rust still targets the old root filename here — the sidecar's `reconcileSettings`/`migrateSettingsLocation` (`core/src/settings.ts:29`) renames it into the real `.settings` file on first boot and fills in the rest of the schema, preserving those seeded keys), persists `config.json`, calls `mark_intro_seen`, and `app.restart()`s into the new vault.
 
 In dev (`tauri dev`), `choose_first_vault` **skips** `app.restart()` (a restart would tear down the `beforeDevCommand` backend → white screen, and the dev vault comes from `BISMUTH_VAULT` regardless) — the frontend just navigates to `/` itself.
 
@@ -421,4 +421,4 @@ This allows the Vite dev server (any port) and the Tauri webview to reach the ba
 | `Port 4321 is already in use` | Another backend is running | Use `--port 4322` |
 | `ENOENT` on vault watch start | Vault directory does not exist | Create the directory before starting |
 
-Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonInstall.ts, /Users/michaelslain/Documents/dev/bismuth/app/scripts/build-daemon-sidecar.ts, /Users/michaelslain/Documents/dev/bismuth/app/vite.config.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/tauri.conf.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx
+Source: /Users/michaelslain/Documents/dev/bismuth/CLAUDE.md, /Users/michaelslain/Documents/dev/bismuth/package.json, /Users/michaelslain/Documents/dev/bismuth/app/package.json, /Users/michaelslain/Documents/dev/bismuth/core/src/server.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/settings.ts, /Users/michaelslain/Documents/dev/bismuth/core/src/daemonInstall.ts, /Users/michaelslain/Documents/dev/bismuth/app/scripts/build-daemon-sidecar.ts, /Users/michaelslain/Documents/dev/bismuth/app/vite.config.ts, /Users/michaelslain/Documents/dev/bismuth/app/src/api.ts, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/src/lib.rs, /Users/michaelslain/Documents/dev/bismuth/app/src-tauri/tauri.conf.json, /Users/michaelslain/Documents/dev/bismuth/app/src/index.tsx, /Users/michaelslain/Documents/dev/bismuth/app/src/intro/VaultIntro.tsx

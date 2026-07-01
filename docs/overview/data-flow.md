@@ -51,7 +51,7 @@ if (memory) dirty.graph = true;
 Each watch callback calls `scheduleVault(filename)`, which:
 
 1. Adds the vault-relative path to `pendingVault` (a `Set<string>`).
-2. Calls `arm()`, which clears any existing timer and sets a new `setTimeout` for `appConfig.server.fileWatchDebounceMs` (default **250 ms**, min 50, max 2000 — configurable in `settings.yaml`).
+2. Calls `arm()`, which clears any existing timer and sets a new `setTimeout` for `appConfig.server.fileWatchDebounceMs` (default **250 ms**, min 50, max 2000 — configurable in `.settings`).
 
 When the timer fires, all accumulated paths are processed together in one `classifyVault` call and the pending sets are cleared. **Two edits within the debounce window produce exactly one invalidation event**, not two.
 
@@ -106,7 +106,7 @@ It fingerprints each path against its stored previous fingerprint, ORs the dirty
 The server's `classifyVault` wraps the tracker with additional logic:
 
 - **Hidden paths** (`.git/`, `.trash/`, etc.) are skipped before reaching the tracker.
-- **`settings.yaml`** forces `{ graph: true, tree: true }` and also reloads `appConfig` (so debounce/heartbeat settings take effect live, without a server restart).
+- **`.settings`** forces `{ graph: true, tree: true }` and also reloads `appConfig` (so debounce/heartbeat settings take effect live, without a server restart).
 - **Non-`.md` files** force `{ graph: true, tree: true }` — only markdown notes get fingerprinted.
 
 ---
@@ -228,10 +228,10 @@ A new file `notes/bar.md` added with wikilinks:
 { "version": 43, "paths": ["notes/bar.md"], "dirty": { "graph": true, "tree": true } }
 ```
 
-`settings.yaml` saved:
+`.settings` saved:
 
 ```json
-{ "version": 44, "paths": ["settings.yaml"], "dirty": { "graph": true, "tree": true } }
+{ "version": 44, "paths": [".settings"], "dirty": { "graph": true, "tree": true } }
 ```
 
 ---
@@ -476,7 +476,7 @@ POST /create { path, kind }
 
 ## 12. Settings Changes
 
-`settings.yaml` changes (whether via `POST /set-setting` or an external edit) are handled specially:
+`.settings` changes (whether via `POST /set-setting` or an external edit) are handled specially:
 
 1. **`classifyVault`** detects `isSettingsPath(p)` and immediately marks `{ graph: true, tree: true }`, then reloads `appConfig`:
 
@@ -496,7 +496,7 @@ POST /create { path, kind }
 
 2. This makes debounce interval and SSE heartbeat changes take effect without restarting the server. It also picks up a `daemon.enabled` toggle live: the daemon-gated caches (the `.daemon` tree folder + the 3rd-brain graph) are re-invalidated after `appConfig` lands, and connected clients are nudged to refetch. `settings.daemon` carries only `enabled` (the master switch); there is no `daemon.home` key, so the reload no longer overrides any claude-bot home.
 
-3. The frontend's `GET /settings` is a separate read (not cached by the server — it reads `settings.yaml` fresh on each request), so UI settings update on the next SSE event.
+3. The frontend's `GET /settings` is a separate read (not cached by the server — it reads `.settings` fresh on each request), so UI settings update on the next SSE event.
 
 ---
 

@@ -453,7 +453,7 @@ Modal for mapping base note columns to calendar event fields. Reads the base con
 
 ## Settings
 
-Calendar settings live in `settings.yaml` under the `calendar:` section. They are read via the unified `appSettings` store (`app/src/settings.ts`) and proxied through the `settings` adapter in `calendar/state.ts` so existing calendar code retains the `settings.value.X` access shape.
+Calendar settings live in `.settings` (the single hidden vault-root settings file) under the `calendar:` section. They are read via the unified `appSettings` store (`app/src/settings.ts`) and proxied through the `settings` adapter in `calendar/state.ts` so existing calendar code retains the `settings.value.X` access shape.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
@@ -464,7 +464,7 @@ Calendar settings live in `settings.yaml` under the `calendar:` section. They ar
 | `calendar.timeGutterWidth` | number (px) | `50` | Width of the hour-label gutter in week/day views |
 | `calendar.defaultCategoryColor` | string (hex) | `"#4a90e2"` | Default color pre-filled for new categories |
 
-Settings are **not** stored in `localStorage` — they persist in `settings.yaml` via `POST /set-setting` (the backend is the single writer).
+Settings are **not** stored in `localStorage` — they persist in `.settings` via `POST /set-setting` (the backend is the single writer).
 
 ---
 
@@ -495,4 +495,4 @@ Key test files:
 - **`biweekly` week-parity**: the even/odd week is counted from `startDate`, not from any calendar epoch. Two series that start on different weeks will fire on alternating weeks relative to each other even if they share the same `daysOfWeek`.
 - **Category deletion with no `reassignTo`**: calling `store.deleteCategory(name)` (without a second argument) sets `category: undefined` on affected events (verified in test). In `CategoryPanel`, the code tries to find a `"Uncategorized"` or `"Default"` category as a stable reassignment target before passing it; there is no fallback beyond that.
 
-Source: app/src/calendar/EventStore.ts, app/src/calendar/dates.ts, app/src/calendar/categoryColor.ts, app/src/calendar/components/RecurrenceDialog.tsx, app/src/calendar/types.ts, app/src/calendar/state.ts, app/src/calendar/refresh.ts, app/src/calendar/components/EventModal.tsx, app/src/calendar/components/EventChip.tsx, app/src/calendar/components/CategoryPanel.tsx, app/src/calendar/components/Toolbar.tsx, app/src/calendar/components/CalendarSettings.tsx, app/src/calendar/components/views/MonthView.tsx, app/src/calendar/components/views/TimeGrid.tsx, app/src/bases/CalendarView.tsx, app/src/bases/calendarBase.ts, app/src/bases/calendarSerialize.ts, app/src/calendar/EventStore.test.ts, app/src/calendar/dates.test.ts, core/src/schema/settingsSchema.ts, core/src/gcal/sync.ts
+Source: app/src/calendar/EventStore.ts, app/src/calendar/dates.ts, app/src/calendar/categoryColor.ts, app/src/calendar/components/RecurrenceDialog.tsx, app/src/calendar/types.ts, app/src/calendar/state.ts, app/src/calendar/refresh.ts, app/src/calendar/components/EventModal.tsx, app/src/calendar/components/EventChip.tsx, app/src/calendar/components/CategoryPanel.tsx, app/src/calendar/components/Toolbar.tsx, app/src/calendar/components/CalendarSettings.tsx, app/src/calendar/components/views/MonthView.tsx, app/src/calendar/components/views/TimeGrid.tsx, app/src/bases/CalendarView.tsx, app/src/bases/calendarBase.ts, app/src/bases/calendarSerialize.ts, app/src/calendar/EventStore.test.ts, app/src/calendar/dates.test.ts, core/src/schema/settingsSchema.ts, core/src/gcal/sync.ts, core/src/settings.ts

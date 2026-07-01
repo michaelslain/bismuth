@@ -1,6 +1,7 @@
 // app/src/export/formats.test.ts
 import { test, expect, describe } from "bun:test";
 import { formatsFor, isExportable, formatsForOptions } from "./formats";
+import { SETTINGS_FILE } from "../tabIds";
 
 describe("formatsFor", () => {
   test("note offers html, pdf, png, md", () => {
@@ -20,7 +21,7 @@ describe("formatsFor", () => {
   });
   test("unknown / sentinel offers nothing", () => {
     expect(formatsFor("::settings")).toEqual([]);
-    expect(formatsFor("settings.yaml")).toEqual([]);
+    expect(formatsFor(SETTINGS_FILE)).toEqual([]);
   });
   test("isExportable reflects formatsFor", () => {
     expect(isExportable("x.md")).toBe(true);

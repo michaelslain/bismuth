@@ -78,7 +78,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 ## Settings
 
-- [Overview](settings/overview.md) — `settings.yaml` lifecycle (schema-driven, no GUI)
+- [Overview](settings/overview.md) — `.settings` lifecycle (schema-driven, no GUI)
 - [Full reference](settings/reference.md) — every section + key + default
 - [Keybindings](settings/keybindings.md) — shortcut syntax + catalog
 - [Toolbar & commands](settings/toolbar-commands.md) — toolbar config + command catalog

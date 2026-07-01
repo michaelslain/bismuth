@@ -231,7 +231,7 @@ An **invalid offset unit** for the name (e.g. `{{date+1h}}` — `h` is a time un
 
 ## Daily notes
 
-Daily notes are configured under the `dailyNotes:` list in `settings.yaml`. Each entry registers a `daily-note:<id>` command you can put on the toolbar / use from the palette; pressing it opens today's note for that type, creating it from `template` the first time. The pure computation lives in `core/src/dailyNote.ts`; IO (existence check, reading the template, writing the note) is in `POST /daily-note` (`core/src/server.ts`).
+Daily notes are configured under the `dailyNotes:` list in `.settings`. Each entry registers a `daily-note:<id>` command you can put on the toolbar / use from the palette; pressing it opens today's note for that type, creating it from `template` the first time. The pure computation lives in `core/src/dailyNote.ts`; IO (existence check, reading the template, writing the note) is in `POST /daily-note` (`core/src/server.ts`).
 
 ### `DailyNoteConfig`
 

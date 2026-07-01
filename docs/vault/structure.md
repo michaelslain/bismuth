@@ -1,12 +1,12 @@
 # Vault Structure
 
-This document covers how Bismuth models a vault: the markdown file tree that constitutes the "2nd brain," how notes are discovered and turned into graph nodes and edges (the two-pass algorithm in `buildVaultGraph`), the shared `buildGraphFromNotes` helper, the file types recognized in the sidebar tree, path-traversal safety, and every public function exported by `files.ts`, `vault.ts`, and `graphBuilder.ts`.
+This document covers how Bismuth models a vault: the markdown file tree that constitutes the "2nd brain," how notes are discovered and turned into graph nodes and edges (the two-pass algorithm in `buildVaultGraph`), the shared `buildGraphFromNotes` helper, the file types recognized in the sidebar tree, path-traversal safety, every public function exported by `files.ts`, `vault.ts`, and `graphBuilder.ts`, and the frontend sidebar (`app/src/FileTree.tsx` + `app/src/fileTreeOps.ts`) that renders and edits that tree.
 
 ---
 
 ## What Is a Vault?
 
-A vault is an ordinary directory of files on disk — no database, no sidecar index. The primary content is `.md` (Markdown) files. The backend also recognizes `.draw`, `.sheet`, `.yaml`/`.yml` as first-class vault files, and silently ignores everything else (images, PDFs, `.txt`, etc.) when building the sidebar tree.
+A vault is an ordinary directory of files on disk — no database, no sidecar index. The primary content is `.md` (Markdown) files. The backend also recognizes `.draw`, `.sheet`, `.yaml`/`.yml`, and common image/PDF formats (`.png`, `.jpg`/`.jpeg`, `.gif`, `.webp`, `.svg`, `.pdf`) as first-class vault files in the sidebar tree — images and PDFs open as an annotatable markup surface backed by a `.draw` sidecar (see `docs/drawing/`). Everything else (`.txt`, other binaries, etc.) is silently ignored when building the sidebar tree. Two system entries also surface despite the normal dotfile skip: the hidden `.settings` config file (always) and the `.daemon` folder (only when this vault's daemon is enabled) — see "System Folders" below.
 
 The path to the vault is supplied via the `BISMUTH_VAULT` environment variable or the `--vault` CLI flag. There is no default; the server refuses to start without it.
 
@@ -14,21 +14,38 @@ The path to the vault is supplied via the `BISMUTH_VAULT` environment variable o
 
 ## File Types Recognized
 
-`listTree` (the sidebar tree) recognizes the following extensions:
+`listTree` (the sidebar tree) recognizes the following:
 
-| Extension | Kind | Notes |
+| Extension / entry | Kind | Notes |
 |---|---|---|
-| `.md` | `file` | Primary note format. `icon` frontmatter surfaced on the tree entry. |
-| `.draw` | `file` | Vector drawing; always receives `icon: "PenTool"` in the tree entry. |
+| `.md` | `file` | Primary note format. `icon` frontmatter surfaced on the tree entry. A "base" is a `.md` file with `type: base` frontmatter — there is no separate `.base` extension (see `listBases` below for the unrelated, currently-unused `.base` glob). |
+| `.draw` | `file` | Vector drawing; always receives `icon: "PenTool"` in the tree entry, regardless of content. |
 | `.sheet` | `file` | Univer spreadsheet JSON snapshot. |
-| `.yaml` / `.yml` | `file` | YAML files (e.g. `settings.yaml`). |
-| Directory | `dir` | All non-dotfile directories are included. |
+| `.yaml` / `.yml` | `file` | YAML files. |
+| `.png` / `.jpg` / `.jpeg` / `.gif` / `.webp` / `.svg` / `.pdf` | `file` | Images and PDFs; open as an annotatable markup surface via a sidecar `<file>.draw` (the export sidecars `<file>.draw.png`/`<file>.draw.pdf` are excluded separately — see below). |
+| `.settings` (hidden, no extension) | `file` | The vault's single settings file. Always surfaced despite the leading dot; rendered with label `"settings"` + a `Settings2` icon (see "System Folders" below). |
+| `.daemon` (hidden dir) | `dir` | The per-vault daemon's home folder. Surfaced only when the vault's daemon is enabled; everything inside is surfaced regardless of extension (see "System Folders" below). |
+| Directory | `dir` | All other non-dotfile directories are included, recursively. |
 
 ### Explicitly excluded by `listTree`
 
 - `.draw.png` and `.draw.pdf` — generated export sidecars of `.draw` files; hidden from the tree so they do not appear as siblings of the drawing.
-- Any file starting with `.` (dotfiles) or any directory starting with `.` (e.g. `.trash`, `.git`). The dot-skip applies at every level of the recursive walk.
-- All other extensions (`.png`, `.pdf`, `.txt`, etc.) are silently dropped.
+- Any file starting with `.` (dotfiles) or any directory starting with `.` (e.g. `.trash`, `.git`), **except** the two system entries below. The dot-skip applies at every level of the recursive walk.
+- All other extensions (`.txt`, other binaries, etc.) are silently dropped.
+
+### System Folders: `.settings` and `.daemon`
+
+`listTree(root, opts)` takes an optional `{ daemonEnabled?, daemonName? }` and threads two predicates into `walkDir`'s `allowDot` parameter (`core/src/files.ts:111-114`):
+
+- `allowDot(rel)` — returns `true` for `rel === ".settings"` always, and for `rel === ".daemon"` only when `opts.daemonEnabled` is set. This is what lets those two dotfile entries survive the walk's usual dot-skip.
+- `inSystemFolder(rel)` — `true` for anything under `.daemon/`. Files inside the daemon folder (crons, memory notes, process defs, `identity.md`, …) are surfaced **regardless of extension** — the normal `.md`/`.draw`/`.sheet`/`.yaml`/image allowlist doesn't apply inside `.daemon/`, only the `.draw` → `PenTool` icon marker still does. The daemon's own internal dot-state (e.g. `.daemon/crons/.last-fired.json`) stays hidden, since `allowDot` only opts in the two named roots, not their nested dotfiles.
+
+Output shaping for the two system entries (`core/src/files.ts:157-166`):
+
+- `.settings` → `{ path: ".settings", kind: "file", label: "settings", icon: "Settings2" }`.
+- `.daemon` → `{ path: ".daemon", kind: "dir", isSystemFolder: true, label: daemonName }`, where `daemonName` is `opts.daemonName?.trim() || "daemon"` (the daemon's configured `identity.md` name, read by the server via `daemonIdentityName()`).
+
+`TreeEntry.isSystemFolder` and `TreeEntry.label` (`core/src/graph.ts`) exist specifically to carry this: the frontend sidebar uses them to render the entry distinctly and guard it from rename/delete/drag (see "System-folder protection" below). Folder-level `icon` overrides (via the icon picker, stored in the `.settings` file's `folderIcons` map — see `settings.ts`'s `setFolderIcon`/`readFolderIcons`) are **not** applied inside `listTree` itself — they're merged onto `dir` entries per-request by the `GET /tree` route in `server.ts`, so a folder-icon change is reflected without needing the underlying tree cache to rebuild.
 
 ### `listMarkdown` — only `.md` files
 
@@ -39,6 +56,16 @@ The path to the vault is supplied via the `BISMUTH_VAULT` environment variable o
 export async function listMarkdown(root: string): Promise<string[]>
 // Returns vault-relative paths: ["a.md", "reading/My Note.md", ...]
 ```
+
+### `listBases` — a `.base`-extension glob (currently unused)
+
+```ts
+// core/src/files.ts
+export async function listBases(root: string): Promise<string[]>
+// Bun.Glob("**/*.base"), dot: false, results sorted.
+```
+
+This exists in the `FileAccess` interface (`fileAccess.ts`, wired to both the desktop `files.ts` impl and the iPad `tauriFileAccess.ts` impl) alongside `listMarkdown`, but **nothing in the live Bases pipeline calls it**: `basesData.ts`'s `buildVaultRows` and `bases/source.ts` both discover bases the same way as every other note — via `listMarkdown` + `type: base` frontmatter (the actual base convention; see the `.md` row above). A literal `.base`-extension file is never created by the app. `listBases` reads as a legacy/future-proofing hook rather than part of any code path a note or base file actually travels through today.
 
 ---
 
@@ -238,23 +265,31 @@ const { nodes, edges, byBase } = await buildGraphFromNotes(
 ## `listTree` — Sidebar File Tree
 
 ```ts
-export async function listTree(root: string): Promise<TreeEntry[]>
+export async function listTree(
+  root: string,
+  opts?: { daemonEnabled?: boolean; daemonName?: string },
+): Promise<TreeEntry[]>
 ```
 
 Returns a flat list of `TreeEntry` objects representing the vault sidebar:
 
 ```ts
+// core/src/graph.ts
 interface TreeEntry {
-  path: string;         // vault-relative path
-  icon?: string;        // frontmatter `icon` for .md files; "PenTool" for .draw
+  path: string;             // vault-relative path
+  icon?: string;             // frontmatter `icon` for .md files; "PenTool" for .draw; "Settings2" for .settings
   kind: "file" | "dir";
+  isSystemFolder?: boolean;  // true for .daemon — rendered distinctly, guarded from rename/delete/drag
+  label?: string;            // display override (e.g. "settings" for .settings, or the configured daemon name for .daemon)
 }
 ```
+
+`opts.daemonEnabled`/`opts.daemonName` control whether `.daemon` surfaces and what label it carries — see "System Folders" above.
 
 ### Walk behavior
 
 - All non-dotfile directories are always recursed.
-- Dotfile directories (`.trash`, `.git`, etc.) are skipped entirely — their contents never appear.
+- Dotfile directories (`.trash`, `.git`, etc.) are skipped entirely — their contents never appear — **except** `.settings`/`.daemon`, opted back in via `allowDot` (see "System Folders" above).
 - Results preserve filesystem iteration order (not sorted).
 
 ### Icon extraction for `.md` files
@@ -273,8 +308,8 @@ interface TreeEntry {
 ### Excluded from tree
 
 - `.draw.png` and `.draw.pdf` (export sidecars).
-- Any dotfile or dotfile directory at any depth.
-- All file types other than `.md`, `.draw`, `.sheet`, `.yaml`, `.yml`.
+- Any dotfile or dotfile directory at any depth, **except** `.settings` and (when the vault's daemon is enabled) `.daemon` — see "System Folders" above.
+- All file types other than `.md`, `.draw`, `.sheet`, `.yaml`, `.yml`, and images/PDF (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`/`.pdf`) — except inside `.daemon/`, where every file surfaces regardless of extension.
 
 ### Example output
 
@@ -295,6 +330,74 @@ await listTree("/vault")
 //   { path: "sketch.draw",       kind: "file", icon: "PenTool" },
 // ]
 ```
+
+---
+
+## Sidebar File Tree (Frontend): `FileTree.tsx` + `fileTreeOps.ts`
+
+`app/src/FileTree.tsx` is the sidebar component that renders the flat `TreeEntry[]` from `GET /tree` as a nested tree and layers **optimistic, undoable** editing on top of the plain `api.*` CRUD calls (`create`/`move`/`del`/`restore`/`setProperty`/`deleteProperty`/`setFolderIcon`). `app/src/fileTreeOps.ts` holds the pure list-transform helpers those optimistic edits use; `app/src/fileTreeRefresh.ts` (`decideTreeRefresh`) holds the pure SSE-refetch gating logic (not detailed here — see that module's own tests).
+
+### Tree building
+
+`buildTree(entries)` folds the flat list into a nested `TreeNode` map keyed by path segment, carrying each entry's `icon`, `label`, and `isSystemFolder` onto its own node (not its ancestors). `sortedChildren(node)` orders each level: system entries (anything with `isSystemFolder`, plus the `.settings` path) always sink to the bottom, then folders before files, then alphabetically by name. Row icons fall back to `Settings2` for system folders, `FolderOpen`/`Folder` for other directories (open/closed), `Table` for `.sheet` files, and `FileText` for everything else, when no explicit `icon` is set.
+
+### Creating entries
+
+`doCreate(parentDir, kind, view?)` handles `CreateKind = "file" | "dir" | "base" | "sheet" | "draw"` (the backend only knows `file`/`dir` — `base`/`sheet`/`draw` are `.md`/`.sheet`/`.draw` files with a seeded default name/content):
+
+- The default name (`"Untitled.md"`, `"New Folder"`, a base-view-specific name via `baseFileName()`, `"Untitled.sheet"`, `"Untitled.draw"`) is disambiguated against the current (optimistic) tree via `fileTreeOps.ts`'s `uniqueChildName`, which mirrors the backend's `uniqueAssetPath` collision-suffix algorithm (append `" 1"`, `" 2"`, … to the stem before the extension; a `Date.now()` fallback after 9999 tries) — so two fast "New note" clicks land as distinct rows instead of the second create 409ing (`EEXIST`) and yanking the first row's inline-rename box.
+- The new entry is added to the tree instantly via `fileTreeOps.ts`'s `addEntry` (a no-op if the path already exists), then `api.create` fires for real.
+- A `base` is created, seeded with `baseTemplate(view)` via `api.write`, and opened immediately in a new tab (skipping inline-rename, since a blank base row wouldn't show its view). Every other kind drops into inline-rename mode (`EditableLabel`); files also get their note-cache primed with an empty body (`primeNoteCache`) so an immediate open is a guaranteed cache hit instead of racing the create.
+- `pendingCreate`, keyed by a fresh per-invocation `Symbol` (not the path, so concurrent creates never collide), exposes the in-flight `api.create` promise so a same-row rename-on-Enter can `awaitCreate(path)` before issuing its `move` — preventing the move from reaching the server before the file exists.
+- The toolbar's "+" chooser and header "New note"/"New folder" buttons (in `App.tsx`) both create at the vault root by dispatching a `bismuth-new` window `CustomEvent` that `FileTree` listens for.
+
+```ts
+// app/src/fileTreeOps.ts — pure helpers used by the optimistic edits above
+export function renameEntries(entries: TreeEntry[], from: string, to: string): TreeEntry[]      // rewrites `from` + every descendant path
+export function removeEntries(entries: TreeEntry[], path: string): TreeEntry[]                   // drops `path` + descendants
+export function addEntry(entries: TreeEntry[], path: string, kind: "file" | "dir"): TreeEntry[]  // no-op if path exists
+export function uniqueChildName(entries: TreeEntry[], parentDir: string, name: string): string   // "Untitled.md" → "Untitled 1.md", …
+```
+
+`pendingOps` — a counter of in-flight optimistic round-trips (create/move/delete) — gates SSE-driven `refetch()` (via `decideTreeRefresh`), so a server tree snapshot that was in flight before an edit landed can never clobber the optimistic state with stale data; the effect re-runs once `pendingOps` drops back to 0.
+
+### Delete + undo
+
+`doDelete`/`doDeleteMany` optimistically remove the row(s) via `removeEntries` and fire `POST /del` per path (the backend's `deleteEntry` moves the file into `.trash/<timestamp>-<basename>`, see below), then push `{ trashPath, to, name }` onto a LIFO `undoStack` and a toast with an "Undo" action. `restoreDeleted` pops the matching stack entry and calls `api.restore(trashPath, to)`. **Cmd/Ctrl+Z** (ignored while typing in an input/textarea/contenteditable) undoes the most recently deleted entry via the same path — bound as a `window` `keydown` listener. Deleting a multi-selection first runs `pruneNested` to drop any selected path whose ancestor is also selected, so deleting a selected folder doesn't also try (and 404) to delete an already-gone selected child.
+
+### Multi-select
+
+`selected` is a `Set<string>` of paths, managed by `onRowClick`:
+
+- **Cmd/Ctrl+click** — toggles the row in/out of the selection and sets it as the new range anchor.
+- **Shift+click** (with an existing anchor or non-empty selection) — extends a contiguous range from the anchor to the clicked row, computed over `visibleOrder()` — a flattened walk of only the currently-expanded rows, in on-screen display order (so a range spans exactly what's visible, not the full underlying tree).
+- **Plain click** — clears the selection.
+- `Delete`/`Backspace` with a non-empty selection deletes the whole selection (undoable, as above).
+- Right-clicking a row that's part of a >1-item selection replaces the normal per-row context menu with a single "Delete N items" action.
+- System folders and `.settings` are excluded from selection entirely — `onRowClick` returns `false` immediately for them, so the click falls through to the normal open/toggle behavior instead.
+
+### Icon picker
+
+"Set Icon…" on a file or folder opens `IconPicker`; picking (or explicitly clearing, via `onClear`) calls `applyIcon(node, isDir, icon)`, which routes by entry kind:
+
+- **Folders** → `api.setFolderIcon(path, icon)` → `POST /folder-icon` → `settings.ts`'s `setFolderIcon`, storing the mapping in the `.settings` file's `folderIcons` map (an empty icon deletes the entry). This is merged onto `dir` entries by the `GET /tree` route in `server.ts`, not by `listTree` itself (see "System Folders" above).
+- **Files** → the note's own `icon` frontmatter key, set via `api.setProperty(path, "icon", icon)` or cleared via `api.deleteProperty(path, "icon")`.
+
+### System-folder protection
+
+`.settings` (matched via `tabIds.ts`'s `SETTINGS_FILE` constant) and any node with `isSystemFolder` (currently only `.daemon`) are excluded from:
+
+- The context menu's **Set Icon…**/**Rename**/**Delete** items (`buildMenuItems` skips pushing them when `node.isSystemFolder || node.path === SETTINGS_FILE`) — the creation submenu (New File/Folder/Base/Spreadsheet/Drawing) still shows for `.daemon`, so crons/memory files can be hand-added.
+- `draggable` on the row (both the folder and file row templates check `!child.isSystemFolder` / `child.path !== SETTINGS_FILE`).
+- Multi-select and rename-on-click handling, as noted above.
+
+### Drag-and-drop
+
+Dragging a row sets `dragPath` (`makeDragStart`); dropping onto a folder row (or the tree root's own background, representing the vault root) calls `moveInto(targetDir)`, which no-ops if the target is the entry's current parent or a descendant of the dragged path, otherwise optimistically renames via `renameEntries` and calls `api.move(from, to)` (reverting via `refetch()` on failure). Only **file** rows also write the `application/x-bismuth-path` drag payload (`e.dataTransfer.setData`), so a pane can accept the drop as a split target; folder drags participate only in tree reordering, never pane splitting.
+
+### Inline rename
+
+Rename swaps the row's label for an `<input>` (`EditableLabel`), pre-filled with the extension-stripped stem: `.md`/`.yaml`/`.yml` are hidden (matching the tree's `displayName()`, which strips the same extensions for the non-editing label — Obsidian-style), while any other extension (`.sheet`, `.draw`, images) shows in full. Enter commits (re-appending the hidden extension if the user dropped it; a no-op if the name is unchanged), Escape cancels, and blur also commits. A `done` flag ensures the commit/cancel body runs exactly once even though `setEditing(null)` unmounts the input and fires a second `blur`. If the row's `api.create` is still in flight, the commit `awaits awaitCreate(from)` before calling `api.move`, so a fast type-and-Enter can't race the row's own creation.
 
 ---
 
@@ -443,6 +546,9 @@ This note produces a `GraphNode` and its body tags/links are still processed nor
 - **`frontmatter.ts`** — `parseFrontmatter(content)` splits content into `{ data, body }`.
 - **`layout.ts`** / **`layout-cache.ts`** — after graph construction, positions are computed backend-side and attached to nodes.
 - **`changeClassifier.ts`** — content-only edits (no link/tag/structural change) set `dirty.graph = false` so graph rebuilds are skipped.
+- **`settings.ts`** — owns the `.settings` file lifecycle, including the `folderIcons` map behind the sidebar's folder icon picker, and `daemon.enabled`, which gates whether `.daemon` surfaces in `listTree`.
+- **`server.ts`** — `GET /tree` merges per-folder icons onto `listTree`'s cached output; `POST /folder-icon`, `POST /del`, `POST /create`, `POST /move`, `POST /restore` back the frontend sidebar's mutations.
+- **`app/src/FileTree.tsx`** + **`app/src/fileTreeOps.ts`** — the sidebar tree consuming `GET /tree`, with optimistic create/rename/move/delete, delete-undo, multi-select, an icon picker, and drag-and-drop (see "Sidebar File Tree (Frontend)" above).
 - See also: [bases overview](../bases/overview.md) for how vault notes become base rows.
 
-`Source: core/src/vault.ts, core/src/files.ts, core/src/graphBuilder.ts, core/src/fileAccess.ts, core/src/graph.ts, core/test/vault.test.ts, core/test/files.test.ts, core/test/graphBuilder.test.ts`
+`Source: core/src/vault.ts, core/src/files.ts, core/src/graphBuilder.ts, core/src/fileAccess.ts, core/src/graph.ts, core/src/settings.ts, core/src/server.ts, app/src/FileTree.tsx, app/src/fileTreeOps.ts, core/test/vault.test.ts, core/test/files.test.ts, core/test/graphBuilder.test.ts, app/src/fileTreeOps.test.ts, app/src/FileTree.refresh.test.ts`

@@ -184,6 +184,27 @@ The header's **Clock** button opens a popover (`HistoryPanel`) listing the user'
 
 The next message continues that conversation. The **Plus** button (`startNewChat`) swaps to a fresh chat id (`crypto.randomUUID()`) — a brand-new Claude Code session on the next message — and clears the view, without touching the tab. Both reconnect via `reconnectOn(id)`, which detaches the old socket's handlers before closing it so a deliberate switch never leaks a duplicate socket.
 
+## Editor context injection
+
+Every non-slash-command turn is prefixed with a compact `<editor-context>` preamble describing what the user is looking at — grounding for Claude, never something the user typed. Two pieces cooperate:
+
+- **`app/src/chatContext.ts`** is a tiny module-level **singleton** mirroring `editorRegistry`, but for "which files is the user looking at": `publishEditorTabs(t: EditorTabsSnapshot)` (`{ openFiles: {path,label}[], activeFile: string | null }`) and `getEditorTabs()`. Plain module state, not reactive — consumers only ever want the freshest value at send time. `App.tsx` calls `publishEditorTabs` from a `createEffect` that re-derives `openContents()`/`focusedContent()` on every tab/pane open/close/focus change, filtering out sentinel content ids (`::graph`, `::chat:…`, terminals, …) via `isSentinel()` so only real note paths count as "open" or "active" (`app/src/App.tsx:192-204`).
+- **`ChatView.buildEditorContext()`** (`app/src/ChatView.tsx:190-204`) reads `getEditorTabs()` plus the focused CodeMirror selection (`getFocusedSelection()` from `editorRegistry`) and renders a `<editor-context>…</editor-context>` block: an `Active file:` line, an `Open tabs:` line (comma-joined paths), and, only when there's a live selection, a `Current selection (from <path>):` line with the selected text fenced in a code block. Returns `""` when there's no active file and no selection — nothing worth telling Claude.
+
+`send()` prepends this preamble to the **wire** text only (`preamble + "\n\n" + text`) — the transcript bubble stores and shows the user's raw typed text, so the context never clutters what the user sees (`app/src/ChatView.tsx:485-491`). It's skipped entirely for a `/slash-command` turn, since Claude Code only recognizes a command at the very start of the message.
+
+Because the SDK persists the literal wire text (preamble included) as the turn's message content, replaying a resumed session would otherwise show the preamble as if the user had typed it. `core/src/chat.ts`'s `stripEditorContext(text)` strips a single leading `<editor-context>\n…\n</editor-context>\n\n` block via regex; `userMessageText()` (used by `translateSdkMessage`'s history path) runs every replayed user message through it before emitting the `user-message` frame, so a replayed bubble shows only what the user actually typed — kept in sync with `buildEditorContext`'s exact shape (a lone `<editor-context>` line … `</editor-context>` then a blank line).
+
+## Image attachments
+
+The composer accepts dropped or pasted images, sent alongside (or instead of) text as SDK image content blocks — no OCR/description step, the model sees the actual image.
+
+- **Client** (`app/src/ChatView.tsx`): `onComposerDrop`/`onComposerPaste` intercept image `File`s (mirroring `Editor.tsx`'s own image handling) and hand them to `addImageFiles()`, which rejects anything over `MAX_IMAGE_BYTES` (10 MB) or outside `CHAT_IMAGE_MIME` (`image/png|jpeg|gif|webp` — deliberately narrower than the editor's attachment set: no svg/pdf, since those aren't valid SDK `image` blocks) and otherwise stages a base64 `Attachment` (`readImageFile()`, `FileReader.readAsDataURL` with the `data:<mime>;base64,` prefix stripped). Staged attachments render as removable thumbnail chips above the textarea (`chat-attachments`/`chat-attachment` with a remove button); a chat needs *some* content to send — text or ≥1 attachment.
+- **Send-time guards**: a slash command can't carry images — `send()` refuses with an inline error if `text` starts with `/` and attachments are staged (the CLI only expands `/command` for a plain string turn; an array-of-blocks shape would forward it as literal text and silently break the command). `MAX_TOTAL_IMAGE_BYTES` (~12 MB of combined base64) bounds one turn's payload, since Bun silently drops a `/chat` WS frame over ~16 MB, which would otherwise wedge the turn in `streaming()` forever with no reply.
+- **Wire shape**: `{type:"user", text, images?: {media_type, data}[]}` — `data` is base64 without the `data:` prefix. The server validates each entry's `media_type`/`data` are strings before forwarding to `chatSend` (`core/src/server.ts`).
+- **Backend** (`core/src/chat.ts`): `ChatImage { media_type: string; data: string }` flows through `sendMessage(chatId, text, cwd, sink, images?)` → the input queue's `push(text, images)` → `makeUserMessage(text, images)`, which shapes the SDK `SDKUserMessage.message.content`. With **no** images, content is a **plain string** (required so the spawned `claude` CLI still runs its own slash-command detection/expansion — an array-of-blocks shape would be forwarded to the model as literal text and never execute `/compact`, `/clear`, or a custom command). With images, content becomes an **array**: an optional leading `{type:"text", text}` block, then one `{type:"image", source:{type:"base64", media_type, data}}` block per attachment.
+- **Rendering**: the sent images are shown in the user bubble as `data:` URLs (`bubbleImages`) so an image-only turn isn't an empty-looking bubble — rendered via `UserItem.images` in a `chat-user-images` flex row of thumbnails (`app/src/ChatView.tsx:798-805`), separate from the `renderNoteBody` markdown path used for text.
+
 ## Rendering
 
 Both the user's messages and the assistant's replies render through `renderNoteBody` (`app/src/bases/markdown` — the same markdown pipeline notes use), so a chat reads exactly like the editor (Lora, math, code, wikilinks, tags):
@@ -210,4 +231,4 @@ Its default keybinding is **`Mod+Shift+C`** (`core/src/keybindings.ts`, id `new-
 
 ---
 
-Source: `core/src/chat.ts`, `core/src/server.ts` (`/chat` WS + `GET /chat/sessions` + `GET /chat/session-messages`), `app/src/ChatView.tsx`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/commands.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`.
+Source: `core/src/chat.ts`, `core/src/server.ts` (`/chat` WS + `GET /chat/sessions` + `GET /chat/session-messages`), `app/src/ChatView.tsx`, `app/src/chatContext.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `app/src/api.ts`, `app/src/App.tsx`, `app/src/commands.ts`, `core/src/commands.ts`, `core/src/keybindings.ts`.

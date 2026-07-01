@@ -1,6 +1,6 @@
 # Google Calendar Two-Way Sync
 
-This document covers Bismuth's **two-way Google Calendar sync** — a subsystem that reconciles the events in a Bismuth calendar base (a `type: base` note with a `view: calendar`) against a Google calendar in both directions, so an edit made in the app's calendar lands in Google and an edit made in Google flows back into the vault. It connects via Google's OAuth 2.0 "Authorization Code + PKCE" flow over a loopback redirect, requesting the single `calendar.events` scope (events read+write only — no Gmail, Drive, contacts, or calendar-ACL access). All secrets and sync bookkeeping live **outside the vault** under `~/.bismuth/gcal/` so nothing sensitive is ever committed to git, and the vault's `settings.yaml` carries only non-secret operational config. Reconciliation runs on demand ("Sync now") and on a background ticker; both serialize through an in-process chain and a cross-process file lock so two syncs can never race the shared manifest.
+This document covers Bismuth's **two-way Google Calendar sync** — a subsystem that reconciles the events in a Bismuth calendar base (a `type: base` note with a `view: calendar`) against a Google calendar in both directions, so an edit made in the app's calendar lands in Google and an edit made in Google flows back into the vault. It connects via Google's OAuth 2.0 "Authorization Code + PKCE" flow over a loopback redirect, requesting the single `calendar.events` scope (events read+write only — no Gmail, Drive, contacts, or calendar-ACL access). All secrets and sync bookkeeping live **outside the vault** under `~/.bismuth/gcal/` so nothing sensitive is ever committed to git, and the vault's `.settings` carries only non-secret operational config. Reconciliation runs on demand ("Sync now") and on a background ticker; both serialize through an in-process chain and a cross-process file lock so two syncs can never race the shared manifest.
 
 ---
 
@@ -187,7 +187,7 @@ Sync arguments are derived in one place by `gcalSyncArgs(appConfig, basePathOver
 
 ## `googleCalendar` Settings Keys (`core/src/schema/settingsSchema.ts`)
 
-The vault's `settings.yaml` holds only **non-secret** operational config (every secret stays in `~/.bismuth/gcal/state.json`):
+The vault's `.settings` file holds only **non-secret** operational config (every secret stays in `~/.bismuth/gcal/state.json`):
 
 | Key | Type / default | Meaning |
 | --- | --- | --- |
@@ -213,4 +213,4 @@ The **auto-sync ticker** is a `setInterval(…, 60_000)` in `server.ts`, **`.unr
 
 ---
 
-Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/client.ts`, `core/src/gcal/state.ts`, `core/src/gcal/lock.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/server.ts` (the `/gcal/*` routes + auto-sync ticker), `core/src/schema/settingsSchema.ts` (`googleCalendar`), `app/src/GcalConnectModal.tsx`, `app/src/api.ts` (`gcal*` methods).
+Source: `core/src/gcal/index.ts`, `core/src/gcal/oauth.ts`, `core/src/gcal/pkce.ts`, `core/src/gcal/sync.ts`, `core/src/gcal/client.ts`, `core/src/gcal/state.ts`, `core/src/gcal/lock.ts`, `core/src/gcal/manifest.ts`, `core/src/gcal/map.ts`, `core/src/gcal/recurrence.ts`, `core/src/gcal/colors.ts`, `core/src/server.ts` (the `/gcal/*` routes + auto-sync ticker), `core/src/schema/settingsSchema.ts` (`googleCalendar`), `core/src/settings.ts` (`.settings` — the live vault settings file), `app/src/GcalConnectModal.tsx`, `app/src/api.ts` (`gcal*` methods).

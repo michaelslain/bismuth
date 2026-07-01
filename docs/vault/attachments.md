@@ -248,9 +248,9 @@ Attachments are invisible to the graph/tree/search caches — `listTree` exclude
 
 ---
 
-## Attachment Settings (`settings.yaml`)
+## Attachment Settings (`.settings`)
 
-All fields live under the `attachments:` top-level key in `settings.yaml`.
+All fields live under the `attachments:` top-level key in `.settings` (the vault's single hidden settings file).
 
 ### `attachments.folder`
 
@@ -307,4 +307,4 @@ Name collisions after template expansion are resolved by `uniqueAssetPath` with 
 - **`listTree` excludes binary assets**: images/PDFs/etc. do not appear in the file tree or search index; the graph is unaffected by attachment uploads.
 - **`private, max-age=60` cache**: the browser caches asset bytes for 60 seconds. If a file is replaced (same name), the old version may serve for up to 60 seconds. Hard-reload clears this.
 
-`Source: app/src/editor/embedBlock.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, app/src/api.ts`
+`Source: app/src/editor/embedBlock.ts, core/src/files.ts, core/src/server.ts, core/src/schema/settingsSchema.ts, core/src/settings.ts, app/src/api.ts`

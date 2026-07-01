@@ -6,11 +6,11 @@ This document is the canonical reference for Bismuth's command system: the pure 
 
 Commands are split into **pure data** and **behavior** so the command palette and the sidebar header toolbar share one source of truth:
 
-- **`core/src/commands.ts`** — `COMMAND_CATALOG`, a list of `CommandSpec` (`id`, `label`, `icon`). Pure metadata, no frontend imports. The settings schema derives the `toolbar.command` enum from `COMMAND_IDS` (so `settings.yaml` autocomplete and lint know every valid command id). This file is the **single source of truth for command ids**.
+- **`core/src/commands.ts`** — `COMMAND_CATALOG`, a list of `CommandSpec` (`id`, `label`, `icon`). Pure metadata, no frontend imports. The settings schema derives the `toolbar.command` enum from `COMMAND_IDS` (so `.settings` autocomplete and lint know every valid command id). This file is the **single source of truth for command ids**.
 - **`app/src/commands.ts`** — `bindCommands(handlers, dailyNotes)` produces a live `Map<string, BoundCommand>` where each catalog id is mapped to a runnable `{ id, label, icon, action }`. The catalog says *what* each command is; the binding says *what it does*. `App.tsx` passes its handlers in once.
 - **`core/src/schema/settingsSchema.ts`** — defines the `toolbar:` settings key (a list of button objects) and the `dailyNotes:` key (which registers extra `daily-note:<id>` commands).
 
-The sidebar header bar (`.sidebar-icons` in `App.tsx`) is configured entirely by `toolbar:` in `settings.yaml`. There is no GUI for it — you edit `settings.yaml` directly (see [settings overview](./overview.md)).
+The sidebar header bar (`.sidebar-icons` in `App.tsx`) is configured entirely by `toolbar:` in `.settings`. There is no GUI for it — you edit `.settings` directly (see [settings overview](./overview.md)).
 
 ## The Command Catalog
 
@@ -289,7 +289,7 @@ The `dailyNotes` settings key is configured separately — see [daily notes & te
 
 ## The `toolbar:` Setting
 
-The sidebar header bar buttons are configured by the top-level `toolbar:` key in `settings.yaml`. Schema definition (`core/src/schema/settingsSchema.ts`):
+The sidebar header bar buttons are configured by the top-level `toolbar:` key in `.settings`. Schema definition (`core/src/schema/settingsSchema.ts`):
 
 ```ts
 toolbar: {
@@ -420,7 +420,7 @@ The `toolbar.command` enum, its autocomplete, and the command palette pick the n
 
 > Note: adding any new **top-level** schema key (not a new command) also requires updating the hardcoded key lists in `core/test/schema/settingsSchema.test.ts`. Adding a *command* does not touch any top-level key, so that step does not apply to commands.
 
-## Example `settings.yaml` toolbar
+## Example `.settings` toolbar
 
 A toolbar mixing built-in commands, a daily-note command, an emoji icon, a custom tooltip, and a multi-command button:
 
@@ -448,7 +448,7 @@ toolbar:
 
 ## Cross-references
 
-- [Settings overview](./overview.md) — how `settings.yaml` is structured, schema-driven autocomplete, lint, and persistence.
+- [Settings overview](./overview.md) — how `.settings` is structured, schema-driven autocomplete, lint, and persistence.
 - [Daily notes & templates](../templates/syntax.md) — the `dailyNotes:` config that registers `daily-note:<id>` commands.
 - [Keybindings](./keybindings.md) — the parallel split-data system for keyboard shortcuts (`KEYBINDING_CATALOG` + `matchesKeybinding`).
 
