@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import type { DrawingDoc, Stroke } from "../../../core/src/drawing/model";
+import type { DrawingDoc, ImageEl, Stroke } from "../../../core/src/drawing/model";
 
 export function createDrawingStore(initial: DrawingDoc, requestSave: (doc: DrawingDoc) => void) {
   const [doc, setDoc] = createSignal<DrawingDoc>(initial);
@@ -24,6 +24,19 @@ export function createDrawingStore(initial: DrawingDoc, requestSave: (doc: Drawi
     eraseStroke(pageIndex: number, strokeIndex: number) {
       const next = clone(doc());
       next.pages[pageIndex].strokes.splice(strokeIndex, 1);
+      mutate(next);
+    },
+    addImage(pageIndex: number, img: ImageEl) {
+      const next = clone(doc());
+      const pg = next.pages[pageIndex];
+      (pg.images ??= []).push(img);
+      mutate(next);
+    },
+    removeImage(pageIndex: number, idx: number) {
+      const next = clone(doc());
+      const imgs = next.pages[pageIndex].images;
+      if (!imgs || idx < 0 || idx >= imgs.length) return;
+      imgs.splice(idx, 1);
       mutate(next);
     },
     setBackground(bg: DrawingDoc["paper"]["bg"]) {

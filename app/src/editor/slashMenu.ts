@@ -94,6 +94,7 @@ export const SLASH_ITEMS: SlashItem[] = [
   { id: "ol", label: "Numbered list", icon: "ListOrdered", info: "Ordered list item.", keywords: ["numbered", "list", "ordered", "ol"], snippet: "1. $0" },
   { id: "task", label: "To-do", icon: "ListChecks", info: "Checkbox task.", keywords: ["task", "todo", "checkbox", "check"], snippet: "- [ ] $0" },
   { id: "quote", label: "Quote", icon: "TextQuote", info: "Block quote.", keywords: ["quote", "blockquote", "citation"], snippet: "> $0" },
+  { id: "callout", label: "Callout", icon: "Megaphone", info: "Obsidian-style admonition callout.", keywords: ["callout", "admonition", "note", "warning", "info", "tip", "aside"], snippet: "> [!note] $0" },
   { id: "table", label: "Table", icon: "Table", info: "Markdown table.", keywords: ["table", "grid", "tbl"], snippet: "| $0 |  |\n| --- | --- |\n|  |  |" },
   { id: "code", label: "Code block", icon: "Code", info: "Fenced code block.", keywords: ["code", "fence", "codeblock", "snippet"], snippet: "```\n$0\n```" },
   { id: "query", label: "Query block", icon: "Database", info: "Embedded base / query block.", keywords: ["query", "base", "view", "dataview", "db"], snippet: "```query\n$0\n```", reTrigger: true },
@@ -102,6 +103,10 @@ export const SLASH_ITEMS: SlashItem[] = [
   // paragraph is a SETEXT H2 underline in CommonMark/GFM (it would turn that paragraph into a
   // heading on export), not a thematic break. The blank line forces a real <hr>.
   { id: "divider", label: "Divider", icon: "Minus", info: "Horizontal rule.", keywords: ["divider", "rule", "separator", "hr", "horizontal"], snippet: "\n---\n$0" },
+  // A lone `<!-- pagebreak -->` comment line: invisible on screen + in Obsidian, but the PDF
+  // exporter (htmlToPdf) slices a new page at it. Becomes a real <div> before sanitize (which
+  // strips comments) via bases/markdown.ts so the page-break survives into the rendered HTML.
+  { id: "pagebreak", label: "Page break", icon: "SeparatorHorizontal", info: "Forces a new page in PDF export.", keywords: ["page", "break", "pagebreak", "pdf", "print"], snippet: "<!-- pagebreak -->\n$0" },
   { id: "wikilink", label: "Link to note", icon: "Link", info: "Insert a [[wikilink]].", keywords: ["link", "wikilink", "internal", "ref", "note"], snippet: "[[$0]]", reTrigger: true },
   { id: "embed", label: "Embed", icon: "Image", info: "Embed a note, image, or file.", keywords: ["embed", "image", "attachment", "file", "transclude"], snippet: "![[$0]]", reTrigger: true },
   { id: "properties", label: "Properties", icon: "FileText", info: "Add a frontmatter / properties block (top of the note).", keywords: ["properties", "frontmatter", "yaml", "metadata", "props", "tags"], snippet: "---\ntags: $0\n---\n", when: "docStart" },

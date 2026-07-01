@@ -53,3 +53,8 @@
 }
 /* The page wrappers stretch to fill width; the "Add page" button stays its natural size. */
 .draw-stage > button { align-self: center; }
+/* The stage is focusable (tabindex=0) only so a Cmd/Ctrl+V image paste targets it — never
+   show a focus ring for that. */
+.draw-stage:focus, .draw-stage:focus-visible { outline: none; }
+/* Hidden picker backing the toolbar's Import-image button. */
+.draw-fileinput { display: none; }

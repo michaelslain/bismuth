@@ -42,6 +42,7 @@ import {
   filterSlashItems,
   type SlashItem,
 } from "./editor/slashMenu";
+import { calloutMeta, calloutIconSvg } from "./editor/callout";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import { resolveNotePath, parseHeadings, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
@@ -87,6 +88,17 @@ function makeBlock(type: BlockType): Block {
       return regenerateRaw({ ...base, lang: "" });
     case "divider":
       return regenerateRaw(base);
+    case "callout":
+      return regenerateRaw({
+        ...base,
+        type: "callout",
+        calloutType: "note",
+        calloutTitle: "",
+        calloutHeaderRaw: "> [!note]",
+        foldable: false,
+        collapsed: false,
+        text: "",
+      });
     case "quote":
     case "mathBlock":
     case "paragraph":
@@ -109,6 +121,7 @@ function isTextEditable(type: BlockType): boolean {
     type === "paragraph" ||
     type === "heading" ||
     type === "quote" ||
+    type === "callout" ||
     type === "bulletItem" ||
     type === "orderedItem" ||
     type === "task" ||
@@ -136,6 +149,7 @@ function isRichText(type: BlockType): boolean {
     type === "paragraph" ||
     type === "heading" ||
     type === "quote" ||
+    type === "callout" ||
     type === "bulletItem" ||
     type === "orderedItem" ||
     type === "task"
@@ -672,8 +686,11 @@ export function BlockEditor(props: {
     // Properties (frontmatter) only makes sense at doc start, and is handled separately; keep
     // the rest. We drop wikilink/embed here since those insert inline text, not a block — they
     // map to paragraph and would just create an empty paragraph; still allow them as paragraph
-    // inserts is confusing, so filter them out of the block menu.
-    const items = SLASH_ITEMS.filter((it) => it.id !== "wikilink" && it.id !== "embed" && it.id !== "properties");
+    // inserts is confusing, so filter them out of the block menu. Page break is a print-only
+    // marker (a lone HTML comment) with no block representation, so drop it too.
+    const items = SLASH_ITEMS.filter(
+      (it) => it.id !== "wikilink" && it.id !== "embed" && it.id !== "properties" && it.id !== "pagebreak",
+    );
     return filterSlashItems(items, s.query);
   });
   const slashNav = createMenuNav({
@@ -1005,6 +1022,9 @@ export function BlockEditor(props: {
     if (block.type === "code" && block.lang === "query") {
       return <QueryBlockBlock block={block} />;
     }
+    if (block.type === "callout") {
+      return <CalloutBlockView block={block} />;
+    }
     if (block.type === "divider") {
       return <hr class="block-hr" />;
     }
@@ -1051,6 +1071,34 @@ export function BlockEditor(props: {
         <Show when={isRichText(p.block.type)} fallback={<CodeBlock block={p.block} />}>
           <RichTextBlock block={p.block} />
         </Show>
+      </div>
+    );
+  }
+
+  // A callout block: the admonition chrome (accent border + icon + title) wrapping a RichTextBlock
+  // that edits the BODY. The header (type/title/fold) is read-only chrome here — edit it in source
+  // mode. The accent color is driven by an inline `--callout-color` var (the same shared palette as
+  // the export + CM surfaces); the icon SVG inherits it via currentColor. Lossless: the block model
+  // keeps the verbatim header line, so the body edits never disturb the `> [!type]` source.
+  function CalloutBlockView(p: { block: Block }) {
+    const meta = createMemo(() => calloutMeta(p.block.calloutType ?? "note"));
+    const title = createMemo(() => {
+      const t = p.block.calloutTitle ?? "";
+      return t.trim() ? t : meta().label;
+    });
+    return (
+      <div
+        class={`block-callout block-callout--${p.block.calloutType ?? "note"}`}
+        style={{ "--callout-color": meta().color }}
+      >
+        <div class="block-callout-title">
+          {/* eslint-disable-next-line solid/no-innerhtml -- trusted static icon SVG (callout.ts) */}
+          <span class="block-callout-icon" innerHTML={calloutIconSvg(p.block.calloutType ?? "note")} />
+          <span class="block-callout-title-text">{title()}</span>
+        </div>
+        <div class="block-callout-body">
+          <RichTextBlock block={p.block} />
+        </div>
       </div>
     );
   }
@@ -1474,6 +1522,8 @@ function richPlaceholder(block: Block): string {
       return "List item";
     case "quote":
       return "Quote";
+    case "callout":
+      return "Callout body…";
     default:
       return "Type '/' for blocks…";
   }

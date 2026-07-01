@@ -4,7 +4,12 @@ export const PAGE_H = 1056;
 export type PaperBg = "blank" | "lines" | "grid" | "dots";
 export type Tool = "pen" | "hl";
 export interface Stroke { t: Tool; c: string; w: number; straight?: boolean; pts: number[]; }
-export interface Page { strokes: Stroke[]; }
+// A placed raster image, in the page's 816×1056 logical coordinate space. `src` is a
+// self-contained `data:image/...;base64,...` URL so the `.draw` stays fully portable (the
+// headless CLI export needs zero asset resolution). Drawn UNDER the ink (background-ish), so
+// you can both import a picture into a sketch and annotate a photo by stroking over it.
+export interface ImageEl { src: string; x: number; y: number; w: number; h: number; }
+export interface Page { strokes: Stroke[]; images?: ImageEl[]; }
 export interface Paper { bg: PaperBg; }
 export interface DrawingDoc { v: 1; kind: "drawing"; paper: Paper; pages: Page[]; }
 export interface ThemeColors { bg: string; fg: string; }
@@ -23,6 +28,11 @@ export function roundDoc(doc: DrawingDoc): DrawingDoc {
         ...s,
         pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n))),
       })),
+      // Carry images through (rebuilding the page as `{ strokes }` only would silently
+      // strip them on save). Round the geometry; NEVER touch `src` (the data URL).
+      ...(pg.images
+        ? { images: pg.images.map((im) => ({ ...im, x: Math.round(im.x), y: Math.round(im.y), w: Math.round(im.w), h: Math.round(im.h) })) }
+        : {}),
     })),
   };
 }

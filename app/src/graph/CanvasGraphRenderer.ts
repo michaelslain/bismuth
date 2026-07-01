@@ -70,9 +70,10 @@ const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
 // Breathing room kept clear around the "you" hub, in SCREEN px (see clearAroundSelf): a node's drawn
 // circle is pushed out until it's at least this far from the hub's circle. Per-frame + in px, so it
-// holds at ANY zoom / graph size — unlike the world-space pre-spread, which can't know how big a dot
-// is actually drawn (a one-link neighbour in a sparse, zoomed-in graph draws large enough to graze
-// the hub even when its center clears the world radius).
+// holds a CONSISTENT gap at ANY zoom / graph size — unlike a fixed world-space gap, which projects
+// through zoom (so it grows/shrinks as you zoom and reads as a hard ring) and can't know how big a
+// dot is actually drawn (a one-link neighbour in a sparse, zoomed-in graph draws large enough to
+// graze the hub even when its center clears the world radius). This is the ONLY clear-zone pass.
 const SELF_CLEAR_GAP = 16;
 // Zoom-in label discovery: once a node's projected dot grows past this many px (i.e. the user
 // has zoomed in toward it), reveal its filename label so zooming in progressively surfaces names.
@@ -142,17 +143,16 @@ function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
     cx += p[0]; cy += p[1]; cz += dim === 3 ? p[2] : 0; cnt++;
   }
   if (cnt) { cx /= cnt; cy /= cnt; cz /= cnt; }
-  // Carve a deterministic clearing around the origin where "you" is pinned. This renderer runs NO
-  // force/collide sim, so without this any non-self node that the layout placed near the center
-  // would land ON TOP of the "you" hub. We push every such node radially outward to a clearance
-  // radius, so a ring of empty space opens around self in BOTH the 3D and 2D layouts (the morph
-  // interpolates p3<->p2, so the clearing must exist in each to survive it). This is only a mild
-  // WORLD-space pre-spread so central nodes aren't piled on the origin; the exact, drawn-size-aware
-  // clearing that guarantees the hub stays uncovered at any zoom is done per-frame in screen space
-  // (clearAroundSelf). O(n).
-  const clearance = LINK_SPREAD * 1.5;
+  // "you" is pinned at the origin (the cloud's center). The clear zone around the hub is NOT carved
+  // here in world space — it's the SINGLE source of truth of the per-frame screen-space pass
+  // (clearAroundSelf), which knows each dot's ACTUAL drawn radius and so holds a fixed-px gap at any
+  // zoom. A world-space pre-spread can't: it projects through worldScale × perspective(zoom), so it
+  // grows/shrinks with zoom and reads as a hard ring. This pass therefore only does the uniform
+  // centroid-scale; the lone special case is a node that maps EXACTLY onto the origin (a zero vector
+  // has no radial direction for clearAroundSelf to push it out along), which gets a tiny
+  // deterministic golden-angle nudge so the screen-space fan-out has a distinct bearing per node. O(n).
   const store = new Map<string, Vec3>();
-  let originIdx = 0; // distinct angle for any node that lands EXACTLY on the origin (see below)
+  let originIdx = 0; // distinct bearing for any node that lands EXACTLY on the origin (see below)
   for (const nv of nodes) {
     let np: Vec3;
     if (nv.node.kind === "self") {
@@ -163,14 +163,19 @@ function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
       const r = Math.hypot(np[0], np[1], dim === 3 ? np[2] : 0);
       if (r === 0) {
         // The node maps exactly onto the origin where "you" sits — e.g. the sole neighbour in a
-        // self+1 graph, whose self-excluded centroid IS its own position. Radial scaling can't push
-        // a zero vector out, so seat it on the clearance ring at a golden-angle-spread bearing so
-        // several coincident-at-origin nodes fan out instead of stacking on the hub.
+        // self+1 graph, whose self-excluded centroid IS its own position. A zero vector has no
+        // direction for clearAroundSelf to push along, so apply a tiny epsilon offset on a
+        // golden-angle bearing (distinct per coincident node) — just enough to give each a unique
+        // direction, NOT a fixed clearance radius. The screen-space pass then fans them out so they
+        // don't stack on the hub, with a gap that's constant in px at any zoom.
         const a = originIdx++ * 2.39996323; // golden angle (rad) → even angular distribution
-        np = [clearance * Math.cos(a), clearance * Math.sin(a), 0];
-      } else if (r < clearance) {
-        const f = clearance / r; // scale this node out along its own radial so directions are preserved
-        np = [np[0] * f, np[1] * f, dim === 3 ? np[2] * f : 0];
+        // Offset by one `scale` unit — the same per-edge spacing the whole layout uses — so a
+        // degenerate graph (e.g. self+1, whose only neighbour lands exactly on the centroid) frames
+        // like a normal one-hop graph instead of collapsing onto the fit floor as a tiny dot. This
+        // is NOT the old fixed clearance ring: it touches ONLY nodes landing EXACTLY on the origin
+        // (near-origin nodes keep their scaled positions), so it never re-creates the zoom-scaling ring.
+        const eps = scale;
+        np = [eps * Math.cos(a), eps * Math.sin(a), 0];
       }
     }
     if (dim === 3) nv.p3 = np; else nv.p2 = np;
@@ -577,14 +582,18 @@ export class CanvasGraphRenderer {
     this.clearAroundSelf();
   }
 
-  /** Guarantee a clear ring around the "you" hub IN SCREEN SPACE, using each node's actual drawn
-   *  radius. The world-space pre-spread (scaleToSpacing) can't do this: how big a dot is DRAWN
-   *  depends on zoom, so a one-link neighbour in a sparse, zoomed-in graph draws large enough to
-   *  graze the hub even though its CENTER clears the world radius. After projecting, push any
-   *  non-self node whose drawn circle would overlap the hub's (plus SELF_CLEAR_GAP) radially
-   *  outward in screen px. Runs every frame, so it holds in 2D, 3D, and through the morph; the hub
-   *  is pinned at the cloud centre, so the push direction is stable (no jitter). Edges, DOM nodes,
-   *  and labels all read sx/sy, so they follow the nudge. O(n). */
+  /** Open a consistent clear ZONE around the "you" hub IN SCREEN SPACE — the SINGLE source of truth
+   *  for the hub's breathing room (scaleToSpacing no longer carves anything in world space). Using
+   *  each node's ACTUAL drawn radius is the whole point: how big a dot is DRAWN depends on zoom, so a
+   *  one-link neighbour in a sparse, zoomed-in graph draws large enough to graze the hub even though
+   *  its CENTER clears any world radius — and a fixed WORLD gap projects through zoom and reads as a
+   *  hard ring that grows/shrinks as you zoom. After projecting, push any non-self node whose drawn
+   *  circle would overlap the hub's (plus SELF_CLEAR_GAP) radially outward in screen px — but ONLY
+   *  the ones actually inside that gap, so it stays a clearing, not a forced ring. Runs every frame,
+   *  so the gap is constant in px across 2D, 3D, and the morph at ANY zoom; the hub is pinned at the
+   *  cloud centre, so the push direction is stable. Coincident nodes (resolving to the same screen
+   *  point) fan out on golden-angle bearings so they don't stack. Edges, dots, and labels all read
+   *  sx/sy, so they follow the nudge. O(n). */
   private clearAroundSelf() {
     const self = this.nodes.find((n) => n.node.kind === "self");
     if (!self || !self.onScreen) return;

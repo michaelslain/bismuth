@@ -10,6 +10,12 @@ export interface ToolState { tool: Tool | "eraser"; color: string; size: number;
   smoothMode: "sharp" | "smooth";
   holdToStraighten: boolean; holdDelayMs: number; }
 
+// Module-level decode cache shared by every canvas instance: a data-URL `src` → its
+// decoded <img>. renderPage is synchronous (it can't await a decode), so the resolver
+// returns the handle only once `.complete`, and a freshly created Image repaints its
+// owner canvas on load — so the page converges to a correct paint as images decode.
+const imageCache = new Map<string, HTMLImageElement>();
+
 export function DrawingCanvas(props: {
   doc: () => DrawingDoc; pageIndex: number; tools: () => ToolState; theme: () => "dark" | "light";
   onCommit: (s: Stroke) => void; onEraseStroke: (strokeIndex: number) => void;
@@ -21,9 +27,33 @@ export function DrawingCanvas(props: {
   function ctxOf(c: HTMLCanvasElement): Ctx2D & CanvasRenderingContext2D {
     const x = c.getContext("2d")!; x.setTransform(DPR, 0, 0, DPR, 0, 0); return x as any;
   }
+  // Per-instance set of srcs we've already hooked a repaint for (so we register at most one
+  // pending repaint per undecoded image, not one per repaintBase call).
+  const hooked = new Set<string>();
+  // Resolve a placed image's data-URL src to a decoded handle, decoding lazily on first
+  // sight. Until it's `.complete` we return undefined (renderPage skips it) and repaint THIS
+  // canvas once the load fires, so the image pops in as soon as it decodes. The cache is shared
+  // across canvases, so we can't rely on the cached Image's own onload (it belongs to whichever
+  // canvas created it) — every live canvas awaiting the same src attaches its OWN load listener
+  // (addEventListener stacks; img.onload= would clobber a sibling's), so a split pane / reopened
+  // tab that shares a still-decoding entry still repaints when the decode completes.
+  function resolveImage(src: string): HTMLImageElement | undefined {
+    let img = imageCache.get(src);
+    if (!img) {
+      img = new Image();
+      img.src = src;
+      imageCache.set(src, img);
+    }
+    if (img.complete) { hooked.delete(src); return img; }
+    if (!hooked.has(src)) {
+      hooked.add(src);
+      img.addEventListener("load", () => { hooked.delete(src); if (base) repaintBase(); }, { once: true });
+    }
+    return undefined;
+  }
   function repaintBase() {
     const x = ctxOf(base);
-    renderPage(x, props.doc().pages[props.pageIndex], props.doc().paper, theme(), PAGE_W, PAGE_H);
+    renderPage(x, props.doc().pages[props.pageIndex], props.doc().paper, theme(), PAGE_W, PAGE_H, resolveImage);
   }
   function clearLive() { live.getContext("2d")!.clearRect(0, 0, live.width, live.height); }
 

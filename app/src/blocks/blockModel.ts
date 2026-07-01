@@ -12,6 +12,7 @@
 
 import { parseFrontmatter } from "../../../core/src/frontmatter";
 import { SLASH_ITEMS } from "../editor/slashMenu";
+import { parseCalloutHeader } from "../editor/callout";
 
 /** The kinds of block we recognise. `blank` and `unknown` are the safety net: anything we
  *  don't model explicitly still round-trips byte-for-byte via its `raw`. */
@@ -22,6 +23,7 @@ export type BlockType =
   | "orderedItem"
   | "task"
   | "quote"
+  | "callout"
   | "code"
   | "divider"
   | "table"
@@ -53,6 +55,13 @@ export interface Block {
   ordered?: boolean; // list item: true => orderedItem marker
   marker?: string; // list item: the exact marker token (e.g. "-", "*", "1.", "2)")
   lang?: string; // code: info string after the opening fence
+  // callout: the parsed header (for chrome) + the VERBATIM header line so an edited body re-emits
+  // the header byte-for-byte (preserving the original alias / fold marker / spacing).
+  calloutType?: string; // canonical type (note/tip/warning/…)
+  calloutTitle?: string; // header title text ("" → the type label is shown)
+  calloutHeaderRaw?: string; // the exact first line, e.g. "> [!warning]+ Heads up"
+  foldable?: boolean; // header carried `+`/`-`
+  collapsed?: boolean; // header carried `-`
 }
 
 export interface ParsedDocument {
@@ -221,10 +230,33 @@ function parseBody(body: string): Block[] {
       continue;
     }
 
-    // Blockquote run: contiguous lines beginning with `>`. Opaque-ish (edited raw / text).
+    // Blockquote run: contiguous lines beginning with `>`. A run whose FIRST line is an Obsidian
+    // callout header (`> [!type] …`) becomes a `callout` block (the header line is kept verbatim
+    // so an edited body re-emits it exactly); any other `>` run is a plain `quote`. Either way the
+    // block's `raw` is the verbatim source slice, so the parse→serialize identity is unaffected.
     if (QUOTE_RE.test(line)) {
       let j = i;
       while (j < lines.length && QUOTE_RE.test(lines[j])) j++;
+      const header = parseCalloutHeader(line);
+      if (header) {
+        const body = lines
+          .slice(i + 1, j)
+          .map((l) => l.replace(/^(\s*)>\s?/, ""))
+          .join("\n");
+        blocks.push({
+          id: nextId(),
+          type: "callout",
+          raw: rawFor(i, j),
+          text: body,
+          calloutType: header.type,
+          calloutTitle: header.title,
+          calloutHeaderRaw: line,
+          foldable: header.foldable,
+          collapsed: header.collapsed,
+        });
+        i = j;
+        continue;
+      }
       const bodyText = lines
         .slice(i, j)
         .map((l) => l.replace(/^(\s*)>\s?/, ""))
@@ -414,6 +446,16 @@ export function renderBlockToMarkdown(block: Block): string {
       const lines = (block.text ?? "").split("\n");
       return lines.map((l) => (l ? `> ${l}` : ">")).join("\n");
     }
+    case "callout": {
+      // Re-emit the VERBATIM header line + the body re-prefixed with `> `. Editing the body never
+      // touches the header (type/title/fold), so an edited callout still re-parses as a callout of
+      // the same type. Falls back to a default header if one wasn't captured.
+      const head = block.calloutHeaderRaw ?? `> [!${block.calloutType ?? "note"}]`;
+      const body = block.text ?? "";
+      if (body === "") return head;
+      const lines = body.split("\n").map((l) => (l ? `> ${l}` : ">"));
+      return head + "\n" + lines.join("\n");
+    }
     case "code": {
       const lang = block.lang ?? "";
       const body = block.text ?? "";
@@ -575,6 +617,8 @@ export function blockTypeForSlashItem(id: string): BlockType {
       return "task";
     case "quote":
       return "quote";
+    case "callout":
+      return "callout";
     case "table":
       return "table";
     case "code":

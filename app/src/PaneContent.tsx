@@ -8,6 +8,12 @@ import { Switch, Match, Suspense, lazy } from "solid-js";
 const FileView = lazy(() => import("./FileView").then((m) => ({ default: m.FileView })));
 const SheetView = lazy(() => import("./SheetView").then((m) => ({ default: m.SheetView })));
 const DrawingPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.DrawingPage })));
+// Opening an image opens it as an annotatable markup surface (a sidecar `<image>.draw`).
+const ImageMarkupPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.ImageMarkupPage })));
+
+// Raster/vector image files that open as an annotatable markup surface (NOT the `.draw`
+// sidecars they create — those end in `.draw` and route to DrawingPage above).
+const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
 
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
@@ -70,6 +76,21 @@ export function PaneContent(props: {
       <Match when={props.path.endsWith(".draw")}>
         <Suspense fallback={<div class="full" />}>
           <DrawingPage path={props.path} />
+        </Suspense>
+      </Match>
+      {/* An image opens as a markup surface: the image becomes a full-page background of a
+          sidecar `.draw`, drawn UNDER the ink so strokes annotate it. */}
+      <Match when={IMAGE_RE.test(props.path)}>
+        <Suspense fallback={<div class="full" />}>
+          <ImageMarkupPage path={props.path} />
+        </Suspense>
+      </Match>
+      {/* A PDF opens the same way: each page is rasterized into a full-page background of a
+          MULTI-page sidecar `<file>.pdf.draw`. Placed AFTER the `.draw` Match so the sidecar
+          itself routes to DrawingPage; guard against the drawing-export artifact `<name>.draw.pdf`. */}
+      <Match when={props.path.endsWith(".pdf") && !props.path.endsWith(".draw.pdf")}>
+        <Suspense fallback={<div class="full" />}>
+          <ImageMarkupPage path={props.path} />
         </Suspense>
       </Match>
       <Match when={props.path.startsWith(TERMINAL_PREFIX)}>

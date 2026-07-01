@@ -10,9 +10,76 @@ import {
   chatSessionCount,
   listChatSessions,
   sessionHistoryFrames,
+  stripEditorContext,
+  makeUserMessage,
   type ChatFrame,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
+
+// The visual chat prepends a `<editor-context>…</editor-context>` preamble to the WIRE message
+// (grounding context for Claude, never user prose). On history REPLAY the bubble is rebuilt from the
+// SDK-persisted content, so the preamble must be stripped there or it leaks into the rendered bubble.
+describe("stripEditorContext (chat history replay)", () => {
+  test("strips a leading editor-context preamble, leaving only the typed text", () => {
+    const wire = "<editor-context>\nActive file: Project.md\nOpen tabs: Project.md\n</editor-context>\n\nsummarize this";
+    expect(stripEditorContext(wire)).toBe("summarize this");
+  });
+
+  test("strips a multi-line preamble that includes a selection block", () => {
+    const wire =
+      "<editor-context>\nActive file: A.md\nCurrent selection (from A.md):\n```\nhello\nworld\n```\n</editor-context>\n\nwhat does this mean?";
+    expect(stripEditorContext(wire)).toBe("what does this mean?");
+  });
+
+  test("leaves an ordinary message (no preamble) untouched", () => {
+    expect(stripEditorContext("just a normal question")).toBe("just a normal question");
+  });
+
+  test("only strips a LEADING preamble, not one that appears mid-text", () => {
+    const text = "look at <editor-context>\nx\n</editor-context>\n\ninline";
+    expect(stripEditorContext(text)).toBe(text);
+  });
+});
+
+// makeUserMessage's content SHAPE is load-bearing (pure, no `claude` needed):
+//  - no images → a PLAIN STRING so the spawned CLI runs slash-command detection/expansion
+//    ("/compact", "/clear", custom commands only execute for string content — an array-of-blocks
+//    shape is forwarded to the model as literal text and never runs).
+//  - images present → an ARRAY: an optional leading text block, then one base64 image block each.
+describe("makeUserMessage (content shape)", () => {
+  test("no images → content is a plain STRING (so slash commands expand)", () => {
+    const msg = makeUserMessage("/compact");
+    expect(msg.type).toBe("user");
+    expect((msg.message as { role: string }).role).toBe("user");
+    expect(msg.message.content).toBe("/compact");
+  });
+
+  test("an empty images array is treated as no images → still a string", () => {
+    expect(makeUserMessage("hello world", []).message.content).toBe("hello world");
+  });
+
+  test("images present → an ARRAY: a leading text block then one image block per attachment", () => {
+    const msg = makeUserMessage("look at this", [{ media_type: "image/png", data: "AAAA" }]);
+    const content = msg.message.content as unknown[];
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toEqual([
+      { type: "text", text: "look at this" },
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+    ]);
+  });
+
+  test("image-only (empty text) → array with ONLY the image block(s), no empty text block", () => {
+    const msg = makeUserMessage("", [
+      { media_type: "image/jpeg", data: "BBBB" },
+      { media_type: "image/webp", data: "CCCC" },
+    ]);
+    const content = msg.message.content as unknown[];
+    expect(content).toEqual([
+      { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "BBBB" } },
+      { type: "image", source: { type: "base64", media_type: "image/webp", data: "CCCC" } },
+    ]);
+  });
+});
 
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
 // key) against a TEMP dir — NEVER the vault. Guarded to skip gracefully when claude isn't on PATH

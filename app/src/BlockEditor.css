@@ -234,6 +234,116 @@
   padding-left: 12px;
 }
 
+/* --- Callout block (Milkdown surface) ----------------------------------- */
+/* The admonition chrome wrapping a RichTextBlock body. The accent comes from an inline
+   `--callout-color` var (set per type from the shared palette in editor/callout.ts); the icon
+   inherits it via currentColor. */
+.block-callout {
+  border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
+  border-left: 4px solid var(--callout-color, var(--accent));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  padding: 8px 12px;
+  margin: 2px 0;
+}
+.block-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  color: var(--callout-color, var(--accent));
+  margin-bottom: 2px;
+}
+.block-callout-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.block-callout-icon svg {
+  width: 1.05em;
+  height: 1.05em;
+}
+.block-callout-title-text {
+  min-width: 0;
+}
+.block-callout-body {
+  color: var(--fg);
+}
+
+/* --- Rendered-markdown callouts (cards / transclusion / static block preview) ----------------- */
+/* These `.callout` classes are emitted by bases/markdown.ts renderMarkdown — used on every in-app
+   rendered-note surface (card faces, `.md` transclusion, the offscreen block static preview). This
+   stylesheet is a global side-effect import (BlockEditor is statically imported by FileView), so the
+   rules apply wherever those surfaces render. The export pipeline (htmlTemplate.ts) + the CodeMirror
+   widget (livePreview.ts calloutTheme) carry their OWN copies of the equivalent rules.
+   PER-TYPE ACCENTS BELOW MUST STAY IN SYNC WITH CALLOUT_TYPES IN editor/callout.ts. */
+.callout {
+  margin: 1em 0;
+  border: 1px solid color-mix(in srgb, var(--fg) 16%, transparent);
+  border-left-width: 4px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+  padding: 0.55em 0.85em;
+}
+.callout-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45em;
+  font-weight: 600;
+}
+.callout-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+.callout-icon svg {
+  width: 1.1em;
+  height: 1.1em;
+}
+.callout-title-inner {
+  min-width: 0;
+}
+.callout-content {
+  margin-top: 0.4em;
+}
+.callout-content > :first-child {
+  margin-top: 0;
+}
+.callout-content > :last-child {
+  margin-bottom: 0;
+}
+details.callout > summary {
+  cursor: pointer;
+  list-style: none;
+}
+details.callout > summary::-webkit-details-marker {
+  display: none;
+}
+.callout-note { border-left-color: #448aff; }
+.callout-note > .callout-title { color: #448aff; }
+.callout-tip { border-left-color: #00bfa5; }
+.callout-tip > .callout-title { color: #00bfa5; }
+.callout-success { border-left-color: #21c065; }
+.callout-success > .callout-title { color: #21c065; }
+.callout-question { border-left-color: #e0a526; }
+.callout-question > .callout-title { color: #e0a526; }
+.callout-warning { border-left-color: #ef8e2c; }
+.callout-warning > .callout-title { color: #ef8e2c; }
+.callout-failure { border-left-color: #e5484d; }
+.callout-failure > .callout-title { color: #e5484d; }
+.callout-danger { border-left-color: #e93147; }
+.callout-danger > .callout-title { color: #e93147; }
+.callout-bug { border-left-color: #e93147; }
+.callout-bug > .callout-title { color: #e93147; }
+.callout-example { border-left-color: #a371f7; }
+.callout-example > .callout-title { color: #a371f7; }
+.callout-quote { border-left-color: #9aa0a6; }
+.callout-quote > .callout-title { color: #9aa0a6; }
+.callout-abstract { border-left-color: #00b8d4; }
+.callout-abstract > .callout-title { color: #00b8d4; }
+.callout-todo { border-left-color: #448aff; }
+.callout-todo > .callout-title { color: #448aff; }
+.callout-important { border-left-color: #00b8d4; }
+.callout-important > .callout-title { color: #00b8d4; }
+
 /* Inline marks rendered WYSIWYG (no markdown symbols shown). */
 .block-rich .ProseMirror strong { font-weight: 700; }
 .block-rich .ProseMirror em { font-style: italic; }

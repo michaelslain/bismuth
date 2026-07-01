@@ -6,6 +6,7 @@ import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
 import { latexTokenDecorations, mathSrcMark } from "./latexHighlight";
+import { mathField } from "./mathBlock";
 import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
@@ -20,6 +21,9 @@ import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableSt
 import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 import { isThematicBreak } from "./thematicBreak";
+import { scanCallouts, renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from "./callout";
+import { renderNoteBody, renderInline } from "../bases/markdown";
+import { sanitizeHtml } from "../sanitizeHtml";
 
 // The editor's mono face: Monaspace Xenon, falling back to the platform ui-monospace.
 // Shared across every mono region in the live-preview theme (and reused by embedBlock).
@@ -398,6 +402,31 @@ interface BlockRegions {
   // is rendered by htmlBlockField (a StateField widget); the per-line pass skips
   // these lines so it neither double-decorates nor misreads the raw HTML.
   htmlBlockLines: Set<number>;
+  // Obsidian `> [!type]` callout blocks → a line→block lookup. Each (non-active) block renders as
+  // the CalloutWidget (calloutWidgetField); the per-line pass skips its lines unless the block is
+  // the active (revealed-for-editing) one, in which case the lines render as a raw blockquote.
+  calloutBlockByLine: Map<number, CalloutLineBlock>;
+}
+
+/** A callout blockquote run located in the document (1-based line range + parsed header + body). */
+interface CalloutLineBlock {
+  fromLine: number;
+  toLine: number;
+  header: CalloutHeader;
+  body: string;
+}
+
+/** All callout blocks in `doc` (1-based line ranges). Shared by computeBlockRegions, the widget
+ *  field, and the active-block lookup so every callout consumer agrees on the same ranges. */
+function scanCalloutLineBlocks(doc: Text): CalloutLineBlock[] {
+  const lines: string[] = [];
+  for (let i = 1; i <= doc.lines; i++) lines.push(doc.line(i).text);
+  return scanCallouts(lines).map((c) => ({
+    fromLine: c.fromLine + 1,
+    toLine: c.toLine + 1,
+    header: c.header,
+    body: c.body,
+  }));
 }
 
 /** Scan the whole document once and return the block-region sets.
@@ -469,14 +498,20 @@ function computeBlockRegions(doc: Text): BlockRegions {
     for (let k = b.fromLine; k <= b.toLine; k++) htmlBlockLines.add(k);
   }
 
-  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine, htmlBlockLines };
+  // precompute callout blocks (rendered by calloutWidgetField)
+  const calloutBlockByLine = new Map<number, CalloutLineBlock>();
+  for (const c of scanCalloutLineBlocks(doc)) {
+    for (let k = c.fromLine; k <= c.toLine; k++) calloutBlockByLine.set(k, c);
+  }
+
+  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine, htmlBlockLines, calloutBlockByLine };
 }
 
 /** Run the per-visible-line decoration pass using pre-computed block regions.
  *  This is cheap: it only iterates view.visibleRanges and must run on every
  *  update (including cursor moves) so that the cursor-line reveal stays correct. */
 function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSet {
-  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine, htmlBlockLines } = regions;
+  const { frontmatterLines, frontmatterOpen, frontmatterClose, tableBlockByLine, codeBlockByLine, htmlBlockLines, calloutBlockByLine } = regions;
   const deco: Range<Decoration>[] = [];
   const doc = view.state.doc;
   // Lines touched by any selection range. A line "reveals" its raw markdown (instead
@@ -520,6 +555,10 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
     selSpans.some(([a, b]) => a <= frontmatterClose && b >= frontmatterOpen);
   // The code block (by opening-fence line) currently in edit mode, if any.
   const activeCodeOpen = view.state.field(activeCodeField, false) ?? null;
+  // The callout block (by its header line) currently revealed for raw editing, if any. A rendered
+  // (non-active) callout is covered by the CalloutWidget block-replace, so the per-line pass skips
+  // its lines; the active one falls through to render as a raw blockquote.
+  const activeCalloutOpen = view.state.field(activeCalloutField, false) ?? null;
 
   for (const { from, to } of view.visibleRanges) {
     let pos = from;
@@ -606,6 +645,15 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // inside it). Either way the per-line markdown pass must leave these lines
       // alone — skip so we don't misread raw HTML as headings/lists/etc.
       if (htmlBlockLines.has(line.number)) {
+        pos = line.to + 1;
+        continue;
+      }
+
+      // Callout block: rendered as the CalloutWidget unless it's the active (revealed) block.
+      // When rendered, skip the line entirely (the block-replace covers it). When active, fall
+      // through so the lines render as a normal (raw) blockquote for editing.
+      const calloutBlock = calloutBlockByLine.get(line.number);
+      if (calloutBlock && calloutBlock.fromLine !== activeCalloutOpen) {
         pos = line.to + 1;
         continue;
       }
@@ -742,6 +790,13 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // braces / ^_ etc. marked), the same per-token reveal the inline **/`` ` `` tokens use.
       const mathSpans: { from: number; to: number }[] = [];
       const inMathSpan = (s: number, e: number) => mathSpans.some((h) => s < h.to && e > h.from);
+      // Multi-line inline `$…$` spans are owned by the mathBlock StateField (a ViewPlugin
+      // can't hold cross-line replace decorations). Seed them so (a) we never emit our own
+      // single-line `$…$` replace overlapping one (overlapping replaces throw) and (b) inline
+      // emphasis (`**`/`*`/…) inside the math source is skipped. Absolute doc offsets.
+      const mlSpans = view.state.field(mathField, false)?.spans ?? [];
+      const inMlSpan = (s: number, e: number) => mlSpans.some((h) => s < h.to && e > h.from);
+      for (const s of mlSpans) mathSpans.push({ from: s.from, to: s.to });
       {
         // block math: $$...$$  (single-line, non-empty inner)
         for (const m of text.matchAll(/\$\$([^$]+)\$\$/g)) {
@@ -771,6 +826,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
+          // A `$` on this line that is actually a delimiter of a multi-line span (owned by
+          // mathBlock) must not be re-claimed here — its replace would overlap mathBlock's.
+          if (inMlSpan(s, end)) continue;
           mathSpans.push({ from: s, to: end });
           if (revealsRange(s, end)) {
             // Cover the whole revealed inner range in mono FIRST (under the color marks) so
@@ -909,11 +967,144 @@ const tableWidgetField = StateField.define<DecorationSet>({
   provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f, false) ?? Decoration.none)],
 });
 
+// --- callout "edit mode" ------------------------------------------------------
+// A callout normally renders as the CalloutWidget block (icon + title + rendered body). Like a
+// code block it reveals its raw blockquote source when DOUBLE-CLICKED (or while you type inside an
+// already-revealed one), and collapses back once the caret leaves the block. Tracked by the
+// callout's header line number (1-based), or null.
+const setActiveCalloutEffect = StateEffect.define<number | null>();
+
+/** The callout block containing `lineNumber` (1-based), returning its header line, or null. */
+function calloutBlockAt(state: EditorState, lineNumber: number): number | null {
+  for (const c of scanCalloutLineBlocks(state.doc)) {
+    if (lineNumber >= c.fromLine && lineNumber <= c.toLine) return c.fromLine;
+  }
+  return null;
+}
+
+const activeCalloutField = StateField.define<number | null>({
+  create: () => null,
+  update(value, tr) {
+    // Explicit request (double-click) wins.
+    for (const e of tr.effects) if (e.is(setActiveCalloutEffect)) return e.value;
+    const head = tr.state.selection.main.head;
+    const at = calloutBlockAt(tr.state, tr.state.doc.lineAt(head).number);
+    // Typing inside a callout reveals/keeps it.
+    if (tr.docChanged) return at;
+    // Selection-only move: stay revealed only while still inside the active block; a single click
+    // into a different/rendered callout does NOT reveal it (double-click does).
+    if (tr.selection) return at != null && at === value ? value : null;
+    return value;
+  },
+});
+
+// The block widget shown in place of a (non-active) callout's raw blockquote source.
+class CalloutWidget extends WidgetType {
+  constructor(private readonly header: CalloutHeader, private readonly body: string) {
+    super();
+  }
+
+  eq(other: CalloutWidget): boolean {
+    return (
+      other.header.type === this.header.type &&
+      other.header.title === this.header.title &&
+      other.header.foldable === this.header.foldable &&
+      other.header.collapsed === this.header.collapsed &&
+      other.body === this.body
+    );
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-callout-wrap";
+    const titleHtml = renderInline(this.header.title);
+    const bodyHtml = renderNoteBody(this.body);
+    wrap.innerHTML = sanitizeHtml(renderCalloutHtml(this.header, bodyHtml, titleHtml));
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return true; // atomic block: enter via double-click, not a stray click
+  }
+}
+
+// Block decorations must come from a StateField (not a ViewPlugin). Each non-active callout block
+// is replaced by one CalloutWidget spanning its source; the active block is excluded so it stays
+// editable as a raw blockquote.
+function buildCalloutWidgets(state: EditorState): DecorationSet {
+  const doc = state.doc;
+  const active = state.field(activeCalloutField, false) ?? null;
+  const deco: Range<Decoration>[] = [];
+  for (const c of scanCalloutLineBlocks(doc)) {
+    if (c.fromLine === active) continue;
+    const from = doc.line(c.fromLine).from;
+    const to = doc.line(c.toLine).to;
+    deco.push(Decoration.replace({ widget: new CalloutWidget(c.header, c.body), block: true }).range(from, to));
+  }
+  return Decoration.set(deco, true);
+}
+
+const calloutWidgetField = StateField.define<DecorationSet>({
+  create: (state) => buildCalloutWidgets(state),
+  update(value, tr) {
+    const activeChanged = tr.startState.field(activeCalloutField) !== tr.state.field(activeCalloutField);
+    if (tr.docChanged || tr.selection || activeChanged) return buildCalloutWidgets(tr.state);
+    return value.map(tr.changes);
+  },
+  // Provide the rendered-callout ranges as decorations AND atomic ranges so the caret steps over a
+  // rendered callout as one unit (the active/raw block is excluded → still editable).
+  provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((view) => view.state.field(f, false) ?? Decoration.none)],
+});
+
+// Double-click a rendered callout → reveal its raw blockquote source for editing.
+const calloutDomHandlers = EditorView.domEventHandlers({
+  dblclick: (e, view) => {
+    const pos = view.posAtCoords({ x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
+    if (pos == null) return false;
+    const at = calloutBlockAt(view.state, view.state.doc.lineAt(pos).number);
+    if (at == null) return false;
+    view.dispatch({ effects: setActiveCalloutEffect.of(at), selection: { anchor: view.state.doc.line(at).from } });
+    view.focus();
+    return false;
+  },
+});
+
+// Callout chrome for the editor widget. Scoped under `.cm-callout-wrap` (and EditorView.theme
+// already scopes to this editor) so it's self-contained; the per-type accent is generated from the
+// shared palette (callout.ts) so it matches the export + in-app rendered surfaces.
+const calloutThemeSpec: Record<string, Record<string, string>> = {
+  ".cm-callout-wrap": { display: "block", margin: "0.3em 0" },
+  ".cm-callout-wrap .callout": {
+    margin: "0.4em 0",
+    border: "1px solid color-mix(in srgb, var(--fg) 16%, transparent)",
+    "border-left-width": "4px",
+    "border-radius": "6px",
+    background: "color-mix(in srgb, var(--fg) 4%, transparent)",
+    padding: "0.5em 0.8em",
+  },
+  ".cm-callout-wrap .callout-title": { display: "flex", "align-items": "center", gap: "0.45em", "font-weight": "600" },
+  ".cm-callout-wrap .callout-icon": { display: "inline-flex", flex: "0 0 auto" },
+  ".cm-callout-wrap .callout-icon svg": { width: "1.1em", height: "1.1em" },
+  ".cm-callout-wrap .callout-content": { "margin-top": "0.4em" },
+  ".cm-callout-wrap .callout-content > :first-child": { "margin-top": "0" },
+  ".cm-callout-wrap .callout-content > :last-child": { "margin-bottom": "0" },
+  ".cm-callout-wrap details.callout > summary": { cursor: "pointer", "list-style": "none" },
+};
+for (const [type, meta] of Object.entries(CALLOUT_TYPES)) {
+  calloutThemeSpec[`.cm-callout-wrap .callout-${type}`] = { "border-left-color": meta.color };
+  calloutThemeSpec[`.cm-callout-wrap .callout-${type} > .callout-title`] = { color: meta.color };
+}
+const calloutTheme = EditorView.theme(calloutThemeSpec);
+
 export const livePreview = [
   activeCodeField,
   activeTableField,
   tableWidgetField,
   htmlBlockField,
+  activeCalloutField,
+  calloutWidgetField,
+  calloutDomHandlers,
+  calloutTheme,
   codeLineNumberTheme,
   EditorView.domEventHandlers({
     dblclick: (e, view) => {
@@ -1003,7 +1194,8 @@ export const livePreview = [
       update(u: ViewUpdate) {
         const activeChanged =
           u.startState.field(activeCodeField, false) !== u.state.field(activeCodeField, false) ||
-          u.startState.field(activeTableField, false) !== u.state.field(activeTableField, false);
+          u.startState.field(activeTableField, false) !== u.state.field(activeTableField, false) ||
+          u.startState.field(activeCalloutField, false) !== u.state.field(activeCalloutField, false);
         if (u.docChanged || u.viewportChanged || u.selectionSet || u.focusChanged || activeChanged) {
           // Refresh the block-region cache only when document content changes.
           // On selectionSet / viewportChanged alone, reuse the cached sets —

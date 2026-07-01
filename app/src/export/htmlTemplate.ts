@@ -2,8 +2,20 @@
 import { escapeHtml } from "../htmlEscape";
 import { DEFAULT_PALETTE } from "./exportTheme";
 import type { ThemePalette } from "./types";
+import { CALLOUT_TYPES } from "../editor/callout";
 
 export { escapeHtml };
+
+/** Per-type callout accent rules, generated from the shared palette (editor/callout.ts) so the
+ *  exported PDF/HTML uses the SAME colors as the in-app surfaces. */
+function calloutTypeCss(): string {
+  return Object.entries(CALLOUT_TYPES)
+    .map(
+      ([type, meta]) =>
+        `.callout-${type}{border-left-color:${meta.color}}.callout-${type}>.callout-title{color:${meta.color}}`,
+    )
+    .join("\n  ");
+}
 
 function styles(p: ThemePalette): string {
   return `
@@ -23,6 +35,24 @@ function styles(p: ThemePalette): string {
   code { background: ${p.head}; padding: 0.1em 0.35em; border-radius: 4px; }
   pre code { background: none; padding: 0; }
   blockquote { border-left: 3px solid ${p.border}; margin: 0; padding-left: 1rem; color: ${p.muted}; }
+  /* Callouts (editor/callout.ts). Neutral translucent fill + a 4px accent left bar; the icon
+     inherits the title's accent via currentColor. Concrete per-type accents below so the PDF
+     rasterizer (html2canvas) renders them. */
+  .callout { margin: 1em 0; border: 1px solid ${p.border}; border-left-width: 4px; border-radius: 6px;
+             background: rgba(127,127,127,0.06); padding: 0.55em 0.85em; }
+  .callout-title { display: flex; align-items: center; gap: 0.45em; font-weight: 600; }
+  .callout-icon { display: inline-flex; flex: 0 0 auto; }
+  .callout-icon svg { width: 1.1em; height: 1.1em; }
+  .callout-title-inner { min-width: 0; }
+  .callout-content { margin-top: 0.4em; }
+  .callout-content > :first-child { margin-top: 0; }
+  .callout-content > :last-child { margin-bottom: 0; }
+  details.callout > summary { cursor: pointer; list-style: none; }
+  details.callout > summary::-webkit-details-marker { display: none; }
+  ${calloutTypeCss()}
+  /* A page break: invisible on screen (height:0), a forced new page when printed. The in-app PDF
+     rasterizer slices pages at this element explicitly (htmlToPdf.ts). */
+  .bismuth-page-break { break-after: page; page-break-after: always; height: 0; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid ${p.border}; padding: 0.4rem 0.6rem; text-align: left; }
   th { background: ${p.head}; }

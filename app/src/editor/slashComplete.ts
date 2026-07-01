@@ -18,8 +18,9 @@ function dateItem(): SlashItem {
 }
 
 /** `/` slash menu: on a line whose first content char is `/`, offer insertions (headings,
- *  lists, table, query/code/math blocks, callout, divider, links, properties, date). Gated
- *  out of frontmatter (the property sources own it there) and fenced code/query blocks. */
+ *  lists, table, query/code/math blocks, quote, callout, divider, page break, links,
+ *  properties, date). Gated out of frontmatter (the property sources own it there) and
+ *  fenced code/query blocks. */
 export function slashSource(inFrontmatter: (ctx: CompletionContext) => boolean): CompletionSource {
   return (context: CompletionContext): CompletionResult | null => {
     if (inFrontmatter(context)) return null;

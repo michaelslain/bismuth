@@ -29,7 +29,7 @@ const settle = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms))
  * `doc.fonts.ready` here is what gates the snapshot on embedded @font-face fonts (incl.
  * the inlined KaTeX glyph fonts) so math is measured/drawn correctly.
  */
-async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; bg: string }> {
+async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; bg: string; breaks: number[] }> {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W_PX}px;height:200px;border:0;`;
@@ -56,6 +56,19 @@ async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; 
     // — matters most for PNG, which is one image with no page slicing.
     const MAX_CANVAS_PX = 32000;
     const scale = Math.max(1, Math.min(2, Math.floor(MAX_CANVAS_PX / Math.max(1, doc.body.scrollHeight))));
+    // Explicit page-break markers (bases/markdown.ts `<div class="bismuth-page-break">`): their
+    // post-layout Y offset, scaled into canvas pixels. The PDF slicer cuts a new page at each.
+    // Measured here (after layout has settled) while the iframe doc is still live. A marker before
+    // the first content (offsetTop ≈ body padding-top) or after the last (≈ content bottom) would
+    // slice off an empty page, so ignore markers outside the real content band.
+    const padCs = getComputedStyle(doc.body);
+    const padTop = parseFloat(padCs.paddingTop) || 0;
+    const contentBottom = doc.body.scrollHeight - (parseFloat(padCs.paddingBottom) || 0);
+    const breaks = Array.from(doc.querySelectorAll<HTMLElement>(".bismuth-page-break"))
+      .map((el) => el.offsetTop)
+      .filter((y) => y > padTop + 1 && y < contentBottom - 1)
+      .map((y) => Math.round(y * scale))
+      .sort((a, b) => a - b);
     const canvas = await html2canvas(doc.body, {
       scale,
       backgroundColor: bg,
@@ -64,7 +77,7 @@ async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; 
       useCORS: true,
     });
     if (canvas.height === 0) throw new Error("htmlToCanvas: nothing to render");
-    return { canvas, bg };
+    return { canvas, bg, breaks };
   } finally {
     iframe.remove();
   }
@@ -86,15 +99,25 @@ export async function htmlToPng(html: string): Promise<{ bytes: Uint8Array; data
 }
 
 export async function htmlToPdf(html: string): Promise<Uint8Array> {
-  const { canvas, bg } = await htmlToCanvas(html);
+  const { canvas, bg, breaks } = await htmlToCanvas(html);
   {
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
     const scale = PAGE_W_PT / canvas.width; // canvas px -> pt
     const pageHpx = Math.floor(PAGE_H_PT / scale); // source px per Letter page
     let offset = 0;
     let first = true;
+    let bi = 0; // cursor into the sorted page-break offsets
     while (offset < canvas.height) {
-      const sliceHpx = Math.min(pageHpx, canvas.height - offset);
+      // A forced page break that falls inside this page ends it early (the next slice starts AT
+      // the marker); otherwise cut at the natural full-page bottom. Skip markers at/above the
+      // current offset so a marker exactly on a page boundary never emits an empty page.
+      while (bi < breaks.length && breaks[bi] <= offset) bi++;
+      let sliceEnd = offset + pageHpx;
+      if (bi < breaks.length && breaks[bi] < sliceEnd) {
+        sliceEnd = breaks[bi];
+        bi++;
+      }
+      const sliceHpx = Math.min(sliceEnd, canvas.height) - offset;
       // Full-page slice padded with the document background so partial last pages stay
       // on-theme (e.g. a dark page is fully dark, not white below the content).
       const slice = document.createElement("canvas");

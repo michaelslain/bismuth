@@ -44,7 +44,7 @@ import {
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
@@ -167,6 +167,21 @@ export function createServer(cfg: CoreConfig) {
   // from DEFAULTS so timings are sane before the async load lands, then refreshed on
   // boot and whenever settings.yaml changes (see classifyVault).
   let appConfig: AppConfig = SETTINGS_DEFAULTS as unknown as AppConfig;
+  // Reflect the on-disk daemon.enabled SYNCHRONOUSLY before the first cache warm (below).
+  // The tree gates the `.daemon` folder and the graph gates the 3rd brain on this flag, so
+  // the FIRST cached /tree + /graph build (treeCache/graphCache.warm()) must already see the
+  // real value — otherwise the DEFAULTS-seeded `false` makes that first build omit `.daemon`
+  // (and the 3rd brain), and they only pop in a beat later once the async loadAppConfig below
+  // resolves and re-invalidates (worse on a cold-boot SSE miss → up to the 5s /version poll).
+  // Mirrors daemonIdentityName's sync identity.md read. A fresh object so the shared
+  // SETTINGS_DEFAULTS is never mutated; the async load still reassigns appConfig wholesale.
+  const daemonEnabledAtBoot = readDaemonEnabledSync(cfg.vault);
+  if (daemonEnabledAtBoot !== (appConfig.daemon?.enabled ?? false)) {
+    appConfig = {
+      ...SETTINGS_DEFAULTS,
+      daemon: { ...(SETTINGS_DEFAULTS as { daemon: Record<string, unknown> }).daemon, enabled: daemonEnabledAtBoot },
+    } as unknown as AppConfig;
+  }
 
   // /graph, /tree, and the unscoped vault feeds (rows + tasks) all go through a deduped,
   // invalidation-safe cache (see asyncCache.ts): concurrent first requests share ONE build,
@@ -1402,7 +1417,8 @@ export function createServer(cfg: CoreConfig) {
       message(ws, msg) {
         if (ws.data.kind === "chat") {
           // Chat protocol is text JSON, driving the visual Claude Code session (core/src/chat.ts):
-          //   {type:"user",text}                              → run a turn (slash commands are just text)
+          //   {type:"user",text,images?}                      → run a turn (slash commands are just text;
+          //                                                     images = base64 blocks the user attached)
           //   {type:"resume",sessionId}                       → bind this chat to an existing session
           //   {type:"permission_response",id,behavior,always?} → answer a "permission" frame
           //   {type:"set_permission_mode",mode}               → switch permission mode live
@@ -1414,6 +1430,7 @@ export function createServer(cfg: CoreConfig) {
           let parsed: {
             type?: string;
             text?: string;
+            images?: { media_type?: unknown; data?: unknown }[];
             sessionId?: string;
             id?: string;
             behavior?: "allow" | "deny";
@@ -1434,7 +1451,24 @@ export function createServer(cfg: CoreConfig) {
                 /* socket closed mid-turn */
               }
             };
-            chatSend(chatId, parsed.text, cfg.vault, sink);
+            // Accept optional base64 image attachments; keep only well-formed {media_type,data}
+            // pairs whose media_type is an SDK-accepted image MIME (the frontend whitelist is not the
+            // only client — a rogue local client could send anything), so a malformed or
+            // unsupported attachment can never reach makeUserMessage / the SDK image block.
+            const images = Array.isArray(parsed.images)
+              ? parsed.images.filter(
+                  (im): im is { media_type: string; data: string } =>
+                    !!im &&
+                    typeof im === "object" &&
+                    typeof (im as { media_type?: unknown }).media_type === "string" &&
+                    ["image/png", "image/jpeg", "image/gif", "image/webp"].includes(
+                      (im as { media_type: string }).media_type,
+                    ) &&
+                    typeof (im as { data?: unknown }).data === "string" &&
+                    (im as { data: string }).data.length > 0,
+                )
+              : [];
+            chatSend(chatId, parsed.text, cfg.vault, sink, images.length ? images : undefined);
           } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
             // Bind this chat socket to an existing Claude Code session — its init manifest streams
             // back, and the next {type:"user"} continues the resumed conversation.

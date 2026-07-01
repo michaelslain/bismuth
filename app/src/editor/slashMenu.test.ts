@@ -148,3 +148,26 @@ test("link/embed/query re-trigger autocomplete after insert", () => {
 test("divider snippet is preceded by a blank line (avoids a setext-heading underline)", () => {
   expect(SLASH_ITEMS.find((i) => i.id === "divider")?.snippet.startsWith("\n")).toBe(true);
 });
+
+test("page break inserts a lone HTML-comment marker", () => {
+  const item = SLASH_ITEMS.find((i) => i.id === "pagebreak");
+  expect(item).toBeTruthy();
+  expect(item!.snippet).toBe("<!-- pagebreak -->\n$0");
+  // The caret lands on the line AFTER the (invisible) marker.
+  expect(parseSnippet(item!.snippet)).toEqual({ text: "<!-- pagebreak -->\n", caret: 19 });
+});
+
+test("page break is findable by its keywords (page / pdf / print)", () => {
+  for (const q of ["page", "break", "pdf", "print"]) {
+    expect(filterSlashItems(SLASH_ITEMS, q).some((i) => i.id === "pagebreak")).toBe(true);
+  }
+});
+
+test("callout inserts a `> [!note]` blockquote header", () => {
+  const item = SLASH_ITEMS.find((i) => i.id === "callout");
+  expect(item).toBeTruthy();
+  expect(item!.snippet).toBe("> [!note] $0");
+  expect(filterSlashItems(SLASH_ITEMS, "callout")[0].id).toBe("callout");
+  // "admonition" is a keyword so the menu finds it under that name too.
+  expect(filterSlashItems(SLASH_ITEMS, "admonition")[0].id).toBe("callout");
+});

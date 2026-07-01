@@ -44,6 +44,7 @@ import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel } from "./tabIds";
 import { isExportable } from "./export/formats";
+import { publishEditorTabs } from "./chatContext";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -188,6 +189,22 @@ export default function App() {
     return [...ids];
   });
 
+  // Publish the open-file / active-file working set to the chat-context singleton so the visual
+  // chat can inject "what the user is looking at" onto its wire payload (never into the visible
+  // message). Re-runs on any tab/pane open/close/focus change. Sentinels (graph/search/terminal/
+  // chat/…) are dropped — only real note paths are useful context.
+  createEffect(() => {
+    publishEditorTabs({
+      openFiles: openContents()
+        .filter((c) => !isSentinel(c))
+        .map((c) => ({ path: c, label: contentLabel(c) })),
+      activeFile: (() => {
+        const c = focusedContent();
+        return c && !isSentinel(c) ? c : null;
+      })(),
+    });
+  });
+
   // The editor body element — overlay positioning is relative to its rect.
   let editorBodyEl: HTMLDivElement | undefined;
   // Pixel rects (relative to editor body) of each terminal's host placeholder in the
@@ -241,10 +258,15 @@ export default function App() {
   // openFile), so they move through history without re-recording.
   const HISTORY_CAP = 100;
   const histories = new Map<string, { stack: string[]; idx: number }>();
+  // A monotonic version counter that ticks on every history mutation. The `histories` Map
+  // isn't a reactive store, so the toolbar's can-go-back/forward memos track THIS signal (plus
+  // the focused leaf) to recompute their enabled state after a record/navigate.
+  const [histVer, setHistVer] = createSignal(0);
   const recordNav = (leafId: string, content: string) => {
     const h = histories.get(leafId);
     if (!h) {
       histories.set(leafId, { stack: [content], idx: 0 });
+      setHistVer((v) => v + 1);
       return;
     }
     if (h.stack[h.idx] === content) return; // already current — a focus, not a navigation
@@ -253,6 +275,7 @@ export default function App() {
     const overflow = Math.max(0, trimmed.length - HISTORY_CAP);
     h.stack = overflow ? trimmed.slice(overflow) : trimmed;
     h.idx = h.stack.length - 1;
+    setHistVer((v) => v + 1);
   };
   // Move the active tab's focused pane through its history by `delta` (−1 back, +1 forward).
   const navigateHistory = (delta: 1 | -1) => {
@@ -265,9 +288,25 @@ export default function App() {
     if (next < 0 || next >= h.stack.length) return;
     h.idx = next;
     updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, h.stack[next]) }));
+    setHistVer((v) => v + 1);
   };
   const historyBack = () => navigateHistory(-1);
   const historyForward = () => navigateHistory(1);
+  // Whether the focused pane can step back / forward in its history. Tracks histVer() (mutations)
+  // AND the active tab (its focusId changes as panes/tabs switch) so the toolbar buttons enable/
+  // disable live. The two visible chevrons in the tab strip read these.
+  const canGoBack = createMemo(() => {
+    histVer();
+    const leafId = activeTab()?.focusId;
+    const h = leafId ? histories.get(leafId) : undefined;
+    return !!h && h.idx > 0;
+  });
+  const canGoForward = createMemo(() => {
+    histVer();
+    const leafId = activeTab()?.focusId;
+    const h = leafId ? histories.get(leafId) : undefined;
+    return !!h && h.idx < h.stack.length - 1;
+  });
   // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
   const [sidebarVisible, setSidebarVisible] = createSignal(
     localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0",
@@ -1504,6 +1543,22 @@ export default function App() {
       <main class="editor-pane">
         <UpdateBanner />
         <div class="tabbar" data-tabstrip="true">
+          <div class="tabbar-nav">
+            <IconButton
+              icon="ChevronLeft"
+              label="Back (⌘[)"
+              iconSize={18}
+              disabled={!canGoBack()}
+              onClick={() => historyBack()}
+            />
+            <IconButton
+              icon="ChevronRight"
+              label="Forward (⌘])"
+              iconSize={18}
+              disabled={!canGoForward()}
+              onClick={() => historyForward()}
+            />
+          </div>
           <For each={tabs()}>
             {(t, i) => (
               <>
