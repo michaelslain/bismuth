@@ -35,14 +35,3 @@ export function parseJsonResponse<T>(
 export function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
-
-export function validateFolder(folder?: string): { valid: boolean; error?: string } {
-  if (folder === undefined || folder === "") return { valid: true };
-  if (!/^[a-zA-Z0-9_-]+$/.test(folder)) {
-    return {
-      valid: false,
-      error: `Invalid folder "${folder}". Must be a single segment of alphanumeric, dash, or underscore characters.`
-    };
-  }
-  return { valid: true };
-}

@@ -15,8 +15,9 @@
 //
 // Run: cd app && bun run scripts/build-daemon-sidecar.ts   (or `bun run build:daemon-sidecar`)
 import { spawnSync } from "node:child_process";
-import { mkdirSync, existsSync, statSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { assertBuiltBinary } from "./buildUtils";
 
 const here = dirname(new URL(import.meta.url).pathname);
 const appDir = join(here, "..");                 // app/
@@ -35,8 +36,4 @@ const build = spawnSync(
 if (build.status !== 0) { console.error("bun build --compile failed"); process.exit(1); }
 
 // Smoke: the file exists and is non-trivial.
-if (!existsSync(outFile) || statSync(outFile).size < 1_000_000) {
-  console.error(`daemon binary missing or too small: ${outFile}`);
-  process.exit(1);
-}
-console.log(`✓ daemon built: ${outFile} (${(statSync(outFile).size / 1e6).toFixed(0)}MB)`);
+assertBuiltBinary(outFile, "daemon binary");

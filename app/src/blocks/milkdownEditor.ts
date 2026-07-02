@@ -32,6 +32,7 @@ import { Plugin, PluginKey, TextSelection } from "@milkdown/prose/state";
 import { keymap } from "@milkdown/prose/keymap";
 import type { EditorView } from "@milkdown/prose/view";
 import type { Command } from "@milkdown/prose/state";
+import type { Node } from "@milkdown/prose/model";
 import { inlineAtoms } from "./inlineNodes";
 import { preserveAffixWhitespace } from "./preserveWhitespace";
 import { markerAwareEmphasis, markerAwareStrong } from "./emphasisMarker";
@@ -528,6 +529,16 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
 // Caret / position helpers (ProseMirror equivalents of textarea selection math)
 // ---------------------------------------------------------------------------------------
 
+/** True for a custom inline atom node (`[[wikilink]]`/`#tag`/`$math$`/embed/url). */
+function isBismuthAtom(node: Node): boolean {
+  return node.isAtom && node.type.name.startsWith("bismuth");
+}
+
+/** The atom's raw markdown source (e.g. the full `[[Note]]` text). */
+function bismuthRaw(node: Node): string {
+  return (node.attrs.raw as string) ?? "";
+}
+
 /** The textblock's content from its start UP TO the caret, with custom inline atoms counted as
  *  their raw source (so a `[[Note]]` chip contributes its full `[[Note]]` length). This is the
  *  unit the wikilink/tag matchers + applyAutocomplete's offset arithmetic share. */
@@ -538,8 +549,8 @@ function textUpToCaret(v: EditorView): string {
   v.state.doc.nodesBetween(start, head, (node, pos) => {
     if (node.isText) {
       text += (node.text ?? "").slice(Math.max(0, start - pos));
-    } else if (node.isAtom && node.type.name.startsWith("bismuth")) {
-      text += (node.attrs.raw as string) ?? "";
+    } else if (isBismuthAtom(node)) {
+      text += bismuthRaw(node);
     }
   });
   return text;
@@ -578,8 +589,8 @@ function mdOffsetToDocPos(v: EditorView, offset: number): number {
         acc += 1;
         result = pos + i + 1; // PM pos just after this character
       }
-    } else if (node.isAtom && node.type.name.startsWith("bismuth")) {
-      const rawLen = ((node.attrs.raw as string) ?? "").length;
+    } else if (isBismuthAtom(node)) {
+      const rawLen = bismuthRaw(node).length;
       acc += rawLen; // the whole atom is consumed as one unit
       result = pos + node.nodeSize; // PM pos just after the atom
     }
@@ -603,6 +614,11 @@ function textSelectionNear(v: EditorView, pos: number) {
   return TextSelection.near(v.state.doc.resolve(pos));
 }
 
+/** True for a hard line-break node (Shift+Enter), across the naming milkdown/prosemirror use. */
+function isHardBreak(node: Node): boolean {
+  return node.type.name === "hardbreak" || node.type.name === "hard_break";
+}
+
 /** True when the selection sits on the first visual line (no newline before the caret in the
  *  block's inline text) — so ArrowUp should leave the block. Inline blocks are usually one line;
  *  this also handles a Shift+Enter hardbreak by checking for a preceding break node. */
@@ -613,7 +629,7 @@ function atFirstLine(v: EditorView): boolean {
   // No hard-break before the caret in this textblock → first line.
   let hasBreakBefore = false;
   v.state.doc.nodesBetween($head.start(), head, (node) => {
-    if (node.type.name === "hardbreak" || node.type.name === "hard_break") hasBreakBefore = true;
+    if (isHardBreak(node)) hasBreakBefore = true;
   });
   return !hasBreakBefore;
 }
@@ -625,7 +641,7 @@ function atLastLine(v: EditorView): boolean {
   const $head = v.state.doc.resolve(head);
   let hasBreakAfter = false;
   v.state.doc.nodesBetween(head, $head.end(), (node) => {
-    if (node.type.name === "hardbreak" || node.type.name === "hard_break") hasBreakAfter = true;
+    if (isHardBreak(node)) hasBreakAfter = true;
   });
   return !hasBreakAfter;
 }

@@ -114,7 +114,7 @@ export async function collectTranscript(dir: string, transcriptPath: string, ses
   const pad = (n: number) => String(n).padStart(2, "0");
   const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   const sid = sessionId ? sessionId.slice(0, 8) : "unknown";
-  const date = now.toISOString().slice(0, 10);
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   try {
     await writeNote(`auto-${ts}-${sid}`, { type: "auto", tags: ["auto", "raw", "session"], created: date, updated: date }, body, dir);
   } catch {

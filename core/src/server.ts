@@ -429,7 +429,7 @@ export function createServer(cfg: CoreConfig) {
       // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
       // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
       if (filename && isDaemonRuntimeNoise(filename)) return; // drop daemon runtime churn early
-      if (filename && !isSystemFolderPath(filename) && isWatchIgnored(filename)) return;
+      if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && isWatchIgnored(filename)) return;
       scheduleVault(filename ?? undefined);
     });
   } catch {

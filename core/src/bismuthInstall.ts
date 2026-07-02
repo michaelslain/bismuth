@@ -269,7 +269,7 @@ export async function ensureBismuthInstalled(
 }
 
 /** Remove the symlink (if ours), the global MCP registration, and ~/.bismuth. Never throws. */
-export async function uninstallBismuth(io: InstallIO = defaultIO): Promise<{ removed: boolean; warnings: string[] }> {
+export async function uninstallBismuth(): Promise<{ removed: boolean; warnings: string[] }> {
   const warnings: string[] = [];
   try {
     const link = findOurLink();
@@ -288,6 +288,5 @@ export async function uninstallBismuth(io: InstallIO = defaultIO): Promise<{ rem
   } catch (e) {
     warnings.push(`failed to remove ${BISMUTH_HOME}: ${e instanceof Error ? e.message : String(e)}`);
   }
-  void io;
   return { removed: true, warnings };
 }

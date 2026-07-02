@@ -14,7 +14,7 @@ import { parseFrontmatter } from "../frontmatter";
 import { parseBaseFile } from "../bases/parse";
 import { reassemble } from "../bases/rowOps";
 import { categoryColorId } from "./colors";
-import type { Row } from "../bases/types";
+import { placeholderFile, type Row } from "../bases/types";
 import {
   listEvents,
   insertEvent,
@@ -67,10 +67,6 @@ export interface SyncOpts {
 }
 
 const DAY_MS = 86_400_000;
-
-function emptyFile(name: string, path: string): Row["file"] {
-  return { name, basename: name, path, folder: "", ext: "md", size: 0, ctime: 0, mtime: 0, tags: [], links: [] };
-}
 
 /** Build a category-name → Google colorId map from the base file's `categories` frontmatter. */
 function categoryColorMap(text: string, theme?: string): Record<string, string> {
@@ -167,7 +163,7 @@ export async function syncEvents(opts: SyncOpts): Promise<SyncResult> {
   const deleteBids = new Set<string>();
   const newRows: Row[] = [];
   const toStamp: Array<{ gcalId: string; bid: string }> = []; // pulled events to tag with their bismuthId
-  const baseFile = rows[0]?.file ?? emptyFile(meta.name, meta.path);
+  const baseFile = rows[0]?.file ?? placeholderFile(meta.name, meta.path);
 
   // ---- Phase A: reconcile remote → local ----
   for (const ev of events) {

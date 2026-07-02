@@ -49,10 +49,10 @@ marker).
 
 ## Repository Layout (Monorepo)
 
-Bismuth is a Bun workspace monorepo. The root `package.json` declares five workspaces:
+Bismuth is a Bun workspace monorepo. The root `package.json` declares seven workspaces:
 
 ```json
-"workspaces": ["core", "cli", "app", "relay", "mcp"]
+"workspaces": ["core", "cli", "app", "relay", "mcp", "memory", "daemon"]
 ```
 
 - **core** — backend HTTP server (`core/src/server.ts`)
@@ -60,6 +60,8 @@ Bismuth is a Bun workspace monorepo. The root `package.json` declares five works
 - **cli** — `bismuth` command-line binary
 - **relay** — Claude Code plugin hooks (no standalone process)
 - **mcp** — stdio MCP server serving `docs/` + the `bismuth` CLI to app-terminal Claude sessions
+- **memory** — `@bismuth/memory`, the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools
+- **daemon** — `@bismuth/daemon`, the per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session
 
 ---
 
@@ -71,7 +73,7 @@ Run once from the repo root. Bun installs all workspaces in a single pass.
 bun install
 ```
 
-This installs dependencies for all five workspaces. Do not run `npm install` or `yarn`; they do not understand Bun workspaces.
+This installs dependencies for all seven workspaces. Do not run `npm install` or `yarn`; they do not understand Bun workspaces.
 
 ---
 

@@ -21,7 +21,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
-import { pidAlive, readFrontmatter } from "./daemonState";
+import { isDaemonAlive, readFrontmatter } from "./daemonState";
 import { AppError } from "./error";
 
 /** The daemon's machine-level identity dir: BISMUTH_DAEMON_DIR env, else ~/.bismuth/daemon. */
@@ -194,14 +194,7 @@ export function getOwner(): Owner | null {
 
 /** Daemon liveness: <home>/daemon.pid exists AND that pid is alive. */
 export function daemonStatus(): DaemonStatus {
-  let running = false;
-  try {
-    const raw = readFileSync(join(daemonMachineDir(), "daemon.pid"), "utf8").trim();
-    running = pidAlive(Number(raw));
-  } catch {
-    running = false;
-  }
-  return { running, thisDeviceId: thisDeviceId(), owner: getOwner() };
+  return { running: isDaemonAlive(daemonMachineDir()), thisDeviceId: thisDeviceId(), owner: getOwner() };
 }
 
 /** All heartbeating devices (devices.json), each flagged owner/this. */
@@ -310,7 +303,7 @@ function setEnabled(subdir: "crons" | "processes", name: string, enabled: boolea
 
 /** Enable/disable a cron by editing its `enabled` frontmatter. The daemon re-reads
  *  every cron file on its next scheduler tick, so no trigger is needed for crons. */
-export function setCronEnabled(name: string, enabled: boolean, home: string = daemonMachineDir()): void {
+export function setCronEnabled(name: string, enabled: boolean, home: string): void {
   setEnabled("crons", name, enabled, home);
 }
 
@@ -323,7 +316,7 @@ export function setCronEnabled(name: string, enabled: boolean, home: string = da
  * it / stop it) via the daemon's general process-trigger port. No-op vs the live process
  * if the daemon isn't running; the disk flip still takes effect on next boot.
  */
-export function setProcessEnabled(name: string, enabled: boolean, home: string = daemonMachineDir()): void {
+export function setProcessEnabled(name: string, enabled: boolean, home: string): void {
   const base = setEnabled("processes", name, enabled, home);
   writeTrigger(join(home, "processes"), base);
 }
@@ -335,7 +328,7 @@ export function setProcessEnabled(name: string, enabled: boolean, home: string =
  * the owner; otherwise the file is consumed without firing. Throws AppError("ENOENT")
  * if no cron matches `name`.
  */
-export function runCron(name: string, home: string = daemonMachineDir()): void {
+export function runCron(name: string, home: string): void {
   const dir = join(home, "crons");
   const base = resolveDaemonFile(dir, name);
   if (!base) throw new AppError("ENOENT", `Cron "${name}" not found`, 404);

@@ -10,6 +10,7 @@ import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts, hexToInt as hexToIntT } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { ClusterLegend, type ClusterRow } from "./ClusterLegend";
+import { readCache, writeCache } from "./viewCache";
 import { DaemonList } from "./DaemonList";
 import { GraphSearch, type SearchItem } from "./GraphSearch";
 import { SegmentedToggle } from "./ui/SegmentedToggle";
@@ -50,17 +51,13 @@ function fpsColor(fps: number): string {
 // preference survives reload without touching the vault.
 const VIEW_MODE_KEY = "bismuth:graph:viewMode";
 const readStoredViewMode = (): "2d" | "3d" => {
-  try {
-    const v = localStorage.getItem(VIEW_MODE_KEY);
-    return v === "2d" || v === "3d" ? v : "3d";
-  } catch {
-    return "3d";
-  }
+  const v = readCache<"2d" | "3d">(VIEW_MODE_KEY);
+  return v === "2d" || v === "3d" ? v : "3d";
 };
 const [graphViewMode, setGraphViewMode] = createSignal<"2d" | "3d">(readStoredViewMode());
 const setViewModePersisted = (m: "2d" | "3d") => {
   setGraphViewMode(m);
-  try { localStorage.setItem(VIEW_MODE_KEY, m); } catch { /* private mode / quota — in-memory only */ }
+  writeCache(VIEW_MODE_KEY, m);
 };
 
 // One icon per control, SHARED by the two toolbars: the cramped sidebar mini-graph

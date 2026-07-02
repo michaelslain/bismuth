@@ -11,8 +11,5 @@
   "devDependencies": {
     "emojilib": "^4.0.3",
     "unicode-emoji-json": "^0.9.0"
-  },
-  "dependencies": {
-    "d3-force-3d": "^3.0.6"
   }
 }
