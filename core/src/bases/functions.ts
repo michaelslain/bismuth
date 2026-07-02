@@ -15,9 +15,10 @@ const UNIT_MS: Record<string, number> = {
   ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000,
   w: 7 * 86_400_000, mo: 30 * 86_400_000, M: 30 * 86_400_000, y: 365 * 86_400_000,
 };
+const DURATION_RE = /^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/;
 export function parseDurationMs(s: unknown): number {
   if (typeof s !== "string") return NaN;
-  const m = s.trim().match(/^(-?\d+(?:\.\d+)?)(ms|mo|M|[smhdwy])$/);
+  const m = s.trim().match(DURATION_RE);
   if (!m) return NaN;
   return Number(m[1]) * UNIT_MS[m[2]];
 }
@@ -27,6 +28,7 @@ export function parseDurationMs(s: unknown): number {
 // path or a tiny embedded expression instead). `_.x`, `it.x`, `$.x`, and
 // "bare" forms all resolve against the item; an item that's an object lets
 // you reach into it, an item that's primitive only responds to `_`/`it`/`$`.
+const ITEM_ACCESSOR_PREFIX_RE = /^(_|it|\$)\./;
 function compileItemAccessor(arg: unknown): (item: unknown, index: number) => unknown {
   if (typeof arg === "function") return arg as (i: unknown, n: number) => unknown;
   if (typeof arg !== "string") return (item) => item;
@@ -34,7 +36,7 @@ function compileItemAccessor(arg: unknown): (item: unknown, index: number) => un
   // Bare placeholders just return the item.
   if (path === "_" || path === "it" || path === "$") return (item) => item;
   // Stripped leading placeholder + dot = property path on the item.
-  const stripped = path.replace(/^(_|it|\$)\./, "");
+  const stripped = path.replace(ITEM_ACCESSOR_PREFIX_RE, "");
   const parts = stripped.split(".").filter(Boolean);
   return (item) => {
     let v: unknown = item;
@@ -136,6 +138,7 @@ function callNumberMethod(n: number, name: string, args: unknown[]): unknown {
   return undefined;
 }
 
+const TITLE_CASE_RE = /\w\S*/g;
 function callStringMethod(s: string, name: string, args: unknown[]): unknown {
   switch (name) {
     case "lower":
@@ -145,7 +148,7 @@ function callStringMethod(s: string, name: string, args: unknown[]): unknown {
     case "trim":
       return s.trim();
     case "title":
-      return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+      return s.replace(TITLE_CASE_RE, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
     case "contains":
       return s.includes(asString(args[0]));
     case "startsWith":
@@ -240,14 +243,20 @@ function callDateMethod(d: Date, name: string, args: unknown[]): unknown {
   return undefined;
 }
 
+const FORMAT_DATE_YEAR_RE = /YYYY/g;
+const FORMAT_DATE_MONTH_RE = /MM/g;
+const FORMAT_DATE_DAY_RE = /DD/g;
+const FORMAT_DATE_HOUR_RE = /HH/g;
+const FORMAT_DATE_MINUTE_RE = /mm/g;
+const FORMAT_DATE_SECOND_RE = /ss/g;
 function formatDate(d: Date, fmt: string): string {
   if (!fmt) return d.toISOString().slice(0, 10);
   const pad = (n: number) => String(n).padStart(2, "0");
   return fmt
-    .replace(/YYYY/g, String(d.getFullYear()))
-    .replace(/MM/g, pad(d.getMonth() + 1))
-    .replace(/DD/g, pad(d.getDate()))
-    .replace(/HH/g, pad(d.getHours()))
-    .replace(/mm/g, pad(d.getMinutes()))
-    .replace(/ss/g, pad(d.getSeconds()));
+    .replace(FORMAT_DATE_YEAR_RE, String(d.getFullYear()))
+    .replace(FORMAT_DATE_MONTH_RE, pad(d.getMonth() + 1))
+    .replace(FORMAT_DATE_DAY_RE, pad(d.getDate()))
+    .replace(FORMAT_DATE_HOUR_RE, pad(d.getHours()))
+    .replace(FORMAT_DATE_MINUTE_RE, pad(d.getMinutes()))
+    .replace(FORMAT_DATE_SECOND_RE, pad(d.getSeconds()));
 }
