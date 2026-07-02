@@ -109,7 +109,9 @@ interface NodeView {
   scale: number; // degree-based collision multiplier (for the settle)
   baseDiameter: number; // resting (pre-perspective) diameter — cached per fit(), see computeBaseDiameters
   sx: number; sy: number; depth: number; pscale: number; onScreen: boolean; // per-frame scratch
+  dr: number; // per-frame depth rank (0 far..1 near), precomputed once in projectPositions — see depthRank()
   lastZi: number; lastDotSize: number; shown: boolean;
+  labelW: number; // cached ctx.measureText(text).width for this node's label; -1 = needs (re)measuring
 }
 interface EdgeView { a: NodeView; b: NodeView; kr: number; } // kr = stable 0..1 rank for per-mode thinning
 
@@ -204,6 +206,7 @@ export class CanvasGraphRenderer {
   private nodes: NodeView[] = [];
   private byId = new Map<string, NodeView>();
   private edges: EdgeView[] = [];
+  private drawOrder: NodeView[] = []; // persistent scratch for the depth-sorted draw order (avoids a per-frame filter() alloc)
   private selfNode: NodeView | null = null; // cached "you" node — this.nodes only changes in build()
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
@@ -251,6 +254,10 @@ export class CanvasGraphRenderer {
   // loop
   private raf = 0; private running = false; private visible = true; private dirty = true;
   private lastFrameT = 0; private fpsAccum = 0; private fpsFrames = 0; private nowMs = 0;
+
+  // label fonts (hoisted so the label loop doesn't rebuild the font string every label every frame)
+  private readonly FONT_SELF = "700 14px ui-sans-serif, system-ui, -apple-system, sans-serif";
+  private readonly FONT_NODE = "500 11px ui-sans-serif, system-ui, -apple-system, sans-serif";
 
   // ---- lifecycle -----------------------------------------------------------
 
@@ -368,7 +375,8 @@ export class CanvasGraphRenderer {
       return {
         node, p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]], p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0],
         colorInt: 0, colorHex: "#888", deg: d, scale: this.collideScale(node, d), baseDiameter: 0,
-        sx: 0, sy: 0, depth: 0, pscale: 1, onScreen: true, lastZi: -1, lastDotSize: -1, shown: true,
+        sx: 0, sy: 0, depth: 0, pscale: 1, onScreen: true, dr: 0, lastZi: -1, lastDotSize: -1, shown: true,
+        labelW: -1,
       };
     };
     // Nodes (and edges) are rendered entirely on the canvas — there are no per-node DOM elements,
@@ -513,6 +521,7 @@ export class CanvasGraphRenderer {
       nv.colorInt = this.colorFor(nv.node);
       nv.colorHex = intToHex(nv.colorInt);
       nv.lastDotSize = -1;
+      nv.labelW = -1; // label text isn't reassigned here, but reset defensively — a re-measure is cheap and yields the same value
     }
     this.dirty = true; // the canvas reads colorHex on the next frame
   }
@@ -595,6 +604,11 @@ export class CanvasGraphRenderer {
       if (zc > maxZ) maxZ = zc;
     }
     this.minZ = minZ; this.maxZ = maxZ;
+    // Precompute per-node depth rank ONCE per frame (same formula as depthRank()) — reused below by
+    // the 3D edge bands and depthFade instead of recomputing it ~2x per edge + once per node.
+    const span = this.maxZ - this.minZ;
+    const flat = span < 1;
+    for (const nv of this.nodes) nv.dr = flat ? 1 : (nv.depth - this.minZ) / span;
     this.clearAroundSelf();
   }
 
@@ -634,7 +648,7 @@ export class CanvasGraphRenderer {
 
   private depthRank(nv: NodeView): number { const span = this.maxZ - this.minZ; return span < 1 ? 1 : (nv.depth - this.minZ) / span; } // 0 far, 1 near; flat/single -> 1
   private depthMin(): number { return DEPTH_MIN_OPACITY; }
-  private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(this.depthRank(nv), DEPTH_CURVE); }
+  private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(nv.dr, DEPTH_CURVE); }
   /** Resting (pre-perspective) diameter for every node — depends only on fitPx, nodes.length, and
    *  each node's kind/degree, all constant between fit()/build() calls, so it's computed ONCE per
    *  fit() (see computeBaseDiameters) instead of every frame per node in nodeDiameter's hot path. */
@@ -788,12 +802,15 @@ export class CanvasGraphRenderer {
       for (let bi = 0; bi < BANDS; bi++) {
         const lo = bi / BANDS, hi = (bi + 1) / BANDS + (bi === BANDS - 1 ? 0.01 : 0);
         const fade = dm + (1 - dm) * Math.pow((bi + 0.5) / BANDS, DEPTH_CURVE);
-        strokeEdges(op * fade, (a, b) => { const m = (this.depthRank(a) + this.depthRank(b)) / 2; return m >= lo && m < hi; });
+        strokeEdges(op * fade, (a, b) => { const m = (a.dr + b.dr) / 2; return m >= lo && m < hi; });
       }
     }
     // nodes (canvas state) — depth-sorted far→near so near dots paint over far ones
     if (withNodes) {
-      const order = this.nodes.filter((n) => n.onScreen).sort((a, b) => a.depth - b.depth);
+      this.drawOrder.length = 0;
+      for (const nv of this.nodes) { if (nv.onScreen) this.drawOrder.push(nv); }
+      this.drawOrder.sort((a, b) => a.depth - b.depth);
+      const order = this.drawOrder;
       for (const nv of order) {
         const ds = this.nodeDiameter(nv);
         let alpha = this.depthFade(nv, is2d);
@@ -821,10 +838,11 @@ export class CanvasGraphRenderer {
       for (const nv of this.nodes) {
         if (!nv.onScreen || !this.labelVisible(nv)) continue;
         const self = nv.node.kind === "self";
-        ctx.font = (self ? "700 14px " : "500 11px ") + "ui-sans-serif, system-ui, -apple-system, sans-serif";
+        ctx.font = self ? this.FONT_SELF : this.FONT_NODE;
         const text = self ? "You" : nv.node.label;
         const ds = this.nodeDiameter(nv);
-        const tw = ctx.measureText(text).width;
+        if (nv.labelW < 0) { nv.labelW = ctx.measureText(text).width; }
+        const tw = nv.labelW;
         const fh = self ? 14 : 11, padX = 6, padY = 2;
         const bx = nv.sx - tw / 2 - padX, by = nv.sy + ds / 2 + 4, bw = tw + padX * 2, bh = fh + padY * 2;
         ctx.fillStyle = this.cfg.labelBgColor;
