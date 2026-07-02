@@ -77,14 +77,16 @@ function scheduleExisting(prev: SchedulingInfo, response: ReviewResponse, cfg: S
 /** Matches a full SR scheduling comment, e.g. <!--SR:!2026-06-01,4,270-->. */
 export const SR_COMMENT_RE = /<!--SR:(?:!\d{4}-\d{2}-\d{2},\d+,\d+)+-->/;
 
+const SCHEDULE_ENTRY_RE = /!(\d{4}-\d{2}-\d{2}),(\d+),(\d+)/g;
+
 /** Parse a `<!--SR:..-->` comment found anywhere in `text` into schedule entries. */
 export function parseScheduling(text: string): SchedulingInfo[] {
   const m = text.match(SR_COMMENT_RE);
   if (!m) return [];
   const entries: SchedulingInfo[] = [];
-  const re = /!(\d{4}-\d{2}-\d{2}),(\d+),(\d+)/g;
   let e: RegExpExecArray | null;
-  while ((e = re.exec(m[0])) !== null) {
+  SCHEDULE_ENTRY_RE.lastIndex = 0;
+  while ((e = SCHEDULE_ENTRY_RE.exec(m[0])) !== null) {
     entries.push({ due: e[1], interval: Number(e[2]), ease: Number(e[3]) });
   }
   return entries;

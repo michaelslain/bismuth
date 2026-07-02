@@ -17,9 +17,11 @@ import { parseRRule, buildRRule, recurrenceSignature, firstOccurrence, type Bism
  * link file or a crash mid-sync can never double an event. UUID/most ids are already hex
  * (a subset of base32hex) once hyphens are stripped; anything else falls back to a SHA-1 digest.
  */
+const VALID_GOOGLE_ID_RE = /^[0-9a-v]{5,1024}$/;
+
 export function googleEventId(bismuthId: string): string {
   const cleaned = bismuthId.replace(/-/g, "").toLowerCase();
-  if (/^[0-9a-v]{5,1024}$/.test(cleaned)) return cleaned;
+  if (VALID_GOOGLE_ID_RE.test(cleaned)) return cleaned;
   return createHash("sha1").update(bismuthId).digest("hex"); // hex (0-9a-f) ⊂ base32hex
 }
 
