@@ -13,8 +13,9 @@
 // Run: cd app && bun run scripts/build-bismuth-tools.ts   (or `bun run build:bismuth-tools`)
 // Wired into beforeBuildCommand so `tauri build` always has fresh tools.
 import { spawnSync } from "node:child_process";
-import { mkdirSync, rmSync, cpSync, existsSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, cpSync, existsSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { assertBuiltBinary } from "./buildUtils";
 
 const here = dirname(new URL(import.meta.url).pathname);
 const appDir = join(here, ".."); // app/
@@ -36,11 +37,7 @@ function compile(entry: string, outName: string): void {
     console.error(`bun build --compile failed for ${entry}`);
     process.exit(1);
   }
-  if (!existsSync(outFile) || statSync(outFile).size < 1_000_000) {
-    console.error(`binary missing or too small: ${outFile}`);
-    process.exit(1);
-  }
-  console.log(`✓ ${outName} (${(statSync(outFile).size / 1e6).toFixed(0)}MB)`);
+  assertBuiltBinary(outFile, outName);
 }
 
 compile(join(repoRoot, "cli", "src", "index.ts"), "bismuth");

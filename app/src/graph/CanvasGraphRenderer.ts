@@ -81,6 +81,7 @@ const LABEL_REVEAL_DOT_PX = 18;
 const DEPTH_MIN_OPACITY = 0.04; // farthest node's opacity (strong depth cue)
 const DEPTH_CURVE = 2.4;      // >1 = back fades faster (stronger depth cue)
 const BACK_INTERACT_CUTOFF = 0.18; // 3D nodes whose depth rank is below this aren't hover/click targets
+const GOLDEN_ANGLE_RAD = 2.39996323; // golden angle (rad) → even angular distribution for coincident/origin nodes
 // Dense-graph edge thinning is per-mode: 2D thins hard (flat view clutters fast), 3D keeps more
 // (depth fade already declutters). Each edge has a stable rank; we draw it if rank < the mode's frac.
 const EDGE_BUDGET_2D = 600; const EDGE_FLOOR_2D = 0.06;   // aggressive
@@ -168,7 +169,7 @@ function scaleToSpacing(nodes: NodeView[], dim: 2 | 3): Map<string, Vec3> {
         // golden-angle bearing (distinct per coincident node) — just enough to give each a unique
         // direction, NOT a fixed clearance radius. The screen-space pass then fans them out so they
         // don't stack on the hub, with a gap that's constant in px at any zoom.
-        const a = originIdx++ * 2.39996323; // golden angle (rad) → even angular distribution
+        const a = originIdx++ * GOLDEN_ANGLE_RAD;
         // Offset by one `scale` unit — the same per-edge spacing the whole layout uses — so a
         // degenerate graph (e.g. self+1, whose only neighbour lands exactly on the centroid) frames
         // like a normal one-hop graph instead of collapsing onto the fit floor as a tiny dot. This
@@ -607,7 +608,7 @@ export class CanvasGraphRenderer {
       if (d >= minDist) continue;
       if (d < 0.01) {
         // Exactly on the hub — fan coincident nodes out on a golden-angle bearing so they don't stack.
-        const a = (coincident++) * 2.39996323;
+        const a = (coincident++) * GOLDEN_ANGLE_RAD;
         dx = Math.cos(a); dy = Math.sin(a); d = 1;
       }
       const f = minDist / d;

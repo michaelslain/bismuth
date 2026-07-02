@@ -126,6 +126,12 @@ export function syntheticBaseFile(path: string): FileMeta {
   return { ...EMPTY_FILE, name: "", basename: "", path };
 }
 
+/** Build a placeholder FileMeta with a real name/basename (unlike EMPTY_FILE/syntheticBaseFile,
+ *  which blank those out). Used as a fallback `Row["file"]` when no parsed row exists yet. */
+export function placeholderFile(name: string, path: string): FileMeta {
+  return { ...EMPTY_FILE, name, basename: name, path };
+}
+
 export interface Row {
   file: FileMeta;
   note: Record<string, unknown>;           // frontmatter

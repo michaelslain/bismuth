@@ -68,6 +68,11 @@ test("extracts tags but keeps them in the description", () => {
   expect(t.description).toContain("#work");
 });
 
+test("does not treat a mid-word # as a tag boundary", () => {
+  const t = parseTaskLine("- [ ] see page#section #realtag", "f.md", 0)!;
+  expect(t.tags).toEqual(["realtag"]);
+});
+
 test("extractTasks finds only task lines with correct line numbers", () => {
   const md = "# Title\n\n- [ ] one\nsome prose\n- [x] two\n  - [ ] three\n";
   const tasks = extractTasks(md, "n.md");

@@ -5,6 +5,7 @@
 // to a safe default. (daemon.ts keeps its own name-based, null-returning JSON reader,
 // whose error contract differs.)
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parseFrontmatter } from "./frontmatter";
 
 /** True when an integer pid is alive (process.kill(pid, 0) doesn't throw). */
@@ -13,6 +14,16 @@ export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when `<home>/daemon.pid` exists and names a live pid. Shared by daemon.ts's
+ *  machine-level `daemonStatus()` and daemonGraph.ts's per-graph liveness check. */
+export function isDaemonAlive(home: string): boolean {
+  try {
+    return pidAlive(Number(readFileSync(join(home, "daemon.pid"), "utf8").trim()));
   } catch {
     return false;
   }

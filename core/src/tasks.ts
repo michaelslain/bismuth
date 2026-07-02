@@ -5,6 +5,7 @@
 import { getFileAccess } from "./fileAccess";
 import { addDaysISO } from "./dates";
 import { reorderTaskBlocks, isResolvedStatus, collectBlock } from "./taskReorder";
+import { INLINE_TAG_REGEX } from "./tags";
 
 export type TaskStatus = "todo" | "done" | "in-progress" | "cancelled" | "other";
 export type Priority = "highest" | "high" | "medium" | "low" | "lowest" | "none";
@@ -101,7 +102,7 @@ export function parseTaskLine(line: string, path: string, lineNo: number): Task 
     }
   }
 
-  const tags = [...new Set([...rest.matchAll(/#([A-Za-z0-9_\/-]+)/g)].map((t) => t[1]))];
+  const tags = [...new Set([...rest.matchAll(INLINE_TAG_REGEX)].map((t) => t[1]))];
 
   // Recurrence is the trailing 🔁 signifier; dates/priority are already stripped, so the
   // text after 🔁 is the rule (e.g. "every weekday"). Anything before stays as description.

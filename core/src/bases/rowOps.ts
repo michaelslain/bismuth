@@ -1,13 +1,10 @@
 import { parseBaseFile, FRONTMATTER_RE } from "./parse";
 import { serializeRows } from "./rows";
+import { placeholderFile } from "./types";
 import type { Row } from "./types";
 import type { BaseConfig } from "./types";
 
 type Meta = { name: string; path: string };
-
-function emptyFile(meta: Meta): Row["file"] {
-  return { name: meta.name, basename: meta.name, path: meta.path, folder: "", ext: "md", size: 0, ctime: 0, mtime: 0, tags: [], links: [] };
-}
 
 /**
  * Rebuild the file: keep the frontmatter block verbatim, replace the body with the YAML rows.
@@ -32,7 +29,7 @@ export function reassemble(text: string, rows: Row[], config?: BaseConfig): stri
 export function upsertRow(text: string, meta: Meta, index: number | null, note: Record<string, unknown>): string {
   if (!meta.name || !meta.path) throw new Error("meta.name and meta.path are required");
   const { rows, config } = parseBaseFile(text, meta);
-  const newRow: Row = { file: rows[0]?.file ?? emptyFile(meta), note, formula: {} };
+  const newRow: Row = { file: rows[0]?.file ?? placeholderFile(meta.name, meta.path), note, formula: {} };
   if (index == null) rows.push(newRow);
   else rows[index] = newRow;
   return reassemble(text, rows, config);

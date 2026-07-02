@@ -18,13 +18,11 @@ const MAX_CONTEXT_BYTES = 4096;
 
 // Type weights: higher = more likely to be relevant
 const TYPE_BOOST: Record<string, number> = {
-  feedback: 1.5,
   preference: 1.4,
   workflow: 1.2,
   project: 1.1,
   fact: 1.0,
   person: 1.0,
-  reference: 0.9,
   daily: 0.5,
   auto: 0.3,
 };

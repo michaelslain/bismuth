@@ -15,6 +15,7 @@ import { readThemePalette } from "./export/resolvePalette";
 import { renderExport, renderPreview } from "./export/exporters";
 import { drawingToPng } from "./export/drawingRaster";
 import { downloadFile, writeToFolder } from "./export/download";
+import { readCache, writeCache } from "./viewCache";
 import type { ExportFormat, ExportTheme, ExportDeps, ExportOptions, RenderMode, CalSpan } from "./export/types";
 import { parseFrontmatter } from "../../core/src/frontmatter";
 import { parseBaseFile } from "../../core/src/bases/parse";
@@ -64,12 +65,10 @@ function baseName(path: string): string {
 // localStorage; no schema).
 const DEST_KEY = "bismuth.export.destFolder";
 const SPAN_KEY = "bismuth.export.calSpan";
-const loadLs = (k: string): string => {
-  try { return localStorage.getItem(k) ?? ""; } catch { return ""; }
-};
-const saveLs = (k: string, v: string): void => {
-  try { v ? localStorage.setItem(k, v) : localStorage.removeItem(k); } catch { /* private mode */ }
-};
+// Thin wrappers over viewCache's readCache/writeCache (JSON-encoded) rather than
+// duplicating the try/catch + typeof-guard logic here.
+const loadLs = (k: string): string => readCache<string>(k) ?? "";
+const saveLs = (k: string, v: string): void => writeCache(k, v);
 
 const deps: ExportDeps = {
   read: (p) => api.read(p),

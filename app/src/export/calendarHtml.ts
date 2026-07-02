@@ -9,6 +9,7 @@
 // calendar uses), and recurrence/date math reuses the headless core helpers, so an
 // exported calendar agrees with what's on screen.
 import { expandRecurrence, toDateStr, addDays } from "../../../core/src/bases/recurrence";
+import { formatGutterHour } from "../calendar/dates";
 import { rowToEvent } from "../bases/calendarSerialize";
 import type { CalendarEvent } from "../calendar/types";
 import { escapeHtml } from "../htmlEscape";
@@ -46,10 +47,7 @@ function fmtTime(t: string, military: boolean): string {
   const h12 = h % 12 || 12;
   return `${h12}:${String(m || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
-function fmtHourLabel(h: number, military: boolean): string {
-  if (h === 0) return "";
-  return military ? `${h}:00` : `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
-}
+const fmtHourLabel = formatGutterHour;
 function minutesOf(t?: string): number | null {
   if (!t) return null;
   const [h, m] = t.split(":").map(Number);

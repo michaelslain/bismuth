@@ -6,7 +6,7 @@ This document is a module-by-module navigation guide for the Bismuth monorepo. I
 
 ## Workspace Layout
 
-Bismuth is a Bun workspace monorepo. The root `package.json` declares five workspaces:
+Bismuth is a Bun workspace monorepo. The root `package.json` declares seven workspaces:
 
 ```
 bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-json)
@@ -15,6 +15,8 @@ bismuth/               root (private, no src; devDeps: emojilib, unicode-emoji-j
   cli/                 @bismuth/cli — `bismuth` binary wrapping @bismuth/core
   relay/               @bismuth/relay — Claude Code plugin for the agent graph
   mcp/                 @bismuth/mcp — stdio MCP server (docs + CLI) for app-terminal Claude sessions
+  memory/              @bismuth/memory — the pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools
+  daemon/              @bismuth/daemon — per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session
 ```
 
 `core` is the library that `app`, `cli`, and `mcp` import as `@bismuth/core`. `relay` is not imported by anyone; it runs as a standalone plugin inside terminal tabs, and its `.mcp.json` auto-starts the `mcp` server in those sessions. Root-level `dependencies` (`@napi-rs/canvas`, `pdf-lib`, `perfect-freehand`) are hoisted and consumed by `core/src/drawing/`.

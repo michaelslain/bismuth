@@ -1,16 +1,16 @@
 # Bismuth Architecture Overview
 
-Bismuth is a personal knowledge management system built as a Bun monorepo with five workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
+Bismuth is a personal knowledge management system built as a Bun monorepo with seven workspaces. The central concept is the **three-brain model**: a "you" self-node at the center, a "2nd brain" (vault of markdown files), and a "3rd brain" (the per-vault daemon's memory notes, living under `<vault>/.daemon/memory` and present only when `daemon.enabled`). These data sources are merged by the core backend into a single knowledge graph, precomputed with 2D and 3D layouts, served over HTTP to a Tauri + Solid.js desktop app. The relay plugin powers a live "agents" graph by reporting Claude Code sessions running inside the app's own terminal tabs back to the core server, and the mcp workspace is a stdio MCP server that auto-attaches to those same sessions to serve the docs + CLI.
 
 ---
 
 ## Monorepo Layout
 
-The root `package.json` declares five Bun workspaces:
+The root `package.json` declares seven Bun workspaces:
 
 ```json
 {
-  "workspaces": ["core", "cli", "app", "relay", "mcp"]
+  "workspaces": ["core", "cli", "app", "relay", "mcp", "memory", "daemon"]
 }
 ```
 
@@ -21,6 +21,8 @@ The root `package.json` declares five Bun workspaces:
 | `cli/` | `@bismuth/cli` | `bismuth` binary; imports `@bismuth/core` and calls core functions headlessly |
 | `relay/` | `@bismuth/relay` | Claude Code hooks-only plugin; feeds core's in-process relay registry |
 | `mcp/` | `@bismuth/mcp` | stdio MCP server; auto-attaches to app-terminal Claude sessions, serves `docs/` + the `bismuth` CLI token-frugally |
+| `memory/` | `@bismuth/memory` | The pure 3rd-brain memory graph (note CRUD + frontmatter + backlinks, keyword search, query DSL), used by the daemon, relay hooks, and MCP memory tools |
+| `daemon/` | `@bismuth/daemon` | Per-vault daemon runtime; one machine process multiplexing every enabled vault's memory + crons + processes + conversation session |
 
 Install all workspaces at once with `bun install` from the repo root. To add a package to a specific workspace: `cd <workspace> && bun add <package>`.
 

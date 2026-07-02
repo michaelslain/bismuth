@@ -18,10 +18,10 @@
 //
 // Only crons/processes that EXIST as *.md files are included — stale `.last-fired` entries with
 // no backing file (e.g. a renamed/removed cron) are dropped.
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { daemonMachineDir } from "./daemon";
-import { pidAlive, readJsonObj, readFrontmatter, isEnabled } from "./daemonState";
+import { isDaemonAlive, readJsonObj, readFrontmatter, isEnabled } from "./daemonState";
 import type { GraphData, GraphNode, GraphEdge } from "./graph";
 
 export const DAEMON_NODE_ID = "::daemon";
@@ -59,17 +59,6 @@ function listMarkdownNames(dir: string): string[] {
   }
 }
 
-/** Daemon liveness is MACHINE-level: daemonMachineDir()/daemon.pid exists AND that pid is
- *  alive (mirrors daemon.ts). One machine process serves every vault, so this is read from
- *  the machine dir, never from the per-vault `<home>`. */
-function daemonRunning(): boolean {
-  try {
-    return pidAlive(Number(readFileSync(join(daemonMachineDir(), "daemon.pid"), "utf8").trim()));
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Read a vault's daemon cron/process state into a snapshot. `home` is the vault's `.daemon`
  * dir (vaultDaemonDir(vault)) — crons/processes are read from `<home>/crons` + `<home>/processes`;
@@ -78,7 +67,7 @@ function daemonRunning(): boolean {
  * point it at a fixture dir.
  */
 export function daemonSnapshot(home: string = daemonMachineDir(), name: string = "daemon"): DaemonSnapshot {
-  const daemon = { label: name, running: daemonRunning(), home };
+  const daemon = { label: name, running: isDaemonAlive(daemonMachineDir()), home };
   try {
     const cronsDir = join(home, "crons");
     const lastFired = readJsonObj(join(cronsDir, ".last-fired.json"));
