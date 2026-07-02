@@ -33,19 +33,24 @@ function inCode(context: CompletionContext): boolean {
   return false;
 }
 
+// Hoisted: used via .match() (which resets lastIndex before scanning) from the
+// per-keystroke checks below.
+const BACKTICK_RE = /`/g;
+const UNESCAPED_DOLLAR_RE = /(?<!\\)\$/g;
+
 // Cheap textual fallback for an *open* inline-code span on the current line: an odd
 // number of backticks before the caret means we're inside a still-unclosed `` `…``. The
 // syntax tree only marks a *closed* `InlineCode`, so this catches the half-typed case
 // the tree misses. (`[[` / `#` alone have zero backticks → false, so the trigger is safe.)
 function inInlineCode(textBefore: string): boolean {
-  return ((textBefore.match(/`/g) || []).length % 2) === 1;
+  return ((textBefore.match(BACKTICK_RE) || []).length % 2) === 1;
 }
 
 // Cheap textual check for an *open* inline `$…$` math span on the current line: an odd
 // number of unescaped `$` before the caret means we're inside it. `:` is a real LaTeX
 // character (e.g. `\colon`, `a:b`) so the `:emoji:` trigger must not fire inside math.
 function inInlineMath(textBefore: string): boolean {
-  return ((textBefore.match(/(?<!\\)\$/g) || []).length % 2) === 1;
+  return ((textBefore.match(UNESCAPED_DOLLAR_RE) || []).length % 2) === 1;
 }
 
 // Shared shape for the prefix-triggered body sources (wikilink, tag): extract the

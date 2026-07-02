@@ -19,6 +19,11 @@ const URL_RE = /https?:\/\/[^\s<>"'`\]}]+/g;
 // Punctuation that commonly trails a URL in prose but isn't part of it.
 const TRAILING = new Set([".", ",", ";", ":", "!", "?"]);
 
+// Hoisted: used via .match() (which resets lastIndex before scanning), called per
+// trim iteration inside findBareUrls's hot loop.
+const OPEN_PAREN_RE = /\(/g;
+const CLOSE_PAREN_RE = /\)/g;
+
 /** Find every bare URL in `text`, skipping those that are the destination of a markdown
  *  link (`](url)`) — those are handled by the markdown-link path, not as bare URLs. */
 export function findBareUrls(text: string): UrlSpan[] {
@@ -40,8 +45,8 @@ export function findBareUrls(text: string): UrlSpan[] {
         url = url.slice(0, -1);
         trimmed = true;
       } else if (last === ")") {
-        const opens = (url.match(/\(/g) ?? []).length;
-        const closes = (url.match(/\)/g) ?? []).length;
+        const opens = (url.match(OPEN_PAREN_RE) ?? []).length;
+        const closes = (url.match(CLOSE_PAREN_RE) ?? []).length;
         if (closes > opens) {
           url = url.slice(0, -1);
           trimmed = true;

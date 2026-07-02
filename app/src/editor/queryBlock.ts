@@ -28,9 +28,9 @@ interface QueryRange { from: number; to: number; bodyFrom: number; body: string 
 function queryRanges(state: EditorState): QueryRange[] {
   const text = state.doc.toString();
   const out: QueryRange[] = [];
-  const re = new RegExp(QUERY_FENCE.source, "gm");
+  QUERY_FENCE.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) {
+  while ((m = QUERY_FENCE.exec(text))) {
     const from = m.index;
     const bodyFrom = from + m[0].indexOf("\n") + 1; // first char after the ```query line
     out.push({ from, to: from + m[0].length, bodyFrom, body: m[1] });

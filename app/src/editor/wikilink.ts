@@ -75,15 +75,21 @@ function normalizeHeading(s: string): string {
   return s.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+// Hoisted: these run per-line from the heading scanners below, which are called from
+// hot editor passes (autocomplete, live preview). Both are used via .test()/.exec()
+// without the `g` flag, so there's no lastIndex state to worry about across calls.
+const FENCE_RE = /^\s*(```|~~~)/;
+const HEADING_LINE_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
+
 // True for a fence opener/closer line (``` or ~~~, any indent). Toggling on these lets the
 // heading scanners skip `#` lines that are really code, mirroring core's stripCode masking.
 function isFence(line: string): boolean {
-  return /^\s*(```|~~~)/.test(line);
+  return FENCE_RE.test(line);
 }
 
 // ATX heading line → its level + trimmed display text (closing `#`s stripped), else null.
 function parseHeadingLine(line: string): HeadingItem | null {
-  const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+  const m = HEADING_LINE_RE.exec(line);
   return m ? { level: m[1].length, text: m[2].trim() } : null;
 }
 
