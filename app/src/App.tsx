@@ -1626,7 +1626,7 @@ export default function App() {
               <PaneTree
                 node={t().root}
                 focusId={t().focusId}
-                showHeader={leaves(t().root).length > 1}
+                showHeader={leafCount(t().root) > 1}
                 onFocus={(leafId) => updateActiveTab((tab) => ({ ...tab, focusId: leafId }))}
                 onResize={(splitId, ratio) =>
                   updateActiveTab((tab) => ({ ...tab, root: setRatio(tab.root, splitId, ratio) }))
