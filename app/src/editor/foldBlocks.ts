@@ -30,6 +30,14 @@ export type FoldMode = "markdown" | "yaml";
 
 // --- foldable-block scan (pure, unit-tested) ---------------------------------
 
+// Hoisted regex literals — this scan runs per-line on every doc change, so avoid
+// re-allocating a fresh RegExp object per line/call. All uses below are .match()
+// without the `g` flag, so there's no lastIndex state to worry about across calls.
+const HEADING_LINE_RE = /^(#{1,6})\s+(.*)$/;
+const HEADING_PREFIX_RE = /^(#{1,6})\s+/;
+const LIST_ITEM_RE = /^(\s*)(\d+[.)]|[-*+])\s+/;
+const BULLET_ITEM_RE = /^(\s*)([-*+])\s+(.*)$/;
+
 export type FoldKind = "h" | "l";
 
 export interface FoldBlock {
@@ -99,13 +107,13 @@ function scanMarkdown(doc: Text): FoldBlock[] {
     const text = line.text;
     if (isBlank(text)) continue; // blank lines never break a list
 
-    const hm = text.match(/^(#{1,6})\s+(.*)$/);
+    const hm = text.match(HEADING_LINE_RE);
     if (hm) {
       stack.length = 0; // a heading ends any open list
       const level = hm[1].length;
       let last = i;
       for (let j = i + 1; j <= doc.lines; j++) {
-        const jm = doc.line(j).text.match(/^(#{1,6})\s+/);
+        const jm = doc.line(j).text.match(HEADING_PREFIX_RE);
         if (jm && jm[1].length <= level) break; // next sibling/parent heading ends the region
         last = j;
       }
@@ -129,11 +137,11 @@ function scanMarkdown(doc: Text): FoldBlock[] {
 
     // Every list item (bullet, numbered, or task) advances nesting depth; only bullet /
     // task items become fold anchors (numbered items aren't folded here).
-    const li = text.match(/^(\s*)(\d+[.)]|[-*+])\s+/);
+    const li = text.match(LIST_ITEM_RE);
     if (li) {
       const indent = indentCols(text);
       const depth = listDepth(indent);
-      const bm = text.match(/^(\s*)([-*+])\s+(.*)$/);
+      const bm = text.match(BULLET_ITEM_RE);
       if (bm) {
         const { last, sawChild } = indentRegionEnd(doc, i, indent);
         if (sawChild) {

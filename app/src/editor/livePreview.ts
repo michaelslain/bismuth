@@ -89,6 +89,32 @@ const tableLine = Decoration.line({ class: "cm-table" });
 // dashes hide and CSS draws a horizontal rule; on it the raw markers show (mono).
 const hrLine = Decoration.line({ class: "cm-hr" });
 
+// Regex literals evaluated per visible line by buildDecorations() and its helpers
+// (pushInline/pushWikilinks/pushMarkdownLinks/pushTags/computeBlockRegions/findCodeBlock).
+// Hoisted to module scope so a fresh RegExp isn't allocated for every visible line on
+// every keystroke/cursor-move/viewport change. Source + flags are unchanged from their
+// former inline literals; every use below is via .match()/.matchAll()/.test()/.exec(),
+// none of which leak lastIndex state across calls for these patterns.
+const HEADING_RE = /^(#{1,6})\s+/;
+const BLOCKQUOTE_RE = /^>\s?/;
+const TASK_LINE_RE = /^(\s*)([-*+])(\s+)\[([ xX/\\-])\](\s)/;
+const BULLET_LINE_RE = /^(\s*)([-*+])(\s+)/;
+const ORDERED_LINE_RE = /^(\s*)(\d+)([.)])(\s+)/;
+const BLOCK_MATH_RE = /\$\$([^$]+)\$\$/g;
+const INLINE_MATH_RE = /(?<!\$)\$([^$\n]+)\$(?!\$)/g;
+const INLINE_CODE_RE = /(`+)((?:(?!\1)[^\n])*?)\1/g;
+const FM_KEY_RE = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/;
+const STRONG_STAR_RE = /\*\*([^*]+)\*\*/g;
+const STRONG_UNDERSCORE_RE = /__([^_]+)__/g;
+const EM_RE = /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g;
+const STRIKE_RE = /~~([^~]+)~~/g;
+const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g;
+const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
+const TAG_RE = /(^|\s)(#[\p{L}\d/_-]+)/gu;
+// Fenced-code-fence detection, shared by computeBlockRegions() (open + close) and findCodeBlock().
+const FENCE_OPEN_RE = /^\s*```(.*)$/;
+const FENCE_RE = /^\s*```/;
+
 // Notion-style hanging indent for lists. Off the cursor line we replace the whole
 // list prefix (indent + marker + spaces) with a single widget and drive ALL spacing
 // from CSS instead of the literal markdown whitespace: the text sits at (depth+1)*STEP
@@ -312,7 +338,7 @@ function pushInline(
 function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean) {
   // `(?<!!)` skips EMBEDS (`![[...]]`) — they're rendered by embedBlock, not styled as
   // links here (mirrors the graph's extractWikilinks exclusion in core/src/wikilinks.ts).
-  for (const m of text.matchAll(/(?<!!)\[\[([^\]]+?)\]\]/g)) {
+  for (const m of text.matchAll(WIKILINK_RE)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
     // Per-token reveal: only the wikilink the caret touches shows its brackets/path.
@@ -340,7 +366,7 @@ function pushWikilinks(deco: Range<Decoration>[], text: string, lineFrom: number
  *  it). Used for both body and frontmatter lines so links in properties read as links.
  *  Click handling (open the URL) lives in Editor.tsx. */
 function pushMarkdownLinks(deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean) {
-  for (const m of text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+  for (const m of text.matchAll(MD_LINK_RE)) {
     const s = lineFrom + (m.index ?? 0);
     const end = s + m[0].length;
     const onCursor = reveals(s, end);
@@ -371,7 +397,7 @@ function pushBareUrls(deco: Range<Decoration>[], text: string, lineFrom: number)
  *  mark only colors text and hides nothing, so the cursor-line reveal stays consistent
  *  with raw source either way. Heading `#`s never match (callers skip heading lines). */
 function pushTags(deco: Range<Decoration>[], text: string, lineFrom: number) {
-  for (const m of text.matchAll(/(^|\s)(#[\p{L}\d/_-]+)/gu)) {
+  for (const m of text.matchAll(TAG_RE)) {
     const tagStart = lineFrom + (m.index ?? 0) + m[1].length;
     deco.push(tag.range(tagStart, tagStart + m[2].length));
   }
@@ -439,12 +465,12 @@ function computeBlockRegions(doc: Text): BlockRegions {
   {
     let i = 1;
     while (i <= doc.lines) {
-      const m = doc.line(i).text.match(/^\s*```(.*)$/);
+      const m = doc.line(i).text.match(FENCE_OPEN_RE);
       if (m) {
         const open = i;
         const bodyLines: string[] = [];
         let j = i + 1;
-        while (j <= doc.lines && !/^\s*```/.test(doc.line(j).text)) {
+        while (j <= doc.lines && !FENCE_RE.test(doc.line(j).text)) {
           bodyLines.push(doc.line(j).text);
           j++;
         }
@@ -593,7 +619,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         // never do), matching fenced code. `frontmatterOpen` is non-null here.
         deco.push(numberedLine("cm-frontmatter", line.number - (frontmatterOpen ?? 0)).range(line.from));
         // Tint the `key:` portion in --accent (design .fm keys), leaving values --fg.
-        const km = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/.exec(text);
+        const km = FM_KEY_RE.exec(text);
         if (km) {
           const start = line.from + km[1].length;
           deco.push(fmKeyMark.range(start, start + km[2].length));
@@ -659,7 +685,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // headings: size the whole line, hide the leading "#"s off the cursor line
-      const hm = text.match(/^(#{1,6})\s+/);
+      const hm = text.match(HEADING_RE);
       if (hm) {
         deco.push(headingLines[hm[1].length - 1].range(line.from));
         if (!onCursor) deco.push(hide.range(line.from, line.from + hm[0].length));
@@ -668,7 +694,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // blockquote
-      const qm = text.match(/^>\s?/);
+      const qm = text.match(BLOCKQUOTE_RE);
       if (qm) {
         deco.push(quoteLine.range(line.from));
         if (!onCursor) deco.push(hide.range(line.from, line.from + qm[0].length));
@@ -695,7 +721,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // Must run BEFORE the bullet block so task lines never get a bullet glyph.
       let isTaskLine = false;
       // Inner char: space=todo, x/X=done, "/" or "\"=in-progress, "-"=cancelled.
-      const taskMatch = text.match(/^(\s*)([-*+])(\s+)\[([ xX/\\-])\](\s)/);
+      const taskMatch = text.match(TASK_LINE_RE);
       if (taskMatch) {
         isTaskLine = true;
         const status = charToStatus(taskMatch[4]);
@@ -730,7 +756,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // ---- bullet list lines ----
       // Thematic breaks (--- / *** / - - -) are handled + `continue`d above, so a line
       // reaching here is never one; only task lines need guarding off the bullet path.
-      const bulletMatch = isTaskLine ? null : text.match(/^(\s*)([-*+])(\s+)/);
+      const bulletMatch = isTaskLine ? null : text.match(BULLET_LINE_RE);
       if (bulletMatch) {
         const depth = listDepth(view.state, line.from + bulletMatch[1].length, bulletMatch[1]);
         // Empty active item → render raw marker so the end-of-line caret stays anchored
@@ -755,7 +781,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // Mirror the bullet treatment so numbers share the same hanging gutter + text
       // alignment; the number stays visible (no glyph swap). Task and bullet lines were
       // matched above (and thematic breaks `continue`d), so they never reach here.
-      const orderedMatch = isTaskLine || bulletMatch ? null : text.match(/^(\s*)(\d+)([.)])(\s+)/);
+      const orderedMatch = isTaskLine || bulletMatch ? null : text.match(ORDERED_LINE_RE);
       if (orderedMatch) {
         const depth = listDepth(view.state, line.from + orderedMatch[1].length, orderedMatch[1]);
         // Empty active item → render raw marker so the end-of-line caret stays anchored
@@ -799,7 +825,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       for (const s of mlSpans) mathSpans.push({ from: s.from, to: s.to });
       {
         // block math: $$...$$  (single-line, non-empty inner)
-        for (const m of text.matchAll(/\$\$([^$]+)\$\$/g)) {
+        for (const m of text.matchAll(BLOCK_MATH_RE)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
@@ -822,7 +848,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         // text, no jarring centered line break mid-sentence). So `$\frac{a}{b}$` looks like
         // the block instead of the cramped default inline style. `\displaystyle` is a valid
         // KaTeX switch; throwOnError:false in renderMath shrugs off anything malformed.
-        for (const m of text.matchAll(/(?<!\$)\$([^$\n]+)\$(?!\$)/g)) {
+        for (const m of text.matchAll(INLINE_MATH_RE)) {
           const s = line.from + (m.index ?? 0);
           const end = s + m[0].length;
           if (inHtmlSpan(s, end)) continue;
@@ -843,17 +869,17 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       }
 
       // inline tokens
-      pushInline(deco, text, line.from, revealsRange, /\*\*([^*]+)\*\*/g, 2, strong, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, /__([^_]+)__/g, 2, strong, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g, 1, em, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, /~~([^~]+)~~/g, 2, strike, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, STRONG_STAR_RE, 2, strong, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, STRONG_UNDERSCORE_RE, 2, strong, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, EM_RE, 1, em, inMathSpan);
+      pushInline(deco, text, line.from, revealsRange, STRIKE_RE, 2, strike, inMathSpan);
       // inline code: run-length-aware so a backtick can live INSIDE a span. A run of N
       // backticks opens a span that closes only on the next run of EXACTLY N backticks
       // (mirrors core/src/wikilinks.ts stripCode + CommonMark). The single-backtick regex
       // (/`([^`]+)`/) couldn't do this — it closed on the first inner backtick. Kept in the
       // SAME inline-token position (before links/wikilinks) so `[[x]]` inside a code span
       // isn't styled as a wikilink. Mirrors pushInline's hide/syntaxMark fence logic.
-      for (const m of text.matchAll(/(`+)((?:(?!\1)[^\n])*?)\1/g)) {
+      for (const m of text.matchAll(INLINE_CODE_RE)) {
         const s = line.from + (m.index ?? 0);
         const end = s + m[0].length;
         const fenceLen = m[1].length;
@@ -903,7 +929,7 @@ function findCodeBlock(state: EditorState, lineNumber: number): { open: number; 
   const doc = state.doc;
   let open = -1;
   for (let i = 1; i <= doc.lines; i++) {
-    if (/^\s*```/.test(doc.line(i).text)) {
+    if (FENCE_RE.test(doc.line(i).text)) {
       if (open === -1) {
         open = i;
       } else {
