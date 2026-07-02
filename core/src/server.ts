@@ -150,6 +150,10 @@ function requireQueryParam(url: URL, param: string): string {
 /** Request handler type. */
 type Handler = (req: Request, url: URL, cfg: CoreConfig) => Promise<Response> | Response;
 
+/** Matches a daemon cron/process DEFINITION file (.daemon/{crons,processes}/<name>.md) —
+ *  hoisted out of isDaemonRuntimeNoise (called per file-watch event) since it's stateless. */
+const DAEMON_DEF_RE = /^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/;
+
 export function createServer(cfg: CoreConfig) {
   // On boot: reconcile settings.yaml against SETTINGS_SCHEMA — write a fresh
   // defaults file if absent, or fill in any keys added since the file was written
@@ -246,7 +250,7 @@ export function createServer(cfg: CoreConfig) {
   // without changing its connections — e.g. a bot status file restamped every
   // couple of seconds.
   const tracker = createChangeTracker();
-  const isHidden = (p: string) => p.split("/").some((seg) => seg.startsWith("."));
+  const isHidden = (p: string) => p.startsWith(".") || p.includes("/.");
   // The daemon rewrites its status file (DAEMON.md) into the vault root every
   // ~2s (daemon-status-updater). It's a status artifact, not knowledge — reacting to its
   // churn (version bump → cache invalidation → every content-dependent base re-resolving
@@ -254,8 +258,9 @@ export function createServer(cfg: CoreConfig) {
   // bump the version. The file still lists + renders; only its 2s heartbeat rewrites are
   // ignored (you don't want live graph/row/editor refreshes for a status heartbeat anyway).
   const DAEMON_STATUS_FILE = "DAEMON.md";
+  const DAEMON_STATUS_PATH = "/" + DAEMON_STATUS_FILE;
   const isWatchIgnored = (p: string) =>
-    isHidden(p) || p === DAEMON_STATUS_FILE || p.endsWith("/" + DAEMON_STATUS_FILE);
+    isHidden(p) || p === DAEMON_STATUS_FILE || p.endsWith(DAEMON_STATUS_PATH);
   // The .daemon folder is dot-prefixed (so isHidden treats it as hidden) but its contents ARE
   // meaningful: .daemon shows in the sidebar, and .daemon/memory is the 3rd brain. Route its
   // changes through instead of dropping them as hidden. (The `.settings` FILE is matched earlier
@@ -272,7 +277,7 @@ export function createServer(cfg: CoreConfig) {
     p.startsWith(".daemon/") &&
     !isDaemonMemoryPath(p) &&
     p !== ".daemon/identity.md" && // the user-editable personality file — show it in the sidebar
-    !/^\.daemon\/(crons|processes)\/[^/.][^/]*\.md$/.test(p);
+    !DAEMON_DEF_RE.test(p);
 
   // Clear only the caches a change touched, bump version, and tell subscribers
   // exactly what's dirty. We always bump version (so the editor can reconcile an
