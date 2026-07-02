@@ -48,12 +48,13 @@ function mathHtml(expr: string, display: boolean): string {
   return `<span class="${cls}" data-math="${escapeAttr(expr)}" data-display="${display ? "1" : "0"}"></span>`;
 }
 
+const MATH_BLOCK_RE = /^\$\$([\s\S]+?)\$\$/;
 const mathBlockExt: TokenizerAndRendererExtension = {
   name: "bismuthMathBlock",
   level: "block",
   start(src) { const i = src.indexOf("$$"); return i < 0 ? undefined : i; },
   tokenizer(src) {
-    const m = /^\$\$([\s\S]+?)\$\$/.exec(src);
+    const m = MATH_BLOCK_RE.exec(src);
     if (!m) return undefined;
     return { type: "bismuthMathBlock", raw: m[0], text: m[1].trim() };
   },
@@ -65,6 +66,8 @@ const mathBlockExt: TokenizerAndRendererExtension = {
 // MAX_INLINE_MATH_LINES (mathBlock.ts) so reading mode and live preview agree.
 const MAX_INLINE_MATH_NEWLINES = 10;
 
+const MATH_INLINE_RE = /^\$(?![\s$])((?:\\[\s\S]|[^$\\])*?)(?<!\s)\$(?!\$)/;
+const INLINE_MATH_NEWLINE_RE = /\n/g;
 const mathInlineExt: TokenizerAndRendererExtension = {
   name: "bismuthMathInline",
   level: "inline",
@@ -79,9 +82,9 @@ const mathInlineExt: TokenizerAndRendererExtension = {
     // `\x` escape ONLY via the first branch and every other char via the second. The naive
     // `(?:\\.|[^$])` lets a `\` match either branch, which with `[^$]` spanning newlines backtracks
     // exponentially (ReDoS) on a long unclosed `$…` paragraph of LaTeX. This form is linear.
-    const m = /^\$(?![\s$])((?:\\[\s\S]|[^$\\])*?)(?<!\s)\$(?!\$)/.exec(src);
+    const m = MATH_INLINE_RE.exec(src);
     if (!m) return undefined;
-    if ((m[1].match(/\n/g)?.length ?? 0) > MAX_INLINE_MATH_NEWLINES) return undefined;
+    if ((m[1].match(INLINE_MATH_NEWLINE_RE)?.length ?? 0) > MAX_INLINE_MATH_NEWLINES) return undefined;
     return { type: "bismuthMathInline", raw: m[0], text: m[1] };
   },
   renderer(token) { return mathHtml(String(token.text), false); },
@@ -102,16 +105,18 @@ interface CalloutToken {
   titleTokens: Token[];
   bodyTokens: Token[];
 }
+const CALLOUT_START_RE = /(?:^|\n)[ \t]{0,3}>[ \t]?\[!/;
+const CALLOUT_BLOCKQUOTE_LINES_RE = /^((?:[ \t]{0,3}>[^\n]*(?:\n|$))+)/;
 const calloutBlockExt: TokenizerAndRendererExtension = {
   name: "bismuthCallout",
   level: "block",
   start(src) {
-    const m = /(?:^|\n)[ \t]{0,3}>[ \t]?\[!/.exec(src);
+    const m = CALLOUT_START_RE.exec(src);
     return m ? m.index : undefined;
   },
   tokenizer(src) {
     // Block tokenizers run at a block boundary, so `src` starts at the candidate blockquote.
-    const m = /^((?:[ \t]{0,3}>[^\n]*(?:\n|$))+)/.exec(src);
+    const m = CALLOUT_BLOCKQUOTE_LINES_RE.exec(src);
     if (!m) return undefined;
     const block = m[0];
     const rawLines = block.replace(/\n$/, "").split("\n");
