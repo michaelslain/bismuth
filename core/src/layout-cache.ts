@@ -41,6 +41,40 @@ const INCREMENTAL_MAX_ADD = 25;
 const INCREMENTAL_MAX_FRAC = 0.1;
 const memCache = new Map<string, Layout>();
 
+// --- Per-graph-object memoization -------------------------------------------------------------
+// graphSig() sorts every node id (O(n log n)) + every edge string (O(m log m)); subgraphByKinds()
+// walks the whole node/edge list (O(n+m)). Both are pure functions of a GraphData's structure, and
+// nothing downstream ever mutates a GraphData's nodes/edges in place (subgraphByKinds only reads
+// `n.kind`/`e.from`/`e.to`; computeLayoutAsync's prepareLayout only reads `.id`/`.from`/`.to` off the
+// nodes/edges it's given — see layout.ts). So for a given graph OBJECT, its signature and its 2nd/3rd
+// brain subgraphs are safe to compute once and reuse for every later call that happens to receive the
+// exact same reference — notably attachLayout's peek (below) followed by a computeViewLayouts call
+// over the identical cached graph (e.g. GET /graph/views, or the background view-layout warm-up in
+// server.ts, both of which operate on the same object graphCache.get() keeps returning until the next
+// rebuild). WeakMap so entries vanish on their own once a graph is superseded by the next rebuild.
+const sigCache = new WeakMap<GraphData, { vaultKey: string; sig: string }>();
+function memoSig(graph: GraphData, vaultKey: string): string {
+  const cached = sigCache.get(graph);
+  if (cached && cached.vaultKey === vaultKey) return cached.sig;
+  const sig = graphSig(graph, vaultKey);
+  sigCache.set(graph, { vaultKey, sig });
+  return sig;
+}
+
+const brainSubgraphCache = new WeakMap<GraphData, { second: GraphData; third: GraphData }>();
+/** The 2nd-brain (note+tag) and 3rd-brain (memory) subgraphs of `graph`, built once per graph object
+ *  and reused by every later caller that passes the same reference. `subgraphByKinds` is pure and
+ *  order-preserving, so a cached subgraph is structurally identical to a freshly-built one. */
+function brainSubgraphs(graph: GraphData): { second: GraphData; third: GraphData } {
+  let subgraphs = brainSubgraphCache.get(graph);
+  if (!subgraphs) {
+    subgraphs = { second: subgraphByKinds(graph, SECOND_KINDS), third: subgraphByKinds(graph, THIRD_KINDS) };
+    brainSubgraphCache.set(graph, subgraphs);
+  }
+  return subgraphs;
+}
+// -----------------------------------------------------------------------------------------------
+
 // Last full-graph layout per vault, kept so a structural edit warm-starts the next build from where
 // the graph already was instead of a cold PivotMDS, and (for a pure add) lets us pin the unchanged
 // nodes and settle only the new ones. Persisted to disk (see read/writeSeed) so the warm-start
@@ -151,7 +185,7 @@ function incremental2dSeed(seed: Layout, pos3d: Positions, fixed: Set<string>): 
  *  settle doesn't block concurrent requests. `seed` (the prior full layout) skips PivotMDS on a miss;
  *  for a pure add it also pins the unchanged nodes so only the new ones settle (cheap + no scramble). */
 async function layoutFor(graph: GraphData, vaultKey: string, seed?: Layout): Promise<Layout> {
-  const sig = graphSig(graph, vaultKey);
+  const sig = memoSig(graph, vaultKey);
   let layout = memCache.get(sig) ?? readDisk(sig);
   if (!layout) {
     const input = { nodes: graph.nodes, edges: graph.edges.map((e) => ({ from: e.from, to: e.to })) };
@@ -185,7 +219,7 @@ async function layoutFor(graph: GraphData, vaultKey: string, seed?: Layout): Pro
  */
 export function peekLayout(graph: GraphData, vaultKey: string): Layout | null {
   if (graph.nodes.length === 0) return { pos3d: {}, pos2d: {} };
-  const sig = graphSig(graph, vaultKey);
+  const sig = memoSig(graph, vaultKey);
   const hit = memCache.get(sig) ?? readDisk(sig);
   if (hit) memCache.set(sig, hit);
   return hit ?? null;
@@ -197,8 +231,9 @@ export function peekLayout(graph: GraphData, vaultKey: string): Layout | null {
  * them from the cold /graph so first paint only pays for the full-graph layout.
  */
 export async function computeViewLayouts(graph: GraphData, vaultKey: string): Promise<{ second: ViewLayout; third: ViewLayout }> {
-  const second = await layoutFor(subgraphByKinds(graph, SECOND_KINDS), vaultKey);
-  const third = await layoutFor(subgraphByKinds(graph, THIRD_KINDS), vaultKey);
+  const { second: secondGraph, third: thirdGraph } = brainSubgraphs(graph);
+  const second = await layoutFor(secondGraph, vaultKey);
+  const third = await layoutFor(thirdGraph, vaultKey);
   return { second: toViewLayout(second), third: toViewLayout(third) };
 }
 
@@ -224,8 +259,9 @@ export async function attachLayout(graph: GraphData, vaultKey: string): Promise<
   // mode. Attach them only when ALREADY cached (a cheap peek) so the cold first /graph
   // pays for just the full-graph layout. When absent they're computed on demand via
   // GET /graph/views; the frontend falls back to full-graph positions until then.
-  const second = peekLayout(subgraphByKinds(graph, SECOND_KINDS), vaultKey);
-  const third = peekLayout(subgraphByKinds(graph, THIRD_KINDS), vaultKey);
+  const { second: secondGraph, third: thirdGraph } = brainSubgraphs(graph);
+  const second = peekLayout(secondGraph, vaultKey);
+  const third = peekLayout(thirdGraph, vaultKey);
   const views = second && third
     ? { second: toViewLayout(second), third: toViewLayout(third) }
     : undefined;
