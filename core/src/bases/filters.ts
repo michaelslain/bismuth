@@ -1,14 +1,22 @@
 import type { EvalContext, FilterNode } from "./types";
 import { parseExpr } from "./parser";
+import type { Expr } from "./ast";
 import { evaluate } from "./evaluate";
 import { truthy } from "./values";
+
+const parseCache = new Map<string, Expr>();
 
 export function passesFilter(node: FilterNode | undefined, ctx: EvalContext): boolean {
   if (!node) return true;
 
   if (typeof node === "string") {
     try {
-      return truthy(evaluate(parseExpr(node), ctx));
+      let expr = parseCache.get(node);
+      if (!expr) {
+        expr = parseExpr(node);
+        parseCache.set(node, expr);
+      }
+      return truthy(evaluate(expr, ctx));
     } catch {
       return false;
     }
