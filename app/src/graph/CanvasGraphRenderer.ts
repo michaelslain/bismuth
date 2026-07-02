@@ -107,6 +107,7 @@ interface NodeView {
   colorInt: number; colorHex: string;
   deg: number; // undirected degree (drives node size)
   scale: number; // degree-based collision multiplier (for the settle)
+  baseDiameter: number; // resting (pre-perspective) diameter — cached per fit(), see computeBaseDiameters
   sx: number; sy: number; depth: number; pscale: number; onScreen: boolean; // per-frame scratch
   lastZi: number; lastDotSize: number; shown: boolean;
 }
@@ -203,6 +204,7 @@ export class CanvasGraphRenderer {
   private nodes: NodeView[] = [];
   private byId = new Map<string, NodeView>();
   private edges: EdgeView[] = [];
+  private selfNode: NodeView | null = null; // cached "you" node — this.nodes only changes in build()
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
   private colorSig = ""; // gate node recolouring so mode toggles don't rewrite 2k colours
@@ -365,7 +367,7 @@ export class CanvasGraphRenderer {
       const d = deg.get(node.id) ?? 0;
       return {
         node, p3: [p[0] - c3[0], -(p[1] - c3[1]), p[2] - c3[2]], p2: [p2[0] - c2[0], -(p2[1] - c2[1]), 0],
-        colorInt: 0, colorHex: "#888", deg: d, scale: this.collideScale(node, d),
+        colorInt: 0, colorHex: "#888", deg: d, scale: this.collideScale(node, d), baseDiameter: 0,
         sx: 0, sy: 0, depth: 0, pscale: 1, onScreen: true, lastZi: -1, lastDotSize: -1, shown: true,
       };
     };
@@ -373,6 +375,7 @@ export class CanvasGraphRenderer {
     // which is what keeps load + mode-switch cheap at any graph size. We just (re)build the data array.
     this.nodes = g.nodes.map(mkNode);
     this.byId = new Map(this.nodes.map((nv) => [nv.node.id, nv]));
+    this.selfNode = this.nodes.find((nv) => nv.node.kind === "self") ?? null;
 
     // Each edge gets a stable 0..1 rank; the draw loop keeps those below the current mode's fraction.
     this.edges = [];
@@ -560,24 +563,36 @@ export class CanvasGraphRenderer {
     return { x: x1 * persp, y: y2 * persp, z: zc, s: persp };
   }
 
-  private coordFor(nv: NodeView): Vec3 {
-    if (this.morph <= 0) return nv.p3;
-    if (this.morph >= 1) return nv.p2;
-    const m = this.morph;
-    return [nv.p3[0] + (nv.p2[0] - nv.p3[0]) * m, nv.p3[1] + (nv.p2[1] - nv.p3[1]) * m, nv.p3[2] + (nv.p2[2] - nv.p3[2]) * m];
-  }
-
-  /** Compute screen pos + depth for every node (no DOM writes). */
+  /** Compute screen pos + depth for every node (no DOM writes). Inlines project() plus the old
+   *  coordFor() morph-lerp (now folded in here, since this was its only caller) with the
+   *  per-frame-constant trig/target/origin values hoisted out of the loop, and no per-node result
+   *  object allocated. Arithmetic, operand order, and branch structure are identical to
+   *  project()/the old coordFor() — just evaluated inline. project() itself is kept intact above
+   *  (still used by emitGlow). */
   private projectPositions() {
+    const s = this.worldScale;
+    const tx = this.target[0], ty = this.target[1], tz = this.target[2];
+    const cyr = Math.cos(this.ry), syr = Math.sin(this.ry), cxr = Math.cos(this.rx), sxr = Math.sin(this.rx);
+    const P = this.P, zoom = this.zoom, m = this.morph;
+    const ox = this.cx + this.panX;
+    const oy = this.cy + this.panY + this.viewOffsetY * this.H;
     let minZ = Infinity, maxZ = -Infinity;
     for (const nv of this.nodes) {
-      const pr = this.project(this.coordFor(nv));
-      nv.sx = this.cx + this.panX + pr.x;
-      nv.sy = this.cy + this.panY + this.viewOffsetY * this.H + pr.y;
-      nv.depth = pr.z; nv.pscale = Math.max(0.05, pr.s);
-      nv.onScreen = pr.s > 0.05 && pr.z < this.P * 0.985; // cull nodes at/behind the camera plane (zoom-in)
-      if (pr.z < minZ) minZ = pr.z;
-      if (pr.z > maxZ) maxZ = pr.z;
+      let px: number, py: number, pz: number;
+      if (m <= 0) { px = nv.p3[0]; py = nv.p3[1]; pz = nv.p3[2]; }
+      else if (m >= 1) { px = nv.p2[0]; py = nv.p2[1]; pz = nv.p2[2]; }
+      else { px = nv.p3[0] + (nv.p2[0] - nv.p3[0]) * m; py = nv.p3[1] + (nv.p2[1] - nv.p3[1]) * m; pz = nv.p3[2] + (nv.p2[2] - nv.p3[2]) * m; }
+      const x = (px - tx) * s, y = (py - ty) * s, z = (pz - tz) * s;
+      const x1 = x * cyr + z * syr, z1 = -x * syr + z * cyr;
+      const y2 = y * cxr - z1 * sxr, z2 = y * sxr + z1 * cxr;
+      const zc = z2 + zoom;
+      const persp = P / Math.max(1, P - zc);
+      nv.sx = ox + x1 * persp;
+      nv.sy = oy + y2 * persp;
+      nv.depth = zc; nv.pscale = Math.max(0.05, persp);
+      nv.onScreen = persp > 0.05 && zc < P * 0.985; // cull nodes at/behind the camera plane (zoom-in)
+      if (zc < minZ) minZ = zc;
+      if (zc > maxZ) maxZ = zc;
     }
     this.minZ = minZ; this.maxZ = maxZ;
     this.clearAroundSelf();
@@ -596,7 +611,7 @@ export class CanvasGraphRenderer {
    *  point) fan out on golden-angle bearings so they don't stack. Edges, dots, and labels all read
    *  sx/sy, so they follow the nudge. O(n). */
   private clearAroundSelf() {
-    const self = this.nodes.find((n) => n.node.kind === "self");
+    const self = this.selfNode;
     if (!self || !self.onScreen) return;
     const rSelf = this.nodeDiameter(self) / 2;
     let coincident = 0;
@@ -620,16 +635,24 @@ export class CanvasGraphRenderer {
   private depthRank(nv: NodeView): number { const span = this.maxZ - this.minZ; return span < 1 ? 1 : (nv.depth - this.minZ) / span; } // 0 far, 1 near; flat/single -> 1
   private depthMin(): number { return DEPTH_MIN_OPACITY; }
   private depthFade(nv: NodeView, is2d: boolean): number { if (is2d) return 1; const m = this.depthMin(); return m + (1 - m) * Math.pow(this.depthRank(nv), DEPTH_CURVE); }
-  private nodeDiameter(nv: NodeView): number {
+  /** Resting (pre-perspective) diameter for every node — depends only on fitPx, nodes.length, and
+   *  each node's kind/degree, all constant between fit()/build() calls, so it's computed ONCE per
+   *  fit() (see computeBaseDiameters) instead of every frame per node in nodeDiameter's hot path. */
+  private computeBaseDiameters() {
     // Size by node DENSITY, not by the layout's absolute scale. The on-screen node spacing is roughly
     // (2·fitPx)/√n (n nodes filling a disk of on-screen radius fitPx), and nodeFrac is a node's diameter
     // as a fraction of that spacing. This is invariant to the layout radius — so it no longer changes
     // when the backend layout's extent shifts (e.g. as nodes are added), which made dots balloon before.
     const spacing = (2 * this.fitPx) / Math.sqrt(Math.max(1, this.nodes.length));
-    const base = Math.min(MAX_DOT_PX, NODE_SIZE_SCALE * spacing * this.nodeFrac(nv)); // cap resting size
+    for (const nv of this.nodes) {
+      nv.baseDiameter = Math.min(MAX_DOT_PX, NODE_SIZE_SCALE * spacing * this.nodeFrac(nv)); // cap resting size
+    }
+  }
+
+  private nodeDiameter(nv: NodeView): number {
     // Floor at MIN_DOT_PX so zooming out keeps nodes as tiny dots instead of making them
     // vanish (perspective shrinks every dot; without a floor the small ones drop out).
-    return Math.max(MIN_DOT_PX, base * nv.pscale);
+    return Math.max(MIN_DOT_PX, nv.baseDiameter * nv.pscale);
   }
 
   // ---- camera / fit --------------------------------------------------------
@@ -659,6 +682,7 @@ export class CanvasGraphRenderer {
     this.zoom = 0; this.goalZoom = 0;
     this.target = [0, 0, 0]; this.goalTarget = [0, 0, 0];
     this.panX = 0; this.panY = 0; this.goalPanX = 0; this.goalPanY = 0; this.userTook = false;
+    this.computeBaseDiameters();
     this.dirty = true;
   }
 
