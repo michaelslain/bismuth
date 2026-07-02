@@ -32,6 +32,10 @@ function hexToRgb(hex: string): [number, number, number] | null {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+// Precomputed once: colorId → parsed RGB, in the same order as EVENT_COLORS (the 11 fixed
+// hexes above are all valid, so the non-null assertion is safe).
+const EVENT_COLORS_RGB = Object.entries(EVENT_COLORS).map(([id, hex]) => [id, hexToRgb(hex)!] as const);
+
 /** Nearest Google event colorId (1–11) to a hex color by RGB distance; undefined if unparseable. */
 export function nearestGoogleColorId(hex: string | undefined): string | undefined {
   if (!hex) return undefined;
@@ -39,8 +43,7 @@ export function nearestGoogleColorId(hex: string | undefined): string | undefine
   if (!rgb) return undefined;
   let best: string | undefined;
   let bestD = Infinity;
-  for (const [id, chex] of Object.entries(EVENT_COLORS)) {
-    const c = hexToRgb(chex)!;
+  for (const [id, c] of EVENT_COLORS_RGB) {
     const d = (rgb[0] - c[0]) ** 2 + (rgb[1] - c[1]) ** 2 + (rgb[2] - c[2]) ** 2;
     if (d < bestD) {
       bestD = d;
