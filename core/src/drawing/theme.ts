@@ -10,9 +10,15 @@ export function makeColorResolver(t: ThemeColors): (c: string) => string {
   return (c) => (c === "fg" ? t.fg : c);
 }
 
+const _gridCache = new Map<string, string>();
+
 /** Grid/line wash = the ink color at low alpha (rgba), matching App.css surfaces. */
 export function gridColor(t: ThemeColors): string {
+  const cached = _gridCache.get(t.fg);
+  if (cached) return cached;
   const h = t.fg.replace("#", "");
   const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},0.14)`;
+  const out = `rgba(${r},${g},${b},0.14)`;
+  _gridCache.set(t.fg, out);
+  return out;
 }

@@ -93,19 +93,22 @@ export function resample(ps: P[], spacing: number): P[] {
  *  spaced points so it denoises evenly (the approximating step that removes jitter). */
 export function gaussian(ps: P[], passes: number): P[] {
   if (ps.length < 3 || passes <= 0) return ps.slice();
-  let cur = ps;
+  const a = ps.slice();
+  const b = ps.slice();
+  let src = ps;
+  let dst = a;
   for (let it = 0; it < passes; it++) {
-    const next = cur.slice();
-    for (let i = 1; i < cur.length - 1; i++) {
-      next[i] = {
-        x: 0.25 * cur[i - 1].x + 0.5 * cur[i].x + 0.25 * cur[i + 1].x,
-        y: 0.25 * cur[i - 1].y + 0.5 * cur[i].y + 0.25 * cur[i + 1].y,
-        p: 0.25 * cur[i - 1].p + 0.5 * cur[i].p + 0.25 * cur[i + 1].p,
+    for (let i = 1; i < src.length - 1; i++) {
+      dst[i] = {
+        x: 0.25 * src[i - 1].x + 0.5 * src[i].x + 0.25 * src[i + 1].x,
+        y: 0.25 * src[i - 1].y + 0.5 * src[i].y + 0.25 * src[i + 1].y,
+        p: 0.25 * src[i - 1].p + 0.5 * src[i].p + 0.25 * src[i + 1].p,
       };
     }
-    cur = next;
+    src = dst;
+    dst = dst === a ? b : a;
   }
-  return cur;
+  return src;
 }
 
 /**
