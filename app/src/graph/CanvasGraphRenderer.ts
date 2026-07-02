@@ -207,6 +207,7 @@ export class CanvasGraphRenderer {
   private byId = new Map<string, NodeView>();
   private edges: EdgeView[] = [];
   private drawOrder: NodeView[] = []; // persistent scratch for the depth-sorted draw order (avoids a per-frame filter() alloc)
+  private edgeBands: EdgeView[][] = [[], [], [], [], [], []]; // persistent scratch: 3D no-hover depth-band buckets (size = BANDS)
   private selfNode: NodeView | null = null; // cached "you" node — this.nodes only changes in build()
   private adjacency = new Map<string, Set<string>>();
   private sig = "";
@@ -796,13 +797,30 @@ export class CanvasGraphRenderer {
     } else if (is2d) {
       strokeEdges(op);
     } else {
-      // 3D: fade edges by depth (back edges recede) — banded so it stays a few batched strokes
+      // 3D: fade edges by depth (back edges recede) — banded so it stays a few batched strokes.
+      // Single bucketing pass over this.edges (same keep/onScreen filters + band test as the
+      // old per-band strokeEdges() calls), then one stroke per band — avoids rescanning all
+      // edges BANDS times.
       const BANDS = 6;
       const dm = this.depthMin();
+      const bands = this.edgeBands;
+      for (const arr of bands) arr.length = 0;
+      for (const e of this.edges) {
+        if (e.kr >= keepFrac) continue; // per-mode dense-graph thinning
+        const { a, b } = e;
+        if (!a.onScreen || !b.onScreen) continue;
+        const m = (a.dr + b.dr) / 2;
+        for (let bi = 0; bi < BANDS; bi++) {
+          const lo = bi / BANDS, hi = (bi + 1) / BANDS + (bi === BANDS - 1 ? 0.01 : 0);
+          if (m >= lo && m < hi) { bands[bi].push(e); break; }
+        }
+      }
       for (let bi = 0; bi < BANDS; bi++) {
-        const lo = bi / BANDS, hi = (bi + 1) / BANDS + (bi === BANDS - 1 ? 0.01 : 0);
         const fade = dm + (1 - dm) * Math.pow((bi + 0.5) / BANDS, DEPTH_CURVE);
-        strokeEdges(op * fade, (a, b) => { const m = (a.dr + b.dr) / 2; return m >= lo && m < hi; });
+        ctx.globalAlpha = op * fade;
+        ctx.beginPath();
+        for (const e of bands[bi]) { ctx.moveTo(e.a.sx, e.a.sy); ctx.lineTo(e.b.sx, e.b.sy); }
+        ctx.stroke();
       }
     }
     // nodes (canvas state) — depth-sorted far→near so near dots paint over far ones
