@@ -290,9 +290,10 @@ export const api = {
   saveDrawing: (path: string, doc: DrawingDoc) =>
     put("/file", { path, contents: serializeDoc(doc) }).then(() => {}),
 
-  // Daemon supervision. Status (running + this device + owner), the list
-  // of heartbeating devices, and claiming a device as the owner (writes owner.json).
-  daemonStatus: () => getJson<DaemonStatus>("/daemon/status"),
+  // Daemon supervision. Status (running + this device + owner, augmented server-side with this
+  // vault's identity name), the list of heartbeating devices, and claiming a device as the owner
+  // (writes owner.json).
+  daemonStatus: () => getJson<DaemonStatus & { name: string }>("/daemon/status"),
   daemonDevices: () => getJson<DeviceList>("/daemon/devices"),
   setDaemonOwner: (deviceId: string) => postJson<Owner>("/daemon/owner", { deviceId }),
   // Daemon install probe (read-only) + the idempotent, adopt-only setup action

@@ -28,6 +28,7 @@ import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest } from "../../core/src/chat";
 import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs } from "./chatContext";
+import { chatPersonaName } from "./daemonIdentity";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -716,11 +717,14 @@ export function ChatView(props: { chatId: string }) {
 
   // ── Render ──────────────────────────────────────────────────────────────────────────────
   const mcpConnected = () => (manifest()?.mcpServers ?? []).filter((s) => /connect|ready|ok/i.test(s.status)).length;
+  // The chat presents AS the vault's daemon when one is enabled — its identity name replaces
+  // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts).
+  const persona = () => chatPersonaName() ?? "Claude";
 
   return (
     <div class="chat-host">
       <ViewBar>
-        <Crumb icon="MessageSquare">Chat</Crumb>
+        <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
         <Show when={manifest()?.model}>
           {(model) => <span class="chat-model" title="Active model">{model()}</span>}
         </Show>
@@ -781,7 +785,7 @@ export function ChatView(props: { chatId: string }) {
         <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll}>
           <Show when={transcript.length === 0}>
             <div class="chat-empty">
-              <p>Ask Claude anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.</p>
+              <p>Ask {persona()} anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.</p>
             </div>
           </Show>
           <For each={transcript}>
@@ -879,7 +883,7 @@ export function ChatView(props: { chatId: string }) {
               onDragOver={onComposerDragOver}
               onDrop={onComposerDrop}
               onPaste={onComposerPaste}
-              placeholder="Message Claude…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )"
+              placeholder={`Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
             />
           </div>
           <Show
