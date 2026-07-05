@@ -346,13 +346,7 @@ export function createServer(cfg: CoreConfig) {
       if (!p.endsWith(".md")) { graph = true; tree = true; continue; }
       notePaths.push(p);
     }
-    const d = await tracker.classify(notePaths, async (p) => {
-      try {
-        return (await Bun.file(join(cfg.vault, p)).exists()) ? await readNote(cfg.vault, p) : null;
-      } catch {
-        return null; // unreadable — treated as removed (structural)
-      }
-    });
+    const d = await tracker.classify(notePaths, (p) => readNoteOrNull(cfg.vault, p));
     return { graph: graph || d.graph, tree: tree || d.tree };
   }
 
