@@ -1,5 +1,5 @@
 // app/src/App.tsx
-import { createSignal, onMount, onCleanup, For, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
+import { createSignal, onMount, onCleanup, For, Index, createMemo, createEffect, Show, Suspense, lazy } from "solid-js";
 import { api, apiBase, summarizeSync } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { FileTree } from "./FileTree";
@@ -1559,59 +1559,60 @@ export default function App() {
               onClick={() => historyForward()}
             />
           </div>
-          <For each={tabs()}>
+          <Index each={tabs()}>
             {(t, i) => (
               <>
-                <Show when={stripDropIndex() === i() && !draggingTabId()}>
+                <Show when={stripDropIndex() === i && !draggingTabId()}>
                   <div class="tab-caret" />
                 </Show>
                 <div
-                  class={`tab${activeTabId() === t.id ? " active" : ""}`}
-                  classList={{ dragging: draggingTabId() === t.id }}
+                  class={`tab${activeTabId() === t().id ? " active" : ""}`}
+                  classList={{ dragging: draggingTabId() === t().id }}
                   data-tab-chip="true"
-                  style={{ transform: `translateX(${tabShift(i())}px)` }}
+                  style={{ transform: `translateX(${tabShift(i)}px)` }}
                   onPointerDown={(e) => {
                     if ((e.target as HTMLElement).closest(".tab-x, .tab-rename")) return;
-                    viewDrag.startTab(e, t.id, tabBarLabel(t), () => setActiveTabId(t.id));
+                    viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id));
                   }}
                   onDblClick={(e) => {
                     if ((e.target as HTMLElement).closest(".tab-x")) return;
-                    startRenameTab(t.id);
+                    startRenameTab(t().id);
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    const content = t.root.kind === "leaf" ? t.root.content : null;
+                    const tab = t();
+                    const content = tab.root.kind === "leaf" ? tab.root.content : null;
                     const items: MenuItem[] = [
-                      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(t.id) },
+                      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(tab.id) },
                     ];
-                    if (t.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(t.id, (x) => ({ ...x, name: undefined })) });
+                    if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
                     if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
                     openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
                   }}
                 >
-                  <Show when={tabBarIcon(t)}>
+                  <Show when={tabBarIcon(t())}>
                     {(icon) => <Icon value={icon()} size={13} />}
                   </Show>
-                  <Show when={renamingTabId() === t.id} fallback={<span>{tabBarLabel(t)}</span>}>
+                  <Show when={renamingTabId() === t().id} fallback={<span>{tabBarLabel(t())}</span>}>
                     <input
                       class="tab-rename"
-                      value={tabBarLabel(t)}
+                      value={tabBarLabel(t())}
                       ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
-                      onBlur={(e) => commitRename(t.id, e.currentTarget.value)}
+                      onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") { e.preventDefault(); commitRename(t.id, e.currentTarget.value); }
+                        if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
                         else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
                         e.stopPropagation();
                       }}
                     />
                   </Show>
-                  <IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t.id, e)} />
+                  <IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />
                 </div>
               </>
             )}
-          </For>
+          </Index>
           <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
             <div class="tab-caret" />
           </Show>

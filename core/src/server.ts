@@ -44,7 +44,7 @@ import {
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, readFolderIcons, setFolderIcon, readDailyNotes } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
@@ -546,7 +546,7 @@ export function createServer(cfg: CoreConfig) {
       // Done per-request on a shallow copy so a folder-icon change is reflected
       // even when the underlying file tree (cachedTree) hasn't structurally changed
       // and so we never mutate the cache with a value tied to a specific request.
-      const folderIcons = await readFolderIcons(cfg.vault);
+      const folderIcons = (appConfig.folderIcons as Record<string, string> | undefined) ?? {};
       const entries = cachedTree.map((e) => {
         if (e.kind === "dir" && folderIcons[e.path]) {
           return { ...e, icon: folderIcons[e.path] };
@@ -1167,6 +1167,14 @@ export function createServer(cfg: CoreConfig) {
           return error("invalid path", 400);
         }
         await setFolderIcon(cfg.vault, path, icon ?? "");
+        // GET /tree overlays icons from the cached appConfig (no per-request .settings read),
+        // and the watcher-driven loadAppConfig refresh lands a debounce (~250ms) AFTER this
+        // mutation's SSE — patch the in-memory map synchronously so the client's immediate
+        // refetch already sees the new icon instead of a stale flash.
+        const icons = { ...((appConfig.folderIcons as Record<string, string> | undefined) ?? {}) };
+        if (icon) icons[path] = icon;
+        else delete icons[path];
+        appConfig = { ...appConfig, folderIcons: icons };
         return ok();
       },
       // settings.yaml change → invalidate broadly; pass its path so classifyVault
