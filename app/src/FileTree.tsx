@@ -1,5 +1,5 @@
 // app/src/FileTree.tsx
-import { createEffect, createResource, createSignal, For, Show, onCleanup, type JSX } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, Show, onCleanup, type JSX } from "solid-js";
 import { api } from "./api";
 import { readCache, writeCache } from "./viewCache";
 import { lastChange } from "./serverVersion";
@@ -14,7 +14,7 @@ import { IconPicker } from "./icons/IconPicker";
 import { BASE_VIEW_KINDS, baseTemplate, baseFileName } from "./baseViews";
 import { primeNoteCache } from "./noteCache";
 
-type TreeNode = { name: string; path: string; icon?: string; label?: string; isSystemFolder?: boolean; children?: Map<string, TreeNode> };
+import { buildTree, reconcileTree, type TreeNode } from "./fileTreeModel";
 
 // Every artifact the file tree can create in place. "base" is a `.md` seeded with
 // BASE_TEMPLATE; the rest map onto the backend's blank file/dir create. Shared with
@@ -27,33 +27,6 @@ const STRIP_EXT = /\.(md|yaml|yml)$/i;
 const displayName = (name: string) => name.replace(STRIP_EXT, "");
 
 const TREE_CACHE_KEY = "bismuth-tree-cache-v1";
-
-function buildTree(entries: TreeEntry[]): TreeNode {
-  const root: TreeNode = { name: "", path: "", children: new Map() };
-  for (const { path, icon, kind, isSystemFolder, label } of entries) {
-    const parts = path.split("/");
-    let cur = root;
-    let acc = "";
-    parts.forEach((part, i) => {
-      acc = acc ? `${acc}/${part}` : part;
-      const isLeaf = i === parts.length - 1;
-      const isDir = isLeaf ? kind === "dir" : true;
-      if (!cur.children!.has(part)) {
-        cur.children!.set(part, { name: part, path: acc, children: isDir ? new Map() : undefined });
-      }
-      const node = cur.children!.get(part)!;
-      // Custom icon for the entry's own node — files (frontmatter `icon`) and
-      // folders (folder-icon override surfaced on dir entries) alike.
-      if (isLeaf && icon) node.icon = icon;
-      // System folders (.settings / .daemon): rendered distinctly, label override
-      // (e.g. .daemon shows the configured daemon name), guarded from rename/delete.
-      if (isLeaf && isSystemFolder) node.isSystemFolder = true;
-      if (isLeaf && label) node.label = label;
-      cur = node;
-    });
-  }
-  return root;
-}
 
 function sortedChildren(node: TreeNode): TreeNode[] {
   // The system entries — the `.daemon` folder + the `.settings` file — always sink to the bottom
@@ -88,6 +61,17 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
   // still runs and reconciles. Persist every fresh, non-error response for next launch.
   const [files, { refetch, mutate }] = createResource(() => api.tree(), {
     initialValue: readCache<TreeEntry[]>(TREE_CACHE_KEY),
+  });
+  // Persistent-identity tree root: rebuild from the flat entries on every files() change, then
+  // reconcile against the previous root so untouched subtrees keep their object identity — the
+  // reference-keyed <For> in Level preserves those rows (DOM + handlers) instead of disposing and
+  // recreating the whole visible tree on every structural edit. Any real change still busts the
+  // spine of references up to the root (see reconcileTree), so updates render exactly as before.
+  let prevRoot: TreeNode | undefined;
+  const treeRoot = createMemo(() => {
+    const next = reconcileTree(prevRoot, buildTree(files() ?? []));
+    prevRoot = next;
+    return next;
   });
   const [editing, setEditing] = createSignal<string | null>(null);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
@@ -169,7 +153,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
         if (c.children && open().has(c.path)) walk(c);
       }
     };
-    walk(buildTree(files() ?? []));
+    walk(treeRoot());
     return out;
   };
 
@@ -484,7 +468,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
       onDrop={(e) => { e.preventDefault(); moveInto(""); }}
     >
       <Level
-        node={buildTree(files() ?? [])}
+        node={treeRoot()}
         depth={0}
         open={open()}
         toggle={toggle}
