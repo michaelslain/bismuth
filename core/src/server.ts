@@ -813,7 +813,9 @@ export function createServer(cfg: CoreConfig) {
     // daemon machine dir (BISMUTH_DAEMON_DIR, default ~/.bismuth/daemon) that the daemon
     // authors; vault-independent, so they live here regardless of cfg.vault.
     "GET /daemon/status": async (_, __) => {
-      return ok(daemonStatus());
+      // Augmented with THIS vault's daemon identity name (identity.md frontmatter) — the chat
+      // surface presents as the daemon, so the client needs its name alongside liveness.
+      return ok({ ...daemonStatus(), name: daemonIdentityName(cfg.vault) });
     },
 
     "GET /daemon/devices": async (_, __) => {
