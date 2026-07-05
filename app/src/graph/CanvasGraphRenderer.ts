@@ -833,6 +833,7 @@ export class CanvasGraphRenderer {
         const ds = this.nodeDiameter(nv);
         let alpha = this.depthFade(nv, is2d);
         if (focus && !focus.has(nv.node.id)) alpha *= 0.13; // dim non-focus on hover/highlight
+        else if (this.hoveredId && focus?.has(nv.node.id)) alpha = Math.max(alpha, 0.95); // connected nodes pop to full brightness on hover
         ctx.globalAlpha = alpha;
         ctx.beginPath();
         ctx.arc(nv.sx, nv.sy, ds / 2, 0, Math.PI * 2);
@@ -842,8 +843,20 @@ export class CanvasGraphRenderer {
           ctx.fillStyle = nv.colorHex; ctx.fill();
         }
       }
-      // hovered node: a bright ring
+      // hovered node: a bright ring; its neighbours: a thinner ring so connected NODES read as
+      // highlighted, not just the incident edges
       if (this.hoveredId) {
+        if (focus) {
+          ctx.lineWidth = 1.25;
+          for (const id of focus) {
+            if (id === this.hoveredId) continue;
+            const nb = this.byId.get(id);
+            if (!nb || !nb.onScreen) continue;
+            const nds = this.nodeDiameter(nb);
+            ctx.globalAlpha = 0.85; ctx.strokeStyle = nb.colorHex;
+            ctx.beginPath(); ctx.arc(nb.sx, nb.sy, nds / 2 + 2.5, 0, Math.PI * 2); ctx.stroke();
+          }
+        }
         const nv = this.byId.get(this.hoveredId);
         if (nv && nv.onScreen) {
           const ds = this.nodeDiameter(nv);
