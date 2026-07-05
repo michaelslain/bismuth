@@ -320,7 +320,9 @@ export function setRatio(root: PaneNode, splitId: string, ratio: number): PaneNo
   const walk = (node: PaneNode): PaneNode => {
     if (node.kind === "leaf") return node;
     if (node.id === splitId) return { ...node, ratio };
-    return { ...node, a: walk(node.a), b: walk(node.b) };
+    const a = walk(node.a);
+    const b = walk(node.b);
+    return a === node.a && b === node.b ? node : { ...node, a, b };
   };
   return walk(root);
 }

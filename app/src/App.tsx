@@ -1092,12 +1092,16 @@ export default function App() {
     const d = drag();
     return d.active && d.target?.kind === "tabstrip" ? d.target.index : null;
   };
+  const dragFromIndex = createMemo(() => {
+    const id = draggingTabId();
+    return id ? tabs().findIndex((t) => t.id === id) : -1;
+  });
   const tabShift = (index: number): number => {
     const d = drag();
     const dragId = draggingTabId();
     const dropI = stripDropIndex();
     if (!dragId || dropI === null || d.descriptor?.kind !== "tab") return 0;
-    const from = tabs().findIndex((t) => t.id === dragId);
+    const from = dragFromIndex();
     if (from === -1 || index === from) return 0;
     const w = d.descriptor.width;
     if (from < dropI && index > from && index < dropI) return -w;
