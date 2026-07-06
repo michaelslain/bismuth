@@ -24,6 +24,10 @@
   cursor: pointer;
   white-space: nowrap;
 }
+/* The persistently-highlighted cluster — click again (or click empty canvas) to deselect. */
+.cluster-row.selected {
+  background: var(--hover-bg, rgba(128, 128, 128, 0.15));
+}
 .cluster-swatch {
   width: 9px;
   height: 9px;
