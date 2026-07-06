@@ -1,5 +1,5 @@
-import { loadAllNotes, getMemoryDir } from "./graph.ts";
-import type { MemoryNote } from "./graph.ts";
+import { loadAllNotes, getMemoryDir } from "./graph";
+import type { MemoryNote } from "./graph";
 
 export interface ParsedQuery {
   tags: string[];

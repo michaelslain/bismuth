@@ -61,7 +61,17 @@ After Step 2, re-run \`du -sh "$BISMUTH_MEMORY_DIR"\` to confirm the graph is ba
 Glob for \`auto-*.md\`. For each:
 
 - Read it via the Read tool (it's small now).
-- Extract any useful fact, preference, project context, or personal detail.
+- These notes are raw session transcripts with BOTH sides of the conversation, PAIRED per
+  exchange: each \`## Turn N\` block holds a \`**You:**\` side (the user's own words) and a
+  \`**Claude:**\` side (what the assistant replied/proposed in that exchange). A
+  \`_(N turns omitted)_\` marker means the middle of a long session was elided.
+  **Attribute carefully**: the **You:** side is direct evidence of the user's facts/
+  preferences/intent. The **Claude:** side is what the assistant said — it may describe
+  something the user agreed to or asked for, but do NOT record it as a user preference unless
+  the paired (or a nearby) **You:** side actually confirms it. Claude's side is still worth
+  extracting (it captures what was built/decided/explained); phrase those as outcomes
+  ("built X", "explained Y"), never as first-person user preferences.
+- Extract any useful fact, preference, project context, decision, or personal detail.
 - Merge that fact into an existing properly-typed note via \`remember\` (overwrites if name matches), or create a new atomic note if genuinely novel.
 - Then \`forget\` the auto note.
 - If the auto note has nothing extractable → just \`forget\` it.

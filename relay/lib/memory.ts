@@ -3,7 +3,7 @@
 // daemon is enabled for this vault). So memory is recalled into prompts + collected from
 // transcripts strictly for vault-scoped sessions — never globally, the way the old
 // ~/.claude/settings.json hooks did.
-import { searchMemory, writeNote, type MemoryNote } from "@bismuth/memory";
+import { searchMemory, writeNote, buildAutoNoteBody, type MemoryNote, type TranscriptEntry } from "@bismuth/memory";
 
 const RECALL_BUDGET_MS = 800;
 
@@ -39,59 +39,17 @@ export async function recallContext(dir: string, prompt: string): Promise<string
 }
 
 // ── Transcript collection (SessionEnd) ───────────────────────────────────────
-interface TranscriptEntry {
-  type?: string;
-  message?: { role?: string; content?: string | Array<{ type?: string; text?: string }> };
-}
-
-const MIN_BODY_CHARS = 50;
-const MAX_BODY_CHARS = 8000;
-const TRUNCATE_HEAD = 4000;
-const TRUNCATE_TAIL = 4000;
-const TRUNCATE_MARKER = "\n\n... [truncated] ...\n\n";
-const CRON_PREFIX = "[Cron: ";
-
-function extractText(message: TranscriptEntry["message"]): string {
-  if (!message) return "";
-  const c = message.content;
-  if (typeof c === "string") return c;
-  if (Array.isArray(c)) {
-    return c.filter((p) => p?.type === "text" && typeof p.text === "string").map((p) => p.text!).join("\n");
-  }
-  return "";
-}
-
-function stripInjectedBlocks(text: string): string {
-  return text
-    .replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "")
-    .replace(/<local-command-stdout>[\s\S]*?<\/local-command-stdout>/g, "")
-    .replace(/<command-(?:name|message|args)>[\s\S]*?<\/command-(?:name|message|args)>/g, "")
-    .replace(/<command-stdout>[\s\S]*?<\/command-stdout>/g, "")
-    .trim();
-}
-
-function extractUserMessages(rawTranscript: string): string[] {
-  const messages: string[] = [];
-  for (const line of rawTranscript.split("\n")) {
-    if (!line.trim()) continue;
-    let entry: TranscriptEntry;
-    try {
-      entry = JSON.parse(line) as TranscriptEntry;
-    } catch {
-      continue;
-    }
-    if (entry.type !== "user" || entry.message?.role !== "user") continue;
-    const text = stripInjectedBlocks(extractText(entry.message));
-    if (text) messages.push(text);
-  }
-  return messages;
-}
+// All transcript→note logic (turn pairing, per-message caps, turn-aware truncation, the
+// trivial/cron-noise drops) lives in @bismuth/memory's pure `transcript` module so it's
+// unit-tested and shared with core's visual-chat capture. This file just reads the JSONL
+// and writes the note.
 
 /**
- * Save a finished session's user-side messages as an auto-typed memory note (the daemon's
- * dream cron later consolidates these). Drops cron-fired sessions (their prompts carry raw
- * cron text that pollutes recall) and trivial ones. Best-effort, off the user's critical
- * path (SessionEnd).
+ * Save a finished session's conversation — both the user's prompts and Claude's responses,
+ * paired per logical turn — as an auto-typed memory note (the daemon's dream cron later
+ * consolidates these). Drops cron-fired sessions (their prompts carry raw cron text that
+ * pollutes recall) and trivial ones. Best-effort, off the user's critical path (SessionEnd),
+ * and pure string work — no LLM call happens here, so collection itself never burns tokens.
  */
 export async function collectTranscript(dir: string, transcriptPath: string, sessionId?: string): Promise<void> {
   let raw: string;
@@ -100,15 +58,17 @@ export async function collectTranscript(dir: string, transcriptPath: string, ses
   } catch {
     return;
   }
-  const messages = extractUserMessages(raw);
-  if (messages.some((m) => m.startsWith(CRON_PREFIX))) return; // cron noise
-  const totalChars = messages.reduce((sum, m) => sum + m.length, 0);
-  if (totalChars < MIN_BODY_CHARS) return; // trivial
-
-  let body = messages.map((m, i) => `## message ${i + 1}\n\n${m}`).join("\n\n");
-  if (body.length > MAX_BODY_CHARS) {
-    body = body.slice(0, TRUNCATE_HEAD) + TRUNCATE_MARKER + body.slice(-TRUNCATE_TAIL);
+  const entries: TranscriptEntry[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      entries.push(JSON.parse(line) as TranscriptEntry);
+    } catch {
+      continue;
+    }
   }
+  const body = buildAutoNoteBody(entries);
+  if (body === null) return; // trivial or cron-fired — not worth a note
 
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");

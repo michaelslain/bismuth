@@ -1,5 +1,5 @@
-import { loadAllNotes, getMemoryDir } from "./graph.ts";
-import type { MemoryNote } from "./graph.ts";
+import { loadAllNotes, getMemoryDir } from "./graph";
+import type { MemoryNote } from "./graph";
 
 const STOP_WORDS = new Set([
   "the", "is", "a", "an", "it", "to", "for", "of", "in", "on", "and", "or",
