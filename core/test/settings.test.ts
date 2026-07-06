@@ -172,6 +172,27 @@ test("serializeSettingsForFrontend clamps out-of-range numbers and invalid enums
   expect((data.appearance as any).theme).toBe("oxide-duotone");   // invalid enum → default
 });
 
+test("serializeSettingsForFrontend accepts a well-formed list leaf, rejects a malformed one", async () => {
+  const vault = await emptyVault();
+  await writeNote(
+    vault,
+    ".settings",
+    'editor:\n  wrapSelectionChars: ["+", "="]\n',
+  );
+  const data = await serializeSettingsForFrontend(vault);
+  expect((data.editor as any).wrapSelectionChars).toEqual(["+", "="]);   // well-formed string[], applied
+
+  const vault2 = await emptyVault();
+  await writeNote(
+    vault2,
+    ".settings",
+    // typeof [] === typeof {} === "object", so a malformed object must be caught structurally.
+    "editor:\n  wrapSelectionChars: { foo: bar }\n",
+  );
+  const data2 = await serializeSettingsForFrontend(vault2);
+  expect((data2.editor as any).wrapSelectionChars).toEqual(["*", "_", "~", "`"]); // malformed → default
+});
+
 test("serializeSettingsForFrontend omits the properties registry section", async () => {
   const vault = await emptyVault();
   await writeNote(vault, ".settings", "properties:\n  due: date\n");

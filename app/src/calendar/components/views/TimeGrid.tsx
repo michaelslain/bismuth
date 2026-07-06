@@ -325,8 +325,6 @@ export function TimeGrid(props: Props) {
                     // they use their vertical space. Long titles in the stacked layout
                     // ellipsize via the 2-line clamp in Calendar.css.
                     const compact = height < 42
-                    const drag = dragState.value
-                    const isBeingMoved = drag?.type === 'move' && drag.event.id === e.id
                     // Overlap layout: events that overlap in time get a lane, but instead
                     // of an even split (which squishes a long event to half-width for its
                     // whole span just because a short event overlaps part of it), each event
@@ -339,7 +337,7 @@ export function TimeGrid(props: Props) {
                     const left = `calc(3px + (100% - 6px) * ${lane} / ${lanes})`
                     const width = `calc((100% - 6px) * ${lanes - lane} / ${lanes})`
                     return (
-                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, 'z-index': lane + 1, 'box-shadow': lane > 0 ? '-4px 0 7px rgba(0,0,0,0.3)' : undefined, opacity: isBeingMoved ? 0.3 : 1 }}
+                      <div class="time-grid-event" style={{ top: `${top}px`, height: `${height}px`, left, width, 'z-index': lane + 1, 'box-shadow': lane > 0 ? '-4px 0 7px rgba(0,0,0,0.3)' : undefined, opacity: (dragState.value?.type === 'move' && dragState.value.event.id === e.id) ? 0.3 : 1 }}
                         onMouseDown={ev => onChipMouseDown(ev, e, ds, e.recurrence ? e.id : undefined)}>
                         <EventChip event={e} compact={compact} masterId={e.recurrence ? e.id : undefined} occurrenceDate={e.recurrence ? ds : undefined} categories={props.categories} store={props.store} />
                       </div>

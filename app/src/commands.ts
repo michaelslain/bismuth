@@ -110,6 +110,7 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "graph-3rd": () => h.setMode("3rd"),
     "graph-both": () => h.setMode("both"),
     "graph-agents": () => h.setMode("agents"),
+    "graph-daemon": () => h.setMode("daemon"),
     "equalize-panes": h.equalizePanes,
     "toggle-sidebar": h.toggleSidebar,
     "daemon-owner": h.openDaemonOwner,

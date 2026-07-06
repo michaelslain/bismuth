@@ -7,7 +7,7 @@ import type { GraphData, GraphNode, GraphEdge } from "./graph";
 const MEM = (base: string) => `mem:${base}`;
 
 export interface MemoryGraph extends GraphData {
-  /** basename -> raw wikilink targets, for cross-brain resolution in engine.ts */
+  /** relative id (no mem: prefix) -> raw wikilink targets, for cross-brain resolution in engine.ts */
   links: Map<string, string[]>;
 }
 
@@ -29,9 +29,10 @@ export async function buildMemoryGraph(root: string): Promise<MemoryGraph> {
     const edges: GraphEdge[] = [];
     const targets = extractWikilinks(content);
 
-    // Derive basename from the memory node id (format: "mem:<relative-path>")
-    const base = basename(nodeId.slice("mem:".length));
-    links.set(base, targets);
+    // Key by the full relative id (format: "mem:<relative-path>") so subfolder
+    // notes reconstruct their real node id and same-basename notes stay distinct.
+    const rid = nodeId.slice("mem:".length);
+    links.set(rid, targets);
 
     // Create edges to other memory notes. Resolve path-qualified links by full
     // path first, falling back to basename (mirrors resolveNotePath order).
