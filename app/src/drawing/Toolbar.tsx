@@ -1,5 +1,5 @@
 // app/src/drawing/Toolbar.tsx
-import { type JSX } from "solid-js";
+import { Show, type JSX } from "solid-js";
 import type { PaperBg } from "../../../core/src/drawing/model";
 import type { ToolState } from "./DrawingCanvas";
 import { ZOOM_MIN, ZOOM_MAX } from "./DrawingPage";
@@ -48,15 +48,18 @@ const paperIcon = (bg: PaperBg): JSX.Element => {
 export function Toolbar(props: {
   tools: () => ToolState;
   setTools: (patch: Partial<ToolState>) => void;
-  bg: () => PaperBg;
-  setBackground: (bg: PaperBg) => void;
+  // Paper background, zoom, and image import are page-drawing concerns; the note-ink overlay
+  // reuses this bar without them (no paper, no zoom, attachments already handle images), so
+  // each group is optional — DrawingPage passes everything and is unchanged.
+  bg?: () => PaperBg;
+  setBackground?: (bg: PaperBg) => void;
   onUndo: () => void;
   onRedo: () => void;
-  zoom: () => number;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onResetZoom: () => void;
-  onImportImage: () => void;
+  zoom?: () => number;
+  onZoomIn?: () => void;
+  onZoomOut?: () => void;
+  onResetZoom?: () => void;
+  onImportImage?: () => void;
 }) {
   const t = props.tools;
   // Fixed 7-swatch Bismuth ink palette. The first swatch ("fg") is the theme
@@ -75,7 +78,7 @@ export function Toolbar(props: {
   ];
   const paperOpts = (["blank", "lines", "grid", "dots"] as PaperBg[]).map((p) => ({ id: p, label: paperIcon(p), title: p[0].toUpperCase() + p.slice(1) }));
 
-  const zoomPct = () => Math.round(props.zoom() * 100);
+  const zoomPct = () => Math.round((props.zoom?.() ?? 1) * 100);
 
   return (
     <div class="draw-toolbar">
@@ -85,9 +88,11 @@ export function Toolbar(props: {
         <div class="draw-group">
           <SegmentedToggle options={toolOpts} value={t().tool} onChange={(id) => props.setTools({ tool: id })} segmentClass="draw-iconseg" />
           {/* Place a picture into the drawing (also reachable via paste + drag-drop onto the stage). */}
-          <Button kind="text" state="unselected" class="draw-iconseg" title="Import image" aria-label="Import image" onClick={() => props.onImportImage()}>
-            <Icon value="ImagePlus" size={17} />
-          </Button>
+          <Show when={props.onImportImage}>
+            <Button kind="text" state="unselected" class="draw-iconseg" title="Import image" aria-label="Import image" onClick={() => props.onImportImage!()}>
+              <Icon value="ImagePlus" size={17} />
+            </Button>
+          </Show>
         </div>
         {/* Colors on top, line-weight directly below — same box size + spacing. */}
         <div class="draw-group">
@@ -96,11 +101,13 @@ export function Toolbar(props: {
             <SegmentedToggle options={sizeOpts} value={t().size} onChange={(s) => props.setTools({ size: s })} segmentClass="draw-iconseg" />
           </div>
         </div>
-        {/* Smoothing on top, paper below. */}
+        {/* Smoothing on top, paper below (paper only when the surface has one — not note ink). */}
         <div class="draw-group">
           <div class="draw-vstack">
             <SegmentedToggle options={smoothOpts} value={t().smoothMode} onChange={(v) => props.setTools({ smoothMode: v })} segmentClass="draw-iconseg" />
-            <SegmentedToggle options={paperOpts} value={props.bg()} onChange={(id) => props.setBackground(id)} segmentClass="draw-iconseg" />
+            <Show when={props.bg && props.setBackground}>
+              <SegmentedToggle options={paperOpts} value={props.bg!()} onChange={(id) => props.setBackground!(id)} segmentClass="draw-iconseg" />
+            </Show>
           </div>
         </div>
         {/* Undo/redo on top, zoom below. */}
@@ -114,19 +121,21 @@ export function Toolbar(props: {
                 <Icon value="Redo2" size={17} />
               </Button>
             </div>
-            <div class="segmented">
-              <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom out" aria-label="Zoom out"
-                disabled={props.zoom() <= ZOOM_MIN} onClick={() => props.onZoomOut()}>
-                <Icon value="ZoomOut" size={17} />
-              </Button>
-              <Button kind="text" state="unselected" class="draw-iconseg draw-zoompct" title="Reset zoom" aria-label="Reset zoom" onClick={() => props.onResetZoom()}>
-                {zoomPct()}%
-              </Button>
-              <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom in" aria-label="Zoom in"
-                disabled={props.zoom() >= ZOOM_MAX} onClick={() => props.onZoomIn()}>
-                <Icon value="ZoomIn" size={17} />
-              </Button>
-            </div>
+            <Show when={props.zoom && props.onZoomIn && props.onZoomOut && props.onResetZoom}>
+              <div class="segmented">
+                <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom out" aria-label="Zoom out"
+                  disabled={props.zoom!() <= ZOOM_MIN} onClick={() => props.onZoomOut!()}>
+                  <Icon value="ZoomOut" size={17} />
+                </Button>
+                <Button kind="text" state="unselected" class="draw-iconseg draw-zoompct" title="Reset zoom" aria-label="Reset zoom" onClick={() => props.onResetZoom!()}>
+                  {zoomPct()}%
+                </Button>
+                <Button kind="text" state="unselected" class="draw-iconseg" title="Zoom in" aria-label="Zoom in"
+                  disabled={props.zoom!() >= ZOOM_MAX} onClick={() => props.onZoomIn!()}>
+                  <Icon value="ZoomIn" size={17} />
+                </Button>
+              </div>
+            </Show>
           </div>
         </div>
       </div>

@@ -31,10 +31,13 @@ interface EmbedSpec {
 }
 
 /** Classify an embed target by its file extension. Anything that isn't a known media
- *  extension (including a bare `[[Note]]` with no extension) is treated as a note. */
-function kindForTarget(target: string): EmbedKind {
+ *  extension (including a bare `[[Note]]` with no extension) is treated as a note. `.draw`
+ *  returns null — drawings are no longer embeddable in notes (draw-anywhere note ink replaced
+ *  the embed; a stray `![[Sketch.draw]]` in old content renders as inert plain text). */
+function kindForTarget(target: string): EmbedKind | null {
   const dot = target.lastIndexOf(".");
   const ext = dot === -1 ? "" : target.slice(dot + 1).toLowerCase();
+  if (ext === "draw") return null;
   if (IMAGE_EXT.has(ext)) return "image";
   if (ext === "pdf") return "pdf";
   if (AUDIO_EXT.has(ext)) return "audio";
@@ -55,6 +58,7 @@ function specForWikiEmbed(inner: string): EmbedSpec | null {
   const { target, alias, heading } = parseWikilink(inner);
   if (!target) return null;
   const kind = kindForTarget(target);
+  if (kind === null) return null; // .draw — not embeddable
   if (kind === "note") return { kind, target };
   const src = api.assetUrl(target); // backend resolves filename-first
   if (kind === "image") return { kind, src, alt: target, ...parseSize(alias) };
@@ -249,13 +253,14 @@ function altSize(alt: string): { alt: string; width?: number } {
  *  classified by extension so `![](clip.mp4)` / `![](doc.pdf#page=2)` render as that medium
  *  (Obsidian parity), not a broken <img>. A trailing `|WIDTH` in the alt sets the image width
  *  (resize is persisted there — markdown images have no `[[...|size]]` slot). */
-function specForMarkdownImage(url: string, rawAlt: string): EmbedSpec {
+function specForMarkdownImage(url: string, rawAlt: string): EmbedSpec | null {
   const { alt, width } = altSize(rawAlt);
   if (/^(https?:|data:|blob:)/i.test(url)) return { kind: "image", src: url, alt, width };
   const hash = url.indexOf("#");
   const target = hash === -1 ? url : url.slice(0, hash);
   const frag = hash === -1 ? undefined : url.slice(hash + 1);
   const kind = kindForTarget(target);
+  if (kind === null) return null; // .draw — not embeddable (scanEmbeds drops a null spec)
   const src = api.assetUrl(target);
   if (kind === "pdf") return { kind, src, page: frag };
   if (kind === "audio" || kind === "video") return { kind, src };

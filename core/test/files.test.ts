@@ -296,3 +296,54 @@ test("listTree daemon label falls back to 'daemon' when name is blank", async ()
   const on = await listTree(root, { daemonEnabled: true, daemonName: "" });
   expect(on.find((e) => e.path === ".daemon")?.label).toBe("daemon");
 });
+
+// ── Sidecar carry: note ink (.ink/<path>.ink) + image markup (<path>.draw) follow moves,
+//    deletes (into the trash), and restores (back out) ─────────────────────────────────────
+
+test("moveEntry carries a note's ink sidecar to the new path", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-ink-"));
+  await writeNote(dir, "a.md", "# A");
+  await writeNote(dir, ".ink/a.md.ink", '{"v":1,"kind":"ink","strokes":[]}');
+  moveEntry(dir, "a.md", "sub/b.md");
+  expect(existsSync(join(dir, ".ink/a.md.ink"))).toBe(false);
+  expect(existsSync(join(dir, ".ink/sub/b.md.ink"))).toBe(true);
+});
+
+test("moveEntry of a folder re-roots its whole ink subtree", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-inkdir-"));
+  await writeNote(dir, "proj/x.md", "x");
+  await writeNote(dir, ".ink/proj/x.md.ink", '{"v":1,"kind":"ink","strokes":[]}');
+  moveEntry(dir, "proj", "archive/proj");
+  expect(existsSync(join(dir, ".ink/proj"))).toBe(false);
+  expect(existsSync(join(dir, ".ink/archive/proj/x.md.ink"))).toBe(true);
+});
+
+test("moveEntry carries an image's co-located .draw markup sidecar", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-markup-"));
+  await writeNote(dir, "pic.png", "binary-ish");
+  await writeNote(dir, "pic.png.draw", '{"v":1,"kind":"drawing","paper":{"bg":"blank"},"pages":[{"strokes":[]}]}');
+  moveEntry(dir, "pic.png", "media/pic.png");
+  expect(existsSync(join(dir, "pic.png.draw"))).toBe(false);
+  expect(existsSync(join(dir, "media/pic.png.draw"))).toBe(true);
+});
+
+test("delete then restore round-trips the ink sidecar through the trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-inktrash-"));
+  await writeNote(dir, "n.md", "note");
+  await writeNote(dir, ".ink/n.md.ink", '{"v":1,"kind":"ink","strokes":[]}');
+  const { trashPath } = deleteEntry(dir, "n.md");
+  expect(existsSync(join(dir, ".ink/n.md.ink"))).toBe(false);
+  expect(existsSync(join(dir, `.ink/${trashPath}.ink`))).toBe(true);
+  // POST /restore is just moveEntry(trashPath, to) — the carry brings the ink back.
+  moveEntry(dir, trashPath, "n.md");
+  expect(existsSync(join(dir, ".ink/n.md.ink"))).toBe(true);
+  expect(await readNote(dir, "n.md")).toBe("note");
+});
+
+test("move without any sidecar behaves exactly as before", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-nosc-"));
+  await writeNote(dir, "plain.md", "p");
+  moveEntry(dir, "plain.md", "moved.md");
+  expect(existsSync(join(dir, "moved.md"))).toBe(true);
+  expect(existsSync(join(dir, ".ink"))).toBe(false);
+});

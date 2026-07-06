@@ -265,6 +265,36 @@ export function uniqueAssetPath(root: string, rel: string): string {
   return `${dir}${stem} ${Date.now()}${ext}`; // pathological fallback
 }
 
+/**
+ * Carry an entry's companion sidecars along a move: the hidden note-ink store
+ * (`.ink/<path>.ink` for a file, the whole `.ink/<path>/` subtree for a directory) and the
+ * co-located image/PDF markup sidecar (`<path>.draw`). Best-effort + existence-gated — entries
+ * without sidecars pay a couple of existsSync calls and a failed carry never fails the primary
+ * operation. Symmetry note: deleteEntry carries sidecars to the TRASH-path-derived locations,
+ * so POST /restore (which is just moveEntry(trashPath, to)) carries them back automatically.
+ */
+function carrySidecars(root: string, from: string, to: string, wasDir: boolean): void {
+  const pairs: Array<[string, string]> = wasDir
+    ? [[`.ink/${from}`, `.ink/${to}`]]
+    : [
+        [`.ink/${from}.ink`, `.ink/${to}.ink`],
+        // A .draw's own sidecar would be `x.draw.draw` — never a thing; skip the probe.
+        ...(from.endsWith(".draw") ? [] : ([[`${from}.draw`, `${to}.draw`]] as Array<[string, string]>)),
+      ];
+  for (const [f, t] of pairs) {
+    try {
+      const fAbs = join(root, f);
+      if (!existsSync(fAbs)) continue;
+      const tAbs = join(root, t);
+      if (existsSync(tAbs)) continue; // never clobber an existing sidecar at the destination
+      mkdirSync(dirname(tAbs), { recursive: true });
+      renameSync(fAbs, tAbs);
+    } catch {
+      /* best-effort — the note/file operation itself already succeeded */
+    }
+  }
+}
+
 export function deleteEntry(root: string, path: string): { trashPath: string } {
   const fromAbs = resolveInVault(root, path);
   if (!existsSync(fromAbs)) throw createError("ENOENT", `does not exist: ${path}`, 404);
@@ -273,6 +303,9 @@ export function deleteEntry(root: string, path: string): { trashPath: string } {
   const trashAbs = join(root, trashPath);
   mkdirSync(dirname(trashAbs), { recursive: true });
   renameSync(fromAbs, trashAbs);
+  // Sidecars ride into the trash under the SAME stamped name, so a later restore
+  // (moveEntry(trashPath, to)) carries them back to the restored path automatically.
+  carrySidecars(root, path, trashPath, statSync(trashAbs).isDirectory());
   return { trashPath };
 }
 
@@ -327,4 +360,8 @@ export function moveEntry(root: string, from: string, to: string): void {
   if (existsSync(toAbs)) throw createError("EEXIST", `destination already exists: ${to}`, 409);
   mkdirSync(dirname(toAbs), { recursive: true });
   renameSync(fromAbs, toAbs);
+  // Note ink + image-markup sidecars follow their file (and restores carry them back — see
+  // carrySidecars). A directory move re-roots its whole .ink subtree; co-located .draw
+  // sidecars inside the directory moved with it already.
+  carrySidecars(root, from, to, statSync(toAbs).isDirectory());
 }

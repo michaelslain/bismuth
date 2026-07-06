@@ -1,7 +1,7 @@
 // app/src/Editor.tsx
-import { createEffect, createMemo, onCleanup, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Annotation, Prec, type Line } from "@codemirror/state";
+import { EditorState, Annotation, Compartment, Prec, type Line } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
@@ -36,6 +36,7 @@ import { frontmatterBodyRange } from "./editor/frontmatterUtils";
 import { normalizeFrontmatterSpacing, minimalChange } from "./editor/normalizeFrontmatter";
 import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
+import { InkOverlay } from "./editor/ink/InkOverlay";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, findHeadingLineIndex, type NoteCandidate } from "./editor/wikilink";
@@ -324,6 +325,54 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   // when the path string itself changes, so the view is rebuilt only on a real file switch.
   const currentPath = createMemo(() => props.path);
 
+  // ── Draw mode (note ink) ──────────────────────────────────────────────────────────────
+  // Toggled by the toggle-draw-mode keybinding (Escape also exits): the InkOverlay's live
+  // canvas goes interactive over the text, and CodeMirror's user interaction is switched off
+  // via an `editable` Compartment (NOT readOnly — programmatic dispatches like the SSE
+  // external-reconcile and autosave-normalize must keep working). Owned at component scope,
+  // outside the per-path view effect, so toggling never rebuilds the view; the view signal
+  // lets the (Solid) overlay react to view rebuilds without living inside a CM extension.
+  const editableCompartment = new Compartment();
+  const [drawMode, setDrawMode] = createSignal(false);
+  const [cmView, setCmView] = createSignal<EditorView | undefined>(undefined);
+  const isInkable = (p: string | null): p is string => !!p && p.endsWith(".md") && !isSettingsBuffer(p);
+  const setDraw = (on: boolean): void => {
+    if (drawMode() === on) return;
+    setDrawMode(on);
+    const v = view;
+    if (!v) return;
+    v.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(!on)) });
+    // The toggle usually fires while the editor has focus — drop it so keystrokes can't
+    // leak into the (now non-editable) buffer while drawing.
+    if (on) v.contentDOM.blur();
+  };
+  const onDrawKey = (e: KeyboardEvent): void => {
+    if (e.repeat) return;
+    if (!isInkable(currentPath())) return;
+    if (!matchesKeybinding(e, settings.keybindings["toggle-draw-mode"])) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDraw(!drawMode());
+  };
+  onMount(() => {
+    wrapper.addEventListener("keydown", onDrawKey, true);
+    onCleanup(() => wrapper.removeEventListener("keydown", onDrawKey, true));
+  });
+  // Exiting needs a WINDOW-level listener: entering draw mode blurs the editor (focus lands on
+  // body), so the wrapper listener above can no longer see the toggle combo. Registered only
+  // while draw mode is on, and only flips THIS editor back off.
+  createEffect(() => {
+    if (!drawMode()) return;
+    const onExitKey = (e: KeyboardEvent): void => {
+      if (e.repeat || !matchesKeybinding(e, settings.keybindings["toggle-draw-mode"])) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setDraw(false);
+    };
+    window.addEventListener("keydown", onExitKey, true);
+    onCleanup(() => window.removeEventListener("keydown", onExitKey, true));
+  });
+
   const save = async (path: string, text: string) => {
     lastSavedText = text; // record before the await so a fast echo still matches
     await api.write(path, text);
@@ -467,9 +516,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // which dispatches) become no-ops on full unmount — `view === v` would otherwise still hold
       // for the destroyed instance and dispatch on a destroyed view throws.
       view = undefined;
+      setCmView(undefined);
     });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
     pendingSave = false;
+    // Switching notes always lands in TEXT mode; the fresh view below is built editable.
+    setDraw(false);
     if (!path) return;
 
     // Prefer the body FileView already fetched (no second HTTP round-trip on open).
@@ -550,6 +602,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
 
     // Shared base for every buffer: editing, theme, gutters, autosave.
     const base = [
+      // Draw mode switches USER editing off (contenteditable/IME/tab order) without touching
+      // programmatic dispatch — see setDraw. Fresh views start editable (draw mode was reset).
+      editableCompartment.of(EditorView.editable.of(true)),
       history(),
       drawSelection(),
       // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML
@@ -816,6 +871,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // the template picker targets. unregisterEditor runs in the onCleanup above.
     trackEditor(view);
     setEditorFlush(view, flushSaveAsync); // so a rename can persist this buffer before moving (B6)
+    setCmView(view); // the ink overlay (Solid-side) reacts to view rebuilds through this
 
     // A pending `[[File#Heading]]` anchor (set by App when this buffer was opened via a
     // heading link) wins over the saved scroll position: jump to the heading instead of
@@ -1001,6 +1057,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   return (
     <div ref={wrapper} style={{ height: "100%", overflow: "hidden", position: "relative" }}>
       <div ref={host} style={{ height: "100%", overflow: "auto" }} />
+      {/* Draw-anywhere note ink: a stroke layer over the text (real .md notes only). Paint-only
+          in normal mode; the toggle-draw-mode keybinding makes it interactive + mounts the
+          drawing toolbar. Lives here (not in a CM extension) so it's plain Solid over the view. */}
+      <Show when={isInkable(currentPath())}>
+        <InkOverlay view={cmView} path={currentPath} active={drawMode} onExit={() => setDraw(false)} />
+      </Show>
     </div>
   );
 }
