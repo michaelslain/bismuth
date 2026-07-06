@@ -286,6 +286,13 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
       : undefined;
     for (const key of Object.keys(target)) {
       const v = (stored as Record<string, unknown>)[key];
+      if (Array.isArray(target[key])) {
+        // List-typed leaf (e.g. editor.wrapSelectionChars): typeof "object" matches both
+        // arrays and plain objects, so a bare typeof check can't reject a malformed value —
+        // validate structurally instead and fall back to the default otherwise.
+        if (Array.isArray(v) && v.every((el) => typeof el === "string")) target[key] = v;
+        continue;
+      }
       if (typeof v !== typeof target[key]) continue;
       const keySchema = fields?.[key];
       if (keySchema?.min !== undefined && typeof v === "number" && v < keySchema.min) continue;

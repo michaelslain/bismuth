@@ -30,12 +30,14 @@ export async function buildGraph(vaultDir: string, memoryDir?: string): Promise<
 
   const memory = await buildMemoryGraph(memoryDir);
   const about: GraphEdge[] = [];
-  for (const [base, targets] of memory.links) {
+  for (const [rid, targets] of memory.links) {
     for (const t of targets) {
       // Resolve memory→vault "about" links by full path first, then basename, so a
       // path-qualified [[folder/Note]] reference in a memory note still links across.
+      // `rid` is the memory note's full relative id, so subfolder notes reconstruct
+      // their real `mem:` node id (a basename key produced dangling edges).
       const toId = resolveLinkTarget(t, vaultByBase, vaultByPath);
-      if (toId) about.push({ from: `mem:${base}`, to: toId, kind: "about" });
+      if (toId) about.push({ from: `mem:${rid}`, to: toId, kind: "about" });
     }
   }
   const merged = mergeGraphs([vault, { nodes: memory.nodes, edges: [...memory.edges, ...about] }]);
