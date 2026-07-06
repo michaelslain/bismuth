@@ -1,8 +1,15 @@
-/* Chat surface — a VISUAL Claude Code wired to the user's own `claude` over the /chat
-   WebSocket. The backend's Agent-SDK driver streams ChatFrames; this view renders a live
-   transcript (assistant prose, thinking, tool-call chips, inline permission prompts) that
-   mirrors the Claude Code TUI. Prose (both roles) renders with the shared note markdown
-   renderer so it reads like the editor. Theme-aware throughout via App.css custom properties. */
+/* Chat surface — a VISUAL Claude Code wired to the user's own `claude` over the /chat WS.
+   NOTEBOOK-TRANSCRIPT design: the chat reads as a NOTE, not a messaging app. No message
+   bubbles — no per-turn fill, border, or left/right alignment. A turn is a quiet uppercase
+   speaker label ("You" / the daemon's persona name) followed by plain note prose, set in the
+   SAME 680px Lora reading column the CodeMirror editor uses (BlockEditor.css: .block-editor
+   padding-inline 40px + .block-editor-col max-width 680px). Separation between turns is
+   whitespace. Thinking + tool calls are quiet one-line disclosures that expand to left-ruled
+   excerpts; the permission prompt is the one affordance that keeps chrome, as a callout.
+   Theme-aware throughout via App.css custom properties. The only non-token literals are the
+   shared markdown-renderer's code/pre fill rgba(140,140,140,x) (kept verbatim to stay in
+   lockstep with the editor/cards) and the attachment-remove scrim (a control over arbitrary
+   photo pixels, theme-invariant like --term-bg/--term-fg). */
 
 .chat-host {
   display: flex;
@@ -15,49 +22,39 @@
   color: var(--fg);
 }
 
-/* ── Header (ViewBar) extras ─────────────────────────────────────────────────── */
-/* The active model id, sitting just right of the breadcrumb. */
+/* ── Header (ViewBar) extras — quiet metadata, no pills ───────────────────────── */
 .chat-model {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: 11.5px;
-  color: var(--text-muted);
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  padding: 1px 7px;
-  margin-left: 8px;
+  color: var(--faint);
+  margin-left: 10px;
   white-space: nowrap;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A small tool-count / MCP-count stat in the header. */
+.chat-model::before { content: "· "; }
 .chat-stat {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--faint);
   margin-right: 10px;
   white-space: nowrap;
 }
 .chat-stat svg { opacity: 0.8; }
-/* The permission-mode selector — keep it compact in the header. */
 .chat-mode-select {
   min-width: 124px;
   height: 28px;
   font-size: 12.5px;
 }
 
-/* ── Session history picker ───────────────────────────────────────────────────── */
-/* The History button + its panel are anchored together so the popover drops under
-   the button (right-aligned to the header). */
+/* ── Session history picker — reuses .bismuth-popover; this supplies POSITIONING only ── */
 .chat-history-anchor {
   position: relative;
   display: inline-flex;
 }
-/* The dropdown listing past Claude Code sessions to resume. Floats below the button,
-   right edge aligned, above the transcript. */
 .chat-history-panel {
   position: absolute;
   top: calc(100% + 6px);
@@ -65,10 +62,6 @@
   z-index: 50;
   width: 320px;
   max-width: min(360px, 80vw);
-  background: var(--bg);
-  border: 1px solid var(--border-soft);
-  border-radius: 10px;
-  box-shadow: var(--shadow-menu, 0 8px 28px rgba(0, 0, 0, 0.28));
   overflow: hidden;
 }
 .chat-history-title {
@@ -79,21 +72,17 @@
   color: var(--faint);
   border-bottom: 1px solid var(--border-soft);
 }
-/* Loading / empty states. */
 .chat-history-state {
   padding: 16px 14px;
   font-size: 12.5px;
   color: var(--text-muted);
   text-align: center;
 }
-/* The scroll region wrapping the PopoverList (caps the height for long histories). */
 .chat-history-scroll {
   max-height: 340px;
   overflow-y: auto;
   padding: 4px;
 }
-/* The PopoverList inside the panel fills the width (its default min-width is narrower);
-   each row's summary ellipsizes (the shared .bismuth-popover-label rule) with the time on the right. */
 .chat-history-panel .chat-history-list.bismuth-popover {
   border: none;
   box-shadow: none;
@@ -102,92 +91,95 @@
   min-width: 0;
   width: 100%;
 }
-/* The relative-time detail: a touch dimmer + monospace so the times line up. */
 .chat-history-panel .bismuth-popover-detail {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: 11px;
   white-space: nowrap;
 }
 
-/* ── Scrollable transcript ───────────────────────────────────────────────────── */
+/* ── Scrollable transcript — the reading column ──────────────────────────────── */
 .chat-list {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 22px 0 16px;
+  padding: 28px 40px 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 26px;
 }
 
-.chat-empty {
-  margin: auto;
+/* Empty state via <EmptyState>/.ui-empty — Lora-italic note prose (the flashcards idiom). */
+.chat-empty.ui-empty-block {
   max-width: 440px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 14px;
-  line-height: 1.6;
   padding: 24px;
 }
-.chat-empty code {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: 0.88em;
+.chat-empty .ui-empty {
+  font-family: var(--editor-font, "Lora", serif);
+  font-style: italic;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--faint);
+}
+.chat-empty .ui-empty code {
+  font-family: var(--ui-font-stack);
+  font-style: normal;
+  font-size: 0.85em;
   background: var(--surface-2);
   border-radius: 4px;
   padding: 1px 5px;
 }
 
-/* A message row: user messages hug the right edge, assistant turns the left. */
+/* A turn row: capped to the 680px reading column, centered. No role alignment — a turn is a
+   block in the page, like a note paragraph. */
 .chat-msg {
   display: flex;
-  padding: 0 22px;
+  flex-direction: column;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
 }
-.chat-msg.user { justify-content: flex-end; }
-.chat-msg.assistant { justify-content: flex-start; }
 
-/* The whole assistant turn — its prose/thinking/tool/permission parts stack vertically and
-   share the left column, so an interleaved tool call splits prose into separate bubbles. */
+/* The quiet speaker label that replaces color-coding as the role marker. The user turn's is
+   text-only ("You"); the assistant turn's carries a small persona glyph + the daemon's name,
+   so identity reads per-turn without an avatar. Same uppercase micro-label idiom as
+   .chat-tool-section-label / .vbtn. */
+.chat-turn-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--ui-font-stack);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--faint);
+  margin: 0 0 6px;
+}
+.chat-turn-label svg { opacity: 0.75; flex: 0 0 auto; }
+
+/* The assistant turn's parts stack, full width of the capped column. */
 .chat-turn {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: 82%;
+  width: 100%;
   min-width: 0;
 }
 
+/* ── Bubbles dissolve: no fill, border, radius, or alignment — both roles are plain note
+   prose. Retires the old .chat-bubble.user accent fill + hardcoded #fff (no fill left to
+   need --on-accent). .user/.assistant remain as inert hooks. ───────────────────────────── */
 .chat-bubble {
-  max-width: 76%;
-  border-radius: 14px;
-  padding: 8px 16px;
-  /* Render exactly like a note: Lora at the editor's reading size + line-height
-     (var(--editor-font*), set by settingsCssVars from the appearance settings). */
   font-family: var(--editor-font, "Lora", serif);
   font-size: var(--editor-font-size, 18px);
   line-height: var(--prose-line-height, 1.65);
+  color: var(--fg);
   word-wrap: break-word;
   overflow-wrap: anywhere;
 }
-/* An assistant prose bubble lives inside the turn column (already width-capped). */
-.chat-turn .chat-bubble { max-width: 100%; }
 
-/* User bubble — accent-tinted; renders markdown identically to the assistant side. */
-.chat-bubble.user {
-  background: var(--accent);
-  color: #fff;
-  border-bottom-right-radius: 4px;
-}
-
-/* Assistant bubble — neutral surface. */
-.chat-bubble.assistant {
-  background: var(--surface-2);
-  color: var(--fg);
-  border: 1px solid var(--border-soft);
-  border-bottom-left-radius: 4px;
-}
-
-/* ── Rendered markdown — mirrors the editor's live-preview theme (editor/livePreview.ts)
-   so a chat message reads EXACTLY like a note: Lora prose, the same heading scale,
-   Monaspace inline-code/fences, soft blockquote. Applies to BOTH roles. ─────────────── */
+/* ── Rendered markdown — mirrors the editor's live-preview theme so a message reads exactly
+   like a note. Applies to both roles identically. ─────────────────────────────────────── */
 .chat-bubble > :first-child { margin-top: 0; }
 .chat-bubble > :last-child { margin-bottom: 0; }
 .chat-bubble p { margin: 0 0 0.55em; }
@@ -195,7 +187,6 @@
 .chat-bubble ol { margin: 0.3em 0 0.55em; padding-left: 1.4em; }
 .chat-bubble li { margin: 0; line-height: 1.55; }
 .chat-bubble li::marker { color: var(--faint); }
-.chat-bubble.user li::marker { color: rgba(255, 255, 255, 0.7); }
 .chat-bubble h1,
 .chat-bubble h2,
 .chat-bubble h3,
@@ -215,13 +206,12 @@
   text-decoration: none;
   border-bottom: 1px solid var(--accent-soft);
 }
-.chat-bubble.user a { color: #fff; border-bottom-color: rgba(255, 255, 255, 0.55); }
 .chat-bubble a:hover { border-bottom-color: currentColor; }
 .chat-bubble a.bismuth-wikilink { cursor: pointer; }
-/* Inline code + fences: Monaspace at the editor's mono-scale, semi-transparent grey fill
-   (the same rgba the editor uses, so it reads on both the dark and the accent bubble). */
+/* Inline code + fences: the shared renderer's verbatim rgba(140,140,140,x) fill — matches
+   .cardMd / livePreview token-for-token. Do not "fix" to a token; it would desync Chat. */
 .chat-bubble code {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: calc(1em * var(--mono-scale, 0.85));
   background: rgba(140, 140, 140, 0.18);
   padding: 0 3px;
@@ -242,7 +232,7 @@
 .chat-bubble blockquote {
   margin: 0.4em 0;
   padding-left: 8px;
-  border-left: 3px solid #555;
+  border-left: 3px solid var(--border);
   opacity: 0.85;
 }
 .chat-bubble hr {
@@ -253,7 +243,7 @@
 .chat-bubble table {
   border-collapse: collapse;
   margin: 0.55em 0;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: calc(1em * var(--mono-scale, 0.85));
 }
 .chat-bubble th,
@@ -268,21 +258,30 @@
 }
 .chat-bubble .bismuth-tag {
   color: var(--accent);
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: calc(1em * var(--mono-scale, 0.85));
 }
-.chat-bubble.user .bismuth-tag { color: #fff; }
 .chat-bubble img {
   max-width: 100%;
   border-radius: 8px;
 }
 
-/* ── Thinking — a dim, collapsible "extended thinking" section, collapsed by default. ── */
-.chat-thinking {
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
-  border: 1px dashed var(--border-soft);
+/* ── The user's own sent images, under the "You" label. ─────────────────────────────── */
+.chat-user-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
 }
+.chat-user-image {
+  max-width: 180px;
+  max-height: 180px;
+  border-radius: 8px;
+  border: 1px solid var(--border-soft);
+  display: block;
+}
+
+/* ── Thinking — a dim, collapsible one-liner. No box; quiet italic muted text. ────────── */
 .chat-thinking-head {
   display: flex;
   align-items: center;
@@ -290,33 +289,29 @@
   width: 100%;
   background: none;
   border: none;
-  padding: 5px 10px;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin-left: -4px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--faint);
   font-style: italic;
   text-align: left;
 }
-.chat-thinking-head:hover { color: var(--fg); }
+.chat-thinking-head:hover { color: var(--text-muted); background: var(--hover-bg); }
 .chat-thinking-body {
   margin: 0;
-  padding: 2px 12px 10px 28px;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  padding: 2px 0 6px 20px;
+  font-family: var(--ui-font-stack);
   font-size: 12px;
   line-height: 1.55;
-  color: var(--text-muted);
+  color: var(--faint);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* ── Tool-call chip — an icon + name + one-line summary + status, expandable to input/result. */
-.chat-tool {
-  border-radius: 9px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  overflow: hidden;
-}
-.chat-tool.error { border-color: color-mix(in srgb, var(--accent-purple, #d4574a) 45%, var(--border-soft)); }
+/* ── Tool-call chip — a quiet one-liner: icon + name + summary + status. No box. Expands to
+   a left-ruled excerpt (the shared "here's raw data" idiom). ──────────────────────────── */
 .chat-tool-head {
   display: flex;
   align-items: center;
@@ -324,38 +319,43 @@
   width: 100%;
   background: none;
   border: none;
-  padding: 7px 10px;
+  border-radius: 4px;
+  padding: 3px 4px;
+  margin-left: -4px;
   cursor: pointer;
   text-align: left;
   font-size: 12.5px;
-  color: var(--fg);
+  color: var(--text-muted);
   min-width: 0;
 }
-.chat-tool-head:hover { background: var(--surface-1); }
-.chat-tool-icon { color: var(--accent); flex: 0 0 auto; }
+.chat-tool-head:hover { background: var(--hover-bg); color: var(--fg); }
+.chat-tool.open .chat-tool-head { color: var(--fg); }
+.chat-tool-icon { color: var(--faint); flex: 0 0 auto; }
+.chat-tool.error .chat-tool-icon { color: var(--danger); }
 .chat-tool-name {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-weight: 600;
+  font-family: var(--ui-font-stack);
+  font-weight: 500;
   flex: 0 0 auto;
+  min-width: 8ch;
 }
 .chat-tool-summary {
   flex: 1 1 auto;
   min-width: 0;
-  color: var(--text-muted);
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
   font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .chat-tool-status { flex: 0 0 auto; display: inline-flex; align-items: center; }
-.chat-tool-check { color: var(--accent-green, #4a9d5b); }
-.chat-tool-x { color: var(--accent-purple, #d4574a); }
+/* Real semantic tokens (was --accent-green [undefined→literal] / --accent-purple [purple!]). */
+.chat-tool-check { color: var(--success); }
+.chat-tool-x { color: var(--danger); }
 .chat-tool-caret { color: var(--faint); flex: 0 0 auto; }
-/* A tiny spinner while the tool runs (no result yet). */
 .chat-tool-spinner {
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   border: 2px solid var(--border-soft);
   border-top-color: var(--accent);
@@ -364,22 +364,22 @@
 }
 @keyframes chat-spin { to { transform: rotate(360deg); } }
 .chat-tool-detail {
-  padding: 4px 10px 10px;
-  border-top: 1px solid var(--border-soft);
+  padding: 2px 0 10px 22px;
+  border-top: none;
 }
 .chat-tool-section-label {
-  font-size: 10.5px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--faint);
-  margin: 8px 0 3px;
+  margin: 7px 0 3px;
 }
 .chat-tool-pre {
   margin: 0;
-  padding: 8px 10px;
-  background: rgba(140, 140, 140, 0.12);
-  border-radius: 6px;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  padding: 5px 0 5px 10px;
+  border-left: 2px solid var(--border-soft);
+  border-radius: 0;
+  font-family: var(--ui-font-stack);
   font-size: 11.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -387,36 +387,41 @@
   max-height: 320px;
   overflow: auto;
 }
-.chat-tool-pre-error { color: var(--accent-purple, #d4574a); }
-
-/* ── Inline permission card — Claude Code's approve/deny prompt, the heart of "user chooses". */
-.chat-permission {
-  border-radius: 11px;
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border-soft));
-  padding: 10px 12px;
+.chat-tool-pre-error {
+  color: var(--danger);
+  border-left-color: color-mix(in srgb, var(--danger) 45%, var(--border-soft));
 }
-.chat-permission.answered { opacity: 0.75; }
+
+/* ── Inline permission card — the one affordance that keeps chrome: a callout-style left
+   accent rule + soft fg-tint (the editor's `> [!type]` admonition), not a dialog box. ──── */
+.chat-permission {
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  padding: 9px 12px 10px;
+}
+.chat-permission.answered { opacity: 0.65; border-left-color: var(--border); }
 .chat-permission-head {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13.5px;
+  font-size: 13px;
   color: var(--fg);
 }
 .chat-permission-icon { color: var(--accent); }
+.chat-permission.answered .chat-permission-icon { color: var(--faint); }
 .chat-permission-title b {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-weight: 600;
 }
 .chat-permission-summary {
-  margin: 7px 0 0;
-  padding: 7px 9px;
-  background: rgba(140, 140, 140, 0.12);
-  border-radius: 6px;
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  margin: 8px 0 0;
+  padding: 5px 0 5px 10px;
+  border-left: 2px solid var(--border-soft);
+  font-family: var(--ui-font-stack);
   font-size: 11.5px;
   line-height: 1.5;
+  color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 160px;
@@ -434,27 +439,23 @@
   gap: 5px;
   margin-top: 9px;
   font-size: 12.5px;
-  color: var(--accent-green, #4a9d5b);
+  color: var(--success);
 }
-.chat-permission-outcome.deny { color: var(--accent-purple, #d4574a); }
+.chat-permission-outcome.deny { color: var(--danger); }
 
-/* The turn's muted footer (turns + cost), under the last part. */
+/* The turn's muted footer (turns + cost). */
 .chat-turn-footer {
   font-size: 11px;
   color: var(--faint);
-  padding: 1px 4px;
+  padding: 2px 0 0;
 }
 
-/* ── Pre-first-delta thinking indicator — three pulsing dots. ─────────────────── */
+/* ── Pre-first-delta thinking dots — no card. ────────────────────────────────────────── */
 .chat-thinking-dots {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 13px 16px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
-  border-radius: 14px;
-  border-bottom-left-radius: 4px;
+  padding: 4px 0;
 }
 .chat-dot {
   width: 6px;
@@ -470,47 +471,114 @@
   30% { opacity: 1; transform: translateY(-3px); }
 }
 
-/* A recoverable per-turn error (spawn/exit/error) shown inline below the conversation. */
+/* A recoverable per-turn error — plain danger text + icon, no pill. (was --accent-purple.) */
 .chat-turn-error {
-  align-self: center;
-  max-width: 76%;
-  margin: 0 22px;
-  padding: 9px 13px;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--accent-purple, #d4574a) 14%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-purple, #d4574a) 32%, transparent);
-  color: var(--fg);
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0;
+  color: var(--danger);
   font-size: 13px;
   line-height: 1.45;
   white-space: pre-wrap;
 }
+.chat-turn-error-icon { flex: 0 0 auto; margin-top: 2px; }
 
-/* ── Composer pinned at the bottom ──────────────────────────────────────────── */
+/* ── Composer pinned at the bottom — borderless, compose on the page in the same column ── */
 .chat-composer {
-  position: relative; /* anchors the slash popover above the input */
+  position: relative;
   flex: 0 0 auto;
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  padding: 12px 18px 16px;
+  padding: 14px 40px 20px;
   border-top: 1px solid var(--border-soft);
 }
+.chat-composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+}
+.chat-composer-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* The textarea drops the boxed .ui-input look (scoped to .chat-composer only — .ui-input
+   elsewhere is untouched; the 2-class selector outranks .ui-input's 1-class rules). */
 .chat-composer .chat-input {
   flex: 1 1 auto;
   resize: none;
-  min-height: 38px;
+  min-height: 34px;
   max-height: 200px;
-  /* Compose in the same Lora prose you'll read back, so typing matches the rendered message. */
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 6px 0;
+  box-shadow: none;
   font-family: var(--editor-font, "Lora", serif);
   font-size: var(--editor-font-size, 18px);
   line-height: 1.45;
   overflow-y: auto;
 }
+.chat-composer .chat-input:hover,
+.chat-composer .chat-input:focus,
+.chat-composer .chat-input:focus-within {
+  border: none;
+  box-shadow: none;
+}
 
-/* The slash-command autocomplete popover, floating just above the composer. */
+/* Staged image attachments above the textarea. */
+.chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chat-attachment {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+}
+.chat-attachment-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+/* The remove "x" is the shared <IconButton>, shrunk + circular over the thumbnail. The 3-class
+   ancestor chain (.chat-attachment .btn--icon.chat-attachment-remove) reliably outranks ui.css's
+   own .btn--icon.btn--normal(:hover) rules regardless of stylesheet import order. The dark scrim
+   + white icon are deliberately NOT tokens — like --term-bg/--term-fg, this sits over arbitrary
+   photo pixels, not app chrome, so it must stay legible over any image in any theme. */
+.chat-attachment .btn--icon.chat-attachment-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 1;
+}
+.chat-attachment .btn--icon.chat-attachment-remove:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+}
+
+/* The slash-command autocomplete popover — left edge matches the 40px composer inset. */
 .chat-slash-popover {
   position: absolute;
-  left: 18px;
+  left: 40px;
   bottom: calc(100% - 6px);
   z-index: 40;
   max-height: 280px;
@@ -518,7 +586,7 @@
   min-width: 240px;
 }
 
-/* ── Setup state (claude not installed) ─────────────────────────────────────── */
+/* ── Setup state (claude not installed) — already minimal. ───────────────────────────── */
 .chat-setup {
   flex: 1 1 auto;
   min-height: 0;
@@ -549,7 +617,7 @@
   line-height: 1.5;
 }
 .chat-setup code {
-  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-family: var(--ui-font-stack);
   font-size: 0.9em;
   background: var(--surface-2);
   border-radius: 4px;
