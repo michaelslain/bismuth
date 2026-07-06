@@ -1,5 +1,5 @@
 import { join, dirname, resolve, sep } from "node:path";
-import { mkdirSync, renameSync, existsSync, writeFileSync, statSync } from "node:fs";
+import { mkdirSync, renameSync, existsSync, writeFileSync, statSync, rmSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { parseFrontmatter } from "./frontmatter";
@@ -307,7 +307,13 @@ function carrySidecars(root: string, from: string, to: string, wasDir: boolean):
       const fAbs = join(root, f);
       if (!existsSync(fAbs)) continue;
       const tAbs = join(root, t);
-      if (existsSync(tAbs)) continue; // never clobber an existing sidecar at the destination
+      // A sidecar already at the destination is by construction an ORPHAN: the caller just
+      // proved the destination MAIN entry didn't exist (moveEntry throws EEXIST; deleteEntry
+      // stamps a unique trash path), so nothing owns it. Evict it — skipping instead would
+      // strand the source's REAL ink at a path nothing ever reads again while the moved note
+      // silently inherits the stale orphan. rm (not a bare rename) because renaming onto a
+      // non-empty directory throws ENOTEMPTY, which the catch below would swallow.
+      if (existsSync(tAbs)) rmSync(tAbs, { recursive: true, force: true });
       mkdirSync(dirname(tAbs), { recursive: true });
       renameSync(fAbs, tAbs);
     } catch {

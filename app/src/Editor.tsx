@@ -1,5 +1,5 @@
 // app/src/Editor.tsx
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
 import { EditorState, Annotation, Compartment, Prec, type Line } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
@@ -342,9 +342,19 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     const v = view;
     if (!v) return;
     v.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(!on)) });
-    // The toggle usually fires while the editor has focus — drop it so keystrokes can't
-    // leak into the (now non-editable) buffer while drawing.
-    if (on) v.contentDOM.blur();
+    if (on) {
+      // The toggle usually fires while the editor has focus — drop it so keystrokes can't
+      // leak into the (now non-editable) buffer while drawing. The InkOverlay then focuses
+      // its own host, which keeps ALL draw-mode keys (toggle/Escape/undo) scoped to this
+      // pane's wrapper — no global listeners.
+      v.contentDOM.blur();
+    } else {
+      const ae = document.activeElement;
+      // Exiting: focus went to the ink host (or fell to body). Give it back to the editor so
+      // the user can type — and re-toggle — immediately. Guarded so we never steal focus if
+      // the user has since clicked into another pane or input.
+      if (ae === document.body || wrapper.contains(ae)) v.contentDOM.focus();
+    }
   };
   const onDrawKey = (e: KeyboardEvent): void => {
     if (e.repeat) return;
@@ -355,22 +365,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     setDraw(!drawMode());
   };
   onMount(() => {
+    // Catches both directions: entering (focus in the editor) AND exiting — the InkOverlay
+    // focuses its host (inside this wrapper) while drawing, so the toggle keystroke still
+    // lands here. Scoping is automatic per pane; no window-level listener.
     wrapper.addEventListener("keydown", onDrawKey, true);
     onCleanup(() => wrapper.removeEventListener("keydown", onDrawKey, true));
-  });
-  // Exiting needs a WINDOW-level listener: entering draw mode blurs the editor (focus lands on
-  // body), so the wrapper listener above can no longer see the toggle combo. Registered only
-  // while draw mode is on, and only flips THIS editor back off.
-  createEffect(() => {
-    if (!drawMode()) return;
-    const onExitKey = (e: KeyboardEvent): void => {
-      if (e.repeat || !matchesKeybinding(e, settings.keybindings["toggle-draw-mode"])) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setDraw(false);
-    };
-    window.addEventListener("keydown", onExitKey, true);
-    onCleanup(() => window.removeEventListener("keydown", onExitKey, true));
   });
 
   const save = async (path: string, text: string) => {
@@ -384,6 +383,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   // The current buffer's path, tracked at component scope so the unload handler (added
   // once) can flush whatever buffer is open.
   let activePath: string | null = null;
+  // The path the view was last BUILT for — distinguishes a real note switch from a
+  // settings-driven same-path rebuild inside the view effect (see pathChanged there).
+  let prevBuiltPath: string | null = null;
 
   // Flush the debounced autosave NOW, so a reload / file-switch can't drop an edit still
   // sitting in the 800ms timer (e.g. a table cell committed on click-off right before you
@@ -520,8 +522,13 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
     pendingSave = false;
-    // Switching notes always lands in TEXT mode; the fresh view below is built editable.
-    setDraw(false);
+    // Switching NOTES always lands in text mode — but this effect also re-runs on any
+    // settings.editor change (it reads those leaves to build the extensions), and a
+    // settings-driven same-path rebuild must NOT silently kick the user out of draw mode
+    // (the compartment seed below preserves the non-editable state instead).
+    const pathChanged = path !== prevBuiltPath;
+    prevBuiltPath = path;
+    if (pathChanged) setDraw(false);
     if (!path) return;
 
     // Prefer the body FileView already fetched (no second HTTP round-trip on open).
@@ -603,8 +610,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Shared base for every buffer: editing, theme, gutters, autosave.
     const base = [
       // Draw mode switches USER editing off (contenteditable/IME/tab order) without touching
-      // programmatic dispatch — see setDraw. Fresh views start editable (draw mode was reset).
-      editableCompartment.of(EditorView.editable.of(true)),
+      // programmatic dispatch — see setDraw. Seeded from the CURRENT draw state (untracked —
+      // drawMode must not be a dependency of this effect): a real note switch reset it to
+      // false above, while a settings-driven same-path rebuild preserves an active draw mode
+      // instead of leaving an interactive ink overlay over a silently editable buffer.
+      editableCompartment.of(EditorView.editable.of(!untrack(drawMode))),
       history(),
       drawSelection(),
       // Indent unit is set per-buffer below (4 spaces for markdown notes, 2 for YAML

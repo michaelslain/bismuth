@@ -368,7 +368,12 @@ export function createServer(cfg: CoreConfig) {
     const dirty = paths.length === 0
       ? { graph: true, tree: true }
       : await classifyVault(paths);
-    applyDirty(paths, dirty);
+    // Pure ink-sidecar writes touch no vault content — skip the search/rows/tasks drops,
+    // matching arm()'s gate. This is the path a PUT /file ink autosave actually takes, so
+    // without it every stroke would force a full rows/tasks rebuild despite classifyVault
+    // marking the batch dirty-to-nothing. No paths = unknown extent → treat as touched.
+    const vaultTouched = paths.length === 0 || paths.some((p) => !isInkSidecarPath(p));
+    applyDirty(paths, dirty, vaultTouched);
   }
 
   /** Schedule vault changes for debounced processing. */

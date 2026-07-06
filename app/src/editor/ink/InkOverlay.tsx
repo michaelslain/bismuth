@@ -118,6 +118,12 @@ export function InkOverlay(props: {
         const text = await api.read(inkPathFor(p));
         if (props.path() !== p || text === lastSavedInk || !text.trim()) return;
         const doc = parseInkDoc(text);
+        // Cancel any pending local flush FIRST: its closure holds a pre-reload snapshot, and
+        // letting it fire after we adopt the sibling's content would silently overwrite the
+        // sidecar with stale ink (erasing the other pane's strokes on disk). Concurrent draws
+        // on both panes within one debounce window still resolve last-writer-wins — accepted;
+        // this guard only removes the DESTRUCTIVE stale-clobber, not the need to take turns.
+        clearTimeout(saveTimer);
         lastSavedInk = text;
         setStore(createDrawingStore(wrapInk(doc.strokes), requestSave));
       } catch {
@@ -295,26 +301,28 @@ export function InkOverlay(props: {
     e.preventDefault();
   };
 
-  // Draw-mode key handling (capture, registered on window while active so it wins regardless
-  // of focus): Escape exits; Mod+Z / Mod+Shift+Z drive the INK undo stack, never CM's.
-  createEffect(() => {
+  // Draw-mode key handling: while active, the HOST (tabindex=-1) takes focus, so Escape and
+  // Mod+Z / Mod+Shift+Z are handled right here — scoped to this pane by focus itself, never a
+  // window-level capture that could hijack a sibling pane's keys. (The host sits inside the
+  // editor wrapper, so the toggle-draw-mode combo still bubbles to Editor's wrapper listener.)
+  const onHostKey = (e: KeyboardEvent) => {
     if (!props.active()) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        props.onExit();
-        return;
-      }
-      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.shiftKey) store()?.redo();
-        else store()?.undo();
-      }
-    };
-    window.addEventListener("keydown", onKey, true);
-    onCleanup(() => window.removeEventListener("keydown", onKey, true));
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      props.onExit();
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) store()?.redo();
+      else store()?.undo();
+    }
+  };
+  // Take focus on activation (and back after toolbar clicks steal it) so onHostKey sees keys.
+  createEffect(() => {
+    if (props.active()) queueMicrotask(() => host?.focus());
   });
 
   onCleanup(() => {
@@ -327,7 +335,14 @@ export function InkOverlay(props: {
 
   return (
     <Show when={mounted()}>
-      <div ref={host} class="ink-host" classList={{ active: props.active() }}>
+      <div
+        ref={host}
+        class="ink-host"
+        classList={{ active: props.active() }}
+        tabindex={-1}
+        onKeyDown={onHostKey}
+        onPointerDown={() => { if (props.active()) host?.focus(); }}
+      >
         <canvas ref={base} class="ink-canvas" />
         <canvas
           ref={live}
