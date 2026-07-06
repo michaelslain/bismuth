@@ -23,12 +23,13 @@ export function isSentinel(content: string): boolean {
   return content.startsWith("::");
 }
 
-// Chat tabs present AS the vault's daemon when one is enabled (its identity name replaces
-// "Chat"). tabIds stays framework-free, so the name is injected as a provider — App wires it
-// to the daemonIdentity signal store; null (or no provider) → the plain "Chat" label. Because
-// the provider reads a signal, any JSX/memo calling contentLabel stays reactive to the name.
-let chatLabelProvider: (() => string | null) | null = null;
-export function setChatLabelProvider(fn: () => string | null): void {
+// Chat tabs are labeled by an injected provider (tabIds stays framework-free): App wires it to
+// the per-session conversation title (chatTitles) with the daemon's identity name as fallback,
+// so precedence is title > daemon persona > "Chat". Because the provider reads signals, any
+// JSX/memo calling contentLabel stays reactive to both. Receives the full content id
+// ("::chat:<id>") so it can key the title lookup.
+let chatLabelProvider: ((content: string) => string | null) | null = null;
+export function setChatLabelProvider(fn: (content: string) => string | null): void {
   chatLabelProvider = fn;
 }
 
@@ -46,7 +47,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
-  if (content.startsWith(CHAT_PREFIX)) return chatLabelProvider?.() ?? "Chat";
+  if (content.startsWith(CHAT_PREFIX)) return chatLabelProvider?.(content) ?? "Chat";
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
   if (isSettingsFile(content)) return "settings";
   return noteName(content);

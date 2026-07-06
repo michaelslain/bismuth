@@ -105,19 +105,22 @@ The `/chat` WebSocket is a text-JSON protocol. Server → client is the `ChatFra
 | `{type:"resume", sessionId}` | Bind this chat to an existing session — `chatResume()`. Its `init` manifest streams back. |
 | `{type:"permission_response", id, behavior, always?}` | Answer a `permission` frame — `chatRespondPermission()`. |
 | `{type:"set_permission_mode", mode}` | Switch permission mode live — `chatSetPermissionMode()`. |
-| `{type:"set_model", model}` | Switch model live — `chatSetModel()` (wired but not surfaced in the UI). |
+| `{type:"set_model", model}` | Switch model live — `chatSetModel()` (the header model picker, populated by the `models` frame). |
 | `{type:"stop"}` | Interrupt the in-flight turn — `chatAbort()` (leaves the session resumable). |
 
 The `ChatFrame` union (server → client):
 
 - `{type:"manifest", manifest}` — a fresh per-turn manifest from each `system`/`init`.
-- `{type:"user-message", text}` — a past user turn, emitted **only** during history replay (live user messages come from the client, not the wire).
+- `{type:"user-message", text, images?}` — a past user turn, emitted **only** during history replay (live user messages come from the client, not the wire). `images` carries persisted attachments as `data:` URLs so image(-only) turns survive replay.
 - `{type:"assistant-text", text}` — a delta of assistant prose, streamed from `content_block_delta` text deltas.
 - `{type:"thinking", text}` — a delta of extended-thinking text.
 - `{type:"tool-use", id, name, input}` — an assistant `tool_use` block.
 - `{type:"tool-result", id, content, isError}` — the matching user `tool_result` block.
 - `{type:"permission", id, toolName, input}` — `canUseTool` asking the user to approve/deny.
 - `{type:"result", isError, numTurns, costUsd}` — a turn ended.
+- `{type:"models", models}` — the models this login can run (`Query.supportedModels()`, fetched once per session after the first init) — populates the header model picker.
+- `{type:"title", title}` — the session's conversation summary (`getSessionInfo`), emitted once a non-empty summary exists (retried at each turn-end) — names the chat tab.
+- `{type:"context", percentage, totalTokens, maxTokens}` — context-window usage after each completed turn (`Query.getContextUsage()`) — the header pill (warns past ~80%).
 - `{type:"done"}` — the turn is fully drained (pushed after `result`).
 - `{type:"error", code, message}` — `no-claude` (CLI missing — surface setup), `spawn`/`exit` (child failed), or `error` (an SDK/turn error).
 
@@ -170,9 +173,9 @@ session.sink({
 });
 ```
 
-In the header `ViewBar`, `ChatView` shows the active model (read-only), a tools count (`Wrench N`), a connected/total MCP count (`Server X/Y`, where "connected" matches `/connect|ready|ok/i` on each server's status), and a permission-mode `Select` (Default / Plan / Accept edits / Bypass — the fixed protocol values). The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
+In the header `ViewBar`, `ChatView` shows the model (a live picker once the `models` frame arrives, read-only before), a tools count (`Wrench N`), a connected/total MCP count (`Server X/Y`, where "connected" matches `/connect|ready|ok/i` on each server's status), a context-usage pill (`Gauge N%`, danger-tinted past 80%), and a permission-mode `Select` (Default / Plan / Accept edits / Bypass — the fixed protocol values). The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
 
-> `setModel` is fully wired end-to-end (`{type:"set_model"}` → `chatSetModel`), but **not** surfaced in the UI — the manifest exposes the active model read-only, and there's no reliable available-models list from the SDK to populate a picker.
+> The model is switchable live from the header: the `models` frame (from `Query.supportedModels()`) populates a `Select` that sends `{type:"set_model"}`; before the list arrives (or for a single-model login) the active model shows read-only.
 
 ## Session history picker
 
