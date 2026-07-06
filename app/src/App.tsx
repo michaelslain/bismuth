@@ -37,6 +37,11 @@ import { isReloadNavigation } from "./navType";
 import { installAppMenu } from "./nativeAppMenu";
 // Lazy: xterm.js + its CSS only load when a terminal tab first opens.
 const TerminalTab = lazy(() => import("./Terminal").then((m) => ({ default: m.TerminalTab })));
+// Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX). Mounted HERE (in an
+// always-mounted overlay, like TerminalTab) rather than inside PaneContent, so a tab/pane switch
+// hides the chat instead of unmounting it — unmount closes its WS with code 1000, which the
+// backend treats as an intentional tab-close and kills the whole `claude` session.
+const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
 import { subgraphByKinds, SECOND_BRAIN_KINDS, THIRD_BRAIN_KINDS } from "../../core/src/graph";
 import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
@@ -180,6 +185,21 @@ export default function App() {
     return [...ids];
   });
 
+  // Every unique chat content id open across all tabs/panes — same keep-alive pattern as the
+  // terminals above: each mounts ONE always-mounted ChatView in the overlay, hidden (not
+  // unmounted) when its host pane isn't visible, so the backend `claude` session + transcript
+  // survive tab/pane switches. An id leaving this set (a real tab close) unmounts its view,
+  // whose onCleanup closes the WS with 1000 → the backend tears the session down.
+  const chatContents = createMemo<string[]>(() => {
+    const ids = new Set<string>();
+    for (const t of tabs()) {
+      for (const l of leaves(t.root)) {
+        if (l.content.startsWith(CHAT_PREFIX)) ids.add(l.content);
+      }
+    }
+    return [...ids];
+  });
+
   // Every content id open as a tab or pane, across all tabs — the "you" hub in the knowledge
   // graph links to each of these (whichever resolve to a note in the active brain view). Live:
   // re-derives on any tab/pane open/close/replace, so the hub's edges track the working set.
@@ -207,27 +227,32 @@ export default function App() {
 
   // The editor body element — overlay positioning is relative to its rect.
   let editorBodyEl: HTMLDivElement | undefined;
-  // Pixel rects (relative to editor body) of each terminal's host placeholder in the
-  // active tab. Absent → terminal not in active tab → hidden. Recomputed whenever the
+  // Pixel rects (relative to editor body) of each terminal's / chat's host placeholder in the
+  // active tab. Absent → not in active tab → hidden. Recomputed whenever the
   // active tab's tree changes or the body resizes (see effect below).
   const [terminalHostRects, setTerminalHostRects] = createSignal<Map<string, Rect>>(new Map());
-  const measureTerminalHosts = (): void => {
+  const [chatHostRects, setChatHostRects] = createSignal<Map<string, Rect>>(new Map());
+  const measureOverlayHosts = (): void => {
     if (!editorBodyEl) return;
     const parent = editorBodyEl.getBoundingClientRect();
-    const next = new Map<string, Rect>();
-    for (const host of editorBodyEl.querySelectorAll<HTMLElement>("[data-terminal-host]")) {
-      const id = host.getAttribute("data-terminal-host");
-      if (!id) continue;
-      const r = host.getBoundingClientRect();
-      next.set(id, { x: r.left - parent.left, y: r.top - parent.top, w: r.width, h: r.height });
-    }
-    setTerminalHostRects(next);
+    const measure = (attr: string): Map<string, Rect> => {
+      const next = new Map<string, Rect>();
+      for (const host of editorBodyEl!.querySelectorAll<HTMLElement>(`[${attr}]`)) {
+        const id = host.getAttribute(attr);
+        if (!id) continue;
+        const r = host.getBoundingClientRect();
+        next.set(id, { x: r.left - parent.left, y: r.top - parent.top, w: r.width, h: r.height });
+      }
+      return next;
+    };
+    setTerminalHostRects(measure("data-terminal-host"));
+    setChatHostRects(measure("data-chat-host"));
   };
   // Re-measure whenever the active tab's tree changes — Solid runs this effect after the
   // render that placed/removed host elements, so getBoundingClientRect is current.
   createEffect(() => {
     activeTab(); // track
-    queueMicrotask(measureTerminalHosts);
+    queueMicrotask(measureOverlayHosts);
   });
 
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
@@ -1460,7 +1485,7 @@ export default function App() {
   // (window resize, sidebar toggle, divider drag).
   onMount(() => {
     if (!editorBodyEl) return;
-    const ro = new ResizeObserver(() => { measureTerminalHosts(); placeFloater(); });
+    const ro = new ResizeObserver(() => { measureOverlayHosts(); placeFloater(); });
     ro.observe(editorBodyEl);
     onCleanup(() => ro.disconnect());
   });
@@ -1684,6 +1709,32 @@ export default function App() {
                 }}>
                   <Suspense fallback={<div class="term-host" />}>
                     <TerminalTab id={id} active={() => focusedContent() === id} onExit={() => closeTerminalContent(id)} />
+                  </Suspense>
+                </div>
+              );
+            }}
+          </For>
+          {/* Always-mounted chat overlay — the same keep-alive pattern as the terminals: each
+              unique chat content id mounts ONE ChatView, positioned over its data-chat-host in
+              the active tab and hidden (display:none, NOT unmounted) elsewhere, so the backend
+              `claude` session, WS, and transcript survive tab/pane switches. Unmount (and the
+              clean ws.close(1000) → backend closeChat) happens only when the id leaves
+              chatContents — a genuine tab/pane close. */}
+          <For each={chatContents()}>
+            {(id) => {
+              const rect = () => chatHostRects().get(id);
+              return (
+                <div class="chat-overlay"
+                  style={{
+                  position: "absolute",
+                  left: rect() ? `${rect()!.x}px` : "0",
+                  top: rect() ? `${rect()!.y}px` : "0",
+                  width: rect() ? `${rect()!.w}px` : "100%",
+                  height: rect() ? `${rect()!.h}px` : "100%",
+                  display: rect() ? "block" : "none",
+                }}>
+                  <Suspense fallback={<div class="full" />}>
+                    <ChatView chatId={id.slice(CHAT_PREFIX.length)} />
                   </Suspense>
                 </div>
               );

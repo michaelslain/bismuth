@@ -43,8 +43,10 @@ export type ChatFrame =
   /** A fresh manifest from each `system`/`init` (emitted every turn; the manifest self-updates). */
   | { type: "manifest"; manifest: ChatManifest }
   /** A past USER turn, emitted ONLY when replaying history (live user messages come from the client,
-   *  not the wire). The frontend renders it as a user bubble — same as a freshly-sent user item. */
-  | { type: "user-message"; text: string }
+   *  not the wire). The frontend renders it as a user bubble — same as a freshly-sent user item.
+   *  `images` carries any persisted image attachments as data: URLs so an image(-only) turn
+   *  survives replay instead of vanishing. */
+  | { type: "user-message"; text: string; images?: string[] }
   /** A delta of assistant prose (markdown). Streamed live from `content_block_delta` text deltas. */
   | { type: "assistant-text"; text: string }
   /** A delta of extended-thinking text. Streamed live from `content_block_delta` thinking deltas. */
@@ -197,6 +199,30 @@ interface ChatSession {
   apiKeySource: string;
   /** A pending grace-period teardown (set on an abnormal WS drop, cleared on reconnect). */
   closeTimer?: ReturnType<typeof setTimeout>;
+  /** True while a user turn is in flight (set on push, cleared after result+done / drain end).
+   *  Read by rebindSink: a reconnect that finds NO active turn pushes a synthetic `done` so a
+   *  terminating frame lost to a dead socket can't wedge the client's streaming state forever. */
+  turnActive: boolean;
+  /** Set by detachSink on an abnormal WS drop: frames buffer here (capped) instead of being
+   *  fired into a dead socket, and rebindSink flushes them to the reconnected one — the chat
+   *  analogue of terminal.ts's PTY detach/attach output buffering. */
+  detached: boolean;
+  buffer: ChatFrame[];
+}
+
+/** Cap on frames buffered while detached — enough for any realistic turn's tail; a runaway turn
+ *  during a long outage drops the middle rather than growing unbounded (the terminal frames that
+ *  matter for UI consistency — result/done/permission — are tiny and near the end). */
+const MAX_BUFFERED_FRAMES = 2000;
+
+/** Route a frame to the session's sink, or into the reconnect buffer while detached. Every frame
+ *  producer (drain loop, canUseTool, teardown notices) funnels through this. */
+function emit(session: ChatSession, frame: ChatFrame): void {
+  if (session.detached) {
+    if (session.buffer.length < MAX_BUFFERED_FRAMES) session.buffer.push(frame);
+    return;
+  }
+  session.sink(frame);
 }
 
 const sessions = new Map<string, ChatSession>();
@@ -312,10 +338,24 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
   if (msg.type === "user") {
     const content = (msg.message as { content?: unknown }).content;
     // A live user message is ONLY the carrier of tool_result blocks (the user's own prompt came from
-    // the client). In history we also surface the prose as a user-message bubble.
+    // the client). In history we also surface the prose — and any persisted image attachments —
+    // as a user-message bubble; an image-only turn (no text blocks) must not vanish from replay.
     if (!opts.live) {
       const text = userMessageText(content);
-      if (text.length) frames.push({ type: "user-message", text });
+      const images: string[] = [];
+      if (Array.isArray(content)) {
+        for (const block of content) {
+          if (!block || typeof block !== "object") continue;
+          const b = block as Record<string, unknown>;
+          if (b.type !== "image") continue;
+          const src = b.source as { type?: string; media_type?: string; data?: string } | undefined;
+          if (src && src.type === "base64" && typeof src.media_type === "string" && typeof src.data === "string") {
+            images.push(`data:${src.media_type};base64,${src.data}`);
+          }
+        }
+      }
+      // Pure tool_result carrier messages have neither — keep skipping those (no empty bubbles).
+      if (text.length || images.length) frames.push({ type: "user-message", text, ...(images.length ? { images } : {}) });
     }
     if (Array.isArray(content)) {
       for (const block of content) {
@@ -356,7 +396,9 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
       existing.closeTimer = undefined;
     }
     existing.sink = sink;
+    existing.detached = false;
     existing.cwd = cwd;
+    existing.turnActive = true;
     existing.input.push(text, images);
     return;
   }
@@ -365,6 +407,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
   // Send the first turn, then drain the generator forever (until the queue closes / session ends).
+  session.turnActive = true;
   session.input.push(text, images);
   void drain(session);
 }
@@ -415,6 +458,9 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
     alwaysAllow: new Set(),
     sessionId: null,
     apiKeySource: "none",
+    turnActive: false,
+    detached: false,
+    buffer: [],
   };
 
   // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
@@ -438,7 +484,7 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
           resolve({ behavior: "deny", message: "Denied by the user" });
         }
       });
-      session.sink({ type: "permission", id, toolName, input: toolInput });
+      emit(session, { type: "permission", id, toolName, input: toolInput });
     });
   };
 
@@ -549,7 +595,7 @@ async function drain(session: ChatSession): Promise<void> {
         // "none" => the user is on a Claude subscription login (no API key), so the reported cost
         // is notional and we hide it. Read from Claude Code's own init — the app doesn't decide this.
         session.apiKeySource = (msg as { apiKeySource?: string }).apiKeySource ?? session.apiKeySource;
-        session.sink({
+        emit(session, {
           type: "manifest",
           manifest: {
             model: msg.model,
@@ -568,7 +614,7 @@ async function drain(session: ChatSession): Promise<void> {
         // assistant turn. Surface its text as assistant prose so the command's output is visible
         // instead of the turn appearing to do nothing.
         const out = msg.content;
-        if (typeof out === "string" && out.length) session.sink({ type: "assistant-text", text: out });
+        if (typeof out === "string" && out.length) emit(session, { type: "assistant-text", text: out });
         continue;
       }
 
@@ -577,9 +623,9 @@ async function drain(session: ChatSession): Promise<void> {
         const ev = msg.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string } };
         if (ev?.type === "content_block_delta" && ev.delta) {
           if (ev.delta.type === "text_delta" && typeof ev.delta.text === "string" && ev.delta.text.length) {
-            session.sink({ type: "assistant-text", text: ev.delta.text });
+            emit(session, { type: "assistant-text", text: ev.delta.text });
           } else if (ev.delta.type === "thinking_delta" && typeof ev.delta.thinking === "string" && ev.delta.thinking.length) {
-            session.sink({ type: "thinking", text: ev.delta.thinking });
+            emit(session, { type: "thinking", text: ev.delta.thinking });
           }
         }
         continue;
@@ -589,12 +635,12 @@ async function drain(session: ChatSession): Promise<void> {
         // assistant → tool_use frames (text/thinking already streamed live via deltas — don't
         // double-emit); user → tool_result frames (the user's own prompt came from the client).
         // Shared with history replay via the single translateSdkMessage source of truth.
-        for (const frame of translateSdkMessage(msg, { live: true })) session.sink(frame);
+        for (const frame of translateSdkMessage(msg, { live: true })) emit(session, frame);
         continue;
       }
 
       if (msg.type === "result") {
-        session.sink({
+        emit(session, {
           type: "result",
           isError: msg.is_error === true,
           numTurns: typeof msg.num_turns === "number" ? msg.num_turns : 0,
@@ -605,7 +651,10 @@ async function drain(session: ChatSession): Promise<void> {
               ? null
               : msg.total_cost_usd,
         });
-        session.sink({ type: "done" });
+        emit(session, { type: "done" });
+        // The turn is fully over — a reconnect from here until the next push finds no active
+        // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
+        session.turnActive = false;
         continue;
       }
       // Other message kinds (status/retry/hooks/etc.) carry no UI frame — ignore.
@@ -634,7 +683,7 @@ async function drain(session: ChatSession): Promise<void> {
       } catch {
         /* */
       }
-      session.sink(
+      emit(session, 
         drainError
           ? { type: "error", code: "error", message: drainError }
           : { type: "error", code: "exit", message: "The Claude Code session ended — send another message to start a new one." },
@@ -687,6 +736,18 @@ export function setModel(chatId: string, model: string): void {
 export function abortTurn(chatId: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
+  // Release any parked permission FIRST (mirrors closeChat): interrupt() alone leaves
+  // session.pending populated, so the parked canUseTool promise would keep the turn blocked,
+  // a stale still-clickable card could later resolve a moot promise, and "always allow" could
+  // even get poisoned by a tool the user never really approved on an aborted turn.
+  for (const resolve of s.pending.values()) {
+    try {
+      resolve({ behavior: "deny" });
+    } catch {
+      /* */
+    }
+  }
+  s.pending.clear();
   try {
     s.q.interrupt()?.catch(() => {});
   } catch {
@@ -756,7 +817,42 @@ export function rebindSink(chatId: string, sink: ChatSink): boolean {
     s.closeTimer = undefined;
   }
   s.sink = sink;
+  // Replay everything emitted while the socket was down (detachSink buffered it) — the chat
+  // analogue of terminal.ts's attachSink flush — so mid-turn deltas, tool results, and
+  // permission prompts lost to the gap reach the reconnected client in order.
+  if (s.buffer.length) {
+    const buffered = s.buffer;
+    s.buffer = [];
+    for (const f of buffered) {
+      try {
+        sink(f);
+      } catch {
+        break; // the new socket died mid-flush — the next rebind gets whatever's next
+      }
+    }
+  }
+  s.detached = false;
+  // Reconcile turn state: if NO turn is in flight, the terminating result/done may have been
+  // fired into the dying socket BEFORE the close was even detected (nothing buffers that
+  // window), which would wedge the client's streaming spinner forever. A synthetic `done` is
+  // idempotent client-side, so push one whenever the session is between turns.
+  if (!s.turnActive) {
+    try {
+      sink({ type: "done" });
+    } catch {
+      /* */
+    }
+  }
   return true;
+}
+
+/** Mark a session's sink detached after an abnormal WS drop: frames buffer for the reconnect
+ *  (rebindSink flushes them) instead of being fired into the dead socket and lost. Paired with
+ *  scheduleClose by the server's close handler. */
+export function detachSink(chatId: string): void {
+  const s = sessions.get(chatId);
+  if (!s) return;
+  s.detached = true;
 }
 
 export function chatSessionCount(): number {

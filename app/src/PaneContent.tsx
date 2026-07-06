@@ -18,8 +18,6 @@ const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
-// Lazy: ChatView pulls in the shared markdown renderer (marked + KaTeX); defer it off the entry bundle.
-const ChatView = lazy(() => import("./ChatView").then((m) => ({ default: m.ChatView })));
 import type { NoteCandidate } from "./editor/wikilink";
 import { SEARCH_TAB, GRAPH_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
@@ -101,9 +99,11 @@ export function PaneContent(props: {
         <div data-terminal-host={props.path} class="full" />
       </Match>
       <Match when={props.path.startsWith(CHAT_PREFIX)}>
-        <Suspense fallback={<div class="full" />}>
-          <ChatView chatId={props.path.slice(CHAT_PREFIX.length)} />
-        </Suspense>
+        {/* Chat panes show a transparent placeholder. The real ChatView lives in the
+            always-mounted overlay in App.tsx (same pattern as the terminal above) so its
+            WebSocket — and therefore the backend `claude` session — survives tab/pane
+            switches instead of being torn down by an unmount's clean WS close. */}
+        <div data-chat-host={props.path} class="full" />
       </Match>
       {/* Any other sentinel (e.g. a stale "::tasks" tab from before the global
           Tasks page was removed) falls back to an empty pane rather than trying

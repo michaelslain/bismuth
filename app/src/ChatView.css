@@ -442,6 +442,8 @@
   color: var(--success);
 }
 .chat-permission-outcome.deny { color: var(--danger); }
+/* Orphaned by Stop — neither an allow nor a user denial; a muted neutral note. */
+.chat-permission-outcome.cancelled { color: var(--faint); }
 
 /* The turn's muted footer (turns + cost). */
 .chat-turn-footer {
