@@ -8,6 +8,7 @@
   inset: 0;
   pointer-events: none;
   z-index: 3; /* above the note text; the find bar (z-index higher) still wins */
+  outline: none; /* the host holds focus while drawing (tabindex=-1) — no focus ring */
 }
 .ink-canvas {
   position: absolute;
