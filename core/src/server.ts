@@ -1518,7 +1518,7 @@ export function createServer(cfg: CoreConfig) {
                     (im as { data: string }).data.length > 0,
                 )
               : [];
-            chatSend(chatId, parsed.text, cfg.vault, sink, images.length ? images : undefined);
+            chatSend(chatId, parsed.text, cfg.vault, sink, images.length ? images : undefined, effectiveMemoryDir());
           } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
             // Bind this chat socket to an existing Claude Code session — its init manifest streams
             // back, and the next {type:"user"} continues the resumed conversation.
@@ -1529,7 +1529,7 @@ export function createServer(cfg: CoreConfig) {
                 /* socket closed mid-turn */
               }
             };
-            chatResume(chatId, parsed.sessionId, cfg.vault, sink);
+            chatResume(chatId, parsed.sessionId, cfg.vault, sink, effectiveMemoryDir());
           } else if (
             parsed.type === "permission_response" &&
             typeof parsed.id === "string" &&

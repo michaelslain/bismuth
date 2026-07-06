@@ -11,6 +11,7 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
+import { buildAutoNoteBody, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -222,6 +223,14 @@ interface ChatSession {
    *  has none on turn 1, so the drain retries at each turn-end until one appears). */
   modelsSent?: boolean;
   titleSent?: boolean;
+  /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
+   *  captured there as an auto note (like the relay SessionEnd hook does for terminals), so
+   *  the dream cron consolidates in-app chats too. Undefined = daemon off = no capture. */
+  memoryDir?: string;
+  /** Completed turns this session — a conversation with none isn't worth a memory note. */
+  turnCount: number;
+  /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
+  captured?: boolean;
 }
 
 /** Cap on frames buffered while detached — enough for any realistic turn's tail; a runaway turn
@@ -400,7 +409,7 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
  * pushes `text` into the queue so the CLI runs it as the next turn. If `claude` isn't installed,
  * pushes {error, code:"no-claude"} and returns — NEVER calls any API.
  */
-export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[]): void {
+export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): void {
   const existing = sessions.get(chatId);
   if (existing) {
     // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
@@ -417,7 +426,7 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     return;
   }
 
-  const session = createSession(chatId, cwd, sink);
+  const session = createSession(chatId, cwd, sink, undefined, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
   // Send the first turn, then drain the generator forever (until the queue closes / session ends).
@@ -436,9 +445,9 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
  * If a session already exists for this chatId, it's torn down first so we cleanly re-bind to the
  * resumed conversation.
  */
-export function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink): void {
+export function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string): void {
   if (sessions.has(chatId)) closeChat(chatId);
-  const session = createSession(chatId, cwd, sink, sessionId);
+  const session = createSession(chatId, cwd, sink, sessionId, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
   // No initial turn — query() resumes the existing session; the drain loop streams its init manifest.
   void drain(session);
@@ -452,7 +461,7 @@ export function resumeSession(chatId: string, sessionId: string, cwd: string, si
  * When `resume` is given, query() resumes that existing Claude Code session (keeps its history +
  * session_id) instead of starting fresh — the ONLY difference from a brand-new session.
  */
-function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string): ChatSession | null {
+function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string): ChatSession | null {
   const bin = whichClaude();
   if (!bin) {
     sink({ type: "error", code: "no-claude", message: "The `claude` CLI was not found. Install Claude Code to use chat." });
@@ -475,6 +484,8 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
     turnActive: false,
     detached: false,
     buffer: [],
+    memoryDir,
+    turnCount: 0,
   };
 
   // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
@@ -695,6 +706,7 @@ async function drain(session: ChatSession): Promise<void> {
               : msg.total_cost_usd,
         });
         emit(session, { type: "done" });
+        session.turnCount++;
         // The turn is fully over — a reconnect from here until the next push finds no active
         // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
         session.turnActive = false;
@@ -720,6 +732,7 @@ async function drain(session: ChatSession): Promise<void> {
     // client; otherwise a queued turn would push into a dead input queue and the UI would hang
     // forever with no frame. A throw surfaces as `error`; a clean end as `exit`.
     if (sessions.get(session.id) === session) {
+      captureToMemory(session); // the conversation ended (child exit/throw) — same capture as closeChat
       sessions.delete(session.id);
       if (session.closeTimer) clearTimeout(session.closeTimer);
       for (const resolve of session.pending.values()) {
@@ -805,10 +818,39 @@ export function abortTurn(chatId: string): void {
   }
 }
 
+/**
+ * Capture a finished chat's conversation into the vault's 3rd brain as an auto note — the
+ * in-app twin of the relay SessionEnd hook, sharing the same pure transcript pipeline
+ * (@bismuth/memory), so the dream cron consolidates visual chats too. Fire-and-forget,
+ * latched by `captured`, gated on the daemon being enabled (memoryDir set) and the session
+ * having done real work (>=1 completed turn). Never blocks or fails teardown.
+ */
+function captureToMemory(s: ChatSession): void {
+  if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return;
+  s.captured = true;
+  const sessionId = s.sessionId;
+  const { cwd, memoryDir } = s;
+  void (async () => {
+    try {
+      const messages = await getSessionMessages(sessionId, { dir: cwd });
+      const body = buildAutoNoteBody(messages as TranscriptEntry[]);
+      if (body === null) return; // trivial
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+      await writeMemoryNote(`auto-${ts}-${sessionId.slice(0, 8)}`, { type: "auto", tags: ["auto", "raw", "chat"], created: date, updated: date }, body, memoryDir);
+    } catch {
+      /* best-effort — memory capture must never surface as a chat error */
+    }
+  })();
+}
+
 /** Tear a session down entirely: interrupt + close the generator, reject pending prompts, drop it. */
 export function closeChat(chatId: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
+  captureToMemory(s);
   if (s.closeTimer) clearTimeout(s.closeTimer);
   sessions.delete(chatId);
   // Reject every pending permission as a deny so canUseTool promises don't dangle.
