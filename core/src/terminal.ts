@@ -224,7 +224,20 @@ export function attachSink(id: string, send: (d: string) => void): void {
   const s = sessions.get(id);
   if (!s) return;
   if (s.buffer.length) {
-    send(s.buffer.join(""));
+    // Replay as bounded pieces, not one up-to-256KB join: a single WS frame is ONE
+    // uninterruptible xterm write()/parse on the client (its WriteBuffer only yields to the
+    // renderer BETWEEN write chunks), so a giant replay stalled the UI for its whole duration
+    // ("terminal laggy, then fine"). ~16KB pieces split only at original PTY-chunk boundaries
+    // keep the byte stream identical to live streaming (no surrogate/UTF-8 splits) while
+    // letting the client time-slice. Deliberately SYNCHRONOUS — an async yield here would let
+    // concurrent pty onData interleave while s.sink is still null and reorder output.
+    const TARGET = 16 * 1024;
+    let acc = "";
+    for (const chunk of s.buffer) {
+      acc += chunk;
+      if (acc.length >= TARGET) { send(acc); acc = ""; }
+    }
+    if (acc) send(acc);
     s.buffer = [];
     s.bufferedBytes = 0;
   }

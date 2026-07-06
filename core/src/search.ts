@@ -198,7 +198,13 @@ async function buildSearchIndex(root: string): Promise<SearchIndex> {
       fuzzy: (term) => (term.length > 3 ? 0.2 : false),
     },
   });
-  mini.addAll(docs);
+  // Index in chunks with a REAL macrotask yield between them (addAllAsync uses setTimeout 0),
+  // instead of one synchronous addAll: a cold build after a broad invalidation tokenizes the
+  // whole vault, and doing that in one shot inside the POST /search handler blocked Bun's
+  // single thread — starving the PTY WS and every other request for its duration. Identical
+  // final index; race-safe because getSearchIndex's generation guard already discards a build
+  // that an invalidation overtook. (A microtask yield would NOT release the I/O poll phase.)
+  await mini.addAllAsync(docs, { chunkSize: 200 });
   return { mini, bodies, paths };
 }
 

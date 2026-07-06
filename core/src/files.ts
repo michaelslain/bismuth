@@ -1,6 +1,6 @@
 import { join, dirname, resolve, sep } from "node:path";
 import { mkdirSync, renameSync, existsSync, writeFileSync, statSync } from "node:fs";
-import { readdir } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { parseFrontmatter } from "./frontmatter";
 import { createError } from "./error";
@@ -151,6 +151,31 @@ export async function listTree(
 
   const daemonLabel = opts?.daemonName?.trim() || "daemon";
 
+  // Pre-stat every .md entry with bounded concurrency BEFORE the build loop. The loop used a
+  // synchronous statSync per note — on an icon-cache-hit pass (the overwhelming majority) it
+  // had no await at all, so hundreds of back-to-back sync syscalls blocked Bun's event loop
+  // for the whole walk (starving the PTY WS → "terminal laggy, then fine" on every tree
+  // rebuild). Async stat batched 32-wide keeps the loop free; NaN keeps the old stat-failed
+  // semantics (deleted mid-walk → fresh read attempt below).
+  const mdEntries = entries.filter((e) => !e.isDir && e.name.endsWith(".md") && e.rel !== ".settings");
+  const mtimes = new Map<string, number>();
+  {
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const i = next++;
+        if (i >= mdEntries.length) return;
+        const abs = join(root, mdEntries[i].rel);
+        try {
+          mtimes.set(abs, (await stat(abs)).mtimeMs);
+        } catch {
+          mtimes.set(abs, NaN);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(32, mdEntries.length) }, worker));
+  }
+
   const out: TreeEntry[] = [];
 
   for (const entry of entries) {
@@ -167,14 +192,10 @@ export async function listTree(
     } else if (entry.name.endsWith(".md")) {
       const abs = join(root, entry.rel);
       // Reuse the cached icon when the file's mtime is unchanged; only re-read + parse
-      // frontmatter for notes that actually changed since the last listTree.
+      // frontmatter for notes that actually changed since the last listTree. mtimes were
+      // pre-statted concurrently above (NaN = stat failed → fresh read attempt).
       let icon: string | null;
-      let mtime = NaN;
-      try {
-        mtime = statSync(abs).mtimeMs;
-      } catch {
-        // stat failed (e.g. deleted mid-walk); fall through to a fresh read attempt.
-      }
+      const mtime = mtimes.get(abs) ?? NaN;
       const cached = iconCache.get(abs);
       if (cached && cached.mtime === mtime && !Number.isNaN(mtime)) {
         icon = cached.icon;
