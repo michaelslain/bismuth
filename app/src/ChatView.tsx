@@ -30,6 +30,8 @@ import type { ChatFrame, ChatManifest } from "../../core/src/chat";
 import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs } from "./chatContext";
 import { chatPersonaName } from "./daemonIdentity";
+import { publishChatTitle } from "./chatTitles";
+import { pushToast } from "./Toast";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -112,7 +114,15 @@ interface PermissionPart {
 }
 type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart;
 
-interface UserItem { role: "user"; text: string; images?: string[] /* data: URLs, shown in the bubble */ }
+interface UserItem {
+  role: "user";
+  text: string;
+  images?: string[]; // data: URLs, shown in the bubble
+  /** Staged while a turn streams (dimmed bubble + cancel); cleared when actually dispatched. */
+  queued?: boolean;
+  /** Joins the bubble to its entry in the queued-turns list for cancel-before-send. */
+  queueId?: string;
+}
 interface AssistantItem {
   role: "assistant";
   parts: AssistantPart[];
@@ -220,6 +230,13 @@ export function ChatView(props: { chatId: string }) {
   const [setupError, setSetupError] = createSignal(false);
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
   const [turnError, setTurnError] = createSignal<string | null>(null);
+  // The models this login can run (`models` frame, once per session) — powers the header picker.
+  const [models, setModels] = createSignal<{ value: string; label: string; description: string }[]>([]);
+  // Context-window usage after each completed turn (`context` frame) — the header pill.
+  const [context, setContext] = createSignal<{ percentage: number; totalTokens: number; maxTokens: number } | null>(null);
+  // Turns staged while a turn is streaming (Claude Code TUI parity): dispatched one at a time
+  // from the `done` frame, each with a dimmed transcript bubble the user can cancel before send.
+  const [queuedTurns, setQueuedTurns] = createSignal<{ id: string; wire: string; images: Attachment[] }[]>([]);
 
   // The backend chat id this view's WS is bound to. Seeded from the tab's id (props.chatId), but
   // OWNED here so "New" can swap to a fresh id — a brand-new Claude Code session on the next turn —
@@ -262,18 +279,19 @@ export function ChatView(props: { chatId: string }) {
   // when they return to (near) the bottom. We can't reliably read scroll position right before each
   // append — Solid reconciles the new row synchronously, so scrollHeight has already grown by the
   // time a mutation helper runs — so we track it from a scroll listener instead (mirrors Terminal).
-  let following = true;
+  // A signal (not a bare var) so the render can show a "jump to latest" pill while unfollowed.
+  const [following, setFollowing] = createSignal(true);
   const onListScroll = () => {
     if (!list) return;
-    following = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+    setFollowing(list.scrollHeight - list.scrollTop - list.clientHeight < 40);
   };
 
   // Keep the view pinned to the latest content, but ONLY if the user is still following the bottom.
   // If they've scrolled up to read, leave their position alone instead of yanking them down on every
   // streamed chunk. `force` (used when the user sends a message) re-pins regardless.
   const scrollToBottom = (force = false) => {
-    if (force) following = true;
-    if (!following) return;
+    if (force) setFollowing(true);
+    if (!following()) return;
     queueMicrotask(() => {
       if (list) list.scrollTop = list.scrollHeight;
     });
@@ -380,13 +398,62 @@ export function ChatView(props: { chatId: string }) {
         break;
       case "done":
         setStreaming(false);
+        dispatchQueued();
+        break;
+      case "models":
+        setModels(frame.models);
+        break;
+      case "title":
+        // Names this TAB (props.chatId — the tab's identity, independent of the view-internal
+        // id a "New chat" swaps to). App's chat-label provider reads it reactively.
+        publishChatTitle(props.chatId, frame.title);
+        break;
+      case "context":
+        setContext({ percentage: frame.percentage, totalTokens: frame.totalTokens, maxTokens: frame.maxTokens });
         break;
       case "error":
         setStreaming(false);
         if (frame.code === "no-claude") setSetupError(true);
-        else setTurnError(frame.message || "Something went wrong.");
+        else {
+          setTurnError(frame.message || "Something went wrong.");
+          // exit/error ended the session — a queued follow-up still gets dispatched (chatSend
+          // spins up a fresh session for it), matching the user's intent when they staged it.
+          dispatchQueued();
+        }
         break;
     }
+  };
+
+  /** Send the front queued turn, if any: un-dim its bubble and flip back to streaming. Called
+   *  from the frames that end a turn (`done`, terminal `error`). If the socket is down the turn
+   *  stays queued — the next turn-end (or the user's cancel) picks it up. */
+  const dispatchQueued = () => {
+    const q = queuedTurns();
+    if (!q.length) return;
+    const next = q[0];
+    if (!sendJson({ type: "user", text: next.wire, ...(next.images.length ? { images: next.images.map((a) => ({ media_type: a.mediaType, data: a.data })) } : {}) })) return;
+    setQueuedTurns(q.slice(1));
+    setTranscript(
+      produce((m) => {
+        for (const item of m) {
+          if (item.role === "user" && item.queueId === next.id) {
+            item.queued = false;
+            item.queueId = undefined;
+            return;
+          }
+        }
+      }),
+    );
+    setStreaming(true);
+  };
+
+  /** Cancel a still-queued turn: drop it from the queue and remove its staged bubble. */
+  const cancelQueued = (queueId: string) => {
+    setQueuedTurns((q) => q.filter((t) => t.id !== queueId));
+    setTranscript(produce((m) => {
+      const i = m.findIndex((item) => item.role === "user" && item.queueId === queueId);
+      if (i >= 0) m.splice(i, 1);
+    }));
   };
 
   const connect = () => {
@@ -490,8 +557,9 @@ export function ChatView(props: { chatId: string }) {
   const send = () => {
     const text = draft().trim();
     const atts = attachments();
-    // A message needs SOMETHING to send — text or at least one image attachment.
-    if ((!text && atts.length === 0) || streaming() || setupError()) return;
+    // A message needs SOMETHING to send — text or at least one image attachment. (Streaming no
+    // longer blocks: a mid-turn send STAGES the message instead — see the queued branch below.)
+    if ((!text && atts.length === 0) || setupError()) return;
     // A slash command can't carry images: the CLI only expands a leading "/command" for a plain
     // STRING turn, but attachments force an array-of-blocks shape, so the command would be silently
     // sent to the model as literal text. Refuse rather than degrade it.
@@ -512,6 +580,22 @@ export function ChatView(props: { chatId: string }) {
     // message, so a preamble would silently break it.
     const preamble = text.startsWith("/") ? "" : buildEditorContext();
     const wire = preamble ? `${preamble}\n\n${text}` : text;
+    // Show the sent images in the user bubble (data URLs) so an image-only turn isn't an empty bubble.
+    const bubbleImages = atts.map((a) => `data:${a.mediaType};base64,${a.data}`);
+    // Mid-turn: STAGE the message (Claude Code TUI parity) — a dimmed bubble with a cancel; the
+    // `done` frame dispatches queued turns in order. The editor context is captured now (what
+    // the user was looking at when they wrote it), not at dispatch time.
+    if (streaming()) {
+      const id = crypto.randomUUID();
+      setQueuedTurns((q) => [...q, { id, wire, images: atts }]);
+      setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined, queued: true, queueId: id })));
+      setDraft("");
+      setAttachments([]);
+      closeSlash();
+      scrollToBottom(true);
+      queueMicrotask(() => autoGrow());
+      return;
+    }
     const images = atts.map((a) => ({ media_type: a.mediaType, data: a.data }));
     // Socket not open (backend down / mid-reconnect): tell the user instead of silently dropping the
     // message. The draft is preserved (setDraft("") only runs on success) so they can retry.
@@ -520,8 +604,6 @@ export function ChatView(props: { chatId: string }) {
       return;
     }
     setTurnError(null);
-    // Show the sent images in the user bubble (data URLs) so an image-only turn isn't an empty bubble.
-    const bubbleImages = atts.map((a) => `data:${a.mediaType};base64,${a.data}`);
     setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined })));
     setDraft("");
     setAttachments([]);
@@ -540,11 +622,18 @@ export function ChatView(props: { chatId: string }) {
       return;
     }
     setStreaming(false);
-    // The aborted turn's unanswered permission prompts are now moot — the backend denied them
-    // when it interrupted (abortTurn). Mark them cancelled so the cards stop offering a live
-    // decision (rendered as a muted "Cancelled", not a user denial).
+    // Stop means the whole pipeline: cancel anything still queued (never sent — bubbles come
+    // out) so the interrupted turn's `done` doesn't immediately fire a staged follow-up.
+    setQueuedTurns([]);
     setTranscript(
       produce((m) => {
+        for (let i = m.length - 1; i >= 0; i--) {
+          const item = m[i];
+          if (item.role === "user" && item.queued) m.splice(i, 1);
+        }
+        // The aborted turn's unanswered permission prompts are now moot — the backend denied
+        // them when it interrupted (abortTurn). Mark them cancelled so the cards stop offering
+        // a live decision (rendered as a muted "Cancelled", not a user denial).
         for (const item of m) {
           if (item.role !== "assistant") continue;
           for (const part of item.parts) {
@@ -582,6 +671,13 @@ export function ChatView(props: { chatId: string }) {
     if (m) setManifest({ ...m, permissionMode: mode });
   };
 
+  const switchModel = (model: string) => {
+    sendJson({ type: "set_model", model });
+    // Optimistically reflect it; the next turn's init manifest confirms.
+    const m = manifest();
+    if (m) setManifest({ ...m, model });
+  };
+
   // ── Session history / new chat ──────────────────────────────────────────────────────────────
   /** Wipe the transcript + transient turn state back to the empty state (shared by New + resume). */
   const resetTranscript = () => {
@@ -589,6 +685,11 @@ export function ChatView(props: { chatId: string }) {
     setStreaming(false);
     setTurnError(null);
     setManifest(null);
+    setQueuedTurns([]);
+    setContext(null);
+    // The conversation this tab was named after is gone — revert the tab label to the persona
+    // fallback until the new/resumed session publishes its own title frame.
+    publishChatTitle(props.chatId, "");
   };
 
   /** Tear the current WS down (clean close — backend ends that session immediately) and reconnect
@@ -720,7 +821,14 @@ export function ChatView(props: { chatId: string }) {
         return;
       }
     }
-    // Enter sends; Shift+Enter inserts a newline (default textarea behavior).
+    // Escape interrupts the in-flight turn (Claude Code TUI parity). Only when the slash
+    // popover isn't open — it owns Escape above — and only while actually streaming.
+    if (e.key === "Escape" && streaming()) {
+      e.preventDefault();
+      stop();
+      return;
+    }
+    // Enter sends (or stages, mid-turn); Shift+Enter inserts a newline (default textarea behavior).
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send();
@@ -775,8 +883,22 @@ export function ChatView(props: { chatId: string }) {
     <div class="chat-host">
       <ViewBar>
         <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
-        <Show when={manifest()?.model}>
-          {(model) => <span class="chat-model" title="Active model">{model()}</span>}
+        {/* Model: a live picker once the session reports its supported models (set_model is
+            wired end-to-end); a read-only span before that / for single-model logins. */}
+        <Show
+          when={models().length > 1}
+          fallback={
+            <Show when={manifest()?.model}>
+              {(model) => <span class="chat-model" title="Active model">{model()}</span>}
+            </Show>
+          }
+        >
+          <Select
+            class="chat-model-select"
+            value={manifest()?.model ?? ""}
+            options={models().map((m) => ({ value: m.value, label: m.label }))}
+            onChange={switchModel}
+          />
         </Show>
         <ViewBarSpacer />
         <Show when={manifest()}>
@@ -791,6 +913,17 @@ export function ChatView(props: { chatId: string }) {
                 <span class="chat-stat" title={`${mcpConnected()}/${m().mcpServers.length} MCP servers connected`}>
                   <Icon value="Server" size={13} /> {mcpConnected()}/{m().mcpServers.length}
                 </span>
+              </Show>
+              <Show when={context()}>
+                {(c) => (
+                  <span
+                    class="chat-stat chat-context"
+                    classList={{ warn: c().percentage >= 80 }}
+                    title={`Context window: ${c().totalTokens.toLocaleString()} / ${c().maxTokens.toLocaleString()} tokens`}
+                  >
+                    <Icon value="Gauge" size={13} /> {Math.round(c().percentage)}%
+                  </span>
+                )}
               </Show>
               <Select
                 class="chat-mode-select"
@@ -832,6 +965,7 @@ export function ChatView(props: { chatId: string }) {
           </div>
         }
       >
+        <div class="chat-list-wrap">
         <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll}>
           <Show when={transcript.length === 0}>
             <EmptyState class="chat-empty">
@@ -843,13 +977,28 @@ export function ChatView(props: { chatId: string }) {
               <Show
                 when={item.role === "assistant"}
                 fallback={
-                  <div class="chat-msg user">
+                  <div class="chat-msg user" classList={{ queued: !!(item as UserItem).queued }}>
                     {/* Notebook-transcript: a quiet speaker label marks the turn (no bubble fill /
                         alignment). The message renders through the SAME note markdown pipeline
                         (renderNoteBody) so it reads exactly like a note. */}
-                    <div class="chat-turn-label">You</div>
+                    <div class="chat-turn-label">
+                      You
+                      <Show when={(item as UserItem).queued}>
+                        <span class="chat-queued-note">· queued</span>
+                        <IconButton
+                          icon="X"
+                          label="Cancel queued message"
+                          iconSize={11}
+                          class="chat-queued-cancel"
+                          onClick={() => cancelQueued((item as UserItem).queueId!)}
+                        />
+                      </Show>
+                    </div>
                     <Show when={(item as UserItem).text.trim()}>
-                      <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
+                      <div class="chat-bubble-wrap">
+                        <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
+                        <CopyButton text={(item as UserItem).text} />
+                      </div>
                     </Show>
                     <Show when={(item as UserItem).images?.length}>
                       <div class="chat-user-images">
@@ -883,6 +1032,13 @@ export function ChatView(props: { chatId: string }) {
               </div>
             )}
           </Show>
+        </div>
+        {/* Floating jump-back pill while the user has scrolled up off the live tail. */}
+        <Show when={!following() && transcript.length > 0}>
+          <button class="chat-jump-bottom" onClick={() => scrollToBottom(true)}>
+            <Icon value="ArrowDown" size={13} /> Latest
+          </button>
+        </Show>
         </div>
 
         <div class="chat-composer">
@@ -1045,8 +1201,30 @@ export function ChatView(props: { chatId: string }) {
   function TextBubble(p: { part: TextPart }) {
     return (
       <Show when={p.part.text.trim()}>
-        <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
+        <div class="chat-bubble-wrap">
+          <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
+          <CopyButton text={p.part.text} />
+        </div>
       </Show>
+    );
+  }
+
+  /** Hover-revealed copy control on every prose bubble — copies the RAW markdown source
+   *  (what you'd paste into a note), never the rendered HTML. */
+  function CopyButton(p: { text: string }) {
+    return (
+      <IconButton
+        icon="Copy"
+        label="Copy message"
+        iconSize={13}
+        class="chat-copy-btn"
+        onClick={() => {
+          navigator.clipboard
+            .writeText(p.text)
+            .then(() => pushToast("Copied"))
+            .catch(() => pushToast("Couldn't copy"));
+        }}
+      />
     );
   }
 

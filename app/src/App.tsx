@@ -47,7 +47,9 @@ import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
+import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
+import { chatTitle } from "./chatTitles";
 import { isExportable } from "./export/formats";
 import { publishEditorTabs } from "./chatContext";
 import {
@@ -112,6 +114,17 @@ export default function App() {
   // Per-file frontmatter icon (vault path -> Lucide name), sourced from the file tree so a
   // note's tab shows the same icon as its file-tree row. Refreshed alongside the graph.
   const [fileIcons, setFileIcons] = createSignal<Map<string, string>>(new Map());
+
+  // Chat tab labels: the session's conversation title once one exists (chatTitles, published by
+  // ChatView from the backend's `title` frames), else the daemon's identity name when it's
+  // enabled — the chat presents AS the daemon. Injected into contentLabel (tabIds stays
+  // framework-free; the closure reads signals so labels stay reactive). A manual tab Rename
+  // still wins — Leaf.name overrides the auto label upstream of contentLabel. Also (re)fetch
+  // the daemon identity whenever the flag flips on.
+  setChatLabelProvider((content) => chatTitle(content.slice(CHAT_PREFIX.length)) ?? (settings.daemon.enabled ? daemonName() : null));
+  createEffect(() => {
+    if (settings.daemon.enabled) void refreshDaemonIdentity();
+  });
 
   // A window "worth keeping" on close: more than one tab, or a single tab that isn't just the
   // graph home (no point stashing/reopening an empty home).

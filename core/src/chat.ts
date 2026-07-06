@@ -3,6 +3,7 @@ import {
   query,
   listSessions,
   getSessionMessages,
+  getSessionInfo,
   type CanUseTool,
   type Query,
   type SDKMessage,
@@ -61,6 +62,14 @@ export type ChatFrame =
   | { type: "result"; isError: boolean; numTurns: number; costUsd: number | null }
   /** The turn is fully drained (pushed after `result`). */
   | { type: "done" }
+  /** The models this login can run (Query.supportedModels), fetched once per session after the
+   *  first init — powers the header model picker (set_model was already wired end-to-end). */
+  | { type: "models"; models: { value: string; label: string; description: string }[] }
+  /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
+   *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
+  | { type: "title"; title: string }
+  /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
+  | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
   /** A fatal problem. `no-claude` = the CLI isn't installed (surface setup, never fall back to an
    *  API); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
   | { type: "error"; code: "no-claude" | "spawn" | "exit" | "error"; message: string };
@@ -208,6 +217,11 @@ interface ChatSession {
    *  analogue of terminal.ts's PTY detach/attach output buffering. */
   detached: boolean;
   buffer: ChatFrame[];
+  /** Once-per-session latches: the supported-models list is static per login (fetched after the
+   *  first init); the title latches only when a NON-EMPTY summary exists (a brand-new session
+   *  has none on turn 1, so the drain retries at each turn-end until one appears). */
+  modelsSent?: boolean;
+  titleSent?: boolean;
 }
 
 /** Cap on frames buffered while detached — enough for any realistic turn's tail; a runaway turn
@@ -571,6 +585,21 @@ export async function sessionHistoryFrames(sessionId: string, cwd: string): Prom
   return frames;
 }
 
+/** Fetch the session's conversation summary once and emit it as a `title` frame. Latches ONLY on
+ *  a non-empty summary (turn 1 usually has none yet), so callers retry at each turn-end until the
+ *  store has one. Fire-and-forget; failures just retry later. */
+function maybeEmitTitle(session: ChatSession): void {
+  if (session.titleSent || !session.sessionId) return;
+  getSessionInfo(session.sessionId, { dir: session.cwd })
+    .then((info) => {
+      const title = info?.summary?.trim();
+      if (!title || session.titleSent) return;
+      session.titleSent = true;
+      emit(session, { type: "title", title });
+    })
+    .catch(() => {});
+}
+
 /**
  * The drain loop: translate every SDK message for this session into ChatFrames per the taxonomy.
  * Runs until the generator ends (input queue closed or the CLI exited). Wrapped so any throw —
@@ -605,6 +634,20 @@ async function drain(session: ChatSession): Promise<void> {
             mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
           },
         });
+        // Once per session (the list is static per login): the models this login can run, for
+        // the header model picker. Latch BEFORE the async call so it fires exactly once.
+        if (!session.modelsSent) {
+          session.modelsSent = true;
+          session.q
+            .supportedModels()
+            .then((ms) => {
+              emit(session, { type: "models", models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description })) });
+            })
+            .catch(() => {});
+        }
+        // A RESUMED session already has a summary — name the tab right away rather than only
+        // after the next turn completes. No-op (and retried at turn-end) for a fresh session.
+        maybeEmitTitle(session);
         continue;
       }
 
@@ -655,6 +698,15 @@ async function drain(session: ChatSession): Promise<void> {
         // The turn is fully over — a reconnect from here until the next push finds no active
         // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
         session.turnActive = false;
+        // Turn-end refreshes: the tab title (retries until a summary exists) and the
+        // context-window usage pill. Both fire-and-forget; a failed fetch just waits a turn.
+        maybeEmitTitle(session);
+        session.q
+          .getContextUsage()
+          .then((u) => {
+            emit(session, { type: "context", percentage: u.percentage, totalTokens: u.totalTokens, maxTokens: u.maxTokens });
+          })
+          .catch(() => {});
         continue;
       }
       // Other message kinds (status/retry/hooks/etc.) carry no UI frame — ignore.
@@ -718,10 +770,8 @@ export function setPermissionMode(chatId: string, mode: string): void {
   }
 }
 
-/** Switch the model live. Fully wired end-to-end (server `set_model` route → ChatView's `setModel`),
- *  but NOT yet surfaced in the UI: the manifest exposes the active model read-only, and there's no
- *  reliable available-models list from the SDK to populate a picker. Intentionally kept available
- *  for when a model chooser is added — the header shows the current model today. */
+/** Switch the model live. Wired end-to-end: the header's model picker (populated by the `models`
+ *  frame from Query.supportedModels) sends `set_model` → this. */
 export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
