@@ -22,6 +22,7 @@ import { Select } from "./ui/Select";
 import { TextInput } from "./ui/TextInput";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
+import { EmptyState } from "./ui/EmptyState";
 import { Icon } from "./icons/Icon";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
@@ -784,9 +785,9 @@ export function ChatView(props: { chatId: string }) {
       >
         <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll}>
           <Show when={transcript.length === 0}>
-            <div class="chat-empty">
-              <p>Ask {persona()} anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.</p>
-            </div>
+            <EmptyState class="chat-empty">
+              Ask {persona()} anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.
+            </EmptyState>
           </Show>
           <For each={transcript}>
             {(item) => (
@@ -794,21 +795,17 @@ export function ChatView(props: { chatId: string }) {
                 when={item.role === "assistant"}
                 fallback={
                   <div class="chat-msg user">
-                    {/* The user's own message renders through the SAME note markdown pipeline
-                        (renderNoteBody) so it looks like a note too — not just Claude's replies. */}
+                    {/* Notebook-transcript: a quiet speaker label marks the turn (no bubble fill /
+                        alignment). The message renders through the SAME note markdown pipeline
+                        (renderNoteBody) so it reads exactly like a note. */}
+                    <div class="chat-turn-label">You</div>
                     <Show when={(item as UserItem).text.trim()}>
                       <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
                     </Show>
                     <Show when={(item as UserItem).images?.length}>
-                      <div class="chat-user-images" style={{ display: "flex", "flex-wrap": "wrap", gap: "6px", "justify-content": "flex-end", "margin-top": "4px" }}>
+                      <div class="chat-user-images">
                         <For each={(item as UserItem).images}>
-                          {(src) => (
-                            <img
-                              src={src}
-                              alt="attachment"
-                              style={{ "max-width": "180px", "max-height": "180px", "border-radius": "8px", border: "1px solid var(--border, rgba(128,128,128,0.3))" }}
-                            />
-                          )}
+                          {(src) => <img class="chat-user-image" src={src} alt="attachment" />}
                         </For>
                       </div>
                     </Show>
@@ -821,6 +818,7 @@ export function ChatView(props: { chatId: string }) {
           </For>
           <Show when={streaming() && (transcript.length === 0 || transcript[transcript.length - 1].role === "user")}>
             <div class="chat-msg assistant">
+              <div class="chat-turn-label"><Icon value="MessageSquare" size={11} /> {persona()}</div>
               <div class="chat-thinking-dots">
                 <span class="chat-dot" />
                 <span class="chat-dot" />
@@ -828,7 +826,14 @@ export function ChatView(props: { chatId: string }) {
               </div>
             </div>
           </Show>
-          <Show when={turnError()}>{(msg) => <div class="chat-turn-error">{msg()}</div>}</Show>
+          <Show when={turnError()}>
+            {(msg) => (
+              <div class="chat-turn-error">
+                <Icon value="TriangleAlert" size={13} class="chat-turn-error-icon" />
+                <span>{msg()}</span>
+              </div>
+            )}
+          </Show>
         </div>
 
         <div class="chat-composer">
@@ -842,64 +847,61 @@ export function ChatView(props: { chatId: string }) {
               />
             </div>
           </Show>
-          {/* Column wrapper so the attachment chips stack ABOVE the textarea (the composer itself is
-              a flex ROW: [this column][send button]). Takes the textarea's place as the flex-grow child. */}
-          <div style={{ display: "flex", "flex-direction": "column", gap: "6px", flex: "1 1 auto", "min-width": "0" }}>
-            <Show when={attachments().length > 0}>
-              <div class="chat-attachments" style={{ display: "flex", "flex-wrap": "wrap", gap: "6px" }}>
-                <For each={attachments()}>
-                  {(att, i) => (
-                    <div
-                      class="chat-attachment"
-                      style={{ position: "relative", width: "56px", height: "56px", "border-radius": "8px", overflow: "hidden", border: "1px solid var(--border, rgba(128,128,128,0.3))" }}
-                    >
-                      <img
-                        src={`data:${att.mediaType};base64,${att.data}`}
-                        alt={att.name}
-                        title={att.name}
-                        style={{ width: "100%", height: "100%", "object-fit": "cover", display: "block" }}
-                      />
-                      <button
-                        type="button"
-                        class="chat-attachment-remove"
-                        title="Remove attachment"
-                        onClick={() => removeAttachment(i())}
-                        style={{ position: "absolute", top: "2px", right: "2px", display: "flex", "align-items": "center", "justify-content": "center", width: "18px", height: "18px", padding: "0", border: "none", "border-radius": "50%", background: "rgba(0,0,0,0.6)", color: "#fff", cursor: "pointer" }}
-                      >
-                        <Icon value="X" size={12} />
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </Show>
-            <TextInput
-              multiline
-              ref={((el: HTMLTextAreaElement) => { ta = el; }) as unknown as HTMLInputElement}
-              class="chat-input"
-              value={draft()}
-              onInput={setDraft}
-              onKeyDown={onKeyDown}
-              onDragOver={onComposerDragOver}
-              onDrop={onComposerDrop}
-              onPaste={onComposerPaste}
-              placeholder={`Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
-            />
-          </div>
-          <Show
-            when={streaming()}
-            fallback={
-              <IconButton
-                icon="Send"
-                label="Send message"
-                variant="selected"
-                onClick={send}
-                disabled={!draft().trim() && attachments().length === 0}
+          <div class="chat-composer-inner">
+            {/* Column wrapper so the attachment chips stack ABOVE the textarea (the inner row is
+                [this column][send button]); all layout lives in ChatView.css, no inline styles. */}
+            <div class="chat-composer-main">
+              <Show when={attachments().length > 0}>
+                <div class="chat-attachments">
+                  <For each={attachments()}>
+                    {(att, i) => (
+                      <div class="chat-attachment">
+                        <img
+                          class="chat-attachment-img"
+                          src={`data:${att.mediaType};base64,${att.data}`}
+                          alt={att.name}
+                          title={att.name}
+                        />
+                        <IconButton
+                          icon="X"
+                          label="Remove attachment"
+                          iconSize={11}
+                          class="chat-attachment-remove"
+                          onClick={() => removeAttachment(i())}
+                        />
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <TextInput
+                multiline
+                ref={((el: HTMLTextAreaElement) => { ta = el; }) as unknown as HTMLInputElement}
+                class="chat-input"
+                value={draft()}
+                onInput={setDraft}
+                onKeyDown={onKeyDown}
+                onDragOver={onComposerDragOver}
+                onDrop={onComposerDrop}
+                onPaste={onComposerPaste}
+                placeholder={`Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
               />
-            }
-          >
-            <IconButton icon="Square" label="Stop generating" danger onClick={stop} />
-          </Show>
+            </div>
+            <Show
+              when={streaming()}
+              fallback={
+                <IconButton
+                  icon="Send"
+                  label="Send message"
+                  variant="selected"
+                  onClick={send}
+                  disabled={!draft().trim() && attachments().length === 0}
+                />
+              }
+            >
+              <IconButton icon="Square" label="Stop generating" danger onClick={stop} />
+            </Show>
+          </div>
         </div>
       </Show>
     </div>
@@ -937,7 +939,7 @@ export function ChatView(props: { chatId: string }) {
       document.removeEventListener("keydown", onDocKey, true);
     });
     return (
-      <div ref={panel!} class="chat-history-panel">
+      <div ref={panel!} class="chat-history-panel bismuth-popover">
         <div class="chat-history-title">Resume a conversation</div>
         <Show
           when={!historyLoading()}
@@ -967,6 +969,8 @@ export function ChatView(props: { chatId: string }) {
   function AssistantTurn(p: { item: AssistantItem }) {
     return (
       <div class="chat-msg assistant">
+        {/* Persona glyph + the daemon's name — per-turn identity without an avatar. */}
+        <div class="chat-turn-label"><Icon value="MessageSquare" size={11} /> {persona()}</div>
         <div class="chat-turn">
           <For each={p.item.parts}>
             {(part) => {
