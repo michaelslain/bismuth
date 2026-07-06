@@ -99,13 +99,16 @@ interface ToolPart {
   isError: boolean;
   pending: boolean;
 }
-/** An inline permission prompt; `answered` records the user's choice once they pick. */
+/** An inline permission prompt; `answered` records the user's choice once they pick. `cancelled`
+ *  marks a prompt orphaned by Stop (the backend denied it when the turn aborted) — rendered as a
+ *  muted "Cancelled" note, NOT as a user denial, and its buttons stop being actionable. */
 interface PermissionPart {
   kind: "permission";
   id: string;
   toolName: string;
   input: unknown;
   answered: null | { behavior: "allow" | "deny"; always: boolean };
+  cancelled?: boolean;
 }
 type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart;
 
@@ -241,6 +244,12 @@ export function ChatView(props: { chatId: string }) {
   // A resume requested before the socket was OPEN — flushed on the next onopen so a picked session
   // still binds even if the WS was momentarily connecting/reconnecting.
   let pendingResume: string | null = null;
+  // Permission answers that couldn't be delivered (socket down mid-reconnect) — flushed on the
+  // next onopen. An ARRAY: parallel tool calls can raise several concurrent prompts, and the
+  // backend's pending map survives the ≤30s grace window, so a flushed answer still resolves the
+  // parked canUseTool. Without this, a click during a blip shows "Allowed" while the backend
+  // grace-timer silently denies it.
+  let pendingPermissions: { id: string; behavior: "allow" | "deny"; always: boolean }[] = [];
 
   const sendJson = (msg: unknown): boolean => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -310,8 +319,9 @@ export function ChatView(props: { chatId: string }) {
         break;
       case "user-message":
         // A replayed past user turn (history only — live user messages come from send(), not the
-        // wire). Render it as a user bubble, identical to a freshly-sent one.
-        setTranscript(produce((m) => m.push({ role: "user", text: frame.text })));
+        // wire). Render it as a user bubble, identical to a freshly-sent one — including any
+        // persisted image attachments (data: URLs), so an image-only turn doesn't vanish.
+        setTranscript(produce((m) => m.push({ role: "user", text: frame.text, images: frame.images })));
         scrollToBottom();
         break;
       case "assistant-text":
@@ -382,7 +392,11 @@ export function ChatView(props: { chatId: string }) {
   const connect = () => {
     // Pin the chat id so a reconnect resumes the same backend session (continuity). Uses the
     // view-owned activeChatId (not props.chatId) so a "New" chat reconnects on its fresh id.
-    ws = new WebSocket(`${wsBase()}/chat?chatId=${encodeURIComponent(activeChatId())}`);
+    // `rebind=1` marks a RECONNECT (not a first open / deliberate switch): the server then tells
+    // us explicitly if the session we expect was already torn down (grace window expired), so a
+    // wedged mid-turn UI clears instead of silently continuing against a fresh session.
+    const rebind = reconnectAttempt > 0 ? "&rebind=1" : "";
+    ws = new WebSocket(`${wsBase()}/chat?chatId=${encodeURIComponent(activeChatId())}${rebind}`);
     ws.onopen = () => {
       reconnectAttempt = 0;
       // Clear any stale "connection lost" notice — the backend rebinds this socket's sink on open
@@ -394,6 +408,13 @@ export function ChatView(props: { chatId: string }) {
         const sid = pendingResume;
         pendingResume = null;
         sendJson({ type: "resume", sessionId: sid });
+      }
+      // Flush permission answers clicked while the socket was down — the backend session's
+      // pending map survives the grace window, so these still resolve the parked prompts.
+      if (pendingPermissions.length) {
+        const queued = pendingPermissions;
+        pendingPermissions = [];
+        for (const p of queued) sendJson({ type: "permission_response", ...p });
       }
     };
     ws.onmessage = (ev) => {
@@ -511,12 +532,35 @@ export function ChatView(props: { chatId: string }) {
   };
 
   const stop = () => {
-    sendJson({ type: "stop" });
+    // Socket not open (mid-reconnect): the stop never reaches the backend — don't lie by
+    // flipping to the idle Send state while the turn keeps running server-side. Leave the
+    // streaming UI; rebindSink resumes the turn's frames on reconnect and the user can retry.
+    if (!sendJson({ type: "stop" })) {
+      setTurnError("Not connected to the backend — couldn't stop. Reconnecting…");
+      return;
+    }
     setStreaming(false);
+    // The aborted turn's unanswered permission prompts are now moot — the backend denied them
+    // when it interrupted (abortTurn). Mark them cancelled so the cards stop offering a live
+    // decision (rendered as a muted "Cancelled", not a user denial).
+    setTranscript(
+      produce((m) => {
+        for (const item of m) {
+          if (item.role !== "assistant") continue;
+          for (const part of item.parts) {
+            if (part.kind === "permission" && !part.answered && !part.cancelled) part.cancelled = true;
+          }
+        }
+      }),
+    );
   };
 
   const answerPermission = (id: string, behavior: "allow" | "deny", always: boolean) => {
-    sendJson({ type: "permission_response", id, behavior, always });
+    // Queue the answer if the socket is down (flushed on the next onopen — the backend's pending
+    // map survives the grace window); the optimistic transcript mark below stays for responsiveness.
+    if (!sendJson({ type: "permission_response", id, behavior, always })) {
+      pendingPermissions.push({ id, behavior, always });
+    }
     setTranscript(
       produce((m) => {
         for (const item of m) {
@@ -552,6 +596,11 @@ export function ChatView(props: { chatId: string }) {
   const reconnectOn = (id: string) => {
     clearTimeout(reconnectTimer);
     reconnectAttempt = 0;
+    // A deliberate switch invalidates anything queued for the OLD socket: a stale stashed resume
+    // would otherwise be flushed by the NEW socket's onopen (silently resuming a session the user
+    // just navigated away from), and queued permission answers belong to a session being closed.
+    pendingResume = null;
+    pendingPermissions = [];
     // Detach the OLD socket's handlers BEFORE closing it. A `close` event fires asynchronously —
     // after connect() below has already reassigned `ws` — and the onclose handler only bails on
     // `disposed`, so a deliberate switch would otherwise schedule a stray reconnect that opens a
@@ -594,14 +643,18 @@ export function ChatView(props: { chatId: string }) {
     }
   };
 
-  /** Resume a past session: clear the transcript, rehydrate it from the session's history frames
-   *  (fed through the SAME onFrame so they render like live turns), then bind this chat to resume
-   *  it over the WS so the next message continues THAT conversation. */
+  /** Resume a past session: tear the current socket + its in-flight turn down FIRST (a clean
+   *  reconnect — the server closeChat()s the old session, so no stray frame from the abandoned
+   *  turn can land in the just-cleared transcript or raise a permission card whose answer would
+   *  be silently dropped), then rehydrate from the session's history frames (fed through the SAME
+   *  onFrame so they render like live turns). The new socket's onopen flushes the stashed resume,
+   *  whose only frame (the init manifest) doesn't touch the transcript — so it can't interleave
+   *  with the replayed history. */
   const resumeSession = async (sessionId: string) => {
     setHistoryOpen(false);
     resetTranscript();
-    // Rehydrate from history BEFORE the resume binds — the replayed frames render the past turns;
-    // the WS resume then streams the session's init manifest and continues it on the next message.
+    reconnectOn(activeChatId()); // clears any stale pendingResume/pendingPermissions itself
+    pendingResume = sessionId; // set AFTER reconnectOn — the new socket's onopen flushes it
     let frames: ChatFrame[] = [];
     try {
       frames = await api.chatSessionMessages(sessionId);
@@ -609,10 +662,6 @@ export function ChatView(props: { chatId: string }) {
       frames = [];
     }
     for (const frame of frames) onFrame(frame);
-    // Bind the live socket to resume this session (cancel any in-flight reconnect timer first).
-    // If the socket isn't open yet, stash it so onopen flushes the resume instead of dropping it.
-    clearTimeout(reconnectTimer);
-    if (!sendJson({ type: "resume", sessionId })) pendingResume = sessionId;
     scrollToBottom(true); // jump to the latest turn of the resumed conversation
     ta?.focus();
   };
@@ -1058,7 +1107,7 @@ export function ChatView(props: { chatId: string }) {
   function PermissionCard(p: { part: PermissionPart }) {
     const summary = () => clamp(summarizeInput(p.part.input), 160);
     return (
-      <div class="chat-permission" classList={{ answered: !!p.part.answered }}>
+      <div class="chat-permission" classList={{ answered: !!p.part.answered || !!p.part.cancelled }}>
         <div class="chat-permission-head">
           <Icon value="Lock" size={14} class="chat-permission-icon" />
           <span class="chat-permission-title">
@@ -1069,15 +1118,17 @@ export function ChatView(props: { chatId: string }) {
           <pre class="chat-permission-summary">{summary()}</pre>
         </Show>
         <Show
-          when={!p.part.answered}
+          when={!p.part.answered && !p.part.cancelled}
           fallback={
-            <div class="chat-permission-outcome" classList={{ deny: p.part.answered?.behavior === "deny" }}>
-              <Icon value={p.part.answered?.behavior === "allow" ? "Check" : "X"} size={13} />
-              {p.part.answered?.behavior === "allow"
-                ? p.part.answered.always
-                  ? "Allowed (always)"
-                  : "Allowed"
-                : "Denied"}
+            <div class="chat-permission-outcome" classList={{ deny: p.part.answered?.behavior === "deny", cancelled: !p.part.answered && !!p.part.cancelled }}>
+              <Icon value={p.part.answered ? (p.part.answered.behavior === "allow" ? "Check" : "X") : "Ban"} size={13} />
+              {p.part.answered
+                ? p.part.answered.behavior === "allow"
+                  ? p.part.answered.always
+                    ? "Allowed (always)"
+                    : "Allowed"
+                  : "Denied"
+                : "Cancelled"}
             </div>
           }
         >

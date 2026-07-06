@@ -254,6 +254,7 @@ html.view-dragging, html.view-dragging * { cursor: grabbing !important; user-sel
 /* …and let drops pass through the always-mounted terminal overlay + graph floater to the
    pane-leaf beneath them (each overlay's host placeholder lives inside the leaf). */
 html.view-dragging .terminal-overlay,
+html.view-dragging .chat-overlay,
 html.view-dragging .graph-floater { pointer-events: none; }
 
 /* Command palette (Cmd+P) & quick switcher (Cmd+O) — see app/src/palette/. */

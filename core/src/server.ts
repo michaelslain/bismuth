@@ -34,6 +34,7 @@ import {
   closeChat,
   scheduleClose as scheduleChatClose,
   rebindSink as chatRebindSink,
+  detachSink as chatDetachSink,
   newChatId,
   respondPermission as chatRespondPermission,
   setPermissionMode as chatSetPermissionMode,
@@ -283,20 +284,26 @@ export function createServer(cfg: CoreConfig) {
   // exactly what's dirty. We always bump version (so the editor can reconcile an
   // externally-edited open file), but graph/tree consumers skip refetching when
   // their `dirty` flag is false.
-  function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }) {
+  function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }, vaultTouched = true) {
     if (dirty.graph) graphCache.invalidate();
     if (dirty.tree) treeCache.invalidate();
-    // The search index covers note bodies (and basenames/headings/tags), so even a content-only edit
-    // that's dirty to neither graph nor tree changes search results. When we know exactly which paths
-    // changed, patch just those docs in place (re-read one file, not the whole vault); otherwise (an
-    // unknown-extent change) drop the index so the next /search rebuilds from current files. The patch
-    // is fire-and-forget: a search landing in the brief window before it resolves can return results one
-    // edit stale, which self-heals on the next search; on patch failure we fall back to a full drop.
-    if (paths.length > 0) void updateSearchIndex(cfg.vault, paths).catch(() => invalidateSearchIndex(cfg.vault));
-    else invalidateSearchIndex(cfg.vault);
-    // Bases rows + tasks derive from arbitrary frontmatter/body — rebuild lazily on next read.
-    rowsCache.invalidate();
-    tasksCache.invalidate();
+    // Search index, rows, and tasks are all built purely from vault notes, so a batch that
+    // touched only the memory dir (3rd brain, no vault paths) has nothing for them to react
+    // to — skip the drop/rebuild entirely so a daemon memory write doesn't force the next
+    // /search, /rows, or /tasks request to pay a full vault re-walk for no content change.
+    if (vaultTouched) {
+      // The search index covers note bodies (and basenames/headings/tags), so even a content-only edit
+      // that's dirty to neither graph nor tree changes search results. When we know exactly which paths
+      // changed, patch just those docs in place (re-read one file, not the whole vault); otherwise (an
+      // unknown-extent change) drop the index so the next /search rebuilds from current files. The patch
+      // is fire-and-forget: a search landing in the brief window before it resolves can return results one
+      // edit stale, which self-heals on the next search; on patch failure we fall back to a full drop.
+      if (paths.length > 0) void updateSearchIndex(cfg.vault, paths).catch(() => invalidateSearchIndex(cfg.vault));
+      else invalidateSearchIndex(cfg.vault);
+      // Bases rows + tasks derive from arbitrary frontmatter/body — rebuild lazily on next read.
+      rowsCache.invalidate();
+      tasksCache.invalidate();
+    }
     version++;
     sse.publish({ version, paths, dirty });
   }
@@ -397,7 +404,10 @@ export function createServer(cfg: CoreConfig) {
           // doesn't spam commits; best-effort, never blocks.
           if (cfg.memory) scheduleBackup(cfg.memory, () => snapshotMessage(new Date(), "memory"));
         }
-        applyDirty(unknown ? [] : vaultPaths, dirty);
+        // A pure memory-dir batch (no vault paths, extent known) never touched the vault, so
+        // the search/rows/tasks caches below have nothing to invalidate for it.
+        const vaultTouched = unknown || vaultPaths.length > 0;
+        applyDirty(unknown ? [] : vaultPaths, dirty, vaultTouched);
       })();
     }, appConfig.server.fileWatchDebounceMs);
   }
@@ -1302,7 +1312,7 @@ export function createServer(cfg: CoreConfig) {
   // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
   // drive the headless Claude Code chat driver (core/src/chat.ts).
   type TermWsData = { kind: "terminal"; sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
-  type ChatWsData = { kind: "chat"; chatId: string };
+  type ChatWsData = { kind: "chat"; chatId: string; rebind: boolean };
   type WsData = TermWsData | ChatWsData;
   const server = Bun.serve<WsData>({
     port: cfg.port ?? 4321,
@@ -1384,7 +1394,11 @@ export function createServer(cfg: CoreConfig) {
           return withCors(error("forbidden origin", 403));
         }
         const chatId = url.searchParams.get("chatId") || newChatId();
-        const upgraded = server.upgrade(req, { data: { kind: "chat", chatId } as ChatWsData });
+        // `rebind=1` marks a RECONNECT (the client had this chat open and lost the socket) as
+        // opposed to a first open — it lets the open handler tell the client when the session
+        // it expects is already gone (grace window expired) instead of silently starting fresh.
+        const rebind = url.searchParams.get("rebind") === "1";
+        const upgraded = server.upgrade(req, { data: { kind: "chat", chatId, rebind } as ChatWsData });
         if (!upgraded) return withCors(error("upgrade failed", 400));
         return new Response(null, { status: 101 });
       }
@@ -1410,12 +1424,20 @@ export function createServer(cfg: CoreConfig) {
         if (ws.data.kind === "chat") {
           // A reconnect (same chatId) mid-turn: re-point the live session's sink at THIS new socket
           // and cancel its grace-period teardown, so in-flight drain frames (incl. the turn's tail
-          // and `done`) flow here instead of the dead socket. A brand-new chat has no session yet —
-          // rebind is a no-op and the first {type:"user"} binds the sink via sendMessage.
-          const { chatId } = ws.data;
-          chatRebindSink(chatId, (frame: unknown) => {
+          // and `done`) flow here instead of the dead socket — rebindSink also flushes any frames
+          // buffered while detached. A brand-new chat has no session yet — rebind is a no-op and
+          // the first {type:"user"} binds the sink via sendMessage.
+          const { chatId, rebind } = ws.data;
+          const rebound = chatRebindSink(chatId, (frame: unknown) => {
             try { ws.send(JSON.stringify(frame)); } catch { /* socket closed mid-turn */ }
           });
+          // The client RECONNECTED expecting its session, but the 30s grace already tore it down
+          // (closeChat sends no frame) — tell it explicitly so a wedged mid-turn UI clears and the
+          // user learns the conversation ended, instead of the next send silently starting fresh.
+          if (!rebound && rebind) {
+            const frame = { type: "error", code: "exit", message: "The Claude Code session ended while disconnected — send a message to start a new one." };
+            try { ws.send(JSON.stringify(frame)); } catch { /* */ }
+          }
           return;
         }
         const data = ws.data;
@@ -1532,11 +1554,17 @@ export function createServer(cfg: CoreConfig) {
       close(ws, code) {
         if (ws.data.kind === "chat") {
           // A CLEAN close (1000) is an intentional tab-close → tear the session down now. An
-          // ABNORMAL close (reload 1001, network drop 1006) → keep the session alive for a short
-          // grace window so a reconnect (the client retries with the same chatId) resumes the same
-          // `claude` conversation instead of spawning a fresh one. The next sendMessage cancels it.
-          if (code === 1000) closeChat(ws.data.chatId);
-          else scheduleChatClose(ws.data.chatId, 30_000);
+          // ABNORMAL close (reload 1001, network drop 1006) → detach the sink (frames buffer for
+          // the reconnect's rebindSink flush instead of vanishing into the dead socket) and keep
+          // the session alive for a short grace window so a reconnect (the client retries with
+          // the same chatId) resumes the same `claude` conversation instead of spawning a fresh
+          // one. The next sendMessage/rebind cancels the timer.
+          if (code === 1000) {
+            closeChat(ws.data.chatId);
+          } else {
+            chatDetachSink(ws.data.chatId);
+            scheduleChatClose(ws.data.chatId, 30_000);
+          }
           return;
         }
         const data = ws.data;
