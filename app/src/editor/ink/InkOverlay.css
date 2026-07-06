@@ -1,0 +1,26 @@
+/* Note-ink overlay: a transparent stroke layer covering the editor viewport (the wrapper is
+   position:relative). In normal mode it's paint-only (pointer-events:none) so text editing is
+   untouched; draw mode flips the LIVE canvas interactive so a click can't reach the text. The
+   toolbar reuses the drawing dock (.draw-toolbar in Drawing.css), which anchors to the same
+   wrapper. */
+.ink-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3; /* above the note text; the find bar (z-index higher) still wins */
+}
+.ink-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.ink-host.active .ink-live {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none; /* stylus/touch draw, not scroll — wheel still forwards to the note */
+}
+.ink-host.active .draw-toolbar {
+  pointer-events: auto;
+}

@@ -34,6 +34,8 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
     doc: "Open/close the quick file switcher." },
   { id: "terminal", label: "Open terminal", default: "Mod+`, Mod+J",
     doc: "Open a terminal tab (comma-separated alternatives allowed)." },
+  { id: "toggle-draw-mode", label: "Toggle draw mode", default: "Mod+Shift+I",
+    doc: "Toggle ink/draw mode in the focused note editor — draw freehand over the note (Escape also exits). Mnemonic: Ink. On Linux/Windows Ctrl+Shift+I collides with browser devtools — rebind if needed." },
   { id: "split-right", label: "Split pane right", default: "Mod+D",
     doc: "Split the focused pane into a new pane to the right." },
   { id: "split-down", label: "Split pane down", default: "Mod+Shift+D",

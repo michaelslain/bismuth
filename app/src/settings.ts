@@ -141,6 +141,7 @@ export interface Settings {
   // against these (app/src/keybindings.ts), never a hardcoded combo.
   keybindings: {
     "find": string;
+    "toggle-draw-mode": string;
     "command-palette": string;
     "quick-switcher": string;
     "terminal": string;

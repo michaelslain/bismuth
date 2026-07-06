@@ -40,6 +40,7 @@ import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
 import type { GcalStatus } from "../../core/src/gcal";
 import type { SyncResult } from "../../core/src/gcal/sync";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
+import { serializeInkDoc, inkPathFor, type InkDoc } from "../../core/src/drawing/ink";
 import type { ChatFrame } from "../../core/src/chat";
 
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
@@ -289,6 +290,11 @@ export const api = {
   // write path as notes — there is no dedicated /drawing/save route.
   saveDrawing: (path: string, doc: DrawingDoc) =>
     put("/file", { path, contents: serializeDoc(doc) }).then(() => {}),
+  // Note ink (draw-anywhere strokes over a note) persists as a hidden `.ink/<note>.ink`
+  // sidecar via the same generic PUT /file path. Reading uses api.read(inkPathFor(path)) —
+  // GET /file never 404s, so an empty body just means "no ink yet".
+  saveNoteInk: (notePath: string, doc: InkDoc) =>
+    put("/file", { path: inkPathFor(notePath), contents: serializeInkDoc(doc) }).then(() => {}),
 
   // Daemon supervision. Status (running + this device + owner, augmented server-side with this
   // vault's identity name), the list of heartbeating devices, and claiming a device as the owner

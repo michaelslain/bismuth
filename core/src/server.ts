@@ -53,6 +53,7 @@ import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
 import { fileBasename } from "./pathUtils";
+import { isInkSidecarPath } from "./drawing/ink";
 import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName, registerVaultRoot } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
 import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
@@ -349,6 +350,10 @@ export function createServer(cfg: CoreConfig) {
       if (isDaemonRuntimeNoise(p)) continue; // daemon logs/pids/cron-state → never refetch
       if (isDaemonMemoryPath(p)) { graph = true; continue; }
       if (isSystemFolderPath(p)) { tree = true; continue; }
+      // Note-ink sidecars (.ink/**) are dirty to NOTHING — they feed no graph, tree, search,
+      // rows, or tasks. They still ride the SSE publish (paths + version bump) so a split-pane
+      // sibling showing the same note can refetch its ink. Matched before the hidden-drop.
+      if (isInkSidecarPath(p)) continue;
       if (isWatchIgnored(p)) continue;
       if (!p.endsWith(".md")) { graph = true; tree = true; continue; }
       notePaths.push(p);
@@ -404,9 +409,10 @@ export function createServer(cfg: CoreConfig) {
           // doesn't spam commits; best-effort, never blocks.
           if (cfg.memory) scheduleBackup(cfg.memory, () => snapshotMessage(new Date(), "memory"));
         }
-        // A pure memory-dir batch (no vault paths, extent known) never touched the vault, so
-        // the search/rows/tasks caches below have nothing to invalidate for it.
-        const vaultTouched = unknown || vaultPaths.length > 0;
+        // A pure memory-dir batch (no vault paths, extent known) never touched the vault, and
+        // ink sidecars (.ink/**) are content-neutral to search/rows/tasks — so a batch of only
+        // those skips the cache drops entirely (a stroke autosave must cost nothing).
+        const vaultTouched = unknown || vaultPaths.some((p) => !isInkSidecarPath(p));
         applyDirty(unknown ? [] : vaultPaths, dirty, vaultTouched);
       })();
     }, appConfig.server.fileWatchDebounceMs);
@@ -438,7 +444,9 @@ export function createServer(cfg: CoreConfig) {
       // extent unknown". System folders (.settings/.daemon) are dot-hidden but meaningful,
       // so they bypass the hidden-drop (classifyVault routes them to tree/graph).
       if (filename && isDaemonRuntimeNoise(filename)) return; // drop daemon runtime churn early
-      if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && isWatchIgnored(filename)) return;
+      // .ink/** is dot-hidden but must pass: classifyVault marks it dirty-to-nothing while the
+      // SSE publish keeps split panes' ink in sync (see the isInkSidecarPath branch there).
+      if (filename && !isSystemFolderPath(filename) && !isSettingsPath(filename) && !isInkSidecarPath(filename) && isWatchIgnored(filename)) return;
       scheduleVault(filename ?? undefined);
     });
   } catch {

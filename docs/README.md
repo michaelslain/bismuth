@@ -48,6 +48,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Block editor (WYSIWYG)](editor/blocks.md) — the Milkdown true-WYSIWYG surface + `editor.defaultMode`
 - [Tables](editor/tables.md) — editable GFM pipe tables
 - [Autocomplete](editor/autocomplete.md) — wikilink/tag/task/query/settings completion
+- [Note ink](editor/ink.md) — draw-anywhere mode: freehand strokes over any note (Mod+Shift+I)
 
 ## Bases (queries & views)
 

@@ -20,14 +20,20 @@ export function emptyDoc(): DrawingDoc {
 
 const clampByte = (n: number) => Math.max(0, Math.min(255, Math.round(n)));
 
+/** Round stroke geometry for compact persistence: x/y to whole px, the packed pressure byte
+ *  clamped to 0-255. Shared by `.draw` (roundDoc) and `.ink` (serializeInkDoc) serializers. */
+export function roundStrokes(strokes: Stroke[]): Stroke[] {
+  return strokes.map((s) => ({
+    ...s,
+    pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n))),
+  }));
+}
+
 export function roundDoc(doc: DrawingDoc): DrawingDoc {
   return {
     ...doc,
     pages: doc.pages.map((pg) => ({
-      strokes: pg.strokes.map((s) => ({
-        ...s,
-        pts: s.pts.map((n, i) => (i % 3 === 2 ? clampByte(n) : Math.round(n))),
-      })),
+      strokes: roundStrokes(pg.strokes),
       // Carry images through (rebuilding the page as `{ strokes }` only would silently
       // strip them on save). Round the geometry; NEVER touch `src` (the data URL).
       ...(pg.images
