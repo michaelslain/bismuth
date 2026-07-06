@@ -875,6 +875,18 @@ export function ChatView(props: { chatId: string }) {
 
   // ── Render ──────────────────────────────────────────────────────────────────────────────
   const mcpConnected = () => (manifest()?.mcpServers ?? []).filter((s) => /connect|ready|ok/i.test(s.status)).length;
+  // The pre-first-delta waiting dots: streaming with no assistant output for the CURRENT turn
+  // yet. Queued (staged, unsent) user bubbles belong to future turns — skip them, or the dots
+  // would vanish/misplace the moment a follow-up is staged.
+  const awaitingReply = () => {
+    if (!streaming()) return false;
+    for (let i = transcript.length - 1; i >= 0; i--) {
+      const it = transcript[i];
+      if (it.role === "user" && it.queued) continue;
+      return it.role === "user";
+    }
+    return true;
+  };
   // The chat presents AS the vault's daemon when one is enabled — its identity name replaces
   // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts).
   const persona = () => chatPersonaName() ?? "Claude";
@@ -1014,7 +1026,7 @@ export function ChatView(props: { chatId: string }) {
               </Show>
             )}
           </For>
-          <Show when={streaming() && (transcript.length === 0 || transcript[transcript.length - 1].role === "user")}>
+          <Show when={awaitingReply()}>
             <div class="chat-msg assistant">
               <div class="chat-turn-label"><Icon value="MessageSquare" size={11} /> {persona()}</div>
               <div class="chat-thinking-dots">
