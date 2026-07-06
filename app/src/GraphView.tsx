@@ -103,13 +103,26 @@ export function GraphView(props: {
   const [hovered, setHovered] = createSignal<HoverNode | null>(null);
   const [fps, setFps] = createSignal<number | null>(null);
   const [legendRows, setLegendRows] = createSignal<ClusterRow[]>([]);
+  // The persistently-highlighted cluster (legend click). Toggled off by clicking the same row
+  // again, clicking empty canvas space (renderer.onHighlightCleared), or the search menu close.
+  const [selectedCluster, setSelectedCluster] = createSignal<number | null>(null);
+  const focusCluster = (ids: string[], community: number): void => {
+    if (selectedCluster() === community) {
+      setSelectedCluster(null);
+      renderer.clearHighlight();
+      return;
+    }
+    setSelectedCluster(community);
+    renderer.highlightNodes(ids);
+    renderer.frameSubset(ids);
+  };
   const [searchItems, setSearchItems] = createSignal<SearchItem[]>([]);
 
   // Graph search panel, opened by the FIND / ☰ buttons. Only shown when the graph is a full
   // pane (props.fill) — the sidebar mini-graph is too small to be worth it. (Clusters have
   // their own floating legend card; there's no reset-view button.)
   const [menuOpen, setMenuOpen] = createSignal(false);
-  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); };
+  const closeMenu = () => { setMenuOpen(false); renderer.setSearchMatches(new Set()); renderer.clearHighlight(); setSelectedCluster(null); };
 
   // The 3rd-brain (memory) + daemon graph modes only exist while the daemon is enabled
   // (the per-vault master switch). When it's off, the 3rd brain carries no nodes and the
@@ -150,6 +163,8 @@ export function GraphView(props: {
       labelsEl, // DOM overlay for native text labels (replaces in-canvas sprite labels)
     );
     renderer.setFpsCallback(setFps);
+    // Empty-canvas click cleared the highlight renderer-side — mirror it in the legend state.
+    renderer.onHighlightCleared = () => setSelectedCluster(null);
     // The atmosphere glow (lobes that ride the 3 biggest clusters) is wired by <GraphAtmosphere>.
     mounted = true;
     if (lastGraph) { renderer.render(rendererGraph()); refreshUiData(); }
@@ -303,7 +318,7 @@ export function GraphView(props: {
           <div class="graph-legend-card">
             <div class="graph-card-h">{modeLabel()} · clusters</div>
             <div class="graph-legend-rows">
-              <ClusterLegend rows={legendRows()} onFocus={(ids) => { renderer.highlightNodes(ids); renderer.frameSubset(ids); }} />
+              <ClusterLegend rows={legendRows()} selected={selectedCluster()} onFocus={focusCluster} />
             </div>
           </div>
         </Show>

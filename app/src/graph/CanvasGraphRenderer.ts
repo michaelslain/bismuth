@@ -68,13 +68,14 @@ const NODE_MAX_FRAC = 0.6;    // cap: a hub never exceeds ~0.6 of the spacing
 const SELF_FRAC = 0.5;        // the "you" hub's diameter as a fraction of spacing
 const MIN_DOT_PX = 1.6;       // below this projected diameter a node is hidden
 const MAX_DOT_PX = 60;        // cap the resting diameter so tiny graphs (1 "you" node) don't blow up
-// Breathing room kept clear around the "you" hub, in SCREEN px (see clearAroundSelf): a node's drawn
-// circle is pushed out until it's at least this far from the hub's circle. Per-frame + in px, so it
-// holds a CONSISTENT gap at ANY zoom / graph size — unlike a fixed world-space gap, which projects
-// through zoom (so it grows/shrinks as you zoom and reads as a hard ring) and can't know how big a
-// dot is actually drawn (a one-link neighbour in a sparse, zoomed-in graph draws large enough to
-// graze the hub even when its center clears the world radius). This is the ONLY clear-zone pass.
-const SELF_CLEAR_GAP = 16;
+// Breathing room kept clear around the "you" hub (see clearAroundSelf). The RADIUS is a
+// world-space quantity — expressed as a fraction of the fitted graph radius and projected
+// through the hub's own perspective scale — so the cleared region zooms WITH the graph like any
+// other world geometry (a fixed screen-px ring warped neighbours differently at every zoom
+// level, reading as the hub's space "growing and shrinking on zoom"). The nodes' DRAWN radii
+// are still added in screen px as a pure anti-overlap floor, so a big-drawn dot in a sparse,
+// zoomed-in graph can never graze the hub's circle. This is the ONLY clear-zone pass.
+const SELF_CLEAR_FRAC = 0.05;
 // Zoom-in label discovery: once a node's projected dot grows past this many px (i.e. the user
 // has zoomed in toward it), reveal its filename label so zooming in progressively surfaces names.
 const LABEL_REVEAL_DOT_PX = 18;
@@ -251,6 +252,9 @@ export class CanvasGraphRenderer {
   private onHover: (n: HoverNode | null) => void = () => {};
   private onFps?: (fps: number) => void;
   private onGlow?: (g: { lobes: { x: number; y: number }[] }) => void;
+  /** Fired when an empty-space click clears a persistent highlight — lets the view (e.g. the
+   *  cluster legend's selected row) drop its own selection state in sync. */
+  onHighlightCleared?: () => void;
 
   // loop
   private raf = 0; private running = false; private visible = true; private dirty = true;
@@ -613,26 +617,31 @@ export class CanvasGraphRenderer {
     this.clearAroundSelf();
   }
 
-  /** Open a consistent clear ZONE around the "you" hub IN SCREEN SPACE — the SINGLE source of truth
-   *  for the hub's breathing room (scaleToSpacing no longer carves anything in world space). Using
-   *  each node's ACTUAL drawn radius is the whole point: how big a dot is DRAWN depends on zoom, so a
-   *  one-link neighbour in a sparse, zoomed-in graph draws large enough to graze the hub even though
-   *  its CENTER clears any world radius — and a fixed WORLD gap projects through zoom and reads as a
-   *  hard ring that grows/shrinks as you zoom. After projecting, push any non-self node whose drawn
-   *  circle would overlap the hub's (plus SELF_CLEAR_GAP) radially outward in screen px — but ONLY
-   *  the ones actually inside that gap, so it stays a clearing, not a forced ring. Runs every frame,
-   *  so the gap is constant in px across 2D, 3D, and the morph at ANY zoom; the hub is pinned at the
-   *  cloud centre, so the push direction is stable. Coincident nodes (resolving to the same screen
-   *  point) fan out on golden-angle bearings so they don't stack. Edges, dots, and labels all read
-   *  sx/sy, so they follow the nudge. O(n). */
+  /** Open a clear ZONE around the "you" hub — the SINGLE source of truth for the hub's breathing
+   *  room (scaleToSpacing carves nothing in world space). The zone's RADIUS behaves like world
+   *  geometry: SELF_CLEAR_FRAC of the fitted graph radius, scaled by the hub's perspective, so
+   *  zooming scales the clearing with the graph instead of holding a fixed px ring (which warped
+   *  neighbours differently at each zoom level — "the space around you grows/shrinks on zoom").
+   *  Each node's ACTUAL drawn radius is still added in px as an anti-overlap floor: how big a dot
+   *  is DRAWN depends on zoom, so a one-link neighbour in a sparse, zoomed-in graph could
+   *  otherwise graze the hub's circle even though its center clears the world radius. Only nodes
+   *  actually inside the zone are pushed, so it stays a clearing, not a forced ring. Runs every
+   *  frame across 2D, 3D, and the morph; the hub is pinned at the cloud centre, so the push
+   *  direction is stable. Coincident nodes (resolving to the same screen point) fan out on
+   *  golden-angle bearings so they don't stack. Edges, dots, and labels all read sx/sy, so they
+   *  follow the nudge. O(n). */
   private clearAroundSelf() {
     const self = this.selfNode;
     if (!self || !self.onScreen) return;
     const rSelf = this.nodeDiameter(self) / 2;
+    // World-space breathing room, projected like any node position: fraction of the fitted
+    // graph radius × the hub's own perspective scale. Zooming scales it with the graph, so the
+    // hub's clear zone stays geometrically stable instead of pulsing with zoom.
+    const projectedClear = SELF_CLEAR_FRAC * this.fitPx * self.pscale;
     let coincident = 0;
     for (const nv of this.nodes) {
       if (nv === self || !nv.onScreen) continue;
-      const minDist = rSelf + this.nodeDiameter(nv) / 2 + SELF_CLEAR_GAP;
+      const minDist = rSelf + this.nodeDiameter(nv) / 2 + projectedClear;
       let dx = nv.sx - self.sx, dy = nv.sy - self.sy;
       let d = Math.hypot(dx, dy);
       if (d >= minDist) continue;
@@ -992,7 +1001,14 @@ export class CanvasGraphRenderer {
     this.dirty = true; // restore the crisp DOM after a drag
     if (wasDrag) return;
     const hit = this.pick(e.clientX, e.clientY);
-    if (hit) this.onNodeClick(hit.node.id);
+    if (hit) {
+      this.onNodeClick(hit.node.id);
+    } else if (this.highlightSet) {
+      // Click on empty space deselects a persistent cluster highlight (the legend sets it) —
+      // without this there was no way OFF a selected cluster short of picking another one.
+      this.clearHighlight();
+      this.onHighlightCleared?.();
+    }
   };
 
   private onWheel = (e: WheelEvent) => {

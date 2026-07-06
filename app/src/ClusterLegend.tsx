@@ -17,8 +17,11 @@ export interface ClusterRow {
 
 export function ClusterLegend(props: {
   rows: ClusterRow[];
-  onFocus: (ids: string[]) => void; // fly to this cluster's nodes
+  onFocus: (ids: string[], community: number) => void; // fly to / toggle this cluster's nodes
   onHover?: (community: number | null) => void;
+  /** The persistently-highlighted cluster, if any — its row reads as selected, and clicking it
+   *  again deselects (GraphView owns the state; empty-canvas clicks clear it too). */
+  selected?: number | null;
 }) {
   // Sort by count desc (largest community first); stable tie-break on community id.
   const sorted = createMemo(() =>
@@ -31,12 +34,13 @@ export function ClusterLegend(props: {
         {(row) => (
           <div
             class="cluster-row"
+            classList={{ selected: props.selected === row.community }}
             // Stop mousedown from bubbling to the enclosing pane-leaf, whose focus handler
             // (PaneTree's onMouseDown) re-renders the pane and recreates these rows mid-click —
             // detaching the mousedown target before mouseup, so the browser never fires the click
             // and onFocus never runs. Matches EmptyPane's interactive-control pattern.
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={() => props.onFocus(row.ids)}
+            onClick={() => props.onFocus(row.ids, row.community)}
             onMouseEnter={() => props.onHover?.(row.community)}
             onMouseLeave={() => props.onHover?.(null)}
             title={row.label}
