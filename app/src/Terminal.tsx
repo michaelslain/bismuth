@@ -552,14 +552,50 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
         sendResize();
       };
 
-      // Backend → terminal: raw PTY output. After the chunk is parsed into the
-      // buffer, re-pin to the bottom if we're following — this keeps the viewport
-      // tracking new output even while the tab is hidden (display:none), where
-      // xterm's own auto-scroll is suspended. A no-op when already at the bottom.
-      ws.onmessage = (ev) => {
-        term!.write(new Uint8Array(ev.data as ArrayBuffer), () => {
+      // Backend → terminal: raw PTY output, COALESCED to one term.write() per animation frame.
+      // A burst (build output, `ls -R`, an animating TUI) arrives as rapid-fire small WS frames;
+      // writing each individually queues a per-frame parse in xterm's WriteBuffer whose
+      // setTimeout-chained drain monopolizes the timer queue — the "terminal laggy, then fine"
+      // backlog. Byte-concatenating frames is stream-identical for a PTY byte stream, and one
+      // write per frame lets xterm time-slice cleanly. rAF is paused while the WINDOW is hidden
+      // (an inactive in-app tab is display:none — document stays visible, rAF still fires), so
+      // a timeout fallback + a byte cap keep a background window's queue bounded and flushing.
+      // After the flush parses, re-pin to the bottom if we're following — keeps the viewport
+      // tracking new output even while the tab is hidden, where xterm's auto-scroll is
+      // suspended. A no-op when already at the bottom.
+      let pending: Uint8Array[] = [];
+      let pendingBytes = 0;
+      let flushScheduled = false;
+      let flushFallback: ReturnType<typeof setTimeout> | undefined;
+      const FLUSH_MAX_BYTES = 512 * 1024; // cap the queue: force a flush mid-burst
+      const flushWrites = () => {
+        flushScheduled = false;
+        clearTimeout(flushFallback);
+        flushFallback = undefined;
+        if (disposed || !pending.length || !term) return; // a flush can land after unmount
+        let data: Uint8Array;
+        if (pending.length === 1) {
+          data = pending[0];
+        } else {
+          data = new Uint8Array(pendingBytes);
+          let off = 0;
+          for (const c of pending) { data.set(c, off); off += c.length; }
+        }
+        pending = [];
+        pendingBytes = 0;
+        term.write(data, () => {
           if (following) term?.scrollToBottom();
         });
+      };
+      ws.onmessage = (ev) => {
+        pending.push(new Uint8Array(ev.data as ArrayBuffer));
+        pendingBytes += (ev.data as ArrayBuffer).byteLength;
+        if (pendingBytes >= FLUSH_MAX_BYTES) { flushWrites(); return; }
+        if (flushScheduled) return;
+        flushScheduled = true;
+        requestAnimationFrame(flushWrites);
+        // rAF never fires while the window is hidden — keep a running terminal draining there.
+        flushFallback = setTimeout(flushWrites, 50);
       };
 
       ws.onclose = (ev) => {
