@@ -192,6 +192,8 @@
   left: 0;
   color: color-mix(in srgb, var(--fg) 28%, transparent);
   pointer-events: none;
+  /* Mono (not the block's Lora prose font) — the hint reads as UI chrome, not typed content. */
+  font-family: var(--ui-font-stack);
 }
 
 /* --- Static preview (lazy-mount: offscreen blocks) ---------------------- */

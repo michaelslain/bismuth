@@ -231,6 +231,12 @@ interface ChatSession {
   turnCount: number;
   /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
   captured?: boolean;
+  /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
+   *  handled. The SDK reports a user-interrupted turn as an error result (is_error: true,
+   *  subtype "error_during_execution") — indistinguishable on the wire from a real failure — so
+   *  without this a deliberate Escape/Stop surfaces as "The turn ended with an error." in the UI.
+   *  This flag lets the drain loop recognize "we asked for this" and report isError: false. */
+  aborting?: boolean;
 }
 
 /** Cap on frames buffered while detached — enough for any realistic turn's tail; a runaway turn
@@ -694,9 +700,13 @@ async function drain(session: ChatSession): Promise<void> {
       }
 
       if (msg.type === "result") {
+        // A result following our OWN interrupt() is a deliberate Stop, not a failure — report it
+        // as such regardless of what the SDK's is_error says (see ChatSession.aborting).
+        const wasAborting = session.aborting === true;
+        session.aborting = false;
         emit(session, {
           type: "result",
-          isError: msg.is_error === true,
+          isError: wasAborting ? false : msg.is_error === true,
           numTurns: typeof msg.num_turns === "number" ? msg.num_turns : 0,
           // Hide cost on a subscription login (notional, not billed); only show it for real
           // API-key billing. Driven by Claude Code's own apiKeySource, not an app decision.
@@ -811,6 +821,9 @@ export function abortTurn(chatId: string): void {
     }
   }
   s.pending.clear();
+  // Mark this turn as a deliberate Stop BEFORE interrupting — the drain loop's `result` handler
+  // reads this to keep the SDK's error-shaped interrupt result from surfacing as a chat error.
+  s.aborting = true;
   try {
     s.q.interrupt()?.catch(() => {});
   } catch {

@@ -322,7 +322,7 @@
 /* big serif title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
 .evm-modal .evm-titlein { width: 100%; border: none; outline: none; background: none; font-family: var(--serif); font-size: 23px; font-weight: 600; letter-spacing: -.015em; color: var(--hi); padding: 2px 0 9px; border-bottom: 1px solid var(--border2); transition: border-color .15s; }
-.evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; }
+.evm-modal .evm-titlein::placeholder { color: var(--faint); font-style: italic; font-weight: 500; font-family: var(--mono); }
 .evm-modal .evm-titlein:focus { border-bottom-color: var(--accent); }
 
 /* labels + field shells */

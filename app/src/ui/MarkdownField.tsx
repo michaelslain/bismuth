@@ -21,7 +21,8 @@ const fieldTheme = EditorView.theme({
   ".cm-content": { caretColor: "var(--fg)" },
   ".cm-line": { padding: "0" },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--fg)", borderLeftWidth: "2px" },
-  ".cm-placeholder": { color: "var(--faint)", fontStyle: "italic" },
+  // Mono (not the Lora the typed value uses) so the hint reads distinctly from real content.
+  ".cm-placeholder": { color: "var(--faint)", fontStyle: "italic", fontFamily: "var(--ui-font-stack)", fontSize: "13px" },
   ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
 });
