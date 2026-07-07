@@ -274,7 +274,7 @@ server:
 
 ## `daemon`
 
-Per-vault daemon integration. The daemon is the in-repo `@bismuth/daemon` workspace (the former standalone "claude-bot" sibling repo, now absorbed) — **one machine process that multiplexes per-vault "brains"**. When `enabled`, Bismuth runs this vault's brain (crons/processes/memory + a Claude session), injects the vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes; when off the brain is dormant (state is preserved on disk and the `.daemon` folder is hidden).
+Per-vault daemon integration. The daemon is the in-repo `@bismuth/daemon` workspace — **one machine process that multiplexes per-vault "brains"**. When `enabled`, Bismuth runs this vault's brain (crons/processes/memory + a Claude session), injects the vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes; when off the brain is dormant (state is preserved on disk and the `.daemon` folder is hidden).
 
 Machine-level identity (device-id, `devices.json`, `owner.json`, `daemon.pid`, logs, `vaults.json`) lives at `~/.bismuth/daemon` (`daemonMachineDir()` = `BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`). Each enabled vault's brain — crons, processes, memory, session-id, `identity.md` — lives under `<vault>/.daemon`. The daemon updates **with** the app (no git-pull self-update); install/setup is `core/src/daemonInstall.ts`.
 
@@ -482,8 +482,8 @@ Derived from `COMMAND_CATALOG` (`core/src/commands.ts`); the enum also accepts a
 | `equalize-panes` | Equalize panes | `Columns3` |
 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` |
 | `daemon-owner` | Set daemon owner device… | `Server` |
-| `daemon-setup` | Set up claude-bot daemon… | `Download` |
-| `daemon-update` | Update claude-bot daemon… | `RefreshCw` |
+| `daemon-setup` | Set up daemon… | `Download` |
+| `daemon-update` | Update daemon… | `RefreshCw` |
 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` |
 | `update-app` | Update Bismuth… | `RefreshCw` |
 | `gcal-connect` | Connect Google Calendar… | `Calendar` |

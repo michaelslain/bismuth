@@ -1,6 +1,6 @@
 # Daemon Overview
 
-The **daemon** is Bismuth's in-repo background agent runtime — the `@bismuth/daemon` workspace (`daemon/src/**`), absorbed from the former standalone `claude-bot` sibling repo. It is **one machine process that multiplexes per-vault "brains"**: a single long-lived service started by launchd/systemd, looping over every vault whose daemon is enabled and running that vault's crons, background processes, conversation session, and memory.
+The **daemon** is Bismuth's in-repo background agent runtime — the `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes per-vault "brains"**: a single long-lived service started by launchd/systemd, looping over every vault whose daemon is enabled and running that vault's crons, background processes, conversation session, and memory.
 
 This page covers what the daemon **is** now, the machine-vs-vault split, the `daemon.enabled` master switch, the per-vault `identity.md`, the "daemon" graph mode, and how Bismuth's core reads the daemon's state. The deeper pages are indexed at the bottom.
 
@@ -99,7 +99,7 @@ A persistent personal-assistant daemon for this Bismuth vault…
 
 Bismuth's core is the **read/write window** onto the daemon's on-disk state. The "daemon" graph mode visualizes one vault's supervised work as a star graph (`core/src/daemonGraph.ts`):
 
-- **One hub** — `id: "::daemon"` (`DAEMON_NODE_ID`), `kind: "daemon"`, `label` = the daemon's name (default `"daemon"`, never `"claude-bot"`). There is **no** "you"/self node.
+- **One hub** — `id: "::daemon"` (`DAEMON_NODE_ID`), `kind: "daemon"`, `label` = the daemon's name (default `"daemon"`). There is **no** "you"/self node.
 - **One node per cron** — `id: "cron:<name>"`, `kind: "cron"`, carrying `DaemonVizState` (`{ enabled, running, lastResult, lastFiredMs, schedule }`).
 - **One node per process** — `id: "process:<name>"`, `kind: "process"`.
 - **`supervises` edges** — hub → each cron/process.
@@ -126,7 +126,7 @@ All of them gate on `BISMUTH_MEMORY_DIR`, which `core/src/terminal.ts` injects i
 
 ## Install & update
 
-Bismuth no longer git-clones a sibling project. The bundled app stages the compiled daemon at `resources/daemon` (`BISMUTH_DAEMON_BUNDLE`); on boot, core copies it to `~/.bismuth/bin/bismuth-daemon` and runs `<bin> --ensure-installed`, which writes the launchd/systemd service pointing at that stable path (`core/src/daemonInstall.ts` `installDaemonFromBundle`; daemon CLI modes in `daemon/src/daemon/index.ts`). Service ids: launchd `com.bismuth.daemon`, systemd `bismuth-daemon` (`daemon/src/lib/{config,platform}.ts`).
+The bundled app stages the compiled daemon at `resources/daemon` (`BISMUTH_DAEMON_BUNDLE`); on boot, core copies it to `~/.bismuth/bin/bismuth-daemon` and runs `<bin> --ensure-installed`, which writes the launchd/systemd service pointing at that stable path (`core/src/daemonInstall.ts` `installDaemonFromBundle`; daemon CLI modes in `daemon/src/daemon/index.ts`). Service ids: launchd `com.bismuth.daemon`, systemd `bismuth-daemon` (`daemon/src/lib/{config,platform}.ts`).
 
 - `InstallStatus = { installed, running, binPath }` (`installStatus()` runs `<bin> --status`).
 - `runSetup() = { ok, binPath, error? }` runs `<bin> --ensure-installed`; `POST /daemon/update` calls it.

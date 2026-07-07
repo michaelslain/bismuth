@@ -483,8 +483,8 @@ POST /create { path, kind }
    ```ts
    void loadAppConfig(cfg.vault).then(c => {
      appConfig = c;
-     // Enabling this vault's daemon triggers the one-time, copy-only migration of any
-     // legacy ~/.claude-bot brain into <vault>/.daemon (machine-marker-gated).
+     // Enabling the daemon for this vault triggers the one-time copy-only migration of
+     // any legacy ~/.claude-bot brain into <vault>/.daemon (machine-marker-gated).
      if (c.daemon?.enabled) migrateDaemonState(cfg.vault);
      treeCache.invalidate();
      graphCache.invalidate();
@@ -494,7 +494,7 @@ POST /create { path, kind }
    }).catch(() => {});
    ```
 
-2. This makes debounce interval and SSE heartbeat changes take effect without restarting the server. It also picks up a `daemon.enabled` toggle live: the daemon-gated caches (the `.daemon` tree folder + the 3rd-brain graph) are re-invalidated after `appConfig` lands, and connected clients are nudged to refetch. `settings.daemon` carries only `enabled` (the master switch); there is no `daemon.home` key, so the reload no longer overrides any claude-bot home.
+2. This makes debounce interval and SSE heartbeat changes take effect without restarting the server. It also picks up a `daemon.enabled` toggle live: the daemon-gated caches (the `.daemon` tree folder + the 3rd-brain graph) are re-invalidated after `appConfig` lands, and connected clients are nudged to refetch. `settings.daemon` carries only `enabled` (the master switch); there is no `daemon.home` key.
 
 3. The frontend's `GET /settings` is a separate read (not cached by the server — it reads `.settings` fresh on each request), so UI settings update on the next SSE event.
 

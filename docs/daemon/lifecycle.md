@@ -1,6 +1,6 @@
 # The Daemon Supervisor & Lifecycle
 
-The daemon is Bismuth's always-on background runtime — the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) absorbed from the former standalone *claude-bot* repo. It is **one machine process that multiplexes many per-vault "brains"**: launched by launchd (macOS) or systemd (Linux), it stays resident and, for **every vault whose `settings.daemon.enabled` is on**, supervises that vault's background processes, runs its crons, recovers interrupted work after a crash, and (on the owner device) holds a persistent conversation session. Machine-level identity (device-id, owner, devices, pid, logs) lives in one place; each vault's brain (crons, processes, memory, session-id, identity) lives under `<vault>/.daemon`.
+The daemon is Bismuth's always-on background runtime — the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). It is **one machine process that multiplexes many per-vault "brains"**: launched by launchd (macOS) or systemd (Linux), it stays resident and, for **every vault whose `settings.daemon.enabled` is on**, supervises that vault's background processes, runs its crons, recovers interrupted work after a crash, and (on the owner device) holds a persistent conversation session. Machine-level identity (device-id, owner, devices, pid, logs) lives in one place; each vault's brain (crons, processes, memory, session-id, identity) lives under `<vault>/.daemon`.
 
 This page documents the process lifecycle (`daemon/src/daemon/index.ts`), the per-vault session funnel (`daemon/src/daemon/session.ts`), the single-owner device gating it leans on (`daemon/src/lib/owner.ts`), and the install/service glue (`core/src/daemonInstall.ts` + `daemon/src/lib/platform.ts`).
 
@@ -17,7 +17,7 @@ The daemon is a single OS service, but the state it manages is split across two 
 
 The session, cron, and process modules are all threaded a `VaultContext`, so concurrent vault brains never collide on a process-global anything.
 
-> **Note:** `~/.claude-bot` is **not** the daemon's home anymore. It survives only as a one-time, copy-only legacy migration source — `migrateDaemonState` (`core/src/daemon.ts`) copies a legacy `~/.claude-bot/{memory,crons,processes}` into a vault's `.daemon` on first enable, gated by a `.claude-bot-migrated` machine marker, and never deletes the source.
+> **Note:** `~/.claude-bot` is not the daemon's home. It survives only as a one-time, copy-only legacy migration source — `migrateDaemonState` (`core/src/daemon.ts`) copies a legacy `~/.claude-bot/{memory,crons,processes}` into a vault's `.daemon` on first enable, gated by a `.claude-bot-migrated` machine marker, and never deletes the source.
 
 ---
 
@@ -171,7 +171,7 @@ Only the owner device holds sessions and fires the model; a non-owner heartbeats
 
 ## Install & service lifecycle
 
-The daemon ships as a bundled, compiled binary and runs as a launchd/systemd **service** — NOT a Tauri child — because it must outlive the app to keep firing crons. Installation is **app-driven** (`core/src/daemonInstall.ts`); the daemon updates *with* the app, so there is **no git-pull self-update** (the old claude-bot `daemon.autoUpdate` / `daemon.home` settings no longer exist — the schema `daemon` object has only `enabled`).
+The daemon ships as a bundled, compiled binary and runs as a launchd/systemd **service** — NOT a Tauri child — because it must outlive the app to keep firing crons. Installation is **app-driven** (`core/src/daemonInstall.ts`); the daemon updates *with* the app, so there is **no git-pull self-update** (the schema `daemon` object has only `enabled`).
 
 ### Boot-time install from the bundle (`core/src/daemonInstall.ts`)
 

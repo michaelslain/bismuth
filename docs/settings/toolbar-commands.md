@@ -75,8 +75,8 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 28 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
 | 29 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
 | 30 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 31 | `daemon-setup` | Set up claude-bot daemon… | `Download` | `h.openDaemonSetup` |
-| 32 | `daemon-update` | Update claude-bot daemon… | `RefreshCw` | `h.updateDaemon` |
+| 31 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 32 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
 | 33 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
 | 34 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
 | 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
@@ -96,7 +96,7 @@ Notes on individual commands:
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-agents`): each calls `h.setMode(...)` with the corresponding graph mode string.
-- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. The "claude-bot daemon" wording in the `daemon-setup`/`daemon-update` labels is verbatim from the catalog. See Daemon Integration in the project CLAUDE.md.
+- **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
 - **`bismuth-install`**: opens the panel to install the `bismuth` CLI + MCP machine-wide (`h.openBismuthInstall`).
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
 - **`new-claude-chat`**: opens a fresh Claude Code chat session in its own tab (`h.newClaudeChat`).
@@ -206,11 +206,11 @@ export interface CommandHandlers {
   exportActive: () => void;
   // Estimate how AI-generated the active page reads (local, offline) and toast the score.
   detectAiActive: () => void | Promise<void>;
-  // Open the modal to pick which device owns the claude-bot daemon.
+  // Open the modal to pick which device owns the daemon.
   openDaemonOwner: () => void;
-  // Open the panel to install/repair (adopt) the claude-bot daemon.
+  // Open the panel to install/repair (adopt) the daemon.
   openDaemonSetup: () => void;
-  // Update the claude-bot daemon to the latest version (POST /daemon/update, idempotent +
+  // Update the daemon to the latest version (POST /daemon/update, idempotent +
   // fetch-gated) — toasts progress. Distinct from openDaemonSetup, which only installs/adopts.
   updateDaemon: () => void | Promise<void>;
   // Open the panel to install the bismuth CLI + MCP machine-wide.

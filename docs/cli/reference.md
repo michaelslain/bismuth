@@ -370,7 +370,7 @@ Reads/writes the **`@bismuth/daemon`** runtime's on-disk state. The daemon is ON
 - **Machine-level identity** (device-id, devices.json, owner.json, daemon.pid) lives at `~/.bismuth/daemon` (`daemonMachineDir()`, override with the `BISMUTH_DAEMON_DIR` env var). The machine-level commands — `status`, `devices`, `owner`, `install`, `setup`, `update` — **take no `--vault`**.
 - **Per-vault brain** (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon` (`vaultDaemonDir(vault)`). The per-vault commands — `daemon graph`, `daemon cron toggle`, `daemon cron run`, `daemon process toggle` — **REQUIRE a vault** (`--vault <dir>` / `BISMUTH_VAULT`) and operate on that vault's `.daemon` dir.
 
-Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. Bismuth never starts/stops the daemon. (`~/.claude-bot` survives only as a one-time, copy-only legacy migration source.)
+Mirrors the server's `/daemon/*` routes. See [daemon integration](../daemon/overview.md). status/devices/owner-read/graph just read files; owner-set, cron/process toggles, and cron-run flip frontmatter / drop trigger files the running daemon polls. install/setup register the bundled daemon service. Bismuth never starts/stops the daemon.
 
 ### `daemon status`
 Print the daemon's liveness, this device id, and current owner (`daemonStatus()`).
