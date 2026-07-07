@@ -238,6 +238,10 @@ interface ChatSession {
    *  drain retries at each turn-end until one appears). */
   modelsSent?: boolean;
   titleSent?: boolean;
+  /** Latch for the EAGER synthetic manifest (emitInitManifest): true once ANY manifest — the
+   *  spawn-time synthetic one OR a real per-turn `system/init` — has been emitted, so a slow eager
+   *  control-request fetch can never clobber a real per-turn manifest that raced ahead (BUG #14). */
+  manifestSent?: boolean;
   /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
    *  captured there as an auto note (like the relay SessionEnd hook does for terminals), so
    *  the dream cron consolidates in-app chats too. Undefined = daemon off = no capture. */
@@ -489,10 +493,10 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
   const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
-  // Send the first turn, then drain the generator forever (until the queue closes / session ends).
+  // The session's drain loop is already running (createSession starts it on spawn), so this just
+  // pushes the first turn into the generator, which was parked on the empty input queue for it.
   session.turnActive = true;
   session.input.push(text, images);
-  void drain(session);
 }
 
 /** createSession, de-duplicated against a concurrent in-flight call for the same chatId (see
@@ -532,10 +536,26 @@ async function getOrCreateSession(
  */
 export async function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string): Promise<void> {
   if (sessions.has(chatId)) closeChat(chatId);
-  const session = await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir);
-  if (!session) return; // no-claude / spawn error already pushed to the sink
-  // No initial turn — query() resumes the existing session; the drain loop streams its init manifest.
-  void drain(session);
+  // No initial turn — query() resumes the existing session; createSession starts the drain loop on
+  // spawn, which streams its init manifest + models frame straight to the header.
+  await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir);
+}
+
+/**
+ * OPEN a brand-new chat's session eagerly — the session-spawn twin of resumeSession, but for a fresh
+ * conversation (no `resume` id, no initial turn). Called when a chat WS connects / a ChatView mounts
+ * (server's `{type:"open"}` handler), so the `init` manifest + `models` frame + permission mode
+ * stream to the header the INSTANT the chat opens, BEFORE the first message (BUG #14) — createSession
+ * starts the drain loop on spawn and the generator parks on the empty input queue until the first
+ * sendMessage() pushes a turn.
+ *
+ * No-op when a session already exists for this chatId (a reconnect already rebound its sink via
+ * rebindSink) so an open can't spawn a duplicate; concurrent open/first-turn calls share the same
+ * inFlightCreates promise. A null return means no-claude / spawn error — already pushed to the sink.
+ */
+export async function openSession(chatId: string, cwd: string, sink: ChatSink, memoryDir?: string): Promise<void> {
+  if (sessions.has(chatId)) return;
+  await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
 }
 
 /**
@@ -593,6 +613,19 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // opens, before any message is sent. The drain loop's `init` handler re-tries as a fallback if
   // this eager fetch couldn't resolve. Fire-and-forget; latched by session.modelsSent.
   emitSupportedModels(session);
+  // Populate the header manifest (slash commands + MCP servers) EAGERLY too — the SDK does NOT emit
+  // a `system`/`init` MESSAGE for a turn-less fresh session (only the first turn produces one), so
+  // without this the header stays bare on open; instead we synthesize it from the SDK's control
+  // requests, which resolve off the `initialize` handshake with no user turn (BUG #14).
+  emitInitManifest(session);
+  // Start draining the SDK generator NOW, on spawn — NOT gated on a user turn (BUG #14). This is
+  // what lets a chat OPEN (openSession) bring up a live session whose `init` manifest + `models`
+  // frame + permission mode stream to the header BEFORE the first message; the generator simply
+  // parks on the empty input queue until sendMessage() pushes the first turn. Started here — exactly
+  // once per session creation, de-duped by inFlightCreates + the `sessions.set` above — so no
+  // caller (openSession, sendMessage's first turn, resumeSession) can race two concurrent drains
+  // over the same generator. (refreshVisibility respawns its own query() + drain out of band.)
+  void drain(session);
   return session;
 }
 
@@ -797,6 +830,44 @@ function emitSupportedModels(session: ChatSession): void {
     .catch(() => {});
 }
 
+/**
+ * Synthesize + emit the header `manifest` EAGERLY on session spawn, from the SDK's control requests
+ * (initializationResult → slash commands; mcpServerStatus → MCP servers). These resolve off the
+ * `initialize` handshake — NOT gated on a user turn — whereas the SDK does NOT emit a `system`/`init`
+ * MESSAGE for a turn-less fresh session (verified: only the FIRST turn produces one). So without this,
+ * opening a chat left the header's command list + MCP count empty until the first message (BUG #14).
+ *
+ * Best-effort + latched by session.manifestSent so a SLOW eager fetch (mcpServerStatus can take
+ * seconds while it probes connections) can never clobber a REAL per-turn manifest that already
+ * landed: once the drain loop's `init` handler has emitted (setting manifestSent), this no-ops.
+ *
+ * The active model, tool list, and permission mode aren't exposed as control requests, so they're
+ * left blank here — the model picker rides its own `models` frame (emitSupportedModels) + the client's
+ * persisted last-model, tools fill in from the first real per-turn manifest, and permissionMode is
+ * reported as the spawn default ("default"): the client's first-manifest handler then pushes the app
+ * default (Bypass) because it differs, so Bypass takes effect ON OPEN, before the first turn.
+ */
+function emitInitManifest(session: ChatSession): void {
+  if (session.manifestSent || !session.q) return;
+  const q = session.q;
+  void (async () => {
+    const init = await q.initializationResult().catch(() => null);
+    const mcp = await q.mcpServerStatus().catch(() => []);
+    if (session.manifestSent) return; // a real per-turn manifest already landed — don't clobber it
+    session.manifestSent = true;
+    emit(session, {
+      type: "manifest",
+      manifest: {
+        model: "",
+        permissionMode: "default",
+        slashCommands: (init?.commands ?? []).map((c) => c.name),
+        tools: [],
+        mcpServers: (mcp ?? []).map((m) => ({ name: m.name, status: m.status })),
+      },
+    });
+  })();
+}
+
 /** Fetch the session's conversation summary once and emit it as a `title` frame. Latches ONLY on
  *  a non-empty summary (turn 1 usually has none yet), so callers retry at each turn-end until the
  *  store has one. Fire-and-forget; failures just retry later. */
@@ -845,6 +916,9 @@ async function drain(session: ChatSession): Promise<void> {
         // "none" => the user is on a Claude subscription login (no API key), so the reported cost
         // is notional and we hide it. Read from Claude Code's own init — the app doesn't decide this.
         session.apiKeySource = (msg as { apiKeySource?: string }).apiKeySource ?? session.apiKeySource;
+        // The REAL per-turn manifest — the self-updating source of truth. Latch manifestSent so a
+        // still-pending eager emitInitManifest fetch (BUG #14) can't overwrite this fuller one.
+        session.manifestSent = true;
         emit(session, {
           type: "manifest",
           manifest: {
