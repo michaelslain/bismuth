@@ -8,7 +8,7 @@ import { Icon } from "./icons/Icon";
 // entry bundle even though the graph is the home tab. <Suspense> keeps boot smooth.
 const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
 import { CommandPalette } from "./palette/CommandPalette";
-import { QuickSwitcher } from "./palette/QuickSwitcher";
+import { SwitcherBar } from "./palette/SwitcherBar";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
 import { BASE_VIEW_KINDS } from "./baseViews";
@@ -376,8 +376,23 @@ export default function App() {
   createEffect(() => localStorage.setItem(SIDEBAR_STORAGE_KEY, sidebarVisible() ? "1" : "0"));
   const toggleSidebar = () => setSidebarVisible((v) => !v);
   const equalizePanes = () => updateActiveTab((t) => ({ ...t, root: equalize(t.root) }));
-  // Which palette overlay is open (Cmd+P / Cmd+O), or null. Only one at a time.
-  const [palette, setPalette] = createSignal<"command" | "file" | "template" | null>(null);
+  // Which centered palette overlay is open (Cmd+P command / Alt+T template), or null. The
+  // Cmd+O quick switcher is NOT here anymore — it's the non-modal in-window switcher below.
+  const [palette, setPalette] = createSignal<"command" | "template" | null>(null);
+  // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
+  // the window (the home/new-tab view) and a big search bar (SwitcherBar) sits at the top
+  // where the tab strip was. Esc leaves it and restores the prior view. `switcherMatchPath`
+  // is the highlighted row's file path, mirrored onto the backdrop graph as a node highlight.
+  const [switcherOpen, setSwitcherOpen] = createSignal(false);
+  const [switcherMatchPath, setSwitcherMatchPath] = createSignal<string | null>(null);
+  const openSwitcher = () => setSwitcherOpen(true);
+  const closeSwitcher = () => { setSwitcherOpen(false); setSwitcherMatchPath(null); };
+  // Graph-node id (a note path minus ".md") for the switcher's active file; only .md notes
+  // are graph nodes, so non-note files (settings/sheet/draw) highlight nothing.
+  const switcherMatchNodeId = createMemo<string | null>(() => {
+    const p = switcherMatchPath();
+    return p && p.endsWith(".md") ? p.slice(0, -3) : null;
+  });
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
   const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const paneMenuItems = (leafId: string): MenuItem[] => [
@@ -1448,6 +1463,15 @@ export default function App() {
     const kb = settings.keybindings;
     const isEditableTarget = (tag: string | undefined) => tag === "INPUT" || tag === "TEXTAREA";
 
+    // Cmd+O switcher mode: Escape leaves it and restores the prior view. Handled here (not
+    // only in the SwitcherBar input's own Escape) so it still works if focus moved into the
+    // graph backdrop. Gated on switcherOpen() so it never eats Escape from anything else.
+    if (switcherOpen() && e.key === "Escape") {
+      e.preventDefault();
+      closeSwitcher();
+      return;
+    }
+
     // Secret: Cmd+Ctrl+Opt+Shift+R wipes the saved vault config and relaunches, replaying the
     // first-run intro (handy for re-watching the onboarding animation).
     if (e.metaKey && e.ctrlKey && e.altKey && e.shiftKey && e.code === "KeyR") {
@@ -1486,10 +1510,12 @@ export default function App() {
       setPalette((p) => (p === "command" ? null : "command"));
       return;
     }
-    // Quick switcher (default Mod+O).
+    // Quick switcher (default Mod+O): toggle the in-window switcher mode (graph backdrop +
+    // big top search), NOT a centered modal. Esc (above) leaves it.
     if (matchesKeybinding(e, kb["quick-switcher"])) {
       e.preventDefault();
-      setPalette((p) => (p === "file" ? null : "file"));
+      if (switcherOpen()) closeSwitcher();
+      else openSwitcher();
       return;
     }
     // Terminal (default Mod+` or Mod+J).
@@ -1605,9 +1631,14 @@ export default function App() {
   // split pane without remounting.
   const placeFloater = () => {
     if (!floater) return;
-    const host = activeTabShowsGraph()
-      ? editorBodyEl?.querySelector<HTMLElement>("[data-graph-host]")
-      : null;
+    // Cmd+O switcher mode: the graph fills the whole editor body (the home view) as the
+    // search's backdrop, regardless of which tab was active — "move the graph into the
+    // window again". Takes priority over the normal slot resolution below.
+    const host = switcherOpen()
+      ? editorBodyEl
+      : activeTabShowsGraph()
+        ? editorBodyEl?.querySelector<HTMLElement>("[data-graph-host]")
+        : null;
     const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot);
     if (!slot) return;
     const r = slot.getBoundingClientRect();
@@ -1629,6 +1660,7 @@ export default function App() {
     tabs().length; // …or when tabs open/close
     sidebarVisible(); // …or when the sidebar is shown/hidden
     activeTabShowsGraph(); // …or when the graph moves between the sidebar slot and a pane host
+    switcherOpen(); // …or when Cmd+O expands the graph to fill the window (and back)
     requestAnimationFrame(placeFloaterSettled);
   });
   onMount(() => {
@@ -1737,7 +1769,7 @@ export default function App() {
   }
 
   return (
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() }}>
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible(), "switcher-active": switcherOpen() }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
@@ -1747,6 +1779,11 @@ export default function App() {
       </aside>
       <main class="editor-pane">
         <UpdateBanner />
+        {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
+            switcher mode is on. The graph floater (below) fills the body behind it. */}
+        <Show when={switcherOpen()}>
+          <SwitcherBar onClose={closeSwitcher} openFile={openFile} onActiveChange={setSwitcherMatchPath} />
+        </Show>
         <div class="tabbar" data-tabstrip="true">
           <div class="tabbar-nav">
             <IconButton
@@ -1925,16 +1962,13 @@ export default function App() {
           everywhere means a split/tab-switch repositions it instead of tearing down + rebuilding
           the WebGL renderer (which reset the camera). `docked` (the sidebar clip-path) and `mini`
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
-      <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() }} ref={floater}>
+      <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph()} graph={displayGraph()} onOpen={(id) => openFile(id + ".md")} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchId={switcherOpen() ? switcherMatchNodeId() : null} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
         <CommandPalette onClose={() => setPalette(null)} commands={commands()} />
-      </Show>
-      <Show when={palette() === "file"}>
-        <QuickSwitcher onClose={() => setPalette(null)} openFile={openFile} />
       </Show>
       <Show when={palette() === "template"}>
         <TemplatePalette onClose={() => setPalette(null)} title={activeNoteTitle()} />
