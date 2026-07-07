@@ -23,9 +23,11 @@ import {
   insertColumn,
   deleteColumn,
 } from "./tableModel";
-import { setActiveTableEffect } from "./tableState";
+import { noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { renderInlineMarkdown } from "./inlineMarkdown";
 import { onMathReady } from "./katexLoader";
+import { api } from "../api";
+import { parseWikilink, resolveNotePath } from "./wikilink";
 
 // Visual column widths / row heights have no representation in GFM markdown, so they are
 // persisted OUT of the source: in localStorage, keyed by the note path (one entry per
@@ -251,15 +253,25 @@ function currentRange(view: EditorView, root: HTMLElement): { from: number; to: 
 /** Dispatch a transaction while PINNING the editor's scroll position, so a table edit
  *  (add row/column, prettify-on-source) that changes the block widget's height never
  *  yanks the viewport. Replacing the table block re-lays a block widget, and CodeMirror
- *  re-measures line heights ASYNCHRONOUSLY after the reconcile — that measure resets
- *  scrollTop (the "adding a row scrolls me all the way down" bug). We restore the scroll
- *  synchronously AND inside `requestMeasure` (after CM's own layout pass) so it sticks.
- *  Mirrors the established `foldBlocks.preserveScroll` idiom. */
+ *  re-measures line heights ASYNCHRONOUSLY (over MULTIPLE frames as the taller table settles)
+ *  after the reconcile — that measure resets scrollTop (the "adding a row scrolls me down"
+ *  bug, #36). A single synchronous restore fires too EARLY (before CM re-measures), which is
+ *  why a row insert still jumped "sometimes." So we belt-and-suspenders it three ways:
+ *    1. `EditorView.scrollSnapshot()` folded into the SAME transaction — CM anchors the current
+ *       scroll to a doc position and re-applies it AFTER its own async height re-measure (the
+ *       robust primitive that survives the settle the manual restore misses);
+ *    2. a synchronous restore right after dispatch;
+ *    3. a `requestMeasure` restore after CM's layout pass.
+ *  Mirrors the established `foldBlocks.preserveScroll` idiom, hardened with the snapshot. */
 function dispatchKeepScroll(view: EditorView, spec: TransactionSpec): void {
   const scroller = view.scrollDOM;
   const top = scroller.scrollTop;
   const left = scroller.scrollLeft;
-  view.dispatch(spec);
+  // Merge the scroll snapshot into the transaction's effects (keeping any the caller passed).
+  const snapshot = view.scrollSnapshot();
+  const existing = spec.effects;
+  const effects = existing == null ? snapshot : Array.isArray(existing) ? [...existing, snapshot] : [existing, snapshot];
+  view.dispatch({ ...spec, effects });
   scroller.scrollTop = top;
   scroller.scrollLeft = left;
   view.requestMeasure({
@@ -269,6 +281,22 @@ function dispatchKeepScroll(view: EditorView, spec: TransactionSpec): void {
       scroller.scrollLeft = left;
     },
   });
+}
+
+/** Open a wikilink clicked inside a rendered table cell (#33). The cell is a contenteditable
+ *  inside an atomic block widget whose mousedown stops propagation, so CM's own wikilink click
+ *  handler never fires — we resolve + dispatch the SAME `bismuth-open` event it does. Note
+ *  candidates come from `noteNamesFacet` (provided by the editor host) so a basename resolves to
+ *  its real vault path (subfolder notes open correctly); an unresolved target opens as a new note
+ *  at the typed name, matching the note-body wikilink behavior. A `#heading` rides along. */
+function openCellWikilink(view: EditorView, raw: string): void {
+  const { target, heading } = parseWikilink(raw);
+  if (!target) return;
+  const notes = view.state.facet(noteNamesFacet)?.() ?? [];
+  const resolved = resolveNotePath(target, notes);
+  window.dispatchEvent(
+    new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }),
+  );
 }
 
 export class TableWidget extends WidgetType {
@@ -312,7 +340,9 @@ export class TableWidget extends WidgetType {
     // and an EDIT face (raw markdown source as plain text, shown while focused). We swap
     // between them on focus so the user formats prose but edits the underlying markdown.
     const renderDisplay = (cell: HTMLElement): void => {
-      cell.innerHTML = renderInlineMarkdown(cell.dataset.src ?? "");
+      // Pass the asset-URL builder so image/pdf embeds in the cell render as real media from
+      // GET /asset (#30) — exactly like embedBlock.ts does in the note body.
+      cell.innerHTML = renderInlineMarkdown(cell.dataset.src ?? "", { assetUrl: api.assetUrl });
       // Inline `$math$` renders empty until KaTeX lazy-loads; re-render this cell once it
       // lands (unless the user has since started editing it).
       const maths = cell.querySelectorAll<HTMLElement>(".cm-inline-math");
@@ -394,6 +424,18 @@ export class TableWidget extends WidgetType {
         // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
+          // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
+          // instead of entering edit mode. The `e.stopPropagation()` below means CM's own
+          // wikilink click handler never sees this click, so we run the same open path here.
+          if (cell.dataset.editing !== "1" && me.button === 0) {
+            const link = (me.target as HTMLElement | null)?.closest?.(".cm-wikilink") as HTMLElement | null;
+            if (link && cell.contains(link)) {
+              e.preventDefault();
+              e.stopPropagation();
+              openCellWikilink(view, link.dataset.wikilink ?? "");
+              return;
+            }
+          }
           e.stopPropagation();
           if (cell.dataset.editing === "1") return; // native caret + drag-to-select
           e.preventDefault();

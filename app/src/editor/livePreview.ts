@@ -1401,8 +1401,19 @@ export const livePreview = [
     // inner accent token to win, so the key STILL renders accent; this is exactly why the earlier
     // "change the key to grey" fix showed no visible effect. Overriding the child span forces grey through.
     ".cm-fm-key, .cm-fm-key > span": { color: "color-mix(in srgb, var(--fg) 55%, transparent)" },
-    // Raw (active) table source — monospace pipes for structural / power edits.
-    ".cm-table": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))" },
+    // Raw (active) table source — monospace pipes for structural / power edits (#25). The
+    // serializer column-pads every row to align the pipes in a monospace column view, but the
+    // editor runs with line-wrapping (`white-space: pre-wrap`), so a table wider than the pane
+    // SOFT-WRAPS mid-row and the alignment collapses into a jumble ("looks fucked as hell").
+    // Force `white-space: pre` on the revealed source lines so each row stays on ONE line and the
+    // padded columns actually line up; `overflow-x: auto` lets a too-wide row scroll instead of
+    // clipping. A table that fits the pane is unaffected (no wrap needed either way).
+    ".cm-table": {
+      "font-family": MONO_FONT,
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      "white-space": "pre",
+      "overflow-x": "auto",
+    },
     // Rendered editable table (the block-replace widget). Cells are contenteditable.
     // The vertical spacing lives on the OUTER `.cm-table-block` as PADDING, not as a margin
     // on the wrap: CodeMirror measures a block widget's height with getBoundingClientRect,
