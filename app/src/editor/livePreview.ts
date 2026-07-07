@@ -77,16 +77,17 @@ const quoteLine = Decoration.line({ class: "cm-quote" });
 const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 // On the cursor line a list/task marker shows raw; render it in the mono font.
 const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
-const codeBlockLine = Decoration.line({ class: "cm-codeblock" });
 // A code-block / frontmatter body line carries its 1-based in-block line number via
 // `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
-const codeHeaderLine = Decoration.line({ class: "cm-code-headerline" });
-const codeHiddenLine = Decoration.line({ class: "cm-code-hidden" });
-// A fully collapsed line (zero height): used to hide the frontmatter `---`
-// delimiters off the cursor block, the way a code fence's close line collapses.
-const collapsedLine = Decoration.line({ class: "cm-collapsed-line" });
-const frontmatterLine = Decoration.line({ class: "cm-frontmatter" });
+// The top/bottom "fence" lines of a block (frontmatter `---`, fenced code ```): a thin grey
+// EDGE rule — left + top on the opener, left + bottom on the closer — so a properties panel and
+// every code block are ALWAYS visibly bounded top and bottom, on AND off cursor (never collapsed
+// to nothing). Shared by frontmatter + code; the same theme-aware `color-mix(var(--fg) 40%)` grey
+// as the left rule / `.cm-hr`. The rule sits at the line's edge (not through the middle), so when a
+// fence is revealed for editing the raw `---`/``` text shows without the rule crossing it.
+const blockTopRule = Decoration.line({ class: "cm-block-top" });
+const blockBottomRule = Decoration.line({ class: "cm-block-bottom" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
 // A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
@@ -603,11 +604,6 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
   // — block decorations may not be provided by a ViewPlugin. Here we only need the
   // active-block id so the per-line pass below renders the raw source for it.
   const activeTableOpen = view.state.field(activeTableField, false) ?? null;
-  // The frontmatter `---` fences stay collapsed until the cursor is inside the
-  // block (i.e. you start editing it) — mirroring how code fences hide off-block.
-  const editingFrontmatter =
-    frontmatterOpen != null && frontmatterClose != null &&
-    selSpans.some(([a, b]) => a <= frontmatterClose && b >= frontmatterOpen);
   // The code block (by opening-fence line) currently in edit mode, if any.
   const activeCodeOpen = view.state.field(activeCodeField, false) ?? null;
   // The callout block (by its header line) currently revealed for raw editing, if any. A rendered
@@ -626,21 +622,16 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks, markdown links, and bare URLs (e.g. a `source: "[[Note]]"`,
       // `link: "[x](url)"`, or `homepage: https://…` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
-        // The `---` delimiters collapse to nothing until the cursor enters the
-        // block; only the property rows show (a clean "properties" panel).
+        // The `---` delimiters ALWAYS render as a thin grey edge rule — the top `---` a top
+        // border, the bottom `---` a bottom border — so the properties panel is always visibly
+        // bounded (bug #10: they used to collapse to nothing off-cursor, so the "em dashes" were
+        // invisible). The literal dashes stay HIDDEN for a clean panel; only when the caret sits on
+        // that exact `---` line do the raw dashes reveal (dim Monaspace) for editing — the rule is
+        // an edge, so it never crosses the revealed text.
         const isDelim = line.number === frontmatterOpen || line.number === frontmatterClose;
         if (isDelim) {
-          if (!editingFrontmatter) {
-            deco.push(collapsedLine.range(line.from));
-            if (line.to > line.from) deco.push(hide.range(line.from, line.to));
-            pos = line.to + 1;
-            continue;
-          }
-          // Revealed: force both `---` to the same dim Monaspace. (The markdown
-          // highlighter tokenizes the closing `---` but not the opening one, so
-          // without this the two delimiters render at different lightness.)
-          deco.push(frontmatterLine.range(line.from));
-          if (line.to > line.from) deco.push(syntaxMark.range(line.from, line.to));
+          deco.push((line.number === frontmatterOpen ? blockTopRule : blockBottomRule).range(line.from));
+          if (line.to > line.from) deco.push((onCursor ? syntaxMark : hide).range(line.from, line.to));
           pos = line.to + 1;
           continue;
         }
@@ -660,26 +651,29 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         continue;
       }
 
-      // fenced code block. It stays "rendered" (``` fences hidden: opening fence →
-      // header, closing fence collapsed) until the block is the active edit-mode
-      // block (entered by double-click or by typing in it), then shows raw.
+      // fenced code block. The ``` fences ALWAYS render as a thin grey edge rule — the opening
+      // fence a top border, the closing fence a bottom border — so every code block is always
+      // visibly bounded top and bottom (bug #10: the closing ``` used to collapse to nothing, so
+      // the block had no visible bottom edge). Off-block the opening fence also shows the lang +
+      // copy header widget and the closing ``` hides; entering edit mode (double-click / typing)
+      // reveals the raw ``` on both fences. The rule is an edge, so it never crosses the raw text.
       const codeBlock = codeBlockByLine.get(line.number);
       if (codeBlock) {
         const revealed = activeCodeOpen === codeBlock.open;
-        // Body lines (strictly between the fences) carry their 1-based in-block
-        // line number; the fence lines never do, whether rendered or revealed.
-        const isBody = line.number > codeBlock.open && line.number < codeBlock.close;
-        if (revealed) {
-          deco.push(isBody ? numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from) : codeBlockLine.range(line.from));
-        } else if (line.number === codeBlock.open) {
-          deco.push(codeHeaderLine.range(line.from));
-          if (line.to > line.from) {
+        const isOpen = line.number === codeBlock.open;
+        const isClose = line.number === codeBlock.close;
+        if (isOpen) {
+          // Opening fence: top edge rule always; header widget when rendered, raw ``` when revealed.
+          deco.push(blockTopRule.range(line.from));
+          if (!revealed && line.to > line.from) {
             deco.push(Decoration.replace({ widget: new CodeHeaderWidget(codeBlock.lang, codeBlock.body) }).range(line.from, line.to));
           }
-        } else if (line.number === codeBlock.close) {
-          deco.push(codeHiddenLine.range(line.from));
-          if (line.to > line.from) deco.push(hide.range(line.from, line.to));
+        } else if (isClose) {
+          // Closing fence: bottom edge rule always; raw ``` hidden when rendered, shown when revealed.
+          deco.push(blockBottomRule.range(line.from));
+          if (!revealed && line.to > line.from) deco.push(hide.range(line.from, line.to));
         } else {
+          // Body line: 1-based in-block number in the gutter.
           deco.push(numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from));
         }
         pos = line.to + 1;
@@ -1342,15 +1336,28 @@ export const livePreview = [
     // Code blocks: no fill; just monospace text with a neutral left rule (never a theme-accent
     // color) that runs the full height of the block so it always reads as a distinct, visible block.
     // Theme-aware via `color-mix` off `var(--fg)` (NOT a fixed mid-grey — same "not always visible"
-    // fragility as the HR above: a fixed 128-grey rule washes out on light-bg themes). The ``` fences
-    // are hidden off-cursor (opening fence → header, closing fence collapsed), so the rule lives on
-    // the header line + every body line.
+    // fragility as the HR above: a fixed 128-grey rule washes out on light-bg themes). The left rule
+    // lives on every body line; the ``` fences add the top/bottom edge rules (`.cm-block-top` /
+    // `.cm-block-bottom` below) so the block is bounded on all sides.
     ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5", "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view.
-    ".cm-code-headerline": { "font-family": MONO_FONT, "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)" },
-    ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
-    ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },
+    // A block's TOP fence line (frontmatter opening `---`, code opening ```): the same theme-aware
+    // grey as the left rule, drawn as a LEFT + TOP edge (two inset shadows) so it's the block's
+    // top-left corner. Always present (bug #10 — fences must never collapse to nothing). Because the
+    // rule sits at the line's edge, a revealed raw `---`/``` shows without the rule crossing it.
+    ".cm-block-top": {
+      "font-family": MONO_FONT,
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset 0 2px 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+    },
+    // A block's BOTTOM fence line (frontmatter closing `---`, code closing ```): LEFT + BOTTOM edge,
+    // forming the bottom-left corner. Always present.
+    ".cm-block-bottom": {
+      "font-family": MONO_FONT,
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset 0 -2px 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+    },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
     ".cm-code-header": {
       display: "flex",
@@ -1380,7 +1387,8 @@ export const livePreview = [
     // Frontmatter (.fm in the redesign): monospace property rows with a neutral DARK-GREY left
     // rule (never a theme-accent color) — matching the fenced code blocks + em-dash rule above so
     // the whole block reads as a distinct-but-neutral "properties" panel. Keys render in a dimmed
-    // neutral grey, values in --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
+    // neutral grey, values in --fg; the opening/closing `---` are grey top/bottom edge rules
+    // (`.cm-block-top` / `.cm-block-bottom`) that bound the panel (raw dashes reveal on the caret line).
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
