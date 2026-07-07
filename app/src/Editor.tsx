@@ -50,7 +50,7 @@ import { findExtension } from "./editor/findPanel";
 import { wrapSelection } from "./editor/wrapSelection";
 import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
-import { saveScroll, loadScroll } from "./scrollMemory";
+import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
 import "./Editor.css";
 
@@ -512,7 +512,14 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // the reader's position when the buffer's editor is recreated. `path` is this run's
     // buffer; during cleanup it still names the view being torn down.
     onCleanup(() => {
-      if (view && path) saveScroll(path, view.scrollDOM.scrollTop);
+      if (view && path) {
+        // Save BOTH a CodeMirror scroll SNAPSHOT (position-anchored — the reliable restore for a
+        // recreated CM view; a raw pixel offset lands at the bottom on a fresh view whose off-screen
+        // line heights aren't measured yet) AND a raw pixel offset (so switching to the visual
+        // BlockEditor surface, which reads scrollByPath, still restores approximately).
+        saveScrollSnapshot(path, view.scrollSnapshot());
+        saveScroll(path, view.scrollDOM.scrollTop);
+      }
       flushSave(false);
       clearTimeout(reorderTimer); // drop any pending B12 reorder for the buffer being torn down
       if (view) unregisterEditor(view);
@@ -768,8 +775,23 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
             : []),
         ];
 
+    // Decide the initial scroll BEFORE creating the view so it can be applied via CodeMirror's
+    // `scrollTo` config (the reliable path — CodeMirror applies it during the FIRST measure,
+    // before paint, so there's no flash of the top):
+    //   • a pending `[[File#Heading]]` anchor wins (applied after creation via revealHeading);
+    //   • otherwise restore the saved scroll SNAPSHOT for this buffer. The snapshot is anchored to
+    //     a DOCUMENT POSITION, so CodeMirror re-scrolls to it as it measures off-screen line heights
+    //     — unlike a raw pixel scrollTop, which on a fresh view clamps against the not-yet-measured
+    //     scrollHeight and lands at the BOTTOM (the bug this fixes). Take-and-clear the anchor here
+    //     (one-shot) so an unrelated later rebuild — e.g. flipping an editor setting — can't re-fire it.
+    const anchor = takePendingAnchor(path);
+    const snapEffect = anchor ? undefined : loadScrollSnapshot(path);
+
     view = new EditorView({
       parent: host,
+      // Restore the exact prior scroll position at construction. Undefined → no initial scroll
+      // (fresh buffer / first open / heading anchor, which reveals itself just below).
+      scrollTo: snapEffect,
       state: EditorState.create({
         doc: text,
         extensions: [
@@ -888,14 +910,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
 
     // A pending `[[File#Heading]]` anchor (set by App when this buffer was opened via a
     // heading link) wins over the saved scroll position: jump to the heading instead of
-    // restoring the last reader position. One-shot (take-and-clear) so an unrelated view
-    // rebuild — e.g. flipping an editor setting — doesn't re-hijack the scroll. Re-assert
-    // across a couple of frames because the same async line-height measure that resets
-    // scrollTop (see below) can also undo a scrollIntoView applied at creation time.
+    // restoring the last reader position (`anchor` was taken above, before view creation, so
+    // `scrollTo` didn't also apply a saved snapshot). Re-assert across a couple of frames because
+    // the same async line-height measure that resets scrollTop can also undo a scrollIntoView.
     // revealHeading returns false when the heading isn't in the doc (renamed / typo / stale
     // autocomplete); only a SUCCESSFUL reveal suppresses the scroll-restore below — otherwise we'd
     // strand the reader at the top instead of returning them to their saved position.
-    const anchor = takePendingAnchor(path);
     let revealed = false;
     if (anchor && view) {
       const v = view;
@@ -914,14 +934,29 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       }
     }
 
-    // Restore the reader's scroll position for this buffer (saved when its previous
-    // view was torn down on a tab switch). A plain scrollTop set right after creation
-    // doesn't stick: CodeMirror measures line heights asynchronously (line wrapping +
-    // live-preview block widgets), and that pass resets scrollTop to 0. Re-assert inside
-    // requestMeasure across a few cycles so it survives the layout — same approach the
-    // external-reload reconcile above uses. Skipped when a heading anchor already claimed
-    // the scroll.
-    const restore = revealed ? undefined : loadScroll(path);
+    // Snapshot restore, re-asserted. The `scrollTo` config above already placed the view at the
+    // saved position during its first measure; re-dispatch the SAME position-anchored effect across
+    // the next several frames so a LATER async reflow can't drift it. The note-title block widget
+    // grows once the Lora serif finishes loading (its ResizeObserver fires well after the initial
+    // measure), and live-preview / Harper decorations re-measure too — each re-dispatch re-scrolls
+    // to the exact document position. rAF (not requestMeasure) so re-dispatch is legal. Skipped
+    // when a heading anchor claimed the scroll.
+    if (snapEffect && !revealed) {
+      const v = view;
+      let frames = 0;
+      const repin = () => {
+        if (view !== v || frames++ >= 6) return;
+        v.dispatch({ effects: snapEffect });
+        requestAnimationFrame(repin);
+      };
+      requestAnimationFrame(repin);
+    }
+
+    // Fallback when this buffer has NO CodeMirror snapshot — e.g. the reader arrived from the visual
+    // (Milkdown) surface, which records only a raw pixel offset. Restore that offset via the legacy
+    // requestMeasure re-assert. (The common source→source tab-switch path always has a snapshot and
+    // never reaches here.)
+    const restore = snapEffect || revealed ? undefined : loadScroll(path);
     if (restore != null && restore > 0) {
       const v = view;
       v.scrollDOM.scrollTop = restore;
