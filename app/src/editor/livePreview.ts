@@ -1,13 +1,12 @@
 // app/src/editor/livePreview.ts
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import { type Range, type Text, StateField, StateEffect, type EditorState } from "@codemirror/state";
+import { type Range, StateField, StateEffect, type EditorState } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
 import { renderMath, onMathReady } from "./katexLoader";
 import { latexTokenDecorations, mathSrcMark } from "./latexHighlight";
 import { mathField } from "./mathBlock";
-import { extractFrontmatterBoundary } from "./frontmatterUtils";
 import { wikilinkVisibleRange } from "./wikilink";
 import { findBareUrls } from "./urls";
 import { TaskCheckbox, charToStatus, type TaskStatus } from "./TaskCheckbox";
@@ -15,16 +14,17 @@ import { reorderAroundLine } from "./taskFold";
 import { openTaskStatusMenu } from "../taskStatusMenu";
 import { LIST_STEP } from "./listLayout";
 import { CodeHeader } from "./CodeHeader";
-import { type TableBlock, groupTableBlocks } from "./tableModel";
+import { groupTableBlocks } from "./tableModel";
 import { TableWidget } from "./tableWidget";
 import { activeTableField, notePathFacet, setActiveTableEffect } from "./tableState";
-import { htmlBlockField, pushInlineHtml, scanHtmlBlocks } from "./htmlPreview";
+import { htmlBlockField, pushInlineHtml } from "./htmlPreview";
 import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 import { isThematicBreak } from "./thematicBreak";
-import { scanCallouts, renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from "./callout";
+import { renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from "./callout";
 import { renderNoteBody, renderInline } from "../bases/markdown";
 import { findBismuthWords } from "./bismuthWord";
 import { sanitizeHtml } from "../sanitizeHtml";
+import { computeBlockRegions, scanCalloutLineBlocks, FENCE_RE, type BlockRegions } from "./blockRegions";
 
 // The editor's mono face: Monaspace Xenon, falling back to the platform ui-monospace.
 // Shared across every mono region in the live-preview theme (and reused by embedBlock).
@@ -80,14 +80,26 @@ const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 // A code-block / frontmatter body line carries its 1-based in-block line number via
 // `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
-// The top/bottom "fence" lines of a block (frontmatter `---`, fenced code ```): a thin grey
-// EDGE rule — left + top on the opener, left + bottom on the closer — so a properties panel and
-// every code block are ALWAYS visibly bounded top and bottom, on AND off cursor (never collapsed
-// to nothing). Shared by frontmatter + code; the same theme-aware `color-mix(var(--fg) 40%)` grey
-// as the left rule / `.cm-hr`. The rule sits at the line's edge (not through the middle), so when a
-// fence is revealed for editing the raw `---`/``` text shows without the rule crossing it.
-const blockTopRule = Decoration.line({ class: "cm-block-top" });
-const blockBottomRule = Decoration.line({ class: "cm-block-bottom" });
+// Bug #10 (3rd bounce): a frontmatter panel / fenced code block renders as a rounded-corner
+// bordered CARD — a continuous border on all four sides, a slightly distinct fill, and a GREY
+// (never `var(--accent)`) left accent edge — not the hairline top/bottom-only edge rules fix 2
+// shipped. CodeMirror line decorations can't span multiple lines in one DOM element, so the card
+// is built from per-line classes that compose:
+//   - `cm-block-mid`: the shared "card body" styling (background + left accent + right edge) —
+//     applied to EVERY line in the block (fence lines AND body lines).
+//   - `cm-block-top` / `cm-block-bottom`: layered on TOP of `cm-block-mid`, ONLY on the opening /
+//     closing fence line — adds the top/bottom edge and rounds that line's two outer corners, so
+//     the card's roof and floor land exactly at the block's true boundaries (never fused with an
+//     adjacent block that starts/ends on the very next line).
+// All colors are `color-mix` off `var(--fg)` (never accent) so the card reads correctly, and never
+// washes out, on light AND dark themes — the same fragility a fixed mid-grey had. Every edge is an
+// INSET box-shadow (not a real CSS `border`), so nothing shifts the text layout; `border-radius`
+// alone (no actual border needed) still clips both the shadow and the background to a rounded rect.
+// These classes are ALWAYS applied — never keyed off cursor/reveal state — so the card never
+// flickers when the caret enters or leaves the block; only the raw fence text (the `---`/backticks)
+// reveals inline within it.
+const blockTopRule = Decoration.line({ class: "cm-block-mid cm-block-top" });
+const blockBottomRule = Decoration.line({ class: "cm-block-mid cm-block-bottom" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
 // A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
@@ -116,9 +128,8 @@ const STRIKE_RE = /~~([^~]+)~~/g;
 const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g;
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
 const TAG_RE = /(^|\s)(#[\p{L}\d/_-]+)/gu;
-// Fenced-code-fence detection, shared by computeBlockRegions() (open + close) and findCodeBlock().
-const FENCE_OPEN_RE = /^\s*```(.*)$/;
-const FENCE_RE = /^\s*```/;
+// Fenced-code-fence detection (FENCE_RE) is imported from ./blockRegions, shared with
+// computeBlockRegions() (open + close) there and findCodeBlock() below.
 
 // Notion-style hanging indent for lists. Off the cursor line we replace the whole
 // list prefix (indent + marker + spaces) with a single widget and drive ALL spacing
@@ -433,135 +444,11 @@ function pushBismuth(
   }
 }
 
-interface CodeBlock {
-  open: number; // line number of the opening ``` fence
-  close: number; // line number of the closing ``` fence
-  lang: string; // info string after the opening fence
-  body: string; // the code lines joined with "\n" (for the copy button)
-}
-
-interface BlockRegions {
-  frontmatterLines: Set<number>;
-  // The `---` delimiter line numbers of the frontmatter block (null if no
-  // frontmatter). Hidden like a code fence until the cursor enters the block.
-  frontmatterOpen: number | null;
-  frontmatterClose: number | null;
-  fenceLines: Set<number>;
-  codeLines: Set<number>;
-  // GFM pipe tables grouped into blocks, plus a line → block lookup. A block renders
-  // as the editable <table> widget unless it is the "active" (raw-source) block.
-  tableBlocks: TableBlock[];
-  tableBlockByLine: Map<number, TableBlock>;
-  // Every line that belongs to a (closed) fenced code block → its block.
-  codeBlockByLine: Map<number, CodeBlock>;
-  // Line numbers covered by a blank-line-delimited HTML block. The block itself
-  // is rendered by htmlBlockField (a StateField widget); the per-line pass skips
-  // these lines so it neither double-decorates nor misreads the raw HTML.
-  htmlBlockLines: Set<number>;
-  // Obsidian `> [!type]` callout blocks → a line→block lookup. Each (non-active) block renders as
-  // the CalloutWidget (calloutWidgetField); the per-line pass skips its lines unless the block is
-  // the active (revealed-for-editing) one, in which case the lines render as a raw blockquote.
-  calloutBlockByLine: Map<number, CalloutLineBlock>;
-}
-
-/** A callout blockquote run located in the document (1-based line range + parsed header + body). */
-interface CalloutLineBlock {
-  fromLine: number;
-  toLine: number;
-  header: CalloutHeader;
-  body: string;
-}
-
-/** All callout blocks in `doc` (1-based line ranges). Shared by computeBlockRegions, the widget
- *  field, and the active-block lookup so every callout consumer agrees on the same ranges. */
-function scanCalloutLineBlocks(doc: Text): CalloutLineBlock[] {
-  const lines: string[] = [];
-  for (let i = 1; i <= doc.lines; i++) lines.push(doc.line(i).text);
-  return scanCallouts(lines).map((c) => ({
-    fromLine: c.fromLine + 1,
-    toLine: c.toLine + 1,
-    header: c.header,
-    body: c.body,
-  }));
-}
-
-/** Scan the whole document once and return the block-region sets.
- *  Called only when the document content changes (or on first construction). */
-function computeBlockRegions(doc: Text): BlockRegions {
-  const fenceLines = new Set<number>(); // the ``` marker lines
-  const codeLines = new Set<number>();  // lines inside a fence
-  // Group fences into closed blocks so we can hide the ``` lines / show a header.
-  const codeBlockByLine = new Map<number, CodeBlock>();
-  {
-    let i = 1;
-    while (i <= doc.lines) {
-      const m = doc.line(i).text.match(FENCE_OPEN_RE);
-      if (m) {
-        const open = i;
-        const bodyLines: string[] = [];
-        let j = i + 1;
-        while (j <= doc.lines && !FENCE_RE.test(doc.line(j).text)) {
-          bodyLines.push(doc.line(j).text);
-          j++;
-        }
-        if (j <= doc.lines) {
-          // ```query is owned by queryBlock.ts, which replaces the whole fence with the
-          // rendered view. Skip it here so livePreview doesn't ALSO render it as a code
-          // block (which would collide with that block replace and leak the raw query).
-          // Still advance past its lines so the body isn't re-processed as markdown.
-          if (m[1].trim() === "query") {
-            i = j + 1;
-            continue;
-          }
-          // closed block: record it and mark all its lines
-          const block: CodeBlock = { open, close: j, lang: m[1].trim(), body: bodyLines.join("\n") };
-          fenceLines.add(open);
-          fenceLines.add(j);
-          for (let k = open + 1; k < j; k++) codeLines.add(k);
-          for (let k = open; k <= j; k++) codeBlockByLine.set(k, block);
-          i = j + 1;
-          continue;
-        }
-        // unclosed fence: treat the opener as an ordinary line
-      }
-      i++;
-    }
-  }
-
-  // precompute YAML frontmatter lines from the shared boundary helper (single source
-  // of truth for the fence range, also used by validation + autocomplete + Harper).
-  const frontmatterLines = new Set<number>();
-  let frontmatterOpen: number | null = null;
-  let frontmatterClose: number | null = null;
-  const fmRange = extractFrontmatterBoundary(doc.toString());
-  if (fmRange) {
-    const firstLine = doc.lineAt(fmRange.from).number;     // line after the opening fence
-    const lastBodyLine = fmRange.to > fmRange.from ? doc.lineAt(fmRange.to).number : firstLine - 1;
-    // include the opening fence line, the body lines, and the closing fence line
-    for (let i = firstLine - 1; i <= lastBodyLine + 1; i++) {
-      if (i >= 1 && i <= doc.lines) frontmatterLines.add(i);
-    }
-    frontmatterOpen = firstLine - 1;     // the opening `---`
-    frontmatterClose = lastBodyLine + 1; // the closing `---`
-  }
-
-  // precompute GFM table blocks (header + separator + contiguous body rows)
-  const { blocks: tableBlocks, byLine: tableBlockByLine } = groupTableBlocks(doc);
-
-  // precompute blank-line-delimited HTML blocks (rendered by htmlBlockField)
-  const htmlBlockLines = new Set<number>();
-  for (const b of scanHtmlBlocks(doc)) {
-    for (let k = b.fromLine; k <= b.toLine; k++) htmlBlockLines.add(k);
-  }
-
-  // precompute callout blocks (rendered by calloutWidgetField)
-  const calloutBlockByLine = new Map<number, CalloutLineBlock>();
-  for (const c of scanCalloutLineBlocks(doc)) {
-    for (let k = c.fromLine; k <= c.toLine; k++) calloutBlockByLine.set(k, c);
-  }
-
-  return { frontmatterLines, frontmatterOpen, frontmatterClose, fenceLines, codeLines, tableBlocks, tableBlockByLine, codeBlockByLine, htmlBlockLines, calloutBlockByLine };
-}
+// `CodeBlock`, `BlockRegions`, `CalloutLineBlock`, `scanCalloutLineBlocks`, and
+// `computeBlockRegions` live in `./blockRegions` (a pure, DOM/JSX-free module) so the block-region
+// scan — which decides exactly which lines are a block's opening/closing fence vs. its body — is
+// unit-testable under `bun test` without mounting a real `EditorView` (see `blockRegions.test.ts`
+// and the import comment there for why that split was necessary).
 
 /** Run the per-visible-line decoration pass using pre-computed block regions.
  *  This is cheap: it only iterates view.visibleRanges and must run on every
@@ -622,12 +509,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks, markdown links, and bare URLs (e.g. a `source: "[[Note]]"`,
       // `link: "[x](url)"`, or `homepage: https://…` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
-        // The `---` delimiters ALWAYS render as a thin grey edge rule — the top `---` a top
-        // border, the bottom `---` a bottom border — so the properties panel is always visibly
-        // bounded (bug #10: they used to collapse to nothing off-cursor, so the "em dashes" were
-        // invisible). The literal dashes stay HIDDEN for a clean panel; only when the caret sits on
-        // that exact `---` line do the raw dashes reveal (dim Monaspace) for editing — the rule is
-        // an edge, so it never crosses the revealed text.
+        // The `---` delimiters ALWAYS render as the card's top/bottom edge (`cm-block-top` /
+        // `cm-block-bottom`, rounded corners + rule) so the properties panel is always a fully
+        // bounded container (bug #10, 3rd bounce: hairline edges weren't the ask — a rounded
+        // bordered card was). The literal dashes stay HIDDEN for a clean panel; only when the caret
+        // sits on that exact `---` line do the raw dashes reveal (dim Monaspace) for editing — the
+        // card edge sits at the line's own boundary, so it never crosses the revealed text.
         const isDelim = line.number === frontmatterOpen || line.number === frontmatterClose;
         if (isDelim) {
           deco.push((line.number === frontmatterOpen ? blockTopRule : blockBottomRule).range(line.from));
@@ -636,8 +523,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
           continue;
         }
         // Property rows carry their 1-based in-block line number (the `---` delimiters
-        // never do), matching fenced code. `frontmatterOpen` is non-null here.
-        deco.push(numberedLine("cm-frontmatter", line.number - (frontmatterOpen ?? 0)).range(line.from));
+        // never do), matching fenced code, plus `cm-block-mid` for the card's shared
+        // background/left-accent/right-edge styling (see the `blockTopRule` comment above).
+        deco.push(numberedLine("cm-frontmatter cm-block-mid", line.number - (frontmatterOpen ?? 0)).range(line.from));
         // Mark the `key:` portion (`.cm-fm-key` → a dimmed neutral grey, not accent), leaving values --fg.
         const km = FM_KEY_RE.exec(text);
         if (km) {
@@ -651,30 +539,31 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         continue;
       }
 
-      // fenced code block. The ``` fences ALWAYS render as a thin grey edge rule — the opening
-      // fence a top border, the closing fence a bottom border — so every code block is always
-      // visibly bounded top and bottom (bug #10: the closing ``` used to collapse to nothing, so
-      // the block had no visible bottom edge). Off-block the opening fence also shows the lang +
-      // copy header widget and the closing ``` hides; entering edit mode (double-click / typing)
-      // reveals the raw ``` on both fences. The rule is an edge, so it never crosses the raw text.
+      // fenced code block. The ``` fences ALWAYS render as the card's top/bottom edge (rounded
+      // corners + rule) — so every code block is always a fully bounded, rounded container, on AND
+      // off cursor (bug #10, 3rd bounce: a rounded bordered card, not a hairline edge). Off-block
+      // the opening fence also shows the lang + copy header widget (seated inside the card's top
+      // edge) and the closing ``` hides; entering edit mode (double-click / typing) reveals the raw
+      // ``` on both fences without disturbing the card, which never keys off reveal state.
       const codeBlock = codeBlockByLine.get(line.number);
       if (codeBlock) {
         const revealed = activeCodeOpen === codeBlock.open;
         const isOpen = line.number === codeBlock.open;
         const isClose = line.number === codeBlock.close;
         if (isOpen) {
-          // Opening fence: top edge rule always; header widget when rendered, raw ``` when revealed.
+          // Opening fence: top card edge always; header widget when rendered, raw ``` when revealed.
           deco.push(blockTopRule.range(line.from));
           if (!revealed && line.to > line.from) {
             deco.push(Decoration.replace({ widget: new CodeHeaderWidget(codeBlock.lang, codeBlock.body) }).range(line.from, line.to));
           }
         } else if (isClose) {
-          // Closing fence: bottom edge rule always; raw ``` hidden when rendered, shown when revealed.
+          // Closing fence: bottom card edge always; raw ``` hidden when rendered, shown when revealed.
           deco.push(blockBottomRule.range(line.from));
           if (!revealed && line.to > line.from) deco.push(hide.range(line.from, line.to));
         } else {
-          // Body line: 1-based in-block number in the gutter.
-          deco.push(numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from));
+          // Body line: 1-based in-block number in the gutter, plus `cm-block-mid` for the
+          // card's shared background/left-accent/right-edge styling.
+          deco.push(numberedLine("cm-codeblock cm-block-mid", line.number - codeBlock.open).range(line.from));
         }
         pos = line.to + 1;
         continue;
@@ -1333,31 +1222,56 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
-    // Code blocks: no fill; just monospace text with a neutral left rule (never a theme-accent
-    // color) that runs the full height of the block so it always reads as a distinct, visible block.
-    // Theme-aware via `color-mix` off `var(--fg)` (NOT a fixed mid-grey — same "not always visible"
-    // fragility as the HR above: a fixed 128-grey rule washes out on light-bg themes). The left rule
-    // lives on every body line; the ``` fences add the top/bottom edge rules (`.cm-block-top` /
-    // `.cm-block-bottom` below) so the block is bounded on all sides.
-    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5", "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)" },
+    // Code blocks: monospace text; the card chrome (background/border/left accent) comes from
+    // `.cm-block-mid` (always co-applied — see the `blockTopRule` comment near the top of the
+    // file), not from this rule.
+    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
-    // (codeLineNumbers.ts), shared with the ```query source view.
-    // A block's TOP fence line (frontmatter opening `---`, code opening ```): the same theme-aware
-    // grey as the left rule, drawn as a LEFT + TOP edge (two inset shadows) so it's the block's
-    // top-left corner. Always present (bug #10 — fences must never collapse to nothing). Because the
-    // rule sits at the line's edge, a revealed raw `---`/``` shows without the rule crossing it.
+    // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
+    // line's own border edge (`left: -2.7em` off `.cm-code-numbered`'s own padding box), so the
+    // `.cm-block-mid` padding below doesn't shift it — padding is inside the box it's measured from.
+    //
+    // The card body shared by EVERY line of a frontmatter panel / fenced code block (bug #10, 3rd
+    // bounce — see the `blockTopRule` comment near the top of the file for the full design). A
+    // subtly distinct fill + a GREY (never accent) left accent edge + a thin right edge, all
+    // `color-mix` off `var(--fg)` so they read correctly on light AND dark themes. Horizontal
+    // padding gives the text breathing room off the accent bar / right edge — pure padding, so it
+    // doesn't affect the reading column's outer alignment (the card's edges sit at the column
+    // bounds; only the padding is new).
+    ".cm-block-mid": {
+      background: "color-mix(in srgb, var(--fg) 5%, transparent)",
+      padding: "0 0.5em",
+      "box-shadow":
+        "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset -1px 0 0 color-mix(in srgb, var(--fg) 14%, transparent)",
+    },
+    // A block's TOP fence line (frontmatter opening `---`, code opening ```): the card-body edges
+    // above PLUS a top edge, and the top-left/top-right corners rounded — the card's roof. Always
+    // present (bug #10 — fences must never collapse to nothing). Because the edge sits at the
+    // line's own boundary, a revealed raw `---`/``` shows without it crossing the text. This
+    // `box-shadow` fully REPLACES (doesn't merge with) `.cm-block-mid`'s — CSS doesn't union
+    // same-property shadows across two classes, so the top/bottom variants each restate the full
+    // left+right+top(or bottom) shadow list.
     ".cm-block-top": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset 0 2px 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+      "border-top-left-radius": "8px",
+      "border-top-right-radius": "8px",
+      "box-shadow":
+        "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset -1px 0 0 color-mix(in srgb, var(--fg) 14%, transparent), inset 0 1px 0 color-mix(in srgb, var(--fg) 14%, transparent)",
     },
-    // A block's BOTTOM fence line (frontmatter closing `---`, code closing ```): LEFT + BOTTOM edge,
-    // forming the bottom-left corner. Always present.
+    // A block's BOTTOM fence line (frontmatter closing `---`, code closing ```): bottom edge +
+    // bottom corners rounded — the card's floor. Always present.
     ".cm-block-bottom": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset 0 -2px 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+      "border-bottom-left-radius": "8px",
+      "border-bottom-right-radius": "8px",
+      "box-shadow":
+        "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset -1px 0 0 color-mix(in srgb, var(--fg) 14%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--fg) 14%, transparent)",
     },
+    // The header widget sits inside the card's rounded top edge — it inherits `.cm-block-mid`'s
+    // padding (its line carries both classes) so the lang label/copy button sit inset from the
+    // accent bar and right edge like the rest of the card, with no styling of its own needed here.
     ".cm-code-headerwrap": { display: "block", width: "100%" },
     ".cm-code-header": {
       display: "flex",
@@ -1384,20 +1298,16 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Frontmatter (.fm in the redesign): monospace property rows with a neutral DARK-GREY left
-    // rule (never a theme-accent color) — matching the fenced code blocks + em-dash rule above so
-    // the whole block reads as a distinct-but-neutral "properties" panel. Keys render in a dimmed
-    // neutral grey, values in --fg; the opening/closing `---` are grey top/bottom edge rules
-    // (`.cm-block-top` / `.cm-block-bottom`) that bound the panel (raw dashes reveal on the caret line).
+    // Frontmatter: monospace property rows; the card chrome (background/border/left accent) comes
+    // from `.cm-block-mid` (always co-applied), matching the fenced code blocks above so the whole
+    // panel reads as one consistent, neutral (never theme-accent) "properties" card. A translucent
+    // `.cm-block-mid` background does sit above CodeMirror's selection-background layer (so a
+    // drag-selection starting inside the block is tinted by it), but at 5% `--fg` this is a
+    // deliberate, barely-there trade-off for the card look the user asked for, not a regression —
+    // the selection itself stays fully visible through it.
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      // No surface fill — just a neutral left rule + monospace, matching the fenced code blocks
-      // above (not a theme-accent color, and theme-aware via `color-mix` off `var(--fg)` so it
-      // never washes out on a light-bg theme). A line background sits ABOVE CodeMirror's selection
-      // layer, so any fill (even translucent) hides the selection where it starts in the
-      // frontmatter, making a code-block→body drag look only half-highlighted.
-      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
     },
     // Property KEYS (date / tags / icon …): a dimmed neutral grey, NOT a theme-accent color, so the
     // frontmatter panel stays theme-agnostic dark grey (was `var(--accent)` — the re-flagged bug).
