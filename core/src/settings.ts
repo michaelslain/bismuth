@@ -269,8 +269,11 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
       (out as Record<string, unknown>).folderVisibility = readFolderVisibilityFrom(data);
       continue;
     }
-    if (section === "toolbar") {
-      (out as Record<string, unknown>).toolbar = readToolbarFrom(data);
+    if (section === "toolbar" || section === "tabBar") {
+      // Both are button lists with the same item shape — read the user's array as-is (the generic
+      // per-index overlay below would leave a removed button's slot as the DEFAULT's item at that
+      // index, duplicating it: the [+][💬][💬]-when-terminal-removed bug).
+      (out as Record<string, unknown>)[section] = readButtonListFrom(data, section);
       continue;
     }
     if (section === "dailyNotes") {
@@ -319,9 +322,13 @@ type ToolbarItem = { command?: string; commands?: string[]; icon: string; toolti
  *  are present, mirroring the runtime). Malformed items are dropped. An explicit
  *  array (even empty) is honored; a missing/non-array value falls back to the
  *  seeded defaults. */
-function readToolbarFrom(data: Record<string, unknown>): ToolbarItem[] {
-  const raw = data.toolbar;
-  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any).toolbar) as ToolbarItem[];
+/** Read a button-list section (`toolbar` OR `tabBar` — identical item shape) from parsed
+ *  settings, honoring the user's array as-is (a shorter list is NOT index-padded with the
+ *  default — that padding was the [+][💬][💬] bug where removing one button left the default's
+ *  trailing button duplicated). A missing/non-array value falls back to the seeded default. */
+function readButtonListFrom(data: Record<string, unknown>, section: "toolbar" | "tabBar"): ToolbarItem[] {
+  const raw = data[section];
+  if (!Array.isArray(raw)) return structuredClone((DEFAULTS as any)[section]) as ToolbarItem[];
   const out: ToolbarItem[] = [];
   for (const item of raw) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
