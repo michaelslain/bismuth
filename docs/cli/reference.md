@@ -47,7 +47,7 @@ Argument parsing lives in `cli/src/args.ts` and is shared by every command. Flag
 | `--memory <dir>` | Memory (3rd-brain) directory. **Optional.** Resolution: `--memory` flag → `BISMUTH_MEMORY` env. Used only by `graph` and `serve`. |
 | `BISMUTH_MEMORY` | Env fallback for the memory dir. |
 | `--pretty` | Boolean. Pretty-prints JSON output with 2-space indentation. Accepted by every command (it is only consulted by the shared `out()` helper). |
-| `--api <url>` | (api/agent-graph only) Base URL of a running server. Resolution: `--api` flag → `BISMUTH_API` env → `http://localhost:4321`. |
+| `--api <url>` | (api/agent-graph/app only) Base URL of a running server. `api`/`agent-graph`: `--api` → `BISMUTH_API` → `:4321`. The `app` group adds two more fallbacks: `--api` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`) → `:4321`. |
 | `--off` | (daemon toggles only) boolean — disable instead of enable. |
 | `--clear` | (folder-icon only) boolean — clear the icon instead of setting one. |
 | `--regex` / `--case` / `--word` | (search/replace only) booleans — regex mode, case-sensitive, whole-word. |
@@ -515,6 +515,42 @@ This is the escape hatch for any endpoint without a dedicated CLI command (see t
 
 ---
 
+## App-control commands (`commands/app.ts`)
+
+Drive a **running Bismuth app**'s tabs (and, through the bismuth MCP's `bismuth_cli` tool, from a Claude session) via core's `/ui/*` routes → a per-window control WebSocket. These need a running app (a headless CLI has no window). Core discovery: `--api <url>` → `BISMUTH_API` → `CLAUDE_RELAY_URL` → the run-registry (`~/.bismuth/run`, matched by `--vault`/`BISMUTH_VAULT`, else the single running core) → `:4321`. Full reference: [../mcp/app-control.md](../mcp/app-control.md).
+
+- **`app windows`** — list open windows: `[{ id, label, activeTabId, tabCount }]`.
+- **`app tabs [--window <id>]`** — list a window's tabs + panes.
+- **`app open <content> [--new-tab] [--window <id>]`** — open a note path or sentinel (`::graph`/`::search`/`::inbox`/`.settings`/`::term:<uuid>`). `::chat:*` is refused.
+- **`app close <tabId> [--window <id>]`** / **`app focus <tabId> [--window <id>]`** — close / activate a tab.
+- **`app run <commandId> [--window <id>]`** — run a command-catalog id; a small blocklist (`new-window`/`open-folder`/`update-app`/`update-daemon`/`new-claude-chat`) is refused.
+- **`app commands`** — the ids `app run` accepts (catalog − blocklist).
+
+```bash
+bismuth app windows --pretty
+bismuth app open reading/Dune.md --new-tab
+bismuth app run new-note --window main
+```
+
+`--window` picks a window; omitted, the single open window is used (none → 404, several → 409). A blocked `run`/`open` fails with the server's 403 message.
+
+## Daemon inbox commands (`commands/page.ts`)
+
+The daemon inbox (`<vault>/.daemon/pages`), headless (no server). `create` authors a **validated** page (`core/src/daemonPages.ts` `createDaemonPage`) so the nested `actions[]` frontmatter is never hand-written — see [../daemon/pages.md](../daemon/pages.md).
+
+- **`page list [--retention-days <n>]`** — pages merged with their `.state` sidecar.
+- **`page create <slug> [--title <t>] [--body <md>] [--actions '<json>'] [--source <s>] [--deliver-at <iso>]`** — refuses a bad slug / an existing page.
+- **`page resolve <page-path> <actionId>`** — press an action (approve → daemon runs; dismiss → resolved locally).
+- **`page mark-failed <page-path>`** — force a stuck `working` page to `failed`.
+
+```bash
+bismuth page create reply-drafts --title "Reply drafts" --body "…" \
+  --actions '[{"id":"send","label":"Send","kind":"primary","prompt":"Send them."}]'
+bismuth page list --pretty
+```
+
+---
+
 ## Install commands (`commands/install.ts`)
 
 Install the `bismuth` CLI + MCP server **machine-wide** from a built tools source (the bundled app's `bismuth-tools` resource, or `--src <dir>`). Idempotent + version-gated — a no-op when the bundled binaries are unchanged. Doesn't touch the vault. See [self-update](../overview/self-update.md) and the [MCP server](../mcp/overview.md).
@@ -567,7 +603,9 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `serve` `backup` | serve.ts | yes (+optional memory) | string |
 | `export` | export.ts | yes (no for `.draw`) | `wrote <file>` |
 | `agent-graph` `api` | api.ts | **no** (needs running server) | JSON / text |
+| `app windows/tabs/open/close/focus/run/commands` | app.ts | **no** (needs running app; discovery via `BISMUTH_API`/`CLAUDE_RELAY_URL`/run-registry) | JSON |
+| `page list/create/resolve/mark-failed` | page.ts | **yes** (per-vault `<vault>/.daemon/pages`) | JSON |
 | `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts, core/src/settings.ts
+Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts, core/src/settings.ts

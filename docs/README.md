@@ -107,7 +107,8 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 
 - [CLI reference](cli/reference.md) — every `bismuth` command
 - [HTTP API reference](api/http-reference.md) — every core server route
-- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI
+- [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI + (daemon-gated) memory tools
+- [App control](mcp/app-control.md) — driving a running window's tabs from a Claude session / the shell (`bismuth app …`), via the CLI (zero new MCP tools)
 
 ## Contributing
 

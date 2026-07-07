@@ -19,13 +19,15 @@ import { commands as drawCmds } from "./commands/draw";
 import { commands as serveCmds } from "./commands/serve";
 import { commands as exportCmds } from "./commands/export";
 import { commands as apiCmds } from "./commands/api";
+import { commands as appCmds } from "./commands/app";
+import { commands as pageCmds } from "./commands/page";
 import { commands as installCmds } from "./commands/install";
 import { commands as checkpointCmds } from "./commands/checkpoint";
 
 const registry: CommandMap = {
   ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
   ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
-  ...exportCmds, ...apiCmds, ...installCmds, ...checkpointCmds,
+  ...exportCmds, ...apiCmds, ...appCmds, ...pageCmds, ...installCmds, ...checkpointCmds,
 };
 
 function printHelp(): void {
