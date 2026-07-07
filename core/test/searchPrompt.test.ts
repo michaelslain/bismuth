@@ -304,6 +304,48 @@ describe("consumeModelStream (anomaly handling — BUG #8 3rd-bounce root cause)
     await expect(p).rejects.toThrow();
   });
 
+  // BUG #8, 4th bounce: reproduced live by spawning the real `claude` binary with $USER/$LOGNAME
+  // unset (a Finder-launched sidecar's actual env) — it reports "Not logged in · Please run
+  // /login" as `type: "result", subtype: "success", is_error: true`, NOT a non-success subtype and
+  // NOT an early stream end. The 3rd-bounce fix above only branched on `subtype`, so this exact
+  // shape sailed straight through to `{ structured: undefined, resultText: "Not logged in…" }` —
+  // unparseable as JSON, silently coerced to `[]` downstream. Indistinguishable from a real empty
+  // answer. This must now be a diagnosable error, not a silent empty result.
+  test("THE FIX (4th bounce): throws when a 'success' result message carries is_error: true", async () => {
+    const p = consumeModelStream(
+      streamOf([
+        {
+          type: "result",
+          subtype: "success",
+          is_error: true,
+          result: "Not logged in · Please run /login",
+        } as unknown as Partial<SDKMessage>,
+      ]),
+    );
+    await expect(p).rejects.toThrow();
+    try {
+      await consumeModelStream(
+        streamOf([
+          { type: "result", subtype: "success", is_error: true, result: "Not logged in · Please run /login" } as unknown as Partial<SDKMessage>,
+        ]),
+      );
+      throw new Error("expected to throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AppError);
+      expect((e as AppError).statusCode).toBe(500);
+      expect((e as Error).message).toContain("Not logged in");
+    }
+  });
+
+  test("a 'success' result with is_error: false (the normal case) still returns its payload", async () => {
+    const out = await consumeModelStream(
+      streamOf([
+        { type: "result", subtype: "success", is_error: false, structured_output: { results: [] }, result: "ok" } as unknown as Partial<SDKMessage>,
+      ]),
+    );
+    expect(out.structured).toEqual({ results: [] });
+  });
+
   test("promptSearch propagates consumeModelStream's error as a 500 the UI can render (not a silent [])", async () => {
     const root = makeVault({ "a.md": "some content to rank as a candidate" });
     const realWhich = searchPromptDeps.whichClaude;
