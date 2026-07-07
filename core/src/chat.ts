@@ -463,6 +463,71 @@ export function unstreamedAssistantFrames(
 }
 
 /**
+ * BUG #39: matches ONLY the bare "/mcp" command (optional surrounding whitespace, case-insensitive,
+ * no arguments) — the one built-in slash command this chat intercepts locally instead of forwarding
+ * to the CLI subprocess. Verified against a live session: run programmatically (this app never runs
+ * the interactive TUI), the SDK's OWN "/mcp" stubs out to a synthetic assistant reply "'/mcp' isn't
+ * available in this environment." — it's a TUI-only interactive picker with no headless output, so
+ * forwarding the text is never useful. Every OTHER slash command (recognized or not) is left to the
+ * SDK, which already answers visibly on its own: an unrecognized command comes back as a synthetic
+ * "Unknown command: /x", and every other TUI-only command gets the same "isn't available" stub — so
+ * this is the only stub actually worth replacing with real data (see docs/chat/overview.md).
+ */
+export function isMcpCommand(text: string): boolean {
+  return /^\/mcp\s*$/i.test(text.trim());
+}
+
+/** The minimal per-server shape formatMcpStatus needs — a projection of the SDK's McpServerStatus
+ *  (name/status/tools[]) down to a tool COUNT, so the pure formatter needs no SDK types at all. */
+export interface ChatMcpServerSummary {
+  name: string;
+  status: string;
+  toolCount?: number;
+}
+
+/**
+ * Pure: render the "/mcp" reply body from a snapshot of MCP server statuses — the same data
+ * Query.mcpServerStatus() returns (also what powers the header's connected/total count), just
+ * projected to name + status + tool count. Mirrors the Claude Code CLI's own /mcp panel (which
+ * server, is it connected, how many tools) as a plain markdown list rendered like any assistant
+ * reply, rather than the SDK's non-interactive stub. No servers configured is reported plainly
+ * instead of an empty list.
+ */
+export function formatMcpStatus(servers: ChatMcpServerSummary[]): string {
+  if (!servers.length) return "No MCP servers are configured for this session.";
+  const lines = servers.map((s) => {
+    const tools = typeof s.toolCount === "number" ? ` — ${s.toolCount} tool${s.toolCount === 1 ? "" : "s"}` : "";
+    return `- **${s.name}** — ${s.status}${tools}`;
+  });
+  return `**MCP Servers** (${servers.length})\n\n${lines.join("\n")}`;
+}
+
+/**
+ * Answer "/mcp" LOCALLY from the SDK's own control-plane (Query.mcpServerStatus(), the same call
+ * emitInitManifest already makes for the header's connected/total count) instead of forwarding the
+ * text into the input queue — see isMcpCommand for why. Emits the SAME frame shape a normal turn
+ * produces (assistant-text, then result, then done) so the client's streaming/turn-end handling
+ * (including the mid-turn queued-message dispatch, which fires on `done`) needs no special case.
+ * Deliberately bypasses the real input queue/session transcript: this is introspection of already-
+ * live session state, not a conversational turn, so turnCount/context-usage/title are left untouched
+ * and a resumed session replay simply won't show it (like emitInitManifest's own synthetic manifest).
+ */
+async function answerMcpCommand(session: ChatSession): Promise<void> {
+  session.turnActive = true;
+  let text: string;
+  try {
+    const servers = await session.q.mcpServerStatus();
+    text = formatMcpStatus(servers.map((s) => ({ name: s.name, status: s.status, toolCount: s.tools?.length })));
+  } catch (e) {
+    text = `Couldn't read MCP server status: ${(e as Error).message}`;
+  }
+  emit(session, { type: "assistant-text", text });
+  emit(session, { type: "result", isError: false, numTurns: 0, costUsd: null });
+  emit(session, { type: "done" });
+  session.turnActive = false;
+}
+
+/**
  * Send a user turn. The FIRST call for a chatId creates the session: it builds the input queue and
  * starts a single long-lived query() (the user's `claude`, machine-login auth, partial messages on
  * for live streaming), then spawns a background drain loop. Every call (first and subsequent)
@@ -485,6 +550,12 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
     // list BEFORE running the turn (managedSettings/sandbox are spawn-fixed; a stale session would
     // keep reading a since-hidden file). Resumes the same conversation, so history survives.
     if (existing.visibilityDirty) await refreshVisibility(existing);
+    // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
+    // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
+    if (isMcpCommand(text) && !images?.length) {
+      await answerMcpCommand(existing);
+      return;
+    }
     existing.turnActive = true;
     existing.input.push(text, images);
     return;
@@ -492,6 +563,12 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
 
   const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
+
+  // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
+  if (isMcpCommand(text) && !images?.length) {
+    await answerMcpCommand(session);
+    return;
+  }
 
   // The session's drain loop is already running (createSession starts it on spawn), so this just
   // pushes the first turn into the generator, which was parked on the empty input queue for it.
