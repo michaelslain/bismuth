@@ -27,6 +27,9 @@ keybindings:
   new-claude-chat: Mod+Shift+C
   insert-template: Alt+T
   toggle-sidebar: Alt+S
+  zoom-in: Mod+=, Mod+Shift+=
+  zoom-out: Mod+-
+  zoom-reset: Mod+0
 ```
 
 Each value above is the action's **default** — defaults equal the combos that were previously hardcoded in `App.tsx`, so writing the schema's defaults into a file is a behavioral no-op. To rebind an action, change the string. To remove a shortcut, set it to an empty string (an empty/nullish setting matches nothing — `matchesKeybinding(e, "")` and `matchesKeybinding(e, undefined)`/`null` all return `false`).
@@ -211,6 +214,9 @@ Every action id, its human label, default combo, and what it does. Ids are the Y
 | `new-claude-chat` | `Mod+Shift+C` | New Claude chat — open a new Claude Code chat session in its own tab. |
 | `insert-template` | `Alt+T` | Insert template — open the template-insertion palette (ignored while typing in a form field). |
 | `toggle-sidebar` | `Alt+S` | Toggle sidebar — show/hide the left sidebar (ignored while typing in a form field). |
+| `zoom-in` | `` Mod+=, Mod+Shift+= `` | Zoom in — increase the whole app's UI zoom one step (whole-app native webview zoom, not a note/editor zoom). The Shift alternative covers keyboards where the labeled "+" requires Shift. |
+| `zoom-out` | `Mod+-` | Zoom out — decrease the whole app's UI zoom one step. |
+| `zoom-reset` | `Mod+0` | Reset zoom — reset the whole app's UI zoom to 100%. |
 
 `KEYBINDING_CATALOG` is an ordered array (`KeybindingSpec[]`) — iterating it in order yields these ids.
 

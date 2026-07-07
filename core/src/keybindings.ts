@@ -66,4 +66,10 @@ export const KEYBINDING_CATALOG: KeybindingSpec[] = [
     doc: "Open the template-insertion palette (ignored while typing in a form field)." },
   { id: "toggle-sidebar", label: "Toggle sidebar", default: "Alt+S",
     doc: "Show/hide the left sidebar (ignored while typing in a form field)." },
+  { id: "zoom-in", label: "Zoom in", default: "Mod+=, Mod+Shift+=",
+    doc: "Increase the whole app's UI zoom one step. Mod+Shift+= covers keyboards where the labeled \"+\" requires Shift." },
+  { id: "zoom-out", label: "Zoom out", default: "Mod+-",
+    doc: "Decrease the whole app's UI zoom one step." },
+  { id: "zoom-reset", label: "Reset zoom", default: "Mod+0",
+    doc: "Reset the whole app's UI zoom to 100%." },
 ];

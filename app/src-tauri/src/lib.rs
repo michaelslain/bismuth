@@ -16,6 +16,18 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+// Zoom the whole webview (whichever window invoked this) to `factor` (1.0 = 100%).
+// tauri::WebviewWindow::set_zoom wraps the real platform API: WKWebView.pageZoom on
+// macOS/iOS, WebView2 ZoomFactor on Windows, WebKitGTK zoom_level on Linux — the same
+// engine-level page-zoom mechanism browsers use for Cmd+=/Cmd+-, so text/canvas stay
+// crisp and layout reflows correctly (fixed-position overlays, 100vw/vh math, etc. all
+// keep meaning what they already mean). Best-effort: unsupported (very old macOS/iOS,
+// Android) just no-ops from the frontend's perspective.
+#[tauri::command]
+fn set_ui_zoom(window: tauri::WebviewWindow, factor: f64) -> Result<(), String> {
+    window.set_zoom(factor).map_err(|e| e.to_string())
+}
+
 // Clear ONLY the global "intro seen" marker (leaving the vault config intact) + relaunch, so
 // the intro replays and then drops the user back into their current vault. Bound to a secret
 // keybind in the app (replay the onboarding animation).
@@ -434,7 +446,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run, set_last_vault])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

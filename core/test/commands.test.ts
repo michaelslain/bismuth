@@ -30,6 +30,12 @@ describe("command catalog", () => {
     }
   });
 
+  it("includes the whole-app zoom commands", () => {
+    for (const id of ["zoom-in", "zoom-out", "zoom-reset"]) {
+      expect(COMMAND_IDS).toContain(id);
+    }
+  });
+
   it("looks up a label by id", () => {
     expect(commandLabel("terminal")).toBe("Open Terminal");
     expect(commandLabel("does-not-exist")).toBeUndefined();

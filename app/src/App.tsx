@@ -16,6 +16,7 @@ import { settings } from "./settings";
 import { settingsToCssVars, setCssVars } from "./settingsCssVars";
 import { resolveAppearance } from "./themes";
 import { matchesKeybinding } from "./keybindings";
+import { initZoom, zoomIn, zoomOut, zoomReset } from "./zoom";
 import { lastChange } from "./serverVersion";
 import { debounce } from "./debounce";
 import { ToastHost, pushToast, dismissToast, updateToast } from "./Toast";
@@ -871,7 +872,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1441,6 +1442,22 @@ export default function App() {
       historyForward();
       return;
     }
+    // Whole-app UI zoom (default Mod+=/Mod+Shift+=, Mod+-, Mod+0). See app/src/zoom.ts.
+    if (matchesKeybinding(e, kb["zoom-in"])) {
+      e.preventDefault();
+      zoomIn();
+      return;
+    }
+    if (matchesKeybinding(e, kb["zoom-out"])) {
+      e.preventDefault();
+      zoomOut();
+      return;
+    }
+    if (matchesKeybinding(e, kb["zoom-reset"])) {
+      e.preventDefault();
+      zoomReset();
+      return;
+    }
 
     const at = activeTab();
     if (!at) return;
@@ -1483,6 +1500,10 @@ export default function App() {
       return;
     }
   };
+
+  // Restore the last whole-app zoom level once per window (localStorage — a
+  // machine/display preference, not a synced .settings value; see app/src/zoom.ts).
+  onMount(() => { initZoom(); });
 
   onMount(() => {
     window.addEventListener("keydown", handleGlobalKeydown);
