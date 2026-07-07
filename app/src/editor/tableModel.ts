@@ -342,6 +342,29 @@ export function formatTable(g: TableGrid): string {
   return serializeTable(g.cells, g.aligns);
 }
 
+/** Line-surgical rewrite for an IN-PLACE cell edit (#46): replace only the source lines of
+ *  rows whose cells actually changed, keeping every other line BYTE-IDENTICAL — deliberately
+ *  NO column repadding. A formatTable() commit repads the whole table whenever a cell edit
+ *  changes a column's max width, turning a one-cell edit into a whole-table diff; the
+ *  save-time three-way merge then sees any concurrent EXTERNAL edit to another row of the
+ *  same table as overlapping and drops it, and undo's inverse restores the whole pre-commit
+ *  table, wiping it there too. Alignment drift on the edited line is the accepted cost;
+ *  structural ops (add/delete row/column, Enter-new-row) still go through formatTable.
+ *  Returns null when the shapes don't line up — the caller falls back to formatTable. */
+export function surgicalTableEdit(before: string, orig: string[][], next: string[][]): string | null {
+  if (next.length !== orig.length) return null; // row count changed: structural, not in-place
+  const lines = before.split("\n");
+  if (lines.length !== next.length + 1) return null; // header + separator + body rows
+  const out = lines.slice();
+  for (let r = 0; r < next.length; r++) {
+    const a = orig[r] ?? [];
+    const b = next[r];
+    if (b.length === a.length && b.every((c, i) => c === a[i])) continue; // untouched row
+    out[r === 0 ? 0 : r + 1] = "| " + b.map((c) => encodeCell(c)).join(" | ") + " |";
+  }
+  return out.join("\n");
+}
+
 /** Re-format a block of raw table markdown LINES into aligned GFM (parse → pretty
  *  serialize). Prettifies source that was authored by hand (unpadded pipes) so revealing
  *  it as raw markdown shows tidy, aligned columns. `lines[0]` is the header, `lines[1]`
