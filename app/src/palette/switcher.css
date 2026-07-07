@@ -9,8 +9,16 @@
 /* Positioning context for the absolute bar. Harmless when idle (no offset children). */
 .editor-pane { position: relative; }
 
-/* The big top bar: spans the editor pane's width, covering the tab strip. Stacks above
-   the graph floater (z-index:2) so its dropdown reads over the graph. */
+/* CRITICAL: in switcher mode the graph floater is positioned over the whole editor body as the
+   backdrop, but its canvas is transparent where there's no glow — so the note pane BEHIND it
+   showed through (note title/text bleeding into the graph). Give the floater an opaque app-bg
+   fill ONLY while switcher mode is on, so the graph reads as a clean full-window backdrop. In
+   every other graph mode (sidebar mini, ::graph home tab) the floater stays transparent. */
+.layout.switcher-active .graph-floater { background: var(--bg); }
+
+/* The big top bar: spans the editor pane's width, covering the tab strip. Stacks above the graph
+   floater (z-index:2). Translucent + blurred so it reads as a panel FLOATING over the graph
+   rather than a hard modal slab (the graph glow faintly shows through the results). */
 .switcher-bar {
   position: absolute;
   top: 0;
@@ -19,9 +27,11 @@
   z-index: 20;
   display: flex;
   flex-direction: column;
-  background: var(--surface-1);
+  background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-modal);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
   font-family: var(--popover-font);
   animation: switcher-drop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -61,7 +71,7 @@
    stays visible beneath a long list. */
 .switcher-list {
   overflow-y: auto;
-  max-height: 46vh;
+  max-height: 40vh;
   padding: 6px;
   border-top: 1px solid var(--border-soft);
 }
