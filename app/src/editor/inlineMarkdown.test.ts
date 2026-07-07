@@ -1,6 +1,6 @@
 // app/src/editor/inlineMarkdown.test.ts
 import { test, expect } from "bun:test";
-import { tokenizeInline, renderInlineMarkdown } from "./inlineMarkdown";
+import { tokenizeInline, renderInlineMarkdown, iridescentBismuthCell } from "./inlineMarkdown";
 
 // --- tokenizeInline: splitting wikilinks + math out of the markdown runs -------------
 
@@ -75,5 +75,81 @@ test("renderInlineMarkdown HTML-escapes wikilink display text + target", () => {
 test("renderInlineMarkdown mixes a code span with a wikilink", () => {
   expect(renderInlineMarkdown("`lnames` see [[Drugs]]")).toBe(
     '<code>lnames</code> see <span class="cm-wikilink" data-wikilink="Drugs">Drugs</span>',
+  );
+});
+
+// --- iridescent "bismuth" inside a table cell (#9) ------------------------------------
+// A cell's inline markdown must pick up the same iridescent gradient span as prose /
+// reading-mode surfaces, wrapping whole-word "bismuth" but never inside code / links /
+// URLs / raw HTML / #tags (wikilinks + $math$ are separate segments, so never in an md run).
+
+test("iridescentBismuthCell wraps a whole-word bismuth, preserving casing", () => {
+  expect(iridescentBismuthCell("I love Bismuth crystals")).toBe(
+    'I love <span class="bismuth-word">Bismuth</span> crystals',
+  );
+});
+
+test("iridescentBismuthCell leaves text with no whole-word bismuth untouched", () => {
+  expect(iridescentBismuthCell("bismuths and embismuth")).toBe("bismuths and embismuth");
+  expect(iridescentBismuthCell("plain cell text")).toBe("plain cell text");
+});
+
+test("iridescentBismuthCell skips bismuth inside a code span", () => {
+  expect(iridescentBismuthCell("run `bismuth serve` now")).toBe("run `bismuth serve` now");
+});
+
+test("iridescentBismuthCell skips bismuth inside a markdown link + bare URL", () => {
+  expect(iridescentBismuthCell("[bismuth](https://bismuth.io)")).toBe("[bismuth](https://bismuth.io)");
+  expect(iridescentBismuthCell("see https://x/bismuth here")).toBe("see https://x/bismuth here");
+});
+
+test("iridescentBismuthCell skips bismuth inside a #tag", () => {
+  expect(iridescentBismuthCell("tagged #bismuth today")).toBe("tagged #bismuth today");
+});
+
+test("iridescentBismuthCell wraps prose bismuth while masking a protected copy", () => {
+  // The bare word is wrapped; the copy inside the code span is left literal.
+  expect(iridescentBismuthCell("bismuth vs `bismuth`")).toBe(
+    '<span class="bismuth-word">bismuth</span> vs `bismuth`',
+  );
+});
+
+test("iridescentBismuthCell does not corrupt numbers or stray punctuation around a mask", () => {
+  // Restoration must not eat a bare number that happens to sit near a masked region.
+  expect(iridescentBismuthCell("costs 5 for `bismuth`")).toBe("costs 5 for `bismuth`");
+});
+
+test("renderInlineMarkdown renders bismuth in a cell as the shared gradient span", () => {
+  expect(renderInlineMarkdown("love bismuth")).toBe('love <span class="bismuth-word">bismuth</span>');
+});
+
+test("renderInlineMarkdown keeps bismuth in a cell code span plain", () => {
+  expect(renderInlineMarkdown("`bismuth`")).toBe("<code>bismuth</code>");
+});
+
+// --- lists inside table cells (#15) ---------------------------------------------------
+// A `<br>`-separated run of `- `/`1. ` markers renders as a real <ul>/<ol> (cellList.ts
+// convention). Regression guard that the editor's cell-render path (renderDisplay →
+// renderInlineMarkdown) actually produces the list markup.
+
+test("renderInlineMarkdown renders a <br>-separated bullet cell as a <ul>", () => {
+  expect(renderInlineMarkdown("- a<br>- b<br>- c")).toBe(
+    '<ul class="bismuth-cell-list"><li>a</li><li>b</li><li>c</li></ul>',
+  );
+});
+
+test("renderInlineMarkdown renders a <br>-separated numbered cell as an <ol>", () => {
+  expect(renderInlineMarkdown("1. one<br>2. two")).toBe(
+    '<ol class="bismuth-cell-list"><li>one</li><li>two</li></ol>',
+  );
+});
+
+test("renderInlineMarkdown keeps a plain <br>-separated cell as inline lines (no list)", () => {
+  expect(renderInlineMarkdown("a<br>b")).toBe("a<br>b");
+});
+
+test("renderInlineMarkdown renders inline markdown + bismuth inside a cell list item", () => {
+  expect(renderInlineMarkdown("- **bold** bismuth<br>- b")).toBe(
+    '<ul class="bismuth-cell-list"><li><strong>bold</strong> <span class="bismuth-word">bismuth</span></li><li>b</li></ul>',
   );
 });

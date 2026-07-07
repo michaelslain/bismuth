@@ -647,7 +647,7 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         // Property rows carry their 1-based in-block line number (the `---` delimiters
         // never do), matching fenced code. `frontmatterOpen` is non-null here.
         deco.push(numberedLine("cm-frontmatter", line.number - (frontmatterOpen ?? 0)).range(line.from));
-        // Tint the `key:` portion in --accent (design .fm keys), leaving values --fg.
+        // Mark the `key:` portion (`.cm-fm-key` → a dimmed neutral grey, not accent), leaving values --fg.
         const km = FM_KEY_RE.exec(text);
         if (km) {
           const start = line.from + km[1].length;
@@ -1368,10 +1368,10 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Frontmatter (.fm in the redesign): a raised --surface-2 band with a 2px
-    // accent left bar (via inset shadow, so no text shift), keeping the text and
-    // validation squiggles at full strength. Keys render in --accent, values in
-    // --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
+    // Frontmatter (.fm in the redesign): monospace property rows with a neutral DARK-GREY left
+    // rule (never a theme-accent color) — matching the fenced code blocks + em-dash rule above so
+    // the whole block reads as a distinct-but-neutral "properties" panel. Keys render in a dimmed
+    // neutral grey, values in --fg, the `---` delimiters dim (see codeHighlight / markdown tokens).
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
@@ -1381,7 +1381,10 @@ export const livePreview = [
       // the frontmatter, making a code-block→body drag look only half-highlighted.
       "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)",
     },
-    ".cm-fm-key": { color: "var(--accent)" },
+    // Property KEYS (date / tags / icon …): a dimmed neutral grey, NOT a theme-accent color, so the
+    // frontmatter panel stays theme-agnostic dark grey (was `var(--accent)` — the re-flagged bug).
+    // Theme-aware (dims --fg toward the background) so it reads grey on both light + dark themes.
+    ".cm-fm-key": { color: "color-mix(in srgb, var(--fg) 55%, transparent)" },
     // Raw (active) table source — monospace pipes for structural / power edits.
     ".cm-table": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))" },
     // Rendered editable table (the block-replace widget). Cells are contenteditable.

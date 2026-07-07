@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { findBismuthWords, wrapBismuthWords, BISMUTH_SCAN_RE } from "./bismuthWord";
+import { findBismuthWords, wrapBismuthWords, bismuthWrapSource, BISMUTH_SCAN_RE } from "./bismuthWord";
 
 describe("findBismuthWords", () => {
   test("a lone 'bismuth' matches once, spanning the whole word", () => {
@@ -40,6 +40,35 @@ describe("wrapBismuthWords", () => {
 
   test("leaves partial-word matches untouched", () => {
     expect(wrapBismuthWords("bismuths embismuth", (w) => `<b>${w}</b>`)).toBe("bismuths embismuth");
+  });
+});
+
+describe("bismuthWrapSource", () => {
+  // The mask → wrap → restore transform shared by the reading-mode renderer + the table-cell
+  // renderer. Each caller supplies its own protected-span regex; here a small one covering inline
+  // code + bare URLs exercises the masking.
+  const PROTECT = /`+[^`\n]*?`+|https?:\/\/[^\s]+/gi;
+  const wrap = (w: string): string => `<x>${w}</x>`;
+
+  test("wraps a whole-word bismuth in bare prose", () => {
+    expect(bismuthWrapSource("a bismuth b", PROTECT, wrap)).toBe("a <x>bismuth</x> b");
+  });
+
+  test("never touches a protected region (code span / URL)", () => {
+    expect(bismuthWrapSource("`bismuth`", PROTECT, wrap)).toBe("`bismuth`");
+    expect(bismuthWrapSource("https://bismuth.io", PROTECT, wrap)).toBe("https://bismuth.io");
+  });
+
+  test("wraps prose but not a protected copy in the same string", () => {
+    expect(bismuthWrapSource("bismuth vs `bismuth`", PROTECT, wrap)).toBe("<x>bismuth</x> vs `bismuth`");
+  });
+
+  test("returns the input untouched when there is no whole-word match (cheap gate)", () => {
+    expect(bismuthWrapSource("bismuths and prose", PROTECT, wrap)).toBe("bismuths and prose");
+  });
+
+  test("restoration never corrupts a bare number sitting next to a masked span", () => {
+    expect(bismuthWrapSource("costs 5 for `bismuth`", PROTECT, wrap)).toBe("costs 5 for `bismuth`");
   });
 });
 
