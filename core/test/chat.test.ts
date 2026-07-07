@@ -14,6 +14,7 @@ import {
   makeUserMessage,
   abortTurn,
   extractEditorContextPaths,
+  unstreamedAssistantFrames,
   type ChatFrame,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
@@ -117,6 +118,48 @@ describe("makeUserMessage (content shape)", () => {
   });
 });
 
+// unstreamedAssistantFrames is the BUG #19 de-dupe rule: a locally-executed built-in slash command
+// (/context, /help, …) delivers its output as a complete assistant text block with NO stream_event
+// deltas, so the drain loop (which normally skips already-streamed text) must emit it directly. Pure,
+// no `claude` needed.
+describe("unstreamedAssistantFrames (BUG #19: slash-command output de-dupe)", () => {
+  const asstMsg = (blocks: unknown[]) => ({ message: { content: blocks } });
+
+  test("nothing streamed → emit the assistant text block (the /context case)", () => {
+    const msg = asstMsg([{ type: "text", text: "## Context Usage\n2%" }]);
+    expect(unstreamedAssistantFrames(msg, 0, 0)).toEqual([
+      { type: "assistant-text", text: "## Context Usage\n2%" },
+    ]);
+  });
+
+  test("text already streamed (len>0) → skip the final text block (no double-emit)", () => {
+    const msg = asstMsg([{ type: "text", text: "hello world" }]);
+    expect(unstreamedAssistantFrames(msg, 11, 0)).toEqual([]);
+  });
+
+  test("thinking not streamed → emit it; text streamed → skip it", () => {
+    const msg = asstMsg([
+      { type: "thinking", thinking: "hmm" },
+      { type: "text", text: "streamed reply" },
+    ]);
+    expect(unstreamedAssistantFrames(msg, 14, 0)).toEqual([{ type: "thinking", text: "hmm" }]);
+  });
+
+  test("tool_use blocks are never emitted here (translateSdkMessage owns those)", () => {
+    const msg = asstMsg([{ type: "tool_use", id: "t1", name: "Bash", input: {} }]);
+    expect(unstreamedAssistantFrames(msg, 0, 0)).toEqual([]);
+  });
+
+  test("empty text block is not emitted", () => {
+    const msg = asstMsg([{ type: "text", text: "" }]);
+    expect(unstreamedAssistantFrames(msg, 0, 0)).toEqual([]);
+  });
+
+  test("non-array content (a plain string) yields nothing", () => {
+    expect(unstreamedAssistantFrames({ message: { content: "plain" } }, 0, 0)).toEqual([]);
+  });
+});
+
 // These are real round-trips: they spawn the user's `claude` binary (machine-login auth, no API
 // key) against a TEMP dir — NEVER the vault. Guarded to skip gracefully when claude isn't on PATH
 // or can't be reached, so the suite stays green in environments without it.
@@ -210,6 +253,23 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
 
     await waitFor((f) => f.type === "done");
     expect(frames.some((f) => f.type === "assistant-text")).toBe(true);
+  }, 180_000);
+
+  test("BUG #19: a built-in slash command (/context) produces visible assistant output", async () => {
+    // /context runs LOCALLY and returns its output as a complete assistant text block with NO
+    // streaming deltas. Before the fix the drain loop dropped it (it skips already-streamed text),
+    // so the command appeared to do nothing. Assert the output actually reaches the client.
+    const cwd = await newTempDir();
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    const { sink, frames, waitFor } = makeCollector();
+
+    sendMessage(chatId, "/context", cwd, sink);
+
+    await waitFor((f) => f.type === "done");
+    const texts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text");
+    expect(texts.length).toBeGreaterThan(0);
+    expect(texts.map((t) => t.text).join("")).toMatch(/context/i);
   }, 180_000);
 
   test("permission ALLOW: approving Write creates the file", async () => {
