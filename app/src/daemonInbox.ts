@@ -19,7 +19,7 @@ export const inboxPages = pages;
 /** "Needs review": due pages, oldest-created first. */
 export const duePages = createMemo<DaemonPage[]>(() => dueSorted(pages(), Date.now()));
 
-/** Count of due pages — drives the InboxBell badge. */
+/** Count of due pages — drives the sidebar-toolbar inbox button's badge (App.tsx). */
 export const dueCount = createMemo<number>(() => duePages().length);
 
 /** True while any page is mid-run — App.tsx tightens its poll interval on this. */

@@ -223,6 +223,9 @@ export const SETTINGS_SCHEMA: Schema = {
     default: [
       { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
+      // The daemon inbox lives here by default (hidden while the daemon is off; carries a
+      // due-count badge — see App.tsx's toolbar render). Removable/movable like any button.
+      { command: "open-inbox", icon: "Inbox" },
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
   },

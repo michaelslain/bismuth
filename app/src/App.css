@@ -120,6 +120,10 @@ body { background: var(--bg); color: var(--fg); }
    .tabbar's height is its 40px tabs PLUS its own 1px bottom border (= 41px total), so the
    toolzone must be 41px (border-box) for the two bottom borders to land on the same line. */
 .sidebar-icons { display: flex; align-items: center; gap: 3px; height: 41px; padding: 0 10px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+/* A toolbar button that carries a live count (the daemon inbox): the wrap anchors the badge
+   to the button's top-right corner without disturbing the icon row's layout. */
+.toolbar-btn-wrap { position: relative; display: inline-flex; }
+.toolbar-badge { position: absolute; top: -1px; right: -3px; pointer-events: none; font-size: 9.5px; font-weight: 600; line-height: 1; color: var(--bg); background: var(--accent); border-radius: 8px; padding: 2px 4px; }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */

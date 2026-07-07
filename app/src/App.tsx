@@ -28,8 +28,7 @@ import { BismuthInstallModal } from "./BismuthInstallModal";
 import { GcalConnectModal } from "./GcalConnectModal";
 import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
-import { InboxBell } from "./InboxBell";
-import { refreshDaemonPages, anyWorking } from "./daemonInbox";
+import { refreshDaemonPages, anyWorking, dueCount } from "./daemonInbox";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { pushClosedSession, popClosedSession } from "./closedSession";
@@ -1240,7 +1239,7 @@ export default function App() {
   });
 
   // Daemon inbox: unlike the agents/daemon graph-mode polls above, this one isn't gated on
-  // which tab is showing — the InboxBell badge needs to stay live regardless (plan §3, §6).
+  // which tab is showing — the toolbar inbox badge needs to stay live regardless (plan §3, §6).
   // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
   // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
   // interval whenever it flips.
@@ -1596,16 +1595,27 @@ export default function App() {
               // single `command`. The button runs the FIRST resolvable command; it's disabled
               // only when none resolve (see resolveButtonCommands).
               const cmd = () => resolveButtonCommands(btn, commands())[0];
+              // The inbox button is a DAEMON surface: hidden entirely while the daemon is off
+              // (the default toolbar ships it for every vault), and it carries the live
+              // due-count badge the palette command can't.
+              const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
               return (
-                <Show
-                  when={cmd()}
-                  fallback={
-                    <IconButton icon={btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${btn.command}`} />
-                  }
-                >
-                  {(c) => (
-                    <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
-                  )}
+                <Show when={!hidden()}>
+                  <Show
+                    when={cmd()}
+                    fallback={
+                      <IconButton icon={btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${btn.command}`} />
+                    }
+                  >
+                    {(c) => (
+                      <span class="toolbar-btn-wrap">
+                        <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
+                        <Show when={c().id === "open-inbox" && dueCount() > 0}>
+                          <span class="toolbar-badge">{dueCount()}</span>
+                        </Show>
+                      </span>
+                    )}
+                  </Show>
                 </Show>
               );
             }}
@@ -1616,7 +1626,6 @@ export default function App() {
       </aside>
       <main class="editor-pane">
         <UpdateBanner />
-        <InboxBell onOpen={openInbox} />
         <div class="tabbar" data-tabstrip="true">
           <div class="tabbar-nav">
             <IconButton
