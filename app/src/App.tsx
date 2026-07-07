@@ -64,7 +64,7 @@ import {
   setContent, setRatio, findLeafByContent, leaves, leafCount, pruneMissing, movePane,
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
   serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned, splitColdLaunch,
-  shouldOpenInNewTab,
+  decideOpen,
 } from "./panes";
 import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
@@ -554,46 +554,33 @@ export default function App() {
     graph().nodes.filter((n) => n.kind === "tag").map((n) => n.label.replace(/^#/, "")),
   );
 
-  // Append a brand-new tab showing `content` and make it active. Used when there's nothing to
-  // navigate in place (no active tab, or the active tab is pinned/protected).
+  // Append a brand-new tab showing `content` and make it active. The "new" branch of
+  // decideOpen's decision — i.e. the default outcome of opening a note (see openFile).
   const openInFreshTab = (content: string) => {
     const tab = makeTab(content);
     setTabs((ts) => [...ts, tab]);
     setActiveTabId(tab.id);
     recordNav(tab.root.id, content);
   };
-  // Navigate to a content id IN PLACE: replace the active tab's focused pane and push
-  // onto that pane's history (Obsidian-style). If the content is already showing in the
-  // focused pane it's a no-op; if it's open in another pane of the same tab we focus that
-  // pane instead of duplicating it. With no active tab — or a PINNED active tab, whose
-  // content is protected — we open a fresh tab instead of replacing anything. This is the
-  // path for wikilinks, the file tree, the quick switcher, graph-node clicks and daily notes
-  // — the substrate the Cmd+[ / Cmd+] history walks.
+  // Open a content id in a NEW tab — always (#56: opening a note must never clobber the tab
+  // you're on). If the active tab's focused pane already shows it, do nothing; if it's
+  // already open in some tab (this one, in another pane, or a different tab entirely) we
+  // focus that tab/pane instead of spawning a duplicate. Otherwise: fresh tab. This is the
+  // path for wikilinks, the file tree, the quick switcher, graph-node clicks, search results
+  // and daily notes.
   const openFile = (path: string) => {
-    const at = activeTab();
-    if (!at) {
-      openInFreshTab(path);
-      return;
+    const decision = decideOpen(tabs(), activeTab(), path);
+    switch (decision.kind) {
+      case "noop":
+        return;
+      case "focus":
+        setActiveTabId(decision.tabId);
+        updateTab(decision.tabId, (t) => ({ ...t, focusId: decision.leafId }));
+        return;
+      case "new":
+        openInFreshTab(path);
+        return;
     }
-    const focused = leaves(at.root).find((l) => l.id === at.focusId);
-    if (focused?.content === path) return; // already showing here
-    const existing = findLeafByContent(at.root, path);
-    if (existing) {
-      updateActiveTab((t) => ({ ...t, focusId: existing.id }));
-      return;
-    }
-    // A PINNED tab is protected (Obsidian/VSCode-style): don't overwrite its focused pane —
-    // open the file in its own new tab. Runs after the no-op/already-open checks so re-opening
-    // a file the pinned tab already shows stays a focus, not a duplicate tab.
-    if (shouldOpenInNewTab(at)) {
-      openInFreshTab(path);
-      return;
-    }
-    // Seed the pane's baseline (its current content) so Back returns to it, for panes
-    // that have no history yet (restored from storage, or freshly split).
-    if (focused && !histories.has(at.focusId)) recordNav(at.focusId, focused.content);
-    updateActiveTab((t) => ({ ...t, root: setContent(t.root, t.focusId, path) }));
-    recordNav(at.focusId, path);
   };
   // Open a content id in its OWN tab (tools — settings/search/terminal/calendar/etc — and
   // the New Tab command). A multi-pane active tab loads it into the focused pane (don't
