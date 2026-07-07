@@ -1443,9 +1443,11 @@ export function ChatView(props: { chatId: string }) {
     return (
       <Show when={p.part.text.trim()}>
         <div class="chat-bubble-wrap" onContextMenu={(e) => onBubbleContextMenu(e, p.part.text)}>
-          {/* Slash-command result (#28): a boxed, monospace "command output" panel — like the
-              Claude Code TUI's /context view — instead of loose prose. Raw text (not markdown) so a
-              pre-formatted panel keeps its alignment; wide panels scroll inside the box. */}
+          {/* Slash-command result (#28): a boxed "command output" panel — like the Claude Code TUI's
+              /context view. The BODY renders through the SAME markdown pipeline as ordinary assistant
+              prose (renderNoteBody → sanitized HTML on .chat-bubble), so `##` headings, `**bold**`,
+              code fences, and `| … |` pipe tables display FORMATTED — not as literal raw text. Only
+              the subtle boxed container + "Command output" label frame it; wide tables scroll inside. */}
           <Show
             when={p.command}
             fallback={<div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />}
@@ -1454,7 +1456,7 @@ export function ChatView(props: { chatId: string }) {
               <div class="chat-command-output-head">
                 <Icon value="SquareTerminal" size={12} /> Command output
               </div>
-              <pre class="chat-command-output-body">{p.part.text}</pre>
+              <div class="chat-bubble assistant chat-command-output-body" innerHTML={renderNoteBody(p.part.text)} />
             </div>
           </Show>
           <CopyButton text={p.part.text} />
