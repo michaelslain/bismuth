@@ -388,12 +388,20 @@ export async function readFolderIcons(vault: string): Promise<Record<string, str
 }
 
 /** Pull a clean `{folderPath: "chat-only"|"hidden"}` map out of parsed settings data. */
+/** Strip a trailing slash + collapse repeated slashes so a folder key matches the slash-free
+ *  paths resolveVisibility compares against. A trailing slash is routine from shell/CLI tab-
+ *  completion; without normalizing, such a key silently never enforces. Applied on both WRITE
+ *  (setFolderVisibility) and READ (here) so keys already persisted with a slash still enforce. */
+function normalizeFolderKey(k: string): string {
+  return k.replace(/\/+$/, "").replace(/\/{2,}/g, "/");
+}
+
 function readFolderVisibilityFrom(data: Record<string, unknown>): Record<string, "chat-only" | "hidden"> {
   const raw = data.folderVisibility;
   const out: Record<string, "chat-only" | "hidden"> = {};
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (v === "chat-only" || v === "hidden") out[k] = v;
+      if (v === "chat-only" || v === "hidden") out[normalizeFolderKey(k)] = v;
     }
   }
   return out;
@@ -459,17 +467,22 @@ export async function setFolderVisibility(
   vault: string,
   path: string,
   visibility: "chat-only" | "hidden" | null | undefined,
-): Promise<void> {
-  await withSettingsMutex(vault, async () => {
+): Promise<boolean> {
+  // Normalize the key so a trailing-slash path (shell/CLI tab-completion) actually enforces.
+  const key = normalizeFolderKey(path);
+  // Returns whether the change PERSISTED — a corrupt .settings is left untouched and returns
+  // false, so the caller (POST /folder-visibility) can refuse instead of optimistically claiming
+  // a "hidden" state that was never written (a false badge/enforcement desync).
+  return withSettingsMutex(vault, async () => {
     await initializeSettings(vault); // no-op if present; guarantees a file to edit
     const raw = await readNote(vault, SETTINGS_FILE);
     let doc: Document;
     try {
       doc = parseDocument(raw);
     } catch {
-      return; // unparseable — never clobber existing content
+      return false; // unparseable — never clobber existing content
     }
-    if (doc.errors.length) return; // corrupt — leave the file for the user to fix
+    if (doc.errors.length) return false; // corrupt — leave the file for the user to fix
     if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
       doc.contents = new YAMLMap();
     }
@@ -479,11 +492,12 @@ export async function setFolderVisibility(
       doc.setIn(["folderVisibility"], map);
     }
     if (visibility === "chat-only" || visibility === "hidden") {
-      (map as YAMLMap).set(path, visibility);
+      (map as YAMLMap).set(key, visibility);
     } else {
-      (map as YAMLMap).delete(path);
+      (map as YAMLMap).delete(key);
     }
     await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+    return true;
   });
 }
 

@@ -147,8 +147,16 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
         }
       : {}),
     // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault
-    // via its own --vault/--dir flags, not just this one) — unconditional.
-    disallowedTools: ["mcp__bismuth__bismuth_cli"],
+    // via its own --vault/--dir flags) — always. When ANY file is restricted, ALSO hard-disable
+    // Grep and Glob: their per-file managedSettings deny only matches a call whose OWN `path`
+    // argument is the denied file, but an UNSCOPED Grep(pattern, path: undefined) scans the whole
+    // vault (including a hidden file) and returns its matching lines to the model — which, for the
+    // daemon, IS the leak surface (it consolidates what it sees). The only reliable gate for a
+    // broad scan is to forbid the tools outright. The daemon has no canUseTool second layer, so
+    // this is load-bearing, not defense-in-depth.
+    disallowedTools: denyEntries.length > 0
+      ? ["mcp__bismuth__bismuth_cli", "Grep", "Glob"]
+      : ["mcp__bismuth__bismuth_cli"],
   }
 
   // Point the SDK at the user's installed claude binary (machine-login auth, no API key).

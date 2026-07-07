@@ -42,6 +42,7 @@ import {
   resumeSession as chatResume,
   listChatSessions,
   sessionHistoryFrames,
+  invalidateChatVisibility,
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
@@ -1163,6 +1164,10 @@ export function createServer(cfg: CoreConfig) {
         }
         const next = setFrontmatterKey(raw, key, value);
         await writeNote(cfg.vault, path, next);
+        // A file's `visibility:` edit re-gates open chats — but ONLY that key: /set-property is
+        // also the Bases kanban drag-drop path, so invalidating on every property write would
+        // needlessly respawn every chat on each kanban move.
+        if (key === "visibility") invalidateChatVisibility();
         return ok();
       },
       (b) => b.path,
@@ -1178,6 +1183,7 @@ export function createServer(cfg: CoreConfig) {
         }
         const next = deleteFrontmatterKey(raw, key);
         await writeNote(cfg.vault, path, next);
+        if (key === "visibility") invalidateChatVisibility(); // clearing visibility re-gates open chats
         return ok();
       },
       (b) => b.path,
@@ -1270,14 +1276,25 @@ export function createServer(cfg: CoreConfig) {
         if (visibility !== "chat-only" && visibility !== "hidden" && visibility !== null && visibility !== undefined) {
           return error("invalid visibility", 400);
         }
-        await setFolderVisibility(cfg.vault, path, visibility ?? null);
+        // Only claim success — and patch the in-memory config / badge — if the write actually
+        // PERSISTED. A corrupt .settings leaves the map untouched and returns false; optimistically
+        // patching appConfig then would show a "hidden" badge (and imply enforcement) for a state
+        // that was never written. Normalize the key to match setFolderVisibility's own write.
+        const persisted = await setFolderVisibility(cfg.vault, path, visibility ?? null);
+        if (!persisted) {
+          return error("settings file is invalid — fix .settings before changing folder visibility", 409);
+        }
+        // A folder-visibility change re-gates every open chat: flag live sessions so their next
+        // turn respawns query() with a fresh deny list (managedSettings/sandbox are spawn-fixed).
+        invalidateChatVisibility();
+        const key = path.replace(/\/+$/, "").replace(/\/{2,}/g, "/");
         // Same synchronous appConfig patch as /folder-icon: GET /tree overlays visibility
         // from the cached appConfig, and the watcher-driven loadAppConfig refresh lands a
         // debounce (~250ms) AFTER this mutation's SSE — patch in-memory so the client's
         // immediate refetch already sees the new value instead of a stale flash.
         const visibilities = { ...((appConfig.folderVisibility as Record<string, Visibility> | undefined) ?? {}) };
-        if (visibility) visibilities[path] = visibility;
-        else delete visibilities[path];
+        if (visibility) visibilities[key] = visibility;
+        else delete visibilities[key];
         appConfig = { ...appConfig, folderVisibility: visibilities };
         return ok();
       },
