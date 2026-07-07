@@ -1818,16 +1818,6 @@ export default function App() {
     openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
   }
 
-  // "Arc" offset for a vertical-rail row: a gentle parabolic bow pushing the middle rows a
-  // few px toward the editor (leftward) while the rail is COLLAPSED, so the icon column
-  // reads as a soft arc rather than a rigid line. Zeroed once the rail expands on hover
-  // (CSS overrides the inline transform) so the revealed names align flush. 0 for ≤1 tab.
-  function railArcShift(i: number, n: number): number {
-    if (n <= 1) return 0;
-    const t = (2 * i) / (n - 1) - 1; // -1 (top) … 0 (middle) … 1 (bottom)
-    return -7 * (1 - t * t); // px; max bow at the middle row
-  }
-
   return (
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
@@ -2031,26 +2021,30 @@ export default function App() {
           strip. The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
-          reflows. Back/forward nav sits at the top, the tab rows fill the scrollable middle,
-          and the +/terminal/chat action buttons sit at the bottom — all stacked vertically.
-          Rows carry a subtle parabolic "arc" x-offset while collapsed (railArcShift), zeroed
-          by CSS once the rail expands so the revealed names align flush. */}
+          reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the back/forward
+          nav (‹ › side-by-side once expanded), then the scrollable tab-row list. Collapsed
+          (48px) the toolbar + nav wrap into a centered single-icon column aligned with the
+          tab icons below; expanded (240px) they lay out as horizontal rows. Rows sit in a
+          straight, centered icon column (no arc offset). */}
       <Show when={settings.ui.verticalTabs}>
         <div class="tab-rail">
           <div class="tab-rail-inner">
+            <div class="tab-rail-actions">
+              {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
+              <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
+            </div>
             <div class="tab-rail-nav">
               <IconButton icon="ChevronLeft" label="Back (⌘[)" iconSize={18} disabled={!canGoBack()} onClick={() => historyBack()} />
               <IconButton icon="ChevronRight" label="Forward (⌘])" iconSize={18} disabled={!canGoForward()} onClick={() => historyForward()} />
             </div>
             <div class="tab-rail-list">
               <Index each={tabs()}>
-                {(t, i) => (
+                {(t) => (
                   <div
                     class="tab-rail-row"
                     classList={{ active: activeTabId() === t().id, pinned: !!t().pinned }}
                     // Native tooltip surfaces the name while the rail is collapsed to icons.
                     title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                    style={{ transform: `translateX(${railArcShift(i, tabs().length)}px)` }}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
                       setActiveTabId(t().id);
@@ -2088,10 +2082,6 @@ export default function App() {
                   </div>
                 )}
               </Index>
-            </div>
-            <div class="tab-rail-actions">
-              {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
-              <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
             </div>
           </div>
         </div>
