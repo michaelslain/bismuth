@@ -154,8 +154,8 @@ body { background: var(--bg); color: var(--fg); }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
-.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tabbar-nav .btn--icon, .tab-rail-actions .btn--icon, .tab-rail-nav .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
-.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tabbar-nav .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .tab-rail-nav .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tab-rail-actions .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 /* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row.
@@ -267,13 +267,6 @@ body { background: var(--bg); color: var(--fg); }
    Styled to match the sidebar toolbar icon buttons (same size, muted color, hover). */
 .tabbar-actions { display: flex; align-items: center; gap: 3px; padding: 0 8px; flex: 0 0 auto; }
 
-/* Leading back/forward navigation group, sitting before the first tab in the strip.
-   Same icon-button chrome as .tabbar-actions; a right divider sets it off from the tabs. */
-.tabbar-nav { display: flex; align-items: center; gap: 3px; padding: 0 8px; flex: 0 0 auto; border-right: 1px solid var(--border-soft); }
-/* A disabled back/forward icon greys out (the base .btn--icon.btn--normal opacity:1 otherwise
-   wins over .btn:disabled by source order, so re-assert the dimmed look at higher specificity). */
-.tabbar-nav .btn--icon:disabled { opacity: 0.35; cursor: default; }
-
 /* Insertion caret shown in the strip when a PANE is dragged toward it (detach to
    a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
 .tab-caret { width: 2px; align-self: stretch; margin: 3px 0; background: var(--accent); border-radius: 2px; box-shadow: 0 0 6px var(--accent); flex: 0 0 auto; }
@@ -312,14 +305,12 @@ body { background: var(--bg); color: var(--fg); }
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
-/* Top action toolbar + back/forward nav. Both are LEFT-packed flex-wrap rows: collapsed
-   (48px, content 28px) each 28px button wraps to its own line → a centered single-icon
-   column whose centre lands at 24px = the collapsed rail's midline / the tab icon column;
-   expanded (240px) they fit on one line as horizontal rows (nav = ‹ › side-by-side). */
-.tab-rail-nav, .tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
+/* Top action toolbar. A LEFT-packed flex-wrap row: collapsed (48px, content 28px) each
+   28px button wraps to its own line → a centered single-icon column whose centre lands at
+   24px = the collapsed rail's midline / the tab icon column; expanded (240px) the buttons
+   fit on one line as a horizontal row. */
+.tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
 .tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
-.tab-rail-nav { border-bottom: 1px solid var(--border-soft); }
-.tab-rail-nav .btn--icon:disabled { opacity: 0.35; cursor: default; }
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
