@@ -20,7 +20,7 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, hasActiveCellEdit, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { findExtension } from "./findPanel";
 
 const DOM_GLOBALS = [
@@ -321,5 +321,48 @@ describe("#31 find highlights inside the rendered table", () => {
     wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
     expect(wrap.querySelectorAll(`mark.${TABLE_FIND_MATCH_CLASS}`).length).toBe(0);
     view.destroy();
+  });
+});
+
+// ── #46: hasActiveCellEdit — the guard that defers disk reconciles while a cell is being
+// edited. A focused cell's keystrokes live only in its contenteditable DOM until the blur
+// commit; a reconcile that intersects the table rebuilds the widget (eq() compares
+// serialized source) and would destroy them.
+describe("#46 hasActiveCellEdit", () => {
+  const TABLE = "| a | b |\n| --- | --- |\n| 1 | 2 |";
+
+  test("false with no focus, true while a cell is focused, false again after blur", () => {
+    const view = mount(TABLE);
+    expect(hasActiveCellEdit(view)).toBe(false);
+
+    const cell = view.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.focus();
+    expect(document.activeElement).toBe(cell);
+    expect(hasActiveCellEdit(view)).toBe(true);
+
+    cell.blur();
+    expect(hasActiveCellEdit(view)).toBe(false);
+    view.destroy();
+  });
+
+  test("false when focus is inside the view but NOT a table cell", () => {
+    const view = mount(TABLE);
+    const stray = document.createElement("div");
+    stray.setAttribute("contenteditable", "true");
+    view.dom.appendChild(stray);
+    stray.focus();
+    expect(hasActiveCellEdit(view)).toBe(false);
+    view.destroy();
+  });
+
+  test("false when a cell of a DIFFERENT view is focused", () => {
+    const a = mount(TABLE);
+    const b = mount(TABLE);
+    const cellB = b.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cellB.focus();
+    expect(hasActiveCellEdit(b)).toBe(true);
+    expect(hasActiveCellEdit(a)).toBe(false);
+    a.destroy();
+    b.destroy();
   });
 });
