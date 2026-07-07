@@ -33,6 +33,27 @@ test("2D layout is flat (z = 0)", () => {
   for (const id in pos) expect(pos[id][2]).toBe(0);
 });
 
+test("3D layout flattens into a disc when hubs are present (planet-with-rings shape)", () => {
+  const n = 80;
+  const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}` }));
+  const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: "n0", to: `n${i + 1}` }));
+  const pos = computeLayout({ nodes, edges }, { refineTicks: 150 });
+  let sy2 = 0, sxz2 = 0;
+  for (const id in pos) { const [x, y, z] = pos[id]; sy2 += y * y; sxz2 += x * x + z * z; }
+  const rmsY = Math.sqrt(sy2 / n), rmsXZ = Math.sqrt(sxz2 / (2 * n));
+  expect(rmsY).toBeLessThan(rmsXZ * 0.8);
+});
+
+test("discBias: 0 is an escape hatch back to the old roughly-spherical shape", () => {
+  const n = 80;
+  const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}` }));
+  const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: "n0", to: `n${i + 1}` }));
+  const pos = computeLayout({ nodes, edges }, { refineTicks: 150, discBias: 0 });
+  let sy2 = 0, sxz2 = 0;
+  for (const id in pos) { const [x, y, z] = pos[id]; sy2 += y * y; sxz2 += x * x + z * z; }
+  expect(Math.sqrt(sy2 / n)).toBeGreaterThan(Math.sqrt(sxz2 / (2 * n)) * 0.85);
+});
+
 test("two clusters joined by a bridge separate spatially", () => {
   // Two 6-cliques A0..A5 and B0..B5, joined by a single A0-B0 bridge.
   const nodes = [...Array(6)].map((_, i) => ({ id: `A${i}` })).concat([...Array(6)].map((_, i) => ({ id: `B${i}` })));

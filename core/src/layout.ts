@@ -3,7 +3,10 @@
 //   1. PivotMDS (Brandes & Pich) — a fast, deterministic GLOBAL placement from graph-theoretic
 //      distances to a handful of pivot nodes. Gets the overall shape right in O(k·(V+E)).
 //   2. A short d3-force-3d REFINEMENT using the same forces/constants as the renderer, to polish
-//      local spacing. Starting from PivotMDS means it converges in a fraction of the iterations a
+//      local spacing — this stage also carries a degree-weighted disc-flatten bias in 3D (see
+//      discFlattenForce) so hub-heavy graphs settle into a "planet with rings" shape: heavily-linked
+//      hubs stay roughly spherical while sparse leaves flatten toward the Y=0 plane.
+//      Starting from PivotMDS means it converges in a fraction of the iterations a
 //      random start needs — that's the whole point, since the force solve is the expensive part.
 //
 // Pure (no DOM, no Bun/fs) so it runs in both Bun (core) and a browser Worker (app).
@@ -57,6 +60,13 @@ export interface LayoutOptions {
   virtualLinkStrength?: number;
   virtualAnchors?: number;
   virtualDistMult?: number;
+  /**
+   * "Planet with rings" 3D shape bias — extra pull toward the Y=0 plane (dim===3 only), weighted by
+   * how peripheral a node is (see discFlattenForce). 0 = the old, roughly-spherical behavior; higher
+   * = flatter disc. Purely a function of each node's OWN existing (real-edge) degree — no extra
+   * analysis pass, no change to 2D output, no change to the refine tick budget.
+   */
+  discBias?: number;
 }
 
 export type Positions = Record<string, [number, number, number]>;
@@ -72,7 +82,7 @@ export type Positions = Record<string, [number, number, number]>;
 // without overlaps, while small multi-node clusters stay recognizable lobes. Short (0.8× linkDist) +
 // strong (1.2) + 4 anchors: short/strong beats the long-range repulsion; the extra anchors distribute
 // each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8 };
+const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0.7 };
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
 // help it collapses into a hairball. Push communities apart (repulsion ×), let them breathe (centering
@@ -101,6 +111,24 @@ const SIZE_MAX_MULT = 6;
 const COLLIDE_SIZE_PADDING = 1.55; // gap around big hubs (was 1.25) so they don't visually cover neighbors
 const degreeScale = (deg: number) => Math.min(SIZE_MAX_MULT, SIZE_MIN_MULT + SIZE_DEGREE_GAIN * Math.sqrt(deg));
 const drawnNodeRadius = (scale: number) => (NODE_SIZE * scale * Math.tan(((NODE_FOV_DEG * Math.PI) / 180) / 2)) / 2;
+
+/** Extra per-node pull toward Y=0, weighted by peripherality (1 - hub-ness on the SAME degreeScale
+ *  curve used for collide sizing/draw size). Hubs (hubT→1) barely move; leaves (hubT→0) flatten hard.
+ *  A pure function of realDeg — reused across full-graph/2nd-brain/3rd-brain/daemon layouts alike. */
+function discFlattenForce(nodes: RN[], realDeg: number[], bias: number): (alpha: number) => void {
+  const hubT = realDeg.map((d) => {
+    const s = degreeScale(d);
+    return (s - SIZE_MIN_MULT) / (SIZE_MAX_MULT - SIZE_MIN_MULT);
+  });
+  return (alpha: number) => {
+    for (let i = 0; i < nodes.length; i++) {
+      const flatten = bias * (1 - hubT[i]);
+      if (flatten <= 0) continue;
+      const nd = nodes[i];
+      nd.vy = (nd.vy ?? 0) - (nd.y ?? 0) * flatten * alpha;
+    }
+  };
+}
 
 /** Deterministic LCG so layouts are reproducible (stable disk cache, testable). */
 function lcg(seed: number): () => number {
@@ -398,7 +426,10 @@ function prepareLayout(input: LayoutInput, o: typeof DEFAULTS & LayoutOptions): 
     .force("collide", forceCollide<RN>(collideRadiusFor).iterations(COLLIDE_ITERATIONS))
     .force("x", forceX<RN>(0).strength(centering))
     .force("y", forceY<RN>(0).strength(centering));
-  if (dim === 3) sim.force("z", forceZ<RN>(0).strength(o.centering));
+  if (dim === 3) {
+    sim.force("z", forceZ<RN>(0).strength(o.centering));
+    if (o.discBias > 0) sim.force("disc", discFlattenForce(nodes, realDeg, o.discBias));
+  }
   sim.stop();
   return { sim, nodes, dim, mainIdx };
 }
