@@ -7,64 +7,19 @@
 // server-side), so the frontend passes the bare target — no path lookup needed.
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import { StateField, type EditorState, type Extension, type Range } from "@codemirror/state";
-import { parseWikilink, resolveNotePath, type NoteCandidate } from "./wikilink";
+import { resolveNotePath, type NoteCandidate } from "./wikilink";
 import { stripCode } from "../../../core/src/wikilinks";
 import { api } from "../api";
 import { renderMarkdown } from "../bases/markdown";
 import { stripFrontmatter } from "../bases/cardBodySplit";
 import { MONO_FONT } from "./livePreview";
-
-const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico"]);
-const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac", "opus"]);
-const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogv", "mkv"]);
-
-type EmbedKind = "image" | "pdf" | "audio" | "video" | "note";
-
-interface EmbedSpec {
-  kind: EmbedKind;
-  src?: string;       // asset URL (media) — undefined for note transclusion
-  target?: string;    // the raw target/basename (note transclusion + alt text)
-  page?: string;      // PDF fragment, e.g. "page=2"
-  width?: number;
-  height?: number;
-  alt?: string;
-}
-
-/** Classify an embed target by its file extension. Anything that isn't a known media
- *  extension (including a bare `[[Note]]` with no extension) is treated as a note. `.draw`
- *  returns null — drawings are no longer embeddable in notes (draw-anywhere note ink replaced
- *  the embed; a stray `![[Sketch.draw]]` in old content renders as inert plain text). */
-function kindForTarget(target: string): EmbedKind | null {
-  const dot = target.lastIndexOf(".");
-  const ext = dot === -1 ? "" : target.slice(dot + 1).toLowerCase();
-  if (ext === "draw") return null;
-  if (IMAGE_EXT.has(ext)) return "image";
-  if (ext === "pdf") return "pdf";
-  if (AUDIO_EXT.has(ext)) return "audio";
-  if (VIDEO_EXT.has(ext)) return "video";
-  return "note";
-}
-
-/** Parse a wikilink alias as a size: `300` → width, `300x200` → width×height. */
-function parseSize(alias?: string): { width?: number; height?: number } {
-  if (!alias) return {};
-  const m = /^(\d+)(?:x(\d+))?$/.exec(alias.trim());
-  if (!m) return {};
-  return m[2] ? { width: +m[1], height: +m[2] } : { width: +m[1] };
-}
-
-/** Build an EmbedSpec from a `![[target#frag|alias]]` inner string, or null to skip. */
-function specForWikiEmbed(inner: string): EmbedSpec | null {
-  const { target, alias, heading } = parseWikilink(inner);
-  if (!target) return null;
-  const kind = kindForTarget(target);
-  if (kind === null) return null; // .draw — not embeddable
-  if (kind === "note") return { kind, target };
-  const src = api.assetUrl(target); // backend resolves filename-first
-  if (kind === "image") return { kind, src, alt: target, ...parseSize(alias) };
-  if (kind === "pdf") return { kind, src, page: heading };
-  return { kind, src };
-}
+import {
+  type EmbedKind,
+  type EmbedSpec,
+  computeSizeEdit,
+  specForMarkdownImage,
+  specForWikiEmbed,
+} from "./embedSpec";
 
 // Kinds whose box can be drag-resized (and the new size persisted as `|WxH`).
 const RESIZABLE_KINDS = new Set<EmbedKind>(["image", "pdf", "video"]);
@@ -117,6 +72,10 @@ class EmbedWidget extends WidgetType {
       } else {
         if (s.width) img.style.width = `${s.width}px`;
         if (s.height) img.style.height = `${s.height}px`;
+        // A sizeless inline image would render at its full natural size mid-paragraph, blowing
+        // up the line box and breaking text flow. Cap its height so it flows like an inline icon
+        // (a sized `![[icon|18]]` keeps its explicit dimensions and is never capped).
+        if (this.inline && !s.width && !s.height) img.style.maxHeight = "1.4em";
       }
     } else if (s.kind === "pdf" && s.src) {
       const frame = document.createElement("iframe");
@@ -154,53 +113,65 @@ class EmbedWidget extends WidgetType {
   }
 
   /** Free resize for PDF/video via native CSS `resize: both` (no aspect to fight, so no
-   *  flicker). pointerdown records the start size; pointerup persists `|WxH` only if it
-   *  changed. Implicit pointer capture routes the up event back even over a child iframe. */
+   *  flicker). pointerdown records the start size; the drag itself is the browser's native
+   *  resizer. The commit is bound to `window` (not the wrap) so a pointer-up that lands OUTSIDE
+   *  the box — or over a child iframe — still persists `|WxH` when the size actually changed. */
   private makeResizable(wrap: HTMLElement): void {
     wrap.classList.add("cm-embed-resizable");
     let startW = 0, startH = 0;
-    wrap.addEventListener("pointerdown", () => { startW = wrap.clientWidth; startH = wrap.clientHeight; });
-    wrap.addEventListener("pointerup", () => {
+    const onUp = () => {
+      window.removeEventListener("pointerup", onUp);
       const w = Math.round(wrap.clientWidth), h = Math.round(wrap.clientHeight);
       if (Math.abs(w - startW) > 1 || Math.abs(h - startH) > 1) this.ctx.commitResize(wrap, `${w}x${h}`);
+    };
+    wrap.addEventListener("pointerdown", () => {
+      startW = wrap.clientWidth; startH = wrap.clientHeight;
+      window.addEventListener("pointerup", onUp);
     });
   }
 
   /** Aspect-locked resize (images) via an invisible bottom-right corner handle with the
    *  diagonal resize cursor. I drive the drag myself — setting width and height = width/aspect
    *  on every pointermove — so there's no native-resize-vs-JS fight (and no flicker). The width
-   *  persists as `|W`. */
+   *  persists as `|W`.
+   *
+   *  Two things make the drag robust once the cursor leaves the 20px handle. (1) `setPointerCapture`
+   *  routes every subsequent pointer event to the handle — without it, Chrome delivers no moves to
+   *  our listeners during a contenteditable drag and the corner feels dead. (2) The move/up
+   *  listeners live on `window` (captured events still bubble up to it) as a fallback for webviews
+   *  — notably the Tauri WKWebView the desktop app runs in — that silently refuse capture: there
+   *  the events aren't retargeted but window still sees them, so the drag keeps tracking. */
   private makeAspectResizable(wrap: HTMLElement, getAspect: () => number): void {
     wrap.classList.add("cm-embed-aspect");
     const handle = document.createElement("div");
     handle.className = "cm-embed-handle";
     wrap.appendChild(handle);
 
-    let startX = 0, startW = 0, dragging = false;
-    handle.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      dragging = true;
-      startX = e.clientX;
-      startW = wrap.clientWidth;
-      try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic / inactive pointer */ }
-    });
-    handle.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
+    let startX = 0, startW = 0;
+    const onMove = (e: PointerEvent) => {
       const a = getAspect();
       const maxW = wrap.parentElement?.clientWidth || 2000;
       const w = Math.round(Math.max(40, Math.min(startW + (e.clientX - startX), maxW)));
       wrap.style.width = `${w}px`;
       if (a) wrap.style.height = `${Math.round(w / a)}px`; // set both together — no fight, no flicker
-    });
-    const end = (e: PointerEvent) => {
-      if (!dragging) return;
-      dragging = false;
-      try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    };
+    const onUp = (e: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      try { handle.releasePointerCapture(e.pointerId); } catch { /* never captured */ }
       const w = Math.round(wrap.clientWidth);
       if (Math.abs(w - startW) > 1) this.ctx.commitResize(wrap, `${w}`);
     };
-    handle.addEventListener("pointerup", end);
-    handle.addEventListener("pointercancel", end);
+    handle.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      startX = e.clientX;
+      startW = wrap.clientWidth;
+      try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic / inactive pointer */ }
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    });
   }
 
   /** Transclude a `.md` note: resolve filename-first, fetch, render its body markdown. */
@@ -240,33 +211,6 @@ class EmbedWidget extends WidgetType {
 // `![[target#frag|alias]]` OR `![alt](url "title")`.
 const EMBED_RE = /!\[\[([^\]\n]+?)\]\]|!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 
-/** Split a markdown image alt into its text + a trailing `|WIDTH` (the size we persist there,
- *  since a markdown image has no `[[...|size]]` slot). `![logo|300](url)` → alt "logo", width 300. */
-function altSize(alt: string): { alt: string; width?: number } {
-  const pipe = alt.lastIndexOf("|");
-  if (pipe === -1) return { alt };
-  const m = /^(\d+)$/.exec(alt.slice(pipe + 1).trim());
-  return m ? { alt: alt.slice(0, pipe), width: +m[1] } : { alt };
-}
-
-/** Spec for a markdown `![](url)` image. A remote URL renders as-is; a bare vault path is
- *  classified by extension so `![](clip.mp4)` / `![](doc.pdf#page=2)` render as that medium
- *  (Obsidian parity), not a broken <img>. A trailing `|WIDTH` in the alt sets the image width
- *  (resize is persisted there — markdown images have no `[[...|size]]` slot). */
-function specForMarkdownImage(url: string, rawAlt: string): EmbedSpec | null {
-  const { alt, width } = altSize(rawAlt);
-  if (/^(https?:|data:|blob:)/i.test(url)) return { kind: "image", src: url, alt, width };
-  const hash = url.indexOf("#");
-  const target = hash === -1 ? url : url.slice(0, hash);
-  const frag = hash === -1 ? undefined : url.slice(hash + 1);
-  const kind = kindForTarget(target);
-  if (kind === null) return null; // .draw — not embeddable (scanEmbeds drops a null spec)
-  const src = api.assetUrl(target);
-  if (kind === "pdf") return { kind, src, page: frag };
-  if (kind === "audio" || kind === "video") return { kind, src };
-  return { kind: "image", src, alt, width }; // image, or a non-media ext we can only try as an image
-}
-
 interface EmbedToken {
   from: number; to: number; lineFrom: number; lineTo: number; standalone: boolean; spec: EmbedSpec;
   wiki: boolean; // a `![[...]]` embed (resizable + size-persistable) vs a `![](url)` image
@@ -290,7 +234,7 @@ function scanEmbeds(state: EditorState): EmbedToken[] {
     const from = m.index;
     const to = from + m[0].length;
     const wiki = m[1] !== undefined;
-    const spec = wiki ? specForWikiEmbed(m[1]) : specForMarkdownImage(m[3], m[2]);
+    const spec = wiki ? specForWikiEmbed(m[1], api.assetUrl) : specForMarkdownImage(m[3], m[2], api.assetUrl);
     if (!spec) continue;
     const line = doc.lineAt(from);
     // "Standalone" = the embed is the only content on its line — but allow a leading list
@@ -347,39 +291,10 @@ function commitEmbedSize(view: EditorView, dom: HTMLElement, size: string): void
   let pos: number;
   try { pos = view.posAtDOM(dom); } catch { return; }
   const line = view.state.doc.lineAt(pos);
-  let hit: { from: number; to: number; inner: string } | null = null;
-  for (const m of line.text.matchAll(/!\[\[([^\]\n]+?)\]\]/g)) {
-    const from = line.from + (m.index ?? 0);
-    const to = from + m[0].length;
-    if (pos >= from && pos <= to) { hit = { from, to, inner: m[1] }; break; }
-    if (!hit) hit = { from, to, inner: m[1] }; // fallback: first embed on the line
-  }
-  if (hit) {
-    const pipe = hit.inner.indexOf("|");
-    const beforePipe = pipe === -1 ? hit.inner : hit.inner.slice(0, pipe); // keep target + #frag
-    const replacement = `![[${beforePipe}|${size}]]`;
-    if (view.state.sliceDoc(hit.from, hit.to) === replacement) return; // already this size
-    view.dispatch({ changes: { from: hit.from, to: hit.to, insert: replacement } });
-    return;
-  }
-  // No wiki embed on the line → a markdown `![alt](url)` image. Persist the width in the alt
-  // (the only place a markdown image can carry it): drop any existing `|width`, then re-append
-  // the new bare width. `WxH` from a freer resizer collapses to its width for the round-trip.
-  const width = size.split("x")[0];
-  let mhit: { from: number; to: number; alt: string; url: string } | null = null;
-  for (const m of line.text.matchAll(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g)) {
-    const from = line.from + (m.index ?? 0);
-    const to = from + m[0].length;
-    if (pos >= from && pos <= to) { mhit = { from, to, alt: m[1], url: m[2] }; break; }
-    if (!mhit) mhit = { from, to, alt: m[1], url: m[2] }; // fallback: first image on the line
-  }
-  if (!mhit) return;
-  const basePipe = mhit.alt.lastIndexOf("|");
-  const baseAlt = basePipe !== -1 && /^\d+$/.test(mhit.alt.slice(basePipe + 1).trim())
-    ? mhit.alt.slice(0, basePipe) : mhit.alt;
-  const replacement = `![${baseAlt}|${width}](${mhit.url})`;
-  if (view.state.sliceDoc(mhit.from, mhit.to) === replacement) return; // already this size
-  view.dispatch({ changes: { from: mhit.from, to: mhit.to, insert: replacement } });
+  const edit = computeSizeEdit(line.text, line.from, pos, size);
+  if (!edit) return;
+  if (view.state.sliceDoc(edit.from, edit.to) === edit.insert) return; // already this size
+  view.dispatch({ changes: edit });
 }
 
 // Elements that keep their OWN click instead of revealing the source: native audio/video
@@ -417,9 +332,17 @@ const embedRevealOnClick = EditorView.domEventHandlers({
 
 const embedTheme = EditorView.theme({
   ".cm-embed-block": { display: "block", margin: "0.5em 0" },
-  ".cm-embed-inline": { display: "inline-block", "vertical-align": "middle", margin: "0 2px" },
+  // Inline embed: the wrap must hug the image and sit on the text baseline so it flows with the
+  // surrounding words. `line-height: 0` drops the inline-block's line-box strut (otherwise the
+  // box was a full line-height tall for a tiny image, leaving it stranded at the bottom of an
+  // oversized box); the block `img` below then makes the wrap exactly the image's height.
+  ".cm-embed-inline": {
+    display: "inline-block", "vertical-align": "middle", margin: "0 2px", "line-height": "0",
+  },
   ".cm-embed-img": { "max-width": "100%", "border-radius": "6px", display: "block" },
-  ".cm-embed-inline .cm-embed-img": { display: "inline-block", "vertical-align": "middle" },
+  // Inline image: block display (no baseline gap) + max-width so it never overflows the line;
+  // the wrap's `vertical-align: middle` centers it against the text.
+  ".cm-embed-inline .cm-embed-img": { display: "block", "max-width": "100%", "border-radius": "4px" },
   ".cm-embed-pdf": {
     width: "100%", height: "520px", border: "1px solid var(--border)",
     "border-radius": "8px", background: "var(--surface-2)",
