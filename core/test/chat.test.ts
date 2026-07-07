@@ -12,12 +12,16 @@ import {
   chatSessionCount,
   listChatSessions,
   sessionHistoryFrames,
+  searchChatSessions,
+  chatSnippet,
+  matchChatSession,
   stripEditorContext,
   makeUserMessage,
   abortTurn,
   extractEditorContextPaths,
   unstreamedAssistantFrames,
   type ChatFrame,
+  type ChatSearchDoc,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
 
@@ -486,4 +490,100 @@ describeOrSkip("session history API (resume picker)", () => {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
   }, 60_000);
+});
+
+// FEATURE #34: search past chat conversations by content. The SDK has no native session search, so
+// searchChatSessions filters the SDK's own session data. The match + snippet logic (matchChatSession
+// / chatSnippet) is PURE, so it's tested here without a live `claude` — the exact reason it was
+// factored out. searchChatSessions itself is exercised only for tolerance (no claude needed).
+describe("chatSnippet (content-search excerpt)", () => {
+  test("returns a snippet around the first case-insensitive match, with clip markers", () => {
+    const text = "the quick brown fox jumps over the lazy dog and keeps running along the river bank";
+    const snip = chatSnippet(text, "FOX", 10);
+    expect(snip).not.toBeNull();
+    expect(snip!.toLowerCase()).toContain("fox");
+    expect(snip!.startsWith("…")).toBe(true); // clipped at the head
+    expect(snip!.endsWith("…")).toBe(true); // clipped at the tail
+  });
+
+  test("no clip markers when the match sits within the radius of both ends", () => {
+    const snip = chatSnippet("short bit of text", "bit", 60);
+    expect(snip).toBe("short bit of text");
+  });
+
+  test("collapses whitespace/newlines to a single line", () => {
+    const snip = chatSnippet("alpha\n\n  beta   gamma", "beta", 60);
+    expect(snip).toBe("alpha beta gamma");
+  });
+
+  test("returns null when the query is absent, empty, or the text is empty", () => {
+    expect(chatSnippet("hello world", "xyz")).toBeNull();
+    expect(chatSnippet("hello world", "")).toBeNull();
+    expect(chatSnippet("", "hello")).toBeNull();
+  });
+});
+
+describe("matchChatSession (content-search filter)", () => {
+  const doc = (over: Partial<ChatSearchDoc> = {}): ChatSearchDoc => ({
+    sessionId: "s1",
+    summary: "Planning the auth refactor",
+    lastModified: 1000,
+    texts: ["We should move the login flow to OAuth", "Then wire the token refresh"],
+    ...over,
+  });
+
+  test("matches on the title and reports inTitle with a title snippet", () => {
+    const hit = matchChatSession(doc(), "refactor");
+    expect(hit).not.toBeNull();
+    expect(hit!.sessionId).toBe("s1");
+    expect(hit!.inTitle).toBe(true);
+    expect(hit!.snippet.toLowerCase()).toContain("refactor");
+  });
+
+  test("matches on a message body and reports inTitle=false with a message snippet", () => {
+    const hit = matchChatSession(doc(), "oauth");
+    expect(hit).not.toBeNull();
+    expect(hit!.inTitle).toBe(false);
+    expect(hit!.snippet.toLowerCase()).toContain("oauth");
+  });
+
+  test("is case-insensitive", () => {
+    expect(matchChatSession(doc(), "OAUTH")).not.toBeNull();
+  });
+
+  test("requires ALL tokens (AND) across title + messages, not just one", () => {
+    // Both "login" (a message) and "auth" (the title) appear → matches even though not adjacent.
+    expect(matchChatSession(doc(), "login auth")).not.toBeNull();
+    // "login" is present but "kubernetes" is not → no match.
+    expect(matchChatSession(doc(), "login kubernetes")).toBeNull();
+  });
+
+  test("returns null for a non-matching or empty/whitespace query", () => {
+    expect(matchChatSession(doc(), "database")).toBeNull();
+    expect(matchChatSession(doc(), "")).toBeNull();
+    expect(matchChatSession(doc(), "   ")).toBeNull();
+  });
+
+  test("still matches a title-only session with no message texts", () => {
+    const hit = matchChatSession(doc({ texts: [] }), "planning");
+    expect(hit).not.toBeNull();
+    expect(hit!.inTitle).toBe(true);
+  });
+});
+
+describe("searchChatSessions (tolerance)", () => {
+  test("an empty query returns [] without touching the store", async () => {
+    expect(await searchChatSessions("/nonexistent/vault", "")).toEqual([]);
+    expect(await searchChatSessions("/nonexistent/vault", "   ")).toEqual([]);
+  });
+
+  test("a real query against an empty/unknown dir degrades to [] (never throws)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bismuth-chat-search-"));
+    try {
+      const hits = await searchChatSessions(dir, "anything");
+      expect(Array.isArray(hits)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
 });

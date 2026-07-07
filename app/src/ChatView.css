@@ -108,6 +108,91 @@
   white-space: nowrap;
 }
 
+/* Content search box at the top of the history popover (FEATURE #34) — a borderless field that
+   blends into the popover chrome, with a leading magnifier. */
+.chat-history-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.chat-history-search-icon {
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+.chat-history-search-input.ui-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  box-shadow: none;
+}
+.chat-history-search-input.ui-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Content-search result rows (FEATURE #34): a two-line hit — title + when, then a match snippet. */
+.chat-history-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.chat-history-hit {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-history-hit:hover {
+  background: var(--hover-bg);
+}
+.chat-history-hit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-history-hit-icon {
+  color: var(--faint);
+  flex: 0 0 auto;
+}
+.chat-history-hit-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-history-hit-time {
+  flex: 0 0 auto;
+  font-family: var(--ui-font-stack);
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.chat-history-hit-snippet {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  padding-left: 19px; /* align under the title, past the leading icon + gap */
+}
+
 /* ── Scrollable transcript — the reading column ──────────────────────────────── */
 /* Wrapper exists so the jump-to-latest pill can float over the list's bottom edge
    (an absolute child of the SCROLLING element would scroll away with the content). */
