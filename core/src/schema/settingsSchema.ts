@@ -162,6 +162,10 @@ export const SETTINGS_SCHEMA: Schema = {
     timeZone: { type: "string", default: "", doc: "IANA timezone applied to naive (untimed) events when pushing to Google (blank = system timezone)." },
   }),
   ui: object({
+    // Bookshelf tab mode: rotate each tab chip into a vertical "book spine" (label reads
+    // top→bottom, standard English spine orientation), spines laid left→right along the same
+    // top strip. Off = the classic horizontal tab bar. Purely a CSS class toggle in App.tsx.
+    verticalTabs: { type: "boolean", default: false, doc: "Show tabs as vertical 'book spines' (bookshelf mode) instead of the classic horizontal strip. Tabs still sit along the top; each chip is rotated so its label reads top→bottom, laid left→right like books on a shelf." },
     paletteTopOffset: { type: "string", default: "12vh", doc: "How far down the screen the command palette appears (CSS length, e.g. 12vh)." },
     paneDividerWidth: { type: "number", default: 5, min: 3, max: 12, doc: "Thickness of the draggable divider between split panes (px)." },
     cardGridMinWidth: { type: "number", default: 220, min: 150, max: 360, doc: "Minimum card width in the Bases cards view (px)." },

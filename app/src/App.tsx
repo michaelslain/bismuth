@@ -1794,7 +1794,7 @@ export default function App() {
         <Show when={switcherOpen()}>
           <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
         </Show>
-        <div class="tabbar" data-tabstrip="true">
+        <div class="tabbar" data-tabstrip="true" classList={{ "vertical-tabs": settings.ui.verticalTabs }}>
           <div class="tabbar-nav">
             <IconButton
               icon="ChevronLeft"
