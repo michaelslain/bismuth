@@ -64,6 +64,43 @@ describe("planEnter", () => {
     });
   });
 
+  // BUG #8 (REOPENED): "no files found, press Enter, it does not do prompt." Literal keyword search
+  // is debounced ~150ms; pressing Enter within that window (or while refining a prior search) leaves
+  // `resultCount` reflecting the PREVIOUS query — usually non-empty — so plain Enter chose "keyword"
+  // and never escalated. `resultsStale` says "don't trust the count": run the keyword search for the
+  // CURRENT query first, then escalate to AI iff it comes back empty ("keyword-escalate").
+  describe("resultsStale — Enter pressed before the live keyword search caught up", () => {
+    it("defers the escalate decision to a fresh keyword search when a NON-EMPTY stale count would have blocked it", () => {
+      // The exact reopened bug: stale results show 5 hits (a prior query), current query has none.
+      // Without the guard this was "keyword" (no AI). With it, we run keyword-then-maybe-escalate.
+      expect(planEnter(state({ resultCount: 5, resultsStale: true })).action).toBe("keyword-escalate");
+    });
+
+    it("also defers when the stale count is zero (still can't trust a stale count)", () => {
+      expect(planEnter(state({ resultCount: 0, resultsStale: true })).action).toBe("keyword-escalate");
+    });
+
+    it("escalates IMMEDIATELY (no redundant keyword search) when the zero count is FRESH", () => {
+      expect(planEnter(state({ resultCount: 0, resultsStale: false })).action).toBe("escalate-ai");
+    });
+
+    it("re-runs keyword (not keyword-escalate) when a NON-EMPTY count is FRESH", () => {
+      expect(planEnter(state({ resultCount: 4, resultsStale: false })).action).toBe("keyword");
+    });
+
+    it("stale results never override AI mode, regex mode, forceAi, or an empty query", () => {
+      // Freshness only gates the literal-live branch; the higher-priority branches win regardless.
+      expect(planEnter(state({ promptMode: true, resultsStale: true })).action).toBe("prompt");
+      expect(planEnter(state({ regex: true, resultsStale: true })).action).toBe("regex");
+      expect(planEnter(state({ resultCount: 9, resultsStale: true, forceAi: true })).action).toBe("escalate-ai");
+      expect(planEnter(state({ hasQuery: false, resultsStale: true })).action).toBe("keyword");
+    });
+
+    it("keyword-escalate still cancels the pending live-search debounce", () => {
+      expect(planEnter(state({ resultCount: 5, resultsStale: true })).cancelPendingLiveSearch).toBe(true);
+    });
+  });
+
   it("ALWAYS asks the caller to cancel any pending live-search debounce (the fix invariant)", () => {
     // Enter is a deliberate submit — whichever branch it takes, the pending debounced keyword search
     // must be cancelled so it can't bump the request generation and supersede the run Enter starts.
