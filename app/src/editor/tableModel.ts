@@ -116,6 +116,65 @@ export function groupTableBlocks(doc: Text): { blocks: TableBlock[]; byLine: Map
   return { blocks, byLine };
 }
 
+/** True if `cp` is an East-Asian WIDE / FULLWIDTH code point (occupies TWO monospace
+ *  columns): CJK, Hiragana/Katakana, Hangul, fullwidth forms, and emoji. Standard
+ *  `is-fullwidth-code-point` ranges. Column padding must count these as 2 or the pipes in
+ *  the raw-source view drift right of the header (the #25 "columns don't line up" bug). */
+function isWideCodePoint(cp: number): boolean {
+  return (
+    cp >= 0x1100 &&
+    (cp <= 0x115f || // Hangul Jamo
+      cp === 0x2329 ||
+      cp === 0x232a ||
+      (cp >= 0x2e80 && cp <= 0x303e) || // CJK Radicals … Kangxi … CJK symbols
+      (cp >= 0x3041 && cp <= 0x33ff) || // Hiragana … Katakana … CJK compat
+      (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Ext A
+      (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified
+      (cp >= 0xa000 && cp <= 0xa4cf) || // Yi
+      (cp >= 0xa960 && cp <= 0xa97c) || // Hangul Jamo Ext A
+      (cp >= 0xac00 && cp <= 0xd7a3) || // Hangul Syllables
+      (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+      (cp >= 0xfe10 && cp <= 0xfe19) || // Vertical forms
+      (cp >= 0xfe30 && cp <= 0xfe6f) || // CJK Compatibility Forms
+      (cp >= 0xff00 && cp <= 0xff60) || // Fullwidth Forms
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x1f300 && cp <= 0x1faff) || // emoji + symbols
+      (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+      (cp >= 0x20000 && cp <= 0x3fffd)) // CJK Ext B+
+  );
+}
+
+/** True if `cp` renders in ZERO monospace columns: a combining mark or a zero-width space.
+ *  These attach to the previous glyph, so counting them widens the column spuriously. */
+function isZeroWidthCodePoint(cp: number): boolean {
+  return (
+    (cp >= 0x0300 && cp <= 0x036f) || // combining diacritics
+    (cp >= 0x1ab0 && cp <= 0x1aff) ||
+    (cp >= 0x1dc0 && cp <= 0x1dff) ||
+    (cp >= 0x20d0 && cp <= 0x20ff) || // combining marks for symbols
+    (cp >= 0xfe20 && cp <= 0xfe2f) || // combining half marks
+    cp === 0x200b || // zero-width space
+    cp === 0x200c ||
+    cp === 0x200d || // ZWJ (emoji sequences)
+    cp === 0xfeff
+  );
+}
+
+/** Monospace DISPLAY width of a string, in columns. CJK / fullwidth / emoji code points
+ *  count as 2 and combining/zero-width marks as 0; everything else as 1. `String.length`
+ *  (UTF-16 units) over-counts astral emoji (surrogate pairs) and under-counts wide CJK, so
+ *  padding built on it never lines up in a monospace view — this is what `padCell` /
+ *  `serializeTable` measure by so the aligned raw source actually aligns (#25). */
+export function displayWidth(str: string): number {
+  let w = 0;
+  for (const ch of str) {
+    const cp = ch.codePointAt(0) ?? 0;
+    if (isZeroWidthCodePoint(cp)) continue;
+    w += isWideCodePoint(cp) ? 2 : 1;
+  }
+  return w;
+}
+
 function alignSep(align: Align, width: number): string {
   const w = Math.max(width, 3); // GFM needs at least one dash; keep it readable
   switch (align) {
@@ -137,7 +196,8 @@ function encodeCell(text: string): string {
 }
 
 function padCell(text: string, width: number, align: Align): string {
-  const pad = Math.max(width - text.length, 0);
+  // Pad by DISPLAY width, not `.length`, so a cell holding wide CJK / emoji still lines up.
+  const pad = Math.max(width - displayWidth(text), 0);
   if (align === "right") return " ".repeat(pad) + text;
   if (align === "center") {
     const l = Math.floor(pad / 2);
@@ -228,7 +288,7 @@ export function serializeTable(cells: string[][], aligns: Align[]): string {
   const widths: number[] = [];
   for (let c = 0; c < cols; c++) {
     let w = 3; // separator needs ≥3 dashes; floor the column width there
-    for (const row of enc) w = Math.max(w, row[c].length);
+    for (const row of enc) w = Math.max(w, displayWidth(row[c])); // DISPLAY width (CJK/emoji-aware)
     widths.push(w);
   }
   const al = (c: number): Align => aligns[c] ?? "none";

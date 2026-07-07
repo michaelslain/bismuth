@@ -11,7 +11,7 @@
 // (reads settings.keybindings.find) so it's user-rebindable like every other shortcut.
 
 import { EditorView, type Panel, type ViewUpdate } from "@codemirror/view";
-import { type EditorState } from "@codemirror/state";
+import { type EditorState, type StateEffect, type Text } from "@codemirror/state";
 import {
   search,
   SearchQuery,
@@ -21,6 +21,8 @@ import {
   findPrevious,
   closeSearchPanel,
 } from "@codemirror/search";
+import { groupTableBlocks } from "./tableModel";
+import { activeTableField, setActiveTableEffect } from "./tableState";
 
 // Cap the count scan so a 1-char query in a huge doc can't stall the UI.
 const MAX_COUNT = 10000;
@@ -61,6 +63,37 @@ export function nextMatchFrom(
     r = cursor.next();
   }
   return r.done ? null : { from: r.value.from, to: r.value.to };
+}
+
+/** Interval-overlap test for #21: the START LINE of the first table block whose source
+ *  character span overlaps the (half-open) range `[from, to)`, or null when the range
+ *  touches no block. Pure over the block spans so the "does a search match land inside a
+ *  table" logic is unit-tested without an EditorView. A match that merely ABUTS a block
+ *  boundary (ends exactly at its start, or starts exactly at its end) is NOT inside it. */
+export function tableBlockAtRange(
+  blocks: { from: number; to: number; startLine: number }[],
+  from: number,
+  to: number,
+): number | null {
+  for (const b of blocks) {
+    if (from < b.to && to > b.from) return b.startLine;
+  }
+  return null;
+}
+
+/** The header (start) line of the rendered table block a doc-offset range falls inside,
+ *  or null. Wraps `groupTableBlocks` + `tableBlockAtRange`: a GFM table is drawn as an
+ *  atomic block-replace WIDGET that hides its source lines, so a search match landing on
+ *  those lines is invisible — the find bar uses this to know when it must reveal that
+ *  block's raw source (via `setActiveTableEffect`) so the highlight actually shows (#21). */
+export function tableBlockStartForRange(doc: Text, from: number, to: number): number | null {
+  const { blocks } = groupTableBlocks(doc);
+  const spans = blocks.map((b) => ({
+    from: doc.line(b.startLine).from,
+    to: doc.line(b.endLine).to,
+    startLine: b.startLine,
+  }));
+  return tableBlockAtRange(spans, from, to);
 }
 
 // Lucide-style inline icons (the registry renders Solid components; the panel is raw
@@ -142,8 +175,36 @@ export function createFindPanel(view: EditorView): Panel {
     if (!m) return;
     view.dispatch({
       selection: { anchor: m.from, head: m.to },
-      effects: EditorView.scrollIntoView(m.to, { y: "center" }),
+      effects: matchEffects(m.from, m.to),
       userEvent: "select.search",
+    });
+  };
+
+  // Effects for landing on a match `[from, to)`: always scroll it into view; and — when it
+  // sits inside a GFM table block that's currently drawn as a widget (hiding its source) —
+  // ALSO reveal that block's raw source so the highlight becomes visible (#21). Folded into
+  // one transaction with the selection so the source is already un-hidden when CM measures
+  // the scroll target (no stale-layout jump). Reusing an already-revealed table is a no-op
+  // effect-wise (guarded) so refining the query in the same table doesn't re-dispatch it.
+  const matchEffects = (from: number, to: number): StateEffect<unknown>[] => {
+    const effects: StateEffect<unknown>[] = [EditorView.scrollIntoView(to, { y: "center" })];
+    const tbl = tableBlockStartForRange(view.state.doc, from, to);
+    if (tbl != null && (view.state.field(activeTableField, false) ?? null) !== tbl) {
+      effects.push(setActiveTableEffect.of(tbl) as StateEffect<unknown>);
+    }
+    return effects;
+  };
+
+  // findNext / findPrevious (Enter + the prev/next buttons) are CodeMirror's own commands:
+  // they move the selection but don't know about our table widgets, so a jumped-to match
+  // inside a table would stay hidden behind its widget. After one runs, reveal the table
+  // under the NEW selection (and re-scroll) so that match shows too.
+  const revealTableAtSelection = () => {
+    const sel = view.state.selection.main;
+    const tbl = tableBlockStartForRange(view.state.doc, sel.from, sel.to);
+    if (tbl == null || (view.state.field(activeTableField, false) ?? null) === tbl) return;
+    view.dispatch({
+      effects: [setActiveTableEffect.of(tbl), EditorView.scrollIntoView(sel.to, { y: "center" })],
     });
   };
 
@@ -161,6 +222,7 @@ export function createFindPanel(view: EditorView): Panel {
     if (e.key === "Enter") {
       e.preventDefault();
       (e.shiftKey ? findPrevious : findNext)(view);
+      revealTableAtSelection();
       updateCount();
     } else if (e.key === "Escape") {
       e.preventDefault();
@@ -170,11 +232,13 @@ export function createFindPanel(view: EditorView): Panel {
   });
   prevBtn.addEventListener("click", () => {
     findPrevious(view);
+    revealTableAtSelection();
     updateCount();
     input.focus();
   });
   nextBtn.addEventListener("click", () => {
     findNext(view);
+    revealTableAtSelection();
     updateCount();
     input.focus();
   });

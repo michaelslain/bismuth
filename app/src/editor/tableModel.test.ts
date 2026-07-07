@@ -9,6 +9,7 @@ import {
   serializeTable,
   formatTable,
   prettifyTableBlock,
+  displayWidth,
   decideCellKey,
   cellListContinuation,
   isSeparatorRow,
@@ -278,4 +279,83 @@ test("cellListContinuation exits on an empty marker and ignores non-list lines",
   expect(cellListContinuation("plain text")).toBeNull();
   expect(cellListContinuation("-nospace")).toBeNull(); // a lone dash isn't a list marker
   expect(cellListContinuation("")).toBeNull();
+});
+
+// ── Pretty (aligned) source (#25) ─────────────────────────────────────────────
+// The raw table source is shown in a monospace view, so alignment is done by DISPLAY
+// column width. These assert the EXACT aligned string (not just "it ran") so a
+// padding-math regression is caught, and cover the wide-character case that plain
+// `String.length` gets wrong.
+
+test("displayWidth counts CJK/fullwidth/emoji as 2, combining marks as 0", () => {
+  expect(displayWidth("abc")).toBe(3);
+  expect(displayWidth("日本語")).toBe(6); // 3 wide CJK glyphs
+  expect(displayWidth("😀")).toBe(2); // astral emoji (surrogate pair, .length===2)
+  expect(displayWidth("ｱ")).toBe(1); // halfwidth katakana
+  expect(displayWidth("Ａ")).toBe(2); // fullwidth latin A
+  expect(displayWidth("é")).toBe(1); // e + combining acute → one column
+});
+
+test("prettifyTableBlock aligns a RAGGED hand-authored table into padded columns", () => {
+  const ragged = [
+    "| Name | Age | City |",
+    "|-|-|-|",
+    "| Alice | 30 | New York |",
+    "| Bob | 5 | LA |",
+    "| Charlie | 100 | San Francisco |",
+  ];
+  expect(prettifyTableBlock(ragged)).toBe(
+    [
+      "| Name    | Age | City          |",
+      "| ------- | --- | ------------- |",
+      "| Alice   | 30  | New York      |",
+      "| Bob     | 5   | LA            |",
+      "| Charlie | 100 | San Francisco |",
+    ].join("\n"),
+  );
+});
+
+test("prettifyTableBlock sizes separator dashes + colons to each column's alignment", () => {
+  const src = [
+    "| Left | Center | Right |",
+    "| :--- | :---: | ---: |",
+    "| a | bb | ccc |",
+    "| dddd | e | f |",
+  ];
+  expect(prettifyTableBlock(src)).toBe(
+    [
+      "| Left | Center | Right |",
+      "| :--- | :----: | ----: |",
+      "| a    |   bb   |   ccc |",
+      "| dddd |   e    |     f |",
+    ].join("\n"),
+  );
+});
+
+test("serializeTable pads WIDE (CJK/emoji) cells so the pipes line up by display width", () => {
+  const out = serializeTable(
+    [
+      ["Name", "Note"],
+      ["日本語", "ok"],
+      ["a", "中文"],
+      ["😀x", "z"],
+    ],
+    ["none", "none"],
+  );
+  // Column 0 max display width = 6 ("日本語"); column 1 = 4 ("Note"/"中文"). Note the wide
+  // cells carry FEWER literal spaces than an ASCII cell of the same visual width — that's
+  // the whole point: padding is by display column, not `.length`.
+  expect(out).toBe(
+    [
+      "| Name   | Note |",
+      "| ------ | ---- |",
+      "| 日本語 | ok   |",
+      "| a      | 中文 |",
+      "| 😀x    | z    |",
+    ].join("\n"),
+  );
+  // Every emitted line has the SAME display width (columns genuinely align in monospace).
+  const lines = out.split("\n");
+  const w0 = displayWidth(lines[0]);
+  for (const l of lines) expect(displayWidth(l)).toBe(w0);
 });
