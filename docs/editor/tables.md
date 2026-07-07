@@ -233,7 +233,7 @@ Escapes HTML entities, then converts the `<br>` markers (`<br>` or `<BR>` or `<b
 
 #### `cellSourceFromDom(cell)` — internal
 
-Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers and collapses stray newline characters to spaces (a cell occupies exactly one markdown line). This is the inverse of `srcToEditHtml`.
+Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers. A contenteditable can encode an in-cell line break three ways depending on browser/edit history — a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n` **character** in a text node — so every one is normalized to the `<br>` marker. **A `\n` character maps to `<br>`, NOT a space (#15).** The old space-collapse was the reopened list bug: a typed list `- a\n- b` collapsed to `- a - b`, which `splitCellItems` deliberately refuses to re-split (a space *before* the dash reads as prose, so real sentences aren't chopped), so the list silently vanished. Mapping `\n` → `<br>` keeps the break, so the cell re-renders as the list the user typed. `.trim()` strips only surrounding whitespace, never the `<br>` markers (a deliberate trailing Shift+Enter break — a real `<br>` + ZWSP — and an intentional blank line typed as two breaks both survive). This is the inverse of `srcToEditHtml`.
 
 **Why not `innerText`?** A trailing `<br>` followed by nothing is silently dropped by `innerText`, causing Shift+Enter line breaks at the end of a cell to not save. `cellSourceFromDom`'s explicit node walk captures them correctly.
 

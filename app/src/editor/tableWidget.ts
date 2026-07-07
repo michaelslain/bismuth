@@ -86,14 +86,31 @@ function srcToEditHtml(src: string): string {
  *  text nodes and <br> elements (see srcToEditHtml / insertBreakAtCaret), so each <br>
  *  maps to a `<br>` marker — including a TRAILING one, which `innerText` would silently
  *  drop (the root cause of a Shift+Enter break sometimes not saving). The inverse of
- *  `srcToEditHtml`; stray newlines in text collapse to spaces (a cell is one source line). */
+ *  `srcToEditHtml`.
+ *
+ *  A contenteditable can encode an in-cell line break THREE ways depending on browser /
+ *  edit history: a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n`
+ *  CHARACTER inside a text node. We normalize ALL of them to the `<br>` marker so the stored
+ *  source is uniform and list detection (cellList.ts) sees the breaks. The `\n` case is the
+ *  reopened #15 bug: it USED to collapse to a SPACE, turning a typed list "- a\n- b" into
+ *  "- a - b" — which `splitCellItems` deliberately refuses to re-split (a space before the
+ *  dash reads as prose, not a marker), so the list silently vanished. Mapping `\n` → `<br>`
+ *  keeps the break, so the cell renders as the list the user typed. */
 function cellSourceFromDom(cell: HTMLElement): string {
   let out = "";
   cell.childNodes.forEach((n) => {
     out += n.nodeName === "BR" ? "<br>" : (n.textContent ?? "");
   });
-  // Drop ZWSP fillers and collapse stray newlines (a cell is one source line).
-  return out.replace(new RegExp(ZWSP, "g"), "").replace(/\r?\n/g, " ").trim();
+  // Drop ZWSP fillers, then encode any raw newline as an in-cell `<br>` break — NOT a space,
+  // which was the #15 list-loss bug (a typed "- a\n- b" collapsed to "- a - b" and stopped
+  // reading as a list, because splitCellItems refuses to split a space-before-dash as prose).
+  // `.trim()` only strips surrounding whitespace, never the `<br>` markers, so a deliberate
+  // trailing Shift+Enter break (a real `<br>` + ZWSP) — and any intentional blank line typed as
+  // two breaks — is preserved.
+  return out
+    .replace(new RegExp(ZWSP, "g"), "")
+    .replace(/\r?\n/g, "<br>")
+    .trim();
 }
 
 /** Insert a real <br> element at the caret. Deterministic, unlike
