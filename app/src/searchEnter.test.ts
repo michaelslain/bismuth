@@ -37,6 +37,33 @@ describe("planEnter", () => {
     expect(planEnter(state({ promptMode: true, regex: true })).action).toBe("prompt");
   });
 
+  // BUG #8: the always-reachable AI path. A natural-language query ("where did I write about
+  // metals") usually DOES have some literal keyword hit, so plain Enter re-ran keyword search and
+  // the AI was never reachable via the keyboard. Cmd/Ctrl+Enter (forceAi) escalates regardless.
+  describe("forceAi (Cmd/Ctrl+Enter) — reachable AI even WITH keyword hits", () => {
+    it("escalates to the AI when there ARE keyword hits (the previously-unreachable case)", () => {
+      // Plain Enter with hits stays "keyword"; forceAi turns the SAME state into an AI escalation.
+      expect(planEnter(state({ resultCount: 7, forceAi: false })).action).toBe("keyword");
+      expect(planEnter(state({ resultCount: 7, forceAi: true })).action).toBe("escalate-ai");
+    });
+
+    it("escalates to the AI even in regex mode (forceAi overrides the regex Enter-gate)", () => {
+      expect(planEnter(state({ regex: true, resultCount: 4, forceAi: true })).action).toBe("escalate-ai");
+    });
+
+    it("re-runs the prompt search (not a fresh escalation) when already in AI mode", () => {
+      expect(planEnter(state({ promptMode: true, resultCount: 3, forceAi: true })).action).toBe("prompt");
+    });
+
+    it("still does nothing useful for an empty query (no AI on an empty box)", () => {
+      expect(planEnter(state({ hasQuery: false, forceAi: true })).action).toBe("keyword");
+    });
+
+    it("also escalates a zero-hit query (same as plain Enter there)", () => {
+      expect(planEnter(state({ resultCount: 0, forceAi: true })).action).toBe("escalate-ai");
+    });
+  });
+
   it("ALWAYS asks the caller to cancel any pending live-search debounce (the fix invariant)", () => {
     // Enter is a deliberate submit — whichever branch it takes, the pending debounced keyword search
     // must be cancelled so it can't bump the request generation and supersede the run Enter starts.
@@ -46,6 +73,8 @@ describe("planEnter", () => {
       state({ promptMode: true }),
       state({ regex: true }),
       state({ hasQuery: false }),
+      state({ resultCount: 4, forceAi: true }),
+      state({ regex: true, forceAi: true }),
     ]) {
       expect(planEnter(s).cancelPendingLiveSearch).toBe(true);
     }

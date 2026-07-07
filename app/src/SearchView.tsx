@@ -101,12 +101,15 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
 
   // Enter behavior depends on mode (see planEnter): AI mode runs the prompt search; regex mode is
   // Enter-gated; literal mode with zero hits escalates to AI, otherwise re-runs the keyword search.
-  const onEnter = () => {
+  // `forceAi` (Cmd/Ctrl+Enter) ALWAYS runs the AI prompt search — the always-reachable path so a
+  // natural-language query with keyword hits can still escalate to AI without the Sparkles chip.
+  const onEnter = (forceAi = false) => {
     const plan = planEnter({
       promptMode: promptMode(),
       regex: regex(),
       hasQuery: !!query(),
       resultCount: results().length,
+      forceAi,
     });
     // Enter is a deliberate submit: cancel any pending live-search debounce first so its trailing run
     // can't bump searchGen and supersede the run we're about to start.
@@ -149,8 +152,16 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     clearTimeout(debounceTimer);
     // Clearing the box exits AI mode so the next keystroke is ordinary keyword search again.
     if (!v && promptMode()) { setPromptMode(false); setPromptBusy(false); }
-    // AI mode is Enter-gated only (one model turn per press) — never live-as-you-type.
-    if (promptMode()) { searchGen++; setStatus(v ? "Press Enter to ask Bismuth AI" : ""); return; }
+    // AI mode is Enter-gated only (one model turn per press) — never live-as-you-type. Typing
+    // supersedes any in-flight AI turn (searchGen++), and since no new request starts until the
+    // next Enter, we must clear promptBusy here too — otherwise the spinner sticks on forever (the
+    // generation-guarded `.finally` in runPromptSearch won't reset it once its gen is stale).
+    if (promptMode()) {
+      searchGen++;
+      setPromptBusy(false);
+      setStatus(v ? "Press Enter to ask Bismuth AI" : "");
+      return;
+    }
     // Regex search bypasses the index and scans every note body line-by-line, so don't re-run it on
     // every keystroke — wait for Enter. Literal search stays live-as-you-type (index-backed, cheap).
     if (regex()) { setStatus(v ? "Press Enter to run regex search" : ""); return; }
@@ -158,7 +169,8 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape" && promptMode()) { e.preventDefault(); exitPromptMode(); return; }
-    if (e.key === "Enter") { e.preventDefault(); onEnter(); }
+    // Cmd/Ctrl+Enter forces the AI prompt search regardless of mode / keyword-hit count.
+    if (e.key === "Enter") { e.preventDefault(); onEnter(e.metaKey || e.ctrlKey); }
   };
   onCleanup(() => clearTimeout(debounceTimer));
 
@@ -208,6 +220,20 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             <span>Bismuth AI — natural-language search. Press Esc to return to keyword search.</span>
           </div>
         </Show>
+        {/* Persistent AI affordance (BUG #8): shown whenever a literal search returned hits and we're
+            NOT already in AI mode — so the user can escalate a natural-language query to the AI even
+            though it matched some keyword (the case where plain Enter just re-runs keyword search and
+            the AI never used to be reachable). Clicking runs the prompt search immediately — the same
+            as Cmd+Enter or the Sparkles chip. (Zero-hit queries get the bigger empty-state CTA below.)
+            Hidden while an AI turn is in flight (the mode banner + spinner show instead). */}
+        <Show when={!!query() && !promptMode() && !promptBusy() && !regex() && results().length > 0}>
+          <button type="button" class="search-ask-ai" onClick={askAi}
+            title="Search your vault with Bismuth AI (natural-language)">
+            <Icon value="Sparkles" size={15} class="search-ask-ai-icon" />
+            <span class="search-ask-ai-label">Not what you meant? Ask Bismuth AI about your vault</span>
+            <span class="search-ask-ai-kbd"><kbd class="search-kbd">⌘↵</kbd></span>
+          </button>
+        </Show>
         <Show when={showReplace()}>
           <SearchBar class="search-row" leadingIcon="Replace" value={replacement()} placeholder="Replace with…" onInput={setReplacement}>
             <TextButton size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
@@ -253,7 +279,11 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             const parts = splitPath(r.path);
             return (
               <div class="sresult">
-                <div class="sresult-head">
+                {/* The whole header opens the file too (not just the snippet rows) — AI results
+                    carry one byte-exact snippet, but making the title row a hit target keeps every
+                    result openable even if a row ever comes back without a snippet. */}
+                <div class="sresult-head sresult-head-open"
+                  onClick={() => { recordUse(fileKey(r.path)); props.onOpen(r.path); }}>
                   <Icon value="FileText" size={15} class="sresult-icon" />
                   <b class="sresult-title">{parts.name}</b>
                   <Show when={parts.folder}>
@@ -261,7 +291,8 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
                   </Show>
                   <span class="sresult-count">{r.matchCount}</span>
                   <Show when={showReplace()}>
-                    <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
+                    <IconButton label="Replace all in this file" icon="Replace" iconSize={15}
+                      onClick={(e) => { e.stopPropagation(); doReplace(r.path); }} />
                   </Show>
                 </div>
                 <Show when={r.reason}>
