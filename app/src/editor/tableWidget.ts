@@ -351,6 +351,18 @@ function dispatchKeepScroll(view: EditorView, spec: TransactionSpec): void {
  *  not in the cell. Given the drop event's target node, this returns the cell's grid
  *  coordinate `(r, c)` plus the table block's CURRENT source range (the `from` anchor lets the
  *  async insert re-find the block after the upload), or null when the drop isn't over a cell. */
+/** True while a table cell inside this view is focused (#46). A focused cell's keystrokes
+ *  live only in its contenteditable DOM until the blur commit — any doc reconcile that
+ *  intersects the table rebuilds the widget (eq() compares serialized source) and destroys
+ *  them. Callers (Editor.tsx's external-reconcile paths) defer disk pulls while this holds
+ *  and re-run them on the cell's blur. */
+export function hasActiveCellEdit(view: EditorView): boolean {
+  if (typeof document === "undefined") return false;
+  const el = document.activeElement as HTMLElement | null;
+  if (!el || !view.dom.contains(el)) return false;
+  return !!el.closest?.("[data-cell]");
+}
+
 export function tableCellDropTarget(
   view: EditorView,
   target: EventTarget | null,

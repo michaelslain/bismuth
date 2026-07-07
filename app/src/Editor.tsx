@@ -1,7 +1,7 @@
 // app/src/Editor.tsx
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Annotation, Compartment, Prec, type Line } from "@codemirror/state";
+import { EditorState, Compartment, Prec, type Line } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
@@ -33,7 +33,7 @@ import { editorContextMenu } from "./editor/contextMenu";
 import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
-import { normalizeFrontmatterSpacing, minimalChange } from "./editor/normalizeFrontmatter";
+import { normalizeFrontmatterSpacing } from "./editor/normalizeFrontmatter";
 import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { InkOverlay } from "./editor/ink/InkOverlay";
@@ -52,15 +52,15 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { insertEmbedsInTableCell, tableFindHighlight } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableFindHighlight, hasActiveCellEdit } from "./editor/tableWidget";
 import { threeWayMerge } from "./editor/saveReconcile";
+import { ExternalReload, externalReconcileSpec } from "./editor/reconcileDispatch";
 import "./Editor.css";
 
-// Marks a transaction as "content pulled in from disk" rather than a user edit,
-// so the autosave listener can skip it. Without this, reloading an external
-// change triggers a save that writes the file back to itself — an endless loop
-// against a file something else (e.g. a status-file writer) keeps rewriting.
-const ExternalReload = Annotation.define<boolean>();
+// ExternalReload + externalReconcileSpec live in editor/reconcileDispatch.ts (shared,
+// unit-tested): the annotation lets the autosave listener skip disk-pulled reloads, and
+// the spec builder also marks them addToHistory:false so undo never restores a disk
+// snapshot (#46 — that was the "file autoreverts on cmd+z" data loss).
 
 // Prose font/size and selection tint come from CSS variables (set by App.tsx from
 // the Appearance settings), so they update live without rebuilding the editor.
@@ -368,6 +368,13 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   // after every successful write/reconcile; deliberately distinct from lastSavedText, which
   // tracks what we last WROTE rather than what the buffer started from. See saveReconcile.ts.
   let diskBase: string | undefined;
+  // #46: a disk pull (SSE reconcile or save-merge residue) arrived while a table cell was
+  // mid-edit — reconciling then would rebuild the widget (eq() is serialize-based) and
+  // destroy the cell's un-committed keystrokes, which live only in the cell's DOM until
+  // the blur commit. The pull is deferred instead; the view's focusout listener releases
+  // it (via cellBlurTick) the moment the cell stops being edited.
+  let reloadDeferred = false;
+  const [cellBlurTick, setCellBlurTick] = createSignal(0);
 
   // Value-dedupe the path. props.path is read through a chain (active tab → pane tree →
   // leaf content) that re-emits whenever the tab object changes — e.g. on every pane
@@ -471,7 +478,18 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Only when the buffer hasn't moved on since `text` was captured; if the user kept typing,
     // the next autosave cycle re-merges against this fresh diskBase and reconciles then.
     if (view && finalText !== text && view.state.doc.toString() === text) {
-      view.dispatch({ changes: minimalChange(text, finalText), annotations: ExternalReload.of(true) });
+      if (hasActiveCellEdit(view)) {
+        // A table cell is mid-edit: reconciling now would rebuild the widget and destroy the
+        // cell's un-committed keystrokes (#46). Leave the buffer one step behind disk and
+        // REWIND the merge anchor to `text` — finalText is text + the external hunk, so with
+        // base=text the next save re-applies that hunk instead of mistaking its absence in
+        // the buffer for a local deletion. The blur release (cellBlurTick) pulls the buffer
+        // up to disk the moment the cell commits.
+        diskBase = text;
+        reloadDeferred = true;
+      } else {
+        view.dispatch(externalReconcileSpec(text, finalText));
+      }
     }
     props.onSaved();
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
@@ -716,7 +734,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           const cur = view.state.doc.toString();
           const normalized = normalizeFrontmatterSpacing(cur);
           if (normalized !== cur) {
-            view.dispatch({ changes: minimalChange(cur, normalized), annotations: ExternalReload.of(true) });
+            view.dispatch(externalReconcileSpec(cur, normalized));
           }
         }
         const text = view ? view.state.doc.toString() : u.state.doc.toString();
@@ -935,6 +953,22 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     const anchor = takePendingAnchor(path);
     const snapEffect = anchor ? undefined : loadScrollSnapshot(path);
 
+    // #46: release a deferred disk pull the moment a table cell stops being edited. Bubble
+    // order guarantees the widget root's own focusout commit runs first (deeper ancestor),
+    // so by the time this fires the cell's content is either committed (pendingSave then
+    // gates the reconcile until the save's own merge lands) or unchanged (the reconcile
+    // effect pulls disk in immediately). A cell→cell hop inside a table keeps the deferral.
+    const releaseCellReload = (e: FocusEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (!t?.closest?.("[data-cell]")) return;
+      const rt = e.relatedTarget as HTMLElement | null;
+      if (rt?.closest?.("[data-cell]")) return; // still editing the table
+      if (!reloadDeferred) return;
+      reloadDeferred = false;
+      lastIgnoredVersion = -1; // force a fresh disk check even for an already-seen version
+      setCellBlurTick((n) => n + 1);
+    };
+
     view = new EditorView({
       parent: host,
       // Restore the exact prior scroll position at construction. Undefined → no initial scroll
@@ -1059,6 +1093,8 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     trackEditor(view);
     setEditorFlush(view, flushSaveAsync); // so a rename can persist this buffer before moving (B6)
     setCmView(view); // the ink overlay (Solid-side) reacts to view rebuilds through this
+    // #46 blur release (defined above the constructor); dies with the view's DOM on rebuild.
+    view.dom.addEventListener("focusout", releaseCellReload);
 
     // A pending `[[File#Heading]]` anchor (set by App when this buffer was opened via a
     // heading link) wins over the saved scroll position: jump to the heading instead of
@@ -1134,6 +1170,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
 
   createEffect(async () => {
     const change = lastChange();
+    cellBlurTick(); // #46: re-run when a deferred disk pull is released by a cell blur
     const path = props.path;
     if (!path || !view) return;
     // Skip our own writes: if any of the changed paths is ours AND the doc
@@ -1150,6 +1187,13 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // saveReconcile.ts) rather than trusting a possibly-stale `diskBase`, so skipping the buffer
     // reconcile here no longer risks losing the external edit once the pending save runs.
     if (pendingSave) return;
+    // A table cell is actively being edited: its keystrokes exist only in the cell's DOM
+    // (not the doc), so pendingSave can't see them. Reconciling now would rebuild the
+    // widget and destroy them (#46). Defer; the blur release re-runs this effect.
+    if (hasActiveCellEdit(view)) {
+      reloadDeferred = true;
+      return;
+    }
 
     let onDisk: string;
     try {
@@ -1161,6 +1205,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Guard: path may have changed while awaiting.
     if (path !== props.path) return;
     if (!view) return; // view destroyed while we were awaiting
+    // Re-check after the await: the user may have clicked into a cell while we read disk.
+    // (Before diskBase advances, so the merge anchor still matches what the buffer holds.)
+    if (hasActiveCellEdit(view)) {
+      reloadDeferred = true;
+      return;
+    }
     diskBase = onDisk; // buffer has no pending edits here, so this IS (or is about to become) its base
     const current = view.state.doc.toString();
     if (current === onDisk) {
@@ -1188,15 +1238,11 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // single-region edit becomes a tiny change; scattered edits collapse to one
     // wider change — never worse than the old full replace. (Same pattern already
     // used above for live frontmatter normalization.)
-    const patch = minimalChange(current, onDisk);
     // Keep the reader where they were: capture scroll before applying the change
     // and restore it after (no scrollIntoView, which would jump to the caret —
     // typically the top — every time the file changes on disk).
     const scrollTop = view.scrollDOM.scrollTop;
-    view.dispatch({
-      changes: patch,
-      annotations: ExternalReload.of(true),
-    });
+    view.dispatch(externalReconcileSpec(current, onDisk));
     // Restore the scroll position. The synchronous set covers the simple case, but
     // CodeMirror re-measures line heights asynchronously after the reconcile when
     // it touches block widgets (line wrapping + live-preview block widgets change
