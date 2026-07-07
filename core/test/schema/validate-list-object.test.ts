@@ -61,6 +61,7 @@ describe("toolbar setting", () => {
     expect(toolbar().default).toEqual([
       { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
+      { command: "open-inbox", icon: "Inbox" },
     ]);
   });
 
