@@ -284,6 +284,10 @@ export const api = {
   // Folders have no frontmatter — their icon override lives in .settings.
   // An empty icon clears the override (back to the default folder icon).
   setFolderIcon: (path: string, icon: string) => post("/folder-icon", { path, icon }),
+  // Folders have no frontmatter — their AI visibility override lives in .settings.
+  // `null` clears the override (folder inherits from its own ancestors, or "all").
+  setFolderVisibility: (path: string, visibility: "chat-only" | "hidden" | null) =>
+    post("/folder-visibility", { path, visibility }),
   // Persist a single setting by path (the backend merges it into .settings in
   // place, preserving comments + the property registry + unknown keys).
   setSetting: (path: string[], value: unknown) => post("/set-setting", { path, value }).then(() => {}),

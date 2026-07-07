@@ -136,6 +136,10 @@ body { background: var(--bg); color: var(--fg); }
    when a long name wraps (rows use align-items: flex-start), not on the wrapped block. */
 .ft-icon, .ft-chevron { flex-shrink: 0; display: inline-flex; align-items: center; }
 .ft-chevron { color: var(--faint); }
+/* AI-visibility badge (chat-only / hidden) beside a row's icon — see docs/vault/visibility.md.
+   "hidden" reads as more severe (danger tint); "chat-only" stays muted like the rest of the row. */
+.ft-visibility-badge { flex-shrink: 0; display: inline-flex; align-items: center; margin-left: -3px; color: var(--faint); }
+.ft-visibility-badge.hidden { color: var(--danger); opacity: 0.85; }
 /* File-tree rows (folders + files). The design's 28px rounded rows; static look lives
    here, the dynamic drop-target highlight stays inline/classList in FileTree.tsx. */
 .ft-row { display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; color: var(--text-muted); white-space: nowrap; cursor: pointer; user-select: none; }

@@ -50,6 +50,23 @@ test("diffFingerprints: changing the icon marks tree dirty only", () => {
   expect(diffFingerprints(prev, next)).toEqual({ graph: false, tree: true });
 });
 
+test("extractFingerprint captures the visibility frontmatter", () => {
+  const fp = extractFingerprint(`---\nvisibility: hidden\n---\nbody`);
+  expect(fp.visibility).toBe("hidden");
+});
+
+test("diffFingerprints: adding a visibility marks tree dirty only (the gotcha this file already documents for icon)", () => {
+  const prev = extractFingerprint(`body [[A]]`);
+  const next = extractFingerprint(`---\nvisibility: hidden\n---\nbody [[A]]`);
+  expect(diffFingerprints(prev, next)).toEqual({ graph: false, tree: true });
+});
+
+test("diffFingerprints: changing visibility marks tree dirty only", () => {
+  const prev = extractFingerprint(`---\nvisibility: chat-only\n---\nbody [[A]]`);
+  const next = extractFingerprint(`---\nvisibility: hidden\n---\nbody [[A]]`);
+  expect(diffFingerprints(prev, next)).toEqual({ graph: false, tree: true });
+});
+
 test("diffFingerprints: a brand-new file (no prior fingerprint) is both dirty", () => {
   const next = extractFingerprint(`anything`);
   expect(diffFingerprints(undefined, next)).toEqual({ graph: true, tree: true });

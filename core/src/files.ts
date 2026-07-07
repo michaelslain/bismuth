@@ -92,13 +92,14 @@ export async function listBases(root: string): Promise<string[]> {
   return out.sort();
 }
 
-// Per-note icon cache, keyed by absolute path → { mtime, icon }. listTree otherwise
-// reads + frontmatter-parses every .md just to pull the optional `icon` field; this skips
-// that work for notes whose mtime is unchanged since the last listTree. Self-healing: a
-// changed file restamps its entry, so no explicit invalidation is needed. Stale entries
-// for deleted paths may linger but are never emitted (only paths present in the current
-// walk are looked up). `icon` is null when the note has no icon frontmatter.
-const iconCache = new Map<string, { mtime: number; icon: string | null }>();
+// Per-note icon+visibility cache, keyed by absolute path → { mtime, icon, visibility }.
+// listTree otherwise reads + frontmatter-parses every .md just to pull the optional
+// `icon`/`visibility` fields; this skips that work for notes whose mtime is unchanged
+// since the last listTree. Self-healing: a changed file restamps its entry, so no
+// explicit invalidation is needed. Stale entries for deleted paths may linger but are
+// never emitted (only paths present in the current walk are looked up). `icon`/
+// `visibility` are null when the note has no such frontmatter (or an invalid value).
+const iconCache = new Map<string, { mtime: number; icon: string | null; visibility: "all" | "chat-only" | "hidden" | null }>();
 
 export async function listTree(
   root: string,
@@ -191,21 +192,29 @@ export async function listTree(
       }
     } else if (entry.name.endsWith(".md")) {
       const abs = join(root, entry.rel);
-      // Reuse the cached icon when the file's mtime is unchanged; only re-read + parse
-      // frontmatter for notes that actually changed since the last listTree. mtimes were
-      // pre-statted concurrently above (NaN = stat failed → fresh read attempt).
+      // Reuse the cached icon/visibility when the file's mtime is unchanged; only
+      // re-read + parse frontmatter for notes that actually changed since the last
+      // listTree. mtimes were pre-statted concurrently above (NaN = stat failed →
+      // fresh read attempt). `visibility` here is the file's OWN explicit frontmatter
+      // value (pre-cascade) — GET /tree's overlay resolves it against folderVisibility.
       let icon: string | null;
+      let visibility: "all" | "chat-only" | "hidden" | null;
       const mtime = mtimes.get(abs) ?? NaN;
       const cached = iconCache.get(abs);
       if (cached && cached.mtime === mtime && !Number.isNaN(mtime)) {
         icon = cached.icon;
+        visibility = cached.visibility;
       } else {
         const { data } = parseFrontmatter(await readNote(root, entry.rel));
         icon = typeof data.icon === "string" ? data.icon : null;
-        if (!Number.isNaN(mtime)) iconCache.set(abs, { mtime, icon });
+        visibility = data.visibility === "all" || data.visibility === "chat-only" || data.visibility === "hidden"
+          ? data.visibility
+          : null;
+        if (!Number.isNaN(mtime)) iconCache.set(abs, { mtime, icon, visibility });
       }
       const treeEntry: TreeEntry = { path: entry.rel, kind: "file" };
       if (icon !== null) treeEntry.icon = icon;
+      if (visibility !== null) treeEntry.visibility = visibility;
       out.push(treeEntry);
     } else if (entry.data === "PenTool") {
       // .draw file with icon marker

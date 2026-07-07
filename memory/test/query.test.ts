@@ -139,6 +139,18 @@ describe("executeQuery", () => {
     expect(results).toHaveLength(5);
   });
 
+  // Visibility gate (docs/vault/visibility.md): a "hidden" or "chat-only" memory note is excluded
+  // from EVERY query result, even a match-all empty query.
+  test("excludes 'hidden' and 'chat-only' memory notes from every query, even match-all", async () => {
+    await writeNote("SecretNote", { ...mkFm("fact", ["secret"]), visibility: "hidden" }, "a hidden fact", tempDir);
+    await writeNote("DraftNote", { ...mkFm("fact", ["draft"]), visibility: "chat-only" }, "a draft fact", tempDir);
+    const all = await executeQuery(parseQuery(""), tempDir);
+    const names = all.map((n) => n.name);
+    expect(names).not.toContain("SecretNote");
+    expect(names).not.toContain("DraftNote");
+    expect(all).toHaveLength(5); // the 5 seeded above, unaffected
+  });
+
   test("filters by type", async () => {
     const results = await executeQuery(parseQuery("type:person"), tempDir);
     expect(results).toHaveLength(1);

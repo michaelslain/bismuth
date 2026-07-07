@@ -1,4 +1,4 @@
-import { loadAllNotes, getMemoryDir } from "./graph";
+import { loadAllNotes, getMemoryDir, isMemoryNoteVisibleToDaemon } from "./graph";
 import type { MemoryNote } from "./graph";
 
 const STOP_WORDS = new Set([
@@ -111,7 +111,9 @@ export async function searchMemory(
   const keywords = extractKeywords(prompt);
   if (keywords.length === 0) return [];
 
-  const notes = await loadAllNotes(dir);
+  // Visibility gate (docs/vault/visibility.md): a "chat-only"/"hidden" memory note never
+  // surfaces via recall — memory notes are flat, so this is a per-note check, not a cascade.
+  const notes = (await loadAllNotes(dir)).filter(isMemoryNoteVisibleToDaemon);
 
   // Score and filter
   const scored: ScoredNote[] = [];

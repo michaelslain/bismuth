@@ -241,6 +241,48 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     }
   }
 
+  // Set (or clear, when `visibility` is null) a node's AI visibility. Files store it in
+  // their `visibility:` frontmatter (clearing removes the key — "inherit", not "visible");
+  // folders have none, so theirs lives in settings.yaml (clearing removes that entry).
+  // This restricts the daemon + in-app chat's own tool calls, never the vault owner — see
+  // docs/vault/visibility.md.
+  async function applyVisibility(node: TreeNode, isDir: boolean, visibility: "chat-only" | "hidden" | null) {
+    try {
+      if (isDir) await api.setFolderVisibility(node.path, visibility);
+      else if (visibility === null) await api.deleteProperty(node.path, "visibility");
+      else await api.setProperty(node.path, "visibility", visibility);
+      await refresh();
+    } catch (e) {
+      pushToast(`Set visibility failed: ${(e as Error).message}`);
+    }
+  }
+
+  /** Look up a node in the current tree by its full path (root when path is ""). */
+  function findNode(path: string): TreeNode | undefined {
+    if (!path) return treeRoot();
+    let cur: TreeNode | undefined = treeRoot();
+    for (const seg of path.split("/")) {
+      cur = cur?.children?.get(seg);
+      if (!cur) return undefined;
+    }
+    return cur;
+  }
+
+  // The nearest ancestor FOLDER (deepest first, strictly above `path`) that carries its
+  // own explicit visibility override — a file's own value always wins outright, so its
+  // effective visibility can only diverge from its own (absent) value because of one of
+  // these; same for a folder with no override of its own. Used to name the responsible
+  // folder in the context menu's "Effective: …" row so it never lies about why.
+  function nearestAncestorOverride(path: string): { path: string; visibility: "chat-only" | "hidden" } | null {
+    const parts = path.split("/").slice(0, -1);
+    for (let i = parts.length; i > 0; i--) {
+      const folderPath = parts.slice(0, i).join("/");
+      const v = findNode(folderPath)?.ownVisibility;
+      if (v) return { path: folderPath, visibility: v };
+    }
+    return null;
+  }
+
   // Optimistic local edits: apply the change to the tree instantly so the UI
   // reflects it without waiting for a /tree round-trip (which contends with the
   // server's graph rebuild). The op's own success path needs no refetch — the
@@ -375,6 +417,42 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     }
   }
 
+  function visibilityMenuIcon(resolved: TreeNode["visibility"]): string {
+    return resolved === "hidden" ? "EyeOff" : resolved === "chat-only" ? "MessageSquareOff" : "Eye";
+  }
+
+  // The three explicit states a node can be set to from the menu. `null` clears the
+  // override (delete the frontmatter key / folderVisibility entry) — the plan's "Visible
+  // to Daemon + Chat" row never writes an explicit "all", matching Set Icon's clear pattern.
+  const VISIBILITY_ROWS: { value: "chat-only" | "hidden" | null; label: string }[] = [
+    { value: null, label: "Visible to Daemon + Chat" },
+    { value: "chat-only", label: "Chat only" },
+    { value: "hidden", label: "Hidden from both" },
+  ];
+
+  function buildVisibilitySubmenu(node: TreeNode, isDir: boolean): MenuItem[] {
+    const own = node.ownVisibility ?? null;
+    const submenu: MenuItem[] = [];
+    // The node's own setting is absent yet its EFFECTIVE visibility is restricted — an
+    // ancestor folder is forcing it. Name that folder so the menu never lies about why
+    // picking "Visible to Daemon + Chat" here won't actually expose it.
+    if (!own && node.visibility) {
+      const forced = nearestAncestorOverride(node.path);
+      if (forced) {
+        const label = forced.visibility === "hidden" ? "Hidden" : "Chat only";
+        submenu.push({ label: `Effective: ${label} — inherited from '${forced.path}/'`, disabled: true });
+      }
+    }
+    for (const row of VISIBILITY_ROWS) {
+      const active = own === row.value;
+      submenu.push({
+        label: active ? `✓ ${row.label}` : row.label,
+        onSelect: () => applyVisibility(node, isDir, row.value),
+      });
+    }
+    return submenu;
+  }
+
   function buildMenuItems(node: TreeNode): MenuItem[] {
     // Right-clicking inside a multi-selection offers a single batch delete for the lot.
     const sel = selected();
@@ -404,6 +482,7 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     // stay, for hand-adding crons/memory).
     if (!node.isSystemFolder && node.path !== SETTINGS_FILE) {
       items.push({ label: "Set Icon…", icon: "Image", onSelect: () => setIconPicker({ node, isDir }) });
+      items.push({ label: "Visibility", icon: visibilityMenuIcon(node.visibility), submenu: buildVisibilitySubmenu(node, isDir) });
       items.push({ label: "Rename", icon: "Pencil", onSelect: () => setEditing(node.path) });
       items.push({ label: "Delete", icon: "Trash2", danger: true, separatorBefore: true, onSelect: () => doDelete(node) });
     }
@@ -613,6 +692,26 @@ function Collapsible(props: { open: boolean; children: JSX.Element }) {
   );
 }
 
+// Small glyph beside a row's icon, driven by the RESOLVED visibility (TreeEntry/TreeNode
+// `visibility` — omitted for "all"), so a plain file deep inside a hidden folder still
+// shows the badge without its own frontmatter. Distinct glyph per tier; tooltip names who
+// it's hidden from. Restricts the daemon + in-app chat only — see docs/vault/visibility.md.
+function VisibilityBadge(props: { visibility?: "chat-only" | "hidden" }) {
+  return (
+    <Show when={props.visibility}>
+      {(v) => (
+        <span
+          class="ft-visibility-badge"
+          classList={{ hidden: v() === "hidden" }}
+          title={v() === "hidden" ? "Hidden from the daemon and in-app chat" : "Chat only — hidden from the daemon"}
+        >
+          <Icon value={v() === "hidden" ? "EyeOff" : "MessageSquareOff"} size={12} />
+        </span>
+      )}
+    </Show>
+  );
+}
+
 function Level(props: {
   node: TreeNode; depth: number;
   open: Set<string>; toggle: (p: string) => void; onOpen: (p: string) => void;
@@ -652,6 +751,7 @@ function Level(props: {
             >
               <Icon value={props.open.has(child.path) ? "ChevronDown" : "ChevronRight"} size={14} class="ft-chevron" />
               <Icon value={child.icon} fallback={child.isSystemFolder ? "Settings2" : props.open.has(child.path) ? "FolderOpen" : "Folder"} size={16} class="ft-icon" />
+              <VisibilityBadge visibility={child.visibility} />
               <Show when={props.editing === child.path} fallback={child.label ?? child.name}>
                 <EditableLabel node={child} isDir={true} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
               </Show>
@@ -679,6 +779,7 @@ function Level(props: {
             onContextMenu={(e) => props.onMenu(child, e)}
           >
             <Icon value={child.icon} fallback={child.name.endsWith(".sheet") ? "Table" : "FileText"} size={16} class="ft-icon" />
+            <VisibilityBadge visibility={child.visibility} />
             <Show when={props.editing === child.path} fallback={child.label ?? displayName(child.name)}>
               <EditableLabel node={child} isDir={false} setEditing={props.setEditing} refresh={props.refresh} optimisticRename={props.optimisticRename} trackPending={props.trackPending} awaitCreate={props.awaitCreate} />
             </Show>

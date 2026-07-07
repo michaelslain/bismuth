@@ -73,6 +73,22 @@ describe("reconcileTree", () => {
     expect(child(r3, "a", "x.md").icon).toBeUndefined();
   });
 
+  test("visibility change on a leaf busts the leaf + spine; cleared visibility too (never stale)", () => {
+    const r1 = settle(undefined, [entry("a", "dir"), entry("a/x.md", "file", { visibility: "hidden" })]);
+    expect(child(r1, "a", "x.md").visibility).toBe("hidden");
+    const r2 = settle(r1, [entry("a", "dir"), entry("a/x.md", "file", { visibility: "chat-only" })]);
+    expect(child(r2, "a", "x.md")).not.toBe(child(r1, "a", "x.md"));
+    expect(child(r2, "a", "x.md").visibility).toBe("chat-only");
+    const r3 = settle(r2, [entry("a", "dir"), entry("a/x.md")]); // visibility cleared
+    expect(child(r3, "a", "x.md")).not.toBe(child(r2, "a", "x.md"));
+    expect(child(r3, "a", "x.md").visibility).toBeUndefined();
+  });
+
+  test("a resolved visibility of 'all' is treated as omitted (never carried onto the node)", () => {
+    const r1 = settle(undefined, [entry("a", "dir"), entry("a/x.md", "file", { visibility: "all" as any })]);
+    expect(child(r1, "a", "x.md").visibility).toBeUndefined();
+  });
+
   test("folder icon change busts the folder ref (contents unchanged children reused inside it)", () => {
     const r1 = settle(undefined, [entry("a", "dir", { icon: "Folder" }), entry("a/x.md")]);
     const r2 = settle(r1, [entry("a", "dir", { icon: "Book" }), entry("a/x.md")]);

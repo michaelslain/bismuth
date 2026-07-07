@@ -265,6 +265,10 @@ export async function serializeSettingsForFrontend(vault: string): Promise<Recor
       (out as Record<string, unknown>).folderIcons = readFolderIconsFrom(data);
       continue;
     }
+    if (section === "folderVisibility") {
+      (out as Record<string, unknown>).folderVisibility = readFolderVisibilityFrom(data);
+      continue;
+    }
     if (section === "toolbar") {
       (out as Record<string, unknown>).toolbar = readToolbarFrom(data);
       continue;
@@ -383,6 +387,25 @@ export async function readFolderIcons(vault: string): Promise<Record<string, str
   return readFolderIconsFrom(res.data);
 }
 
+/** Pull a clean `{folderPath: "chat-only"|"hidden"}` map out of parsed settings data. */
+function readFolderVisibilityFrom(data: Record<string, unknown>): Record<string, "chat-only" | "hidden"> {
+  const raw = data.folderVisibility;
+  const out: Record<string, "chat-only" | "hidden"> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (v === "chat-only" || v === "hidden") out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Read the per-folder visibility map from settings.yaml. Absent file / section → {}. */
+export async function readFolderVisibility(vault: string): Promise<Record<string, "chat-only" | "hidden">> {
+  const res = await readSettings(vault);
+  if (!res) return {};
+  return readFolderVisibilityFrom(res.data);
+}
+
 /** Read the dailyNotes config from settings.yaml. Absent file → seeded default. */
 export async function readDailyNotes(vault: string): Promise<DailyNoteConfig[]> {
   const res = await readSettings(vault);
@@ -419,6 +442,44 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
     }
     if (icon && icon.length > 0) {
       (map as YAMLMap).set(path, icon);
+    } else {
+      (map as YAMLMap).delete(path);
+    }
+    await writeNote(vault, SETTINGS_FILE, doc.toString({ flowCollectionPadding: false }));
+  });
+}
+
+/**
+ * Set or clear a folder's AI visibility and persist settings.yaml in place.
+ * A recognized value ("chat-only"/"hidden") sets folderVisibility[path]; anything
+ * else (including "all"/null/undefined) deletes it — same shape as setFolderIcon,
+ * restricted to the two-literal union.
+ */
+export async function setFolderVisibility(
+  vault: string,
+  path: string,
+  visibility: "chat-only" | "hidden" | null | undefined,
+): Promise<void> {
+  await withSettingsMutex(vault, async () => {
+    await initializeSettings(vault); // no-op if present; guarantees a file to edit
+    const raw = await readNote(vault, SETTINGS_FILE);
+    let doc: Document;
+    try {
+      doc = parseDocument(raw);
+    } catch {
+      return; // unparseable — never clobber existing content
+    }
+    if (doc.errors.length) return; // corrupt — leave the file for the user to fix
+    if (!doc.contents || !(doc.contents instanceof YAMLMap)) {
+      doc.contents = new YAMLMap();
+    }
+    let map = doc.getIn(["folderVisibility"]);
+    if (!(map instanceof YAMLMap)) {
+      map = new YAMLMap();
+      doc.setIn(["folderVisibility"], map);
+    }
+    if (visibility === "chat-only" || visibility === "hidden") {
+      (map as YAMLMap).set(path, visibility);
     } else {
       (map as YAMLMap).delete(path);
     }

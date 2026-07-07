@@ -4,6 +4,7 @@ import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
+import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -53,10 +54,17 @@ export const DEFAULT_DAEMON_IDENTITY = [
 ].join("\n")
 
 /** The bot's system prompt for one vault: "You are <name>." followed by the user-editable
- *  .daemon/identity.md (or the default above when absent/empty). Appended to Claude Code's system
- *  prompt so the daemon self-identifies (e.g. "Atlas") with whatever personality the user authored.
- *  Read fresh per session, so edits to identity.md take effect on the next cron/message. */
-async function buildSystemPrompt(ctx: VaultContext): Promise<string> {
+ *  .daemon/identity.md (or the default above when absent/empty), plus an ADVISORY visibility
+ *  appendix naming any notes off-limits per the vault's visibility settings. Appended to Claude
+ *  Code's system prompt so the daemon self-identifies (e.g. "Atlas") with whatever personality
+ *  the user authored. Read fresh per session, so edits to identity.md/visibility take effect on
+ *  the next cron/message.
+ *
+ *  The visibility appendix is defense-in-depth ONLY — same posture as the `dream` cron's
+ *  unenforced boundary — never the gate. The REAL gate is sendMessage's managedSettings.deny +
+ *  sandbox.filesystem.denyRead (core/src/visibility.ts's docs/vault/visibility.md threat model
+ *  applies here too: this restricts the daemon's own tool calls, not the vault owner). */
+async function buildSystemPrompt(ctx: VaultContext, denyEntries: DenyEntry[]): Promise<string> {
   let identity = DEFAULT_DAEMON_IDENTITY
   try {
     // identity.md carries the name in YAML frontmatter (read by the registry → ctx.name) and the
@@ -67,7 +75,16 @@ async function buildSystemPrompt(ctx: VaultContext): Promise<string> {
   } catch {
     // no identity.md (or unreadable) → default
   }
-  return `You are ${ctx.name}.\n\n${identity}`
+  let prompt = `You are ${ctx.name}.\n\n${identity}`
+  if (denyEntries.length > 0) {
+    const list = denyEntries.map((e) => `- ${e.rel}`).join("\n")
+    prompt +=
+      "\n\nThe following notes are marked off-limits by the vault's visibility settings — your Read/" +
+      "Edit/Grep/Glob/Bash access to them is already blocked at the tool level, but treat them as if " +
+      "they don't exist: don't mention them, guess at their contents, or try alternate ways to reach " +
+      `them if a tool call is denied.\n${list}`
+  }
+  return prompt
 }
 
 export interface BotResponse {
@@ -102,6 +119,14 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
 
   const existingSessionId = await getSessionId(ctx)
 
+  // Visibility gate (daemon/src/lib/visibility.ts, ported from core/src/visibility.ts):
+  // recomputed fresh on EVERY message (never cached) so a visibility edit made a moment ago is
+  // honored on this very call — see docs/vault/visibility.md. Verified (Step-0 spike) that
+  // managedSettings.permissions.deny survives this session's exact permissionMode:
+  // "bypassPermissions" + allowDangerouslySkipPermissions:true, and that sandbox.filesystem.
+  // denyRead blocks a Bash `cat`/`grep` of the same paths at the OS level (macOS).
+  const denyEntries = await buildDenyPaths(ctx.root)
+
   const options: Record<string, unknown> = {
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
@@ -109,8 +134,21 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
     // tools target the right brain, and the vault's daemon name as the bot's identity.
     cwd: ctx.root,
     env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
-    appendSystemPrompt: await buildSystemPrompt(ctx),
+    appendSystemPrompt: await buildSystemPrompt(ctx, denyEntries),
     model: opts?.model ?? "haiku",
+    // Both forms (relative-to-cwd AND absolute) of every denied path — empirically, Claude
+    // Code's Read tool does not consistently resolve a relative file_path against an
+    // absolute-only deny pattern (see buildManagedSettingsDeny's doc comment). Omitted entirely
+    // when there's nothing to restrict, so a vault with no visibility settings is unaffected.
+    ...(denyEntries.length > 0
+      ? {
+          managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
+          sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
+        }
+      : {}),
+    // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault
+    // via its own --vault/--dir flags, not just this one) — unconditional.
+    disallowedTools: ["mcp__bismuth__bismuth_cli"],
   }
 
   // Point the SDK at the user's installed claude binary (machine-login auth, no API key).

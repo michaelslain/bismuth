@@ -147,6 +147,8 @@ notify: true
 
 Review this vault (your current working directory) to build and maintain a deep understanding of the user — their beliefs, reading, projects, preferences, and intellectual trajectory — so future sessions don't treat them as a stranger.
 
+Some notes are marked off-limits by the vault's visibility settings (a per-file/folder control the user sets from the file tree) — a Read/Grep/Glob/Bash access to one of those will come back denied. That's expected and by design, not a bug or a missing file: skip it and move on without guessing at its contents or retrying.
+
 ## Step 0: Scope to what changed since the last review
 
 Get exactly the files that changed since your previous review, so you don't re-read the whole vault every time:

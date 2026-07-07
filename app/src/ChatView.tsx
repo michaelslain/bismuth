@@ -31,9 +31,11 @@ import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest } from "../../core/src/chat";
 import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs } from "./chatContext";
+import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { publishChatTitle } from "./chatTitles";
 import { pushToast } from "./Toast";
+import { lastChange } from "./serverVersion";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -203,21 +205,22 @@ function relativeTime(ms: number): string {
  *  with the file it came from. Read CLIENT-SIDE from editorRegistry + chatContext at send time and
  *  prepended to the WIRE message only (never the visible transcript bubble), so Claude grounds its
  *  reply in the user's editor without the user having to paste anything. Returns "" when there's
- *  no active file and no selection — nothing worth telling Claude. */
-function buildEditorContext(): string {
+ *  no active file and no selection — nothing worth telling Claude.
+ *
+ *  `hiddenPaths` drops any file whose RESOLVED AI visibility is "hidden" (never "chat-only" —
+ *  that tier IS visible to chat) before building the preamble, so a hidden note's path/content
+ *  can't reach the model through this side channel. See docs/vault/visibility.md. Filtering logic
+ *  itself is pure (chatEditorContext.ts, unit-tested); this just gathers the live state. */
+function buildEditorContext(hiddenPaths: ReadonlySet<string>): string {
   const sel = getFocusedSelection();
   const { openFiles, activeFile } = getEditorTabs();
-  const selection = sel?.selection ?? "";
-  if (!activeFile && !selection) return "";
-  const lines: string[] = ["<editor-context>"];
-  if (activeFile) lines.push(`Active file: ${activeFile}`);
-  if (openFiles.length) lines.push(`Open tabs: ${openFiles.map((f) => f.path).join(", ")}`);
-  if (selection) {
-    lines.push(`Current selection${sel?.path ? ` (from ${sel.path})` : ""}:`);
-    lines.push("```", selection, "```");
-  }
-  lines.push("</editor-context>");
-  return lines.join("\n");
+  return buildEditorContextText({
+    activeFile,
+    openFiles,
+    selection: sel?.selection ?? "",
+    selectionPath: sel?.path,
+    hiddenPaths,
+  });
 }
 
 export function ChatView(props: { chatId: string }) {
@@ -244,6 +247,24 @@ export function ChatView(props: { chatId: string }) {
   // OWNED here so "New" can swap to a fresh id — a brand-new Claude Code session on the next turn —
   // without touching the tab/App.tsx. The WS pins this id so a reconnect resumes the same session.
   const [activeChatId, setActiveChatId] = createSignal(props.chatId);
+
+  // Paths whose RESOLVED AI visibility is "hidden" (core/src/visibility.ts) — refreshed on mount
+  // and whenever the vault changes (SSE), like the rest of the app's tree state. Best-effort/
+  // eventually-consistent, not a live round trip per keystroke: buildEditorContext filters
+  // against the last-known set so a hidden file's path never reaches the model via the preamble.
+  const [hiddenPaths, setHiddenPaths] = createSignal<ReadonlySet<string>>(new Set());
+  const refreshHiddenPaths = async () => {
+    try {
+      const entries = await api.tree();
+      setHiddenPaths(new Set(entries.filter((e) => e.visibility === "hidden").map((e) => e.path)));
+    } catch {
+      // Leave the last-known set — better a stale filter than none.
+    }
+  };
+  createEffect(() => {
+    lastChange();
+    refreshHiddenPaths();
+  });
 
   // ── Session history picker ────────────────────────────────────────────────────────────────
   // A popover listing the user's existing Claude Code sessions for the vault (terminal + in-app,
@@ -584,7 +605,7 @@ export function ChatView(props: { chatId: string }) {
     // never clutters what the user sees. Empty when nothing's open/selected (see buildEditorContext).
     // Skipped for slash commands: Claude Code only recognises a `/command` at the START of the
     // message, so a preamble would silently break it.
-    const preamble = text.startsWith("/") ? "" : buildEditorContext();
+    const preamble = text.startsWith("/") ? "" : buildEditorContext(hiddenPaths());
     const wire = preamble ? `${preamble}\n\n${text}` : text;
     // Show the sent images in the user bubble (data URLs) so an image-only turn isn't an empty bubble.
     const bubbleImages = atts.map((a) => `data:${a.mediaType};base64,${a.data}`);

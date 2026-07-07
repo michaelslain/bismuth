@@ -116,4 +116,18 @@ describe("searchMemory", () => {
     const results = await searchMemory("deploy auth engineer", tempDir, 1);
     expect(results.length).toBeLessThanOrEqual(1);
   });
+
+  // Visibility gate (docs/vault/visibility.md): a "hidden" or "chat-only" memory note never
+  // surfaces via recall, even when its content otherwise matches the query strongly.
+  test("never surfaces a 'hidden' memory note, even on a strong keyword match", async () => {
+    await writeNote("SecretAuth", { ...mkFm("fact", ["auth"]), visibility: "hidden" }, "authentication secret credentials", tempDir);
+    const results = await searchMemory("authentication secret credentials", tempDir);
+    expect(results.map((n) => n.name)).not.toContain("SecretAuth");
+  });
+
+  test("never surfaces a 'chat-only' memory note either (recall is daemon-facing)", async () => {
+    await writeNote("DraftAuth", { ...mkFm("fact", ["auth"]), visibility: "chat-only" }, "authentication draft notes", tempDir);
+    const results = await searchMemory("authentication draft notes", tempDir);
+    expect(results.map((n) => n.name)).not.toContain("DraftAuth");
+  });
 });

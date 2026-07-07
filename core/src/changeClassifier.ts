@@ -2,8 +2,9 @@
 //
 // Decides whether a file change actually affects the knowledge graph or the file
 // tree. The graph is built only from a note's wikilinks + tags; the tree shows
-// only structure + the frontmatter `icon`. Everything else in a file's content
-// (prose, task lines, status tables, frontmatter values) is irrelevant to both.
+// only structure + the frontmatter `icon`/`visibility`. Everything else in a
+// file's content (prose, task lines, status tables, other frontmatter values) is
+// irrelevant to both.
 //
 // This lets the server stay completely silent toward graph/tree consumers when a
 // file is rewritten without changing its connections — e.g. a bot status file
@@ -19,6 +20,8 @@ export interface Fingerprint {
   tags: string;
   /** Frontmatter `icon`, or "" if absent. */
   icon: string;
+  /** Frontmatter `visibility`, or "" if absent. */
+  visibility: string;
 }
 
 /** What a change touched. */
@@ -36,6 +39,7 @@ export function extractFingerprint(content: string): Fingerprint {
     links: norm(extractWikilinks(content)),
     tags: norm(extractTags(data, body)),
     icon: typeof data.icon === "string" ? data.icon : "",
+    visibility: typeof data.visibility === "string" ? data.visibility : "",
   };
 }
 
@@ -59,7 +63,7 @@ export function diffFingerprints(
   if (!prev || !next) return { graph: true, tree: true };
   return {
     graph: prev.links !== next.links || prev.tags !== next.tags,
-    tree: prev.icon !== next.icon,
+    tree: prev.icon !== next.icon || prev.visibility !== next.visibility,
   };
 }
 

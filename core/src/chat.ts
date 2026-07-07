@@ -11,7 +11,8 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
-import { buildAutoNoteBody, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
+import { buildAutoNoteBody, extractText, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
+import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet } from "./visibility";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -255,6 +256,11 @@ function emit(session: ChatSession, frame: ChatFrame): void {
 }
 
 const sessions = new Map<string, ChatSession>();
+// createSession is async (it awaits the visibility deny-list build), so a chatId with no
+// session yet needs a guard against two concurrent sendMessage/resumeSession calls both
+// racing to create one (the second would silently orphan the first's process). Callers
+// share the SAME in-flight promise instead of starting a second creation.
+const inFlightCreates = new Map<string, Promise<ChatSession | null>>();
 
 /** Generate a fresh chat id (used by the server on upgrade). */
 export function newChatId(): string {
@@ -415,7 +421,7 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
  * pushes `text` into the queue so the CLI runs it as the next turn. If `claude` isn't installed,
  * pushes {error, code:"no-claude"} and returns — NEVER calls any API.
  */
-export function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): void {
+export async function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): Promise<void> {
   const existing = sessions.get(chatId);
   if (existing) {
     // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
@@ -432,13 +438,38 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
     return;
   }
 
-  const session = createSession(chatId, cwd, sink, undefined, memoryDir);
+  const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
   // Send the first turn, then drain the generator forever (until the queue closes / session ends).
   session.turnActive = true;
   session.input.push(text, images);
   void drain(session);
+}
+
+/** createSession, de-duplicated against a concurrent in-flight call for the same chatId (see
+ *  inFlightCreates) — createSession is async (awaits the visibility deny-list build), so two
+ *  calls racing before the first registers its session would otherwise both spawn a `claude`
+ *  process and the second registration would orphan the first. */
+async function getOrCreateSession(
+  chatId: string,
+  cwd: string,
+  sink: ChatSink,
+  resume: string | undefined,
+  memoryDir: string | undefined,
+): Promise<ChatSession | null> {
+  let creating = inFlightCreates.get(chatId);
+  if (!creating) {
+    creating = createSession(chatId, cwd, sink, resume, memoryDir);
+    inFlightCreates.set(chatId, creating);
+  }
+  try {
+    return await creating;
+  } finally {
+    // Only the owner clears its own entry — a stale delete could drop a NEWER in-flight
+    // create for the same chatId started after this one finished (unlikely, but cheap to guard).
+    if (inFlightCreates.get(chatId) === creating) inFlightCreates.delete(chatId);
+  }
 }
 
 /**
@@ -451,9 +482,9 @@ export function sendMessage(chatId: string, text: string, cwd: string, sink: Cha
  * If a session already exists for this chatId, it's torn down first so we cleanly re-bind to the
  * resumed conversation.
  */
-export function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string): void {
+export async function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string): Promise<void> {
   if (sessions.has(chatId)) closeChat(chatId);
-  const session = createSession(chatId, cwd, sink, sessionId, memoryDir);
+  const session = await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir);
   if (!session) return; // no-claude / spawn error already pushed to the sink
   // No initial turn — query() resumes the existing session; the drain loop streams its init manifest.
   void drain(session);
@@ -466,13 +497,24 @@ export function resumeSession(chatId: string, sessionId: string, cwd: string, si
  *
  * When `resume` is given, query() resumes that existing Claude Code session (keeps its history +
  * session_id) instead of starting fresh — the ONLY difference from a brand-new session.
+ *
+ * Async: it awaits buildDenyPaths(cwd, "chat") (core/src/visibility.ts) to gate every tool call
+ * against the vault's visibility settings, RECOMPUTED fresh on every new session (never cached) so
+ * a visibility edit takes effect on the very next chat message — see docs/vault/visibility.md.
  */
-function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string): ChatSession | null {
+async function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string): Promise<ChatSession | null> {
   const bin = whichClaude();
   if (!bin) {
     sink({ type: "error", code: "no-claude", message: "The `claude` CLI was not found. Install Claude Code to use chat." });
     return null;
   }
+
+  // Visibility gate (core/src/visibility.ts): resolve every note's effective visibility for the
+  // "chat" channel and deny the restricted subset. Per-file paths, not folder globs — an explicit
+  // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
+  // emits a deny for it).
+  const denyEntries = await buildDenyPaths(cwd, "chat");
+  const deniedPathSet = denyPathSet(denyEntries);
 
   const input = makeInputQueue();
   const session: ChatSession = {
@@ -502,6 +544,15 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
     toolInput: Record<string, unknown>,
     opts: { toolUseID?: string },
   ): Promise<SdkPermissionResult> => {
+    // Path-aware visibility auto-deny (same-process second layer, belt-and-suspenders with the
+    // managedSettings.deny below): denies OUTRIGHT — no prompt, no "always allow" override — when
+    // the tool targets a file whose resolved visibility is restricted for chat. Read/Edit/Write
+    // all carry the target path as `file_path`, in EITHER relative-to-cwd or absolute form (the
+    // model isn't consistent — deniedPathSet has both, see denyPathSet's doc comment).
+    const filePath = typeof toolInput.file_path === "string" ? toolInput.file_path : undefined;
+    if (filePath && deniedPathSet.has(filePath)) {
+      return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
+    }
     if (session.alwaysAllow.has(toolName)) {
       return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
     }
@@ -543,6 +594,23 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
         // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
         // closure to it.
         canUseTool: canUseTool as unknown as CanUseTool,
+        // Visibility gate, continued: `managedSettings` is the SDK's restrictive-only policy tier —
+        // it layers UNDER the user's own config (deny outranks any pre-existing "always allow"), and
+        // the app can only use it to NARROW access, never widen it. Verified (Step-0 spike) to
+        // survive this session's permission mode. `sandbox` additionally blocks a Bash `cat`/`grep`
+        // of the same paths at the OS level (verified on macOS). Both are omitted entirely when
+        // there's nothing to restrict, so a vault with no visibility settings behaves exactly as
+        // before — no sandboxing surprise for the common case.
+        ...(denyEntries.length > 0
+          ? {
+              managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
+              sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
+            }
+          : {}),
+        // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY
+        // vault via its own --vault/--dir flags, not just this one) — unconditional, independent of
+        // whether this vault has any visibility restrictions configured.
+        disallowedTools: ["mcp__bismuth__bismuth_cli"],
       },
     });
   } catch (e) {
@@ -831,12 +899,37 @@ export function abortTurn(chatId: string): void {
   }
 }
 
+/** Pull file paths referenced in a message's `<editor-context>` preamble (Active file / Open
+ *  tabs / selection source — see app/src/chatEditorContext.ts, the exact format this mirrors) so
+ *  captureToMemory can check whether any of them the daemon isn't allowed to see was part of the
+ *  conversation. Best-effort text scan of that one fixed format, not a general parser. */
+export function extractEditorContextPaths(text: string): string[] {
+  const block = text.match(/<editor-context>([\s\S]*?)<\/editor-context>/)?.[1];
+  if (!block) return [];
+  const out: string[] = [];
+  const active = block.match(/^Active file: (.+)$/m);
+  if (active) out.push(active[1]!.trim());
+  const tabs = block.match(/^Open tabs: (.+)$/m);
+  if (tabs) out.push(...tabs[1]!.split(",").map((s) => s.trim()).filter(Boolean));
+  const sel = block.match(/^Current selection \(from (.+)\):$/m);
+  if (sel) out.push(sel[1]!.trim());
+  return out;
+}
+
 /**
  * Capture a finished chat's conversation into the vault's 3rd brain as an auto note — the
  * in-app twin of the relay SessionEnd hook, sharing the same pure transcript pipeline
  * (@bismuth/memory), so the dream cron consolidates visual chats too. Fire-and-forget,
  * latched by `captured`, gated on the daemon being enabled (memoryDir set) and the session
  * having done real work (>=1 completed turn). Never blocks or fails teardown.
+ *
+ * Visibility gate: skips the WHOLE capture if any file referenced in the session's own
+ * <editor-context> preambles is restricted from the daemon (isVisibleToDaemon false — i.e.
+ * "chat-only" OR "hidden"). Hidden files never reach this preamble in the first place
+ * (ChatView.tsx's buildEditorContext already drops them), but a "chat-only" file is legitimately
+ * visible to chat and would otherwise land in a memory note the daemon later recalls — this is
+ * the load-bearing enforcement point for that tier, not a fast-follow. Coarse (whole-session, not
+ * per-turn) by design: simpler and fails toward NOT capturing rather than partially leaking.
  */
 function captureToMemory(s: ChatSession): void {
   if (!s.memoryDir || !s.sessionId || s.turnCount < 1 || s.captured) return;
@@ -846,7 +939,17 @@ function captureToMemory(s: ChatSession): void {
   void (async () => {
     try {
       const messages = await getSessionMessages(sessionId, { dir: cwd });
-      const body = buildAutoNoteBody(messages as TranscriptEntry[]);
+      const entries = messages as TranscriptEntry[];
+      // Editor-context paths (extractEditorContextPaths) are vault-relative, exactly the `rel`
+      // form denyPathSet carries — no join/realpath needed here (unlike the canUseTool check,
+      // which also has to match the SDK's own absolute-path reporting).
+      const restricted = denyPathSet(await buildDenyPaths(cwd, "daemon"));
+      const touchedRestricted = entries.some((e) => {
+        const text = extractText(e.message);
+        return text && extractEditorContextPaths(text).some((p) => restricted.has(p));
+      });
+      if (touchedRestricted) return; // a chat-only/hidden file was discussed — never capture
+      const body = buildAutoNoteBody(entries);
       if (body === null) return; // trivial
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");

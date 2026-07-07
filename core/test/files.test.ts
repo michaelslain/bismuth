@@ -97,6 +97,28 @@ test("listTree ignores a non-string icon value", async () => {
   expect(entries).toEqual([{ path: "note.md", kind: "file" }]);
 });
 
+test("listTree surfaces the `visibility` frontmatter property (raw, pre-cascade)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-visibility-"));
+  await writeNote(dir, "plain.md", "# Plain");
+  await writeNote(dir, "hidden.md", "---\nvisibility: hidden\n---\n# Hidden");
+  await writeNote(dir, "chat-only.md", "---\nvisibility: chat-only\n---\n# Chat only");
+  await writeNote(dir, "override.md", "---\nvisibility: all\n---\n# Explicit override");
+  const entries = (await listTree(dir)).sort((a, b) => a.path.localeCompare(b.path));
+  expect(entries).toEqual([
+    { path: "chat-only.md", kind: "file", visibility: "chat-only" },
+    { path: "hidden.md", kind: "file", visibility: "hidden" },
+    { path: "override.md", kind: "file", visibility: "all" },
+    { path: "plain.md", kind: "file" },
+  ]);
+});
+
+test("listTree ignores an invalid visibility value", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-badvisibility-"));
+  await writeNote(dir, "note.md", "---\nvisibility: nonsense\n---\n# Note");
+  const entries = await listTree(dir);
+  expect(entries).toEqual([{ path: "note.md", kind: "file" }]);
+});
+
 test("listTree includes directories and excludes dot-dirs like .trash", async () => {
   const dir = mkdtempSync(join(tmpdir(), "bismuth-tree-dirs-"));
   await writeNote(dir, "top.md", "# Top");
