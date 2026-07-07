@@ -9,7 +9,7 @@ import { api } from "./api";
 import { onServerChange } from "./serverVersion";
 import type { TreeEntry } from "../../core/src/graph";
 
-// The exact element type `api.tree()` yields, so consumers (QuickSwitcher's isFile/toItem)
+// The exact element type `api.tree()` yields, so consumers (vaultFileItems' isFile/toItem)
 // keep type-checking against the real shape.
 const [tree, setTree] = createSignal<TreeEntry[]>([]);
 

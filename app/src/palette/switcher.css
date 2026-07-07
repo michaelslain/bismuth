@@ -1,0 +1,75 @@
+/* app/src/palette/switcher.css
+   The in-window Cmd+O switcher (SwitcherBar.tsx). Unlike the modal palette, this bar is
+   NOT a Portal/backdrop overlay — it's an absolutely-positioned top bar inside the editor
+   pane, sitting where the tab strip was while the knowledge graph fills the window behind
+   it. Rows reuse the global .palette-* classes (App.css) so they match the command palette.
+   Loaded at boot (SwitcherBar is eagerly imported by App), so the .editor-pane positioning
+   context below is in place before the bar ever renders. */
+
+/* Positioning context for the absolute bar. Harmless when idle (no offset children). */
+.editor-pane { position: relative; }
+
+/* The big top bar: spans the editor pane's width, covering the tab strip. Stacks above
+   the graph floater (z-index:2) so its dropdown reads over the graph. */
+.switcher-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-modal);
+  font-family: var(--popover-font);
+  animation: switcher-drop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes switcher-drop { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
+
+/* The search row — big and prominent (this is "the search" that replaced the toolbar). */
+.switcher-search { padding: 14px 18px; gap: 12px; }
+.switcher-search .search-bar-lead { color: var(--accent); opacity: 1; }
+.switcher-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 17px;
+}
+.switcher-input::placeholder { color: var(--fg); opacity: 0.4; }
+
+/* Small resting "esc" hint on the right edge of the bar. */
+.switcher-esc {
+  flex: none;
+  font-family: var(--popover-font);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--fg) 7%, transparent);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 2px 8px;
+  line-height: 1.3;
+}
+
+/* The results dropdown, hanging below the bar over the graph. Capped so the graph backdrop
+   stays visible beneath a long list. */
+.switcher-list {
+  overflow-y: auto;
+  max-height: 46vh;
+  padding: 6px;
+  border-top: 1px solid var(--border-soft);
+}
+
+/* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
+   non-interactive — and restores on Esc. Subtle, per the design. */
+.layout.switcher-active .sidebar-icons {
+  opacity: 0.35;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
