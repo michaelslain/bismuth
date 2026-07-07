@@ -14,7 +14,7 @@
     "build:bismuth-tools": "bun run scripts/build-bismuth-tools.ts",
     "build:daemon-sidecar": "bun run scripts/build-daemon-sidecar.ts",
     "installer": "bun run tauri build && bun run scripts/open-installer.ts",
-    "tauri": "tauri"
+    "tauri": "bun run scripts/tauri.ts"
   },
   "license": "MIT",
   "dependencies": {
