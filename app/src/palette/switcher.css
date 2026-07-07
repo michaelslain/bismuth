@@ -16,26 +16,28 @@
    every other graph mode (sidebar mini, ::graph home tab) the floater stays transparent. */
 .layout.switcher-active .graph-floater { background: var(--bg); }
 
-/* The big top bar: spans the editor pane's width, covering the tab strip. Stacks above the graph
-   floater (z-index:2). Translucent + blurred so it reads as a panel FLOATING over the graph
-   rather than a hard modal slab (the graph glow faintly shows through the results). */
+/* The search column: a full-height panel pinned to the LEFT of the editor pane, with the
+   knowledge graph filling the region to its right (the floater is inset by this column's width
+   in App.tsx placeFloater). Stacks above the graph floater. Translucent + blurred so it reads
+   as a panel FLOATING over the graph rather than a hard modal slab. */
 .switcher-bar {
   position: absolute;
   top: 0;
   left: 0;
-  right: 0;
+  bottom: 0;
+  width: min(560px, 45%);
   z-index: 20;
   display: flex;
   flex-direction: column;
   background: color-mix(in srgb, var(--surface-1) 85%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  border-right: 1px solid var(--border);
+  box-shadow: 8px 0 30px rgba(0, 0, 0, 0.28);
   font-family: var(--popover-font);
   animation: switcher-drop 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
-@keyframes switcher-drop { from { transform: translateY(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes switcher-drop { from { transform: translateX(-6px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .switcher-bar { animation: none; } }
 
 /* The search row — big and prominent (this is "the search" that replaced the toolbar). */
@@ -67,11 +69,11 @@
   line-height: 1.3;
 }
 
-/* The results dropdown, hanging below the bar over the graph. Capped so the graph backdrop
-   stays visible beneath a long list. */
+/* The results list fills the rest of the column below the search row. */
 .switcher-list {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  max-height: 40vh;
   padding: 6px;
   border-top: 1px solid var(--border-soft);
 }

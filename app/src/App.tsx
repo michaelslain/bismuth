@@ -1642,9 +1642,12 @@ export default function App() {
     const slot = host ?? (anyTabOpen() ? sidebarSlot : mainSlot);
     if (!slot) return;
     const r = slot.getBoundingClientRect();
+    // In switcher mode the search + results occupy a fixed left column; the graph fills only
+    // the region to the RIGHT of it, so inset the floater's left edge by the column width.
+    const col = switcherOpen() ? Math.min(560, r.width * 0.45) : 0;
     floater.style.top = `${r.top}px`;
-    floater.style.left = `${r.left}px`;
-    floater.style.width = `${r.width}px`;
+    floater.style.left = `${r.left + col}px`;
+    floater.style.width = `${r.width - col}px`;
     floater.style.height = `${r.height}px`;
   };
   // Place the floater on the active slot. The docked (sidebar) graph collapses via a
@@ -1769,7 +1772,7 @@ export default function App() {
   }
 
   return (
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible(), "switcher-active": switcherOpen() }}>
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen() }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
