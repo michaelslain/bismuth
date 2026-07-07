@@ -22,6 +22,7 @@ import {
   deleteRow,
   insertColumn,
   deleteColumn,
+  appendToCell,
 } from "./tableModel";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { renderInlineMarkdown } from "./inlineMarkdown";
@@ -281,6 +282,61 @@ function dispatchKeepScroll(view: EditorView, spec: TransactionSpec): void {
       scroller.scrollLeft = left;
     },
   });
+}
+
+/** Resolve a file-drop target to a table cell (#30). A rendered table is an ATOMIC block
+ *  widget, so the editor's `view.posAtCoords(dropPoint)` maps a drop anywhere over it to the
+ *  block BOUNDARY — an image dropped on a cell would land beside the table in the note body,
+ *  not in the cell. Given the drop event's target node, this returns the cell's grid
+ *  coordinate `(r, c)` plus the table block's CURRENT source range (the `from` anchor lets the
+ *  async insert re-find the block after the upload), or null when the drop isn't over a cell. */
+export function tableCellDropTarget(
+  view: EditorView,
+  target: EventTarget | null,
+): { from: number; to: number; r: number; c: number } | null {
+  const el = target instanceof HTMLElement ? target : (target as Node | null)?.parentElement ?? null;
+  const cell = el?.closest?.("[data-cell]") as HTMLElement | null;
+  const wrap = cell?.closest(".cm-table-wrap") as HTMLElement | null;
+  if (!cell || !wrap) return null;
+  const range = currentRange(view, wrap);
+  if (!range) return null;
+  const r = Number(cell.getAttribute("data-r"));
+  const c = Number(cell.getAttribute("data-c"));
+  if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+  return { from: range.from, to: range.to, r, c };
+}
+
+/** Insert `embeds` (`![[…]]` markers) into cell (r, c) of the table whose block currently
+ *  spans `anchorFrom`, then commit the reformatted table back to source (#30). The drop's
+ *  upload is async, so the block is RE-RESOLVED from the live doc here (its start position is
+ *  stable across our own in-place table edits) rather than trusting a range captured before
+ *  the await. Returns false if the table/cell no longer exists, so the caller can fall back to
+ *  a note-body insert instead of dropping the image silently. */
+export function insertEmbedsInTableCell(
+  view: EditorView,
+  anchorFrom: number,
+  r: number,
+  c: number,
+  embeds: string[],
+): boolean {
+  if (embeds.length === 0) return false;
+  const doc = view.state.doc;
+  const { blocks } = groupTableBlocks(doc);
+  const block = blocks.find(
+    (b) => doc.line(b.startLine).from <= anchorFrom && anchorFrom <= doc.line(b.endLine).to,
+  );
+  if (!block) return false;
+  const cols = block.cells[0]?.length ?? 0;
+  if (r < 0 || r >= block.cells.length || c < 0 || c >= cols) return false;
+  const grid = appendToCell({ cells: block.cells, aligns: block.aligns }, r, c, embeds.join("<br>"));
+  const md = formatTable(grid);
+  const from = doc.line(block.startLine).from;
+  const to = doc.line(block.endLine).to;
+  if (view.state.sliceDoc(from, to) === md) return false;
+  // Growing the cell can change the block widget's height — pin the scroll like every other
+  // table edit so CM's async height re-measure doesn't yank the viewport.
+  dispatchKeepScroll(view, { changes: { from, to, insert: md } });
+  return true;
 }
 
 /** Open a wikilink clicked inside a rendered table cell (#33). The cell is a contenteditable
