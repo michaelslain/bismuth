@@ -100,11 +100,19 @@
 }
 
 /* Match highlighting (the panel-gated highlighter from @codemirror/search). Recolor
-   to the app accent; !important beats the package's themed `.cm-searchMatch` rules. */
+   to the app accent; !important beats the package's themed `.cm-searchMatch` rules.
+   Every match gets a legible accent wash + a hairline ring so it reads against prose;
+   the ACTIVE match (the one the selection sits on — typing/Enter/prev-next move it, see
+   findPanel.revealFrom) gets a strong solid wash + a full 2px accent ring so it's
+   unmistakable even while the find INPUT (not the editor) holds focus and the editor's
+   own selection layer is dimmed. Contrast here is what makes "where the match is" obvious. */
 .cm-editor .cm-searchMatch {
-  background: var(--accent-soft) !important;
+  background: color-mix(in srgb, var(--accent) 26%, transparent) !important;
   border-radius: 2px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .cm-editor .cm-searchMatch-selected {
-  background: color-mix(in srgb, var(--accent) 42%, transparent) !important;
+  background: color-mix(in srgb, var(--accent) 58%, transparent) !important;
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 3px;
 }

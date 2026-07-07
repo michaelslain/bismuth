@@ -11,6 +11,7 @@
 // (reads settings.keybindings.find) so it's user-rebindable like every other shortcut.
 
 import { EditorView, type Panel, type ViewUpdate } from "@codemirror/view";
+import { type EditorState } from "@codemirror/state";
 import {
   search,
   SearchQuery,
@@ -39,6 +40,27 @@ function matchStats(view: EditorView, query: SearchQuery): { total: number; curr
     if (total >= MAX_COUNT) break;
   }
   return { total, current };
+}
+
+/** The match range at/after `pos` (wrapping to the doc start when nothing matches from `pos`
+ *  onward), or null when the query is invalid/empty or the doc has no match at all. Pure over
+ *  the state + query — this is the range the find bar selects + scrolls to on every keystroke,
+ *  factored out of the DOM-coupled panel so the "Cmd+F selects the match" behavior is unit-tested.
+ *  Searching from the match START (not its end) means refining the query keeps you on the current
+ *  match instead of skipping past it. */
+export function nextMatchFrom(
+  state: EditorState,
+  query: SearchQuery,
+  pos: number,
+): { from: number; to: number } | null {
+  if (!query.valid) return null;
+  let cursor = query.getCursor(state, pos);
+  let r = cursor.next();
+  if (r.done) {
+    cursor = query.getCursor(state, 0); // wrap to the start of the doc
+    r = cursor.next();
+  }
+  return r.done ? null : { from: r.value.from, to: r.value.to };
 }
 
 // Lucide-style inline icons (the registry renders Solid components; the panel is raw
@@ -116,21 +138,13 @@ export function createFindPanel(view: EditorView): Panel {
   // which would clobber what the user is typing. Searching from the match START (not its
   // end) means refining the query keeps you on the current match instead of skipping it.
   const revealFrom = (pos: number) => {
-    const q = getSearchQuery(view.state);
-    if (!q.valid) return;
-    let cursor = q.getCursor(view.state, pos);
-    let r = cursor.next();
-    if (r.done) {
-      cursor = q.getCursor(view.state, 0); // wrap to the start of the doc
-      r = cursor.next();
-    }
-    if (!r.done) {
-      view.dispatch({
-        selection: { anchor: r.value.from, head: r.value.to },
-        effects: EditorView.scrollIntoView(r.value.to, { y: "center" }),
-        userEvent: "select.search",
-      });
-    }
+    const m = nextMatchFrom(view.state, getSearchQuery(view.state), pos);
+    if (!m) return;
+    view.dispatch({
+      selection: { anchor: m.from, head: m.to },
+      effects: EditorView.scrollIntoView(m.to, { y: "center" }),
+      userEvent: "select.search",
+    });
   };
 
   // Push the input's text as the active query (live highlight) and reveal the nearest match.
