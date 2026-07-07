@@ -359,11 +359,27 @@ export function setRatio(root: PaneNode, splitId: string, ratio: number): PaneNo
   return walk(root);
 }
 
-type Persisted = { tabs: Tab[]; activeTabId: string | null };
+export type Persisted = { tabs: Tab[]; activeTabId: string | null };
 
 export function serializeTabs(tabs: Tab[], activeTabId: string | null): string {
   const payload: Persisted = { tabs, activeTabId };
   return JSON.stringify(payload);
+}
+
+// Cold-launch restore split. A RELOAD (Cmd+R / hot-reload) restores the whole layout as-is; a
+// COLD launch (the app/window reopened after being fully closed) auto-restores only PINNED tabs —
+// pins survive a full restart the way they do in Obsidian/VSCode — and hands the unpinned
+// remainder back as `stash` for the caller to keep reachable via "reopen closed tab", so the prior
+// working set stays one keystroke away without duplicating the pins that just came back. Pure, so
+// App.tsx's startup restore is unit-testable without a DOM. The active tab follows the restored
+// (pinned) set when it was the active one, else the first pinned tab (null when nothing is pinned).
+export function splitColdLaunch(layout: Persisted): { restore: Persisted; stash: Tab[] } {
+  const pinned = layout.tabs.filter((t) => t.pinned);
+  const stash = layout.tabs.filter((t) => !t.pinned);
+  const activeTabId = pinned.some((t) => t.id === layout.activeTabId)
+    ? layout.activeTabId
+    : (pinned[0]?.id ?? null);
+  return { restore: { tabs: pinned, activeTabId }, stash };
 }
 
 // Give every node a fresh unique id, recording old→new so references (focusId) can be
