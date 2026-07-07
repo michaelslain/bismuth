@@ -1307,11 +1307,18 @@ export const livePreview = [
     ".cm-h5": { "font-size": "1.05em", "font-weight": "600" },
     ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
-    // Rendered horizontal rule (a `---` / `***` "em-dash" break): the line's dashes are hidden,
-    // so draw a centered rule via a pseudo-element. Always clearly visible, in a theme-agnostic
-    // DARK GREY (never a theme-accent color), matching the code-block / frontmatter left rules.
+    // Rendered horizontal rule (a `---` / `***` "em-dash" break): off the cursor line the dashes
+    // are hidden, so draw a centered rule via a pseudo-element. It must be ALWAYS clearly visible on
+    // EVERY theme — the earlier fixed `rgba(128,128,128,·)` mid-grey WAS the "dashes still not always
+    // visible" bug: on a light theme (bg ≈ #F1EFF7) a 128-grey line at 0.6α renders as faint light
+    // grey over near-white (~rgb(173) on ~rgb(243) — low contrast, near-invisible), and on any bg
+    // near mid-grey it disappears outright. `color-mix` off `var(--fg)` (the readable text color —
+    // always high-contrast with the bg on light AND dark themes) guarantees a visible rule, the same
+    // theme-aware technique the bullets / list numbers / frontmatter key already use. The line height
+    // never collapses (fixed 1.2em) so the rule always has a box to sit in. On the cursor line the raw
+    // `---` shows in full-contrast mono (`.cm-syntax-mark` = var(--fg)) — the dashes are visible there too.
     ".cm-hr": { position: "relative", height: "1.2em" },
-    ".cm-hr::before": { content: '""', position: "absolute", left: "0", right: "0", top: "calc(50% - 1px)", "border-top": "2px solid rgba(128,128,128,0.6)" },
+    ".cm-hr::before": { content: '""', position: "absolute", left: "0", right: "0", top: "calc(50% - 1px)", "border-top": "2px solid color-mix(in srgb, var(--fg) 45%, transparent)" },
     ".cm-li": { "padding-left": "2px", "line-height": "1.55" },
     // Bullet glyph sits in the hanging gutter (right-aligned, with a fixed gap to the text).
     ".cm-bullet": {
@@ -1332,14 +1339,16 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
-    // Code blocks: no fill; just monospace text with a neutral DARK-GREY left rule (never a
-    // theme-accent color) that runs the full height of the block so it always reads as a
-    // distinct, visible block. The ``` fences are hidden off-cursor (opening fence → header,
-    // closing fence collapsed), so the rule lives on the header line + every body line.
-    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5", "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)" },
+    // Code blocks: no fill; just monospace text with a neutral left rule (never a theme-accent
+    // color) that runs the full height of the block so it always reads as a distinct, visible block.
+    // Theme-aware via `color-mix` off `var(--fg)` (NOT a fixed mid-grey — same "not always visible"
+    // fragility as the HR above: a fixed 128-grey rule washes out on light-bg themes). The ``` fences
+    // are hidden off-cursor (opening fence → header, closing fence collapsed), so the rule lives on
+    // the header line + every body line.
+    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5", "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view.
-    ".cm-code-headerline": { "font-family": MONO_FONT, "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)" },
+    ".cm-code-headerline": { "font-family": MONO_FONT, "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)" },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
     ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
@@ -1375,11 +1384,12 @@ export const livePreview = [
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      // No surface fill — just a neutral DARK-GREY left rule + monospace, matching the fenced
-      // code blocks above (not a theme-accent color). A line background sits ABOVE CodeMirror's
-      // selection layer, so any fill (even translucent) hides the selection where it starts in
-      // the frontmatter, making a code-block→body drag look only half-highlighted.
-      "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)",
+      // No surface fill — just a neutral left rule + monospace, matching the fenced code blocks
+      // above (not a theme-accent color, and theme-aware via `color-mix` off `var(--fg)` so it
+      // never washes out on a light-bg theme). A line background sits ABOVE CodeMirror's selection
+      // layer, so any fill (even translucent) hides the selection where it starts in the
+      // frontmatter, making a code-block→body drag look only half-highlighted.
+      "box-shadow": "inset 2px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
     },
     // Property KEYS (date / tags / icon …): a dimmed neutral grey, NOT a theme-accent color, so the
     // frontmatter panel stays theme-agnostic dark grey (was `var(--accent)` — the re-flagged bug).
