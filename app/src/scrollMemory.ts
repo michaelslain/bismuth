@@ -26,3 +26,22 @@ export function loadScroll(path: string): number | undefined {
 export function clearScroll(path: string): void {
   scrollByPath.delete(path);
 }
+
+/** Re-key a remembered scroll offset across a rename/move so the renamed note keeps its
+ *  position instead of resetting to the top. No-op when nothing was stored for `from`. */
+export function renameScroll(from: string, to: string): void {
+  const v = scrollByPath.get(from);
+  if (v === undefined) return;
+  scrollByPath.delete(from);
+  scrollByPath.set(to, v);
+}
+
+// Keep a note's scroll offset attached across a rename/move: the FileTree + title-rename flows
+// dispatch `bismuth-moved {from,to}` before the editor remounts at the new path (same idiom as
+// noteCache's re-key), so a rename doesn't dump the reader back at the top.
+if (typeof window !== "undefined") {
+  window.addEventListener("bismuth-moved", (e) => {
+    const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
+    renameScroll(from, to);
+  });
+}
