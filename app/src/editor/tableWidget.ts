@@ -497,6 +497,17 @@ export class TableWidget extends WidgetType {
         // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
+          // Right-click (#43): show ONLY the context menu, never a NEW selection. Chromium's
+          // contenteditable default selects the word under the pointer on a right mousedown — so
+          // right-clicking both highlighted the word AND opened the menu. `preventDefault` here
+          // suppresses that word-select without clearing an EXISTING selection (a right-click on a
+          // selection keeps it), and the separate `contextmenu` listener still opens the menu. We
+          // stop propagation so CM doesn't also act, and return before the caret-placement path.
+          if (me.button === 2) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
           // instead of entering edit mode. The `e.stopPropagation()` below means CM's own
           // wikilink click handler never sees this click, so we run the same open path here.

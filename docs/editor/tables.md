@@ -241,9 +241,10 @@ Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; al
 
 `mousedown` on a cell:
 
-1. Calls `e.stopPropagation()` + `e.preventDefault()` to prevent CodeMirror from stealing the click (which would move the editor selection to the widget boundary).
-2. Calls `cell.focus()`.
-3. Uses `caretRangeFromPoint` (Chrome/Safari) or `caretPositionFromPoint` (Firefox) to place the text caret at the exact click position, falling back to the end of cell content.
+1. **Right-click (`button === 2`, #43):** `preventDefault()` + `stopPropagation()` and return immediately, so the browser's contenteditable default of selecting the word under the pointer never fires. `preventDefault` does NOT clear an existing selection, so right-clicking *on* a selection keeps it; right-clicking elsewhere shows the menu with no new word highlighted. The context menu is opened by the separate `contextmenu` listener. (Before this, a right-click on a cell in edit mode both highlighted a word AND opened the menu.)
+2. Calls `e.stopPropagation()` + `e.preventDefault()` to prevent CodeMirror from stealing the click (which would move the editor selection to the widget boundary).
+3. Calls `cell.focus()`.
+4. Uses `caretRangeFromPoint` (Chrome/Safari) or `caretPositionFromPoint` (Firefox) to place the text caret at the exact click position, falling back to the end of cell content.
 
 ### Paste Handling
 
