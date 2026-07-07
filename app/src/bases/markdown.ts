@@ -4,6 +4,7 @@ import { escapeHtml, escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
 import { parseCalloutHeader, renderCalloutHtml, type CalloutHeader } from "../editor/callout";
 import { BISMUTH_SCAN_RE, wrapBismuthWords } from "../editor/bismuthWord";
+import { renderCellListHtml } from "../editor/cellList";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -166,6 +167,23 @@ function iridescentBismuth(src: string): string {
   const wrapped = wrapBismuthWords(masked, (w) => `<span class="bismuth-word">${escapeHtml(w)}</span>`);
   return wrapped.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? "");
 }
+
+// ── Lists inside table cells ──────────────────────────────────────────────────
+// A GFM cell is one line, so a `<br>`-separated run of `- item` / `1. item` markers is
+// rendered as a real <ul>/<ol> (shared convention + parser in editor/cellList.ts, so the
+// note reader and the editor's editable-table widget agree). A non-list cell falls back to
+// marked's default inline render (a literal `<br>` stays a soft line break). Overrides only
+// `tablecell`; `table`/`tablerow` keep their defaults.
+marked.use({
+  renderer: {
+    tablecell(token) {
+      const listHtml = renderCellListHtml(token.text, (item) => marked.parseInline(item, { async: false }) as string);
+      const content = listHtml ?? this.parser.parseInline(token.tokens);
+      const tag = token.header ? "th" : "td";
+      return (token.align ? `<${tag} align="${token.align}">` : `<${tag}>`) + content + `</${tag}>\n`;
+    },
+  },
+});
 
 // A lone `<!-- pagebreak -->` comment line marks a PDF page boundary (invisible on screen + in
 // Obsidian). DOMPurify STRIPS HTML comments, so convert the marker into a real, zero-height

@@ -13,6 +13,7 @@
 import { Marked } from "marked";
 import { renderMath } from "./katexLoader";
 import { escapeHtml } from "../htmlEscape";
+import { renderCellListHtml } from "./cellList";
 
 // An isolated `marked` instance so our config never leaks into the global one that
 // bases/markdown.ts configures (and vice-versa). GFM gives ~~strikethrough~~ + autolinks.
@@ -111,7 +112,15 @@ function renderSeg(seg: InlineSeg): string {
   return inlineMarked.parseInline(seg.raw, { async: false }) as string;
 }
 
-/** Render a cell's markdown source to display HTML (synchronous). */
-export function renderInlineMarkdown(src: string): string {
+/** Render a run of a cell's inline markdown (wikilinks/math split out, the rest via
+ *  `marked`). One list item, or a whole non-list cell, is one run. */
+function renderInlineRun(src: string): string {
   return tokenizeInline(src).map(renderSeg).join("");
+}
+
+/** Render a cell's markdown source to display HTML (synchronous). A cell whose source is
+ *  `<br>`-separated bullet/number markers renders as a real `<ul>`/`<ol>` (see cellList.ts);
+ *  otherwise its inline markdown renders as-is (a `<br>` stays a soft line break). */
+export function renderInlineMarkdown(src: string): string {
+  return renderCellListHtml(src, renderInlineRun) ?? renderInlineRun(src);
 }
