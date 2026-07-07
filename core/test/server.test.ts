@@ -86,6 +86,35 @@ test("GET /abs-path resolves a vault-relative path to an absolute one (404 when 
 
     const missing = await fetch(`${base}/abs-path?path=does-not-exist.png`);
     expect(missing.status).toBe(404);
+    // #38: never cache a miss — the file can be created/renamed into place moments later (a
+    // pasted screenshot, a race with the file watcher), and a long-lived HTTP cache (a packaged
+    // desktop app's WKWebView keeps one NSURLCache for its whole session, unlike a fresh dev
+    // browser tab) could otherwise pin a stale 404 forever since 404 is heuristically cacheable
+    // by default (RFC 9110 §15.3) absent an explicit Cache-Control.
+    expect(missing.headers.get("cache-control")).toBe("no-store");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /asset streams a vault file's bytes; a miss is never cached (#38)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const r = await fetch(`${base}/asset?path=essay.md`);
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("Essay");
+    // The hit path keeps its intentional short cache (re-opening a note shouldn't re-walk the
+    // vault for filename-first resolution every time).
+    expect(r.headers.get("cache-control")).toBe("private, max-age=60");
+
+    const missing = await fetch(`${base}/asset?path=does-not-exist.png`);
+    expect(missing.status).toBe(404);
+    // See the /abs-path case above: a "not found" asset must never be cached, or a client that
+    // hit the miss before the file existed (or before a resolution bug was fixed) would keep
+    // being served the stale 404 forever for that exact URL.
+    expect(missing.headers.get("cache-control")).toBe("no-store");
   } finally {
     server.stop(true);
   }

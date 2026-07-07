@@ -1,6 +1,7 @@
 // app/src/preview/assetUrl.test.ts
 import { describe, expect, test } from "bun:test";
 import { buildAssetUrl } from "./assetUrl";
+import { httpTransport, resolveBase } from "../api";
 
 const BASE = "http://localhost:62617";
 
@@ -53,5 +54,52 @@ describe("buildAssetUrl", () => {
 
   test("empty base yields a same-origin relative URL", () => {
     expect(buildAssetUrl("", "a b.png")).toBe("/asset?path=a%20b.png");
+  });
+});
+
+// #38 (bug board, 3rd bounce): the packaged desktop app's preview tab kept showing "Couldn't
+// load image" for a macOS-screenshot filename that DID load fine in dev — the standing
+// hypothesis was that PreviewView's asset URL resolved its backend base through a DIFFERENT
+// path than a note-body/table-cell embed's `api.assetUrl`, so a packaged-app-only signal
+// (`window.__BISMUTH_API__`, injected by the Tauri shell, with no `?api=` present) could be
+// honored by one and missed by the other. It isn't — PreviewView calls
+// `buildAssetUrl(apiBase(), path)`, and `apiBase()` is `transport.base()`, the SAME resolved
+// base `api.assetUrl` closes over — but nothing before this locked that equivalence byte-for-
+// byte, so a future edit to either builder could silently reintroduce exactly that split. These
+// assert `buildAssetUrl` and the transport's `assetUrl` are the same function in every way that
+// matters, across every base-resolution source (default port, `?api=`, and the packaged app's
+// injected `__BISMUTH_API__`).
+describe("buildAssetUrl stays byte-for-byte identical to httpTransport(base).assetUrl", () => {
+  const TARGETS = [
+    "Reading List.md",
+    "attachments/photo.png",
+    // The exact #38 repro shape: NARROW NO-BREAK SPACE (U+202F) before AM/PM.
+    "attachments/Screenshot 2026-07-07 at 12.49.07 AM.png",
+    "Q&A ? notes #1.png",
+    "resources/\u{1F4C1} files/Earthlings.jpg",
+  ];
+
+  test("identical output for the default port (no ?api=, no injection — plain dev/browser)", () => {
+    const base = resolveBase(undefined, undefined);
+    for (const target of TARGETS) {
+      expect(buildAssetUrl(base, target)).toBe(httpTransport(base).assetUrl(target));
+    }
+  });
+
+  test("identical output for a `?api=` window (Open Folder / a second backend)", () => {
+    const base = resolveBase("?api=http://localhost:54321", undefined);
+    for (const target of TARGETS) {
+      expect(buildAssetUrl(base, target)).toBe(httpTransport(base).assetUrl(target));
+    }
+  });
+
+  test("identical output for the packaged app's injected __BISMUTH_API__ (no ?api=, Tauri sidecar port)", () => {
+    // Mirrors app/src-tauri/src/lib.rs: `window.__BISMUTH_API__ = "http://localhost:<sidecar port>"`,
+    // injected before any app JS runs, with no `?api=` query param present.
+    const base = resolveBase(undefined, undefined, "http://localhost:54321");
+    expect(base).toBe("http://localhost:54321"); // sanity: the injected port actually won
+    for (const target of TARGETS) {
+      expect(buildAssetUrl(base, target)).toBe(httpTransport(base).assetUrl(target));
+    }
   });
 });
