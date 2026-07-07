@@ -18,6 +18,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { assertBuiltBinary } from "./buildUtils";
+import { findSigningIdentity } from "./signingIdentity";
 
 const here = dirname(new URL(import.meta.url).pathname);
 const appDir = join(here, "..");                 // app/
@@ -42,20 +43,13 @@ assertBuiltBinary(outFile, "daemon binary");
 // The daemon binary is swapped over the SAME path (~/.bismuth/bin/bismuth-daemon) on every
 // update; with only the default ad-hoc (linker) signature, macOS TCC pins Files-and-Folders
 // grants to the binary's content hash, so EVERY update silently revoked the user's folder
-// permissions. If a signing identity is available — APPLE_SIGNING_IDENTITY, or a certificate
-// containing "Bismuth" in the login keychain (create one once via Keychain Access →
-// Certificate Assistant → Create a Certificate → type "Code Signing"; see
-// docs/overview/install.md) — sign with it so the identity (not the hash) stays stable and
-// grants survive updates. Purely opt-in: without a cert this is a no-op, exactly as before.
+// permissions. If a signing identity is available (see findSigningIdentity in
+// ./signingIdentity — APPLE_SIGNING_IDENTITY, or a "Bismuth" codesigning certificate in the
+// login keychain; see docs/overview/install.md) sign with it so the identity (not the hash)
+// stays stable and grants survive updates. Purely opt-in: without a cert this is a no-op,
+// exactly as before.
 if (process.platform === "darwin") {
-  const identity =
-    process.env.APPLE_SIGNING_IDENTITY ??
-    (() => {
-      const probe = spawnSync("security", ["find-identity", "-v", "-p", "codesigning"], { encoding: "utf8" });
-      const line = (probe.stdout ?? "").split("\n").find((l) => l.includes("Bismuth"));
-      const m = line?.match(/"([^"]+)"/);
-      return m?.[1];
-    })();
+  const identity = findSigningIdentity();
   if (identity) {
     console.log(`codesigning daemon with "${identity}"`);
     const sign = spawnSync("codesign", ["--force", "--sign", identity, outFile], { stdio: "inherit" });
