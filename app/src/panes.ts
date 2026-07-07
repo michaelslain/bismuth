@@ -33,6 +33,15 @@ export function sortPinned(tabs: Tab[]): Tab[] {
   return merged.every((t, i) => t === tabs[i]) ? tabs : merged;
 }
 
+// Opening a file normally REPLACES the active tab's focused pane in place (Obsidian-style
+// navigation). A PINNED tab is protected: its content must survive, so opening a file while a
+// pinned tab is active should spawn a NEW tab instead of mutating it. Also true when there's no
+// active tab at all (nothing to replace → a fresh tab). Pure, so App's openFile decision is
+// unit-testable without a DOM.
+export function shouldOpenInNewTab(activeTab: Tab | null): boolean {
+  return activeTab === null || activeTab.pinned === true;
+}
+
 // Flip a tab's pinned flag by id, then re-normalize the partition. Unknown id → unchanged.
 // Setting pinned:false stores `undefined` (keeps the optional field absent rather than
 // serializing `pinned:false` noise).
