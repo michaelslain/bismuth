@@ -97,9 +97,16 @@ const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 // alone (no actual border needed) still clips both the shadow and the background to a rounded rect.
 // These classes are ALWAYS applied — never keyed off cursor/reveal state — so the card never
 // flickers when the caret enters or leaves the block; only the raw fence text (the `---`/backticks)
-// reveals inline within it.
+// brightens for editing when the caret is on that line.
 const blockTopRule = Decoration.line({ class: "cm-block-mid cm-block-top" });
 const blockBottomRule = Decoration.line({ class: "cm-block-mid cm-block-bottom" });
+// The fence text itself (frontmatter `---`, a code block's closing ```) renders ALWAYS VISIBLE in
+// very dim mono — never `display:none`-hidden. Two reasons: (1) the original #10 ask, pixel-matched
+// by the user's reference: the em dashes are faintly visible INSIDE the card at its top and bottom;
+// (2) load-bearing layout — a fully-hidden line collapses to zero height, which erased the
+// `cm-block-top`/`cm-block-bottom` rounded corners + edge that live on that line (the card looked
+// open-ended). On the caret line the fence brightens to the standard `cm-syntax-mark` for editing.
+const fenceMark = Decoration.mark({ class: "cm-fence-syntax" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
 // A body-level `---` / `***` / `___` thematic break: off the cursor line the literal
@@ -512,13 +519,14 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         // The `---` delimiters ALWAYS render as the card's top/bottom edge (`cm-block-top` /
         // `cm-block-bottom`, rounded corners + rule) so the properties panel is always a fully
         // bounded container (bug #10, 3rd bounce: hairline edges weren't the ask — a rounded
-        // bordered card was). The literal dashes stay HIDDEN for a clean panel; only when the caret
-        // sits on that exact `---` line do the raw dashes reveal (dim Monaspace) for editing — the
-        // card edge sits at the line's own boundary, so it never crosses the revealed text.
+        // bordered card was). The literal dashes stay VISIBLE in very dim mono (`fenceMark`) —
+        // the user's reference shows them faintly inside the card, and a hidden line would
+        // collapse to zero height, erasing this line's rounded corners (see the fenceMark
+        // comment). On the caret line they brighten (`syntaxMark`) for editing.
         const isDelim = line.number === frontmatterOpen || line.number === frontmatterClose;
         if (isDelim) {
           deco.push((line.number === frontmatterOpen ? blockTopRule : blockBottomRule).range(line.from));
-          if (line.to > line.from) deco.push((onCursor ? syntaxMark : hide).range(line.from, line.to));
+          if (line.to > line.from) deco.push((onCursor ? syntaxMark : fenceMark).range(line.from, line.to));
           pos = line.to + 1;
           continue;
         }
@@ -557,9 +565,12 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
             deco.push(Decoration.replace({ widget: new CodeHeaderWidget(codeBlock.lang, codeBlock.body) }).range(line.from, line.to));
           }
         } else if (isClose) {
-          // Closing fence: bottom card edge always; raw ``` hidden when rendered, shown when revealed.
+          // Closing fence: bottom card edge always. The raw ``` stays VISIBLE in very dim mono
+          // (`fenceMark`) — "same with code blocks" in the #10 ask, and hiding it would collapse
+          // the line and erase the card's bottom rounded corners (see the fenceMark comment).
+          // In edit mode (revealed) it renders unmarked at full mono contrast.
           deco.push(blockBottomRule.range(line.from));
-          if (!revealed && line.to > line.from) deco.push(hide.range(line.from, line.to));
+          if (!revealed && line.to > line.from) deco.push(fenceMark.range(line.from, line.to));
         } else {
           // Body line: 1-based in-block number in the gutter, plus `cm-block-mid` for the
           // card's shared background/left-accent/right-edge styling.
@@ -1256,9 +1267,19 @@ export const livePreview = [
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
       "border-top-left-radius": "8px",
       "border-top-right-radius": "8px",
+      // A touch of top breathing room inside the card (the reference has the first `---` inset
+      // from the roof, not flush against it). Restates the horizontal 0.5em from `.cm-block-mid`
+      // — CSS shorthand `padding` fully replaces, it doesn't merge per-side.
+      padding: "0.3em 0.5em 0",
       "box-shadow":
         "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset -1px 0 0 color-mix(in srgb, var(--fg) 14%, transparent), inset 0 1px 0 color-mix(in srgb, var(--fg) 14%, transparent)",
     },
+    // The always-visible fence text inside the card (frontmatter `---`, code closing ```): very
+    // dim — clearly quieter than the block's content, matching the reference's faint dashes —
+    // but never hidden (a hidden line collapses and erases the card's rounded corners). The
+    // `> span` override is load-bearing (mirrors `.cm-fm-key`): CodeMirror nests syntax-highlighter
+    // token spans inside the mark, and their own token color would win without it.
+    ".cm-fence-syntax, .cm-fence-syntax > span": { color: "color-mix(in srgb, var(--fg) 30%, transparent)" },
     // A block's BOTTOM fence line (frontmatter closing `---`, code closing ```): bottom edge +
     // bottom corners rounded — the card's floor. Always present.
     ".cm-block-bottom": {
@@ -1266,6 +1287,8 @@ export const livePreview = [
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
       "border-bottom-left-radius": "8px",
       "border-bottom-right-radius": "8px",
+      // Mirror of `.cm-block-top`'s breathing room, on the card's floor.
+      padding: "0 0.5em 0.3em",
       "box-shadow":
         "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent), inset -1px 0 0 color-mix(in srgb, var(--fg) 14%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--fg) 14%, transparent)",
     },
