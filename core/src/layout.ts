@@ -62,9 +62,11 @@ export interface LayoutOptions {
   virtualDistMult?: number;
   /**
    * "Planet with rings" 3D shape bias — extra pull toward the Y=0 plane (dim===3 only), weighted by
-   * how peripheral a node is (see discFlattenForce). 0 = the old, roughly-spherical behavior; higher
-   * = flatter disc. Purely a function of each node's OWN existing (real-edge) degree — no extra
-   * analysis pass, no change to 2D output, no change to the refine tick budget.
+   * how peripheral a node is (see discFlattenForce). 0 (the default) = the roughly-spherical
+   * behavior; higher = flatter disc. Shipped OFF: on a real vault the flattening read as a squashed
+   * blob rather than a planet (rings need radial structure, not just flattening) — kept as an
+   * option for the future ring-structure iteration. Purely a function of each node's OWN existing
+   * (real-edge) degree — no extra analysis pass, no change to 2D output or the tick budget.
    */
   discBias?: number;
 }
@@ -82,7 +84,7 @@ export type Positions = Record<string, [number, number, number]>;
 // without overlaps, while small multi-node clusters stay recognizable lobes. Short (0.8× linkDist) +
 // strong (1.2) + 4 anchors: short/strong beats the long-range repulsion; the extra anchors distribute
 // each stray around the mass instead of piling it at one point. See prepareLayout's "Reel in" block.
-const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0.7 };
+const DEFAULTS = { dimensions: 3 as 2 | 3, numPivots: 50, refineTicks: 150, repulsion: -10, linkDistance: 5, centering: 0.13, virtualLinkStrength: 1.2, virtualAnchors: 4, virtualDistMult: 0.8, discBias: 0 };
 const LINK_STRENGTH = 0.18;
 // 2D-only force tuning (see prepareLayout): the flat layout has one less dimension of room, so without
 // help it collapses into a hairball. Push communities apart (repulsion ×), let them breathe (centering

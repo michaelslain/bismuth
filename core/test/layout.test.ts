@@ -33,22 +33,22 @@ test("2D layout is flat (z = 0)", () => {
   for (const id in pos) expect(pos[id][2]).toBe(0);
 });
 
-test("3D layout flattens into a disc when hubs are present (planet-with-rings shape)", () => {
+test("discBias flattens the 3D layout into a disc when explicitly enabled", () => {
   const n = 80;
   const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}` }));
   const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: "n0", to: `n${i + 1}` }));
-  const pos = computeLayout({ nodes, edges }, { refineTicks: 150 });
+  const pos = computeLayout({ nodes, edges }, { refineTicks: 150, discBias: 0.7 });
   let sy2 = 0, sxz2 = 0;
   for (const id in pos) { const [x, y, z] = pos[id]; sy2 += y * y; sxz2 += x * x + z * z; }
   const rmsY = Math.sqrt(sy2 / n), rmsXZ = Math.sqrt(sxz2 / (2 * n));
   expect(rmsY).toBeLessThan(rmsXZ * 0.8);
 });
 
-test("discBias: 0 is an escape hatch back to the old roughly-spherical shape", () => {
+test("the DEFAULT 3D shape is roughly spherical (discBias ships off — the flattened default read badly on real vaults)", () => {
   const n = 80;
   const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}` }));
   const edges = Array.from({ length: n - 1 }, (_, i) => ({ from: "n0", to: `n${i + 1}` }));
-  const pos = computeLayout({ nodes, edges }, { refineTicks: 150, discBias: 0 });
+  const pos = computeLayout({ nodes, edges }, { refineTicks: 150 });
   let sy2 = 0, sxz2 = 0;
   for (const id in pos) { const [x, y, z] = pos[id]; sy2 += y * y; sxz2 += x * x + z * z; }
   expect(Math.sqrt(sy2 / n)).toBeGreaterThan(Math.sqrt(sxz2 / (2 * n)) * 0.85);
