@@ -14,6 +14,7 @@ import { Marked } from "marked";
 import { renderMath } from "./katexLoader";
 import { escapeHtml } from "../htmlEscape";
 import { renderCellListHtml } from "./cellList";
+import { bismuthWrapSource } from "./bismuthWord";
 
 // An isolated `marked` instance so our config never leaks into the global one that
 // bases/markdown.ts configures (and vice-versa). GFM gives ~~strikethrough~~ + autolinks.
@@ -99,6 +100,25 @@ export function tokenizeInline(src: string): InlineSeg[] {
   return segs;
 }
 
+// Regions of a cell's inline markdown the iridescent "bismuth" effect must never touch — an
+// inline code span, a raw HTML tag, a markdown `[text](url)` link, a bare URL, or a `#tag`.
+// (Wikilinks + `$math$` are already split into their own segments before this runs, so an `md`
+// segment never contains them.) Mirrors the reading-mode masking in bases/markdown.ts, scoped to a
+// single cell line: code first so a `<` inside a code span isn't matched as an HTML tag; the link
+// alternative before the bare-URL one so a `[x](https://…)` is masked as one unit.
+const BISMUTH_PROTECT_RE =
+  /`+[^`\n]*?`+|<[^>]+>|\[[^\]]*?\]\([^)]*?\)|https?:\/\/[^\s<>)\]]+|(?:^|\s)#[\p{L}\d/_-]+/giu;
+
+/** Wrap every whole-word "bismuth" in a cell's inline markdown with the shared iridescent
+ *  `.bismuth-word` gradient span (App.css, same effect as the reading-mode `.bismuth-word` /
+ *  live-preview `.cm-bismuth`), skipping any that sit inside code / links / URLs / raw HTML / tags.
+ *  Shares the mask → wrap → restore transform with the reading-mode renderer via `bismuthWrapSource`
+ *  (only the protected-span set differs). The injected span passes through `marked` as inline HTML
+ *  (its inner text is plain "bismuth" — no extension re-wraps it). Pure. */
+export function iridescentBismuthCell(src: string): string {
+  return bismuthWrapSource(src, BISMUTH_PROTECT_RE, (w) => `<span class="bismuth-word">${escapeHtml(w)}</span>`);
+}
+
 function renderSeg(seg: InlineSeg): string {
   if (seg.type === "wikilink") {
     const text = seg.alias ?? seg.target;
@@ -109,7 +129,7 @@ function renderSeg(seg: InlineSeg): string {
     const html = renderMath(seg.expr, false);
     return `<span class="cm-inline-math" data-math="${escapeAttr(seg.expr)}">${html}</span>`;
   }
-  return inlineMarked.parseInline(seg.raw, { async: false }) as string;
+  return inlineMarked.parseInline(iridescentBismuthCell(seg.raw), { async: false }) as string;
 }
 
 /** Render a run of a cell's inline markdown (wikilinks/math split out, the rest via
