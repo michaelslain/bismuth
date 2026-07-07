@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation, Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu, inline-markdown rendering in the display face, and `<br>`-carried bullet/number lists inside a cell. The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell (#15), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell (#30). The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
 
 ---
 
@@ -16,7 +16,9 @@ This document covers everything about how Bismuth renders and edits GitHub Flavo
 8. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
 9. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
 10. [Source / Raw-Edit Mode](#source--raw-edit-mode)
-11. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
+11. [Find-in-Table Highlighting (#31)](#find-in-table-highlighting-31)
+12. [File Drop Into a Cell (#30)](#file-drop-into-a-cell-30)
+13. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
 
 ---
 
@@ -358,6 +360,33 @@ A table block can be toggled to show its raw pipe-table source for structural or
 ### Widget Rebuild After Raw Edits
 
 When the user edits the raw source and then moves the cursor out, `tableWidgetField` in `livePreview.ts` rebuilds the `DecorationSet` via `buildTableWidgets`. The new `TableWidget` gets the freshly-parsed grid. `TableWidget.eq` compares serialized forms, so a semantic no-op edit (e.g., adding trailing space to a cell) does not force a DOM rebuild.
+
+> **Find (Cmd+F) does NOT reveal source (#31).** The find bar never flips a table to raw markdown — that behavior was rejected outright ("cmd+f converts tables to source, which is stupid"). Only the **manual** "Edit source" menu item reveals source. See [Find-in-Table Highlighting](#find-in-table-highlighting-31).
+
+---
+
+## Find-in-Table Highlighting (#31)
+
+A GFM table is an atomic block-replace widget that **hides its source**, so a Cmd+F match landing on a table line is invisible behind the widget. The find bar does **not** solve this by revealing raw source (rejected). Instead, matches are highlighted **in place, inside the rendered table DOM**.
+
+- **`tableFindHighlight`** (a `ViewPlugin` in `tableWidget.ts`, added to the editor next to `findExtension()`) reacts to doc / selection / search-query / viewport / panel changes. It reads the live `getSearchQuery(view.state)` and `searchPanelOpen(view.state)` from `@codemirror/search` — no new state field.
+- On each apply it **clears** every prior find `<mark>` from all `.cm-table-wrap`s (unwrap + `normalize`), then, while the panel is open with a valid non-empty query, walks each **display** cell's text nodes (skipping any cell in edit mode) and wraps each literal query occurrence in `<mark class="cm-table-find-match">`.
+- The **active match** (the block the find selection is genuinely inside, resolved via `groupTableBlocks` + `cellCoordForOffset` → `parseRowCellSpans`) gets the extra `cm-table-find-active` class and is `scrollIntoView`-ed.
+- Styling lives in `Editor.css` (`.cm-table-rendered mark.cm-table-find-match` / `.cm-table-find-active`), mirroring the prose `.cm-searchMatch` / `-selected` accent wash so a match reads the same in a cell as in prose.
+- It **never dispatches a transaction or reveals source**, and only touches the display face — so an in-progress cell edit is never disturbed. Closing the bar (empty query / panel closed) clears every mark.
+
+`findPanel.ts` therefore carries **zero** table logic — it just moves the selection like anywhere else, and the highlighter reacts.
+
+---
+
+## File Drop Into a Cell (#30)
+
+Dropping an image/PDF/media file onto a rendered table cell embeds it **into that cell**, not the note body. Because the table is an atomic block widget whose `contenteditable` cells reroute the browser's native file drop before CodeMirror's own `drop` handler can see it, the widget installs **capture-phase** `dragover` + `drop` listeners on its root DOM (`toDOM`):
+
+1. `dragover`: when the drag carries files, `preventDefault()` (marks the cell a valid drop target — without this no `drop` fires) + `stopPropagation()`.
+2. `drop`: resolve the target cell via `tableCellDropTarget(view, e.target)`; if it's over a cell, `preventDefault()` + `stopPropagation()` (so CM's bubble-phase `drop` never also fires — no double insert) and dispatch a `bismuth-table-drop` window event carrying `{ view, files, target, altKey }`.
+
+`Editor.tsx` listens for `bismuth-table-drop` (gated to its own `view`) and runs the **same** upload+embed flow as a note-body drop (`dropFilesIntoCell` → `uploadEmbed` → `insertEmbedsInTableCell` → `appendToCell`), so the file is saved into the vault and an `![[…]]` embed lands in the cell (which then renders as real media). `⌥`-drop or `attachments.onDrop: "reference"` inserts a bare `![[name]]` reference instead of copying.
 
 ---
 

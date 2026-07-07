@@ -5,6 +5,7 @@ import {
   parseTableRow,
   parseAlign,
   parseTableBlock,
+  parseRowCellSpans,
   groupTableBlocks,
   serializeTable,
   formatTable,

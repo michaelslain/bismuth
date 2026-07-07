@@ -6,24 +6,31 @@
 // The widget root is contenteditable=false so CodeMirror treats it as atomic and
 // leaves its inner selection alone, while ignoreEvent() keeps CM from acting on
 // clicks/keys inside it.
-import { EditorView, WidgetType } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import type { TransactionSpec } from "@codemirror/state";
+import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
 import {
   type Align,
+  type TableBlock,
   type TableGrid,
   type CellKeyAction,
   groupTableBlocks,
+  parseRowCellSpans,
   serializeTable,
   formatTable,
   prettifyTableBlock,
   decideCellKey,
   cellListContinuation,
+  enterAction,
   insertRow,
   deleteRow,
   insertColumn,
   deleteColumn,
   appendToCell,
 } from "./tableModel";
+// CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
+// the find-highlight text-node walk below.
+import type { Text as CMText } from "@codemirror/state";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { renderInlineMarkdown } from "./inlineMarkdown";
 import { onMathReady } from "./katexLoader";
@@ -973,3 +980,144 @@ export class TableWidget extends WidgetType {
     return true;
   }
 }
+
+// ── Find-in-table highlighting (#31) ──────────────────────────────────────────
+// A GFM table is drawn as an atomic block-replace WIDGET that HIDES its source lines, so a
+// Cmd+F match landing on those lines is invisible behind the widget. The OLD behavior flipped
+// the whole table to RAW MARKDOWN SOURCE so the match showed — which the user rejected outright
+// ("cmd+f converts tables to source, which is stupid"). Instead we highlight matches IN PLACE,
+// inside the rendered table DOM: every match gets a `<mark class="cm-table-find-match">`, and the
+// ACTIVE match (the one the find bar's selection sits on) additionally gets `cm-table-find-active`
+// and is scrolled into view. No StateField, no re-render of the widget (which would blow away an
+// in-progress cell edit) — a post-render ViewPlugin decorates the existing display DOM, so a
+// cursor move or query keystroke never touches the source. Cleared the moment the bar closes.
+export const TABLE_FIND_MATCH_CLASS = "cm-table-find-match";
+export const TABLE_FIND_ACTIVE_CLASS = "cm-table-find-active";
+
+/** Remove every find highlight `<mark>` from a table wrap, restoring the original text nodes.
+ *  Unwraps each mark (moving its children out) then normalizes the parent so split text merges. */
+function clearTableFindHighlights(root: HTMLElement): void {
+  root.querySelectorAll(`mark.${TABLE_FIND_MATCH_CLASS}`).forEach((m) => {
+    const parent = m.parentNode;
+    if (!parent) return;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    (parent as Element & { normalize?: () => void }).normalize?.();
+  });
+}
+
+/** Wrap every literal occurrence of `query` in a display cell's TEXT NODES with a find `<mark>`
+ *  (case-insensitive unless `caseSensitive`). Returns the marks created, in document order, so the
+ *  caller can pick out the active one. Only touches text nodes, so inline elements (bold, tags,
+ *  wikilinks) inside the cell are preserved; a match that straddles an element boundary is left
+ *  alone (same limitation as a browser's own in-page find within formatted text). */
+function highlightCellFind(cell: HTMLElement, query: string, caseSensitive: boolean): HTMLElement[] {
+  if (!query) return [];
+  const needle = caseSensitive ? query : query.toLowerCase();
+  const created: HTMLElement[] = [];
+  // Snapshot the text nodes first — we mutate the tree as we go, which would invalidate a live walk.
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) textNodes.push(n as Text);
+  for (const tn of textNodes) {
+    const src = tn.nodeValue ?? "";
+    const hay = caseSensitive ? src : src.toLowerCase();
+    if (hay.indexOf(needle) === -1) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (let idx = hay.indexOf(needle, 0); idx !== -1; idx = hay.indexOf(needle, last)) {
+      if (idx > last) frag.appendChild(document.createTextNode(src.slice(last, idx)));
+      const mark = document.createElement("mark");
+      mark.className = TABLE_FIND_MATCH_CLASS;
+      mark.textContent = src.slice(idx, idx + query.length);
+      frag.appendChild(mark);
+      created.push(mark);
+      last = idx + query.length;
+    }
+    if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
+    tn.parentNode?.replaceChild(frag, tn);
+  }
+  return created;
+}
+
+/** Grid coordinate `(r, c)` of the cell a document offset falls inside a table block, or null when
+ *  the offset is on the separator row (no rendered cell) or outside the block. Row 0 is the header;
+ *  body rows follow the separator. Column comes from the raw line's cell spans (parseRowCellSpans),
+ *  so the find bar can mark the exact rendered cell its active match sits in (#31). */
+function cellCoordForOffset(block: TableBlock, doc: CMText, offset: number): { r: number; c: number } | null {
+  const lineNo = doc.lineAt(offset).number;
+  if (lineNo < block.startLine || lineNo > block.endLine) return null;
+  if (lineNo === block.startLine + 1) return null; // separator row — not rendered
+  const r = lineNo === block.startLine ? 0 : lineNo - block.startLine - 1;
+  const line = doc.line(lineNo);
+  const within = offset - line.from;
+  const spans = parseRowCellSpans(line.text);
+  for (let c = 0; c < spans.length; c++) {
+    if (within >= spans[c].start && within <= spans[c].end) return { r, c };
+  }
+  return null;
+}
+
+/** ViewPlugin that highlights the current find query inside every rendered table widget and marks
+ *  the active match (#31). Re-applied whenever the doc, selection, query, viewport, or panel state
+ *  changes; a full clear runs when the find bar isn't open. Purely decorates the display DOM — it
+ *  never dispatches a transaction or reveals table source. */
+export const tableFindHighlight = ViewPlugin.fromClass(
+  class {
+    constructor(view: EditorView) {
+      this.apply(view);
+    }
+    update(u: ViewUpdate): void {
+      // Effects cover the search-query set + the panel open/close toggle; selection covers the
+      // active-match move; doc + viewport cover a widget rebuild / newly scrolled-in table.
+      if (
+        u.docChanged ||
+        u.selectionSet ||
+        u.viewportChanged ||
+        u.transactions.some((t) => t.effects.length > 0)
+      ) {
+        this.apply(u.view);
+      }
+    }
+    apply(view: EditorView): void {
+      const wraps = Array.from(view.contentDOM.querySelectorAll<HTMLElement>(".cm-table-wrap"));
+      if (wraps.length === 0) return;
+      for (const w of wraps) clearTableFindHighlights(w);
+      const query = getSearchQuery(view.state);
+      if (!searchPanelOpen(view.state) || !query.valid || !query.search) return;
+      const doc = view.state.doc;
+      const { blocks } = groupTableBlocks(doc);
+      const sel = view.state.selection.main;
+      const activeBlock = blocks.find(
+        (b) => sel.from >= doc.line(b.startLine).from && sel.from <= doc.line(b.endLine).to,
+      );
+      const activeCoord = activeBlock ? cellCoordForOffset(activeBlock, doc, sel.from) : null;
+      for (const wrap of wraps) {
+        let pos: number;
+        try {
+          pos = view.posAtDOM(wrap);
+        } catch {
+          continue;
+        }
+        const block = blocks.find(
+          (b) => pos >= doc.line(b.startLine).from && pos <= doc.line(b.endLine).to,
+        );
+        for (const cell of Array.from(wrap.querySelectorAll<HTMLElement>("[data-cell]"))) {
+          if (cell.dataset.editing === "1") continue; // don't touch the edit face (corrupts read-back)
+          highlightCellFind(cell, query.search, query.caseSensitive);
+        }
+        // Mark + reveal the active match's cell (the block the find selection is genuinely inside).
+        if (block && activeBlock && block === activeBlock && activeCoord) {
+          const activeCell = wrap.querySelector<HTMLElement>(
+            `[data-cell][data-r="${activeCoord.r}"][data-c="${activeCoord.c}"]`,
+          );
+          const mark = activeCell?.querySelector<HTMLElement>(`mark.${TABLE_FIND_MATCH_CLASS}`);
+          if (mark) {
+            mark.classList.add(TABLE_FIND_ACTIVE_CLASS);
+            mark.scrollIntoView({ block: "nearest", inline: "nearest" });
+          }
+        }
+      }
+    }
+  },
+);

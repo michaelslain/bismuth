@@ -52,7 +52,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { tableCellDropTarget, insertEmbedsInTableCell } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableFindHighlight } from "./editor/tableWidget";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -728,6 +728,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // In-editor find (Cmd/Ctrl+F by default) — custom bar, see editor/findPanel.ts.
       // The keybinding is wired below (host capture handler) so it stays rebindable.
       findExtension(),
+      // Highlight find matches IN PLACE inside rendered table widgets (#31) — the find bar never
+      // flips a table to raw source. No-op in buffers without tables (e.g. config YAML).
+      tableFindHighlight,
       autosave,
       // Right-click a spelling / grammar / property mark → the shared app menu.
       editorContextMenu(),

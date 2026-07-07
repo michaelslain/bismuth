@@ -56,6 +56,25 @@ export function parseTableRow(line: string): string[] {
   return cells.map((c) => c.trim());
 }
 
+/** Char-offset spans (relative to the row's line start) of each CONTENT cell in a raw table-row
+ *  line, in grid-column order — the outer `|` rails and the empty pseudo-cells they create are
+ *  dropped, mirroring `parseTableRow`. A `\|` escape counts as cell text, never a delimiter. Used
+ *  to map a document offset that lands inside a table row to its grid COLUMN — e.g. the find bar
+ *  locating which rendered cell an active match sits in (#31). Pure. */
+export function parseRowCellSpans(line: string): { start: number; end: number }[] {
+  const cells: { start: number; end: number }[] = [];
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\" && line[i + 1] === "|") { i++; continue; } // escaped pipe is cell text
+    if (line[i] === "|") { cells.push({ start, end: i }); start = i + 1; }
+  }
+  cells.push({ start, end: line.length });
+  const isEmpty = (s: { start: number; end: number }): boolean => line.slice(s.start, s.end).trim() === "";
+  if (cells.length && isEmpty(cells[0])) cells.shift(); // leading rail
+  if (cells.length && isEmpty(cells[cells.length - 1])) cells.pop(); // trailing rail
+  return cells;
+}
+
 /** Map one separator cell (`:---`, `:--:`, `---:`, `---`) to its alignment. */
 export function parseAlign(cell: string): Align {
   const t = cell.trim();
