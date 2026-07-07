@@ -49,21 +49,46 @@ marker).
 
 ## macOS folder permissions surviving updates (one-time setup)
 
-macOS pins "Files and Folders" grants (Desktop/Documents/Downloads access) to an app's **code
-identity**. With the default ad-hoc signing, every self-update rebuild produces a new identity,
-so macOS silently revokes those grants after each update — for both `Bismuth.app` and the
-`bismuth-daemon` service binary. To make grants survive updates, create a **stable self-signed
-code-signing certificate** once (no Apple Developer account needed):
+**Bug #48** — "computer permissions are not persistent between Bismuth updates." macOS TCC
+(the Files-and-Folders / Accessibility / etc. privacy grant database) pins every grant to the
+app's **designated requirement**, not its bundle id. Run `codesign -d -r- /Applications/Bismuth.app`
+on an unsigned build and you'll see `designated => cdhash H"…"` — the default ad-hoc signature
+anchors the requirement to the exact binary's own content hash. Since every rebuild produces
+different bytes, every rebuild gets a fresh "identity" and macOS silently revokes every grant —
+for both `Bismuth.app` and the `bismuth-daemon` service binary.
+
+To make grants survive updates, create a **stable self-signed code-signing certificate** once
+(no Apple Developer account needed):
 
 1. Keychain Access → Certificate Assistant → **Create a Certificate…**
 2. Name: anything containing `Bismuth` (e.g. `Bismuth Self-Signed`), Identity Type: *Self-Signed
    Root*, Certificate Type: **Code Signing** → Create.
 
-That's it — the update pipeline (`core/src/selfUpdate.ts`) and the daemon sidecar build
-(`app/scripts/build-daemon-sidecar.ts`) auto-detect any login-keychain codesigning certificate
-whose name contains `Bismuth` (or an explicit `APPLE_SIGNING_IDENTITY`) and sign with it on
-every rebuild; without one they fall back to ad-hoc exactly as before. A real Developer ID +
-notarization only matters if Bismuth is ever distributed as a prebuilt binary to other machines.
+That's it — **every** `tauri build` invocation now auto-detects it: the `tauri` npm script
+(`app/scripts/tauri.ts`, which every build path funnels through — a plain `bun run tauri build`,
+`bun run installer`/`build:app`, and the self-update rebuild pipeline in
+`core/src/selfUpdate.ts` alike) and the daemon sidecar build (`app/scripts/build-daemon-sidecar.ts`)
+share one detector (`app/scripts/signingIdentity.ts`): any login-keychain codesigning
+certificate whose name contains `Bismuth`, or an explicit `APPLE_SIGNING_IDENTITY` env var,
+wins; without either they fall back to ad-hoc exactly as before. This closed a gap in the first
+version of this fix, which only wired the auto-detect into the self-update pipeline — a plain,
+manually-run `bun run tauri build` (the normal build path documented above, and how the very
+first install is built) never saw it and stayed ad-hoc-signed even after creating the
+certificate.
+
+**Why a self-signed (non-Apple-issued) certificate works at all**: codesign's auto-generated
+designated requirement for a certificate that does *not* chain to Apple's root CA takes the
+form `anchor = H"<hash of the certificate itself>"` — an anchor on the reused *certificate*,
+not the binary (this is documented in Apple's [Code Signing Requirement
+Language](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html)
+reference for custom certificate hierarchies). Re-signing with the *same* certificate on every
+rebuild keeps that requirement — and therefore the TCC identity — stable, even though the
+certificate itself is self-signed and untrusted by anyone else. This is a narrower claim than
+"self-signed certs are equivalent to Developer ID": a self-signed cert gets no Apple Team ID,
+no Gatekeeper trust, and no notarization — it only stabilizes the one requirement field TCC
+actually keys grants on. A real Developer ID (+ notarization) is worth it if Bismuth is ever
+distributed as a prebuilt binary to other machines, or if you want first-launch Gatekeeper
+friction (a separate, pre-existing concern from unsigned/self-signed local builds) to go away.
 
 ## Repository Layout (Monorepo)
 
@@ -257,7 +282,7 @@ bun run build:app     # from the repo root: builds, then opens the dmg installer
 cd app && bun run tauri build
 ```
 
-`build:app` (root `package.json`) runs `cd app && bun run installer`, which is `tauri build` followed by `scripts/open-installer.ts` (opens the built dmg so you can drag it in). The `tauri` script delegates to `@tauri-apps/cli` and requires Rust + the Tauri prerequisites. The `beforeBuildCommand` (`predmg:clean → prebundle:relay → build:bismuth-tools → build → build:core-sidecar → build:daemon-sidecar`) builds the Vite frontend, the relay resource, the bismuth-tools resource, the compiled core sidecar, and the compiled daemon resource as part of the pipeline.
+`build:app` (root `package.json`) runs `cd app && bun run installer`, which is `tauri build` followed by `scripts/open-installer.ts` (opens the built dmg so you can drag it in). The `tauri` script (`app/scripts/tauri.ts`) wraps `@tauri-apps/cli` and requires Rust + the Tauri prerequisites — it also auto-detects a stable macOS signing identity and passes it to every `tauri` invocation (see [macOS folder permissions surviving updates](#macos-folder-permissions-surviving-updates-one-time-setup) above). The `beforeBuildCommand` (`predmg:clean → prebundle:relay → build:bismuth-tools → build → build:core-sidecar → build:daemon-sidecar`) builds the Vite frontend, the relay resource, the bismuth-tools resource, the compiled core sidecar, and the compiled daemon resource as part of the pipeline.
 
 **To install**: the build writes a `.dmg` and the `.app` it wraps under `src-tauri/target/release/bundle/{dmg,macos}/`. `tauri build` does **not** auto-open an installer window — open the dmg yourself (`open src-tauri/target/release/bundle/dmg/Bismuth_*.dmg`) and drag **Bismuth → Applications**, then eject. Or skip the dmg entirely and drag `src-tauri/target/release/bundle/macos/Bismuth.app` straight into `/Applications`. Re-running the build and re-dragging replaces the prior copy in place.
 
