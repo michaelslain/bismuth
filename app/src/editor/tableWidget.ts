@@ -29,6 +29,8 @@ import { renderInlineMarkdown } from "./inlineMarkdown";
 import { onMathReady } from "./katexLoader";
 import { api } from "../api";
 import { parseWikilink, resolveNotePath } from "./wikilink";
+import { closerFor } from "./wrapSelection";
+import { settings } from "../settings";
 
 // Visual column widths / row heights have no representation in GFM markdown, so they are
 // persisted OUT of the source: in localStorage, keyed by the note path (one entry per
@@ -147,6 +149,34 @@ function insertTextAtCaret(text: string): void {
   next.collapse(true);
   sel.removeAllRanges();
   sel.addRange(next);
+}
+
+/** Typing a configured wrap character (`*`/`_`/`~`/backtick by default —
+ *  `settings.editor.wrapSelectionChars`) over a non-empty selection surrounds it instead of
+ *  replacing it, matching the main editor's `wrapSelection` extension (editor/wrapSelection.ts)
+ *  — which never runs here, since a cell is a plain contenteditable DOM island CodeMirror's own
+ *  input handling never sees (#45). Returns false (caller falls through to native contenteditable
+ *  typing) when the setting's off, `key` isn't a single configured char, or nothing's selected. */
+export function wrapCellSelectionOnType(cell: HTMLElement, key: string): boolean {
+  if (!settings.editor.wrapSelection || key.length !== 1 || !settings.editor.wrapSelectionChars.includes(key)) {
+    return false;
+  }
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
+  const range = sel.getRangeAt(0);
+  if (!cell.contains(range.commonAncestorContainer)) return false;
+  const close = closerFor(key);
+  const text = range.toString();
+  range.deleteContents();
+  const node = document.createTextNode(key + text + close);
+  range.insertNode(node);
+  // Reselect the inner text (not the markers) so a second press nests it, e.g. `word` -> ``word``.
+  const inner = document.createRange();
+  inner.setStart(node, key.length);
+  inner.setEnd(node, key.length + text.length);
+  sel.removeAllRanges();
+  sel.addRange(inner);
+  return true;
 }
 
 /** Flatten a node's cell-edit-face content to text, mapping each `<br>` to a newline so
@@ -550,6 +580,14 @@ export class TableWidget extends WidgetType {
         });
         cell.addEventListener("keydown", (e) => {
           const ev = e as KeyboardEvent;
+          // A configured wrap char (e.g. backtick) typed over a selection surrounds it — see
+          // wrapCellSelectionOnType (#45). Checked before decideCellKey/the modifier-driven
+          // actions below since it only ever matches a plain, unmodified single character.
+          if (!ev.metaKey && !ev.ctrlKey && !ev.altKey && wrapCellSelectionOnType(cell, ev.key)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           const action: CellKeyAction = decideCellKey(ev);
           // A `pass-through` is a global app shortcut (Mod+O quick-switcher, Mod+P command
           // palette, Mod+F find, Mod+` terminal, …). We deliberately do NOT stopPropagation
