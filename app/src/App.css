@@ -287,12 +287,14 @@ body { background: var(--bg); color: var(--fg); }
    The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 48px);
    the actual surface (.tab-rail-inner) is absolutely anchored to the right and animates
    its own width, OVERFLOWING leftward over the editor — so the expand/collapse is a pure
-   overlay and the editor body never reflows on hover. Layout: back/forward nav at the top,
-   the scrollable tab-row list in the middle, the +/terminal/chat actions pinned at the
-   bottom — all stacked vertically. The "arc" is a subtle inline translateX bow on the rows
-   (railArcShift in App.tsx) that CSS zeroes once expanded so names align flush.
-   NOTE: exact widths (48/240px), row spacing, and the arc amplitude are visual-polish
-   knobs that still want an in-browser eyeball (the browser was down at authoring time). */
+   overlay and the editor body never reflows on hover. Layout top-to-bottom: the
+   +/terminal/chat action TOOLBAR, then the back/forward nav, then the scrollable tab-row
+   list. The toolbar + nav are flex-wrap rows: collapsed (48px) each 28px button drops to its
+   own line → a centered single-icon column aligned with the tab icons; expanded (240px) they
+   fit on one line as horizontal rows (nav = ‹ › side-by-side). Rows sit in a straight,
+   centered icon column (no arc).
+   NOTE: exact widths (48/240px) + row spacing are visual-polish knobs that still want an
+   in-browser eyeball (the browser was down at authoring time). */
 .tab-rail { position: relative; z-index: 6; }
 .tab-rail-inner {
   position: absolute; top: 0; right: 0; bottom: 0;
@@ -310,11 +312,14 @@ body { background: var(--bg); color: var(--fg); }
 }
 @media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
 
-/* Top nav + bottom actions: buttons stacked vertically, left-padded so a 28px button
-   centers in the 48px collapsed rail ((48-28)/2 = 10px). */
-.tab-rail-nav, .tab-rail-actions { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
+/* Top action toolbar + back/forward nav. Both are LEFT-packed flex-wrap rows: collapsed
+   (48px, content 28px) each 28px button wraps to its own line → a centered single-icon
+   column whose centre lands at 24px = the collapsed rail's midline / the tab icon column;
+   expanded (240px) they fit on one line as horizontal rows (nav = ‹ › side-by-side). */
+.tab-rail-nav, .tab-rail-actions { display: flex; flex-flow: row wrap; align-items: center; justify-content: flex-start; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
+.tab-rail-actions { border-bottom: 1px solid var(--border-soft); }   /* toolbar pinned at the TOP */
 .tab-rail-nav { border-bottom: 1px solid var(--border-soft); }
-.tab-rail-actions { border-top: 1px solid var(--border-soft); margin-top: auto; }
+.tab-rail-nav .btn--icon:disabled { opacity: 0.35; cursor: default; }
 
 /* The scrollable row list fills the middle. */
 .tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
@@ -328,7 +333,7 @@ body { background: var(--bg); color: var(--fg); }
   margin: 0 5px; padding: 0 11px; border-radius: 8px;
   color: var(--text-muted); cursor: pointer; user-select: none;
   white-space: nowrap; position: relative;
-  transition: background 0.12s ease, color 0.12s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background 0.12s ease, color 0.12s ease;
 }
 .tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
 .tab-rail-row.active { background: var(--surface-2); color: var(--fg); }
@@ -338,9 +343,6 @@ body { background: var(--bg); color: var(--fg); }
    sizes the same) but fades in only once expanded. */
 .tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }
 .tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
-/* Once expanded, drop the collapsed-only arc bow so names/icons align in a straight column
-   (beats the inline transform via !important). */
-.tab-rail:hover .tab-rail-row, .tab-rail:focus-within .tab-rail-row { transform: none !important; }
 
 /* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
    on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
