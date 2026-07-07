@@ -9,6 +9,7 @@ import {
   parseWikilink,
   resolveNotePath,
   wikilinkVisibleRange,
+  wikilinkOpenPath,
 } from "./wikilink";
 
 // `start` is the document offset of the opening "[[". With start=0, "[[" occupies 0-1,
@@ -94,6 +95,35 @@ test("resolveNotePath: a full path target resolves to itself", () => {
 
 test("resolveNotePath: an unknown target returns null (new note)", () => {
   expect(resolveNotePath("Nonexistent", NOTES)).toBeNull();
+});
+
+// --- wikilinkOpenPath (#38: a table-cell/note-body wikilink CHIP to an image opened a
+// blank note tab instead of previewing the image — see the doc comment on the function). ---
+
+test("wikilinkOpenPath: a resolved note gets its id .md-suffixed", () => {
+  expect(wikilinkOpenPath("My Note", "reading/quotes/My Note")).toBe("reading/quotes/My Note.md");
+});
+
+test("wikilinkOpenPath: an unresolved image target opens as-is (no .md appended)", () => {
+  // The exact #38 repro: a bare `[[Screenshot ….png]]` wikilink chip (not an `![[…]]` embed)
+  // inside a table cell, clicked when the file isn't in the notes list (it's an attachment).
+  expect(wikilinkOpenPath("attachments/Screenshot 2026-07-07 at 12.51.05 AM.png", null)).toBe(
+    "attachments/Screenshot 2026-07-07 at 12.51.05 AM.png",
+  );
+});
+
+test("wikilinkOpenPath: an unresolved pdf/code/external target also opens as-is", () => {
+  expect(wikilinkOpenPath("Contract.pdf", null)).toBe("Contract.pdf");
+  expect(wikilinkOpenPath("script.ts", null)).toBe("script.ts");
+  expect(wikilinkOpenPath("Deck.pptx", null)).toBe("Deck.pptx");
+});
+
+test("wikilinkOpenPath: an unresolved bare name still falls back to creating a new note", () => {
+  expect(wikilinkOpenPath("Nonexistent", null)).toBe("Nonexistent.md");
+});
+
+test("wikilinkOpenPath: an unresolved target that already ends with .md is never doubled", () => {
+  expect(wikilinkOpenPath("Some Note.md", null)).toBe("Some Note.md");
 });
 
 test("matches an empty open wikilink", () => {

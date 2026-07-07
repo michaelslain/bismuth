@@ -45,7 +45,7 @@ import {
 import { calloutMeta, calloutIconSvg } from "./editor/callout";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import { resolveNotePath, parseHeadings, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
+import { resolveNotePath, parseHeadings, wikilinkOpenPath, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
 import { clearPendingAnchor } from "./pendingAnchor";
 import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
 import { saveScroll, loadScroll } from "./scrollMemory";
@@ -876,7 +876,10 @@ export function BlockEditor(props: {
       e.preventDefault();
       const heading = chipEl.getAttribute("data-heading") ?? undefined;
       const resolved = resolveNotePath(target, props.noteNames());
-      window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }));
+      // wikilinkOpenPath (not a bare "+ .md"): an unresolved target naming a previewable
+      // attachment (e.g. `[[Screenshot ….png]]`) opens as-is instead of routing to a blank
+      // nonexistent note (#38).
+      window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: wikilinkOpenPath(target, resolved), heading } }));
     };
     host.addEventListener("click", onChipClick);
     onCleanup(() => host.removeEventListener("click", onChipClick));
