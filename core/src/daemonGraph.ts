@@ -11,7 +11,8 @@
 //
 // Layout on disk (the integration contract we read, authored by the daemon):
 //   <machine-dir>/daemon.pid           — running daemon's pid (presence + liveness ⇒ running)
-//   <home>/crons/<name>.md             — cron def; frontmatter { name, schedule, enabled? }
+//   <home>/crons/<name>.md             — cron def; frontmatter { name, schedule, enabled? } OR,
+//                                        for a file-change cron, { name, on: file-change, watch, enabled? }
 //   <home>/crons/.last-fired.json      — { "<name>": { timestamp, result } }
 //   <home>/crons/.running.json         — { "<name>": { startedAt } }
 //   <home>/processes/<name>.md         — process def; frontmatter { name, enabled? }
@@ -29,6 +30,11 @@ export const DAEMON_NODE_ID = "::daemon";
 export interface DaemonCron {
   name: string;
   schedule: string;
+  /** Trigger kind. Defaults to "schedule" for any cron lacking (or not matching) an `on:
+   *  file-change` frontmatter — i.e. every pre-existing cron on disk. */
+  on: "schedule" | "file-change";
+  /** Vault-relative path/glob this cron watches, or null (schedule-triggered / absent). */
+  watch: string | null;
   enabled: boolean;
   lastFired: { timestamp: string; result: string } | null;
   running: boolean;
@@ -89,9 +95,13 @@ export function daemonSnapshot(home: string = daemonMachineDir(), name: string =
         run && typeof run === "object" && typeof (run as any).startedAt === "string"
           ? (run as any).startedAt
           : null;
+      const on = data.on === "file-change" ? "file-change" : "schedule";
+      const watch = typeof data.watch === "string" && data.watch ? data.watch : null;
       return {
         name: fm,
         schedule: typeof data.schedule === "string" ? data.schedule : "",
+        on,
+        watch,
         enabled: isEnabled(data),
         lastFired: lastFiredEntry,
         running: startedAt != null,
@@ -145,6 +155,8 @@ export function buildDaemonGraph(snap: DaemonSnapshot): GraphData {
         lastResult: c.lastFired?.result ?? null,
         lastFiredMs: toMs(c.lastFired?.timestamp),
         schedule: c.schedule || undefined,
+        on: c.on,
+        watch: c.watch ?? undefined,
       },
     });
     edges.push({ from: DAEMON_NODE_ID, to: id, kind: "supervises" });

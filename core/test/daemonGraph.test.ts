@@ -30,6 +30,9 @@ beforeAll(() => {
   cronFile("failed-cron", "name: failed-cron\nschedule: 30 * * * *");
   cronFile("running-cron", "name: running-cron\nschedule: 0 0 * * *");
   cronFile("disabled-cron", "name: disabled-cron\nschedule: 0 6 * * *\nenabled: false");
+  // #51: a file-change cron — the daemon's on-disk shape the reader must tolerate (no `schedule`
+  // key at all).
+  cronFile("on-edit", "name: on-edit\non: file-change\nwatch: inbox.md");
 
   // .last-fired.json — includes "ghost-cron", which has NO backing .md (stale → must be dropped).
   writeFileSync(
@@ -58,8 +61,19 @@ afterAll(() => {
 test("daemonSnapshot reads crons from *.md files only — stale .last-fired entries are excluded", () => {
   const snap = daemonSnapshot(home);
   const names = snap.crons.map((c) => c.name).sort();
-  expect(names).toEqual(["disabled-cron", "failed-cron", "running-cron", "success-cron"]);
+  expect(names).toEqual(["disabled-cron", "failed-cron", "on-edit", "running-cron", "success-cron"]);
   expect(names).not.toContain("ghost-cron"); // stale .last-fired entry with no file
+});
+
+test("#51: daemonSnapshot reads a file-change cron's on/watch, and defaults every other cron to on:schedule/watch:null", () => {
+  const snap = daemonSnapshot(home);
+  const by = Object.fromEntries(snap.crons.map((c) => [c.name, c]));
+
+  expect(by["on-edit"]).toMatchObject({ schedule: "", on: "file-change", watch: "inbox.md" });
+  // Every pre-existing schedule cron still reads as on:"schedule", watch:null — the reader never
+  // breaks on a file lacking the new frontmatter keys.
+  expect(by["success-cron"]).toMatchObject({ on: "schedule", watch: null });
+  expect(by["disabled-cron"]).toMatchObject({ on: "schedule", watch: null });
 });
 
 test("daemonSnapshot merges schedule, enabled, last-fired, and running state", () => {
@@ -123,6 +137,8 @@ test("buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
       {
         name: "success-cron",
         schedule: "0 * * * *",
+        on: "schedule",
+        watch: null,
         enabled: true,
         lastFired: { timestamp: RECENT, result: "success" },
         running: false,
@@ -131,6 +147,8 @@ test("buildDaemonGraph: one hub + a node per cron/process, all edges from the hu
       {
         name: "running-cron",
         schedule: "0 0 * * *",
+        on: "schedule",
+        watch: null,
         enabled: true,
         lastFired: null,
         running: true,
@@ -176,10 +194,18 @@ test("daemonGraph(home) end-to-end: reads the fixture and builds the graph", () 
   const ids = g.nodes.map((n) => n.id);
   expect(ids).toContain(DAEMON_NODE_ID);
   expect(ids).toContain("cron:success-cron");
+  expect(ids).toContain("cron:on-edit");
   expect(ids).toContain("process:my-proc");
   expect(ids).not.toContain("cron:ghost-cron"); // stale entry stays excluded end-to-end
-  // hub + 4 crons + 1 process = 6 nodes; 5 supervises edges.
-  expect(g.nodes).toHaveLength(6);
-  expect(g.edges).toHaveLength(5);
+  // hub + 5 crons + 1 process = 7 nodes; 6 supervises edges.
+  expect(g.nodes).toHaveLength(7);
+  expect(g.edges).toHaveLength(6);
   expect(g.edges.every((e) => e.from === DAEMON_NODE_ID && e.kind === "supervises")).toBe(true);
+
+  // #51: the file-change cron's node carries on/watch through to the graph's viz metadata,
+  // and a plain schedule cron gets on:"schedule" with no watch.
+  const onEdit = g.nodes.find((n) => n.id === "cron:on-edit")!;
+  expect(onEdit.daemon).toMatchObject({ on: "file-change", watch: "inbox.md" });
+  const success = g.nodes.find((n) => n.id === "cron:success-cron")!;
+  expect(success.daemon).toMatchObject({ on: "schedule", watch: undefined });
 });

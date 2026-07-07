@@ -48,8 +48,14 @@ export interface DaemonVizState {
   lastResult: string | null;
   /** Epoch-ms of the last run, or null if it has never fired (idle → faded). */
   lastFiredMs: number | null;
-  /** Cron expression from the cron definition file (cron nodes only; absent on process nodes). */
+  /** Cron expression from the cron definition file (cron nodes only; absent on process nodes,
+   *  and on a `file-change` cron, which has no schedule). */
   schedule?: string;
+  /** Trigger kind (cron nodes only). "schedule" (the default) fires on `schedule`'s cron
+   *  expression; "file-change" fires when `watch` (a vault-relative path/glob) changes. */
+  on?: "schedule" | "file-change";
+  /** Vault-relative path/glob this cron watches (cron nodes only, `on: "file-change"` only). */
+  watch?: string;
 }
 export interface GraphEdge {
   from: string;

@@ -20,12 +20,9 @@ export interface CronExpression {
   dayOfWeek: string
 }
 
-export interface CronJob {
+interface CronJobBase {
   name: string
-  schedule: string
-  cron: CronExpression
   prompt: string
-  catchup: boolean
   enabled: boolean
   notify: boolean
   model?: string
@@ -35,6 +32,36 @@ export interface CronJob {
   /** Process pattern to monitor after session ends (matched via pgrep -f). */
   waitFor?: string
 }
+
+/** Fires on a cron-expression schedule — the original, still-default trigger. */
+export interface ScheduleCronJob extends CronJobBase {
+  on: "schedule"
+  schedule: string
+  cron: CronExpression
+  catchup: boolean
+}
+
+/**
+ * Fires when a watched vault file (or glob) changes — see fileWatch.ts, which owns the ONE
+ * per-vault fs watcher and fans debounced batches out to every enabled job of this shape.
+ * `watch` is a vault-relative path or Bun.Glob pattern (e.g. `notes/inbox.md`, `journal/**`).
+ * There is no time-based catch-up for these (`shouldCatchUp` short-circuits on `on`) — a change
+ * missed while the daemon was down is simply not retroactively fired.
+ *
+ * Self-trigger hazard: if this cron's OWN prompt edits a file that matches its `watch` pattern,
+ * it will refire itself on its own edit (subject only to the debounce window) — an infinite
+ * loop. `.daemon/**` churn is always excluded (fileWatch.ts's `isDaemonInternalPath`), but a
+ * `watch` pointing at an ordinary vault note the cron itself writes is NOT guarded — author such
+ * crons carefully (write to a different file than the one watched, or make the edit idempotent
+ * so a re-fire is a harmless no-op).
+ */
+export interface FileChangeCronJob extends CronJobBase {
+  on: "file-change"
+  watch: string
+  catchup: false
+}
+
+export type CronJob = ScheduleCronJob | FileChangeCronJob
 
 // ── Per-vault state keys ──────────────────────────────────────────────────────
 //
@@ -53,16 +80,9 @@ function parseTimeoutSecs(raw: string | undefined): number {
 }
 
 function parseCronFrontmatter(name: string, frontmatter: Record<string, string>, body: string): CronJob | null {
-  const schedule = frontmatter.schedule
-  if (!schedule) return null
-  const cron = parseCronExpression(schedule)
-  if (!cron) return null
-  return {
+  const base = {
     name: frontmatter.name ?? name,
-    schedule,
-    cron,
     prompt: body,
-    catchup: frontmatter.catchup !== "false",
     enabled: frontmatter.enabled !== "false",
     notify: frontmatter.notify === "true",
     model: frontmatter.model,
@@ -70,6 +90,21 @@ function parseCronFrontmatter(name: string, frontmatter: Record<string, string>,
     timeout: parseTimeoutSecs(frontmatter.timeout),
     waitFor: frontmatter.waitFor,
   }
+
+  // `on: file-change` is opt-in and explicit — everything else (including the absence of `on`)
+  // keeps the original schedule-based behavior unchanged, so every existing cron on disk parses
+  // exactly as before.
+  if (frontmatter.on?.trim() === "file-change") {
+    const watch = frontmatter.watch?.trim()
+    if (!watch) return null // file-change crons require a "watch" path/glob
+    return { ...base, on: "file-change", watch, catchup: false }
+  }
+
+  const schedule = frontmatter.schedule
+  if (!schedule) return null
+  const cron = parseCronExpression(schedule)
+  if (!cron) return null
+  return { ...base, on: "schedule", schedule, cron, catchup: frontmatter.catchup !== "false" }
 }
 
 // Cron job names become filenames in the vault's crons dir. Reject anything that
@@ -300,6 +335,10 @@ function retryCooldownMs(intervalMs: number): number {
 }
 
 export function shouldCatchUp(job: CronJob, lastFired: Record<string, LastFiredEntry>): boolean {
+  // File-change crons have no time-based schedule to be "overdue" against — they only fire
+  // when their watched path actually changes. A change missed while the daemon was down is
+  // simply not retroactively fired (unlike a missed schedule tick).
+  if (job.on === "file-change") return false
   if (!job.catchup) return false
   const last = lastFired[job.name]
   if (!last) return true // never fired — catch up
@@ -421,7 +460,7 @@ async function waitForProcessPattern(
  * synchronously, then runs the session in the background. Callers should await
  * this to ensure .running.json is written before proceeding.
  */
-async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string, LastFiredEntry>): Promise<void> {
+async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string, LastFiredEntry>, opts?: { triggerContext?: string }): Promise<void> {
   const key = jobKey(ctx, job.name)
   const ac = new AbortController()
   runningJobs.add(key)
@@ -441,7 +480,8 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
   // Run the actual session in the background (not awaited by caller)
   const sessionPromise = (async () => {
     try {
-      const prompt = `[Cron: ${job.name}] ${job.prompt}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
+      const triggerNote = opts?.triggerContext ? `\n\nTriggered by change to: ${opts.triggerContext}` : ""
+      const prompt = `[Cron: ${job.name}] ${job.prompt}${triggerNote}${CRON_RESULT_INSTRUCTION}${job.notify ? CRON_NOTIFY_INSTRUCTION : ""}`
       const response = await sendMessage(prompt, ctx, { model: job.model, effort: job.effort, abortController: ac, timeoutSecs: job.timeout, newSession: true })
 
       if (job.waitFor) {
@@ -512,6 +552,26 @@ async function fireJob(ctx: VaultContext, job: CronJob, lastFired: Record<string
 }
 
 /**
+ * Fire a `file-change` cron in response to a debounced batch of matching path changes —
+ * called by fileWatch.ts's per-vault watcher, never by the schedule tick. Runs the job
+ * through the exact same `fireJob` plumbing as a scheduled fire (same session/model/timeout/
+ * notify handling), with the changed paths appended to the prompt as trigger context. Skips
+ * (rather than queues) if the job is disabled or already running — a burst that arrives mid-run
+ * is not replayed; the next fs change after this run finishes will fire it fresh.
+ */
+export async function fireFileChangeCron(ctx: VaultContext, job: FileChangeCronJob, changedPaths: string[]): Promise<void> {
+  if (!job.enabled) return
+  const key = jobKey(ctx, job.name)
+  if (runningJobs.has(key)) {
+    console.log(`[cron] File-change trigger for "${job.name}" ignored — already running`)
+    return
+  }
+  const lastFired = await loadLastFired(ctx)
+  console.log(`[cron] File-change firing: ${job.name} (${changedPaths.join(", ")})`)
+  await fireJob(ctx, job, lastFired, { triggerContext: changedPaths.join(", ") })
+}
+
+/**
  * Re-fire any of a vault's crons that were still in .running.json when the daemon
  * died. MUST be called BEFORE startCronScheduler(): recovery populates runningJobs
  * so the scheduler's catch-up pass skips these jobs. If startCronScheduler() runs
@@ -579,6 +639,9 @@ export function startCronScheduler(): void {
       const [jobs, lastFired] = await Promise.all([loadCronJobs(ctx), loadLastFired(ctx)])
       for (const job of jobs) {
         if (!job.enabled || runningJobs.has(jobKey(ctx, job.name))) continue
+        // file-change crons never fire off the tick — fileWatch.ts's per-vault watcher fires
+        // them directly (via fireFileChangeCron) when their watched path actually changes.
+        if (job.on === "file-change") continue
         // Fire on schedule OR when overdue (catchup). Without the catchup
         // check here, a missed/failed/killed run waits until the next daemon
         // restart to be retried.
@@ -738,10 +801,15 @@ export async function stopCronJob(name: string, ctx: VaultContext): Promise<{ ok
   return { ok: true }
 }
 
-function buildCronFile(opts: { name: string; schedule: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean; timeout?: number; waitFor?: string; prompt: string }): string {
+function buildCronFile(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean; timeout?: number; waitFor?: string; prompt: string }): string {
   const lines = ["---"]
   lines.push(`name: ${opts.name}`)
-  lines.push(`schedule: ${opts.schedule}`)
+  if (opts.on === "file-change") {
+    lines.push(`on: file-change`)
+    if (opts.watch) lines.push(`watch: ${opts.watch}`)
+  } else if (opts.schedule) {
+    lines.push(`schedule: ${opts.schedule}`)
+  }
   if (opts.model) lines.push(`model: ${opts.model}`)
   if (opts.effort) lines.push(`effort: ${opts.effort}`)
   if (opts.timeout !== undefined && opts.timeout !== DEFAULT_CRON_TIMEOUT) lines.push(`timeout: ${opts.timeout}`)
@@ -757,11 +825,16 @@ function buildCronFile(opts: { name: string; schedule: string; model?: string; e
   return lines.join("\n")
 }
 
-export async function createCronJob(opts: { name: string; schedule: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+export async function createCronJob(opts: { name: string; on?: "file-change"; schedule?: string; watch?: string; prompt: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; enabled?: boolean }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
   const nameCheck = validateCronName(opts.name, ctx)
   if (!nameCheck.ok) return nameCheck
-  const cron = parseCronExpression(opts.schedule)
-  if (!cron) return { ok: false, error: `Invalid cron schedule: "${opts.schedule}"` }
+
+  if (opts.on === "file-change") {
+    if (!opts.watch) return { ok: false, error: `file-change crons require a "watch" path/glob` }
+  } else {
+    if (!opts.schedule) return { ok: false, error: "Cron schedule is required" }
+    if (!parseCronExpression(opts.schedule)) return { ok: false, error: `Invalid cron schedule: "${opts.schedule}"` }
+  }
 
   const filePath = join(ctx.cronsDir, `${opts.name}.md`)
   if (await Bun.file(filePath).exists()) return { ok: false, error: `Cron job "${opts.name}" already exists` }
@@ -782,7 +855,7 @@ export async function deleteCronJob(name: string, ctx: VaultContext): Promise<{ 
   }
 }
 
-export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; prompt?: string }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
+export async function updateCronJob(name: string, updates: { enabled?: boolean; schedule?: string; on?: "schedule" | "file-change"; watch?: string; model?: string; effort?: string; catchup?: boolean; notify?: boolean; waitFor?: string; prompt?: string }, ctx: VaultContext): Promise<{ ok: boolean; error?: string }> {
   const nameCheck = validateCronName(name, ctx)
   if (!nameCheck.ok) return nameCheck
   const filePath = join(ctx.cronsDir, `${name}.md`)
@@ -795,6 +868,8 @@ export async function updateCronJob(name: string, updates: { enabled?: boolean; 
 
   const { frontmatter, body } = parseFrontmatter(content)
 
+  if (updates.on !== undefined) frontmatter.on = updates.on
+  if (updates.watch !== undefined) frontmatter.watch = updates.watch
   if (updates.schedule !== undefined) {
     if (!parseCronExpression(updates.schedule)) return { ok: false, error: `Invalid cron schedule: "${updates.schedule}"` }
     frontmatter.schedule = updates.schedule
@@ -807,10 +882,15 @@ export async function updateCronJob(name: string, updates: { enabled?: boolean; 
   if (updates.waitFor !== undefined) frontmatter.waitFor = updates.waitFor
 
   const newPrompt = updates.prompt ?? body
+  const isFileChange = frontmatter.on?.trim() === "file-change"
+  if (isFileChange && !frontmatter.watch) return { ok: false, error: `file-change crons require a "watch" path/glob` }
+  if (!isFileChange && !frontmatter.schedule) return { ok: false, error: "Cron schedule is required" }
 
   await Bun.write(filePath, buildCronFile({
     name,
-    schedule: frontmatter.schedule!,
+    on: isFileChange ? "file-change" : undefined,
+    schedule: frontmatter.schedule,
+    watch: frontmatter.watch,
     model: frontmatter.model,
     effort: frontmatter.effort,
     timeout: frontmatter.timeout !== undefined ? parseTimeoutSecs(frontmatter.timeout) : undefined,

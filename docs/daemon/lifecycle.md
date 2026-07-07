@@ -55,9 +55,10 @@ The boot sequence is **load-bearing** — each step depends on the side effects 
 2. **`reapOrphans(ctx)`** — *boot only.* Kill leftover child processes from a *previous* daemon instance **before** spawning fresh ones; otherwise survivors accumulate as duplicates on every restart. Skipped at runtime-enable because a cross-vault reap could kill a sibling vault's identical-argv process (`spawnProcess` does its own per-def defensive reap instead).
 3. **`startProcesses(ctx)`** — spawn the vault's enabled background processes.
 4. **`startProcessTriggers(ctx)`** — begin the per-vault trigger watcher (external programs flip a process's frontmatter + drop a trigger file; the loop reconciles runtime ↔ disk).
-5. **`recoverInterruptedCrons(ctx)`** — *boot only.* Re-fire crons that were mid-run when the daemon last died, **before** the scheduler ticks. Safe before session init because cron fires use `newSession: true`. Skipped at runtime-enable: the scheduler is already ticking, so recovery could observe a job the live tick just fired and wrongly `markDone()` it (corrupting `.running.json`) — and the scheduler's own catch-up covers overdue jobs anyway.
-6. **Owner-only session init** — *boot + owner only.* `sendMessage(DAEMON_BOOT_PROMPT, ctx, { newSession: true })` wakes the persistent session. On failure it logs a warning and **continues** (the session is created lazily on the first cron/message anyway). A vault enabled at runtime skips this and wakes its session lazily.
-7. Add `ctx.root` to the in-memory `activeVaults` set.
+5. **`startFileWatch(ctx)`** — start the vault's ONE recursive `fs.watch` (`daemon/src/daemon/fileWatch.ts`), debounced (default 2s) and fanned out across every enabled `on: file-change` cron on each batch. No-ops if this vault already has a live watcher. See [crons-and-processes.md](crons-and-processes.md#file-change-crons).
+6. **`recoverInterruptedCrons(ctx)`** — *boot only.* Re-fire crons that were mid-run when the daemon last died, **before** the scheduler ticks. Safe before session init because cron fires use `newSession: true`. Skipped at runtime-enable: the scheduler is already ticking, so recovery could observe a job the live tick just fired and wrongly `markDone()` it (corrupting `.running.json`) — and the scheduler's own catch-up covers overdue jobs anyway.
+7. **Owner-only session init** — *boot + owner only.* `sendMessage(DAEMON_BOOT_PROMPT, ctx, { newSession: true })` wakes the persistent session. On failure it logs a warning and **continues** (the session is created lazily on the first cron/message anyway). A vault enabled at runtime skips this and wakes its session lazily.
+8. Add `ctx.root` to the in-memory `activeVaults` set.
 
 The boot prompt (`DAEMON_BOOT_PROMPT`) is:
 
@@ -68,7 +69,7 @@ The boot prompt (`DAEMON_BOOT_PROMPT`) is:
 Runs every `CRON_CHECK_INTERVAL_MS`. It diffs the registry (`loadAllVaults()`, each `{ ctx, enabled }`) against the live `activeVaults` set so a vault that opted **in** to or **out** of the daemon takes effect without a restart:
 
 - `enabled && !active` → `startVault(ctx, { owner, boot: false })` (the runtime-enable path: no reap, no recovery, lazy session).
-- `!enabled && active` → `stopVault(ctx)` — tear down that vault's trigger loop + managed children. **Never deletes on-disk state — disable = pause.**
+- `!enabled && active` → `stopVault(ctx)` — tear down that vault's trigger loop, file watcher, + managed children. **Never deletes on-disk state — disable = pause.**
 - A vault dropped from the registry entirely (not just disabled) won't appear in `loadAllVaults()`, so any still-`active` root not `seen` this pass is also paused (via `vaultPaths(root)`), so its processes don't leak.
 
 Because the cron scheduler re-reads the enabled set itself, reconcile only manages per-vault process supervision + sessions — not crons.
@@ -80,11 +81,12 @@ Bound to `SIGTERM` and `SIGINT`:
 1. Clear the reconcile interval.
 2. `stopCronScheduler()`.
 3. `stopProcessTriggers()` — global; tears down every vault's trigger loops.
-4. `await waitForRunningJobs(SHUTDOWN_TIMEOUT_MS)` — `SHUTDOWN_TIMEOUT_MS = 10000`. Waits for in-flight cron jobs to finish (aborting on timeout).
-5. `await stopProcesses()` — global; stops every vault's managed children.
-6. `activeVaults.clear()`.
-7. `removePid()`.
-8. Log `"Daemon stopped"` and `process.exit(0)`.
+4. `stopAllFileWatches()` — global; closes every vault's `fs.watch` (`daemon/src/daemon/fileWatch.ts`).
+5. `await waitForRunningJobs(SHUTDOWN_TIMEOUT_MS)` — `SHUTDOWN_TIMEOUT_MS = 10000`. Waits for in-flight cron jobs to finish (aborting on timeout).
+6. `await stopProcesses()` — global; stops every vault's managed children.
+7. `activeVaults.clear()`.
+8. `removePid()`.
+9. Log `"Daemon stopped"` and `process.exit(0)`.
 
 ---
 
