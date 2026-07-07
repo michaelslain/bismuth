@@ -69,6 +69,22 @@ export async function runCli(
 }
 
 /**
+ * Format a CliResult into the single text blob the MCP tools return: stdout, then stderr,
+ * then a `[exit N]` marker on failure. Shared by the `bismuth_cli` tool and the daemon tools
+ * so their output shape stays identical. Falls back to "(no output)" when everything is empty.
+ */
+export function formatCliResult(r: CliResult): string {
+  let text = r.stdout ?? "";
+  if (r.code !== 0) {
+    if (r.stderr) text += (text ? "\n" : "") + r.stderr;
+    text += `${text ? "\n" : ""}[exit ${r.code}]`;
+  } else if (r.stderr) {
+    text += (text ? "\n" : "") + r.stderr;
+  }
+  return text || "(no output)";
+}
+
+/**
  * Fetch the CLI's own help text. For a group, tries `<group> --help`; if that
  * exits non-zero or yields nothing, falls back to the global `--help` (which the
  * CLI prints on `--help`/`-h`/`help`/no args). Returns trimmed stdout, or a

@@ -6,8 +6,9 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { listDocs, searchDocs, readDoc } from "./docs";
-import { runCli, cliHelp } from "./cli";
+import { runCli, cliHelp, formatCliResult } from "./cli";
 import { memoryDir, remember, recall, forget } from "./memory";
+import { daemonTools, daemonEnabled, isDaemonTool, runDaemonTool } from "./daemon";
 
 // mcp/src → repo root → docs/. In a machine-wide install the compiled binary lives in
 // ~/.bismuth (import.meta.dir is virtual), so the installer sets BISMUTH_DOCS_DIR (→ the staged
@@ -139,8 +140,12 @@ const memoryTools = [
   },
 ] as const;
 
+// The memory tools AND the daemon-management tools share ONE gate — the daemon being enabled
+// for this vault (memoryDir()/daemonEnabled(), i.e. BISMUTH_MEMORY_DIR is injected). Outside a
+// daemon-enabled session the server exposes only the always-on five; a machine-wide session
+// with no daemon never sees remember/recall/forget nor the crons/processes/pages tools.
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
-  tools: memoryDir() ? [...tools, ...memoryTools] : tools,
+  tools: daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools,
 }));
 
 function asText(result: unknown): string {
@@ -179,14 +184,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           ? (args.args as unknown[]).map(String)
           : [];
         const r = await runCli(repoRoot, cliArgs);
-        let text = r.stdout ?? "";
-        if (r.code !== 0) {
-          if (r.stderr) text += (text ? "\n" : "") + r.stderr;
-          text += `${text ? "\n" : ""}[exit ${r.code}]`;
-        } else if (r.stderr) {
-          text += (text ? "\n" : "") + r.stderr;
-        }
-        return { content: [{ type: "text", text: text || "(no output)" }] };
+        return { content: [{ type: "text", text: formatCliResult(r) }] };
       }
       case "bismuth_cli_help": {
         const group = typeof args.group === "string" ? args.group : undefined;
@@ -213,6 +211,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: asText(result) }] };
       }
       default:
+        // Daemon-management tools (crons/processes/pages/status/devices/owner) bridge the
+        // bismuth CLI. They're only listed when the daemon is enabled; guard the call path too
+        // so an out-of-context invocation degrades gracefully instead of hitting "Unknown tool".
+        if (isDaemonTool(name)) {
+          if (!daemonEnabled()) {
+            return {
+              content: [{ type: "text", text: "Daemon tools are unavailable — the daemon is not enabled for this vault." }],
+              isError: true,
+            };
+          }
+          const { text, isError } = await runDaemonTool(repoRoot, name, args);
+          return { content: [{ type: "text", text }], isError };
+        }
         return {
           content: [{ type: "text", text: `Unknown tool: ${name}` }],
           isError: true,
