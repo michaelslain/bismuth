@@ -317,6 +317,7 @@ describe("toolbar serialization", () => {
     expect(out.toolbar).toEqual([
       { command: "create-menu", icon: "Plus" },
       { command: "search", icon: "Search" },
+      { command: "open-inbox", icon: "Inbox" },
     ]);
   });
 
