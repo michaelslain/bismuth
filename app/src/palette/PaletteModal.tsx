@@ -27,7 +27,17 @@ type Props = {
   onSelect: (item: PaletteItem) => void;
   onClose: () => void;
   emptyText?: string;
+  // Optional frecency score for an item id (see frecency.ts) — higher = used more/recently.
+  // When provided, the list LEARNS from usage: an empty query lists most-frecent first, and
+  // a non-empty query blends frecency into the fuzzy ranking as a gentle tiebreaker/booster
+  // (a strong text match still wins — see FRECENCY_WEIGHT). Omit it for a plain fuzzy list.
+  frecency?: (id: string) => number;
 };
+
+// How much frecency may nudge a fuzzy match, on the same 0..1 scale as text "goodness"
+// (1 = perfect match). Small on purpose: a perfect/prefix match (goodness ≈ 1) always beats
+// a fuzzy-but-frecent one (goodness + ≤0.15); frecency only reorders similar-quality matches.
+const FRECENCY_WEIGHT = 0.15;
 
 // Collapse matched-char indices into contiguous runs so we render a handful of
 // segments per label instead of one DOM node per character (the latter explodes
@@ -70,6 +80,7 @@ export function PaletteModal(props: Props) {
     return new Fuse(props.items, {
       keys: ["label"],
       includeMatches: true,
+      includeScore: true, // needed to blend frecency into the text-match rank
       ignoreLocation: true,
       threshold: 0.4,
     });
@@ -81,22 +92,47 @@ export function PaletteModal(props: Props) {
 
   const results = createMemo<Match[]>(() => {
     const q = query().trim();
+    const frecency = props.frecency;
     if (!q) {
-      return props.items.slice(0, MAX_RESULTS).map((item) => ({ item, indices: [] }));
+      // Empty query: with frecency, most-used-first (stable — equal/zero scores keep the
+      // caller's order); without it, the plain incoming order. Then cap the rendered rows.
+      // Decorate-sort so frecency() is called once per item, not per comparison.
+      const ordered = frecency
+        ? props.items
+            .map((item) => ({ item, f: frecency(item.id) }))
+            .sort((a, b) => b.f - a.f)
+            .map((s) => s.item)
+        : props.items;
+      return ordered.slice(0, MAX_RESULTS).map((item) => ({ item, indices: [] }));
     }
 
-    return fuse()
-      .search(q, { limit: MAX_RESULTS })
-      .map((r) => {
-        const labelMatch = r.matches?.find((m) => m.key === "label");
-        const indices: number[] = [];
-        for (const [start, end] of labelMatch?.indices ?? []) {
-          for (let i = start; i <= end; i++) {
-            indices.push(i);
-          }
-        }
-        return { item: r.item, indices };
-      });
+    const hits = fuse().search(q, { limit: MAX_RESULTS }).map((r) => {
+      const labelMatch = r.matches?.find((m) => m.key === "label");
+      const indices: number[] = [];
+      for (const [start, end] of labelMatch?.indices ?? []) {
+        for (let i = start; i <= end; i++) indices.push(i);
+      }
+      // Fuse score: 0 = perfect, 1 = worst. Convert to "goodness" (higher = better) so it
+      // shares a scale with the frecency boost below.
+      return { item: r.item, indices, goodness: 1 - (r.score ?? 0) };
+    });
+
+    if (!frecency) return hits.map(({ item, indices }) => ({ item, indices }));
+
+    // Blend frecency as a gentle boost: normalize each hit's frecency against the max in
+    // THIS candidate set (relative, so absolute counts don't matter), scale by
+    // FRECENCY_WEIGHT, add to goodness, and re-sort. Ties/near-ties get reordered by usage;
+    // a decisively better text match is never overtaken. Stable sort keeps Fuse's order
+    // when boosts are equal (e.g. no history yet).
+    let maxF = 0;
+    for (const h of hits) maxF = Math.max(maxF, frecency(h.item.id));
+    const ranked = hits
+      .map((h) => ({
+        h,
+        rank: h.goodness + (maxF > 0 ? FRECENCY_WEIGHT * (frecency(h.item.id) / maxF) : 0),
+      }))
+      .sort((a, b) => b.rank - a.rank);
+    return ranked.map(({ h }) => ({ item: h.item, indices: h.indices }));
   });
 
   // Up/Down/Enter/Escape come from the shared menu-nav hook (same logic as the

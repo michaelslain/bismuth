@@ -5,6 +5,7 @@
 import { PaletteModal, type PaletteItem } from "./PaletteModal";
 import type { BoundCommand } from "../commands";
 import { settings } from "../settings";
+import { loadFrecency, recordUse, scoreOf, commandKey } from "../frecency";
 
 // Command id → keybinding id (core/src/keybindings.ts). Only commands whose action
 // has a real global keybinding appear here; the rest render no hint (no fabrication).
@@ -53,13 +54,20 @@ export function CommandPalette(props: Props) {
   const items = (): PaletteItem[] =>
     list().map((c) => ({ id: c.id, label: c.label, icon: c.icon, shortcut: shortcutFor(c.id) }));
 
+  // Snapshot frecency once per open (fixed `now`): recently/frequently run commands sort
+  // first on an empty query and get boosted in fuzzy results (see PaletteModal blend).
+  const store = loadFrecency();
+  const now = Date.now();
+
   return (
     <PaletteModal
       placeholder="Select a command..."
       items={items()}
+      frecency={(id) => scoreOf(store[commandKey(id)], now)}
       emptyText="No matching commands"
       onClose={props.onClose}
       onSelect={(item) => {
+        recordUse(commandKey(item.id)); // learn: running a command boosts it next time
         props.commands.get(item.id)?.action();
         props.onClose();
       }}
