@@ -23,7 +23,7 @@
 // The daemon is deliberately NOT involved (latency + it's off by default); this path is always-on in
 // every vault, gated only on Claude Code being installed (whichClaude()).
 import { query, type SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { whichClaude } from "./claudeWhich";
+import { claudeSpawnEnv, whichClaude } from "./claudeWhich";
 import { AppError } from "./error";
 import { rankCandidates } from "./search";
 import type { MatchSnippet, SearchResult } from "./search";
@@ -387,7 +387,17 @@ export async function consumeModelStream(
   for await (const msg of iterator) {
     if (msg.type !== "result") continue;
     if (msg.subtype === "success") {
-      const m = msg as { structured_output?: unknown; result?: string };
+      const m = msg as { structured_output?: unknown; result?: string; is_error?: boolean };
+      // BUG #8 (4th bounce) ROOT CAUSE: `claude` reports a broken invocation — e.g. "Not logged in ·
+      // Please run /login" when the spawned child's env is missing $USER (see claudeSpawnEnv in
+      // claudeWhich.ts) — as a perfectly normal `subtype: "success"` message with `is_error: true`
+      // and the failure text in `result`. The 3rd-bounce fix above only checked `subtype`, so this
+      // "successful failure" sailed through: `result` (not JSON) failed to parse in
+      // parseModelOutput → silently coerced to `[]` → rendered as "Bismuth AI found nothing
+      // relevant", INDISTINGUISHABLE from a real empty answer. Treat `is_error` as a hard error too.
+      if (m.is_error) {
+        throw new AppError("INTERNAL_ERROR", `AI search failed: ${m.result || "unknown error"}`, 500);
+      }
       return { structured: m.structured_output, resultText: m.result };
     }
     // error_during_execution / error_max_turns / error_max_structured_output_retries / …
@@ -416,6 +426,14 @@ const runModelReal: ModelRunner = async ({ bin, root, question, context, signal 
         model: HAIKU_MODEL,
         pathToClaudeCodeExecutable: bin,
         cwd: root,
+        // BUG #8 (4th bounce): the SDK's `env` REPLACES the child's env entirely when set (never
+        // merged with process.env) — so if we omitted this, the child would just inherit whatever
+        // env THIS server process happens to have, verbatim. Fine in dev; not safe to assume for a
+        // packaged sidecar. claudeSpawnEnv (see its doc comment in claudeWhich.ts) fills the exact
+        // gaps that break `claude`'s own Keychain-login lookup when they're missing: $USER/$LOGNAME
+        // (the lookup account) and a $PATH that includes `/usr/bin` (where `security` lives) —
+        // without either, `claude` reports "Not logged in" even though the user genuinely is.
+        env: claudeSpawnEnv(),
         // No tools, one turn, no session persistence, no filesystem settings (no CLAUDE.md/skills):
         // a lean, isolated, cheap one-shot — mirrors chat.ts's query() but stripped to the minimum.
         tools: [],
