@@ -237,6 +237,13 @@ body { background: var(--bg); color: var(--fg); }
 /* Tab close button: trim the default icon-button padding so the X doesn't dominate the chip. */
 .tab .tab-x { padding: 2px; margin-right: -4px; }
 
+/* Pinned tab: compact (no label — icon + pin glyph only), narrower, and marked with an
+   accent-tinted pin instead of a close X. Tighter side padding keeps the strip dense. */
+.tab.pinned { padding: 0 10px; gap: 6px; }
+.tab .tab-pin { padding: 2px; margin-right: -4px; color: var(--accent, var(--fg)); opacity: 0.85; }
+.tab .tab-pin:hover { opacity: 1; }
+.tab.pinned.active .tab-pin { opacity: 1; }
+
 /* Inline rename input — sits in place of the label span, sized to match the tab text so
    the chip doesn't jump. Borderless/transparent so it reads as editing the tab itself. */
 .tab-rename {
