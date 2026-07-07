@@ -37,6 +37,8 @@ For block constructs (code fences, frontmatter, HTML blocks, math blocks, tables
 
 ## Block Regions Pre-Scan
 
+`computeBlockRegions` (and the types/regexes it needs — `CodeBlock`, `BlockRegions`, `CalloutLineBlock`, `FENCE_OPEN_RE`/`FENCE_RE`, `scanCalloutLineBlocks`) live in `blockRegions.ts`, not `livePreview.ts` — a pure module with no CodeMirror `view` / DOM / JSX imports, so this scan (which decides exactly which lines are a block's top/mid/bottom, per [Fenced Code Blocks](#fenced-code-blocks) and [YAML Frontmatter](#yaml-frontmatter) above) is unit-testable under `bun test` (`blockRegions.test.ts`) without mounting a real `EditorView`. `livePreview.ts` imports it.
+
 On every document change, `computeBlockRegions(doc)` does a single full-document scan and returns:
 
 | Field | Contents |
@@ -57,10 +59,10 @@ Lines that belong to these regions are handled first in the per-line pass and `c
 
 Frontmatter is detected by `extractFrontmatterBoundary` (in `frontmatterUtils.ts`): the document must start with `---\n` on line 1, closed by a later `---` line. The content between the fences is the YAML body.
 
-**Rendering behavior**:
+**Rendering behavior**: the whole block renders as a rounded-corner bordered CARD — a continuous border on all four sides, a slightly distinct background, and a GREY (never `var(--accent)`) left accent edge — ALWAYS visible, on and off cursor (bug #10). Built from per-line classes, since a CodeMirror line decoration can't span multiple lines: `cm-block-mid` (shared background + left accent + right edge, applied to every line of the block) plus `cm-block-top` / `cm-block-bottom` (layered on top, only on the opening/closing `---`, adding the top/bottom edge and rounding that line's two outer corners).
 
-- **Opening and closing `---` delimiters** are collapsed to zero height (`cm-collapsed-line`) with their text hidden, unless the cursor is inside the frontmatter block. When the cursor enters the block, both delimiters are revealed in `cm-syntax-mark` (dim Monaspace), and both carry `cm-frontmatter` line styling. This ensures both delimiters look the same even though the markdown tokenizer handles them differently.
-- **Property rows** (lines between the delimiters): each gets `cm-frontmatter` (Monaspace Xenon, `--mono-scale` font-size, `--surface-2` background, 2px `--accent` left inset shadow). In-block 1-based line numbers are displayed via the `numberedLine` mechanism (see [Code Line Numbers](#code-line-numbers-in-block-line-numbers) below).
+- **Opening and closing `---` delimiters** always carry `cm-block-top` / `cm-block-bottom` (+ `cm-block-mid`) — the card's roof/floor — regardless of cursor state. The literal dashes themselves stay hidden for a clean panel; only when the cursor is on that exact delimiter line do the raw dashes reveal in `cm-syntax-mark` (dim Monaspace). This ensures both delimiters look the same even though the markdown tokenizer handles them differently, and the card itself never flickers as the cursor enters/leaves.
+- **Property rows** (lines between the delimiters): each gets `cm-frontmatter cm-block-mid` (Monaspace Xenon, `--mono-scale` font-size; the card's background/left-accent/right-edge styling comes from `cm-block-mid`). In-block 1-based line numbers are displayed via the `numberedLine` mechanism (see [Code Line Numbers](#code-line-numbers-in-block-line-numbers) below).
 - **`key:` portion**: The regex `/^(\s*)([A-Za-z0-9_$.-]+)\s*:/` is used to detect the key name on each property row. The key receives `cm-fm-key` (color: `--accent`), while the value portion inherits `--fg`.
 - **Links in property values** are styled so the value reads as a clickable link, the same as in the body: wikilinks (e.g. `source: "[[Note]]"`) via `pushWikilinks`, markdown links (e.g. `link: "[Anthropic](https://anthropic.com)"`) via `pushMarkdownLinks`, and bare URLs (e.g. `homepage: https://example.com`) via `pushBareUrls`. All three calls sit together on the frontmatter branch (`pushWikilinks(...); pushMarkdownLinks(deco, text, line.from, revealsRange); pushBareUrls(deco, text, line.from);`) before the `continue`, so they are the only inline treatments applied inside frontmatter; other inline markdown (bold, italic, tags) is skipped. Click handling is shared with the body — `Editor.tsx`'s `mousedown` handler scans the raw line text, so it resolves frontmatter link clicks (open URL / navigate to note) without any frontmatter-specific code.
 - **No heading/list/tag/math treatment** on frontmatter lines — after the link styling, the `continue` skips the rest of the per-line pass entirely.
@@ -73,18 +75,20 @@ A fenced code block is a pair of ` ``` ` lines (optionally with a language info 
 
 **Special case**: ` ```query ` blocks are **excluded** from code-block rendering here. They are owned by `queryBlock.ts`, which replaces the entire fence with a rendered base/task view. `computeBlockRegions` advances past query blocks without recording them, so livePreview does not double-render them.
 
+Like frontmatter, the whole block ALWAYS renders as a rounded-corner bordered card (bug #10) — `cm-block-top` on the opening fence, `cm-block-mid` on every line (background + left accent + right edge), `cm-block-bottom` on the closing fence — regardless of cursor state, so the card never flickers as the cursor enters/leaves. See [YAML Frontmatter](#yaml-frontmatter) above for the shared class design.
+
 ### Rendered mode (cursor outside the block)
 
-- **Opening fence line** (`codeBlock.open`): replaced by a `CodeHeaderWidget`. The widget mounts the `<CodeHeader>` Solid component, which renders a dim language label on the left (`cm-code-lang`, shows `"text"` if no info string) and a copy-to-clipboard icon button on the right (`cm-code-copy`). The line gets `cm-code-headerline`.
-- **Closing fence line** (`codeBlock.close`): collapsed via `cm-code-hidden` (`font-size:0; line-height:0`) with its text hidden. This removes the closing ` ``` ` from view entirely.
-- **Body lines**: each gets `cm-codeblock` (Monaspace Xenon, `--mono-scale` font-size, `line-height:1.5`) and a 1-based in-block line number via `numberedLine("cm-codeblock", lineNumber - openLine)`.
+- **Opening fence line** (`codeBlock.open`): gets `cm-block-top cm-block-mid`, and its text is replaced by a `CodeHeaderWidget`. The widget mounts the `<CodeHeader>` Solid component, which renders a dim language label on the left (`cm-code-lang`, shows `"text"` if no info string) and a copy-to-clipboard icon button on the right (`cm-code-copy`) — seated inside the card's rounded top edge (it inherits `cm-block-mid`'s padding).
+- **Closing fence line** (`codeBlock.close`): gets `cm-block-bottom cm-block-mid`, with its raw ` ``` ` text hidden (`cm-hidden-syntax`).
+- **Body lines**: each gets `cm-codeblock cm-block-mid` (Monaspace Xenon, `--mono-scale` font-size, `line-height:1.5`) and a 1-based in-block line number via `numberedLine("cm-codeblock cm-block-mid", lineNumber - openLine)`.
 - **Syntax highlighting**: `codeHighlightStyle` (see [Code Syntax Highlighting](#code-syntax-highlighting)) applies One Dark colors to the body lines via CodeMirror's `HighlightStyle`.
 
 ### Edit mode (cursor inside the block)
 
 - Entered by: double-clicking inside the block (dispatches `setActiveCodeEffect`), or by typing inside the block (a `docChanged` transaction while the cursor is in the block).
 - Exited by: moving the cursor outside the block (selection-only move clears the active block).
-- In edit mode, both the opening and closing fence lines get `cm-codeblock` line styling (not hidden), and body lines get `cm-codeblock` + line numbers. The raw ` ``` ` fences are visible.
+- In edit mode, the opening/closing fence lines keep their `cm-block-top`/`cm-block-bottom` card styling (the card itself never keys off reveal state) but show their raw ` ``` ` text instead of the header widget / hidden text; body lines are unaffected.
 - The active block is tracked as its opening line number (or `null`) in `activeCodeField` (a `StateField`).
 
 **Double-click detail**: `dblclick` handler calls `findCodeBlock` (a full-document scan for the enclosing fence pair) and dispatches `setActiveCodeEffect.of(block.open)`. The default word-selection behavior is preserved (`return false`).
