@@ -42,7 +42,8 @@ import type { GcalStatus } from "../../core/src/gcal";
 import type { SyncResult } from "../../core/src/gcal/sync";
 import { serializeDoc, type DrawingDoc } from "../../core/src/drawing/model";
 import { serializeInkDoc, inkPathFor, type InkDoc } from "../../core/src/drawing/ink";
-import type { ChatFrame } from "../../core/src/chat";
+import type { ChatFrame, ChatSearchHit } from "../../core/src/chat";
+export type { ChatSearchHit };
 
 /** One row in the chat history picker — a past Claude Code session (terminal OR in-app) for the
  *  vault. Mirrors the `GET /chat/sessions` shape; newest first (the SDK store sorts it). */
@@ -355,6 +356,10 @@ export const api = {
   chatSessions: () => getJson<{ sessions: ChatSessionInfo[] }>("/chat/sessions").then((r) => r.sessions),
   chatSessionMessages: (id: string) =>
     getJson<{ frames: ChatFrame[] }>(`/chat/session-messages?id=${encodeURIComponent(id)}`).then((r) => r.frames),
+  // Search past sessions by CONTENT (title + message text) — filters the SDK's own session data
+  // server-side (no index). Returns matches newest-first, each with a snippet of where it matched.
+  chatSearch: (query: string) =>
+    postJson<{ hits: ChatSearchHit[] }>("/chat/search", { query }).then((r) => r.hits),
 };
 
 /** Concise one-line summary of a sync result for a toast. */

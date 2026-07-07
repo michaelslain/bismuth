@@ -15,7 +15,7 @@
 import { createSignal, onMount, onCleanup, For, Show, createEffect, createMemo } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import "./ChatView.css";
-import { apiBase, api, type ChatSessionInfo } from "./api";
+import { apiBase, api, type ChatSessionInfo, type ChatSearchHit } from "./api";
 import { renderNoteBody } from "./bases/markdown";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { Select } from "./ui/Select";
@@ -36,6 +36,7 @@ import { chatPersonaName } from "./daemonIdentity";
 import { publishChatTitle } from "./chatTitles";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
+import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -44,7 +45,8 @@ const wsBase = () => apiBase().replace(/^http/, "ws"); // http→ws, https→wss
 
 // The permission modes Claude Code supports, surfaced as a header selector. These are the
 // fixed protocol values (not a hardcoded feature list) — the manifest reports which one is
-// active; switching sends {set_permission_mode}.
+// active; switching sends {set_permission_mode}. (DEFAULT_PERMISSION_MODE + the pure reconcile /
+// sanitize rules live in ./chatPermissionMode so they're unit-tested — FEATURE #35.)
 const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "default", label: "Default" },
   { value: "plan", label: "Plan" },
@@ -52,12 +54,25 @@ const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "bypassPermissions", label: "Bypass" },
 ];
 
-// The APP-LEVEL default permission mode for the visual chat (BUG #14): every chat starts in Bypass
-// so tool use isn't gated by an approval prompt by default. Applied CLIENT-SIDE — the header Select
-// is seeded to it, and it's pushed to the session on its first manifest via set_permission_mode —
-// rather than in the backend query() options, so headless/direct callers keep the user's own Claude
-// Code config (and the live permission tests keep exercising canUseTool). Changeable live any time.
-const DEFAULT_PERMISSION_MODE = "bypassPermissions";
+// The last permission mode the user picked in ANY chat (FEATURE #35: "permissions keep resetting to
+// default"). Persisted like LAST_MODEL_KEY (a transient localStorage key, not a `.settings` value)
+// so the chosen mode — and the Bypass default — STICKS across turns AND new/resumed chats instead of
+// snapping back. readLastMode falls back to DEFAULT_PERMISSION_MODE (Bypass) on a first run / bad value.
+const LAST_MODE_KEY = "bismuth.chat.lastPermissionMode";
+function readLastMode(): string {
+  try {
+    return sanitizePermissionMode(localStorage.getItem(LAST_MODE_KEY));
+  } catch {
+    return DEFAULT_PERMISSION_MODE;
+  }
+}
+function rememberMode(mode: string) {
+  try {
+    localStorage.setItem(LAST_MODE_KEY, mode);
+  } catch {
+    /* localStorage unavailable — the in-memory signal still drives the header */
+  }
+}
 
 // The header shows a model label the instant the chat opens (BUG #14) — before this session's
 // manifest / `models` frames land — by remembering the last model used in ANY chat. A transient
@@ -254,11 +269,12 @@ export function ChatView(props: { chatId: string }) {
   const [attachments, setAttachments] = createSignal<Attachment[]>([]);
   const [streaming, setStreaming] = createSignal(false);
   const [manifest, setManifest] = createSignal<ChatManifest | null>(null);
-  // The permission mode shown in the header Select. Seeded to the app DEFAULT (Bypass) so the
-  // control is populated — reflecting the real default — the instant the chat opens, before any
-  // session/manifest exists (BUG #14). This is the display source of truth: the user's picks update
-  // it, and on a session's FIRST manifest it's pushed down to the session (see onFrame "manifest").
-  const [permMode, setPermMode] = createSignal<string>(DEFAULT_PERMISSION_MODE);
+  // The permission mode shown in the header Select. Seeded to the LAST-CHOSEN mode (persisted;
+  // Bypass on a first run) so the control reflects the user's real preference the instant the chat
+  // opens, before any session/manifest exists (BUG #14 + FEATURE #35). This is the display source of
+  // truth: the user's picks update it (and persist), and on a session's FIRST manifest it's pushed
+  // down to the session (see onFrame "manifest").
+  const [permMode, setPermMode] = createSignal<string>(readLastMode());
   // A fatal setup state (claude not installed) — replaces the transcript with guidance.
   const [setupError, setSetupError] = createSignal(false);
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
@@ -313,6 +329,39 @@ export function ChatView(props: { chatId: string }) {
   const [historyOpen, setHistoryOpen] = createSignal(false);
   const [historyLoading, setHistoryLoading] = createSignal(false);
   const [sessions, setSessions] = createSignal<ChatSessionInfo[]>([]);
+  // Content search across past sessions (FEATURE #34): filters the SDK's OWN session data
+  // server-side (title + message text — see core/src/chat.ts searchChatSessions), NOT a parallel
+  // index. Empty query → the plain "resume" list; a non-empty query → matching sessions with a
+  // snippet of where the text matched. Selecting a hit resumes it via the same resumeSession path.
+  const [historyQuery, setHistoryQuery] = createSignal("");
+  const [searchHits, setSearchHits] = createSignal<ChatSearchHit[]>([]);
+  const [searchLoading, setSearchLoading] = createSignal(false);
+  // Debounced content search: re-runs when the query changes while the panel is open; clears when
+  // the query empties or the panel closes. Mirrors the vault find bar's typing→search cadence.
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(() => {
+    const open = historyOpen();
+    const q = historyQuery().trim();
+    clearTimeout(searchTimer);
+    if (!open || !q) {
+      setSearchHits([]);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    searchTimer = setTimeout(() => {
+      void (async () => {
+        try {
+          setSearchHits(await api.chatSearch(q));
+        } catch {
+          setSearchHits([]);
+        } finally {
+          setSearchLoading(false);
+        }
+      })();
+    }, 200);
+  });
+  onCleanup(() => clearTimeout(searchTimer));
 
   // Right-click menu on a prose bubble (user or assistant) — Reply / Copy. Same <ContextMenu>
   // surface + openContextMenu wiring FileTree/DaemonList use, owned locally (no App.tsx change).
@@ -426,8 +475,13 @@ export function ChatView(props: { chatId: string }) {
             sendJson({ type: "set_permission_mode", mode: permMode() });
           }
         } else {
-          // Later turns: trust the manifest as the live mode (reflects any server-side transition).
-          setPermMode(frame.manifest.permissionMode);
+          // Later manifests: DON'T blindly trust the reported mode (FEATURE #35). A mid-session
+          // query() re-init (e.g. a visibility respawn) re-reports the SDK's SPAWN default
+          // ("default"), which used to silently revert the user's Bypass/explicit choice. Reconcile:
+          // adopt a genuine plan-mode EXIT, but re-enforce the desired mode on any other divergence.
+          const decision = reconcilePermissionMode(permMode(), frame.manifest.permissionMode);
+          if (decision && "adopt" in decision) setPermMode(decision.adopt);
+          else if (decision && "enforce" in decision) sendJson({ type: "set_permission_mode", mode: decision.enforce });
         }
         break;
       case "user-message":
@@ -768,10 +822,11 @@ export function ChatView(props: { chatId: string }) {
   };
 
   const setPermissionMode = (mode: string) => {
-    // permMode is the header's source of truth (seeded to the app default before any session), so
-    // update it immediately — even before a session exists, the picked mode is held and later pushed
-    // down on the first manifest. sendJson is a no-op server-side until the session exists.
+    // permMode is the header's source of truth (seeded to the last-chosen mode before any session),
+    // so update it immediately — even before a session exists, the picked mode is held and later
+    // pushed down on the first manifest. sendJson is a no-op server-side until the session exists.
     setPermMode(mode);
+    rememberMode(mode); // persist so the choice sticks across turns AND new/resumed chats (#35)
     sendJson({ type: "set_permission_mode", mode });
   };
 
@@ -790,8 +845,10 @@ export function ChatView(props: { chatId: string }) {
     setStreaming(false);
     setTurnError(null);
     setManifest(null);
-    // Back to the app default (Bypass) — the next session re-enforces it on its first manifest.
-    setPermMode(DEFAULT_PERMISSION_MODE);
+    // Back to the user's LAST-CHOSEN mode (persisted; Bypass on a first run) — NOT a hardcoded
+    // default — so a new/resumed chat keeps the mode the user actually wants (#35). The next
+    // session re-enforces it on its first manifest.
+    setPermMode(readLastMode());
     setQueuedTurns([]);
     setContext(null);
     // The conversation this tab was named after is gone — revert the tab label to the persona
@@ -843,6 +900,7 @@ export function ChatView(props: { chatId: string }) {
     const next = !historyOpen();
     setHistoryOpen(next);
     if (!next) return;
+    setHistoryQuery(""); // fresh search each open (the effect clears hits when the query empties)
     setHistoryLoading(true);
     try {
       setSessions(await api.chatSessions());
@@ -1355,9 +1413,10 @@ export function ChatView(props: { chatId: string }) {
 
   // ── Session history panel ─────────────────────────────────────────────────────────────────
   // A popover under the History button listing the user's existing Claude Code sessions for the
-  // vault. Each row: the session summary (one line, ellipsized) + a relative time. Picking one
-  // resumes it. Reuses the shared PopoverList chrome (icon + label + detail) so it matches every
-  // other menu. Dismisses on an outside click / Escape.
+  // vault. A search box at the top filters those sessions by CONTENT (title + message text — served
+  // by /chat/search, which filters the SDK's own session data; FEATURE #34): empty query → the plain
+  // "resume" list (session summary + relative time), a non-empty query → matching sessions each with
+  // a snippet of where it matched. Picking either resumes it. Dismisses on an outside click / Escape.
   function HistoryPanel() {
     let panel!: HTMLDivElement;
     const rows = createMemo<PopoverRow[]>(() =>
@@ -1367,6 +1426,7 @@ export function ChatView(props: { chatId: string }) {
         detail: relativeTime(s.lastModified),
       })),
     );
+    const searching = () => historyQuery().trim().length > 0;
     const onDocPointerDown = (e: PointerEvent) => {
       const t = e.target as Node;
       // Ignore clicks inside the panel OR on the History button (which toggles it itself).
@@ -1386,25 +1446,65 @@ export function ChatView(props: { chatId: string }) {
     });
     return (
       <div ref={panel!} class="chat-history-panel bismuth-popover">
-        <div class="chat-history-title">Resume a conversation</div>
+        {/* Content search across past conversations (FEATURE #34). */}
+        <div class="chat-history-search">
+          <Icon value="Search" size={13} class="chat-history-search-icon" />
+          <TextInput
+            class="chat-history-search-input"
+            value={historyQuery()}
+            onInput={setHistoryQuery}
+            placeholder="Search conversations…"
+            autofocus
+          />
+        </div>
         <Show
-          when={!historyLoading()}
-          fallback={<div class="chat-history-state">Loading…</div>}
+          when={searching()}
+          fallback={
+            <>
+              <div class="chat-history-title">Resume a conversation</div>
+              <Show when={!historyLoading()} fallback={<div class="chat-history-state">Loading…</div>}>
+                <Show
+                  when={sessions().length > 0}
+                  fallback={<div class="chat-history-state">No past conversations yet.</div>}
+                >
+                  <div class="chat-history-scroll">
+                    <PopoverList
+                      class="chat-history-list"
+                      items={rows()}
+                      onActivate={(i) => {
+                        const s = sessions()[i];
+                        if (s) void resumeSession(s.sessionId);
+                      }}
+                    />
+                  </div>
+                </Show>
+              </Show>
+            </>
+          }
         >
-          <Show
-            when={sessions().length > 0}
-            fallback={<div class="chat-history-state">No past conversations yet.</div>}
-          >
-            <div class="chat-history-scroll">
-              <PopoverList
-                class="chat-history-list"
-                items={rows()}
-                onActivate={(i) => {
-                  const s = sessions()[i];
-                  if (s) void resumeSession(s.sessionId);
-                }}
-              />
-            </div>
+          {/* Search results: each hit shows the session title + when, and a snippet of the match. */}
+          <Show when={!searchLoading()} fallback={<div class="chat-history-state">Searching…</div>}>
+            <Show
+              when={searchHits().length > 0}
+              fallback={<div class="chat-history-state">No conversations match that search.</div>}
+            >
+              <div class="chat-history-scroll">
+                <div class="chat-history-hits">
+                  <For each={searchHits()}>
+                    {(hit) => (
+                      <button class="chat-history-hit" onClick={() => void resumeSession(hit.sessionId)}>
+                        <div class="chat-history-hit-head">
+                          <Icon value="MessageSquare" size={13} class="chat-history-hit-icon" />
+                          <span class="chat-history-hit-title">{hit.summary?.trim() || "Untitled session"}</span>
+                          <span class="chat-history-hit-time">{relativeTime(hit.lastModified)}</span>
+                        </div>
+                        <div class="chat-history-hit-snippet">{hit.snippet}</div>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
           </Show>
         </Show>
       </div>
