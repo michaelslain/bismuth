@@ -37,7 +37,7 @@ import { renderInlineMarkdown } from "./inlineMarkdown";
 import { minimalChange } from "./normalizeFrontmatter";
 import { onMathReady } from "./katexLoader";
 import { api } from "../api";
-import { parseWikilink, resolveNotePath } from "./wikilink";
+import { parseWikilink, resolveNotePath, wikilinkOpenPath } from "./wikilink";
 import { closerFor } from "./wrapSelection";
 import { settings } from "../settings";
 
@@ -432,15 +432,16 @@ export function insertEmbedsInTableCell(
  *  inside an atomic block widget whose mousedown stops propagation, so CM's own wikilink click
  *  handler never fires — we resolve + dispatch the SAME `bismuth-open` event it does. Note
  *  candidates come from `noteNamesFacet` (provided by the editor host) so a basename resolves to
- *  its real vault path (subfolder notes open correctly); an unresolved target opens as a new note
- *  at the typed name, matching the note-body wikilink behavior. A `#heading` rides along. */
+ *  its real vault path (subfolder notes open correctly); an unresolved target that isn't a
+ *  previewable attachment (image/pdf/…) opens as a new note at the typed name, matching the
+ *  note-body wikilink behavior (see `wikilinkOpenPath`, #38). A `#heading` rides along. */
 function openCellWikilink(view: EditorView, raw: string): void {
   const { target, heading } = parseWikilink(raw);
   if (!target) return;
   const notes = view.state.facet(noteNamesFacet)?.() ?? [];
   const resolved = resolveNotePath(target, notes);
   window.dispatchEvent(
-    new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }),
+    new CustomEvent("bismuth-open", { detail: { path: wikilinkOpenPath(target, resolved), heading } }),
   );
 }
 

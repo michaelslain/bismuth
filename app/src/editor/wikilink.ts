@@ -1,6 +1,7 @@
 // app/src/editor/wikilink.ts
 // Pure, DOM-free helpers for wikilink autocomplete. NO CodeMirror imports here, so
 // these run under `bun test` without a browser environment.
+import { previewKind } from "../preview/previewKind";
 
 // `label` is the basename (what gets inserted + shown in autocomplete); `path` is the
 // note's real vault path (the graph node id), needed to resolve a clicked wikilink to
@@ -166,6 +167,24 @@ export function resolveNotePath(
   if (byPath) return byPath.path;
   const byBase = notes.find((n) => n.label === target);
   return byBase ? byBase.path : null;
+}
+
+// Build the `bismuth-open` path for a clicked wikilink, given `resolveNotePath`'s result.
+// Every wikilink-click site (Editor.tsx mousedown, BlockEditor.tsx chip click, the table
+// cell's openCellWikilink) used to unconditionally append ".md" to an UNRESOLVED target —
+// correct for "create a new note at this name", but wrong when the target already names an
+// existing non-note attachment (`[[Screenshot ….png]]` as a plain — non-embed — wikilink
+// chip, e.g. inside a table cell). Appending ".md" there produced "….png.md": `previewKind`
+// classifies that as a plain (unknown) note extension, so PaneContent routed it to the note
+// editor instead of PreviewView — a blank tab for a note that doesn't exist, not a 404 image
+// (#38). A resolved match is a real note id (already `.md`-stripped by `noteId()`), so it
+// still gets ".md" appended; an unresolved target that `previewKind` recognizes as a
+// previewable attachment opens AS-IS; anything else (a bare new-note name) keeps the old
+// create-a-new-note fallback.
+export function wikilinkOpenPath(target: string, resolved: string | null): string {
+  if (resolved) return `${resolved}.md`;
+  if (target.toLowerCase().endsWith(".md")) return target; // already explicit — never double it
+  return previewKind(target) ? target : `${target}.md`;
 }
 
 // Text to insert when a note is chosen. Append the closing `]]` only when it isn't
