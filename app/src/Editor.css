@@ -141,18 +141,14 @@
 }
 
 /* ── Lists inside a table cell (#15) ───────────────────────────────────────────
-   A `<br>`-separated `- item` / `1. item` cell renders as `<ul>/<ol class="bismuth-cell-
-   list">` (editor/cellList.ts). App.css gives it compact spacing but does NOT set
-   list-style, so the markers rely on the UA default — and `list-style-type` is INHERITED,
-   so any ancestor that sets `list-style: none` (or a UA quirk inside a contenteditable)
-   silently strips the bullets, making the list look like plain lines. Force real, visible
-   markers here, scoped to the editor table (higher specificity than App.css's single
-   `.bismuth-cell-list` class), so a cell list is unmistakably a list with bullets/numbers. */
-.cm-editor .cm-td .bismuth-cell-list {
-  margin: 0;
-  padding-left: 1.4em;
-  list-style-position: outside;
+   A list cell renders as `<ul>/<ol class="bismuth-cell-list">` whose EACH item carries its
+   bullet/number as REAL TEXT (a `.bismuth-cell-mk` span), with the native list marker turned
+   off via an inline `list-style:none` (editor/cellList.ts). The glyph is content, so no
+   cascade or contenteditable quirk can strip it. We deliberately DON'T set `list-style-type`
+   here (an earlier attempt did — with inline `list-style:none` it's dead, and it would only
+   risk DOUBLING the marker if the inline style were ever dropped). Keep `list-style:none` +
+   compact spacing so the class agrees with the render on every surface. */
+.cm-editor .cm-td .bismuth-cell-list,
+.cm-editor .cm-td .bismuth-cell-list li {
+  list-style: none;
 }
-.cm-editor .cm-td ul.bismuth-cell-list { list-style-type: disc; }
-.cm-editor .cm-td ol.bismuth-cell-list { list-style-type: decimal; }
-.cm-editor .cm-td .bismuth-cell-list li { display: list-item; margin: 0.05em 0; }
