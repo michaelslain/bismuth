@@ -1803,8 +1803,33 @@ export default function App() {
     );
   }
 
+  // Shared tab context menu (right-click) — used by both the horizontal strip and the
+  // vertical right-rail (ui.verticalTabs). Kept as one builder so the two presentations
+  // never drift.
+  function openTabContextMenu(e: MouseEvent, tab: Tab) {
+    e.preventDefault();
+    const content = tab.root.kind === "leaf" ? tab.root.content : null;
+    const items: MenuItem[] = [
+      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(tab.id) },
+      { label: tab.pinned ? "Unpin tab" : "Pin tab", icon: tab.pinned ? "PinOff" : "Pin", onSelect: () => togglePinTab(tab.id) },
+    ];
+    if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
+    if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
+    openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
+  }
+
+  // "Arc" offset for a vertical-rail row: a gentle parabolic bow pushing the middle rows a
+  // few px toward the editor (leftward) while the rail is COLLAPSED, so the icon column
+  // reads as a soft arc rather than a rigid line. Zeroed once the rail expands on hover
+  // (CSS overrides the inline transform) so the revealed names align flush. 0 for ≤1 tab.
+  function railArcShift(i: number, n: number): number {
+    if (n <= 1) return 0;
+    const t = (2 * i) / (n - 1) - 1; // -1 (top) … 0 (middle) … 1 (bottom)
+    return -7 * (1 - t * t); // px; max bow at the middle row
+  }
+
   return (
-    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen() }}>
+    <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() || switcherOpen(), "switcher-active": switcherOpen(), "has-rail": settings.ui.verticalTabs }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
@@ -1819,7 +1844,10 @@ export default function App() {
         <Show when={switcherOpen()}>
           <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
         </Show>
-        <div class="tabbar" data-tabstrip="true" classList={{ "vertical-tabs": settings.ui.verticalTabs }}>
+        {/* Horizontal top tab strip — the default. When ui.verticalTabs is ON it's replaced
+            entirely by the right-edge .tab-rail rendered below (outside .editor-pane). */}
+        <Show when={!settings.ui.verticalTabs}>
+        <div class="tabbar" data-tabstrip="true">
           <div class="tabbar-nav">
             <IconButton
               icon="ChevronLeft"
@@ -1865,18 +1893,7 @@ export default function App() {
                     if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
                     startRenameTab(t().id);
                   }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    const tab = t();
-                    const content = tab.root.kind === "leaf" ? tab.root.content : null;
-                    const items: MenuItem[] = [
-                      { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(tab.id) },
-                      { label: tab.pinned ? "Unpin tab" : "Pin tab", icon: tab.pinned ? "PinOff" : "Pin", onSelect: () => togglePinTab(tab.id) },
-                    ];
-                    if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
-                    if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
-                    openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
-                  }}
+                  onContextMenu={(e) => openTabContextMenu(e, t())}
                 >
                   <Show when={tabBarIcon(t())}>
                     {(icon) => <Icon value={icon()} size={13} />}
@@ -1917,6 +1934,7 @@ export default function App() {
             <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
           </div>
         </div>
+        </Show>
         <div class="editor-body" ref={editorBodyEl}>
           <Show when={activeTab()} fallback={<div class="graph-slot-main" ref={mainSlot} />}>
             {(t) => (
@@ -2009,6 +2027,75 @@ export default function App() {
           </For>
         </div>
       </main>
+      {/* Vertical tab rail (ui.verticalTabs) — a right-edge icon rail that REPLACES the top
+          strip. The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
+          column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
+          OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
+          reflows. Back/forward nav sits at the top, the tab rows fill the scrollable middle,
+          and the +/terminal/chat action buttons sit at the bottom — all stacked vertically.
+          Rows carry a subtle parabolic "arc" x-offset while collapsed (railArcShift), zeroed
+          by CSS once the rail expands so the revealed names align flush. */}
+      <Show when={settings.ui.verticalTabs}>
+        <div class="tab-rail">
+          <div class="tab-rail-inner">
+            <div class="tab-rail-nav">
+              <IconButton icon="ChevronLeft" label="Back (⌘[)" iconSize={18} disabled={!canGoBack()} onClick={() => historyBack()} />
+              <IconButton icon="ChevronRight" label="Forward (⌘])" iconSize={18} disabled={!canGoForward()} onClick={() => historyForward()} />
+            </div>
+            <div class="tab-rail-list">
+              <Index each={tabs()}>
+                {(t, i) => (
+                  <div
+                    class="tab-rail-row"
+                    classList={{ active: activeTabId() === t().id, pinned: !!t().pinned }}
+                    // Native tooltip surfaces the name while the rail is collapsed to icons.
+                    title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
+                    style={{ transform: `translateX(${railArcShift(i, tabs().length)}px)` }}
+                    onClick={(e) => {
+                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
+                      setActiveTabId(t().id);
+                    }}
+                    // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
+                    onAuxClick={(e) => { if (e.button !== 1) return; e.preventDefault(); closeTabById(t().id); }}
+                    onDblClick={(e) => { if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return; startRenameTab(t().id); }}
+                    onContextMenu={(e) => openTabContextMenu(e, t())}
+                  >
+                    {/* Every rail row shows an icon (fall back to a generic doc) so the
+                        collapsed icon-column is never empty for an unnamed note. */}
+                    <Icon class="tab-rail-icon" value={tabBarIcon(t()) ?? "File"} size={16} />
+                    <Show when={renamingTabId() === t().id} fallback={<span class="tab-rail-label">{tabBarLabel(t())}</span>}>
+                      <input
+                        class="tab-rename"
+                        value={tabBarLabel(t())}
+                        ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
+                          else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
+                          e.stopPropagation();
+                        }}
+                      />
+                    </Show>
+                    {/* Pinned rows show a pin (click → unpin) in place of the close X; the
+                        close X only appears on row-hover (see .tab-rail CSS). */}
+                    <Show
+                      when={t().pinned}
+                      fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={13} onClick={(e) => closeTab(t().id, e)} />}
+                    >
+                      <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={13} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
+                    </Show>
+                  </div>
+                )}
+              </Index>
+            </div>
+            <div class="tab-rail-actions">
+              {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
+              <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
+            </div>
+          </div>
+        </div>
+      </Show>
       {/* The single always-mounted Knowledge Graph. It floats over whichever slot is active:
           the sidebar mini-square, the full main pane (no tabs), or — when a tab shows a graph
           pane — that pane's `data-graph-host` (placed by placeFloater). Reusing one instance
