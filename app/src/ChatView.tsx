@@ -37,6 +37,7 @@ import { publishChatTitle } from "./chatTitles";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
+import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -98,6 +99,13 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 // under that (base64 chars ≈ wire bytes). Several 5 MB images each pass MAX_IMAGE_BYTES but together
 // would blow the frame; this catches that.
 const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024; // ~12 MB of base64
+
+// Descriptions for slash commands the backend SYNTHESIZES into the manifest (BUG #39). "/mcp" is a
+// TUI-only command the SDK omits from init.slash_commands; chat.ts answers it locally AND splices its
+// name into the manifest so the composer's autocomplete lists it (withLocalSlashCommands). The SDK's
+// own commands carry no description over the wire (names only), so only the synthetic ones get a
+// blurb here — shown as the popover row's `detail`. Unknown commands simply have none.
+const SLASH_COMMAND_DETAILS: Record<string, string> = { mcp: "Show MCP server status" };
 
 /** A base64 image staged in the composer, before it's sent as an SDK image content block. */
 interface Attachment { name: string; mediaType: string; data: string /* base64, no data: prefix */ }
@@ -372,6 +380,7 @@ export function ChatView(props: { chatId: string }) {
   const [selReply, setSelReply] = createSignal<{ x: number; y: number; text: string } | null>(null);
 
   let ws: WebSocket | undefined;
+  let host: HTMLDivElement | undefined; // chat pane root — the drop hit-test target (BUG #54)
   let list!: HTMLDivElement;
   let ta!: HTMLTextAreaElement;
   // Reconnection state — exponential backoff, cleared on successful open (mirrors Terminal.tsx).
@@ -681,12 +690,62 @@ export function ChatView(props: { chatId: string }) {
       else setTurnError(`Unsupported image type ${f.type || "(unknown)"} — use PNG, JPEG, GIF, or WebP.`);
     }
   };
-  // Allow the drop by cancelling the browser default the moment a file drag is over the composer —
-  // this alone stops the OS file PATH from being inserted as text into the textarea.
-  const onComposerDragOver = (e: DragEvent) => {
-    if (e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files")) e.preventDefault();
+  // Drag-and-drop image staging works over the WHOLE chat pane (not just the textarea) across BOTH
+  // transports (BUG #54 — dropping images into chats had stopped working in the packaged app):
+  //  • Browser / dev build: HTML5 drag events fire — handled by the host-level onHost* handlers below.
+  //  • Packaged Tauri app: the native drag-drop handler SUPPRESSES the webview's HTML5 `drop` for
+  //    external OS files, so those arrive ONLY as a `bismuth-native-drag` window event (nativeDrop.ts).
+  //    ChatView was never wired to that bridge (Terminal + Editor were) — the regression — so image
+  //    drops silently did nothing in the real app. The window listener in onMount below handles that
+  //    path, hit-testing the cursor against THIS chat's host rect (pointInDropRect) so only the pane
+  //    under the cursor stages the drop.
+  const [dragActive, setDragActive] = createSignal(false);
+
+  /** Read each dropped OS image path's bytes (Tauri fs plugin — real absolute paths from the native
+   *  drag-drop handler) and stage them, reusing addImageFiles' size/MIME validation + base64 by
+   *  wrapping the bytes in a File. Only reached under Tauri (the event never fires in a browser), so
+   *  the fs-plugin import is dynamic/desktop-only. Non-image paths (by extension) are skipped. */
+  const addImagePaths = async (paths: string[]) => {
+    const images = paths
+      .map((p) => ({ p, mime: imageMimeFromPath(p) }))
+      .filter((x): x is { p: string; mime: string } => !!x.mime);
+    if (!images.length) return;
+    let readFile: (p: string) => Promise<Uint8Array>;
+    try {
+      ({ readFile } = await import("@tauri-apps/plugin-fs"));
+    } catch (e) {
+      setTurnError("Couldn't read the dropped image — see console.");
+      console.error("fs plugin import failed", e);
+      return;
+    }
+    const files: File[] = [];
+    for (const { p, mime } of images) {
+      try {
+        const bytes = await readFile(p);
+        files.push(new File([bytes as BlobPart], p.split(/[\\/]/).pop() ?? "image", { type: mime }));
+      } catch (e) {
+        setTurnError(`Couldn't read ${p.split(/[\\/]/).pop() ?? p}.`);
+        console.error("native drop read failed", e);
+      }
+    }
+    if (files.length) await addImageFiles(files);
   };
-  const onComposerDrop = (e: DragEvent) => {
+
+  // Host-level HTML5 drag handlers (browser / dev build). dragover + drop BUBBLE from the textarea and
+  // transcript, so attaching them to the chat host covers the whole pane — a drop anywhere stages the
+  // image. preventDefault on dragover is what stops the OS path from being inserted as text.
+  const onHostDragOver = (e: DragEvent) => {
+    if (!e.dataTransfer || !Array.from(e.dataTransfer.types).includes("Files")) return;
+    e.preventDefault();
+    setDragActive(true);
+  };
+  const onHostDragLeave = (e: DragEvent) => {
+    // Ignore leaves into a child element — only clear when the cursor exits the host entirely.
+    if (e.relatedTarget && host?.contains(e.relatedTarget as Node)) return;
+    setDragActive(false);
+  };
+  const onHostDrop = (e: DragEvent) => {
+    setDragActive(false);
     const files = e.dataTransfer ? Array.from(e.dataTransfer.files) : [];
     if (!files.some((f) => f.type.startsWith("image/"))) return; // not an image drop — leave default text handling
     e.preventDefault();
@@ -951,7 +1010,9 @@ export function ChatView(props: { chatId: string }) {
     const cmds = manifest()?.slashCommands ?? [];
     return cmds.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 50);
   });
-  const slashRows = createMemo<PopoverRow[]>(() => slashMatches().map((c) => ({ label: `/${c}`, icon: "ChevronRight" })));
+  const slashRows = createMemo<PopoverRow[]>(() =>
+    slashMatches().map((c) => ({ label: `/${c}`, icon: "ChevronRight", detail: SLASH_COMMAND_DETAILS[c] })),
+  );
   const slashNav = createMenuNav({
     count: () => slashMatches().length,
     onSelect: (i) => chooseSlash(i),
@@ -1112,6 +1173,31 @@ export function ChatView(props: { chatId: string }) {
     ta?.focus();
   });
 
+  // Tauri native OS file drop onto the chat (BUG #54). Under the native drag-drop handler the webview's
+  // HTML5 `drop` no longer fires for external files, so we stage the REAL image paths nativeDrop.ts
+  // forwards — only when the cursor is over THIS chat's pane (pointInDropRect against the host rect, so
+  // a drop routed to a backgrounded pane at (0,0) or another pane's area is ignored). No-op in the
+  // browser (the event never fires there; the host-level HTML5 handlers serve that build).
+  onMount(() => {
+    const onNativeDrag = (e: Event) => {
+      const d = (e as CustomEvent<NativeDragDetail>).detail;
+      if (!d || !host) return;
+      const inside = pointInDropRect(host.getBoundingClientRect(), d.x, d.y);
+      if (d.type === "drop") {
+        setDragActive(false);
+        if (!inside || d.paths.length === 0) return;
+        void addImagePaths(d.paths);
+      } else if (d.type === "leave") {
+        setDragActive(false);
+      } else {
+        // enter / over: show the drop affordance only while the cursor is over this chat pane.
+        setDragActive(inside);
+      }
+    };
+    window.addEventListener("bismuth-native-drag", onNativeDrag);
+    onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
+  });
+
   onCleanup(() => {
     disposed = true;
     clearTimeout(reconnectTimer);
@@ -1145,7 +1231,14 @@ export function ChatView(props: { chatId: string }) {
   const persona = () => chatPersonaName() ?? "Claude";
 
   return (
-    <div class="chat-host">
+    <div
+      class="chat-host"
+      ref={host}
+      classList={{ "chat-drop-active": dragActive() }}
+      onDragOver={onHostDragOver}
+      onDragLeave={onHostDragLeave}
+      onDrop={onHostDrop}
+    >
       <ViewBar>
         <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
         {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
@@ -1364,8 +1457,6 @@ export function ChatView(props: { chatId: string }) {
                 value={draft()}
                 onInput={setDraft}
                 onKeyDown={onKeyDown}
-                onDragOver={onComposerDragOver}
-                onDrop={onComposerDrop}
                 onPaste={onComposerPaste}
                 placeholder={`Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
               />

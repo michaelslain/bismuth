@@ -20,6 +20,20 @@
   box-sizing: border-box;
   background: var(--bg);
   color: var(--fg);
+  position: relative;
+}
+
+/* Dragging an image over the chat pane (BUG #54) — inset accent ring + faint wash signalling the
+   drop stages the image as an attachment. Mirrors the terminal's .term-drop-active affordance. */
+.chat-host.chat-drop-active::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1.5px dashed var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  pointer-events: none;
+  z-index: 20;
 }
 
 /* ── Header (ViewBar) extras — quiet metadata, no pills ───────────────────────── */
