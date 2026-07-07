@@ -51,6 +51,7 @@ import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
 import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
+import { tabRailVisible } from "./tabRailVisibility";
 import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
 import { isExportable } from "./export/formats";
@@ -1989,8 +1990,12 @@ export default function App() {
           reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
           tab-row list. Collapsed (48px) the toolbar wraps into a centered single-icon column
           aligned with the tab icons below; expanded (240px) it lays out as horizontal rows.
-          Rows sit in a straight, centered icon column (no arc offset). */}
-      <Show when={settings.ui.verticalTabs}>
+          Rows sit in a straight, centered icon column (no arc offset).
+          BUG #40: also gated on !switcherOpen() (tabRailVisible) — the Cmd+O quick switcher is a
+          full-window search takeover that already hides the file-tree sidebar (`sidebar-hidden`,
+          below); the rail used to keep floating over that takeover instead of hiding with it. The
+          grid column itself collapses to 0 in lockstep via `.layout.switcher-active` (App.css). */}
+      <Show when={tabRailVisible({ verticalTabs: settings.ui.verticalTabs, switcherOpen: switcherOpen() })}>
         <div class="tab-rail">
           <div class="tab-rail-inner">
             <div class="tab-rail-actions">

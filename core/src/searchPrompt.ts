@@ -364,6 +364,43 @@ export function validateResults(
   return out;
 }
 
+/**
+ * Consume a one-shot query() message stream down to its terminal "result" message, returning the
+ * structured/text payload. Extracted from runModelReal so this exact anomaly-handling logic is
+ * unit-testable against a synthetic message stream, without mocking the SDK's query() construction.
+ *
+ * BUG #8 (3rd bounce) ROOT CAUSE: this used to let the stream end WITHOUT ever seeing a "result"
+ * message fall through to `return { structured: undefined, resultText: undefined }` — a silent
+ * "no answer" that validateResults()/parseModelOutput() turn into an empty `[]`, RENDERED IDENTICALLY
+ * to "the AI ran and genuinely found nothing relevant". But the `claude` child process can end the
+ * stream without a result message for many reasons that have NOTHING to do with the question having
+ * no answer: not logged in, a killed/crashed process, an unexpected CLI output shape, a spawn that
+ * failed only after the async iterable started. Every one of those was previously indistinguishable
+ * from a correct empty search — exactly the kind of silent failure that kept this row bouncing. Now
+ * treated as a hard error, same as chat.ts's `drain()` loop (core/src/chat.ts) treating a generator
+ * that ends on its own (not via our own close()) as an `exit` error frame rather than pretending
+ * nothing happened.
+ */
+export async function consumeModelStream(
+  iterator: AsyncIterable<SDKMessage>,
+): Promise<{ structured: unknown; resultText: string | undefined }> {
+  for await (const msg of iterator) {
+    if (msg.type !== "result") continue;
+    if (msg.subtype === "success") {
+      const m = msg as { structured_output?: unknown; result?: string };
+      return { structured: m.structured_output, resultText: m.result };
+    }
+    // error_during_execution / error_max_turns / error_max_structured_output_retries / …
+    throw new AppError("INTERNAL_ERROR", `AI search did not complete (${msg.subtype})`, 500);
+  }
+  // The generator ended without ever emitting a "result" message — see the doc comment above.
+  throw new AppError(
+    "INTERNAL_ERROR",
+    "AI search ended without a response from Claude Code — check that `claude` is installed and you're logged in, then try again",
+    500,
+  );
+}
+
 /** The real SDK model runner: one-shot query() over the user's `claude`, structured JSON out. */
 const runModelReal: ModelRunner = async ({ bin, root, question, context, signal }) => {
   const abort = new AbortController();
@@ -394,16 +431,7 @@ const runModelReal: ModelRunner = async ({ bin, root, question, context, signal 
     // Same construction-error handling shape as chat.ts:548-551.
     throw new AppError("INTERNAL_ERROR", `AI search failed to start: ${(e as Error).message}`, 500);
   }
-  for await (const msg of iterator) {
-    if (msg.type !== "result") continue;
-    if (msg.subtype === "success") {
-      const m = msg as { structured_output?: unknown; result?: string };
-      return { structured: m.structured_output, resultText: m.result };
-    }
-    // error_during_execution / error_max_turns / error_max_structured_output_retries / …
-    throw new AppError("INTERNAL_ERROR", `AI search did not complete (${msg.subtype})`, 500);
-  }
-  return { structured: undefined, resultText: undefined }; // generator ended with no result
+  return consumeModelStream(iterator);
 };
 
 /**
