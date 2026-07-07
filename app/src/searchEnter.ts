@@ -22,14 +22,28 @@
 // regardless of mode or how many keyword hits are showing — one obvious, unconditional
 // way to reach AI that never depends on the zero-results condition. (SearchView also
 // exposes a persistent "Ask Bismuth AI" button + the Sparkles chip for the same thing.)
+//
+// The THIRD bug (BUG #8, REOPENED): "no files found, I press Enter, it does not do prompt."
+// The escalate decision read `resultCount` — the number of results CURRENTLY shown. But
+// literal keyword search is debounced ~150ms, so when the user types a zero-hit query and
+// presses Enter (well within 150ms, or while refining a prior search), the shown results
+// still belong to the PREVIOUS query — usually non-empty. `resultCount === 0` was therefore
+// false, Enter chose "keyword", and the AI never fired (the debounced search then resolved
+// to zero and merely showed the empty state). The guard is `resultsStale`: when the shown
+// results don't reflect the CURRENT query, `resultCount` is untrustworthy, so Enter runs the
+// keyword search for the current query and escalates to AI iff THAT fresh result is empty
+// ("keyword-escalate"). Fresh zero-hit queries still escalate immediately ("escalate-ai").
 
 export type EnterAction =
   // Already in AI mode → run the prompt search for the current query.
   | "prompt"
   // Regex mode is Enter-gated (never live) → run the keyword/regex search.
   | "regex"
-  // Literal mode → escalate to the AI prompt search (zero keyword hits, or Cmd/Ctrl+Enter).
+  // Literal mode → escalate to the AI prompt search (fresh zero keyword hits, or Cmd/Ctrl+Enter).
   | "escalate-ai"
+  // Literal mode, shown results are STALE (a live keyword search for the current query hasn't
+  // resolved yet) → run the keyword search NOW and escalate to AI iff it comes back empty.
+  | "keyword-escalate"
   // Literal mode with hits (or empty query) → re-run the keyword search.
   | "keyword";
 
@@ -40,8 +54,18 @@ export interface EnterState {
   regex: boolean;
   /** The query box is non-empty. */
   hasQuery: boolean;
-  /** Number of results currently shown (0 = no keyword hits). */
+  /** Number of results currently shown (0 = no keyword hits). Trust only when `!resultsStale`. */
   resultCount: number;
+  /**
+   * The shown results do NOT reflect the current query text — a live keyword search is still
+   * pending/in-flight (the user pressed Enter within the ~150ms debounce, before the search for
+   * the current query resolved). When true, `resultCount` belongs to a PRIOR query and must not
+   * be trusted: Enter runs the keyword search for the current query and escalates to AI only if
+   * THAT comes back empty ("keyword-escalate"). This is the reopened BUG #8 — pressing Enter right
+   * after typing a zero-hit query read a stale non-empty `resultCount`, chose "keyword", and never
+   * reached the AI. Optional (defaults false = the shown results are fresh for the current query).
+   */
+  resultsStale?: boolean;
   /**
    * The Enter was pressed with Cmd/Ctrl held → force the AI prompt search regardless of
    * mode or keyword-hit count. This is the always-reachable AI path (BUG #8): it does NOT
@@ -75,8 +99,13 @@ export function planEnter(s: EnterState): EnterPlan {
     action = "prompt";
   } else if (s.regex) {
     action = "regex";
+  } else if (s.resultsStale) {
+    // Literal mode, but the shown results are for a PRIOR query (the live search hasn't caught up).
+    // Don't trust `resultCount`: run the keyword search for the CURRENT query, and let its fresh
+    // empty/non-empty outcome decide whether to escalate to the AI. This is the reopened BUG #8 fix.
+    action = "keyword-escalate";
   } else if (s.resultCount === 0) {
-    // Literal mode, non-empty query, zero keyword hits → escalate to the AI prompt search.
+    // Literal mode, non-empty query, fresh zero keyword hits → escalate to the AI prompt search.
     action = "escalate-ai";
   } else {
     // Literal mode with hits → re-run the keyword search (the persistent "Ask Bismuth AI"

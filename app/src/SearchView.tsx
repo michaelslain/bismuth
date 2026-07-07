@@ -34,6 +34,10 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   const [regex, setRegex] = createSignal(false);
   const [showReplace, setShowReplace] = createSignal(false);
   const [results, setResults] = createSignal<SearchResult[]>([]);
+  // The exact query text the currently-shown `results` were computed for. Enter compares this to the
+  // live `query()` to know whether the results are FRESH; if they lag behind (a debounced keyword
+  // search hasn't resolved yet) the count is stale and Enter must NOT trust it (reopened BUG #8).
+  const [resultsQuery, setResultsQuery] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal("");
   // AI prompt-search ("Bismuth AI") mode: an Enter-gated, one-shot natural-language re-rank of the
@@ -47,18 +51,23 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   // Monotonic request generation: a late AI/keyword response for a superseded query (a newer run,
   // an exit from prompt mode, or a cleared box) is ignored so results never flicker to stale data.
   let searchGen = 0;
-  const runSearch = () => {
+  // `escalateIfEmpty` (set by an Enter whose shown results were STALE): once this run resolves with
+  // the CURRENT query's real keyword count, escalate to the AI prompt search iff it found nothing —
+  // so Enter reliably reaches the AI even when pressed before the debounced search caught up (BUG #8).
+  const runSearch = (escalateIfEmpty = false) => {
     clearTimeout(debounceTimer); // this may BE the debounced call; also drops any redundant pending one
     const q = query();
     searchGen++;
-    if (!q) { setResults([]); setError(null); setStatus(""); return; }
+    if (!q) { setResults([]); setResultsQuery(""); setError(null); setStatus(""); return; }
     if (regex() && !isValidRegex(q)) { setError("Invalid regular expression"); return; }
     setError(null);
     const gen = searchGen;
     api.search(q, opts())
       .then((r) => {
         if (gen !== searchGen) return; // superseded
+        if (escalateIfEmpty && r.length === 0) { askAi(); return; } // fresh zero hits → run the AI
         setResults(r);
+        setResultsQuery(q); // results now reflect this exact query → Enter can trust the count
         // Zero literal hits → nudge the user toward the AI fallback (Enter escalates to prompt mode).
         setStatus(r.length ? `${r.length} file(s)` : "No results — press Enter to ask Bismuth AI");
       })
@@ -103,15 +112,20 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   };
 
   // Enter behavior depends on mode (see planEnter): AI mode runs the prompt search; regex mode is
-  // Enter-gated; literal mode with zero hits escalates to AI, otherwise re-runs the keyword search.
-  // `forceAi` (Cmd/Ctrl+Enter) ALWAYS runs the AI prompt search — the always-reachable path so a
-  // natural-language query with keyword hits can still escalate to AI without the Sparkles chip.
+  // Enter-gated; literal mode with fresh zero hits escalates to AI, otherwise re-runs the keyword
+  // search. When the shown results are STALE (a live keyword search for the current query hasn't
+  // resolved), Enter runs that search first and escalates to AI iff it comes back empty — the fix
+  // for the reopened "no files found, Enter does nothing" bug (BUG #8). `forceAi` (Cmd/Ctrl+Enter)
+  // ALWAYS runs the AI prompt search — the always-reachable path even when keyword hits exist.
   const onEnter = (forceAi = false) => {
     const plan = planEnter({
       promptMode: promptMode(),
       regex: regex(),
       hasQuery: !!query(),
       resultCount: results().length,
+      // Results are stale if they were computed for a different query than what's in the box now
+      // (still-pending/in-flight debounced search) → don't trust `resultCount` for the escalate call.
+      resultsStale: resultsQuery() !== query(),
       forceAi,
     });
     // Enter is a deliberate submit: cancel any pending live-search debounce first so its trailing run
@@ -120,6 +134,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     switch (plan.action) {
       case "prompt": runPromptSearch(); break;
       case "escalate-ai": askAi(); break;
+      case "keyword-escalate": runSearch(true); break; // run keyword now; escalate to AI iff empty
       case "regex":
       case "keyword": runSearch(); break;
     }
@@ -168,7 +183,9 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     // Regex search bypasses the index and scans every note body line-by-line, so don't re-run it on
     // every keystroke — wait for Enter. Literal search stays live-as-you-type (index-backed, cheap).
     if (regex()) { setStatus(v ? "Press Enter to run regex search" : ""); return; }
-    debounceTimer = setTimeout(runSearch, 150);
+    // Wrap so the timer's own callback args can't be passed as `escalateIfEmpty` — a live
+    // debounced keyword search must never auto-escalate to the AI (that's Enter-only).
+    debounceTimer = setTimeout(() => runSearch(), 150);
   };
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape" && promptMode()) { e.preventDefault(); exitPromptMode(); return; }
