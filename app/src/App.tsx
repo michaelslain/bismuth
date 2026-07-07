@@ -62,7 +62,7 @@ import {
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, leafCount, pruneMissing, movePane,
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
-  serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned,
+  serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned, splitColdLaunch,
 } from "./panes";
 import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
@@ -149,12 +149,23 @@ export default function App() {
   // and it works identically in the browser and the Tauri app.
   const reloaded = isReloadNavigation();
   const savedTabs = typeof localStorage !== "undefined" ? localStorage.getItem(TABS_STORAGE_KEY) : null;
-  if (!reloaded && savedTabs && hasRestorableContent(deserializeTabs(savedTabs, () => true).tabs)) {
-    pushClosedSession(savedTabs); // cold launch: keep the prior session reachable via Cmd+Shift+T
+  // Parse the persisted layout ONCE — deserializeTabs re-ids every node, so parsing it twice would
+  // mint divergent ids for the same tabs. Reuse this single parse for both the restore + the stash.
+  const savedLayout = deserializeTabs(savedTabs, () => true);
+  // Reload (Cmd+R / hot-reload) restores every tab as-is. A cold launch (the app/window reopened
+  // after being fully closed) auto-restores only PINNED tabs — pins survive a full restart the way
+  // they do in Obsidian/VSCode — and stashes the UNPINNED remainder for Cmd+Shift+T, so the prior
+  // working set stays one keystroke away without duplicating the pins that just came back.
+  let restored: { tabs: Tab[]; activeTabId: string | null };
+  if (reloaded) {
+    restored = savedLayout;
+  } else {
+    const { restore, stash } = splitColdLaunch(savedLayout);
+    if (stash.length > 0 && hasRestorableContent(stash)) {
+      pushClosedSession(serializeTabs(stash, savedLayout.activeTabId));
+    }
+    restored = restore;
   }
-  const restored = reloaded
-    ? deserializeTabs(savedTabs, () => true)
-    : { tabs: [] as Tab[], activeTabId: null as string | null };
   // The Knowledge Graph is the home tab: there's no separate floating "default view" anymore, so
   // when nothing is restored we open with the graph AS a tab. The no-empty-state effect keeps this
   // invariant (a graph tab always exists) at runtime.

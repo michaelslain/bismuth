@@ -386,7 +386,7 @@ test("splitLeaf without newContent still duplicates (backwards compat)", () => {
 });
 
 // --- Pinned tabs ---
-import { sortPinned, setTabPinned, reorderTabs, type Tab } from "./panes";
+import { sortPinned, setTabPinned, reorderTabs, splitColdLaunch, type Tab } from "./panes";
 
 // Build a list of single-leaf tabs by content, marking the given contents as pinned.
 function tabsFrom(contents: string[], pinned: string[] = []): Tab[] {
@@ -472,4 +472,42 @@ test("deserialize normalizes a stored order where a pinned tab trails an unpinne
   const { tabs: out } = deserializeTabs(json, () => true);
   expect(contentsOf(out)).toEqual(["b", "a"]); // pinned "b" pulled to the front
   expect(out[0].pinned).toBe(true);
+});
+
+// --- Cold-launch restore (App.tsx startup): pinned tabs survive a full close+open ---
+
+test("cold launch: a pinned tab is restored (still pinned + first), unpinned ones stashed", () => {
+  // The full persistence path a real restart exercises: serialize the live tabs, then deserialize
+  // the stored blob (as startup does), then split for a cold launch.
+  const tabs = tabsFrom(["a", "b", "c"], ["b"]); // b pinned
+  const layout = deserializeTabs(serializeTabs(tabs, tabs[0].id), () => true);
+  const { restore, stash } = splitColdLaunch(layout);
+  // The pinned tab auto-restores, pinned flag intact and sorted to the front.
+  expect(contentsOf(restore.tabs)).toEqual(["b"]);
+  expect(restore.tabs[0].pinned).toBe(true);
+  // The unpinned remainder is handed back to stash (for Cmd+Shift+T), NOT dropped.
+  expect(contentsOf(stash)).toEqual(["a", "c"]);
+});
+
+test("cold launch: active follows the pinned tab when it was active, else the first pinned", () => {
+  const tabs = tabsFrom(["a", "b"], ["b"]);
+  // Active = the pinned "b" → restored active stays "b".
+  const bId = tabs.find((t) => (t.root as Leaf).content === "b")!.id;
+  const l1 = deserializeTabs(serializeTabs(tabs, bId), () => true);
+  const r1 = splitColdLaunch(l1);
+  expect(r1.restore.activeTabId).toBe(r1.restore.tabs[0].id);
+  // Active = an unpinned "a" (which won't be restored) → falls back to the first pinned tab.
+  const aId = tabs.find((t) => (t.root as Leaf).content === "a")!.id;
+  const l2 = deserializeTabs(serializeTabs(tabs, aId), () => true);
+  const r2 = splitColdLaunch(l2);
+  expect(r2.restore.activeTabId).toBe(r2.restore.tabs[0].id);
+});
+
+test("cold launch with no pinned tabs restores nothing and stashes the whole session", () => {
+  const tabs = tabsFrom(["a", "b"]); // none pinned
+  const layout = deserializeTabs(serializeTabs(tabs, tabs[0].id), () => true);
+  const { restore, stash } = splitColdLaunch(layout);
+  expect(restore.tabs).toEqual([]);
+  expect(restore.activeTabId).toBeNull();
+  expect(contentsOf(stash)).toEqual(["a", "b"]);
 });
