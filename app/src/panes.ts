@@ -33,13 +33,28 @@ export function sortPinned(tabs: Tab[]): Tab[] {
   return merged.every((t, i) => t === tabs[i]) ? tabs : merged;
 }
 
-// Opening a file normally REPLACES the active tab's focused pane in place (Obsidian-style
-// navigation). A PINNED tab is protected: its content must survive, so opening a file while a
-// pinned tab is active should spawn a NEW tab instead of mutating it. Also true when there's no
-// active tab at all (nothing to replace → a fresh tab). Pure, so App's openFile decision is
-// unit-testable without a DOM.
-export function shouldOpenInNewTab(activeTab: Tab | null): boolean {
-  return activeTab === null || activeTab.pinned === true;
+// Opening a file ALWAYS opens a new tab — it never replaces the active tab's content in place
+// (#56: a wikilink/file-tree/switcher/search click used to clobber whatever tab you were on).
+// The only exceptions, in priority order: the active tab's focused pane is already showing
+// that exact content (nothing to do — "noop"), or the content is already open in SOME tab
+// (this one or another, any pane) — then we just focus it rather than spawn a duplicate
+// ("focus"). Otherwise a fresh tab ("new"). Pure, so App's openFile decision is unit-testable
+// without a DOM.
+export type OpenDecision =
+  | { kind: "noop" }
+  | { kind: "focus"; tabId: string; leafId: string }
+  | { kind: "new" };
+
+export function decideOpen(tabs: Tab[], activeTab: Tab | null, content: string): OpenDecision {
+  if (activeTab) {
+    const focused = leaves(activeTab.root).find((l) => l.id === activeTab.focusId);
+    if (focused?.content === content) return { kind: "noop" };
+  }
+  for (const t of tabs) {
+    const existing = findLeafByContent(t.root, content);
+    if (existing) return { kind: "focus", tabId: t.id, leafId: existing.id };
+  }
+  return { kind: "new" };
 }
 
 // Flip a tab's pinned flag by id, then re-normalize the partition. Unknown id → unchanged.

@@ -512,21 +512,41 @@ test("cold launch with no pinned tabs restores nothing and stashes the whole ses
   expect(contentsOf(stash)).toEqual(["a", "b"]);
 });
 
-// --- Pinned-tab protection: opening a file spawns a new tab instead of overwriting a pin ---
-import { shouldOpenInNewTab } from "./panes";
+// --- #56: opening a note always opens a new tab (never replaces the active one) ---
+import { decideOpen } from "./panes";
 
-test("shouldOpenInNewTab is true for a pinned active tab (its content is protected)", () => {
+test("decideOpen: no-op when the active tab's focused pane already shows the content", () => {
+  const [active] = tabsFrom(["a"]);
+  expect(decideOpen([active], active, "a")).toEqual({ kind: "noop" });
+});
+
+test("decideOpen: new tab when there is no active tab at all", () => {
+  const [other] = tabsFrom(["a"]);
+  expect(decideOpen([other], null, "b")).toEqual({ kind: "new" });
+});
+
+test("decideOpen: new tab when the content isn't open anywhere, even on a pinned active tab", () => {
   const [pinned] = tabsFrom(["a"], ["a"]);
-  expect(shouldOpenInNewTab(pinned)).toBe(true);
+  expect(decideOpen([pinned], pinned, "b")).toEqual({ kind: "new" });
 });
 
-test("shouldOpenInNewTab is false for an unpinned active tab (navigate in place)", () => {
+test("decideOpen: focuses the existing tab when the content is already open elsewhere", () => {
+  const [a, b] = tabsFrom(["a", "b"]);
+  // Active tab is "a", but "b" is already open in another tab — focus it, don't duplicate.
+  const decision = decideOpen([a, b], a, "b");
+  expect(decision).toEqual({ kind: "focus", tabId: b.id, leafId: (b.root as Leaf).id });
+});
+
+test("decideOpen: focuses another pane of the ACTIVE tab when it already shows the content", () => {
+  const root = makeLeaf("a.md");
+  const { root: split, newLeafId } = splitLeaf(root, root.id, "row", "b.md"); // a.md | b.md
+  const active: Tab = { id: "t1", root: split, focusId: root.id }; // focused on the a.md pane
+  const decision = decideOpen([active], active, "b.md");
+  expect(decision).toEqual({ kind: "focus", tabId: "t1", leafId: newLeafId });
+});
+
+test("decideOpen: new tab (not in-place) when a normal, unpinned active tab shows something else", () => {
   const [normal] = tabsFrom(["a"]);
-  expect(shouldOpenInNewTab(normal)).toBe(false);
-  // An explicit pinned:false behaves like an unpinned tab.
-  expect(shouldOpenInNewTab({ ...normal, pinned: false })).toBe(false);
+  expect(decideOpen([normal], normal, "b")).toEqual({ kind: "new" });
 });
 
-test("shouldOpenInNewTab is true when there is no active tab (nothing to replace)", () => {
-  expect(shouldOpenInNewTab(null)).toBe(true);
-});
