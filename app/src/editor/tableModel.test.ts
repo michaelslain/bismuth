@@ -7,12 +7,17 @@ import {
   parseTableBlock,
   groupTableBlocks,
   serializeTable,
+  formatTable,
+  prettifyTableBlock,
+  decideCellKey,
+  cellListContinuation,
   isSeparatorRow,
   insertRow,
   deleteRow,
   insertColumn,
   deleteColumn,
   type TableGrid,
+  type CellKeyEvent,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -198,4 +203,79 @@ test("row/column ops keep the serialized markdown valid (round-trips through par
     expect(back.cells).toEqual(g.cells);
     expect(back.aligns).toEqual(g.aligns);
   }
+});
+
+// ── Prettifier (#25) ──────────────────────────────────────────────────────────
+
+test("formatTable column-pads a grid so pipes align (matches serializeTable)", () => {
+  const g: TableGrid = { cells: [["Name", "Age"], ["Alice", "30"]], aligns: ["left", "right"] };
+  expect(formatTable(g)).toBe(["| Name  | Age |", "| :---- | --: |", "| Alice |  30 |"].join("\n"));
+  expect(formatTable(g)).toBe(serializeTable(g.cells, g.aligns));
+});
+
+test("prettifyTableBlock aligns hand-authored (ragged) table source", () => {
+  const ugly = ["|a|b|", "|-|-|", "|longvalue|x|"];
+  expect(prettifyTableBlock(ugly)).toBe(
+    ["| a         | b   |", "| --------- | --- |", "| longvalue | x   |"].join("\n"),
+  );
+});
+
+test("prettifyTableBlock is idempotent on already-tidy source", () => {
+  const tidy = ["| Name  | Age |", "| :---- | --: |", "| Alice |  30 |"];
+  expect(prettifyTableBlock(tidy)).toBe(tidy.join("\n"));
+});
+
+// ── Cell keydown decision (#22 — global shortcuts pass through) ────────────────
+
+const key = (over: Partial<CellKeyEvent>): CellKeyEvent => ({
+  key: "x",
+  metaKey: false,
+  ctrlKey: false,
+  shiftKey: false,
+  ...over,
+});
+
+test("decideCellKey lets Cmd/Ctrl app shortcuts PASS THROUGH to App's global handler", () => {
+  // The crux of #22: Cmd+O (quick switcher) must not be swallowed by the cell.
+  expect(decideCellKey(key({ key: "o", metaKey: true }))).toBe("pass-through");
+  expect(decideCellKey(key({ key: "f", ctrlKey: true }))).toBe("pass-through");
+  expect(decideCellKey(key({ key: "p", metaKey: true }))).toBe("pass-through");
+  expect(decideCellKey(key({ key: "d", metaKey: true, shiftKey: true }))).toBe("pass-through");
+});
+
+test("decideCellKey keeps the cell-local Cmd combos it owns", () => {
+  expect(decideCellKey(key({ key: "a", metaKey: true }))).toBe("select-cell");
+  expect(decideCellKey(key({ key: "A", metaKey: true }))).toBe("select-cell");
+  for (const k of ["b", "i", "u"]) expect(decideCellKey(key({ key: k, ctrlKey: true }))).toBe("block-format");
+});
+
+test("decideCellKey classifies navigation + editing keys", () => {
+  expect(decideCellKey(key({ key: "Tab" }))).toBe("tab-next");
+  expect(decideCellKey(key({ key: "Tab", shiftKey: true }))).toBe("tab-prev");
+  expect(decideCellKey(key({ key: "Enter" }))).toBe("next-row");
+  expect(decideCellKey(key({ key: "Enter", shiftKey: true }))).toBe("newline");
+  expect(decideCellKey(key({ key: "Escape" }))).toBe("leave");
+  expect(decideCellKey(key({ key: "x" }))).toBe("edit");
+  expect(decideCellKey(key({ key: "ArrowLeft" }))).toBe("edit");
+});
+
+// ── In-cell list continuation (#15) ───────────────────────────────────────────
+
+test("cellListContinuation opens the next unordered marker", () => {
+  expect(cellListContinuation("- apple")).toEqual({ marker: "- " });
+  expect(cellListContinuation("* apple")).toEqual({ marker: "* " });
+});
+
+test("cellListContinuation increments an ordered marker (keeping its delimiter)", () => {
+  expect(cellListContinuation("1. first")).toEqual({ marker: "2. " });
+  expect(cellListContinuation("9. ninth")).toEqual({ marker: "10. " });
+  expect(cellListContinuation("2) second")).toEqual({ marker: "3) " });
+});
+
+test("cellListContinuation exits on an empty marker and ignores non-list lines", () => {
+  expect(cellListContinuation("- ")).toBe("exit");
+  expect(cellListContinuation("3. ")).toBe("exit");
+  expect(cellListContinuation("plain text")).toBeNull();
+  expect(cellListContinuation("-nospace")).toBeNull(); // a lone dash isn't a list marker
+  expect(cellListContinuation("")).toBeNull();
 });

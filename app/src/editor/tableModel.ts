@@ -240,3 +240,93 @@ export function serializeTable(cells: string[][], aligns: Align[]): string {
   for (let r = 1; r < enc.length; r++) out.push(rowLine(enc[r]));
   return out.join("\n");
 }
+
+/** Pretty-print a table grid to normalized, column-padded GFM markdown — the canonical
+ *  serializer the editable-table widget writes back to source, so the raw markdown stays
+ *  aligned and readable by a human OR an LLM. A thin `TableGrid` wrapper over
+ *  `serializeTable` (which does the column-width padding). */
+export function formatTable(g: TableGrid): string {
+  return serializeTable(g.cells, g.aligns);
+}
+
+/** Re-format a block of raw table markdown LINES into aligned GFM (parse → pretty
+ *  serialize). Prettifies source that was authored by hand (unpadded pipes) so revealing
+ *  it as raw markdown shows tidy, aligned columns. `lines[0]` is the header, `lines[1]`
+ *  the separator, the rest body rows — the same shape `parseTableBlock` consumes. */
+export function prettifyTableBlock(lines: string[]): string {
+  const { cells, aligns } = parseTableBlock(lines);
+  return serializeTable(cells, aligns);
+}
+
+// ── Cell keydown decision (pure) ──────────────────────────────────────────────
+// The table widget's contenteditable cell is an "editing island": it must handle the
+// keys it needs for cell navigation/editing while letting the app's GLOBAL keyboard
+// shortcuts (Cmd/Ctrl combos like the quick-switcher / command palette / find) bubble
+// out to the document. Keeping that decision pure + DOM-free lets us unit-test the
+// tricky part — which keys the cell OWNS vs. which must pass through to App's handler.
+
+/** The subset of a `KeyboardEvent` the cell's keydown logic reads. */
+export interface CellKeyEvent {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+}
+
+/** What the editable table cell should do with a keydown. */
+export type CellKeyAction =
+  | "select-cell" // Mod+A: select this cell's contents (native would grab the whole editor)
+  | "block-format" // Mod+B/I/U: swallow — no rich-text markup in a plain-markdown cell
+  | "pass-through" // any other Cmd/Ctrl combo: a global app shortcut — DON'T stop it, let it bubble
+  | "tab-next" // Tab: next cell (wraps to next row / commits past the last cell)
+  | "tab-prev" // Shift+Tab: previous cell
+  | "newline" // Shift+Enter: soft line break within the cell
+  | "next-row" // Enter: move to the cell below (or commit on the last row)
+  | "leave" // Escape: blur the cell
+  | "edit"; // everything else: native contenteditable input (stop it reaching CM's keymap)
+
+/** Classify a cell keydown. The one line that fixes "global shortcuts don't work inside a
+ *  table": every Cmd/Ctrl combo the cell doesn't itself own is `pass-through`, so the
+ *  widget leaves it alone and it reaches App.tsx's window keydown handler. */
+export function decideCellKey(e: CellKeyEvent): CellKeyAction {
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod) {
+    const k = e.key.toLowerCase();
+    if (k === "a") return "select-cell";
+    if (k === "b" || k === "i" || k === "u") return "block-format";
+    return "pass-through";
+  }
+  if (e.key === "Tab") return e.shiftKey ? "tab-prev" : "tab-next";
+  if (e.key === "Enter") return e.shiftKey ? "newline" : "next-row";
+  if (e.key === "Escape") return "leave";
+  return "edit";
+}
+
+// ── In-cell list continuation (pure) ──────────────────────────────────────────
+// A GFM cell renders as a bulleted/numbered list when it's a `<br>`-separated run of
+// `- `/`* ` or `N.`/`N)` items (see cellList.ts). To let a user CREATE one by typing,
+// pressing Enter inside a cell that's on a list-item line should open the next marker
+// on a new in-cell line instead of jumping to the next row. This decides that, purely
+// from the caret's current line text; the widget does the DOM insert/delete.
+
+/** How Enter should treat the caret's current line inside a table cell:
+ *   - `{ marker }` → a non-empty list item: open this marker on a new line;
+ *   - "exit"       → an empty marker (just `- ` / `2. `): drop it and leave the list;
+ *   - null         → not a list item: Enter keeps its normal next-row behavior. */
+export type CellListEnter = { marker: string } | "exit" | null;
+
+// A list-item line needs whitespace after the marker (so a lone `-` isn't a list); the
+// content may be empty (`- ` / `1. `), which is the signal to exit the list.
+const CELL_UL_ITEM = /^([-*])[ \t]+(.*)$/;
+const CELL_OL_ITEM = /^(\d+)([.)])[ \t]+(.*)$/;
+
+/** Decide how Enter continues an in-cell list, given the caret's current line text. The
+ *  next ordered marker increments the number; unordered repeats the bullet. Mirrors the
+ *  markers cellList.ts renders. */
+export function cellListContinuation(lineText: string): CellListEnter {
+  const ul = CELL_UL_ITEM.exec(lineText);
+  if (ul) return ul[2].trim() === "" ? "exit" : { marker: `${ul[1]} ` };
+  const ol = CELL_OL_ITEM.exec(lineText);
+  if (ol) return ol[3].trim() === "" ? "exit" : { marker: `${parseInt(ol[1], 10) + 1}${ol[2]} ` };
+  return null;
+}

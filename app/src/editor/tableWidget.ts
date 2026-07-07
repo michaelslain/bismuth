@@ -7,11 +7,17 @@
 // leaves its inner selection alone, while ignoreEvent() keeps CM from acting on
 // clicks/keys inside it.
 import { EditorView, WidgetType } from "@codemirror/view";
+import type { TransactionSpec } from "@codemirror/state";
 import {
   type Align,
   type TableGrid,
+  type CellKeyAction,
   groupTableBlocks,
   serializeTable,
+  formatTable,
+  prettifyTableBlock,
+  decideCellKey,
+  cellListContinuation,
   insertRow,
   deleteRow,
   insertColumn,
@@ -124,6 +130,66 @@ function insertBreakAtCaret(): void {
   sel.addRange(next);
 }
 
+/** Insert plain text at the caret and leave the caret after it. Used to drop the next
+ *  list marker (`- ` / `3. `) onto a freshly-broken in-cell line. */
+function insertTextAtCaret(text: string): void {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  const next = document.createRange();
+  next.setStartAfter(node);
+  next.collapse(true);
+  sel.removeAllRanges();
+  sel.addRange(next);
+}
+
+/** Flatten a node's cell-edit-face content to text, mapping each `<br>` to a newline so
+ *  callers can reason about the cell as multi-line text (the edit face is a flat run of
+ *  text nodes + `<br>`s — see srcToEditHtml / insertBreakAtCaret). */
+function fragText(node: Node): string {
+  let out = "";
+  node.childNodes.forEach((n) => {
+    if (n.nodeName === "BR") out += "\n";
+    else if (n.nodeType === Node.TEXT_NODE) out += n.textContent ?? "";
+    else out += fragText(n);
+  });
+  return out;
+}
+
+/** The text of the cell line the (collapsed) caret sits on, plus the raw character counts
+ *  before/after the caret ON THAT LINE (for a precise in-line delete). Returns null unless
+ *  there's a single collapsed caret inside `cell`. ZWSP fillers are stripped from `line`
+ *  (marker detection) but counted in before/after (so a delete removes them too). */
+function caretCellLine(cell: HTMLElement): { line: string; beforeLen: number; afterLen: number } | null {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return null;
+  const caret = sel.getRangeAt(0);
+  if (!caret.collapsed || !cell.contains(caret.startContainer)) return null;
+  const beforeR = document.createRange();
+  beforeR.selectNodeContents(cell);
+  beforeR.setEnd(caret.startContainer, caret.startOffset);
+  const afterR = document.createRange();
+  afterR.selectNodeContents(cell);
+  afterR.setStart(caret.startContainer, caret.startOffset);
+  const before = fragText(beforeR.cloneContents());
+  const after = fragText(afterR.cloneContents());
+  const beforeLine = before.slice(before.lastIndexOf("\n") + 1);
+  const afterLine = after.split("\n", 1)[0];
+  const strip = (s: string): string => s.replace(new RegExp(ZWSP, "g"), "");
+  return { line: strip(beforeLine + afterLine), beforeLen: beforeLine.length, afterLen: afterLine.length };
+}
+
+/** Delete `beforeLen` characters back and `afterLen` forward from the caret (the current
+ *  line's marker, when exiting an in-cell list). Uses execCommand — as the paste handler
+ *  does — so the contenteditable's own undo/caret bookkeeping stays consistent. */
+function deleteCurrentLine(beforeLen: number, afterLen: number): void {
+  for (let i = 0; i < beforeLen; i++) document.execCommand("delete");
+  for (let i = 0; i < afterLen; i++) document.execCommand("forwardDelete");
+}
+
 // Item shape understood by App's shared `bismuth-context-menu` handler (mirrors EditorMenuItem).
 type TableMenuItem = { label: string; onSelect: () => void; icon?: string; disabled?: boolean; separatorBefore?: boolean };
 
@@ -182,6 +248,29 @@ function currentRange(view: EditorView, root: HTMLElement): { from: number; to: 
   return { from: doc.line(after.startLine).from, to: doc.line(after.endLine).to };
 }
 
+/** Dispatch a transaction while PINNING the editor's scroll position, so a table edit
+ *  (add row/column, prettify-on-source) that changes the block widget's height never
+ *  yanks the viewport. Replacing the table block re-lays a block widget, and CodeMirror
+ *  re-measures line heights ASYNCHRONOUSLY after the reconcile — that measure resets
+ *  scrollTop (the "adding a row scrolls me all the way down" bug). We restore the scroll
+ *  synchronously AND inside `requestMeasure` (after CM's own layout pass) so it sticks.
+ *  Mirrors the established `foldBlocks.preserveScroll` idiom. */
+function dispatchKeepScroll(view: EditorView, spec: TransactionSpec): void {
+  const scroller = view.scrollDOM;
+  const top = scroller.scrollTop;
+  const left = scroller.scrollLeft;
+  view.dispatch(spec);
+  scroller.scrollTop = top;
+  scroller.scrollLeft = left;
+  view.requestMeasure({
+    read: () => top,
+    write: (t) => {
+      scroller.scrollTop = t;
+      scroller.scrollLeft = left;
+    },
+  });
+}
+
 export class TableWidget extends WidgetType {
   constructor(
     private readonly cells: string[][],
@@ -204,9 +293,11 @@ export class TableWidget extends WidgetType {
     if (!range) return;
     let grid: TableGrid = { cells: readGrid(root), aligns: this.aligns.slice() };
     grid = transform?.(grid) ?? grid;
-    const md = serializeTable(grid.cells, grid.aligns);
+    const md = formatTable(grid); // column-padded, LLM-readable GFM
     if (view.state.sliceDoc(range.from, range.to) === md) return; // no-op: skip churn
-    view.dispatch({ changes: { from: range.from, to: range.to, insert: md } });
+    // Pin the scroll position: growing the table (add row/column) re-lays the block
+    // widget and CM's async height re-measure would otherwise scroll the viewport away.
+    dispatchKeepScroll(view, { changes: { from: range.from, to: range.to, insert: md } });
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -291,13 +382,20 @@ export class TableWidget extends WidgetType {
         // the cell shows formatted markdown when idle but is edited as plain source.
         cell.addEventListener("focusin", () => enterEdit(cell));
         cell.addEventListener("focusout", () => leaveEdit(cell));
-        // Take full control of clicks: CodeMirror's own mousedown would move the editor
-        // selection to the (atomic) widget boundary and focus the doc instead of the
-        // cell, so we stop it, then focus the cell and drop the caret at the click point
-        // ourselves. This makes a single click reliably land in the cell for editing.
+        // Take control of the mousedown so CodeMirror's own handler doesn't move the
+        // editor selection to the (atomic) widget boundary and focus the doc instead of
+        // the cell (stopPropagation). Once the cell is already in its editable (raw-source)
+        // face, let the browser handle the rest NATIVELY so click-drag TEXT SELECTION and
+        // double-click word-select work — calling preventDefault here (as the old code did
+        // on every mousedown) collapses/kills the native selection gesture, which is why
+        // "can't highlight text inside a table cell" happened. Only for the FIRST click
+        // (entering edit mode from the rendered display face) do we preventDefault + focus
+        // + drop the caret ourselves, because focusin swaps the cell's innerHTML to the
+        // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
           e.stopPropagation();
+          if (cell.dataset.editing === "1") return; // native caret + drag-to-select
           e.preventDefault();
           cell.focus();
           const sel = window.getSelection();
@@ -333,49 +431,81 @@ export class TableWidget extends WidgetType {
         });
         cell.addEventListener("keydown", (e) => {
           const ev = e as KeyboardEvent;
-          // The cell is an editing island: stop the keydown reaching CM's contentDOM
-          // keymap so editor shortcuts don't act on the whole document.
+          const action: CellKeyAction = decideCellKey(ev);
+          // A `pass-through` is a global app shortcut (Mod+O quick-switcher, Mod+P command
+          // palette, Mod+F find, Mod+` terminal, …). We deliberately do NOT stopPropagation
+          // or preventDefault, so it bubbles out of the cell to App.tsx's `window` keydown
+          // handler exactly like a normal editor keystroke would. Swallowing these (the old
+          // unconditional stopPropagation) is why "Cmd+O doesn't work inside a table". Every
+          // OTHER key is cell-local, so we stop it reaching CM's contentDOM keymap (the cell
+          // is an editing island) before acting on it.
+          if (action === "pass-through") return;
           ev.stopPropagation();
-          const mod = ev.metaKey || ev.ctrlKey;
-          // Mod-A natively selects the whole contenteditable host (the editor), not the
-          // nested cell — scope it to the cell ourselves.
-          if (mod && (ev.key === "a" || ev.key === "A")) {
-            ev.preventDefault();
-            const sel = window.getSelection();
-            if (sel) {
-              const range = document.createRange();
-              range.selectNodeContents(cell);
-              sel.removeAllRanges();
-              sel.addRange(range);
+          switch (action) {
+            case "select-cell": {
+              // Mod+A natively selects the whole contenteditable host (the editor), not the
+              // nested cell — scope it to the cell ourselves.
+              ev.preventDefault();
+              const sel = window.getSelection();
+              if (sel) {
+                const range = document.createRange();
+                range.selectNodeContents(cell);
+                sel.removeAllRanges();
+                sel.addRange(range);
+              }
+              return;
             }
-            return;
-          }
-          // Block native rich-text formatting (Mod-B/I/U would inject <b>/<i>/<u> markup
-          // into the cell, which has no place in a plain-text markdown cell).
-          if (mod && ["b", "i", "u"].includes(ev.key.toLowerCase())) {
-            ev.preventDefault();
-            return;
-          }
-          if (ev.key === "Tab") {
-            ev.preventDefault();
-            const next = ev.shiftKey ? c - 1 : c + 1;
-            if (next >= 0 && next < cols) focusCell(r, next);
-            else if (!ev.shiftKey && r + 1 < this.cells.length) focusCell(r + 1, 0);
-            else if (ev.shiftKey && r - 1 >= 0) focusCell(r - 1, cols - 1);
-            else cell.blur();
-          } else if (ev.key === "Enter") {
-            ev.preventDefault();
-            if (ev.shiftKey) {
-              // Soft line break WITHIN the cell: insert a real <br> so the caret moves
-              // down and the cell grows. On commit `cellSourceFromDom` encodes it as a
-              // `<br>` marker (a GFM cell is one source line), which the display face
-              // renders back as a line break.
+            case "block-format":
+              // Mod+B/I/U would inject <b>/<i>/<u> markup into a plain-markdown cell — swallow.
+              ev.preventDefault();
+              return;
+            case "tab-next":
+              ev.preventDefault();
+              if (c + 1 < cols) focusCell(r, c + 1);
+              else if (r + 1 < this.cells.length) focusCell(r + 1, 0);
+              else cell.blur();
+              return;
+            case "tab-prev":
+              ev.preventDefault();
+              if (c - 1 >= 0) focusCell(r, c - 1);
+              else if (r - 1 >= 0) focusCell(r - 1, cols - 1);
+              else cell.blur();
+              return;
+            case "newline":
+              // Soft line break WITHIN the cell: insert a real <br> so the caret moves down
+              // and the cell grows. On commit `cellSourceFromDom` encodes it as a `<br>`
+              // marker (a GFM cell is one source line), which the display face renders back.
+              ev.preventDefault();
               insertBreakAtCaret();
-            } else if (r + 1 < this.cells.length) focusCell(r + 1, c);
-            else cell.blur(); // last row → commit on focusout
-          } else if (ev.key === "Escape") {
-            ev.preventDefault();
-            cell.blur();
+              return;
+            case "next-row": {
+              ev.preventDefault();
+              // In-cell list continuation (#15): if the caret's line is a `- `/`N.` list
+              // item, Enter continues the list in-cell instead of jumping rows.
+              const lineInfo = caretCellLine(cell);
+              const cont = lineInfo ? cellListContinuation(lineInfo.line) : null;
+              if (cont && cont !== "exit") {
+                // Non-empty item → open the next marker on a new in-cell line.
+                insertBreakAtCaret();
+                insertTextAtCaret(cont.marker);
+                return;
+              }
+              if (cont === "exit" && lineInfo) {
+                // Empty marker → drop it and leave the list, then fall through to next-row.
+                deleteCurrentLine(lineInfo.beforeLen, lineInfo.afterLen);
+              }
+              if (r + 1 < this.cells.length) focusCell(r + 1, c);
+              else cell.blur(); // last row → commit on focusout
+              return;
+            }
+            case "leave":
+              ev.preventDefault();
+              cell.blur();
+              return;
+            case "edit":
+              // A plain key (typing, arrows, etc.): native contenteditable handles the input;
+              // we only shielded it from CM's keymap above. No preventDefault.
+              return;
           }
         });
         tr.appendChild(cell);
@@ -627,7 +757,16 @@ export class TableWidget extends WidgetType {
           if (!range) return;
           const line = view.state.doc.lineAt(range.from).number;
           view.focus();
-          view.dispatch({ selection: { anchor: range.from }, effects: setActiveTableEffect.of(line) });
+          // Prettify the raw markdown as we reveal it (#25): a hand-authored table may have
+          // ragged pipes, so re-emit it column-padded so "Edit source" is actually readable
+          // (by a human OR an LLM). Only dispatch a change when it isn't already tidy.
+          const src = view.state.sliceDoc(range.from, range.to);
+          const pretty = prettifyTableBlock(src.split("\n"));
+          const spec: TransactionSpec = { selection: { anchor: range.from }, effects: setActiveTableEffect.of(line) };
+          if (pretty !== src) spec.changes = { from: range.from, to: range.to, insert: pretty };
+          // Keep the viewport still — the reformat changes the block height and CM would
+          // otherwise re-measure + scroll it away.
+          dispatchKeepScroll(view, spec);
         },
       },
     ];
