@@ -648,6 +648,74 @@ test("PUT /file writes file and returns ok", async () => {
   }
 });
 
+// #46 — data-loss bug: an autosave racing an external writer to the same file used to silently
+// clobber whichever side wrote last. PUT /file's optional `baseText` optimistic-concurrency guard
+// closes that: a write whose expected prior content no longer matches disk is rejected (409) with
+// the current on-disk content instead of overwriting it.
+test("PUT /file with matching baseText writes normally", async () => {
+  const { vault } = await makeSampleVault();
+  await writeNote(vault, "concurrent.md", "original content\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "concurrent.md", contents: "edited content\n", baseText: "original content\n" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await readNote(vault, "concurrent.md")).toBe("edited content\n");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("PUT /file with stale baseText 409s with current on-disk content and does NOT overwrite", async () => {
+  const { vault } = await makeSampleVault();
+  await writeNote(vault, "concurrent.md", "original content\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Simulate an external writer (e.g. a CLI process, or the daemon) editing the file AFTER the
+    // client last read it but BEFORE the client's autosave PUT lands.
+    await writeNote(vault, "concurrent.md", "externally edited content\n");
+
+    const res = await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      // The client still believes the file holds the ORIGINAL content it loaded.
+      body: JSON.stringify({ path: "concurrent.md", contents: "locally edited content\n", baseText: "original content\n" }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.current).toBe("externally edited content\n");
+    // The external writer's content must survive untouched — this is the exact mechanism that
+    // used to silently revert a live, concurrently-edited vault file.
+    expect(await readNote(vault, "concurrent.md")).toBe("externally edited content\n");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("PUT /file without baseText writes unconditionally (unchanged legacy behavior)", async () => {
+  const { vault } = await makeSampleVault();
+  await writeNote(vault, "concurrent.md", "original content\n");
+  const server = createServer({ vault, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await writeNote(vault, "concurrent.md", "externally edited content\n");
+    const res = await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "concurrent.md", contents: "locally edited content\n" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await readNote(vault, "concurrent.md")).toBe("locally edited content\n");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("POST /backup schedules a coalesced snapshot", async () => {
   const { vault } = await makeSampleVault();
   const server = createServer({ vault, port: 0 });
