@@ -180,7 +180,10 @@ marked.use({
       const listHtml = renderCellListHtml(token.text, (item) => marked.parseInline(item, { async: false }) as string);
       const content = listHtml ?? this.parser.parseInline(token.tokens);
       const tag = token.header ? "th" : "td";
-      return (token.align ? `<${tag} align="${token.align}">` : `<${tag}>`) + content + `</${tag}>\n`;
+      // Centering in tables is not supported (#53): a `:-:` separator column still parses
+      // (source round-trips untouched) but renders LEFT, matching the editor's table widget.
+      const align = token.align === "center" ? null : token.align;
+      return (align ? `<${tag} align="${align}">` : `<${tag}>`) + content + `</${tag}>\n`;
     },
   },
 });
