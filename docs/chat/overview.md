@@ -179,7 +179,7 @@ In the header `ViewBar`, `ChatView` shows the model (a live picker once the `mod
 
 ## Session history picker
 
-The header's **Clock** button opens a popover (`HistoryPanel`) listing the user's existing Claude Code sessions for the vault — terminal *and* in-app, newest-first — fetched via `api.chatSessions()`. Each row shows the session summary (ellipsized, falling back to "Untitled session") plus a relative time ("just now", "5m ago", "2h ago", "3d ago", then a short date). Picking a row calls `resumeSession(sessionId)`, which:
+The header's **Past conversations** button (a `MessagesSquare` icon) opens a popover (`HistoryPanel`) listing the user's existing Claude Code sessions for the vault — terminal *and* in-app, newest-first — fetched via `api.chatSessions()`. Each row shows the session summary (ellipsized, falling back to "Untitled session") plus a relative time ("just now", "5m ago", "2h ago", "3d ago", then a short date). Picking a row calls `resumeSession(sessionId)`, which:
 
 1. clears the transcript (`resetTranscript`),
 2. rehydrates the past turns by fetching `api.chatSessionMessages(sessionId)` and feeding every replayed frame through the **same** `onFrame` that handles live frames, then

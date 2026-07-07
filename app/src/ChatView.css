@@ -560,20 +560,38 @@
 }
 .chat-turn-error-icon { flex: 0 0 auto; margin-top: 2px; }
 
-/* ── Composer pinned at the bottom — borderless, compose on the page in the same column ── */
+/* ── Composer pinned at the bottom — the transcript above stays notebook-plain, but the composer
+   itself reads as a REAL message box: a quiet rounded surface (the .ui-input idiom) wrapping the
+   textarea + send, so the field has a visible affordance instead of floating placeholder text. ── */
 .chat-composer {
   position: relative;
   flex: 0 0 auto;
-  padding: 14px 40px 20px;
+  padding: 14px 40px 18px;
   border-top: 1px solid var(--border-soft);
 }
+/* The message box: textarea (+ any attachment chips) and the send button inside ONE soft-bordered
+   rounded surface, capped to the 680px reading column. Mirrors .ui-input (surface-2 fill, soft
+   border, accent focus ring) but sized for a multi-line composer; the textarea/send inside stay
+   chromeless so the wrapper is the only visible affordance. */
 .chat-composer-inner {
   display: flex;
   align-items: flex-end;
-  gap: 10px;
+  gap: 6px;
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
+  padding: 5px 6px 5px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.chat-composer-inner:hover:not(:focus-within) { border-color: var(--border); }
+/* Signature focus treatment, matching .ui-input: accent border + soft accent glow ring — the
+   textarea inside carries the focus, the box shows it. */
+.chat-composer-inner:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .chat-composer-main {
   display: flex;
@@ -582,17 +600,18 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* The textarea drops the boxed .ui-input look (scoped to .chat-composer only — .ui-input
-   elsewhere is untouched; the 2-class selector outranks .ui-input's 1-class rules). */
+/* The textarea itself stays chromeless — its wrapper (.chat-composer-inner) is the visible surface
+   now. Scoped to .chat-composer only (.ui-input elsewhere is untouched; the 2-class selector
+   outranks .ui-input's 1-class rules). */
 .chat-composer .chat-input {
   flex: 1 1 auto;
   resize: none;
-  min-height: 34px;
+  min-height: 28px;
   max-height: 200px;
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 6px 0;
+  padding: 5px 0;
   box-shadow: none;
   font-family: var(--editor-font, "Lora", serif);
   font-size: var(--editor-font-size, 18px);

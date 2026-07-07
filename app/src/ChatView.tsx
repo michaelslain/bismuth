@@ -1019,8 +1019,8 @@ export function ChatView(props: { chatId: string }) {
             even before the first turn's manifest. The history panel anchors to this wrapper. */}
         <div class="chat-history-anchor">
           <IconButton
-            icon="Clock"
-            label="Session history"
+            icon="MessagesSquare"
+            label="Past conversations"
             variant={historyOpen() ? "selected" : "normal"}
             onClick={openHistory}
           />
