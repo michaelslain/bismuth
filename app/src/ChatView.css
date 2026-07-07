@@ -402,6 +402,39 @@
   word-break: break-word;
 }
 
+/* ── Slash-command output (#28): a boxed, monospace "command output" panel (e.g. /context) — reads
+   like the Claude Code TUI, not loose prose. Raw text with horizontal scroll so a fixed-width panel
+   keeps its column alignment instead of being reflowed. ─────────────────────────────────── */
+.chat-command-output {
+  margin: 2px 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(140, 140, 140, 0.08);
+  overflow: hidden;
+}
+.chat-command-output-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--faint);
+}
+.chat-command-output-body {
+  margin: 0;
+  padding: 9px 12px;
+  font-family: var(--ui-font-stack);
+  font-size: 11.5px;
+  line-height: 1.5;
+  white-space: pre;
+  overflow: auto;
+  max-height: 460px;
+  color: var(--text-muted);
+}
+
 /* ── Tool-call chip — a quiet one-liner: icon + name + summary + status. No box. Expands to
    a left-ruled excerpt (the shared "here's raw data" idiom). ──────────────────────────── */
 .chat-tool-head {

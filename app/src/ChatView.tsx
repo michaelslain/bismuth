@@ -151,6 +151,10 @@ interface AssistantItem {
   parts: AssistantPart[];
   /** Set from the turn's `result` frame — a muted footer (turns + cost). */
   footer: { numTurns: number; costUsd: number | null } | null;
+  /** True when this turn answers a slash-command input (the preceding user bubble started with
+   *  "/"): its prose is a locally-produced command result (e.g. `/context`'s panel), so it renders
+   *  in a boxed monospace "command output" container — like the Claude Code TUI — not loose prose (#28). */
+  command?: boolean;
 }
 type TurnItem = UserItem | AssistantItem;
 
@@ -382,7 +386,10 @@ export function ChatView(props: { chatId: string }) {
       produce((m) => {
         let last = lastTurn(m);
         if (!last || last.role !== "assistant") {
-          const a: AssistantItem = { role: "assistant", parts: [], footer: null };
+          // A turn answering a slash-command input (the preceding user bubble starts with "/") is a
+          // command result — flag it so its prose renders as a boxed monospace panel, not prose (#28).
+          const command = !!last && last.role === "user" && last.text.trim().startsWith("/");
+          const a: AssistantItem = { role: "assistant", parts: [], footer: null, command };
           m.push(a);
           last = a;
         }
@@ -550,7 +557,8 @@ export function ChatView(props: { chatId: string }) {
     // `rebind=1` marks a RECONNECT (not a first open / deliberate switch): the server then tells
     // us explicitly if the session we expect was already torn down (grace window expired), so a
     // wedged mid-turn UI clears instead of silently continuing against a fresh session.
-    const rebind = reconnectAttempt > 0 ? "&rebind=1" : "";
+    const isReconnect = reconnectAttempt > 0;
+    const rebind = isReconnect ? "&rebind=1" : "";
     ws = new WebSocket(`${wsBase()}/chat?chatId=${encodeURIComponent(activeChatId())}${rebind}`);
     ws.onopen = () => {
       reconnectAttempt = 0;
@@ -563,6 +571,13 @@ export function ChatView(props: { chatId: string }) {
         const sid = pendingResume;
         pendingResume = null;
         sendJson({ type: "resume", sessionId: sid });
+      } else if (!isReconnect) {
+        // A FIRST open of this chat id (mount, or a "New"/resume-cleared reconnectOn) with no resume
+        // pending: eagerly spawn the backend session so its `init` manifest + `models` frame +
+        // permission mode land in the header BEFORE the first message (BUG #14). Skipped on a
+        // reconnect — the backend rebinds the live session's sink on WS open (or reports it ended),
+        // so there's nothing to spawn — and skipped when resuming (the resume spawns the session).
+        sendJson({ type: "open" });
       }
       // Flush permission answers clicked while the socket was down — the backend session's
       // pending map survives the grace window, so these still resolve the parked prompts.
@@ -1000,11 +1015,12 @@ export function ChatView(props: { chatId: string }) {
   const onBubbleContextMenu = (e: MouseEvent, text: string) => {
     if (!text.trim()) return; // nothing to quote/copy (e.g. an image-only bubble)
     e.preventDefault();
+    // Reply ALWAYS quotes the WHOLE message (bug #18 follow-up): the floating "Reply" button anchored
+    // above a text selection is the sole selection-reply path, so the right-click menu never offers a
+    // redundant "Reply to selection". Copy still prefers a live selection, else the whole message.
     const selected = selectionWithin(e.currentTarget as HTMLElement);
     const items: MenuItem[] = [
-      selected
-        ? { label: "Reply to selection", icon: "Reply", onSelect: () => replyToMessage(selected) }
-        : { label: "Reply", icon: "Reply", onSelect: () => replyToMessage(text) },
+      { label: "Reply", icon: "Reply", onSelect: () => replyToMessage(text) },
       { label: "Copy", icon: "Copy", onSelect: () => copyMessage(selected || text) },
     ];
     openContextMenu(e.clientX, e.clientY, items, setMenu);
@@ -1404,7 +1420,7 @@ export function ChatView(props: { chatId: string }) {
         <div class="chat-turn">
           <For each={p.item.parts}>
             {(part) => {
-              if (part.kind === "text") return <TextBubble part={part} />;
+              if (part.kind === "text") return <TextBubble part={part} command={p.item.command} />;
               if (part.kind === "thinking") return <ThinkingBlock part={part} />;
               if (part.kind === "tool") return <ToolChip part={part} />;
               return <PermissionCard part={part} />;
@@ -1423,11 +1439,24 @@ export function ChatView(props: { chatId: string }) {
     );
   }
 
-  function TextBubble(p: { part: TextPart }) {
+  function TextBubble(p: { part: TextPart; command?: boolean }) {
     return (
       <Show when={p.part.text.trim()}>
         <div class="chat-bubble-wrap" onContextMenu={(e) => onBubbleContextMenu(e, p.part.text)}>
-          <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
+          {/* Slash-command result (#28): a boxed, monospace "command output" panel — like the
+              Claude Code TUI's /context view — instead of loose prose. Raw text (not markdown) so a
+              pre-formatted panel keeps its alignment; wide panels scroll inside the box. */}
+          <Show
+            when={p.command}
+            fallback={<div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />}
+          >
+            <div class="chat-command-output">
+              <div class="chat-command-output-head">
+                <Icon value="SquareTerminal" size={12} /> Command output
+              </div>
+              <pre class="chat-command-output-body">{p.part.text}</pre>
+            </div>
+          </Show>
           <CopyButton text={p.part.text} />
         </div>
       </Show>

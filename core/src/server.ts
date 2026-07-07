@@ -40,6 +40,7 @@ import {
   setPermissionMode as chatSetPermissionMode,
   setModel as chatSetModel,
   resumeSession as chatResume,
+  openSession as chatOpen,
   listChatSessions,
   sessionHistoryFrames,
   invalidateChatVisibility,
@@ -1698,6 +1699,9 @@ export function createServer(cfg: CoreConfig) {
         }
         if (ws.data.kind === "chat") {
           // Chat protocol is text JSON, driving the visual Claude Code session (core/src/chat.ts):
+          //   {type:"open"}                                   → spawn the session eagerly (no turn) so
+          //                                                     the header's manifest + models frame land
+          //                                                     before the first message (BUG #14)
           //   {type:"user",text,images?}                      → run a turn (slash commands are just text;
           //                                                     images = base64 blocks the user attached)
           //   {type:"resume",sessionId}                       → bind this chat to an existing session
@@ -1724,14 +1728,20 @@ export function createServer(cfg: CoreConfig) {
           } catch {
             return;
           }
-          if (parsed.type === "user" && typeof parsed.text === "string") {
-            const sink = (frame: unknown) => {
-              try {
-                ws.send(JSON.stringify(frame));
-              } catch {
-                /* socket closed mid-turn */
-              }
-            };
+          const chatSink = (frame: unknown) => {
+            try {
+              ws.send(JSON.stringify(frame));
+            } catch {
+              /* socket closed mid-turn */
+            }
+          };
+          if (parsed.type === "open") {
+            // Chat OPEN (the ChatView just mounted / reconnected on a fresh id): spawn the session
+            // eagerly so its `init` manifest + `models` frame + permission mode stream to the header
+            // BEFORE the first message (BUG #14). No-op if a session already exists for this chatId
+            // (a mid-turn reconnect already rebound the sink on WS open) — never spawns a duplicate.
+            chatOpen(chatId, cfg.vault, chatSink, effectiveMemoryDir());
+          } else if (parsed.type === "user" && typeof parsed.text === "string") {
             // Accept optional base64 image attachments; keep only well-formed {media_type,data}
             // pairs whose media_type is an SDK-accepted image MIME (the frontend whitelist is not the
             // only client — a rogue local client could send anything), so a malformed or
@@ -1749,18 +1759,11 @@ export function createServer(cfg: CoreConfig) {
                     (im as { data: string }).data.length > 0,
                 )
               : [];
-            chatSend(chatId, parsed.text, cfg.vault, sink, images.length ? images : undefined, effectiveMemoryDir());
+            chatSend(chatId, parsed.text, cfg.vault, chatSink, images.length ? images : undefined, effectiveMemoryDir());
           } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
             // Bind this chat socket to an existing Claude Code session — its init manifest streams
             // back, and the next {type:"user"} continues the resumed conversation.
-            const sink = (frame: unknown) => {
-              try {
-                ws.send(JSON.stringify(frame));
-              } catch {
-                /* socket closed mid-turn */
-              }
-            };
-            chatResume(chatId, parsed.sessionId, cfg.vault, sink, effectiveMemoryDir());
+            chatResume(chatId, parsed.sessionId, cfg.vault, chatSink, effectiveMemoryDir());
           } else if (
             parsed.type === "permission_response" &&
             typeof parsed.id === "string" &&
