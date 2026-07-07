@@ -14,7 +14,7 @@ import { createMenuNav } from "../ui/popover/createMenuNav";
 import { Highlight } from "./PaletteModal";
 import { rankItems, type Match } from "./rankItems";
 import { vaultFileItems } from "./vaultFileItems";
-import { refreshVaultTree } from "../treeStore";
+import { refreshVaultTree, vaultTree } from "../treeStore";
 import { loadFrecency, recordUse, scoreOf, fileKey } from "../frecency";
 import "./switcher.css";
 
@@ -35,7 +35,7 @@ export function SwitcherBar(props: Props) {
 
   // Derive items reactively from the pre-warmed cache: the list paints immediately off the
   // last-known tree (no per-open fetch). Still kick a refresh so a missed SSE corrects fast.
-  const items = createMemo(() => vaultFileItems());
+  const items = createMemo(() => vaultFileItems(vaultTree()));
   void refreshVaultTree();
 
   // Snapshot the frecency store once per open (fixed `now` — decay over the seconds the
