@@ -13,6 +13,7 @@ import { dirname, join } from "path"
 import type { VaultContext } from "../lib/config.ts"
 import { DEFAULT_DAEMON_IDENTITY } from "./session.ts"
 import { DEFAULT_CRONS } from "./defaultCrons.ts"
+import { PAGES_GUIDE } from "./pagesGuide.ts"
 
 export interface Seed {
   /** Absolute path of the file to seed. */
@@ -29,6 +30,9 @@ export function seedsFor(ctx: VaultContext): Seed[] {
     { path: ctx.identityFile, content: `---\nname: daemon\n---\n\n${DEFAULT_DAEMON_IDENTITY}\n` },
     // The default background jobs.
     ...DEFAULT_CRONS.map((c) => ({ path: join(ctx.cronsDir, `${c.name}.md`), content: c.content })),
+    // Format-discovery doc for the daemon-inbox page format (see core/src/daemonPages.ts) — no
+    // execution cron; pages are fired by runtime code (pages.ts), not a user-deletable cron.
+    { path: join(ctx.daemonDir, "PAGES.md"), content: PAGES_GUIDE },
   ]
 }
 

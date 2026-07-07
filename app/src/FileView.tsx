@@ -4,6 +4,7 @@ import { parseFrontmatter } from "../../core/src/frontmatter";
 import { Editor } from "./Editor";
 import { BlockEditor } from "./BlockEditor";
 import { BaseView } from "./bases/BaseView";
+import { InboxPageView } from "./InboxPageView";
 import { Loading } from "./ui/EmptyState";
 import { settings } from "./settings";
 import type { NoteCandidate } from "./editor/wikilink";
@@ -43,6 +44,12 @@ export function FileView(props: {
     const text = body();
     return text !== undefined && parseFrontmatter(text).data.type === "base";
   };
+  // A daemon-authored inbox page (core/src/daemonPages.ts) — routes to InboxPageView, which
+  // wraps the SAME Editor/BlockEditor body in an action-bar header. Same idiom as isBase() above.
+  const isDaemonPage = () => {
+    const text = body();
+    return text !== undefined && parseFrontmatter(text).data.type === "daemon-page";
+  };
   const visualMode = () => settings.editor.defaultMode === "visual";
   return (
     <Show when={body.state === "ready"} fallback={<Loading />}>
@@ -50,7 +57,10 @@ export function FileView(props: {
         <Match when={isBase()}>
           <BaseView path={props.path} body={body()} onOpen={props.onOpen} />
         </Match>
-        <Match when={!isBase()}>
+        <Match when={isDaemonPage()}>
+          <InboxPageView path={props.path} initialText={body()} onSaved={props.onSaved} noteNames={props.noteNames} tagNames={props.tagNames} />
+        </Match>
+        <Match when={!isBase() && !isDaemonPage()}>
           <Show
             when={visualMode()}
             fallback={

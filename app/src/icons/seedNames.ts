@@ -13,7 +13,7 @@ export const SEED_ICON_NAMES: readonly string[] = [
   "Check", "ChevronDown",
   "ChevronLeft", "ChevronRight", "ChevronUp", "Clock", "Code", "Columns3",
   "Copy", "Crown", "Database", "Download", "Eraser", "Eye", "File", "FilePlus", "FileText",
-  "Folder", "FolderOpen", "FolderPlus", "Hash", "Highlighter", "Image",
+  "Folder", "FolderOpen", "FolderPlus", "Hash", "Highlighter", "Image", "Inbox",
   "Landmark", "LayoutList", "Link", "Lock", "Menu", "MessageSquare", "Minus", "Network", "Notebook",
   "PanelBottom", "PanelLeft", "PanelRight", "Pen", "Pencil", "PenTool", "Plus",
   "Redo2", "RefreshCw", "Regex", "Repeat", "Replace", "RotateCcw", "Search", "Send",

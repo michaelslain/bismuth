@@ -118,6 +118,123 @@ test("GET /daemon/graph returns a graph with the daemon hub node (never throws)"
   }
 });
 
+test("writing a .daemon/pages/*.md page bumps dirty.tree (the DAEMON_PAGE_RE noise-classifier fix)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // Prime — gets SSE headers flushed (see the identical prime step in the /events tests above).
+    await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "prime.md", contents: "x" }),
+    });
+
+    const res = await fetch(`${base}/events`);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+
+    // Without the DAEMON_PAGE_RE fix, isDaemonRuntimeNoise would swallow this as .daemon/**
+    // runtime churn — no tree dirty, no SSE-worthy signal (same failure mode crons/processes
+    // definitions had before DAEMON_DEF_RE).
+    await fetch(`${base}/file`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ".daemon/pages/reply-drafts.md", contents: "---\ntype: daemon-page\ntitle: Hi\n---\n\nbody" }),
+    });
+
+    let buf = "";
+    const start = Date.now();
+    while (Date.now() - start < 2000) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value);
+      const frames = buf.split("\n\n");
+      buf = frames.pop() ?? "";
+      for (const f of frames) {
+        if (!f.startsWith("data: ")) continue;
+        const payload = JSON.parse(f.slice(6));
+        if (Array.isArray(payload.paths) && payload.paths.includes(".daemon/pages/reply-drafts.md")) {
+          expect(payload.dirty.tree).toBe(true);
+          await reader.cancel();
+          return;
+        }
+      }
+    }
+    throw new Error(`no SSE frame mentioned the page path; buf=${buf}`);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /daemon/pages + POST /daemon/pages/resolve round-trip end-to-end", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(
+    vault,
+    ".daemon/pages/reply-drafts.md",
+    `---\ntype: daemon-page\ntitle: "Reply drafts"\ncreatedAt: 2026-07-06T08:00:00.000Z\nactions:\n  - id: send\n    label: Send\n    kind: primary\n    prompt: "Send it."\n  - id: discard\n    label: Discard\n    kind: danger\n---\n\nHi Jane\n`,
+  );
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const pages = await (await fetch(`${base}/daemon/pages`)).json();
+    expect(pages).toHaveLength(1);
+    expect(pages[0]).toMatchObject({ path: ".daemon/pages/reply-drafts.md", title: "Reply drafts", status: "pending" });
+
+    // Dismiss (no daemon round-trip): resolves immediately, no trigger.
+    const dismiss = await fetch(`${base}/daemon/pages/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ".daemon/pages/reply-drafts.md", actionId: "discard" }),
+    });
+    expect((await dismiss.json())).toEqual({ status: "dismissed", alreadyResolved: false });
+
+    const after = await (await fetch(`${base}/daemon/pages`)).json();
+    expect(after[0].status).toBe("dismissed");
+
+    // Unknown action → 400.
+    const bad = await fetch(`${base}/daemon/pages/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ".daemon/pages/reply-drafts.md", actionId: "nope" }),
+    });
+    expect(bad.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /daemon/pages/mark-failed force-writes failed with no daemon involvement", async () => {
+  const { vault, memory } = await makeSampleVault();
+  await writeNote(
+    vault,
+    ".daemon/pages/stuck.md",
+    `---\ntype: daemon-page\ntitle: Stuck\ncreatedAt: 2026-07-06T08:00:00.000Z\nactions:\n  - id: send\n    label: Send\n    prompt: go\n---\n\nbody\n`,
+  );
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/daemon/pages/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ".daemon/pages/stuck.md", actionId: "send" }),
+    });
+    let pages = await (await fetch(`${base}/daemon/pages`)).json();
+    expect(pages[0].status).toBe("working");
+
+    const res = await fetch(`${base}/daemon/pages/mark-failed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: ".daemon/pages/stuck.md" }),
+    });
+    expect(res.ok).toBe(true);
+    pages = await (await fetch(`${base}/daemon/pages`)).json();
+    expect(pages[0].status).toBe("failed");
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("relay hooks → registry → /agent-graph renders the session + subagent tree", async () => {
   resetRelay();
   const { vault, memory } = await makeSampleVault();

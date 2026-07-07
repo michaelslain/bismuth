@@ -38,6 +38,7 @@ async function ensureVaultDirs(ctx: VaultContext): Promise<void> {
   await mkdir(ctx.cronsDir, { recursive: true })
   await mkdir(ctx.processesDir, { recursive: true })
   await mkdir(ctx.logsDir, { recursive: true })
+  await mkdir(ctx.pagesDir, { recursive: true })
 
   // Seed every registered default that's MISSING (identity, the default crons, and any seedable
   // added in future versions) in one declarative, incremental pass — a new default lands here on

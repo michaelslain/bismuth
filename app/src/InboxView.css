@@ -1,0 +1,101 @@
+/* app/src/InboxView.css
+   The ::inbox tab: three sections (Needs review / Scheduled / Recently resolved) of daemon-
+   authored pages. Rows are deliberately plain — a status dot, title, source tag, relative time,
+   a one-line snippet, and inline actions — reading as a list, not cards. */
+.inbox-host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.inbox-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 16px 24px;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+}
+.inbox-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  padding: 16px 4px 6px;
+}
+.inbox-section-head-collapsible {
+  cursor: pointer;
+}
+.inbox-section-count {
+  opacity: 0.6;
+  font-weight: 400;
+}
+.inbox-section-toggle {
+  margin-left: auto;
+  font-size: 11px;
+  text-transform: none;
+  opacity: 0.7;
+}
+.inbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.inbox-row:hover {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.inbox-row-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.inbox-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.inbox-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.inbox-row-title {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--fg);
+}
+.inbox-row-source {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.inbox-row-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.inbox-row-snippet {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.inbox-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-top: 1px;
+}

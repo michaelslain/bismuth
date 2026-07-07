@@ -97,6 +97,7 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon graph mode
 - [Lifecycle](daemon/lifecycle.md) — the supervisor: boot order, reconcile loop, per-vault session, single-owner gating, install/service (launchd/systemd)
 - [Crons & processes](daemon/crons-and-processes.md) — per-vault crons + background processes: `VaultContext` keying, default crons, triggers, state files
+- [Pages (inbox)](daemon/pages.md) — daemon-authored pages awaiting approval/dismissal: format, `.state` sidecar, delivery, the button-press → execution → completion lifecycle, `::inbox`
 - [Memory store](daemon/memory.md) — the per-vault markdown memory graph: note format, backlinks, query vs search, the dream cycle
 - [Communication & hooks](daemon/communication.md) — the relay recall/collect hooks + single-owner device gating (no cross-machine messaging)
 - [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy `~/.claude-bot` migration

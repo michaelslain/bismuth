@@ -28,6 +28,8 @@ import { BismuthInstallModal } from "./BismuthInstallModal";
 import { GcalConnectModal } from "./GcalConnectModal";
 import { EditDictionaryModal } from "./EditDictionaryModal";
 import { UpdateBanner } from "./UpdateBanner";
+import { InboxBell } from "./InboxBell";
+import { refreshDaemonPages, anyWorking } from "./daemonInbox";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { pushClosedSession, popClosedSession } from "./closedSession";
@@ -47,7 +49,7 @@ import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
+import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
 import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
 import { isExportable } from "./export/formats";
@@ -824,6 +826,9 @@ export default function App() {
   };
   // Open the Knowledge Graph as its own tab (focuses the existing graph tab if already open).
   const openGraph = () => openInNewTab(GRAPH_TAB);
+  // Open the daemon inbox as its own tab (focuses the existing one if already open) — same
+  // one-sentinel-tab idiom as openGraph/openSearch/openSettings above.
+  const openInbox = () => openInNewTab(INBOX_TAB);
   // Open a fresh Claude Code chat session in its own tab (a new uuid each time, so every
   // invocation is a distinct conversation rather than re-focusing an old one).
   const newClaudeChat = () => openInNewTab(CHAT_PREFIX + crypto.randomUUID());
@@ -867,7 +872,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.
@@ -1178,6 +1183,9 @@ export default function App() {
   onMount(() => {
     refreshGraph();
     refreshFileIcons();
+    // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
+    // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
+    void refreshDaemonPages(openInbox);
   });
 
   // A note's tab icon comes from its frontmatter `icon`, which lives in the file tree.
@@ -1229,6 +1237,30 @@ export default function App() {
     void refreshDaemon();
     const t = setInterval(refreshDaemon, 4000);
     onCleanup(() => clearInterval(t));
+  });
+
+  // Daemon inbox: unlike the agents/daemon graph-mode polls above, this one isn't gated on
+  // which tab is showing — the InboxBell badge needs to stay live regardless (plan §3, §6).
+  // 30s normally, tightened to ~5s while any page is mid-run so a just-approved action's
+  // done/failed status shows up promptly. Reading anyWorking() here (tracked) re-arms the
+  // interval whenever it flips.
+  createEffect(() => {
+    if (!settings.daemon.enabled) return;
+    const fast = anyWorking();
+    void refreshDaemonPages(openInbox);
+    const t = setInterval(() => void refreshDaemonPages(openInbox), fast ? 5000 : 30000);
+    onCleanup(() => clearInterval(t));
+  });
+
+  // Also refresh right away on any structural vault change (a new/edited page under
+  // .daemon/pages/*.md bumps `tree` — see server.ts's DAEMON_PAGE_RE) instead of waiting out
+  // the poll interval above.
+  createEffect(() => {
+    const c = lastChange();
+    if (c.version === 0) return;
+    if (!settings.daemon.enabled) return;
+    if (c.dirty?.tree === false && c.dirty?.graph === false) return;
+    void refreshDaemonPages(openInbox);
   });
   const registerFileEvents = () => {
     // detail is either a path string (open in the active pane) or { path, newTab, heading } —
@@ -1584,6 +1616,7 @@ export default function App() {
       </aside>
       <main class="editor-pane">
         <UpdateBanner />
+        <InboxBell onOpen={openInbox} />
         <div class="tabbar" data-tabstrip="true">
           <div class="tabbar-nav">
             <IconButton

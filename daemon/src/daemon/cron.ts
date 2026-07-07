@@ -3,6 +3,7 @@ import { readdir, readFile, writeFile, unlink, rename, mkdir } from "fs/promises
 import { execFile } from "child_process"
 import { promisify } from "util"
 import { sendMessage } from "./session"
+import { processPageTriggers } from "./pages"
 
 const execFileAsync = promisify(execFile)
 import { notify } from "../lib/platform"
@@ -671,6 +672,10 @@ export async function requestCronRun(name: string, ctx: VaultContext): Promise<{
 async function processAllTriggers(): Promise<void> {
   for (const ctx of await loadEnabledVaults()) {
     await processTriggers(ctx)
+    // Daemon-inbox pages (core/src/daemonPages.ts) share this same trigger dir contract and
+    // 5s cadence, but fire a one-shot isolated session per approved page rather than a
+    // recurring cron job — see pages.ts. Runs after crons so a cron doesn't wait on it.
+    await processPageTriggers(ctx)
   }
 }
 

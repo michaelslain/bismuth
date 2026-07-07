@@ -335,6 +335,7 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 - [overview.md](overview.md) — the daemon model + Bismuth's daemon controls.
 - [lifecycle.md](lifecycle.md) — boot / shutdown order, the reconcile loop, ownership.
 - [storage.md](storage.md) — on-disk file shapes under `<vault>/.daemon` and `MACHINE_DIR`.
+- [pages.md](pages.md) — the daemon inbox: reuses this same trigger-file port for one-shot approved actions instead of a recurring job.
 - [memory.md](memory.md) — the dream cycle's memory mechanics + the 3rd-brain graph.
 - [communication.md](communication.md) — sessions, identity, and the MCP/relay surface.
 - [../README.md](../README.md) — the docs root.
