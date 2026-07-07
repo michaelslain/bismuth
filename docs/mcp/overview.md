@@ -20,7 +20,7 @@ The compiled binary reads `BISMUTH_DOCS_DIR` for the docs (`mcp/src/server.ts`) 
 
 ## Tools (token-frugal by design)
 
-The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers **five always-on tools** (plus three daemon-gated memory tools — see below). That count is deliberately fixed: richer capabilities (app control, the daemon inbox) route through `bismuth_cli`/`bismuth_cli_help` rather than adding schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. Docs are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
+The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport`, raw JSON-Schema — no zod) registers **five always-on tools** (plus, when the daemon is enabled for the vault, three daemon-gated memory tools + ten daemon-management tools — see below). The always-on count is deliberately fixed: broad capabilities (e.g. app control) route through `bismuth_cli`/`bismuth_cli_help` rather than adding always-listed schemas, because this MCP is machine-wide and every extra always-listed tool costs context in every session on the machine. The daemon-gated tools sidestep that tax by only appearing inside a daemon-enabled session. Docs are served as **pointers + snippets, not full bodies**, so a session spends tokens only on the one page it actually needs:
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -55,11 +55,26 @@ When the [daemon](../daemon/overview.md) is enabled for the active vault, the se
 
 These delegate to the shared `@bismuth/memory` graph, so the MCP tools, the daemon writer, and the relay collect-hook all read/write **one** note format against `<vault>/.daemon/memory`.
 
+## Daemon tools (daemon-gated, per-vault)
+
+Behind the same gate, the server also exposes **ten daemon-management tools** — the daemon's control surface (crons, background processes, the daemon inbox/pages, daemon status + device ownership). These are the restored equivalent of the tools the former standalone `claude-bot` MCP had before it was absorbed into `@bismuth/daemon`. Each **bridges an existing `bismuth` CLI command** (`daemon`/`page` groups) rather than reimplementing daemon logic, so there's one code path per operation and no `@bismuth/core` dependency in this workspace. `ListTools` appends them alongside the memory tools: `daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools`.
+
+| Tool | Bridges to | Does |
+|---|---|---|
+| `daemon_status` / `daemon_devices` / `daemon_owner` | `daemon status`/`devices`/`owner` | liveness + this device; heartbeating devices; read/claim owner |
+| `daemon_list` | `daemon graph` | this vault's crons + processes with enabled/running/schedule/last-result |
+| `cron_run` / `cron_toggle` | `daemon cron run`/`toggle` | run a cron now (e.g. `dream`); enable/pause a cron |
+| `process_toggle` | `daemon process toggle` | enable/disable a background process |
+| `page_list` / `page_create` / `page_resolve` | `page list`/`create`/`resolve` | the daemon inbox: list, author a validated page, press an action |
+
+Full reference (args, the pure name→CLI-argv mapper, and the mapping from the old 26-tool `claude-bot` catalog + still-missing follow-ups): [daemon-tools.md](daemon-tools.md).
+
 ## Modules
 
 - `mcp/src/docs.ts` — pure index/search/read over `docs/` (`listDocs`/`searchDocs`/`readDoc`); section-level scoring, path-traversal-guarded. Unit-tested (`docs.test.ts`).
 - `mcp/src/cli.ts` — runs the CLI: the `BISMUTH_CLI` compiled binary when set (machine-wide install), else `bun run cli/src/index.ts` (dev). Passes `BISMUTH_VAULT`/`BISMUTH_MEMORY` through; `runCli`/`cliHelp`, never throws.
 - `mcp/src/memory.ts` — the daemon-gated memory tools (`remember`/`recall`/`forget`) + the `memoryDir()` gate; delegates to `@bismuth/memory` against `BISMUTH_MEMORY_DIR`.
-- `mcp/src/server.ts` — registers the tools and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). `ListTools` appends the memory tools only when `memoryDir()` resolves. Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
+- `mcp/src/daemon.ts` — the daemon-gated daemon-management tools (crons/processes/pages/status/devices/owner); the pure `daemonCliArgs` name→CLI-argv mapper (unit-tested, `daemon.test.ts`), `daemonVaultRoot()` derivation, and `daemonEnabled()` gate; bridges the `bismuth` CLI via `runCli`. See [daemon-tools.md](daemon-tools.md).
+- `mcp/src/server.ts` — registers the tools and dispatches to the above; docs root from `BISMUTH_DOCS_DIR` (install) else `../../docs` (dev). `ListTools` appends the memory + daemon tools only when `daemonEnabled()` resolves. Diagnostics go to stderr only (stdout is the protocol channel). Run standalone: `bun run mcp/src/server.ts`.
 
-Source: mcp/src/server.ts, mcp/src/memory.ts, mcp/src/docs.ts, mcp/src/cli.ts, relay/.mcp.json, core/src/bismuthInstall.ts, core/src/terminal.ts, core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, app/src/uiControlClient.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, daemon/src/daemon/session.ts, daemon/src/lib/bismuthPaths.ts, app/scripts/build-bismuth-tools.ts. Full app-control reference: [app-control.md](app-control.md).
+Source: mcp/src/server.ts, mcp/src/memory.ts, mcp/src/daemon.ts, mcp/src/docs.ts, mcp/src/cli.ts, relay/.mcp.json, core/src/bismuthInstall.ts, core/src/terminal.ts, core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, app/src/uiControlClient.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, daemon/src/daemon/session.ts, daemon/src/lib/bismuthPaths.ts, app/scripts/build-bismuth-tools.ts. Full app-control reference: [app-control.md](app-control.md).
