@@ -120,6 +120,17 @@ test("keybindings section has one string key per catalog action, defaulting to i
   expect(kb["terminal"].default).toBe("Mod+`, Mod+J");
 });
 
+test("KEYBINDING_CATALOG includes the whole-app zoom actions (Cmd+=/Cmd+-/Cmd+0)", () => {
+  const ids = KEYBINDING_CATALOG.map((k) => k.id);
+  expect(ids).toContain("zoom-in");
+  expect(ids).toContain("zoom-out");
+  expect(ids).toContain("zoom-reset");
+  const kb = objectFields(SETTINGS_SCHEMA.keybindings);
+  expect(kb["zoom-in"].default).toBe("Mod+=, Mod+Shift+=");
+  expect(kb["zoom-out"].default).toBe("Mod+-");
+  expect(kb["zoom-reset"].default).toBe("Mod+0");
+});
+
 test("keybindings is the LAST schema section (so it sits at the end of a fresh settings.yaml)", () => {
   const keys = Object.keys(SETTINGS_SCHEMA);
   expect(keys[keys.length - 1]).toBe("keybindings");

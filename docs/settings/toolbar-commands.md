@@ -78,6 +78,9 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
 | 36 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
 | 37 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 38 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 39 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 40 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -94,6 +97,7 @@ Notes on individual commands:
 - **`update-app`**: manually updates the Bismuth app (same pipeline as the `UpdateBanner` button) for when the banner was dismissed or missed; no-op-with-toast when already up to date / in dev (`h.updateApp`).
 - **`new-claude-chat`**: opens a fresh Claude Code chat session in its own tab (`h.newClaudeChat`).
 - **`gcal-connect` / `gcal-sync` / `gcal-disconnect`**: open the "Connect Google Calendar" OAuth panel (`h.gcalConnect`), pull events from Google Calendar into the configured base (`h.gcalSync`), and disconnect Google Calendar — revoke + wipe stored tokens (`h.gcalDisconnect`).
+- **`zoom-in` / `zoom-out` / `zoom-reset`**: step the whole app's UI zoom in/out or reset it to 100% (`app/src/zoom.ts`) — the same feature as the `zoom-in`/`zoom-out`/`zoom-reset` keybindings (default `Mod+=`/`Mod+Shift+=`, `Mod+-`, `Mod+0`; see [keybindings](./keybindings.md)). Zoom uses native webview page-zoom (`tauri::WebviewWindow::set_zoom`, the same mechanism as a real browser's Cmd+=/Cmd+-), applied to the invoking window; the level is a per-machine `localStorage` preference (like the graph's 2D/3D toggle), not a `.settings` value, since it's a display preference rather than vault content.
 
 ### Notable absences / gotchas
 

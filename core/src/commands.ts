@@ -53,6 +53,9 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "gcal-connect",    label: "Connect Google Calendar…",  icon: "Calendar" },
   { id: "gcal-sync",       label: "Sync Google Calendar",      icon: "RefreshCw" },
   { id: "gcal-disconnect", label: "Disconnect Google Calendar", icon: "CalendarX" },
+  { id: "zoom-in",    label: "Zoom In",    icon: "ZoomIn" },
+  { id: "zoom-out",   label: "Zoom Out",   icon: "ZoomOut" },
+  { id: "zoom-reset", label: "Reset Zoom", icon: "RotateCcw" },
 ];
 
 /** All command ids, in catalog order. */

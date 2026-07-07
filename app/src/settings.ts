@@ -161,6 +161,9 @@ export interface Settings {
     "new-claude-chat": string;
     "insert-template": string;
     "toggle-sidebar": string;
+    "zoom-in": string;
+    "zoom-out": string;
+    "zoom-reset": string;
   };
   toolbar: Array<{ command?: string; commands?: string[]; icon: string; tooltip?: string }>;
   dailyNotes: Array<{ id: string; label: string; icon: string; folder: string; fileName: string; template: string }>;

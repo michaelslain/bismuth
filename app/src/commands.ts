@@ -71,6 +71,10 @@ export interface CommandHandlers {
   gcalDisconnect: () => void | Promise<void>;
   // Open a fresh Claude Code chat session in its own tab.
   newClaudeChat: () => void;
+  // Whole-app UI zoom (see app/src/zoom.ts) — step in/out or reset to 100%.
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomReset: () => void;
 }
 
 export interface BoundCommand {
@@ -126,6 +130,9 @@ export function bindCommands(h: CommandHandlers, dailyNotes: DailyNoteConfig[] =
     "gcal-connect": h.gcalConnect,
     "gcal-sync": h.gcalSync,
     "gcal-disconnect": h.gcalDisconnect,
+    "zoom-in": h.zoomIn,
+    "zoom-out": h.zoomOut,
+    "zoom-reset": h.zoomReset,
   };
   const map = new Map<string, BoundCommand>();
   for (const spec of COMMAND_CATALOG) {
