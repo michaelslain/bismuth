@@ -45,6 +45,28 @@ describe("renderMarkdown — inline math", () => {
     expect(performance.now() - start).toBeLessThan(500); // linear, not exponential
     expect(html).not.toContain("bismuth-math");
   });
+
+  // #58 lock: bold/italic spans CONTAINING inline math must render as <strong>/<em> wrapping
+  // the math span — no literal **/* in the output. The reader path (marked + the math tokenizer
+  // extension) already handled this; these guard it while the editor-side fix lands.
+  test("bold containing inline math renders <strong> around the math span (#58)", () => {
+    for (const src of ["**($\\Rightarrow$)**", "**Case 1: $hk \\in H$.**", "**bold with $x$ math inside**"]) {
+      const html = renderMarkdown(src);
+      expect(html).toContain("<strong>");
+      expect(html).toContain("bismuth-math");
+      expect(html).not.toContain("**");
+    }
+  });
+
+  test("italic + bold-italic containing inline math render <em>/<em><strong> (#58)", () => {
+    const it = renderMarkdown("*italic $x$ inside*");
+    expect(it).toContain("<em>");
+    expect(it).toContain("bismuth-math");
+    const bi = renderMarkdown("***bi $x$ bi***");
+    expect(bi).toContain("<em><strong>");
+    expect(bi).toContain("bismuth-math");
+    expect(bi).not.toContain("*");
+  });
 });
 
 // A lone `<!-- pagebreak -->` becomes a zero-height `<div class="bismuth-page-break">` before
