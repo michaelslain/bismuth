@@ -6,6 +6,7 @@
 import { createSignal, onCleanup, For, Show } from "solid-js";
 import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
+import { planEnter } from "./searchEnter";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
 import { Chip } from "./ui/Chip";
@@ -47,6 +48,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   // an exit from prompt mode, or a cleared box) is ignored so results never flicker to stale data.
   let searchGen = 0;
   const runSearch = () => {
+    clearTimeout(debounceTimer); // this may BE the debounced call; also drops any redundant pending one
     const q = query();
     searchGen++;
     if (!q) { setResults([]); setError(null); setStatus(""); return; }
@@ -65,6 +67,10 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
 
   // Run the AI prompt search for the current query. Enter-gated (never debounced) — one Haiku turn.
   const runPromptSearch = () => {
+    // Cancel any pending live keyword-search debounce (armed by the last keystroke). Without this it
+    // fires ~150ms later, bumps searchGen, and supersedes THIS AI request — dropping its response and
+    // overwriting the results with the empty keyword set. That was the "Enter doesn't run AI" bug.
+    clearTimeout(debounceTimer);
     const q = query();
     searchGen++;
     if (!q) { setResults([]); setStatus(""); return; }
@@ -87,13 +93,30 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
       .finally(() => { if (gen === searchGen) setPromptBusy(false); });
   };
 
-  // Enter behavior depends on mode: AI mode runs the prompt search; regex mode is Enter-gated;
-  // literal mode with zero hits escalates to AI, otherwise re-runs the keyword search.
+  // Escalate to the AI prompt search (from Enter on a zero-hit query, or the empty-state CTA).
+  const askAi = () => {
+    if (!promptMode()) setPromptMode(true);
+    runPromptSearch(); // clears the pending live-search debounce so it can't clobber this run
+  };
+
+  // Enter behavior depends on mode (see planEnter): AI mode runs the prompt search; regex mode is
+  // Enter-gated; literal mode with zero hits escalates to AI, otherwise re-runs the keyword search.
   const onEnter = () => {
-    if (promptMode()) { runPromptSearch(); return; }
-    if (regex()) { runSearch(); return; }
-    if (query() && results().length === 0) { setPromptMode(true); runPromptSearch(); return; }
-    runSearch();
+    const plan = planEnter({
+      promptMode: promptMode(),
+      regex: regex(),
+      hasQuery: !!query(),
+      resultCount: results().length,
+    });
+    // Enter is a deliberate submit: cancel any pending live-search debounce first so its trailing run
+    // can't bump searchGen and supersede the run we're about to start.
+    if (plan.cancelPendingLiveSearch) clearTimeout(debounceTimer);
+    switch (plan.action) {
+      case "prompt": runPromptSearch(); break;
+      case "escalate-ai": askAi(); break;
+      case "regex":
+      case "keyword": runSearch(); break;
+    }
   };
 
   // Toggle AI mode explicitly (the Sparkles chip) — usable even when keyword hits exist. Turning it
@@ -200,6 +223,31 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
       </div>
 
       <div class="search-results">
+        {/* Empty state: a non-empty query with zero results. In literal mode it's a clear CTA to
+            escalate to the AI (click, or the Enter that onEnter already handles); in AI mode it
+            reports the model found nothing. Hidden while an AI turn is in flight (spinner shows). */}
+        <Show when={!!query() && !error() && !promptBusy() && results().length === 0}>
+          <Show
+            when={promptMode()}
+            fallback={
+              <button type="button" class="search-empty search-empty-cta" onClick={askAi}>
+                <Icon value="Sparkles" size={22} class="search-empty-icon" />
+                <div class="search-empty-title">No matching files</div>
+                <div class="search-empty-hint">
+                  Press <kbd class="search-kbd">Enter</kbd> to ask Bismuth AI about your vault
+                </div>
+              </button>
+            }
+          >
+            <div class="search-empty">
+              <Icon value="Sparkles" size={22} class="search-empty-icon" />
+              <div class="search-empty-title">Bismuth AI found nothing relevant</div>
+              <div class="search-empty-hint">
+                Press <kbd class="search-kbd">Esc</kbd> to return to keyword search
+              </div>
+            </div>
+          </Show>
+        </Show>
         <For each={results()}>
           {(r) => {
             const parts = splitPath(r.path);
