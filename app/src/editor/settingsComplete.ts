@@ -1,9 +1,10 @@
 // app/src/editor/settingsComplete.ts
-// Autocomplete for settings.yaml: suggests setting KEYS (scoped to the section the
-// cursor is in) and VALUES (enum members, true/false, or — inside the `properties`
-// section — the property type names). Nested-schema aware. Triggered while typing
-// or on demand via Ctrl-Space (bound in Editor.tsx). The file ships comment-free,
-// so this is the discovery mechanism.
+// Autocomplete for the app `.settings` file: suggests setting KEYS (scoped to the
+// section the cursor is in) and VALUES (enum members, true/false, or — inside the
+// `properties` section — the property type names). Nested-schema aware. Triggered
+// while typing or on demand via Ctrl-Space (bound in Editor.tsx); wired into the
+// editor only for the settings buffer (Editor.tsx, isSettingsBuffer). The file ships
+// comment-free, so this is the discovery mechanism.
 import { autocompletion, snippetCompletion, type Completion, type CompletionContext, type CompletionResult, type CompletionSource } from "@codemirror/autocomplete";
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";

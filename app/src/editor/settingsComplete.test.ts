@@ -235,3 +235,53 @@ describe("property-type completion inside `properties:`", () => {
     expect(res).toBeNull();
   });
 });
+
+// The core of BUG #27: typing in the `.settings` file must surface top-level section keys and
+// nested keys/enum values from the schema. These lock the candidate generation the settings
+// buffer depends on (the wiring bug that hid them lived in editor SELECTION — FileView routing
+// `.settings` to the visual editor when defaultMode:visual — not in this source; see FileView).
+describe("settings key + enum completion (schema-driven discovery)", () => {
+  it("offers a top-level section key from a partial (auto-triggered, not explicit)", () => {
+    const res = complete("app", false);
+    expect(res?.options.map((o) => o.label)).toContain("appearance");
+  });
+
+  it("offers every top-level section on demand (explicit / Ctrl-Space at column 0)", () => {
+    const labels = complete("", true)?.options.map((o) => o.label) ?? [];
+    for (const section of ["appearance", "editor", "ui", "graph", "keybindings", "toolbar", "tabBar"]) {
+      expect(labels).toContain(section);
+    }
+  });
+
+  it("carries the schema doc + range as info/detail on a section key", () => {
+    const opt = complete("editor:\n  li", false)?.options.find((o) => o.label === "livePreview");
+    expect(opt?.info).toBe("Render markdown inline as you type."); // docInfo from the schema
+  });
+
+  it("scopes nested keys to the section the cursor is in (ui.*)", () => {
+    const labels = complete("ui:\n  vert", false)?.options.map((o) => o.label) ?? [];
+    expect(labels).toEqual(["verticalTabs"]);
+  });
+
+  it("offers enum members for an enum-typed value (appearance.theme)", () => {
+    const labels = complete("appearance:\n  theme: oxi", false)?.options.map((o) => o.label) ?? [];
+    expect(labels).toContain("oxide-duotone");
+    expect(labels).toContain("oxide-duotone-light");
+  });
+
+  it("offers true/false for a boolean-typed value", () => {
+    const labels = complete("editor:\n  livePreview: ", true)?.options.map((o) => o.label) ?? [];
+    expect(labels).toEqual(["true", "false"]);
+  });
+
+  it("resolves nested keys correctly mid-file (section below the cursor doesn't confuse scope)", () => {
+    const doc = ["appearance:", "  theme: oxide-duotone", "  editorF", "graph:", "  spin: true"].join("\n");
+    const pos = doc.indexOf("  editorF") + "  editorF".length;
+    const state = EditorState.create({ doc });
+    const ctx = new CompletionContext(state, pos, false);
+    const res = settingsCompletionSource(
+      () => SETTINGS_SCHEMA, () => [], () => [], () => [], async () => [],
+    )(ctx) as { options: { label: string }[] } | null;
+    expect(res?.options.map((o) => o.label)).toEqual(["editorFont", "editorFontSize"]);
+  });
+});

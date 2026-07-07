@@ -1,6 +1,6 @@
 // app/src/editor/yamlSchema.ts
 // CM6 glue for schema-driven YAML validation + autocomplete of note frontmatter
-// (and settings.yaml, via mode). The pure mapping logic (diagnosticsForFrontmatter)
+// (and the app `.settings` file, via mode). The pure mapping logic (diagnosticsForFrontmatter)
 // is exported separately so it runs under `bun test` without a browser.
 import { linter, type Diagnostic as CmDiagnostic, type Action } from "@codemirror/lint";
 import { yamlFixHover, YAML_DIAGNOSTIC_SOURCE } from "./yamlFixHover";
@@ -31,7 +31,7 @@ interface RangedDiagnostic {
 /**
  * Pure: validate a YAML body, then map each Diagnostic.path (a key path) to the
  * document char range of its line. In `frontmatter` mode the body is the `---`-fenced
- * slice; in `settings` mode the WHOLE document is the body (settings.yaml has no fence),
+ * slice; in `settings` mode the WHOLE document is the body (the `.settings` file has no fence),
  * so the entire file is validated against SETTINGS_SCHEMA. Returns [] when there's no
  * body or the YAML is malformed (tolerant, like parseFrontmatter).
  */
@@ -41,7 +41,7 @@ export function diagnosticsForFrontmatter(
   resolveLink: (target: string) => boolean,
   mode: ValidateMode = "frontmatter",
 ): RangedDiagnostic[] {
-  // Settings.yaml is a fenceless document — validate the whole body from offset 0.
+  // The `.settings` file is a fenceless document — validate the whole body from offset 0.
   // Notes validate only their frontmatter slice.
   let bodyText: string;
   let bodyFrom: number;
