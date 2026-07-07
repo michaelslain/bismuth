@@ -7,6 +7,7 @@ import { BaseView } from "./bases/BaseView";
 import { InboxPageView } from "./InboxPageView";
 import { Loading } from "./ui/EmptyState";
 import { settings } from "./settings";
+import { isConfigBuffer } from "./editor/settingsBuffer";
 import type { NoteCandidate } from "./editor/wikilink";
 
 /**
@@ -50,7 +51,12 @@ export function FileView(props: {
     const text = body();
     return text !== undefined && parseFrontmatter(text).data.type === "daemon-page";
   };
-  const visualMode = () => settings.editor.defaultMode === "visual";
+  // Visual (Milkdown) mode is for real prose notes only. A YAML CONFIG buffer — the app
+  // `.settings` file, or any `.yaml`/`.yml` — must ALWAYS open in the CodeMirror source Editor:
+  // that's where the schema-driven settings autocomplete + lint live (isSettingsBuffer), and where
+  // the YAML round-trips losslessly. Routing `.settings` to the BlockEditor is what silently killed
+  // settings autocomplete (and would mangle the YAML on save) whenever defaultMode was `visual`.
+  const visualMode = () => settings.editor.defaultMode === "visual" && !isConfigBuffer(props.path);
   return (
     <Show when={body.state === "ready"} fallback={<Loading />}>
       <Switch>
