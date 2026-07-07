@@ -22,6 +22,7 @@ import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
 import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { parseCellList } from "./cellList";
+import { CellEmojiMenu, replaceTokenBeforeCaret } from "./cellEmoji";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
 import { externalReconcileSpec } from "./reconcileDispatch";
@@ -635,6 +636,111 @@ describe("#31 find highlights inside the rendered table", () => {
     view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "", literal: true })) });
     wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
     expect(wrap.querySelectorAll(`mark.${TABLE_FIND_MATCH_CLASS}`).length).toBe(0);
+    view.destroy();
+  });
+});
+
+// ── #49: in-cell :emoji: autocomplete ──────────────────────────────────────────
+describe("#49 in-cell emoji autocomplete", () => {
+  // A standalone contenteditable cell + a collapsed caret at its end, so the caret-read helpers see it.
+  const editableCell = (text: string): HTMLElement => {
+    const cell = document.createElement("td");
+    cell.setAttribute("data-cell", "");
+    cell.setAttribute("contenteditable", "true");
+    cell.textContent = text;
+    document.body.appendChild(cell);
+    caretAtEnd(cell);
+    return cell;
+  };
+
+  test("replaceTokenBeforeCaret swaps the :query token for the glyph and leaves the caret after it", () => {
+    const cell = editableCell("see :fire");
+    expect(replaceTokenBeforeCaret(cell, 5, "🔥")).toBe(true); // ":fire" = 5 chars
+    expect(cell.textContent).toBe("see 🔥");
+    // caret sits after the inserted glyph
+    const sel = window.getSelection()!;
+    expect(sel.getRangeAt(0).collapsed).toBe(true);
+  });
+
+  test("replaceTokenBeforeCaret returns false when the token doesn't fit before the caret", () => {
+    const cell = editableCell(":a");
+    expect(replaceTokenBeforeCaret(cell, 9, "😀")).toBe(false); // 9 > available chars
+    expect(cell.textContent).toBe(":a"); // untouched
+  });
+
+  test("the controller opens on a :query with matches and closes when the token breaks", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell(":fire");
+    menu.onInput(cell);
+    expect(menu.isOpen()).toBe(true);
+    expect(menu.activeEntry()).not.toBeNull();
+    expect(menu.activeEntry()!.char.length).toBeGreaterThan(0); // a real glyph
+
+    // Break the token (no colon) → the menu closes.
+    cell.textContent = "plain";
+    caretAtEnd(cell);
+    menu.onInput(cell);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  test("Up/Down move the highlight; Escape closes; a char key is not consumed", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell(":smile");
+    menu.onInput(cell);
+    const first = menu.activeEntry();
+    expect(menu.handleKeydown(cell, "ArrowDown")).toBe(true);
+    expect(menu.activeEntry()).not.toBe(first); // highlight moved
+    expect(menu.handleKeydown(cell, "a")).toBe(false); // a character falls through to typing
+    expect(menu.handleKeydown(cell, "Escape")).toBe(true);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  test("accept inserts the highlighted glyph in place of the token", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell("hi :fire");
+    menu.onInput(cell);
+    const glyph = menu.activeEntry()!.char;
+    menu.accept(cell);
+    expect(cell.textContent).toBe(`hi ${glyph}`);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  // End-to-end through the mounted widget: type ":fire" in a cell, the widget's own input listener
+  // opens its menu, and pressing Enter accepts the glyph (NOT a new row / list-continuation).
+  test("end-to-end: typing :fire in a cell shows the menu; Enter inserts the glyph, not a new row", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true })); // edit face
+    cell.textContent = ":fire";
+    caretAtEnd(cell);
+    cell.dispatchEvent(new Event("input", { bubbles: true })); // widget → emojiMenu.onInput
+    const menu = (wrap as unknown as { _emojiMenu: CellEmojiMenu })._emojiMenu;
+    expect(menu.isOpen()).toBe(true);
+    const glyph = menu.activeEntry()!.char;
+    const rowsBefore = groupTableBlocks(view.state.doc).blocks[0].cells.length;
+    cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(cell.textContent).toBe(glyph); // the ":fire" token became the emoji
+    expect(menu.isOpen()).toBe(false);
+    expect(groupTableBlocks(view.state.doc).blocks[0].cells.length).toBe(rowsBefore); // Enter did NOT grow the table
+    view.destroy();
+  });
+
+  test("closing / reopening: a cell blur closes the menu", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    cell.textContent = ":fire";
+    caretAtEnd(cell);
+    cell.dispatchEvent(new Event("input", { bubbles: true }));
+    const menu = (wrap as unknown as { _emojiMenu: CellEmojiMenu })._emojiMenu;
+    expect(menu.isOpen()).toBe(true);
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(menu.isOpen()).toBe(false);
     view.destroy();
   });
 });

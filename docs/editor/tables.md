@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell (#15), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell (#30). The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15), in-cell `:emoji:` autocomplete (#49), no center alignment (#53), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30). Focusing a cell never scrolls the viewport (#50). The modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`), and the in-cell emoji autocomplete (`cellEmoji.ts`).
 
 ---
 
@@ -537,6 +537,20 @@ The table widget is wired into the editor's live-preview extension via three pie
 Block decorations (like the table widget) must come from a `StateField` — CodeMirror forbids them from `ViewPlugin`. This is why `tableWidgetField` is a `StateField` even though it also reacts to view-level signals.
 
 The widget's `eq` method prevents unnecessary DOM rebuilds: if the serialized markdown has not changed (e.g., a cursor moved elsewhere in the document), the existing DOM is kept and any in-progress cell edit is preserved.
+
+---
+
+## In-Cell Emoji Autocomplete (#49)
+
+A table cell is a plain `contenteditable` DOM island that lives **outside** CodeMirror's input pipeline, so the editor's own `:emoji:` completion (`editor/autocomplete.ts` `emojiSource`) never runs inside it — the same class of gap as the in-cell wrap-on-type (`wrapCellSelectionOnType`, #45) and list-continuation features. `editor/cellEmoji.ts` restores it as a lightweight, self-contained popup:
+
+- **Trigger (pure):** `emojiTokenBeforeCaret(beforeCaret)` reuses the editor's `matchEmojiPrefix`, so the trigger rules are identical — a `:` at the start of the cell line or after whitespace opens the popup (`key:value`, `http://x`, `12:30` never fire). It returns the bare `query` plus `tokenLen` (the character count the `:query[:]` token occupies before the caret).
+- **Data source:** the SAME `searchEmoji(query)` the editor uses (`editor/emoji.ts` — one ranked dataset, so a cell shows the identical suggestions), capped to 8 rows.
+- **Key handling (pure):** `emojiMenuKey(key)` maps Up/Down → navigate, Enter/Tab → accept, Escape / Left / Right / Home / End → close. While the menu is open, the cell's `keydown` gives it first refusal, so Enter accepts the glyph instead of growing the table or continuing a list, and Tab accepts instead of moving cells. A character key falls through to normal typing, which re-evaluates the popup on the resulting `input`.
+- **Insertion (deterministic Range op):** `replaceTokenBeforeCaret(cell, tokenLen, glyph)` deletes the `:query[:]` token and inserts the glyph via a `Range` — **not** `execCommand` — so it behaves the same in every engine (mirroring `insertBreakAtCaret`).
+- **Popup DOM:** `CellEmojiMenu` appends the popup to `document.body` (never inside the `contenteditable`, so it can't become cell source or be clobbered by the display/edit face swap), positioned `fixed` at the caret. It's one instance per table widget, torn down on the cell's blur and on the widget's `destroy`. Picking a row uses `mousedown` + `preventDefault` so the choice never blurs the cell (which would commit + destroy the edit face first). Styling: `.cm-cell-emoji-menu` in `Editor.css`.
+
+The trigger + key decision are unit-tested as pure functions (`cellEmoji.test.ts`); the caret read, token replacement, and end-to-end widget flow (type `:fire`, Enter inserts the glyph, no new row) are covered under happy-dom (`tableWidget.test.ts`).
 
 ---
 

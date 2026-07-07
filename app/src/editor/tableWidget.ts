@@ -33,6 +33,7 @@ import {
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
+import { CellEmojiMenu } from "./cellEmoji";
 import { renderInlineMarkdown } from "./inlineMarkdown";
 import { minimalChange } from "./normalizeFrontmatter";
 import { onMathReady } from "./katexLoader";
@@ -593,6 +594,12 @@ export class TableWidget extends WidgetType {
     root.className = "cm-table-wrap";
     root.setAttribute("contenteditable", "false");
 
+    // In-cell `:emoji:` autocomplete (#49). A cell is a contenteditable island outside CM's input
+    // pipeline, so the editor's emoji completion never runs there — this per-widget menu reuses the
+    // SAME searchEmoji data source and inserts the chosen glyph. Torn down on cell blur + destroy.
+    const emojiMenu = new CellEmojiMenu();
+    (root as unknown as { _emojiMenu?: CellEmojiMenu })._emojiMenu = emojiMenu;
+
     const table = document.createElement("table");
     table.className = "cm-table-rendered";
 
@@ -678,7 +685,10 @@ export class TableWidget extends WidgetType {
         // Swap to the raw-source face on focus and back to the rendered face on blur, so
         // the cell shows formatted markdown when idle but is edited as plain source.
         cell.addEventListener("focusin", () => enterEdit(cell));
-        cell.addEventListener("focusout", () => leaveEdit(cell));
+        cell.addEventListener("focusout", () => { emojiMenu.close(); leaveEdit(cell); });
+        // In-cell `:emoji:` autocomplete (#49): re-evaluate the popup on every input (typing /
+        // delete / paste). Cheap — it just reads the caret line and matches a `:query`.
+        cell.addEventListener("input", () => emojiMenu.onInput(cell));
         // Take control of the mousedown so CodeMirror's own handler doesn't move the
         // editor selection to the (atomic) widget boundary and focus the doc instead of
         // the cell (stopPropagation). Once the cell is already in its editable (raw-source)
@@ -765,6 +775,14 @@ export class TableWidget extends WidgetType {
         });
         cell.addEventListener("keydown", (e) => {
           const ev = e as KeyboardEvent;
+          // While the in-cell emoji menu is open (#49), it owns Up/Down (navigate), Enter/Tab
+          // (accept), Escape/Left/Right (close) — so those never fall through to the cell's own
+          // Tab/Enter/Escape handling. Only a plain, unmodified key ever drives the menu.
+          if (!ev.metaKey && !ev.ctrlKey && !ev.altKey && emojiMenu.handleKeydown(cell, ev.key)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           // A configured wrap char (e.g. backtick) typed over a selection surrounds it — see
           // wrapCellSelectionOnType (#45). Checked before decideCellKey/the modifier-driven
           // actions below since it only ever matches a plain, unmodified single character.
@@ -1074,11 +1092,12 @@ export class TableWidget extends WidgetType {
     return outer;
   }
 
-  // Stop the layout observer when CodeMirror drops this widget's DOM. CM hands us the
-  // toDOM root (the outer block); the observer is stored on the inner `.cm-table-wrap`.
+  // Stop the layout observer + tear down the emoji popup when CodeMirror drops this widget's DOM.
+  // CM hands us the toDOM root (the outer block); both live on the inner `.cm-table-wrap`.
   destroy(dom: HTMLElement): void {
     const wrap = (dom.classList.contains("cm-table-wrap") ? dom : dom.querySelector(".cm-table-wrap")) as HTMLElement | null;
     (wrap as unknown as { _tableRO?: ResizeObserver } | null)?._tableRO?.disconnect();
+    (wrap as unknown as { _emojiMenu?: CellEmojiMenu } | null)?._emojiMenu?.destroy();
   }
 
   // Build + dispatch the right-click menu for the cell at (r, c). Insert/delete act on
