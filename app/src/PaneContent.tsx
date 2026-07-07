@@ -8,12 +8,12 @@ import { Switch, Match, Suspense, lazy } from "solid-js";
 const FileView = lazy(() => import("./FileView").then((m) => ({ default: m.FileView })));
 const SheetView = lazy(() => import("./SheetView").then((m) => ({ default: m.SheetView })));
 const DrawingPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.DrawingPage })));
-// Opening an image opens it as an annotatable markup surface (a sidecar `<image>.draw`).
+// The `.draw` markup surface (annotate): an image/PDF becomes the full-page background of a
+// sidecar `<file>.draw`, drawn UNDER the ink. Reached from the preview's "Annotate" button via
+// the ::annotate: sentinel — no longer the default open for images/PDFs (that's PreviewView).
 const ImageMarkupPage = lazy(() => import("./drawing/DrawingPage").then((m) => ({ default: m.ImageMarkupPage })));
-
-// Raster/vector image files that open as an annotatable markup surface (NOT the `.draw`
-// sidecars they create — those end in `.draw` and route to DrawingPage above).
-const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
+// Read-only preview tab for images / PDFs / code / binary files (the default open).
+const PreviewView = lazy(() => import("./PreviewView").then((m) => ({ default: m.PreviewView })));
 
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
@@ -21,7 +21,8 @@ const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.E
 // Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
 const InboxView = lazy(() => import("./InboxView").then((m) => ({ default: m.InboxView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { SEARCH_TAB, GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, isSentinel } from "./tabIds";
+import { SEARCH_TAB, GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, ANNOTATE_PREFIX, isSentinel } from "./tabIds";
+import { isPreviewPath } from "./preview/previewKind";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -78,24 +79,27 @@ export function PaneContent(props: {
       </Match>
       {/* A base is a `type: base` md file — routed by FileView (the fallback), which
           reads its frontmatter and renders BaseView. There is no `.base` extension. */}
+      {/* Annotate (markup) surface — the SECONDARY action reached from a preview's "Annotate"
+          button. Must precede the preview/`.draw` Matches below: the sentinel ends in the source
+          file's extension (e.g. "::annotate:foo.png"), which isPreviewPath would otherwise claim. */}
+      <Match when={props.path.startsWith(ANNOTATE_PREFIX)}>
+        <Suspense fallback={<div class="full" />}>
+          <ImageMarkupPage path={props.path.slice(ANNOTATE_PREFIX.length)} />
+        </Suspense>
+      </Match>
       <Match when={props.path.endsWith(".draw")}>
         <Suspense fallback={<div class="full" />}>
           <DrawingPage path={props.path} />
         </Suspense>
       </Match>
-      {/* An image opens as a markup surface: the image becomes a full-page background of a
-          sidecar `.draw`, drawn UNDER the ink so strokes annotate it. */}
-      <Match when={IMAGE_RE.test(props.path)}>
+      {/* Images, PDFs, and code/text open as a read-only PREVIEW by default (lighter than the
+          `.draw` markup surface). Images/PDFs offer an "Annotate" button that switches to that
+          surface (::annotate: above); binary formats (PSD/Figma/…) show a "preview not available"
+          state + "Open in default app". Placed AFTER the `.draw` Match so a `<file>.png.draw`
+          sidecar still routes to DrawingPage. */}
+      <Match when={isPreviewPath(props.path)}>
         <Suspense fallback={<div class="full" />}>
-          <ImageMarkupPage path={props.path} />
-        </Suspense>
-      </Match>
-      {/* A PDF opens the same way: each page is rasterized into a full-page background of a
-          MULTI-page sidecar `<file>.pdf.draw`. Placed AFTER the `.draw` Match so the sidecar
-          itself routes to DrawingPage; guard against the drawing-export artifact `<name>.draw.pdf`. */}
-      <Match when={props.path.endsWith(".pdf") && !props.path.endsWith(".draw.pdf")}>
-        <Suspense fallback={<div class="full" />}>
-          <ImageMarkupPage path={props.path} />
+          <PreviewView path={props.path} onOpen={props.onOpen} />
         </Suspense>
       </Match>
       <Match when={props.path.startsWith(TERMINAL_PREFIX)}>

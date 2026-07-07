@@ -16,6 +16,57 @@ fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+// Open an ABSOLUTE filesystem path in the OS's default application, or REVEAL it in the file
+// manager. Backs the preview tab's "Open in default app" / "Reveal in Finder" affordances (the
+// frontend resolves a vault-relative path to an absolute one via GET /abs-path first). We shell to
+// the platform opener rather than the opener plugin's `open_path` (which the app's granted
+// `opener:default` set doesn't include) — a tiny, permission-free command that also handles
+// reveal uniformly. Best-effort: a spawn failure surfaces as an Err the frontend toasts.
+#[tauri::command]
+fn open_path(path: String, reveal: bool) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(target_os = "macos")]
+    {
+        // `open` launches the default app; `open -R` reveals + selects the file in Finder.
+        let mut cmd = Command::new("open");
+        if reveal {
+            cmd.arg("-R");
+        }
+        cmd.arg(&path).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // explorer opens the file; `explorer /select,<path>` reveals it in its folder.
+        let mut cmd = Command::new("explorer");
+        if reveal {
+            cmd.arg("/select,");
+        }
+        cmd.arg(&path).spawn().map(|_| ()).map_err(|e| e.to_string())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-open can't select a file, so REVEAL opens the containing directory instead.
+        let target = if reveal {
+            std::path::Path::new(&path)
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| std::path::PathBuf::from(&path))
+        } else {
+            std::path::PathBuf::from(&path)
+        };
+        Command::new("xdg-open")
+            .arg(target)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = (path, reveal);
+        Err("unsupported platform".to_string())
+    }
+}
+
 // Zoom the whole webview (whichever window invoked this) to `factor` (1.0 = 100%).
 // tauri::WebviewWindow::set_zoom wraps the real platform API: WKWebView.pageZoom on
 // macOS/iOS, WebView2 ZoomFactor on Windows, WebKitGTK zoom_level on Linux — the same
@@ -446,7 +497,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![greet, quit_app, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom])
+        .invoke_handler(tauri::generate_handler![greet, quit_app, open_path, choose_first_vault, finish_intro, reset_first_run, set_last_vault, set_ui_zoom])
         .setup(|app| {
             // One-time: carry an existing user's saved vault config across the bundle-id
             // rename. Must run before any config read below (the config dir is id-keyed).

@@ -188,6 +188,10 @@ export const api = {
   // filename-first by the backend. Used as the `src` of an embed widget. Honors the
   // window's bound backend via the transport so multi-window/?api= previews load correctly.
   assetUrl: (target: string) => transport.assetUrl(target),
+  // Resolve a vault-relative path to its ABSOLUTE machine-local path (filename-first, like
+  // /asset) — used by the preview's "Open in default app" / "Reveal" affordances, which hand
+  // an absolute path to the OS opener. 404s when the file doesn't exist.
+  absPath: (path: string) => getJson<{ path: string }>(`/abs-path?path=${encodeURIComponent(path)}`),
   // Upload pasted/dropped attachment bytes to `targetPath` (under the attachments
   // folder). The backend de-collides the name and returns the path actually written,
   // whose basename the caller inserts as `![[basename]]`.

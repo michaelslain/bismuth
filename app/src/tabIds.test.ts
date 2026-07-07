@@ -1,6 +1,6 @@
 // app/src/tabIds.test.ts
 import { test, expect, describe } from "bun:test";
-import { EXPORT_PREFIX, SETTINGS_FILE, isSettingsFile, contentLabel, contentIcon, isSentinel } from "./tabIds";
+import { EXPORT_PREFIX, SETTINGS_FILE, ANNOTATE_PREFIX, annotatePath, isSettingsFile, contentLabel, contentIcon, isSentinel } from "./tabIds";
 
 describe("export tab id", () => {
   test("EXPORT_PREFIX is a sentinel", () => {
@@ -35,5 +35,34 @@ describe(".settings is a first-class app tab", () => {
     expect(contentLabel("notes/todo.yml")).toBe("todo");
     expect(contentLabel("Sketch.draw")).toBe("Sketch");
     expect(contentLabel("Budget.sheet")).toBe("Budget");
+  });
+});
+
+describe("preview tabs (images / PDFs / code / binary)", () => {
+  test("plain preview paths keep their filename (with extension) as the label", () => {
+    expect(contentLabel("attachments/diagram.png")).toBe("diagram.png");
+    expect(contentLabel("docs/spec.pdf")).toBe("spec.pdf");
+    expect(contentLabel("src/main.ts")).toBe("main.ts");
+  });
+  test("kind-specific tab icons", () => {
+    expect(contentIcon("a/b/photo.png")).toBe("Image");
+    expect(contentIcon("a/b/doc.pdf")).toBe("FileText");
+    expect(contentIcon("a/b/app.ts")).toBe("Code");
+    expect(contentIcon("a/b/art.psd")).toBe("File");
+    expect(contentIcon("a/b/Note.md")).toBeUndefined(); // notes keep the default (no icon)
+  });
+});
+
+describe("annotate (markup) tab id", () => {
+  test("ANNOTATE_PREFIX is a sentinel; annotatePath composes it", () => {
+    expect(annotatePath("photo.png")).toBe(ANNOTATE_PREFIX + "photo.png");
+    expect(isSentinel(annotatePath("photo.png"))).toBe(true);
+  });
+  test("label is the bare filename (with extension)", () => {
+    expect(contentLabel(annotatePath("a/b/photo.png"))).toBe("photo.png");
+    expect(contentLabel(annotatePath("doc.pdf"))).toBe("doc.pdf");
+  });
+  test("icon is the pen (markup surface), NOT the preview image icon", () => {
+    expect(contentIcon(annotatePath("photo.png"))).toBe("PenTool");
   });
 });
