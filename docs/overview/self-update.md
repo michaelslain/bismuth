@@ -183,7 +183,7 @@ There is **no `BISMUTH_APP_PATH` gate and no git pull** — it's a bundle-copy +
 - `installStatus()` shells out to `<bin> --status` → `InstallStatus = { installed, running, binPath }`.
 - Best-effort throughout: every function catches and never throws, so a failed daemon install can never block the app.
 
-The daemon was absorbed from the former standalone **claude-bot** repo into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) — one machine process that multiplexes per-vault brains. Machine identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, `identity.md`) lives under `<vault>/.daemon`. There is **no `daemon.autoUpdate`/`daemon.home` setting** (the schema `daemon` object has only `enabled`) and **no git-pull self-update path** for it. The manual equivalent of the boot install is `POST /daemon/update`, which also just calls `runSetup()` (re-registers the service); it does not pull source.
+The daemon is the in-repo `@bismuth/daemon` workspace (`daemon/src/**`) — one machine process that multiplexes per-vault brains. Machine identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, `identity.md`) lives under `<vault>/.daemon`. There is **no `daemon.autoUpdate`/`daemon.home` setting** (the schema `daemon` object has only `enabled`) and **no git-pull self-update path** for it. The manual equivalent of the boot install is `POST /daemon/update`, which also just calls `runSetup()` (re-registers the service); it does not pull source.
 
 ### 2. The Bismuth app itself — `update.autoUpdate`
 

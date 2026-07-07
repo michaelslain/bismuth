@@ -8,11 +8,9 @@ vault's brain (its crons, processes, memory, and conversation session) lives und
 `DaemonList` sidebar, and writes only a few control files (`owner.json`, the `enabled` frontmatter,
 and trigger files) — see [overview.md](overview.md).
 
-> **Heritage note.** The daemon was absorbed from the former standalone `claude-bot` sibling repo
-> into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`). The old single-tier `~/.claude-bot`
-> tree no longer exists as a live layout — it survives only as a **one-time, copy-only migration
-> source** (see [Legacy migration](#legacy-claude-bot-migration) below). There is **no**
-> `daemon.home` / `BOT_DIR` setting anymore.
+> **Legacy migration note.** `~/.claude-bot` is not a live layout — it survives only as a
+> **one-time, copy-only migration source** (see [Legacy migration](#legacy-claude-bot-migration)
+> below). There is **no** `daemon.home` setting.
 
 ---
 
@@ -173,7 +171,7 @@ Add a future seedable by appending one entry to `seedsFor()`.
 
 ## Legacy `~/.claude-bot` migration
 
-The pre-absorption standalone tree at `~/.claude-bot` is no longer a live layout. It survives only as
+`~/.claude-bot` is not a live layout. It survives only as
 a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault, legacy?)` in
 `core/src/daemon.ts`:
 
@@ -183,7 +181,7 @@ a **one-time, copy-only** migration source, handled by `migrateDaemonState(vault
   destination vault root; once present, no other vault ever migrates. The brain lands in the first
   vault whose daemon is enabled after upgrade.
 - **Per-file merge.** For each of `memory/`, `crons/`, `processes/`, it copies only legacy items not
-  already present in `<vault>/.daemon/<sub>` — so seeded defaults and the bot's own newer notes are
+  already present in `<vault>/.daemon/<sub>` — so seeded defaults and the vault's own newer notes are
   never clobbered.
 - **Best-effort; never throws.** Any failure leaves `~/.claude-bot` untouched as the source of truth.
 - **Source override.** The legacy root defaults to `~/.claude-bot` but is overridable via

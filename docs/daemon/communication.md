@@ -2,14 +2,14 @@
 
 How the daemon's memory reaches your Claude Code sessions (recall/collect hooks), how it coordinates across machines (it doesn't pass messages — it gates on a shared owner file), and what the words "relay", "message", and "owner" actually mean now. The recurring editorial point: **there is no inter-agent or cross-machine message bus in this codebase.** The only multi-device story is file-based single-owner gating; the only thing that crosses *into* your sessions is the vault's memory, injected per-session by the **relay plugin**.
 
-This page describes the *current* in-repo `@bismuth/daemon` model. The obsolete standalone-claude-bot doc this replaces was wrong in two load-bearing ways, corrected up front:
+This page describes the *current* in-repo `@bismuth/daemon` model:
 
-- **OLD CLAIM: "the relay does not exist."** A `relay/` workspace now exists — a tiny Claude Code plugin (hooks only). Recall + collect are its scripts, not the MCP server's, and not global `~/.claude` hooks.
-- **OLD CLAIM: a `message_bot` MCP tool lets a session poke the bot's session.** There is **no `message_bot` MCP tool**. The MCP server exposes `remember`/`recall`/`forget` (memory CRUD), not a way to message the daemon session. The daemon's `sendMessage()` is an in-process call driven by crons/processes, never an MCP surface.
+- The `relay/` workspace is a tiny Claude Code plugin (hooks only). Recall + collect are its scripts, not the MCP server's, and not global `~/.claude` hooks.
+- There is **no `message_bot` MCP tool**. The MCP server exposes `remember`/`recall`/`forget` (memory CRUD), not a way to message the daemon session. The daemon's `sendMessage()` is an in-process call driven by crons/processes, never an MCP surface.
 
-## Recall + collect now live in the relay plugin (not `~/.claude`)
+## Recall + collect live in the relay plugin
 
-claude-bot used to imperatively write two hooks into your **global** `~/.claude/settings.json` at MCP startup. That is gone. The two memory hooks now ship in the **`relay/` workspace** and load **per-session, only inside Bismuth terminals**:
+The two memory hooks ship in the **`relay/` workspace** and load **per-session, only inside Bismuth terminals** — nothing is written to your global `~/.claude/settings.json`:
 
 - `core/src/terminal.ts` spawns each terminal tab's PTY with a PATH shim (`relay/shim/claude`) that makes a bare `claude` run `claude --plugin-dir <relay>`, plus env: `CLAUDE_TERMINAL_ID` (the tab's pty id), `CLAUDE_RELAY_URL` (this app's core server), and — **only when `settings.daemon.enabled` for this vault** — `BISMUTH_MEMORY_DIR` (the vault's `.daemon/memory`).
 - The plugin's `hooks/hooks.json` binds the hooks; nothing is installed in `~/.claude`. Outside a Bismuth terminal the plugin isn't even present, and each hook additionally gates on `CLAUDE_TERMINAL_ID` (a cheap belt-and-suspenders guard via `relay/lib/report.ts`).
@@ -41,7 +41,7 @@ Flow (`relay/bin/recall-hook.ts` + `relay/lib/memory.ts`):
 }
 ```
 
-`formatNotes()` emits a `# Memories` header (NOT the old `# Claude Bot Memories`), then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
+`formatNotes()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
 
 ### `session-end-hook.ts` — `SessionEnd` (transcript → auto note)
 
@@ -79,7 +79,7 @@ The relay collect-hook, the MCP `remember` tool, and the daemon's own writer all
 
 ## What device coordination does exist: single-owner gating
 
-The actual multi-device story is **single-owner gating** through shared on-disk JSON files — the "SHARED INTEGRATION CONTRACT v1" in `daemon/src/lib/owner.ts`. It coordinates **which** device's daemon does work; it does **not** pass messages between devices. All identity/ownership files live at the **machine** level under `MACHINE_DIR` (`BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`, `daemon/src/lib/config.ts`) — NOT per-vault, and NOT under the dead `~/.claude-bot`.
+The actual multi-device story is **single-owner gating** through shared on-disk JSON files — the "SHARED INTEGRATION CONTRACT v1" in `daemon/src/lib/owner.ts`. It coordinates **which** device's daemon does work; it does **not** pass messages between devices. All identity/ownership files live at the **machine** level under `MACHINE_DIR` (`BISMUTH_DAEMON_DIR || ~/.bismuth/daemon`, `daemon/src/lib/config.ts`) — NOT per-vault.
 
 ### Device identity — `daemon/src/lib/device.ts`
 

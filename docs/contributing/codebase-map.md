@@ -85,7 +85,7 @@ Pure types shared by every graph builder and the renderer:
 Also exports: `pathParts(rel)` (decompose a vault-relative path into name/ext/folder/basename/topFolder), `noteId(rel)` (strip `.md`), `resolveLinkTarget(target, byBase, byPath)`.
 
 #### `memory.ts`
-`buildMemoryGraph(root)` — builds the memory graph from Claude-bot notes in a separate directory. Node ids are prefixed `mem:`. Returns `{ nodes, edges, links: Map<base, targets[]> }` where `links` carries which vault filenames each memory note references (used by `engine.ts` to create "about" edges).
+`buildMemoryGraph(root)` — builds the memory graph from memory notes in a separate directory. Node ids are prefixed `mem:`. Returns `{ nodes, edges, links: Map<base, targets[]> }` where `links` carries which vault filenames each memory note references (used by `engine.ts` to create "about" edges).
 
 #### `agents.ts`
 `buildAgentGraph(snapshot, liveTerminalIds, now?)` — pure function. Builds the "agents" graph from a `RelaySnapshot` (from `relay.ts`) and the live pty id set (from `terminal.ts`). Sessions with closed terminal tabs are dropped. A session with a live (non-done) subagent stays "awake" even without a recent heartbeat. Returns `{ nodes, edges }` — no "you" hub (frontend injects it via `withYouNode`). Session node id: `agent:sess:<sessionId>`, subagent node id: `agent:sub:<agentId>`.
@@ -286,14 +286,14 @@ Obsidian-Tasks-compatible DSL parser + executor. `parseTaskQuery(text)` — erro
 
 ### Daemon Integration
 
-The former standalone `claude-bot` sibling repo was absorbed into the in-repo `@bismuth/daemon` workspace (`daemon/src/**`): ONE machine process that multiplexes per-vault "brains". Machine-level identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon`. These core modules are Bismuth's READ/WRITE window onto that on-disk state.
+The in-repo `@bismuth/daemon` workspace (`daemon/src/**`) is ONE machine process that multiplexes per-vault "brains". Machine-level identity (device-id, devices.json, owner.json, daemon.pid, logs, vaults.json) lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session-id, identity.md) lives under `<vault>/.daemon`. These core modules are Bismuth's READ/WRITE window onto that on-disk state.
 
 #### `daemon.ts`
 Reads (and minimally writes) the daemon's shared on-disk state. Never throws. Key exports:
 - `daemonMachineDir()` — the machine-level identity dir: `BISMUTH_DAEMON_DIR` env, else `~/.bismuth/daemon`.
 - `vaultDaemonDir(vault)` — a vault's brain dir, `<vault>/.daemon` (where crons/processes/memory/session live).
-- `daemonIdentityName(vault)` — the daemon's name from `<vault>/.daemon/identity.md`'s `name:` frontmatter; drives the sidebar folder label + daemon-graph hub. Defaults to `"daemon"` (never `"claude-bot"`).
-- `migrateDaemonState(vault, legacy?)` — one-time, COPY-ONLY migration of a legacy `~/.claude-bot/{memory,crons,processes}` into `<vault>/.daemon` (per-file merge, never clobbers, never deletes the source). Machine-marker-gated (`.claude-bot-migrated`) so it lands in exactly ONE vault. `~/.claude-bot` survives only as this legacy migration source.
+- `daemonIdentityName(vault)` — the daemon's name from `<vault>/.daemon/identity.md`'s `name:` frontmatter; drives the sidebar folder label + daemon-graph hub. Defaults to `"daemon"`.
+- `migrateDaemonState(vault, legacy?)` — one-time, COPY-ONLY migration of a legacy `~/.claude-bot/{memory,crons,processes}` directory into `<vault>/.daemon` (per-file merge, never clobbers, never deletes the source). Machine-marker-gated (`.claude-bot-migrated`) so it lands in exactly ONE vault.
 - `daemonStatus()` → `DaemonStatus { running, thisDeviceId, owner }`; `listDevices()` → `DeviceList`; `setOwner(deviceId)` — writes `owner.json`.
 - `setCronEnabled(name, enabled, dir?)` / `setProcessEnabled(name, enabled, dir?)` — flip `enabled` frontmatter on a cron/process `.md` (the `dir` is a vault's `.daemon` dir; process also drops a reconcile trigger).
 - `runCron(name, dir?)` — request an out-of-schedule run by dropping a trigger file the daemon polls.
@@ -308,7 +308,7 @@ Reads (and minimally writes) the daemon's shared on-disk state. Never throws. Ke
 Shared low-level helpers: `pidAlive(pid)`, `readJsonObj(path)`, `readFrontmatter(path)`, `isEnabled(data)`. Used by `daemon.ts` and `daemonGraph.ts` to read state files.
 
 #### `daemonInstall.ts`
-Installs the bundled `@bismuth/daemon` runtime as a launchd/systemd **service** so it keeps running while the app is closed (replaces the old `claude-bot` git-clone provisioning — `core/src/claudebot.ts` no longer exists). The app stages the compiled binary at `resources/daemon` (path in `BISMUTH_DAEMON_BUNDLE`). Every function is best-effort and never throws — a failed daemon install must never block the app. Key exports:
+Installs the bundled `@bismuth/daemon` runtime as a launchd/systemd **service** so it keeps running while the app is closed. The app stages the compiled binary at `resources/daemon` (path in `BISMUTH_DAEMON_BUNDLE`). Every function is best-effort and never throws — a failed daemon install must never block the app. Key exports:
 - `DAEMON_LABEL = "com.bismuth.daemon"`; `daemonBinPath()` — the stable installed path `~/.bismuth/bin/bismuth-daemon` (env override `BISMUTH_DAEMON_BIN`).
 - `installStatus()` → `InstallStatus { installed, running, binPath }` — runs `<bin> --status` and parses its JSON; degrades to `{ installed: false, running: false }` when the binary is absent or errors.
 - `runSetup()` → `SetupResult { ok, binPath, error? }` — runs `<bin> --ensure-installed` (idempotent; writes the plist/unit). Called by `POST /daemon/update` (the daemon updates WITH the app — there is no git-pull self-update).

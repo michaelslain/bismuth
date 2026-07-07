@@ -31,19 +31,18 @@ See also the full Tauri prerequisites: https://tauri.app/start/prerequisites/
 
 ### The daemon ships as a compiled bundled binary
 
-The former standalone **claude-bot** sibling repo has been absorbed into the in-repo
-**`@bismuth/daemon`** workspace (`daemon/src/**`) — one machine process that multiplexes per-vault
-"brains". You do **not** clone or `bun install` anything separately to build it. The Tauri build
-compiles the daemon to a standalone binary (`app/scripts/build-daemon-sidecar.ts` →
-`app/src-tauri/resources/daemon/bin/bismuth-daemon`, staged as a Tauri **resource**). On boot the
-bundled app's core sidecar copies that binary to `~/.bismuth/bin` and registers it as a
-launchd/systemd service (`core/src/daemonInstall.ts` `installDaemonFromBundle()` — see
+The in-repo **`@bismuth/daemon`** workspace (`daemon/src/**`) is one machine process that
+multiplexes per-vault "brains". You do **not** clone or `bun install` anything separately to build
+it. The Tauri build compiles the daemon to a standalone binary
+(`app/scripts/build-daemon-sidecar.ts` → `app/src-tauri/resources/daemon/bin/bismuth-daemon`,
+staged as a Tauri **resource**). On boot the bundled app's core sidecar copies that binary to
+`~/.bismuth/bin` and registers it as a launchd/systemd service (`core/src/daemonInstall.ts`
+`installDaemonFromBundle()` — see
 [Bundled resources](#bundled-resources-relay--daemon--machine-wide-tools) below and
 [Self-update](self-update.md)). The daemon therefore updates **with** the app — there is no git
-clone, no `provisionClaudeBot`, and no `daemon.autoUpdate`/`daemon.home` setting (the schema's
-`daemon` object has only `enabled`). `~/.claude-bot` survives only as a one-time, copy-only legacy
-migration source (`migrateDaemonState` in `core/src/daemon.ts`, gated by a `.claude-bot-migrated`
-marker).
+clone and no `daemon.autoUpdate`/`daemon.home` setting (the schema's `daemon` object has only
+`enabled`). `~/.claude-bot` survives only as a one-time, copy-only legacy migration source
+(`migrateDaemonState` in `core/src/daemon.ts`, gated by a `.claude-bot-migrated` marker).
 
 ---
 

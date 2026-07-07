@@ -57,7 +57,7 @@ These delegate to the shared `@bismuth/memory` graph, so the MCP tools, the daem
 
 ## Daemon tools (daemon-gated, per-vault)
 
-Behind the same gate, the server also exposes **ten daemon-management tools** — the daemon's control surface (crons, background processes, the daemon inbox/pages, daemon status + device ownership). These are the restored equivalent of the tools the former standalone `claude-bot` MCP had before it was absorbed into `@bismuth/daemon`. Each **bridges an existing `bismuth` CLI command** (`daemon`/`page` groups) rather than reimplementing daemon logic, so there's one code path per operation and no `@bismuth/core` dependency in this workspace. `ListTools` appends them alongside the memory tools: `daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools`.
+Behind the same gate, the server also exposes **ten daemon-management tools** — the daemon's control surface (crons, background processes, the daemon inbox/pages, daemon status + device ownership). Each **bridges an existing `bismuth` CLI command** (`daemon`/`page` groups) rather than reimplementing daemon logic, so there's one code path per operation and no `@bismuth/core` dependency in this workspace. `ListTools` appends them alongside the memory tools: `daemonEnabled() ? [...tools, ...memoryTools, ...daemonTools] : tools`.
 
 | Tool | Bridges to | Does |
 |---|---|---|
@@ -67,7 +67,7 @@ Behind the same gate, the server also exposes **ten daemon-management tools** �
 | `process_toggle` | `daemon process toggle` | enable/disable a background process |
 | `page_list` / `page_create` / `page_resolve` | `page list`/`create`/`resolve` | the daemon inbox: list, author a validated page, press an action |
 
-Full reference (args, the pure name→CLI-argv mapper, and the mapping from the old 26-tool `claude-bot` catalog + still-missing follow-ups): [daemon-tools.md](daemon-tools.md).
+Full reference (args, the pure name→CLI-argv mapper, and still-missing follow-ups): [daemon-tools.md](daemon-tools.md).
 
 ## Modules
 
