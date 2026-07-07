@@ -146,6 +146,80 @@ function padCell(text: string, width: number, align: Align): string {
   return text + " ".repeat(pad);
 }
 
+/** A table's editable content: the cell grid (row 0 = header) plus per-column alignment.
+ *  The unit the structural row/column ops below transform. */
+export interface TableGrid {
+  cells: string[][];
+  aligns: Align[];
+}
+
+/** Column count of a grid (header row width, falling back to aligns / widest row). */
+function gridCols(g: TableGrid): number {
+  return Math.max(g.cells[0]?.length ?? 0, g.aligns.length, ...g.cells.map((r) => r.length));
+}
+
+function blankRow(cols: number): string[] {
+  return Array.from({ length: cols }, () => "");
+}
+
+// ── Structural row/column ops ────────────────────────────────────────────────
+// Pure grid transforms behind the table widget's right-click menu (insert/delete
+// row & column). Each returns a NEW grid (never mutates its input) and keeps the
+// table well-formed: the header row (index 0) is never removed and the grid never
+// drops to zero rows or zero columns, so `serializeTable` always emits valid GFM.
+
+/** Insert a blank body row at index `at` (clamped to `[1, rows]` so the header stays
+ *  first). `at = r` inserts ABOVE row r; `at = r + 1` inserts below it. */
+export function insertRow(g: TableGrid, at: number): TableGrid {
+  const rows = g.cells.length;
+  const idx = Math.min(Math.max(at, 1), rows);
+  const cells = g.cells.map((r) => r.slice());
+  cells.splice(idx, 0, blankRow(gridCols(g)));
+  return { cells, aligns: g.aligns.slice() };
+}
+
+/** Delete body row `at`. The header (0) is never deletable and the last body row is
+ *  kept (a table always has ≥1 body row after the header), so out-of-range / guarded
+ *  requests return an unchanged copy of the grid. */
+export function deleteRow(g: TableGrid, at: number): TableGrid {
+  const cells = g.cells.map((r) => r.slice());
+  // Refuse to delete the header (0), an out-of-range row, or the LAST body row
+  // (`length <= 2` = header + one body) — a table keeps ≥1 body row.
+  if (at <= 0 || at >= cells.length || cells.length <= 2) return { cells, aligns: g.aligns.slice() };
+  cells.splice(at, 1);
+  return { cells, aligns: g.aligns.slice() };
+}
+
+/** Insert a blank column at index `at` (clamped to `[0, cols]`) in every row, with a
+ *  `none` alignment. `at = c` inserts LEFT of column c; `at = c + 1` inserts to its right. */
+export function insertColumn(g: TableGrid, at: number): TableGrid {
+  const cols = gridCols(g);
+  const idx = Math.min(Math.max(at, 0), cols);
+  const cells = g.cells.map((r) => {
+    const row = r.slice();
+    while (row.length < cols) row.push("");
+    row.splice(idx, 0, "");
+    return row;
+  });
+  const aligns = g.aligns.slice();
+  while (aligns.length < cols) aligns.push("none");
+  aligns.splice(idx, 0, "none");
+  return { cells, aligns };
+}
+
+/** Delete column `at` from every row and its alignment. The last column is kept (a
+ *  table always has ≥1 column), so a guarded / out-of-range request returns an
+ *  unchanged copy of the grid. */
+export function deleteColumn(g: TableGrid, at: number): TableGrid {
+  const cols = gridCols(g);
+  const cells = g.cells.map((r) => r.slice());
+  if (at < 0 || at >= cols || cols <= 1) return { cells, aligns: g.aligns.slice() };
+  for (const row of cells) if (at < row.length) row.splice(at, 1);
+  const aligns = g.aligns.slice();
+  if (at < aligns.length) aligns.splice(at, 1);
+  return { cells, aligns };
+}
+
 /** Serialize a cell grid + alignments back to normalized, column-padded markdown lines.
  *  Column widths are the max visible width per column so the raw source stays tidy. */
 export function serializeTable(cells: string[][], aligns: Align[]): string {

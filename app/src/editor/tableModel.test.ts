@@ -8,7 +8,22 @@ import {
   groupTableBlocks,
   serializeTable,
   isSeparatorRow,
+  insertRow,
+  deleteRow,
+  insertColumn,
+  deleteColumn,
+  type TableGrid,
 } from "./tableModel";
+
+// A small 2-col grid: header + two body rows.
+const grid = (): TableGrid => ({
+  cells: [
+    ["Name", "Age"],
+    ["Alice", "30"],
+    ["Bob", "40"],
+  ],
+  aligns: ["left", "right"],
+});
 
 test("parseTableRow strips outer rails and trims cells", () => {
   expect(parseTableRow("| a | b | c |")).toEqual(["a", "b", "c"]);
@@ -109,4 +124,78 @@ test("parse → serialize round-trips a normalized table", () => {
   const lines = ["| Name  | Age |", "| :---- | --: |", "| Alice |  30 |"];
   const { cells, aligns } = parseTableBlock(lines);
   expect(serializeTable(cells, aligns)).toBe(lines.join("\n"));
+});
+
+// ── Structural row/column ops ─────────────────────────────────────────────────
+
+test("insertRow inserts a blank body row above (at = r) and below (at = r + 1)", () => {
+  const above = insertRow(grid(), 1); // above the first body row
+  expect(above.cells).toEqual([
+    ["Name", "Age"],
+    ["", ""],
+    ["Alice", "30"],
+    ["Bob", "40"],
+  ]);
+  const below = insertRow(grid(), 2); // below the first body row
+  expect(below.cells).toEqual([
+    ["Name", "Age"],
+    ["Alice", "30"],
+    ["", ""],
+    ["Bob", "40"],
+  ]);
+  expect(below.aligns).toEqual(["left", "right"]);
+});
+
+test("insertRow never inserts above the header and does not mutate its input", () => {
+  const g = grid();
+  const out = insertRow(g, 0); // clamped to 1 — header stays first
+  expect(out.cells[0]).toEqual(["Name", "Age"]);
+  expect(out.cells[1]).toEqual(["", ""]);
+  expect(g.cells.length).toBe(3); // input untouched
+});
+
+test("deleteRow removes a body row but never the header or the last body row", () => {
+  expect(deleteRow(grid(), 1).cells).toEqual([
+    ["Name", "Age"],
+    ["Bob", "40"],
+  ]);
+  expect(deleteRow(grid(), 0).cells).toEqual(grid().cells); // header guarded
+  const oneBody: TableGrid = { cells: [["H"], ["only"]], aligns: ["none"] };
+  expect(deleteRow(oneBody, 1).cells).toEqual(oneBody.cells); // last body row kept
+});
+
+test("insertColumn inserts a blank column + none align left (at = c) and right (at = c + 1)", () => {
+  const left = insertColumn(grid(), 0);
+  expect(left.cells).toEqual([
+    ["", "Name", "Age"],
+    ["", "Alice", "30"],
+    ["", "Bob", "40"],
+  ]);
+  expect(left.aligns).toEqual(["none", "left", "right"]);
+  const right = insertColumn(grid(), 1);
+  expect(right.cells[0]).toEqual(["Name", "", "Age"]);
+  expect(right.aligns).toEqual(["left", "none", "right"]);
+});
+
+test("deleteColumn removes the column + its align but keeps the last column", () => {
+  const out = deleteColumn(grid(), 1);
+  expect(out.cells).toEqual([["Name"], ["Alice"], ["Bob"]]);
+  expect(out.aligns).toEqual(["left"]);
+  const oneCol: TableGrid = { cells: [["H"], ["x"]], aligns: ["none"] };
+  expect(deleteColumn(oneCol, 0).cells).toEqual(oneCol.cells); // last column kept
+});
+
+test("row/column ops keep the serialized markdown valid (round-trips through parse)", () => {
+  const ops: TableGrid[] = [
+    insertRow(grid(), 2),
+    deleteRow(grid(), 1),
+    insertColumn(grid(), 1),
+    deleteColumn(grid(), 0),
+  ];
+  for (const g of ops) {
+    const md = serializeTable(g.cells, g.aligns);
+    const back = parseTableBlock(md.split("\n"));
+    expect(back.cells).toEqual(g.cells);
+    expect(back.aligns).toEqual(g.aligns);
+  }
 });
