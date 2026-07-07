@@ -276,36 +276,40 @@ body { background: var(--bg); color: var(--fg); }
 
 /* ── Bookshelf (vertical) tab mode ─────────────────────────────────────────────────
    `ui.verticalTabs` toggles `.vertical-tabs` onto the strip (App.tsx). Each tab chip
-   becomes a vertical "book spine": `writing-mode: vertical-rl` both reflows the chip's
-   own flex main axis to run top→bottom (icon at the top, label filling the middle,
-   close-X at the bottom) AND rotates the Latin label into the standard English book-
-   spine orientation (reads top→bottom, letter-tops toward the right — tilt your head
-   right). writing-mode is used deliberately in place of a `transform: rotate()` so the
-   text genuinely reflows and each chip keeps a real, sized box for the flex layout — a
-   rotate() would keep the pre-rotation (wide) box and overflow the strip.
+   becomes a vertical "book spine": `writing-mode: sideways-lr` both reflows the chip's
+   own flex main axis to run vertically AND rotates the Latin label into the European
+   book-spine orientation (reads bottom→top, letter-tops toward the LEFT — tilt your
+   head LEFT). We use `sideways-lr` (NOT `vertical-rl`) so the spine reads this natural
+   "tilt-head-left" direction — the OPPOSITE of the earlier top→bottom orientation —
+   and it's fully supported in the app's WebKit / Tauri WKWebView runtime. writing-mode
+   is used deliberately in place of a `transform: rotate()` so the text genuinely reflows
+   and each chip keeps a real, sized box for the flex layout — a rotate() would keep the
+   pre-rotation (wide) box and overflow the strip. (Because sideways-lr's inline axis
+   runs bottom→top, the chip's icon anchors toward the bottom of the spine — a
+   visual-polish detail pending an in-browser eyeball.)
 
    The strip itself stays a HORIZONTAL flex row, so spines are laid left→right and the
    existing drag-reorder `translateX` (physical, writing-mode-independent) + drop caret
-   keep working unchanged. Spines hang from the top rail (align-items: flex-start) so the
+   keep working unchanged. Spines hang from the top rail (align-items: flex-start). The
    leading back/forward nav + the trailing tabBar action buttons ("+", terminal, chat)
-   sit in the top row, aligned with the sidebar toolbar — "the toolbar is one of the
-   books at the top of the shelf." TRADEOFF: because a spine is taller than the classic
-   40px strip, the tab-strip bottom border no longer lines up with the 41px sidebar
-   toolzone divider in this mode (they align at the TOP instead) — intentional. Exact
-   spine width/height + orientation are visual-polish knobs that still want a real
-   in-browser eyeball. */
+   each stack into a VERTICAL column (flex-direction: column) so the whole strip — nav,
+   spines, actions — reads as one vertical shelf. TRADEOFF: because a spine is taller
+   than the classic 40px strip, the tab-strip bottom border no longer lines up with the
+   41px sidebar toolzone divider in this mode (they align at the TOP instead) —
+   intentional. Exact spine width/height + orientation + the toolbar-column padding are
+   visual-polish knobs that still want a real in-browser eyeball. */
 .tabbar.vertical-tabs {
   align-items: flex-start;          /* spines + the two toolbars hang from the top rail */
   --tab-spine-w: 34px;              /* fixed narrow spine width */
   --tab-spine-h: 132px;             /* spine height (taller than the 40px horizontal strip) */
 }
 .tabbar.vertical-tabs .tab {
-  writing-mode: vertical-rl;        /* reflow the chip vertically + rotate the label to a spine */
+  writing-mode: sideways-lr;        /* reflow the chip vertically + rotate the label to a bottom→top spine */
   width: var(--tab-spine-w);
   min-width: var(--tab-spine-w);
   height: var(--tab-spine-h);
   padding: 12px 0;                  /* padding now runs along the vertical (block) axis */
-  justify-content: flex-start;      /* main axis is vertical now → icon pinned to the top */
+  justify-content: flex-start;      /* label span (flex:1) fills the spine's vertical main axis */
 }
 /* Label fills the middle of the spine (pushing the close-X to the bottom) and truncates
    with an ellipsis along the vertical axis instead of stretching the spine taller. */
@@ -327,10 +331,16 @@ body { background: var(--bg); color: var(--fg); }
   min-height: calc(var(--tab-spine-w) + 20px);
   padding: 10px 0;
 }
-/* Keep the leading nav + trailing action groups as a normal horizontal toolbar row,
-   pinned to the top so they line up with the sidebar toolbar (the "books at the top"). */
+/* Stack the leading nav (< >) + trailing action ("+", terminal, chat) groups into
+   VERTICAL columns, hung from the top rail, so they read as part of the vertical shelf
+   rather than a horizontal toolbar row. (Base rules keep gap: 3px + align-items: center,
+   which now centers each button on the column's horizontal cross-axis.) */
 .tabbar.vertical-tabs .tabbar-nav,
-.tabbar.vertical-tabs .tabbar-actions { height: 40px; align-self: flex-start; }
+.tabbar.vertical-tabs .tabbar-actions {
+  flex-direction: column;
+  align-self: flex-start;
+  padding: 8px;
+}
 
 /* Floating ghost that follows the cursor during a tab/pane drag. */
 .drag-ghost {
