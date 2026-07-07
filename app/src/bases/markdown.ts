@@ -193,7 +193,9 @@ marked.use({
 // <div class="bismuth-page-break"> BEFORE sanitize — the div survives, the PDF rasterizer
 // (htmlToPdf) slices a new page at it, and `height:0` (htmlTemplate.ts) makes it a no-op on every
 // other surface. Masked like wikilinks/tags so a marker inside a code fence/span stays literal.
-const PAGEBREAK_RE = /^[ \t]*<!--[ \t]*pagebreak[ \t]*-->[ \t]*$/gm;
+// Exported so export/pageBreaks.ts can split a note's raw markdown at the SAME marker (for the
+// PNG exporter, which renders each page-break section to its own file — see that module).
+export const PAGEBREAK_RE = /^[ \t]*<!--[ \t]*pagebreak[ \t]*-->[ \t]*$/gm;
 function pageBreaksToDivs(src: string): string {
   const { masked, codes } = maskCode(src);
   // Surround the injected div with blank lines: a bare `<div>` starts a CommonMark type-6 HTML
@@ -244,12 +246,15 @@ function tagsToSpans(src: string): string {
 // match the wikilink/tag regexes, convert the rest, then restore the code verbatim before marked
 // parses it. Fenced alternatives come first so a ``` block isn't chewed up by the inline rule.
 const CODE_MASK_RE = /```[\s\S]*?```|~~~[\s\S]*?~~~|`+[^`\n]*?`+/g;
-function maskCode(src: string): { masked: string; codes: string[] } {
+// Exported so export/pageBreaks.ts can mask code the same way before splitting a note on
+// PAGEBREAK_RE — a literal `<!-- pagebreak -->` inside a fenced/inline code span must not split
+// the document.
+export function maskCode(src: string): { masked: string; codes: string[] } {
   const codes: string[] = [];
   const masked = src.replace(CODE_MASK_RE, (m) => `\u0000${codes.push(m) - 1}\u0000`);
   return { masked, codes };
 }
-function unmaskCode(s: string, codes: string[]): string {
+export function unmaskCode(s: string, codes: string[]): string {
   return s.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? "");
 }
 /** Resolve `[[wikilinks]]` + `#tags` on the source while leaving code spans/fences untouched. */

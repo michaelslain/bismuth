@@ -48,6 +48,14 @@ export interface ExportOptions {
   weekStartsOnMonday: boolean;  // week/month grid start; default true
   militaryTime: boolean;        // 24h vs 12h event times; default false
 
+  // Whether the note's leading YAML frontmatter block is included in the exported output.
+  // Applies only to a plain (non-base) `.md` file: `md` export keeps/strips the raw block;
+  // `html`/`pdf`/`png` keep/strip it from the rendered body before `renderMarkdown`. Default
+  // true (the historical behavior — the raw file, frontmatter included, passed straight
+  // through / rendered as-is). Bases/sheets/drawings ignore this entirely (a base's
+  // frontmatter is config, never rendered as content in the first place).
+  includeFrontmatter: boolean;
+
   // Resolved live-theme palette so the export matches the app (colors + font). Undefined
   // headlessly (CLI) → the renderer uses DEFAULT_PALETTE for the chosen theme.
   palette?: ThemePalette;
@@ -67,6 +75,12 @@ export interface ExportResult {
   filename: string;       // e.g. "note.html"
   previewHtml?: string;
   previewImg?: string;
+  // Present only for a PNG export of a note split by `<!-- pagebreak -->` markers — one entry
+  // per marker-delimited section (see export/pageBreaks.ts), each an independent PNG. When
+  // present, `bytes`/`filename`/`previewImg` above mirror `files[0]` (the first page), so a
+  // caller that only looks at the single-result fields still gets a sensible file; a
+  // page-break-aware caller (ExportView's doExport) writes/downloads every entry instead.
+  files?: { filename: string; bytes: Uint8Array }[];
 }
 
 // Impure dependencies injected so exporters.ts stays unit-testable.

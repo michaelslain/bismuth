@@ -468,10 +468,12 @@ bismuth backup --vault ~/vault
 
 ## Universal export command (`commands/export.ts`)
 
-### `export <file> [--format md|html|png|pdf] [--out FILE]`
+### `export <file> [--format md|html|png|pdf] [--out FILE] [--no-frontmatter]`
 Export a note / base / sheet / drawing to `md | html | png | pdf`, reusing the app's own exporter (`app/src/export/exporters.ts` `renderExport`) with headless deps so CLI output matches in-app export exactly. The target file is the first non-flag arg.
 
 Format defaulting: `--format` if given, else `png` for `.draw` files, else `md`.
+
+`--no-frontmatter` strips a plain note's leading YAML frontmatter block from the output (`ExportOptions.includeFrontmatter: false` — applies to `md` and `html` headlessly; ignored for bases/sheets/drawings, whose frontmatter is config, not content). Omit it for the default (frontmatter included, the historical behavior). See [export overview](../export/overview.md) "Include/exclude frontmatter".
 
 Two paths:
 - **`.draw` files** — rendered straight through the headless core renderer (`parseDoc` + `renderDocToPng`/`renderDocToPdf`, `"dark"` theme). Only `png` or `pdf` are valid (`a .draw file exports to png or pdf` otherwise). **No `--vault` needed** for drawings (file read with `node:fs`). This is the *only* file kind that rasterizes to `png` (or `pdf`) headlessly from the CLI.
@@ -483,6 +485,7 @@ Output path defaults to the exporter's chosen filename (or `<file>.<fmt>` for dr
 ```bash
 bismuth export "Notes/Essay.md" --format html --vault ~/vault
 bismuth export "Notes/Essay.md" --format md --out essay.md --vault ~/vault
+bismuth export "Notes/Essay.md" --format md --no-frontmatter --vault ~/vault   # body only, YAML stripped
 bismuth export Sketch.draw                 # → Sketch.draw.png (no vault)
 bismuth export Sketch.draw --format pdf --out sketch.pdf
 bismuth export "Bases/Reading.md" --format png --vault ~/vault   # ERRORS — png is app-only
