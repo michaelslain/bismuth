@@ -495,6 +495,23 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     onCleanup(() => wrapper.removeEventListener("keydown", onFindKey, true));
   });
 
+  // File dropped INTO a rendered table cell (#30). The table widget (an atomic block whose
+  // contenteditable cells reroute the browser's native drop) intercepts the drop with capture-phase
+  // listeners and forwards the File list + resolved cell here — CM's own `drop` handler below never
+  // sees a cell drop. Gated to THIS editor's `view` (the widget stamps it on the event) so a drop in
+  // one split pane's table never lands in another's. Reuses the exact same upload+embed flow as a
+  // note-body drop (dropFilesIntoCell → uploadEmbed → insertEmbedsInTableCell).
+  onMount(() => {
+    const onTableDrop = (e: Event): void => {
+      const d = (e as CustomEvent).detail as { view: EditorView; files: File[]; target: { from: number; r: number; c: number }; altKey: boolean };
+      if (!view || d?.view !== view || !d.files?.length) return;
+      const reference = d.altKey || settings.attachments.onDrop === "reference";
+      void dropFilesIntoCell(view, d.files, activePath, reference, d.target);
+    };
+    window.addEventListener("bismuth-table-drop", onTableDrop);
+    onCleanup(() => window.removeEventListener("bismuth-table-drop", onTableDrop));
+  });
+
   // Scroll to a heading when a `[[File#Heading]]` link targets a note THIS editor already
   // shows (App early-returns from openFile without rebuilding the view, so the creation-time
   // anchor never fires — this event is the live path). Gated to our current buffer.
@@ -880,14 +897,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               const files = dt ? [...dt.files].filter(isEmbeddableFile) : [];
               if (files.length === 0) return false; // not a media drop — let CM handle text
               const reference = de.altKey || settings.attachments.onDrop === "reference";
-              // Dropping onto a rendered table cell → embed into THAT cell's source, not the note
-              // body (#30). The table is an atomic block widget, so posAtCoords maps a drop over it
-              // to the block boundary; tableCellDropTarget instead resolves the cell coordinate.
-              const cell = tableCellDropTarget(view, de.target);
-              if (cell) {
-                void dropFilesIntoCell(view, files, path, reference, cell);
-                return true;
-              }
+              // A drop onto a rendered table CELL is handled by the table widget's own capture-phase
+              // listeners (which forward it to the `bismuth-table-drop` handler above, #30) and never
+              // reaches here — the widget stops propagation. So this path only serves note-body drops.
               const pos = view.posAtCoords({ x: de.clientX, y: de.clientY });
               if (pos != null) view.dispatch({ selection: { anchor: pos } });
               for (const f of files) {

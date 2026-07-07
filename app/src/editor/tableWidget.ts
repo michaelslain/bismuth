@@ -673,6 +673,46 @@ export class TableWidget extends WidgetType {
       edgeBar("cm-table-add-row", "Add row", () => this.commit(view, root, (g) => insertRow(g, g.cells.length))),
     );
 
+    // Drop an image/media FILE onto a cell → embed it INTO that cell (#30). A rendered table is an
+    // atomic block widget whose contenteditable cells reroute the browser's native file drop before
+    // CM's own `drop` handler (Editor.tsx) can see it — so a dropped image landed in the note body,
+    // or nowhere. CAPTURE-phase listeners on the widget root intercept it FIRST: `dragover` must
+    // preventDefault to mark the cell a valid drop target (else no `drop` fires at all), and `drop`
+    // resolves the target cell and hands the File list to Editor.tsx's SAME upload+embed flow via a
+    // window event (the widget can't import that flow without a cycle). stopPropagation keeps CM's
+    // bubble-phase drop handler from ALSO firing (no double insert).
+    const dtHasFiles = (dt: DataTransfer | null): boolean =>
+      !!dt && (Array.from(dt.types ?? []).includes("Files") || (dt.items?.length ?? 0) > 0 || (dt.files?.length ?? 0) > 0);
+    root.addEventListener(
+      "dragover",
+      (e) => {
+        const de = e as DragEvent;
+        if (!dtHasFiles(de.dataTransfer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (de.dataTransfer) de.dataTransfer.dropEffect = "copy";
+      },
+      true,
+    );
+    root.addEventListener(
+      "drop",
+      (e) => {
+        const de = e as DragEvent;
+        const files = de.dataTransfer ? Array.from(de.dataTransfer.files) : [];
+        if (files.length === 0) return; // not a file drop — let text-drop fall through
+        const target = tableCellDropTarget(view, de.target);
+        if (!target) return; // drop wasn't over a cell — leave it to the normal handler
+        e.preventDefault();
+        e.stopPropagation();
+        // Editor.tsx owns the vault upload + attachment settings; hand off (with the resolved cell +
+        // altKey for the reference-vs-copy choice). It matches this event to its own `view`.
+        window.dispatchEvent(
+          new CustomEvent("bismuth-table-drop", { detail: { view, files, target, altKey: de.altKey } }),
+        );
+      },
+      true,
+    );
+
     // Right-click a cell → a table-specific menu (insert/delete row & column, edit
     // source), dispatched to App's shared <ContextMenu> via the `bismuth-context-menu` event.
     table.addEventListener("contextmenu", (e) => {
