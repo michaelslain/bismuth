@@ -4,6 +4,7 @@ import { sendMessage } from "./session.ts"
 import { reconcileSeeds } from "./seeds.ts"
 import { startCronScheduler, stopCronScheduler, recoverInterruptedCrons, waitForRunningJobs } from "./cron.ts"
 import { startProcesses, stopProcesses, stopProcessesForVault, reapOrphans, startProcessTriggers, stopProcessTriggers, stopProcessTriggersForVault } from "./process.ts"
+import { startFileWatch, stopFileWatch, stopAllFileWatches } from "./fileWatch.ts"
 import { heartbeatDevice, isOwner } from "../lib/owner.ts"
 import { loadEnabledVaults, loadAllVaults } from "../lib/registry.ts"
 import { daemonConfigPath, generateDaemonConfig, installDaemon, reloadDaemon } from "../lib/platform.ts"
@@ -61,9 +62,10 @@ async function shutdown(signal: string): Promise<void> {
     reconcileInterval = null
   }
   stopCronScheduler()
-  // stopProcessTriggers() + stopProcesses() are global — they tear down every
-  // vault's trigger loops + managed children in one pass.
+  // stopProcessTriggers() + stopAllFileWatches() + stopProcesses() are global — they tear down
+  // every vault's trigger loops, file watchers, + managed children in one pass.
   stopProcessTriggers()
+  stopAllFileWatches()
   await waitForRunningJobs(SHUTDOWN_TIMEOUT_MS)
   await stopProcesses()
   activeVaults.clear()
@@ -94,6 +96,11 @@ async function startVault(ctx: VaultContext, opts: { owner: boolean; boot: boole
   await startProcesses(ctx)
   startProcessTriggers(ctx)
 
+  // Start the ONE file watcher for this vault (fans debounced changes out across every
+  // `on: file-change` cron — see fileWatch.ts). Safe to (re)start on every startVault call;
+  // startFileWatch no-ops if this vault already has a live watcher.
+  startFileWatch(ctx)
+
   // Recover crons interrupted by the previous shutdown BEFORE the scheduler runs
   // (recovery populates the in-memory running set so catch-up skips them). Safe before
   // session init because fireJob uses newSession: true. BOOT-ONLY: at runtime-enable the
@@ -121,6 +128,7 @@ async function startVault(ctx: VaultContext, opts: { owner: boolean; boot: boole
 async function stopVault(ctx: VaultContext): Promise<void> {
   stopProcessTriggersForVault(ctx)
   await stopProcessesForVault(ctx)
+  stopFileWatch(ctx)
   activeVaults.delete(ctx.root)
 }
 

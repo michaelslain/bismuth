@@ -90,8 +90,10 @@ function CronRow(props: {
 }) {
   const status = () => nodeStatus(props.node);
   const freq = () => {
-    const s = props.node.daemon?.schedule;
-    return s ? cronFrequency(s) : "";
+    const d = props.node.daemon;
+    // A file-change cron has no cron expression to summarize — show what it watches instead.
+    if (d?.on === "file-change") return d.watch ? `on change: ${d.watch}` : "on change";
+    return d?.schedule ? cronFrequency(d.schedule) : "";
   };
   return (
     <div

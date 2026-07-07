@@ -1,6 +1,6 @@
 # Crons & Background Processes
 
-The daemon runs two kinds of recurring work off the same on-disk pattern: **crons** (markdown files that fire a scheduled Claude session) and **background processes** (markdown files that supervise a long-lived child process). Both are plain `.md` files under `<vault>/.daemon` — crons in `.daemon/crons`, processes in `.daemon/processes` — parsed by the same frontmatter reader, driven through the same UNLINK-FIRST trigger discipline, but with deliberately different runtime semantics (a cron trigger *fires a run*; a process trigger *reconciles runtime to disk*).
+The daemon runs two kinds of recurring work off the same on-disk pattern: **crons** (markdown files that fire a Claude session, either on a time schedule or when a watched vault file changes — see [File-change crons](#file-change-crons)) and **background processes** (markdown files that supervise a long-lived child process). Both are plain `.md` files under `<vault>/.daemon` — crons in `.daemon/crons`, processes in `.daemon/processes` — parsed by the same frontmatter reader, driven through the same UNLINK-FIRST trigger discipline, but with deliberately different runtime semantics (a cron trigger *fires a run*; a process trigger *reconciles runtime to disk*).
 
 The big structural fact: there is **ONE machine runtime that multiplexes every enabled vault's brain**. The cron scheduler is a single tick loop that fans out across `loadEnabledVaults()` each tick; process supervision keeps one machine-global `managed` map. Every function takes a `VaultContext` (`loadCronJobs(ctx)`, `fireJob(ctx, job, lastFired)`, `requestCronRun(name, ctx)`, `processTriggers(ctx)`, `startProcess(name, ctx)`, …), and all paths come off that ctx (`ctx.cronsDir`, `ctx.processesDir`, `ctx.logsDir`, `ctx.lastFiredFile`, `ctx.runningFile`, `ctx.triggerDir`, `ctx.processTriggerDir` — all under `<vault>/.daemon`). In-memory runtime state is keyed `${ctx.root}::${name}` so two vaults can each own a cron or process of the same name without colliding.
 
@@ -48,29 +48,40 @@ Machine-level identity/runtime state (`daemon.pid`, `devices.json`, `owner.json`
 
 (`DEFAULT_DREAM_INTERVAL_MS` = 6 h also exists in config but is not used by the cron path — dreaming ships as the hourly `dream` cron below.)
 
+`FILE_WATCH_DEBOUNCE_MS` (`daemon/src/daemon/fileWatch.ts`, not `lib/config.ts`) = `2000` — how long the per-vault file watcher waits for quiet before flushing a batch of changed paths to file-change crons (see [File-change crons](#file-change-crons)).
+
 ---
 
 ## Crons (`daemon/cron.ts`)
 
 ### Model
 
+`CronJob` is a discriminated union on `on` — a cron is EITHER schedule-triggered OR file-change-triggered, never both:
+
 ```ts
-CronJob {
-  name, schedule, cron /* parsed CronExpression */, prompt /* = markdown body */,
+ScheduleCronJob {
+  on: "schedule", name, schedule, cron /* parsed CronExpression */, prompt /* = markdown body */,
   catchup, enabled, notify, model?, effort?, timeout /* s; 0 = no timeout */, waitFor?
+}
+FileChangeCronJob {
+  on: "file-change", name, watch /* vault-relative path or Bun.Glob pattern */, prompt,
+  catchup: false /* always — see File-change crons below */, enabled, notify, model?, effort?,
+  timeout, waitFor?
 }
 ```
 
 ### `parseCronFrontmatter`
 
-A file with **no `schedule`** → `null` (skipped). An **invalid** schedule (`parseCronExpression` returns null) → `null`.
+`on: file-change` is checked FIRST and is opt-in: any other value (including no `on` key at all) parses as the original schedule-based shape, so every cron already on disk is unaffected. A `file-change` cron with no `watch` → `null` (skipped). A schedule cron with **no `schedule`** → `null` (skipped); an **invalid** schedule (`parseCronExpression` returns null) → `null`.
 
 | frontmatter key | mapping | default |
 | --- | --- | --- |
-| `schedule` | required; parsed to `CronExpression` | (null if absent/invalid) |
+| `on` | `"file-change"` selects the file-change shape; anything else (including absent) → schedule shape | `"schedule"` |
+| `schedule` | schedule crons only; required, parsed to `CronExpression` | (null if absent/invalid) |
+| `watch` | file-change crons only; required — a vault-relative path or Bun.Glob pattern | (null if absent) |
 | `name` | `frontmatter.name ?? filename-without-.md` | filename |
 | (body) | `prompt` | — |
-| `catchup` | `frontmatter.catchup !== "false"` | `true` (opt-out) |
+| `catchup` | schedule crons: `frontmatter.catchup !== "false"`; file-change crons: always `false` (no time-based catch-up concept — see below) | `true` (opt-out, schedule only) |
 | `enabled` | `frontmatter.enabled !== "false"` | `true` (opt-out) |
 | `notify` | `frontmatter.notify === "true"` | `false` (opt-in) |
 | `model` | passthrough | `undefined` (session defaults `haiku`) |
@@ -81,6 +92,34 @@ A file with **no `schedule`** → `null` (skipped). An **invalid** schedule (`pa
 `parseTimeoutSecs`: empty → `300`; `"none"` or `"0"` → `0` (explicit no-timeout); otherwise `parseInt` if finite and `> 0`, else `300`.
 
 `loadCronJobs(ctx)`: `readdir ctx.cronsDir`, keep only `*.md`, parse each, skip unreadable. Dotfiles (`.last-fired.json`, `.running.json`) and the `.triggers` dir are naturally excluded because they are not `*.md`. Returns `[]` if the dir doesn't exist.
+
+### File-change crons
+
+A cron can fire when a vault file changes instead of on a time schedule — useful for "whenever I edit X, do Y" workflows (e.g. re-summarize a note, sync a change elsewhere, validate a file's shape).
+
+**Authoring one** — set `on: file-change` and `watch: <vault-relative path or glob>` instead of `schedule`:
+
+```yaml
+---
+name: inbox-triage
+on: file-change
+watch: inbox.md
+notify: true
+---
+
+Read inbox.md (just changed). Triage any new items: file each under
+the right project note, or ask a clarifying question by appending a
+`> [!question]` callout directly below the item. Leave already-triaged
+items untouched.
+```
+
+`watch` is matched with `Bun.Glob` against the vault-relative path of each changed file, so glob syntax works too: `journal/**` (anything under `journal/`), `*.md` (root-level notes only), `notes/*.md`, etc.
+
+**Watcher architecture** — `daemon/src/daemon/fileWatch.ts` owns exactly ONE recursive `fs.watch(ctx.root)` per vault brain (started by `startVault`/stopped by `stopVault`, alongside the process-trigger loop), never one watcher per cron. Raw fs events are debounced per vault (`FILE_WATCH_DEBOUNCE_MS = 2000`) so a burst of rapid saves during an editing session collapses into ONE fire, not one per keystroke. When the debounce window closes, the batch of changed paths is matched against **every** enabled `file-change` cron's `watch` pattern in that vault (`loadCronJobs(ctx)` is re-read fresh each batch, so toggling `enabled` takes effect on the very next change — no restart, no trigger file needed). A cron with one or more matches in the batch fires via `fireFileChangeCron(ctx, job, matchedPaths)` — the exact same `fireJob` session/model/timeout/notify plumbing a scheduled fire uses, with the changed paths appended to the prompt: `\n\nTriggered by change to: <path1>, <path2>, …`. A cron that's already running when its watch matches is skipped, not queued — the next change after it finishes will fire it fresh.
+
+**No time-based catch-up.** `shouldCatchUp` returns `false` immediately for `on: "file-change"` jobs — there is no "overdue" concept for a trigger that only fires on an actual change. A file edited while the daemon was stopped does not retroactively fire the cron; it fires on the *next* change after the daemon comes back up. `catchup` is hardcoded `false` on `FileChangeCronJob` for this reason (the frontmatter key does nothing for these).
+
+**Self-trigger loop hazard.** `.daemon/**` churn (the daemon's own `.last-fired.json`/`.running.json`/logs/memory/session-state writes) is UNCONDITIONALLY excluded from every batch (`isDaemonInternalPath`) — the daemon's own bookkeeping can never retrigger a file-change cron. This does **not** protect against a cron whose prompt edits an ordinary vault file that matches its own `watch` pattern: that cron will refire itself on its own edit (subject only to the debounce window), forever. If you author a cron that both watches and writes vault files, either point `watch` at a different file than the one it edits, or make the edit idempotent (a second identical write is a harmless no-op) so a self-retrigger costs a wasted run rather than compounding.
 
 ### Schedule parsing — hand-rolled, no library
 
@@ -136,8 +175,9 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 `enabled` defaults true (`!== "false"`). Disabled jobs are skipped at:
 
-- the scheduler tick (`if (!job.enabled || runningJobs.has(jobKey(ctx, name))) continue`),
-- catch-up on start (only enabled jobs are considered),
+- the scheduler tick (`if (!job.enabled || runningJobs.has(jobKey(ctx, name))) continue`) — schedule crons only; the tick also skips every `on: "file-change"` job outright (they never fire off the tick),
+- the file watcher's per-batch fan-out (`fileWatch.ts`'s `flush` skips any `job.on !== "file-change" || !job.enabled`) — since `loadCronJobs(ctx)` is re-read fresh on every debounced batch, a file-change cron's enable/disable takes effect on the very next matching change, faster than a schedule cron's next-tick-or-so window,
+- catch-up on start (only enabled jobs are considered; file-change jobs never catch up regardless — see above),
 - recovery (only enabled jobs are re-fired; a disabled job recorded as running is cleaned up via `markDone`).
 
 `updateCronJob(name, updates, ctx)` flips `enabled` by setting `frontmatter.enabled = String(enabled)` then rewriting the file with `buildCronFile`. There is **no live kill on disable** — a job already running keeps running; it just will not fire again.
@@ -147,7 +187,7 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 1. Compute `key = jobKey(ctx, job.name)`; create an `AbortController`; add `key` to the in-memory `runningJobs` Set and the `jobAbortControllers` Map.
 2. `await markRunning(ctx, job.name)` — so `.running.json` is on disk before the caller proceeds.
 3. Snapshot the job's **own** cron file (`<ctx.cronsDir>/<name>.md`) and the **entire** `ctx.processesDir` (self-modification guards — see below).
-4. Start a **background, not-awaited** session. The prompt is `[Cron: ${name}] ${prompt}` + `CRON_RESULT_INSTRUCTION` (the model must print exactly `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]` as its last line) + `CRON_NOTIFY_INSTRUCTION` if `notify`.
+4. Start a **background, not-awaited** session. The prompt is `[Cron: ${name}] ${prompt}` + (for a file-change fire only) `\n\nTriggered by change to: <path1>, <path2>, …` + `CRON_RESULT_INSTRUCTION` (the model must print exactly `[CRON_RESULT:SUCCESS]` or `[CRON_RESULT:FAILURE]` as its last line) + `CRON_NOTIFY_INSTRUCTION` if `notify`.
 5. `sendMessage(prompt, ctx, { model, effort, abortController, timeoutSecs: timeout, newSession: true })` — **each cron runs in a NEW session**, not the vault's persistent one. `sendMessage` supplies the per-call `cwd` = `ctx.root`, `env.BISMUTH_MEMORY_DIR` = `ctx.memoryDir`, and the vault's daemon identity, so concurrent vault sessions never race.
 6. If `waitFor` is set: after the session ends, poll `pgrep -f <pattern>` every 5 s until the pattern is gone or the remaining time is exhausted (`remaining = timeout*1000 - elapsed`, or `MAX_SAFE_INTEGER` if `timeout === 0`).
 7. `parseCronResult` finds the **last** marker in the output; if neither marker is present → `"unknown"`. Write the `LastFiredEntry` via `updateLastFired`.
@@ -161,6 +201,7 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 `getIntervalMs(cron)` estimates the schedule's period from its shape. `shouldCatchUp(job, lastFired)`:
 
+- `job.on === "file-change"` → `false`, always (checked first — file-change crons have no schedule to be overdue against; see [File-change crons](#file-change-crons)).
 - `!catchup` → `false`.
 - never fired → `true`.
 - result `"killed"`/`"failed"` → catch up if `elapsed > retryCooldownMs(interval)`, where `retryCooldownMs = max(5min, floor(interval/12))` (daily ≈ 2 h, weekly ≈ 14 h, hourly → 5-min floor).
@@ -172,7 +213,8 @@ In-memory runtime state — the `runningJobs` Set and the `jobAbortControllers` 
 
 1. An immediate IIFE heartbeats the device; **returns early if `!isOwner()`**. Otherwise it iterates `loadEnabledVaults()` and, per vault, loads jobs + last-fired and **sequentially (awaited)** fires each enabled job where `shouldCatchUp && !running`.
 2. Starts `triggerInterval = setInterval(processAllTriggers, 5000)` — which loops every enabled vault and calls `processTriggers(ctx)`.
-3. Starts `cronInterval = setInterval(tick, 60000)`. Each `tick` heartbeats; if `!isOwner()` it returns (still heartbeats — **a non-owner never fires**); otherwise it fans out across `loadEnabledVaults()`, and per job skips if `!enabled || runningJobs.has(jobKey(ctx, name))`, else fires (**not awaited** on the tick) when `shouldFire(now) || shouldCatchUp(...)`.
+3. Starts `cronInterval = setInterval(tick, 60000)`. Each `tick` heartbeats; if `!isOwner()` it returns (still heartbeats — **a non-owner never fires**); otherwise it fans out across `loadEnabledVaults()`, and per job skips if `!enabled || runningJobs.has(jobKey(ctx, name))` **or `on === "file-change"`** (file-change crons never fire off this tick — see below), else fires (**not awaited** on the tick) when `shouldFire(now) || shouldCatchUp(...)`.
+4. Independently, `fileWatch.ts`'s per-vault `fs.watch` (started/stopped alongside each vault's brain, not by `startCronScheduler`) fires `file-change` crons directly on a debounced batch match — see [File-change crons](#file-change-crons).
 
 `stopCronScheduler()` clears both intervals. `waitForRunningJobs(timeoutMs = 10000)` polls `runningJobs.size` every 500 ms and aborts every job's controller on timeout (used during graceful shutdown — see [lifecycle.md](lifecycle.md)).
 
@@ -194,7 +236,7 @@ There are two paths because the **MCP server is a separate process from the daem
 
 `CRON_NAME_RE = /^[a-zA-Z0-9_-][a-zA-Z0-9_.\-]*$/`. `validateCronName(name, ctx)`: non-empty, `<= 100` chars, regex match, plus a path-containment check that `<ctx.cronsDir>/<name>.md` stays inside `ctx.cronsDir`. Files are `<name>.md`.
 
-`buildCronFile` emits frontmatter **only for non-defaults**: always `name`/`schedule`; `model`/`effort`/`waitFor` if set; `timeout` only if `!== 300`; `catchup: false` only if explicitly false; `notify: true` only if true; `enabled: false` only if disabled. `createCronJob(opts, ctx)` refuses to overwrite; `deleteCronJob(name, ctx)` unlinks; `updateCronJob(name, updates, ctx)` re-parses + rewrites.
+`buildCronFile` emits frontmatter **only for non-defaults**: always `name`; either `on: file-change` + `watch` (if `on === "file-change"`) OR `schedule` (otherwise); `model`/`effort`/`waitFor` if set; `timeout` only if `!== 300`; `catchup: false` only if explicitly false; `notify: true` only if true; `enabled: false` only if disabled. `createCronJob(opts, ctx)` refuses to overwrite and validates the `on`-appropriate required field (`watch` for file-change, a parseable `schedule` otherwise); `deleteCronJob(name, ctx)` unlinks; `updateCronJob(name, updates, ctx)` re-parses + rewrites (accepts `on`/`watch` updates too, and re-validates the same way before writing).
 
 ### The two shipped default crons (`daemon/defaultCrons.ts`)
 
@@ -325,10 +367,11 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 
 ## Keying summary
 
-- **Multiplex:** ONE machine runtime iterates `loadEnabledVaults()`; the cron scheduler is process-global, process supervision is one machine-global `managed` map.
+- **Multiplex:** ONE machine runtime iterates `loadEnabledVaults()`; the cron scheduler is process-global, process supervision is one machine-global `managed` map, and the file watcher is ONE per vault (`fileWatch.ts`'s `watchers` map, keyed `ctx.root`).
 - **Crons:** `.last-fired.json` + `.running.json` keyed by `job.name` (frontmatter `name ?? filename-without-.md`); trigger files named by the job name (no extension). In-memory `runningJobs`/`jobAbortControllers` keyed `${ctx.root}::${name}`. Usually `name == filename`.
 - **Processes:** pid files `.pids/<name>.pid` + trigger files `.triggers/<name>` keyed by the file basename; the trigger handler reads `<name>.md` and rejects path separators; the `managed` map + per-vault trigger intervals are keyed `${ctx.root}::${name}`.
 - **Trigger consumption (both):** UNLINK-FIRST then act; dotfiles excluded; a non-owner consumes-without-acting.
+- **File-change crons:** no trigger file, no dedicated in-memory key — matched fresh out of `loadCronJobs(ctx)` against each debounced batch from that vault's ONE `fileWatch.ts` watcher; still gated by the same `runningJobs` set as every other cron (keyed `${ctx.root}::${name}`), so a file-change cron and a schedule cron can never share a name and both be "running" independently.
 
 ## Cross-links
 
@@ -340,4 +383,4 @@ This is the symmetric counterpart of cron triggers but with **different semantic
 - [communication.md](communication.md) — sessions, identity, and the MCP/relay surface.
 - [../README.md](../README.md) — the docs root.
 
-Source: daemon/src/daemon/cron.ts, daemon/src/daemon/process.ts, daemon/src/daemon/defaultCrons.ts, daemon/src/daemon/seeds.ts, daemon/src/daemon/session.ts, daemon/src/daemon/index.ts, daemon/src/lib/config.ts, daemon/src/lib/registry.ts, daemon/src/lib/frontmatter.ts
+Source: daemon/src/daemon/cron.ts, daemon/src/daemon/fileWatch.ts, daemon/src/daemon/process.ts, daemon/src/daemon/defaultCrons.ts, daemon/src/daemon/seeds.ts, daemon/src/daemon/session.ts, daemon/src/daemon/index.ts, daemon/src/lib/config.ts, daemon/src/lib/registry.ts, daemon/src/lib/frontmatter.ts
