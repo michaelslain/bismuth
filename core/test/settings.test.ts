@@ -137,6 +137,58 @@ test("serializeSettingsForFrontend includes the folderIcons map", async () => {
   expect(data.folderIcons).toEqual({ projects: "Folder" });
 });
 
+import { readFolderVisibility, setFolderVisibility } from "../src/settings";
+
+test("readFolderVisibility returns {} when settings.yaml is absent", async () => {
+  const vault = await emptyVault();
+  expect(await readFolderVisibility(vault)).toEqual({});
+});
+
+test("setFolderVisibility persists a folder visibility into settings.yaml", async () => {
+  const vault = await emptyVault();
+  await setFolderVisibility(vault, "private", "hidden");
+  expect(await readFolderVisibility(vault)).toEqual({ private: "hidden" });
+  const res = await readSettings(vault);
+  expect((res!.data.folderVisibility as Record<string, unknown>).private).toBe("hidden");
+});
+
+test("setFolderVisibility with a null/undefined value deletes the entry", async () => {
+  const vault = await emptyVault();
+  await setFolderVisibility(vault, "private", "chat-only");
+  await setFolderVisibility(vault, "private", null);
+  expect(await readFolderVisibility(vault)).toEqual({});
+});
+
+test("setFolderVisibility ignores a value outside the two-literal union", async () => {
+  const vault = await emptyVault();
+  await setFolderVisibility(vault, "private", "hidden");
+  // @ts-expect-error — deliberately invalid at the call site, mirrors runtime guard
+  await setFolderVisibility(vault, "private", "all");
+  expect(await readFolderVisibility(vault)).toEqual({});
+});
+
+test("initializeSettings seeds folderVisibility as an empty map", async () => {
+  const vault = await emptyVault();
+  await initializeSettings(vault);
+  const parsed = parseYaml((await readSettings(vault))!.raw) as Record<string, any>;
+  expect(parsed.folderVisibility).toEqual({});
+});
+
+test("serializeSettingsForFrontend includes the folderVisibility map", async () => {
+  const vault = await emptyVault();
+  await setFolderVisibility(vault, "private", "hidden");
+  const data = await serializeSettingsForFrontend(vault);
+  expect(data.folderVisibility).toEqual({ private: "hidden" });
+});
+
+test("setFolderVisibility leaves a corrupt file's bytes unchanged (never clobbers content)", async () => {
+  const vault = await emptyVault();
+  await writeNote(vault, ".settings", ": : : not yaml\n[[[");
+  const before = readFileSync(join(vault, ".settings"), "utf8");
+  await setFolderVisibility(vault, "private", "hidden");
+  expect(readFileSync(join(vault, ".settings"), "utf8")).toBe(before);
+});
+
 import { serializeSettingsForFrontend, SETTINGS_FILE } from "../src/settings";
 
 test("serializeSettingsForFrontend returns defaults when no file exists", async () => {

@@ -11,6 +11,7 @@ import {
   loadAllNotes,
   parseNoteRef,
   sanitizeFolder,
+  isMemoryNoteVisibleToDaemon,
   type NoteFrontmatter,
 } from "../src/graph.ts";
 
@@ -58,6 +59,32 @@ describe("MemoryGraph", () => {
   test("readNote returns null for non-existent note", async () => {
     const note = await readNote("NonExistent", tempDir);
     expect(note).toBeNull();
+  });
+
+  // Visibility gate (docs/vault/visibility.md): memory notes carry an OPTIONAL `visibility`
+  // frontmatter field, round-tripped through write/serialize/parse like every other field.
+  test("visibility frontmatter round-trips through writeNote/readNote", async () => {
+    const fm: NoteFrontmatter = { type: "fact", tags: [], created: "2026-04-01", updated: "2026-04-01", visibility: "hidden" };
+    await writeNote("Secret", fm, "shh", tempDir);
+    const note = await readNote("Secret", tempDir);
+    expect(note!.frontmatter.visibility).toBe("hidden");
+  });
+
+  test("visibility is omitted from frontmatter when absent (the common case)", async () => {
+    const fm: NoteFrontmatter = { type: "fact", tags: [], created: "2026-04-01", updated: "2026-04-01" };
+    await writeNote("Public", fm, "not a secret", tempDir);
+    const note = await readNote("Public", tempDir);
+    expect(note!.frontmatter.visibility).toBeUndefined();
+  });
+
+  test("isMemoryNoteVisibleToDaemon: true only when visibility is absent ('all')", async () => {
+    const base = { type: "fact" as const, tags: [], created: "2026-04-01", updated: "2026-04-01" };
+    await writeNote("A", base, "x", tempDir);
+    await writeNote("B", { ...base, visibility: "chat-only" }, "x", tempDir);
+    await writeNote("C", { ...base, visibility: "hidden" }, "x", tempDir);
+    expect(isMemoryNoteVisibleToDaemon((await readNote("A", tempDir))!)).toBe(true);
+    expect(isMemoryNoteVisibleToDaemon((await readNote("B", tempDir))!)).toBe(false);
+    expect(isMemoryNoteVisibleToDaemon((await readNote("C", tempDir))!)).toBe(false);
   });
 
   test("listNotes returns all written notes", async () => {

@@ -18,6 +18,11 @@ export interface NoteFrontmatter {
   tags: string[];
   created: string;
   updated: string;
+  /** AI visibility (core/src/visibility.ts's per-file scheme, applied to memory notes too — see
+   *  docs/vault/visibility.md). Omitted for the common case (fully visible). Memory notes are
+   *  flat under `.daemon/memory`, so there is no folder-cascade tier here, only this explicit
+   *  per-note value — a documented simplification vs. the vault's file+folder cascade. */
+  visibility?: "chat-only" | "hidden";
 }
 
 export interface MemoryNote {
@@ -130,6 +135,8 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
     }
   }
 
+  const visibility = data["visibility"];
+
   return {
     type: (data["type"] as NoteType) ?? "fact",
     tags: Array.isArray(data["tags"])
@@ -139,12 +146,20 @@ function parseFrontmatter(raw: string): NoteFrontmatter {
       : [],
     created: (data["created"] as string) ?? new Date().toISOString().slice(0, 10),
     updated: (data["updated"] as string) ?? new Date().toISOString().slice(0, 10),
+    ...(visibility === "chat-only" || visibility === "hidden" ? { visibility } : {}),
   };
 }
 
 function serializeFrontmatter(fm: NoteFrontmatter): string {
   const tagsStr = fm.tags.length > 0 ? `[${fm.tags.join(", ")}]` : "[]";
-  return `---\ntype: ${fm.type}\ntags: ${tagsStr}\ncreated: ${fm.created}\nupdated: ${fm.updated}\n---`;
+  const visibilityLine = fm.visibility ? `\nvisibility: ${fm.visibility}` : "";
+  return `---\ntype: ${fm.type}\ntags: ${tagsStr}\ncreated: ${fm.created}\nupdated: ${fm.updated}${visibilityLine}\n---`;
+}
+
+/** Memory notes are flat under `.daemon/memory` (no folder cascade) — a note is restricted from
+ *  daemon-facing recall when its OWN frontmatter says so. See docs/vault/visibility.md. */
+export function isMemoryNoteVisibleToDaemon(note: MemoryNote): boolean {
+  return note.frontmatter.visibility !== "chat-only" && note.frontmatter.visibility !== "hidden";
 }
 
 function parseNoteFile(name: string, raw: string): MemoryNote {

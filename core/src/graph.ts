@@ -90,6 +90,29 @@ export interface TreeEntry {
   isSystemFolder?: boolean;
   /** Display label override (e.g. the .daemon folder shows the configured daemon name). */
   label?: string;
+  /**
+   * AI visibility. Two different things depending on where the entry came from:
+   * straight out of `listTree` this is the file's OWN raw explicit frontmatter value
+   * (rarely "all" — an explicit override of an ancestor folder's rule); on the `GET
+   * /tree` response it has been REPLACED with the RESOLVED cascade value (core/src/
+   * visibility.ts `resolveVisibility`/`resolveFolderVisibility`, folded against the
+   * folderVisibility settings map) and omitted entirely when resolved to "all" (like
+   * `icon`). Directories never carry a raw value (folders have no frontmatter) — only
+   * the resolved one, stamped by the same overlay. Because the badge (this field) and
+   * the enforcement gate (`buildDenyPaths`) both call the same resolver, the tree can
+   * never disagree with what chat.ts/the daemon actually do.
+   */
+  visibility?: "all" | "chat-only" | "hidden";
+  /**
+   * The node's OWN explicit setting (unresolved) — a file's own frontmatter value, or a
+   * folder's own `folderVisibility` entry — omitted when absent (or, rarely, an explicit
+   * file-level "all" override; that edge case doesn't need separate UI treatment since
+   * choosing "Visible to Daemon + Chat" always clears the property either way). Only
+   * present on the `GET /tree` response; used by the FileTree context menu to checkmark
+   * the active row and to name the ancestor folder responsible when `visibility` (the
+   * resolved value) differs from it.
+   */
+  ownVisibility?: "chat-only" | "hidden";
 }
 
 export function emptyGraph(): GraphData {

@@ -1,5 +1,5 @@
 import { test, expect, describe, afterEach } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -13,9 +13,44 @@ import {
   stripEditorContext,
   makeUserMessage,
   abortTurn,
+  extractEditorContextPaths,
   type ChatFrame,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
+
+// extractEditorContextPaths backs captureToMemory's visibility gate (skip capturing a session
+// that touched a chat-only/hidden file) — it parses the SAME preamble format app/src/
+// chatEditorContext.ts's buildEditorContextText produces, so these fixtures mirror that shape.
+describe("extractEditorContextPaths (captureToMemory's visibility gate)", () => {
+  test("extracts the active file", () => {
+    const text = "<editor-context>\nActive file: a.md\n</editor-context>\n\nsummarize this";
+    expect(extractEditorContextPaths(text)).toEqual(["a.md"]);
+  });
+
+  test("extracts open tabs (comma-separated)", () => {
+    const text = "<editor-context>\nOpen tabs: a.md, b.md, private/c.md\n</editor-context>\n\nhi";
+    expect(extractEditorContextPaths(text)).toEqual(["a.md", "b.md", "private/c.md"]);
+  });
+
+  test("extracts the selection's source file", () => {
+    const text = "<editor-context>\nCurrent selection (from secret.md):\n```\nhello\n```\n</editor-context>\n\nwhat is this?";
+    expect(extractEditorContextPaths(text)).toEqual(["secret.md"]);
+  });
+
+  test("extracts all three when present, active file first", () => {
+    const text =
+      "<editor-context>\nActive file: a.md\nOpen tabs: a.md, b.md\nCurrent selection (from b.md):\n```\nx\n```\n</editor-context>\n\nq";
+    expect(extractEditorContextPaths(text)).toEqual(["a.md", "a.md", "b.md", "b.md"]);
+  });
+
+  test("returns [] when there's no editor-context block at all", () => {
+    expect(extractEditorContextPaths("just a normal question")).toEqual([]);
+  });
+
+  test("returns [] for an empty editor-context block", () => {
+    expect(extractEditorContextPaths("<editor-context>\n</editor-context>\n\nhi")).toEqual([]);
+  });
+});
 
 // The visual chat prepends a `<editor-context>…</editor-context>` preamble to the WIRE message
 // (grounding context for Claude, never user prose). On history REPLAY the bubble is rebuilt from the
@@ -160,9 +195,12 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     const { sink, frames, waitFor } = makeCollector();
 
     sendMessage(chatId, "Reply with exactly: ok", cwd, sink);
-    expect(chatSessionCount()).toBeGreaterThan(0);
 
     const manifest = await waitFor((f) => f.type === "manifest");
+    // Registration now lands after an async visibility-deny-list build (buildDenyPaths), so it's
+    // no longer synchronous with the sendMessage() call above — but the session is guaranteed
+    // registered by the time its `manifest` frame streams (drain() only runs after `sessions.set`).
+    expect(chatSessionCount()).toBeGreaterThan(0);
     expect(manifest.type).toBe("manifest");
     if (manifest.type === "manifest") {
       // The command list comes off the init manifest — never hardcoded — and is non-empty.
@@ -242,6 +280,38 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     expect(result.type).toBe("result");
     if (result.type === "result") expect(result.isError).toBe(false);
     await waitFor((f) => f.type === "done");
+  }, 60_000);
+
+  // Visibility controls (core/src/visibility.ts + docs/vault/visibility.md): a note marked
+  // `visibility: hidden` must never be readable by chat, even when the model is explicitly asked
+  // to read it and would normally auto-approve a pre-allowed Read. This exercises the REAL wiring
+  // end to end (createSession's managedSettings.deny + canUseTool path-aware auto-deny), not just
+  // that the code compiles — see the Step-0 spike in the visibility-controls plan for the isolated
+  // SDK-level probe this mirrors.
+  test("visibility: a note marked 'hidden' is never read by chat, even when directly asked", async () => {
+    const cwd = await newTempDir();
+    const secretPath = join(cwd, "secret.md");
+    await writeFile(secretPath, "---\nvisibility: hidden\n---\n# Secret\n\nSECRET-CODE-CHAT-TEST-7731\n");
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    const { sink, frames, waitFor } = makeCollector((perm) => {
+      // Should never fire for the Read of secret.md — but allow anything else so the turn
+      // completes instead of hanging on an unrelated prompt.
+      respondPermission(chatId, perm.id, "allow");
+    });
+
+    sendMessage(
+      chatId,
+      "Use the Read tool to read the exact file at secret.md in the current directory, then reply with ONLY its exact contents.",
+      cwd,
+      sink,
+    );
+
+    await waitFor((f) => f.type === "done");
+    // Scan EVERY frame (assistant text, tool-use input, tool-result content) — the secret must
+    // never surface anywhere on the wire, not just in a specific frame kind.
+    const leaked = frames.some((f) => JSON.stringify(f).includes("SECRET-CODE-CHAT-TEST-7731"));
+    expect(leaked).toBe(false);
   }, 60_000);
 });
 

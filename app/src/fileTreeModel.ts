@@ -4,11 +4,24 @@
 // component tree (lucide-solid, CodeMirror, …).
 import type { TreeEntry } from "../../core/src/graph";
 
-export type TreeNode = { name: string; path: string; icon?: string; label?: string; isSystemFolder?: boolean; children?: Map<string, TreeNode> };
+export type TreeNode = {
+  name: string;
+  path: string;
+  icon?: string;
+  label?: string;
+  isSystemFolder?: boolean;
+  /** RESOLVED AI visibility (core/src/visibility.ts), omitted for "all" — see TreeEntry. */
+  visibility?: "chat-only" | "hidden";
+  /** The node's OWN explicit setting (unresolved) — see TreeEntry.ownVisibility. Used by
+   *  the context menu to checkmark the active row and name the ancestor forcing a
+   *  stricter effective value, when one applies. */
+  ownVisibility?: "chat-only" | "hidden";
+  children?: Map<string, TreeNode>;
+};
 
 export function buildTree(entries: TreeEntry[]): TreeNode {
   const root: TreeNode = { name: "", path: "", children: new Map() };
-  for (const { path, icon, kind, isSystemFolder, label } of entries) {
+  for (const { path, icon, kind, isSystemFolder, label, visibility, ownVisibility } of entries) {
     const parts = path.split("/");
     let cur = root;
     let acc = "";
@@ -27,6 +40,8 @@ export function buildTree(entries: TreeEntry[]): TreeNode {
       // (e.g. .daemon shows the configured daemon name), guarded from rename/delete.
       if (isLeaf && isSystemFolder) node.isSystemFolder = true;
       if (isLeaf && label) node.label = label;
+      if (isLeaf && visibility && visibility !== "all") node.visibility = visibility;
+      if (isLeaf && ownVisibility) node.ownVisibility = ownVisibility;
       cur = node;
     });
   }
@@ -47,8 +62,9 @@ export function buildTree(entries: TreeEntry[]): TreeNode {
  * state, handlers) survive the rebuild instead of being disposed + recreated.
  *
  * Field comparison is exhaustive over everything buildTree sets (name/path/icon/label/
- * isSystemFolder/dir-ness): `next` is always a fresh build reflecting current truth, so a cleared
- * icon or label shows up as a field difference here (never a stale carried-over value).
+ * isSystemFolder/visibility/ownVisibility/dir-ness): `next` is always a fresh build
+ * reflecting current truth, so a cleared icon, label, or visibility shows up as a field
+ * difference here (never a stale carried-over value).
  */
 export function reconcileTree(prev: TreeNode | undefined, next: TreeNode): TreeNode {
   if (!prev) return next;
@@ -58,6 +74,8 @@ export function reconcileTree(prev: TreeNode | undefined, next: TreeNode): TreeN
     prev.icon === next.icon &&
     prev.label === next.label &&
     prev.isSystemFolder === next.isSystemFolder &&
+    prev.visibility === next.visibility &&
+    prev.ownVisibility === next.ownVisibility &&
     !prev.children === !next.children; // file ↔ dir flip at the same path
   if (!next.children || !prev.children) return sameFields && !next.children && !prev.children ? prev : next;
   // Size mismatch catches pure removals; an equal-size add+remove swap is caught below because

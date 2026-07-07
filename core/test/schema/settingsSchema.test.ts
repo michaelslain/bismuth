@@ -12,12 +12,16 @@ function objectFields(entry: SchemaEntry): Schema {
 
 test("SETTINGS_SCHEMA nests the app sections, calendar, ui, server, folderIcons and properties", () => {
   expect(Object.keys(SETTINGS_SCHEMA).sort()).toEqual(
-    ["appearance", "attachments", "calendar", "daemon", "dailyNotes", "editor", "folderIcons", "googleCalendar", "graph", "keybindings", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
+    ["appearance", "attachments", "calendar", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
   );
 });
 
 test("folderIcons section is an empty object schema (the per-folder icon map placeholder)", () => {
   expect(SETTINGS_SCHEMA.folderIcons.type).toEqual({ kind: "object", fields: {} });
+});
+
+test("folderVisibility section is an empty object schema (the per-folder visibility map placeholder)", () => {
+  expect(SETTINGS_SCHEMA.folderVisibility.type).toEqual({ kind: "object", fields: {} });
 });
 
 test("appearance has no flat per-color keys (themes are the single source of color)", () => {
@@ -150,7 +154,7 @@ test("properties section is an empty object schema (the registry placeholder)", 
 test("DEFAULTS is the plain nested object derived from the schema", () => {
   // Structural (robust to added settings): section set + representative leaves.
   expect(Object.keys(DEFAULTS).sort()).toEqual(
-    ["appearance", "attachments", "calendar", "daemon", "dailyNotes", "editor", "folderIcons", "googleCalendar", "graph", "keybindings", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
+    ["appearance", "attachments", "calendar", "daemon", "dailyNotes", "editor", "folderIcons", "folderVisibility", "googleCalendar", "graph", "keybindings", "properties", "server", "srs", "tabBar", "templates", "terminal", "toolbar", "ui", "update", "vault"].sort(),
   );
   const d = DEFAULTS as Record<string, Record<string, unknown>>;
   expect(d.appearance.theme).toBe("oxide-duotone");
@@ -164,6 +168,7 @@ test("DEFAULTS is the plain nested object derived from the schema", () => {
   expect(d.server.fileWatchDebounceMs).toBe(250);
   expect(d.properties).toEqual({});
   expect(d.folderIcons).toEqual({});
+  expect(d.folderVisibility).toEqual({});
 });
 
 test("DEFAULTS round-trips clean through validateDocument in settings mode", () => {

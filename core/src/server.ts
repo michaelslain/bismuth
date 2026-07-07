@@ -45,7 +45,8 @@ import {
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
-import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, readDailyNotes } from "./settings";
+import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, setFolderVisibility, readDailyNotes } from "./settings";
+import { resolveVisibility, resolveFolderVisibility, type Visibility } from "./visibility";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
@@ -565,16 +566,31 @@ export function createServer(cfg: CoreConfig) {
 
     "GET /tree": async (_, __) => {
       const cachedTree = await treeCache.get();
-      // Overlay per-folder icons (stored in settings.yaml) onto directory entries.
-      // Done per-request on a shallow copy so a folder-icon change is reflected
-      // even when the underlying file tree (cachedTree) hasn't structurally changed
-      // and so we never mutate the cache with a value tied to a specific request.
+      // Overlay per-folder icons + resolved AI visibility (both stored in settings.yaml)
+      // onto tree entries. Done per-request on a shallow copy so a folder-icon/visibility
+      // change is reflected even when the underlying file tree (cachedTree) hasn't
+      // structurally changed and so we never mutate the cache with a value tied to a
+      // specific request. Visibility is RESOLVED here (core/src/visibility.ts) from each
+      // entry's own raw frontmatter value (files) or path (dirs) + folderVisibility, so
+      // the badge the tree shows can never disagree with what buildDenyPaths enforces —
+      // both call the same resolver.
       const folderIcons = (appConfig.folderIcons as Record<string, string> | undefined) ?? {};
+      const folderVisibility = (appConfig.folderVisibility as Record<string, Visibility> | undefined) ?? {};
       const entries = cachedTree.map((e) => {
-        if (e.kind === "dir" && folderIcons[e.path]) {
-          return { ...e, icon: folderIcons[e.path] };
-        }
-        return e;
+        const next: TreeEntry = { ...e };
+        if (e.kind === "dir" && folderIcons[e.path]) next.icon = folderIcons[e.path];
+        // Stash the node's OWN explicit setting before `visibility` gets overwritten below —
+        // a file's raw frontmatter value (dropping a rare explicit "all", which the context
+        // menu doesn't need to distinguish from absent) or a dir's own folderVisibility entry.
+        const own = e.kind === "dir" ? folderVisibility[e.path] : e.visibility;
+        if (own === "chat-only" || own === "hidden") next.ownVisibility = own;
+        else delete next.ownVisibility;
+        const resolved = e.kind === "dir"
+          ? resolveFolderVisibility(e.path, folderVisibility)
+          : resolveVisibility(e.path, e.visibility, folderVisibility);
+        if (resolved === "all") delete next.visibility;
+        else next.visibility = resolved;
+        return next;
       });
       return ok(entries);
     },
@@ -1230,6 +1246,39 @@ export function createServer(cfg: CoreConfig) {
         if (icon) icons[path] = icon;
         else delete icons[path];
         appConfig = { ...appConfig, folderIcons: icons };
+        return ok();
+      },
+      // settings.yaml change → invalidate broadly; pass its path so classifyVault
+      // marks both graph & tree dirty (isSettingsPath), refreshing /tree.
+      () => SETTINGS_FILE,
+    ),
+
+    "POST /folder-visibility": mutatingHandler(
+      async (req) => {
+        // Assign (or clear) AI visibility for a folder. Folders have no frontmatter, so
+        // the mapping lives in settings.yaml and is overlaid onto /tree file+dir entries
+        // (core/src/visibility.ts resolveVisibility/resolveFolderVisibility).
+        const { path, visibility } = (await req.json()) as { path: string; visibility?: string | null };
+        if (typeof path !== "string" || path.length === 0) {
+          return error("missing path", 400);
+        }
+        // Reject traversal / absolute paths — folder paths are vault-relative.
+        const segments = path.split("/");
+        if (path.startsWith("/") || segments.some((s) => s === ".." || s === ".")) {
+          return error("invalid path", 400);
+        }
+        if (visibility !== "chat-only" && visibility !== "hidden" && visibility !== null && visibility !== undefined) {
+          return error("invalid visibility", 400);
+        }
+        await setFolderVisibility(cfg.vault, path, visibility ?? null);
+        // Same synchronous appConfig patch as /folder-icon: GET /tree overlays visibility
+        // from the cached appConfig, and the watcher-driven loadAppConfig refresh lands a
+        // debounce (~250ms) AFTER this mutation's SSE — patch in-memory so the client's
+        // immediate refetch already sees the new value instead of a stale flash.
+        const visibilities = { ...((appConfig.folderVisibility as Record<string, Visibility> | undefined) ?? {}) };
+        if (visibility) visibilities[path] = visibility;
+        else delete visibilities[path];
+        appConfig = { ...appConfig, folderVisibility: visibilities };
         return ok();
       },
       // settings.yaml change → invalidate broadly; pass its path so classifyVault

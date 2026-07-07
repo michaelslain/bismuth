@@ -211,6 +211,10 @@ export const SETTINGS_SCHEMA: Schema = {
   // Per-folder icons. Free-form `{folderPath: iconName}` (folders have no
   // frontmatter), seeded empty and written via POST /folder-icon.
   folderIcons: { type: { kind: "object", fields: {} }, doc: "Per-folder icons: map a folder path to a Lucide icon name or emoji." },
+  // Per-folder visibility (folders have no frontmatter). Free-form
+  // `{folderPath: "chat-only"|"hidden"}`, seeded empty and written via
+  // POST /folder-visibility. Nearest-ancestor-wins; see core/src/visibility.ts.
+  folderVisibility: { type: { kind: "object", fields: {} }, doc: "Per-folder AI visibility: map a folder path to \"chat-only\" or \"hidden\" (restricts the daemon + in-app chat, not you)." },
   // Sidebar header bar buttons, in order. Each runs a command-palette command.
   // Seeded with the three built-ins so a fresh install is unchanged.
   toolbar: {

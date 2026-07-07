@@ -9,6 +9,7 @@ import {
   setSettingInFile,
   getVaultSchema,
   setFolderIcon,
+  setFolderVisibility,
 } from "../../../core/src/settings";
 
 /** Walk a dotted path into a value; returns undefined if any segment is missing. */
@@ -61,6 +62,21 @@ export const commands: CommandMap = {
       if (!folder) fail("usage: folder-icon <folder> <icon> [--clear]");
       if (!clear && !icon) fail("usage: folder-icon <folder> <icon> [--clear]");
       await setFolderIcon(vault, folder, clear ? null : icon);
+      out({ ok: true }, args);
+    },
+  },
+  "folder-visibility": {
+    summary: "Set (or --clear) a folder's AI visibility (chat-only|hidden) in settings.yaml",
+    usage: "<folder> <chat-only|hidden> [--clear]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [folder, visibility] = positionals(args);
+      const clear = bool(args, "clear");
+      if (!folder) fail("usage: folder-visibility <folder> <chat-only|hidden> [--clear]");
+      if (!clear && visibility !== "chat-only" && visibility !== "hidden") {
+        fail("usage: folder-visibility <folder> <chat-only|hidden> [--clear]");
+      }
+      await setFolderVisibility(vault, folder, clear ? null : (visibility as "chat-only" | "hidden"));
       out({ ok: true }, args);
     },
   },

@@ -1,4 +1,4 @@
-import { loadAllNotes, getMemoryDir } from "./graph";
+import { loadAllNotes, getMemoryDir, isMemoryNoteVisibleToDaemon } from "./graph";
 import type { MemoryNote } from "./graph";
 
 export interface ParsedQuery {
@@ -143,7 +143,9 @@ export async function executeQuery(
   folder?: string
 ): Promise<MemoryNote[]> {
   const notes = await loadAllNotes(dir, folder);
-  return notes.filter((note) => noteMatchesQuery(note, query));
+  // Visibility gate (docs/vault/visibility.md): a "chat-only"/"hidden" memory note never
+  // surfaces via recall — memory notes are flat, so this is a per-note check, not a cascade.
+  return notes.filter((note) => isMemoryNoteVisibleToDaemon(note) && noteMatchesQuery(note, query));
 }
 
 /**

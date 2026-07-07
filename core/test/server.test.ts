@@ -461,6 +461,141 @@ test("POST /folder-icon rejects a path that escapes the vault", async () => {
   }
 });
 
+test("POST /folder-visibility sets a directory visibility surfaced on GET /tree, cascading to its files", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "private", visibility: "hidden" }),
+    });
+    expect(res.status).toBe(200);
+
+    const entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "private", kind: "dir", visibility: "hidden", ownVisibility: "hidden" });
+    expect(entries).toContainEqual({ path: "private/a.md", kind: "file", visibility: "hidden" });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-visibility with null visibility removes a previously-set directory visibility", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-clear-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const post = (body: unknown) =>
+    fetch(`${base}/folder-visibility`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  try {
+    await post({ path: "private", visibility: "hidden" });
+    let entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "private", kind: "dir", visibility: "hidden", ownVisibility: "hidden" });
+
+    await post({ path: "private", visibility: null });
+    entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "private", kind: "dir" });
+    expect(entries).toContainEqual({ path: "private/a.md", kind: "file" });
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-visibility persists folderVisibility into settings.yaml", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-persist-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "private", visibility: "hidden" }),
+    });
+    const res = await readSettings(dir);
+    expect(res).not.toBeNull();
+    expect((res!.data.folderVisibility as Record<string, unknown>).private).toBe("hidden");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-visibility bumps the version so the sidebar refetches", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-ver-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const v0 = (await (await fetch(`${base}/version`)).json()).version;
+    await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "private", visibility: "hidden" }),
+    });
+    const v1 = (await (await fetch(`${base}/version`)).json()).version;
+    expect(v1).toBeGreaterThan(v0);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-visibility rejects a path that escapes the vault", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-esc-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "../escape", visibility: "hidden" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("POST /folder-visibility rejects a value outside the two-literal union", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-folder-visibility-badval-"));
+  await writeNote(dir, "private/a.md", "x");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "private", visibility: "all" }),
+    });
+    expect(res.status).toBe(400);
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /tree: an explicit file-level visibility overrides an ancestor folder's setting", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-visibility-override-"));
+  await writeNote(dir, "private/a.md", "x");
+  await writeNote(dir, "private/exposed.md", "---\nvisibility: all\n---\nx");
+  const server = createServer({ vault: dir, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    await fetch(`${base}/folder-visibility`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: "private", visibility: "hidden" }),
+    });
+    const entries = await (await fetch(`${base}/tree`)).json();
+    expect(entries).toContainEqual({ path: "private/a.md", kind: "file", visibility: "hidden" });
+    // The explicit "all" override means no visibility key at all (omitted, like icon).
+    expect(entries).toContainEqual({ path: "private/exposed.md", kind: "file" });
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /vault-data returns a row per note with file meta + frontmatter", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });
