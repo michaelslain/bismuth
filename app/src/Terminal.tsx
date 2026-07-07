@@ -9,7 +9,7 @@ import { settings, DEFAULT_ACCENT_PALETTE } from "./settings";
 import { paletteToInts } from "./themeColors";
 import { resolveAppearance } from "./themes";
 import { api, apiBase } from "./api";
-import type { NativeDragDetail } from "./nativeDrop";
+import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
 
 // The active node palette (centralized Oxide accentPalette) as 0xRRGGBB ints.
 function activePaletteInts(): number[] {
@@ -476,6 +476,25 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     container.addEventListener("mousedown", downHandler);
     container.addEventListener("mouseup", upHandler);
 
+    // #55: single-source the drop affordance so the two transports (HTML5 + native) never fight over
+    // the class, and so a high-frequency native `over` stream doesn't thrash the DOM — only WRITE the
+    // class when the desired state actually CHANGES. `dropActive` holds the last-applied state. Both
+    // the drop and leave paths always drive it back to false, so the ring can't get stuck on.
+    let dropActive = false;
+    const setDropActive = (on: boolean): void => {
+      if (on === dropActive) return;
+      dropActive = on;
+      container.classList.toggle("term-drop-active", on);
+    };
+    // Insert the shell-quoted path(s) at the prompt, with a trailing space so the next path/arg (or a
+    // command typed after) stays separated. Shared by both transports so a drop pastes IDENTICALLY
+    // whichever way it arrived. No-op if the PTY socket isn't open (nothing to receive it).
+    const insertPathsAtPrompt = (paths: string[]): void => {
+      if (!paths.length || !ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(stdinFrame(enc.encode(paths.map(shellQuote).join(" ") + " ")));
+      term?.focus();
+    };
+
     // Drag a file (from the file tree, or the OS) onto the terminal → insert its path at
     // the prompt. stopPropagation so the host pane doesn't also treat it as a drop-to-split.
     dragOverHandler = (e: DragEvent) => {
@@ -483,24 +502,19 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
       e.preventDefault(); // allow the drop
       e.stopPropagation();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
-      container.classList.add("term-drop-active");
+      setDropActive(true);
     };
     dragLeaveHandler = (e: DragEvent) => {
       // Ignore leaves into a child element — only clear when the cursor exits the host.
       if (e.relatedTarget && container.contains(e.relatedTarget as Node)) return;
-      container.classList.remove("term-drop-active");
+      setDropActive(false);
     };
     dropHandler = (e: DragEvent) => {
       if (!dragHasPath(e)) return;
       e.preventDefault();
       e.stopPropagation();
-      container.classList.remove("term-drop-active");
-      void pathsFromDrop(e).then((paths) => {
-        if (!paths.length || !ws || ws.readyState !== WebSocket.OPEN) return;
-        // Trailing space so the next path/arg (or a command typed after) stays separated.
-        ws.send(stdinFrame(enc.encode(paths.map(shellQuote).join(" ") + " ")));
-        term?.focus();
-      });
+      setDropActive(false);
+      void pathsFromDrop(e).then(insertPathsAtPrompt);
     };
     container.addEventListener("dragover", dragOverHandler);
     container.addEventListener("dragleave", dragLeaveHandler);
@@ -510,27 +524,22 @@ export function TerminalTab(props: { id: string; active: () => boolean; onExit?:
     // window-level `bismuth-native-drag` event (the HTML5 drop above only sees a basename under
     // Tauri). Insert the real path(s) at the prompt — like a native terminal — when the cursor is
     // over THIS terminal. No-op in the browser (the event never fires there). Coexists with the
-    // HTML5 handlers, which still serve the browser build and internal file-tree drags.
+    // HTML5 handlers, which still serve the browser build and internal file-tree drags. Routes via
+    // the SHARED pointInDropRect predicate (unit-tested), so which terminal claims a drop is decided
+    // by the same logic the chat + editor panes use — a hidden pane's 0×0 rect is never inside.
     nativeDragHandler = (e: Event) => {
       const d = (e as CustomEvent<NativeDragDetail>).detail;
       if (!d) return;
-      const r = container.getBoundingClientRect();
-      // A hidden (display:none) terminal tab has a 0×0 rect at (0,0); the `width||height` guard
-      // keeps a drop forwarded at the viewport corner (0,0) from writing to every backgrounded PTY.
-      const inside =
-        (r.width !== 0 || r.height !== 0) &&
-        d.x >= r.left && d.x <= r.right && d.y >= r.top && d.y <= r.bottom;
+      const inside = pointInDropRect(container.getBoundingClientRect(), d.x, d.y);
       if (d.type === "drop") {
-        container.classList.remove("term-drop-active");
-        if (!inside || d.paths.length === 0 || !ws || ws.readyState !== WebSocket.OPEN) return;
-        // Trailing space so the next path/arg (or a command typed after) stays separated.
-        ws.send(stdinFrame(enc.encode(d.paths.map(shellQuote).join(" ") + " ")));
-        term?.focus();
+        setDropActive(false);
+        if (!inside) return;
+        insertPathsAtPrompt(d.paths);
       } else if (d.type === "leave") {
-        container.classList.remove("term-drop-active");
+        setDropActive(false);
       } else {
         // enter / over: show the drop affordance only while the cursor is over this terminal.
-        container.classList.toggle("term-drop-active", inside);
+        setDropActive(inside);
       }
     };
     window.addEventListener("bismuth-native-drag", nativeDragHandler);

@@ -477,6 +477,22 @@ export function isMcpCommand(text: string): boolean {
   return /^\/mcp\s*$/i.test(text.trim());
 }
 
+/**
+ * BUG #39: the composer's slash autocomplete is driven VERBATIM from the init manifest's
+ * `slash_commands`, which the SDK deliberately limits to headless-usable commands — it OMITS
+ * TUI-only ones like "/mcp". But this chat answers "/mcp" LOCALLY (isMcpCommand/answerMcpCommand),
+ * so it IS a usable command here — it just never appeared in the popover. Splice the locally-handled
+ * command names into the manifest's list so the autocomplete lists them. Deduped (a future SDK that
+ * DOES surface "/mcp" won't double it) and order-stable (SDK commands first, synthetics appended) so
+ * the popover ordering stays deterministic. Pure → unit-tested in core/test/chat.test.ts.
+ */
+export const LOCAL_SLASH_COMMANDS = ["mcp"] as const;
+export function withLocalSlashCommands(commands: string[]): string[] {
+  const out = [...commands];
+  for (const c of LOCAL_SLASH_COMMANDS) if (!out.includes(c)) out.push(c);
+  return out;
+}
+
 /** The minimal per-server shape formatMcpStatus needs — a projection of the SDK's McpServerStatus
  *  (name/status/tools[]) down to a tool COUNT, so the pure formatter needs no SDK types at all. */
 export interface ChatMcpServerSummary {
@@ -1064,7 +1080,7 @@ function emitInitManifest(session: ChatSession): void {
       manifest: {
         model: "",
         permissionMode: "default",
-        slashCommands: (init?.commands ?? []).map((c) => c.name),
+        slashCommands: withLocalSlashCommands((init?.commands ?? []).map((c) => c.name)),
         tools: [],
         mcpServers: (mcp ?? []).map((m) => ({ name: m.name, status: m.status })),
       },
@@ -1128,7 +1144,7 @@ async function drain(session: ChatSession): Promise<void> {
           manifest: {
             model: msg.model,
             permissionMode: msg.permissionMode,
-            slashCommands: msg.slash_commands ?? [],
+            slashCommands: withLocalSlashCommands(msg.slash_commands ?? []),
             tools: msg.tools ?? [],
             mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
           },
