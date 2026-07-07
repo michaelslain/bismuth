@@ -8,6 +8,7 @@
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
+import { registerActiveMenu } from "./activeMenu";
 
 export type MenuItem = PopoverRow & {
   /** Run when the row is picked. Optional for rows that only open a `submenu`. */
@@ -100,12 +101,21 @@ export function ContextMenu(props: { x: number; y: number; items: MenuItem[]; on
 
   const handleDocClick = () => props.onClose();
 
+  // Global single-menu exclusivity: registering as the active menu closes any menu that
+  // was already open on ANY other surface (this is the one funnel every context menu —
+  // App's pane/editor/create menus, FileTree, DaemonList, chat bubbles, task status,
+  // calendar chips — passes through, since they all render this component). A right-click
+  // that opens a new menu no longer leaves another surface's menu on screen.
+  let disposeActive: (() => void) | undefined;
+
   onMount(() => {
+    disposeActive = registerActiveMenu(() => props.onClose());
     // Defer so the click that opened the menu doesn't immediately close it.
     setTimeout(() => document.addEventListener("click", handleDocClick), 0);
     document.addEventListener("keydown", onKeyDown);
   });
   onCleanup(() => {
+    disposeActive?.();
     document.removeEventListener("click", handleDocClick);
     document.removeEventListener("keydown", onKeyDown);
   });
