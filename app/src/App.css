@@ -69,6 +69,29 @@ body { background: var(--bg); color: var(--fg); }
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 ::-moz-selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
 
+/* Iridescent "bismuth" — every literal, whole-word occurrence of the word "bismuth" is painted
+   with a shimmering bismuth-crystal gradient (the rainbow oxide iridescence of real bismuth:
+   magenta → purple → blue → teal → green → gold) via background-clip:text. Shared by the
+   reading-mode markdown renderer (`.bismuth-word`, bases/markdown.ts) and the live-preview editor
+   decoration (`.cm-bismuth`, editor/livePreview.ts). The gradient is oversized and slowly pans for
+   a gentle shimmer; reduced-motion users get the static ramp. Theme-independent by design — the
+   crystal colors read the same on every theme; the effect never uses a theme-accent color. */
+.bismuth-word, .cm-bismuth {
+  background-image: linear-gradient(100deg,
+    #ff6ec7 0%, #a06bff 18%, #4d8bff 36%, #22d3d6 52%, #5ff0a8 68%, #ffd36e 84%, #ff6ec7 100%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  font-weight: 600;
+  animation: bismuth-shimmer 7s linear infinite;
+}
+@keyframes bismuth-shimmer { to { background-position: 260% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .bismuth-word, .cm-bismuth { animation: none; }
+}
+
 /* Thin, theme-matched scrollbars — replace the chunky default OS ones. Track is
    invisible; the thumb is a faint inset pill that only firms up on hover. */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--fg) 16%, transparent) transparent; }

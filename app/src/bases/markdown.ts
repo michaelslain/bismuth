@@ -3,6 +3,7 @@ import { sanitizeHtml } from "../sanitizeHtml";
 import { escapeHtml, escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
 import { parseCalloutHeader, renderCalloutHtml, type CalloutHeader } from "../editor/callout";
+import { BISMUTH_SCAN_RE, wrapBismuthWords } from "../editor/bismuthWord";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
 // straight through (Obsidian-style passthrough), so the result is sanitized
@@ -145,6 +146,27 @@ const calloutBlockExt: TokenizerAndRendererExtension = {
 
 marked.use({ extensions: [mathBlockExt, mathInlineExt, calloutBlockExt] });
 
+// ── Iridescent "bismuth" ──────────────────────────────────────────────────────
+// Wrap every whole-word (case-insensitive) occurrence of the literal word "bismuth" in a
+// `.bismuth-word` span, styled with a shimmering bismuth-crystal gradient (App.css) — mirroring the
+// editor's live-preview `.cm-bismuth` decoration. Done as a source pre-pass (BEFORE marked) rather
+// than an inline extension because marked re-tokenizes the text INSIDE pre-injected wikilink/tag
+// anchors, which would leak the effect into a wikilink's label. Instead we MASK every region the
+// effect must never touch — fenced/inline code, injected `<a>`/`<span>` elements + any other HTML
+// tag, markdown links, `[[wikilinks]]`, and bare URLs — wrap "bismuth" in the remaining bare prose,
+// then restore. Over-masking only ever SKIPS the effect on a rare edge (e.g. a `<`…`>` span of
+// literal prose); it never corrupts marked's output, since every masked region is restored verbatim
+// before marked ever sees it. The injected span passes through marked as inline HTML (its inner
+// "bismuth" is plain text — no extension re-wraps it) and survives `sanitizeHtml` (span + class).
+const BISMUTH_PROTECT_RE =
+  /```[\s\S]*?```|~~~[\s\S]*?~~~|`+[^`\n]*?`+|<a\b[^>]*>[\s\S]*?<\/a>|<span\b[^>]*>[\s\S]*?<\/span>|<[^>]+>|\[\[[^\]]*?\]\]|\[[^\]]*?\]\([^)]*?\)|https?:\/\/[^\s<>)\]]+/gi;
+function iridescentBismuth(src: string): string {
+  const codes: string[] = [];
+  const masked = src.replace(BISMUTH_PROTECT_RE, (m) => `\u0000${codes.push(m) - 1}\u0000`);
+  const wrapped = wrapBismuthWords(masked, (w) => `<span class="bismuth-word">${escapeHtml(w)}</span>`);
+  return wrapped.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? "");
+}
+
 // A lone `<!-- pagebreak -->` comment line marks a PDF page boundary (invisible on screen + in
 // Obsidian). DOMPurify STRIPS HTML comments, so convert the marker into a real, zero-height
 // <div class="bismuth-page-break"> BEFORE sanitize — the div survives, the PDF rasterizer
@@ -162,7 +184,7 @@ function pageBreaksToDivs(src: string): string {
 
 /** Render a markdown string to sanitized HTML (synchronous). */
 export function renderMarkdown(src: string): string {
-  return sanitizeHtml(marked.parse(pageBreaksToDivs(src ?? ""), { async: false }) as string);
+  return sanitizeHtml(marked.parse(iridescentBismuth(pageBreaksToDivs(src ?? "")), { async: false }) as string);
 }
 
 // Obsidian `[[wikilinks]]` aren't standard markdown, so `marked` would emit them
@@ -228,14 +250,17 @@ export function renderNoteBody(src: string): string {
  *  the same markdown as the rest of the app. `marked.parseInline` runs the inline math
  *  extension above but not the block one, so `$$…$$` stays literal (correct for a cell). */
 export function renderInline(src: string): string {
-  return sanitizeHtml(marked.parseInline(tagsToSpans(wikilinksToAnchors(src ?? "")), { async: false }) as string);
+  return sanitizeHtml(marked.parseInline(iridescentBismuth(tagsToSpans(wikilinksToAnchors(src ?? ""))), { async: false }) as string);
 }
 
 // Cheap gate: only run the markdown renderer on strings that actually carry inline markup
 // (emphasis, code, a wikilink, a #tag, raw HTML, or `$math$`); plain values stay literal.
 const CELL_MARKUP_RE = /[*_~`$]|\[\[|<[a-z/]|(?:^|\s)#[A-Za-z]/;
 export function hasInlineMarkup(s: string): boolean {
-  return CELL_MARKUP_RE.test(s);
+  // Also treat a bare "bismuth" as markup so a plain-text cell carrying the word still
+  // routes through renderInline and picks up the iridescent gradient. BISMUTH_SCAN_RE is
+  // stateless (no `g` flag), so `.test()` is safe here.
+  return CELL_MARKUP_RE.test(s) || BISMUTH_SCAN_RE.test(s);
 }
 
 /** Render ONE table/sheet cell's string value to HTML: inline markdown + `$math$` (sanitized)

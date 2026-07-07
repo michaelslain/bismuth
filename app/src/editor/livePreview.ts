@@ -23,6 +23,7 @@ import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 import { isThematicBreak } from "./thematicBreak";
 import { scanCallouts, renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from "./callout";
 import { renderNoteBody, renderInline } from "../bases/markdown";
+import { findBismuthWords } from "./bismuthWord";
 import { sanitizeHtml } from "../sanitizeHtml";
 
 // The editor's mono face: Monaspace Xenon, falling back to the platform ui-monospace.
@@ -61,6 +62,9 @@ const code = Decoration.mark({ class: "cm-inline-code" });
 const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
 const tag = Decoration.mark({ class: "cm-tag" });
+// Every whole-word "bismuth" in prose gets the iridescent bismuth-crystal gradient
+// (styled by `.cm-bismuth` in App.css, shared with the reading-mode `.bismuth-word`).
+const bismuthWord = Decoration.mark({ class: "cm-bismuth" });
 const headingLines = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-h${l}` }));
 // The leading `#`s, revealed on the cursor line, render in the mono accent font
 // (matching the inline note title) rather than the serif heading face.
@@ -400,6 +404,31 @@ function pushTags(deco: Range<Decoration>[], text: string, lineFrom: number) {
   for (const m of text.matchAll(TAG_RE)) {
     const tagStart = lineFrom + (m.index ?? 0) + m[1].length;
     deco.push(tag.range(tagStart, tagStart + m[2].length));
+  }
+}
+
+/** Style every whole-word "bismuth" on a body line with the iridescent gradient — skipping any
+ *  occurrence that overlaps a protected span (inline code, math, raw-HTML, markdown links, bare
+ *  URLs, wikilinks, or a #tag) so the effect never lands inside code / URLs / wikilinks. `math`
+ *  and `html` spans are already computed by the caller; the rest are re-scanned here with the same
+ *  module regexes the per-line pass uses (cheap — viewport-gated, only when the line has a match). */
+function pushBismuth(
+  deco: Range<Decoration>[], text: string, lineFrom: number,
+  math: { from: number; to: number }[], html: { from: number; to: number }[],
+) {
+  const words = findBismuthWords(text);
+  if (words.length === 0) return;
+  const prot: { from: number; to: number }[] = [...math, ...html];
+  const add = (a: number, len: number) => prot.push({ from: lineFrom + a, to: lineFrom + a + len });
+  for (const m of text.matchAll(INLINE_CODE_RE)) add(m.index ?? 0, m[0].length);
+  for (const m of text.matchAll(WIKILINK_RE)) add(m.index ?? 0, m[0].length);
+  for (const m of text.matchAll(MD_LINK_RE)) add(m.index ?? 0, m[0].length);
+  for (const { start, end } of findBareUrls(text)) add(start, end - start);
+  for (const m of text.matchAll(TAG_RE)) add((m.index ?? 0) + m[1].length, m[2].length);
+  for (const w of words) {
+    const from = lineFrom + w.from, to = lineFrom + w.to;
+    if (prot.some((p) => from < p.to && p.from < to)) continue;
+    deco.push(bismuthWord.range(from, to));
   }
 }
 
@@ -910,6 +939,11 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // are never tinted (frontmatter/code/table lines already `continue` above).
       if (!hm) pushTags(deco, text, line.from);
 
+      // iridescent "bismuth": tint every whole-word occurrence, skipping any that sit inside
+      // code / math / raw-HTML / links / URLs / wikilinks / tags (frontmatter + fenced code
+      // lines already `continue`d above, so this only runs on prose lines).
+      pushBismuth(deco, text, line.from, mathSpans, htmlSpans);
+
       pos = line.to + 1;
     }
   }
@@ -1273,10 +1307,11 @@ export const livePreview = [
     ".cm-h5": { "font-size": "1.05em", "font-weight": "600" },
     ".cm-h6": { "font-size": "1em", "font-weight": "600", opacity: "0.85" },
     ".cm-quote": { "border-left": "3px solid #555", "padding-left": "8px", opacity: "0.85" },
-    // Rendered horizontal rule: the line's dashes are hidden, so draw a centered rule
-    // via a pseudo-element. Theme-agnostic grey (matches inline-code's neutral tint).
+    // Rendered horizontal rule (a `---` / `***` "em-dash" break): the line's dashes are hidden,
+    // so draw a centered rule via a pseudo-element. Always clearly visible, in a theme-agnostic
+    // DARK GREY (never a theme-accent color), matching the code-block / frontmatter left rules.
     ".cm-hr": { position: "relative", height: "1.2em" },
-    ".cm-hr::before": { content: '""', position: "absolute", left: "0", right: "0", top: "calc(50% - 1px)", "border-top": "2px solid rgba(140,140,140,0.45)" },
+    ".cm-hr::before": { content: '""', position: "absolute", left: "0", right: "0", top: "calc(50% - 1px)", "border-top": "2px solid rgba(128,128,128,0.6)" },
     ".cm-li": { "padding-left": "2px", "line-height": "1.55" },
     // Bullet glyph sits in the hanging gutter (right-aligned, with a fixed gap to the text).
     ".cm-bullet": {
@@ -1297,12 +1332,14 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
-    // Code blocks: no background; just monospace text with a faint left rule. The ``` fences
-    // are hidden off-cursor (replaced by a header + collapsed close line).
-    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
+    // Code blocks: no fill; just monospace text with a neutral DARK-GREY left rule (never a
+    // theme-accent color) that runs the full height of the block so it always reads as a
+    // distinct, visible block. The ``` fences are hidden off-cursor (opening fence → header,
+    // closing fence collapsed), so the rule lives on the header line + every body line.
+    ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5", "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view.
-    ".cm-code-headerline": { "font-family": MONO_FONT },
+    ".cm-code-headerline": { "font-family": MONO_FONT, "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)" },
     ".cm-code-hidden": { "font-size": "0", "line-height": "0" },
     ".cm-collapsed-line": { "font-size": "0", "line-height": "0" },
     ".cm-code-headerwrap": { display: "block", width: "100%" },
@@ -1338,11 +1375,11 @@ export const livePreview = [
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      // No surface fill — just the accent left rule + monospace, matching fenced code
-      // blocks. A line background sits ABOVE CodeMirror's selection layer, so any fill
-      // (even translucent) hides the selection where it starts in the frontmatter,
-      // making a code-block→body drag look only half-highlighted.
-      "box-shadow": "inset 2px 0 0 var(--accent)",
+      // No surface fill — just a neutral DARK-GREY left rule + monospace, matching the fenced
+      // code blocks above (not a theme-accent color). A line background sits ABOVE CodeMirror's
+      // selection layer, so any fill (even translucent) hides the selection where it starts in
+      // the frontmatter, making a code-block→body drag look only half-highlighted.
+      "box-shadow": "inset 2px 0 0 rgba(128,128,128,0.5)",
     },
     ".cm-fm-key": { color: "var(--accent)" },
     // Raw (active) table source — monospace pipes for structural / power edits.
