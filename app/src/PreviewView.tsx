@@ -27,8 +27,9 @@ import {
   Show,
   Switch,
 } from "solid-js";
-import { api } from "./api";
+import { api, apiBase } from "./api";
 import { previewKind, type PreviewKind } from "./preview/previewKind";
+import { buildAssetUrl } from "./preview/assetUrl";
 import { findMatches, segmentText, stepMatchIndex } from "./preview/findMatches";
 import { annotatePath } from "./tabIds";
 import { Icon } from "./icons/Icon";
@@ -56,8 +57,16 @@ const MAX_MATCHES = 2000;
 export function PreviewView(props: { path: string; onOpen: (path: string) => void }) {
   const kind = (): PreviewKind => previewKind(props.path) ?? "external";
   const name = () => props.path.split("/").pop() ?? props.path;
-  const assetUrl = () => api.assetUrl(props.path);
+  // `src` for the image <img> / PDF <iframe>: GET /asset, resolved filename-first by the
+  // backend. Built through the pure, unit-tested `buildAssetUrl` so the space/U+202F/`/`
+  // encoding that lets macOS-screenshot filenames load can never silently regress.
+  const assetUrl = () => buildAssetUrl(apiBase(), props.path);
   const annotatable = () => kind() === "image" || kind() === "pdf";
+
+  // Image load failure (a moved/renamed/unresolved src → 404) must NOT be a silent blank pane
+  // — surface a clear state + the Open-externally affordance instead. Reset on every path
+  // change so switching to a fresh image re-attempts the load.
+  const [imgFailed, setImgFailed] = createSignal(false);
 
   // Fetch the text body only for code/text kinds (GET /file returns "" for a missing file).
   const [code] = createResource(
@@ -85,8 +94,9 @@ export function PreviewView(props: { path: string; onOpen: (path: string) => voi
     kind() === "code" && query() && matches().length ? segmentText(code() ?? "", matches()) : null,
   );
 
-  // Reset the active match when the file (or its text) changes so stale state never lingers.
-  createEffect(on([() => props.path, code], () => setActiveIndex(0)));
+  // Reset the active match + any prior image-load failure when the file (or its text) changes
+  // so stale state never lingers and a new image re-attempts its load.
+  createEffect(on([() => props.path, code], () => { setActiveIndex(0); setImgFailed(false); }));
   // Keep the active index in range as the query narrows the match set.
   createEffect(() => {
     if (activeIndex() >= matches().length) setActiveIndex(0);
@@ -280,7 +290,24 @@ export function PreviewView(props: { path: string; onOpen: (path: string) => voi
 
         <Switch>
           <Match when={kind() === "image"}>
-            <img class="preview-image" src={assetUrl()} alt={name()} />
+            <Show
+              when={!imgFailed()}
+              fallback={
+                <div class="preview-external">
+                  <EmptyState title="Couldn't load image">
+                    {`"${name()}" could not be displayed.`}
+                    {isTauri() ? " Open it in its default app to view it." : " Open it externally to view it."}
+                  </EmptyState>
+                  <Show when={isTauri()}>
+                    <IconTextButton icon="ExternalLink" onClick={() => void openExternal(false)}>
+                      OPEN IN DEFAULT APP
+                    </IconTextButton>
+                  </Show>
+                </div>
+              }
+            >
+              <img class="preview-image" src={assetUrl()} alt={name()} onError={() => setImgFailed(true)} />
+            </Show>
           </Match>
           <Match when={kind() === "pdf"}>
             {/* Full-pane embed of the browser's native PDF viewer (FitH so it fills width). */}
