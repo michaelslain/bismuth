@@ -425,12 +425,17 @@ export function computeLayout(input: LayoutInput, options: LayoutOptions = {}): 
 }
 
 /**
- * Identical result to `computeLayout`, but yields to the event loop every `YIELD_EVERY` force ticks
- * so a multi-thousand-node settle doesn't monopolize Bun's single thread and block other requests
- * (/tree, /file, /settings) for seconds. d3-force ticks are deterministic regardless of when we
- * yield between them, so the output matches the sync path exactly.
+ * Identical result to `computeLayout`, but yields to the event loop on a WALL-CLOCK budget so a
+ * multi-thousand-node settle doesn't monopolize Bun's single thread and block other requests —
+ * and the /terminal WS pump — for seconds. A fixed tick-count granularity (the old YIELD_EVERY=16)
+ * failed to bound the blocking interval because a single tick's cost scales with total node/edge
+ * count (Barnes-Hut + 6-iteration collide): at a ~2k-node vault one tick is ~60ms, so 16 ticks
+ * froze everything for ~1s per chunk on ordinary structural edits — the residual "terminal gets
+ * laggy randomly" after the round-1 fixes. The budget degenerates to yield-every-tick on big
+ * graphs (the best achievable without splitting a tick), cutting the worst chunk ~16x. d3-force
+ * ticks are deterministic regardless of when we yield between them, so output is unchanged.
  */
-const YIELD_EVERY = 16;
+const YIELD_BUDGET_MS = 8;
 // Convergence early-exit for an incremental (pinned) settle: once the only moving nodes (the new ones)
 // stop moving more than EPSILON units in a tick, further ticks are no-ops, so we stop. Only armed when
 // `fixedIds` is set — a full cold/warm settle runs at alpha(1) and keeps drifting (it would never fire),
@@ -453,6 +458,7 @@ export async function computeLayoutAsync(input: LayoutInput, options: LayoutOpti
     for (let j = 0; j < nodes.length; j++) { px[j] = nodes[j].x ?? 0; py[j] = nodes[j].y ?? 0; pz[j] = nodes[j].z ?? 0; }
   };
   snapshot();
+  let lastYield = performance.now();
   for (let i = 0; i < o.refineTicks; i++) {
     sim.tick();
     if (fixed && px && py && pz && i >= INCREMENTAL_EXIT_MIN_TICKS) {
@@ -468,7 +474,10 @@ export async function computeLayoutAsync(input: LayoutInput, options: LayoutOpti
       if (maxMove2 < INCREMENTAL_EXIT_EPSILON * INCREMENTAL_EXIT_EPSILON) break;
     }
     snapshot();
-    if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
+    if (performance.now() - lastYield >= YIELD_BUDGET_MS) {
+      await yieldToEventLoop();
+      lastYield = performance.now(); // reset AFTER the await — only our own compute counts
+    }
   }
   return extractPositions(nodes, dim);
 }

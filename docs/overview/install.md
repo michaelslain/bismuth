@@ -47,6 +47,24 @@ marker).
 
 ---
 
+## macOS folder permissions surviving updates (one-time setup)
+
+macOS pins "Files and Folders" grants (Desktop/Documents/Downloads access) to an app's **code
+identity**. With the default ad-hoc signing, every self-update rebuild produces a new identity,
+so macOS silently revokes those grants after each update — for both `Bismuth.app` and the
+`bismuth-daemon` service binary. To make grants survive updates, create a **stable self-signed
+code-signing certificate** once (no Apple Developer account needed):
+
+1. Keychain Access → Certificate Assistant → **Create a Certificate…**
+2. Name: anything containing `Bismuth` (e.g. `Bismuth Self-Signed`), Identity Type: *Self-Signed
+   Root*, Certificate Type: **Code Signing** → Create.
+
+That's it — the update pipeline (`core/src/selfUpdate.ts`) and the daemon sidecar build
+(`app/scripts/build-daemon-sidecar.ts`) auto-detect any login-keychain codesigning certificate
+whose name contains `Bismuth` (or an explicit `APPLE_SIGNING_IDENTITY`) and sign with it on
+every rebuild; without one they fall back to ad-hoc exactly as before. A real Developer ID +
+notarization only matters if Bismuth is ever distributed as a prebuilt binary to other machines.
+
 ## Repository Layout (Monorepo)
 
 Bismuth is a Bun workspace monorepo. The root `package.json` declares seven workspaces:
