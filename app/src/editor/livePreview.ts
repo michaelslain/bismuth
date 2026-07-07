@@ -80,28 +80,35 @@ const listMarkerMark = Decoration.mark({ class: "cm-list-marker" });
 // A code-block / frontmatter body line carries its 1-based in-block line number via
 // `numberedLine` (shared with queryBlock); CSS draws it in the left gutter through
 // `.cm-code-numbered::before { content: attr(data-codeline) }` (codeLineNumbers.ts).
-// Bug #10 (4th round — a SPEC CHANGE, not a bug): rounds 2-3 tried a hairline edge, then a full
-// rounded-corner bordered CARD spanning every line of a frontmatter panel / fenced code block (grey
-// fill + left accent + right edge on every line, top/bottom rounding on the fences). The user saw
-// round 3 in their real app and dialed it back: "just the --- lines should have a dark grey
-// background, while the rest should have the background as before... this should apply to the left
-// line as well." So now ONLY the fence line itself (frontmatter's opening/closing `---`, a code
-// block's opening/closing ```) gets any chrome at all — a single self-contained grey bar (fill +
-// left accent edge, rounded on all four corners since it no longer joins a taller card). Body lines
-// revert to plain text: no fill, no left/right edge, nothing — see `.cm-frontmatter`/`.cm-codeblock`
-// below, which now carry ONLY font/size, no box-shadow. `cm-fence-bar` is the one class used for
-// every fence line (open AND close — both render identically now that there's no card roof/floor to
-// distinguish). Colors are `color-mix` off `var(--fg)` (never accent) so the bar reads correctly,
-// and never washes out, on light AND dark themes. The left edge is an INSET box-shadow (not a real
-// CSS `border`), so nothing shifts the text layout. This class is ALWAYS applied — never keyed off
-// cursor/reveal state — so the bar never flickers when the caret enters or leaves the block; only
-// the raw fence text (the `---`/backticks) brightens for editing when the caret is on that line.
-const fenceBar = Decoration.line({ class: "cm-fence-bar" });
+// Bug #10 (5th round — the DEFINITIVE spec, combining rounds 3 and 4): the round-4 fence-only bars
+// were rejected ("floating empty pills"); the user's reference screenshot + words pin the final
+// look: ONE homogeneous container for the whole frontmatter panel / fenced code block — a uniform
+// subtle background tint across ALL lines (fences AND body), rounded top/bottom corners, and a
+// CONTINUOUS left vertical accent line running the block's full height — "except with the ---
+// lines having grey background... left line should also seamlessly shift to grey color similarly."
+// So the ONE delta from the homogeneous card: the opening/closing fence rows (`---` / ```) get a
+// visibly DARKER grey band across the container width, and the left line's segment along those
+// rows shifts to grey — same inset geometry (thickness/position), just a different color, so the
+// line reads seamless with no gap or step. CodeMirror line decorations can't span multiple lines
+// in one DOM element, so the container is built from per-line classes:
+//   - `cm-block-mid` (body lines): the uniform tint + the left line in the theme accent (the
+//     reference's blue — theme-aware by definition since it IS `var(--accent)`).
+//   - `cm-block-top` / `cm-block-bottom` (opening/closing fence): the darker grey band, the grey
+//     left-line segment, and that end's two rounded corners (the container's roof/floor).
+// The greys are `color-mix` off `var(--fg)` so they read correctly on light AND dark themes. The
+// left line is an INSET box-shadow (not a real CSS `border`), so nothing shifts the text layout;
+// `border-radius` on the fence rows clips both the band and the line-ends to the rounded rect.
+// These classes are ALWAYS applied — never keyed off cursor/reveal state — so the container never
+// flickers when the caret enters or leaves the block; only the raw fence text (the `---`/backticks)
+// brightens for editing when the caret is on that line.
+const blockTopRule = Decoration.line({ class: "cm-block-top" });
+const blockBottomRule = Decoration.line({ class: "cm-block-bottom" });
 // The fence text itself (frontmatter `---`, a code block's closing ```) renders ALWAYS VISIBLE in
 // very dim mono — never `display:none`-hidden. Two reasons: (1) the original #10 ask, pixel-matched
-// by the user's reference: the em dashes are faintly visible INSIDE the bar; (2) load-bearing
-// layout — a fully-hidden line collapses to zero height, which erased the `cm-fence-bar`'s rounded
-// corners (the bar looked cut off). On the caret line the fence brightens to `cm-syntax-mark`.
+// by the user's reference: the em dashes are faintly visible INSIDE the container at its top and
+// bottom; (2) load-bearing layout — a fully-hidden line collapses to zero height, which erased the
+// fence row's rounded corners + grey band (the container looked open-ended). On the caret line the
+// fence brightens to the standard `cm-syntax-mark` for editing.
 const fenceMark = Decoration.mark({ class: "cm-fence-syntax" });
 const fmKeyMark = Decoration.mark({ class: "cm-fm-key" });
 const tableLine = Decoration.line({ class: "cm-table" });
@@ -512,23 +519,24 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
       // wikilinks, markdown links, and bare URLs (e.g. a `source: "[[Note]]"`,
       // `link: "[x](url)"`, or `homepage: https://…` property) so they read as links.
       if (frontmatterLines.has(line.number)) {
-        // The `---` delimiters ALWAYS render as a self-contained `cm-fence-bar` (grey fill + left
-        // accent, rounded on all four corners) — bug #10, 4th round: the user dialed the 3rd-round
-        // whole-card fill back to JUST the fence line (see the `fenceBar` comment above). The literal
-        // dashes stay VISIBLE in very dim mono (`fenceMark`) inside the bar; a hidden line would
-        // collapse to zero height, erasing the bar's rounded corners (see the fenceMark comment). On
-        // the caret line they brighten (`syntaxMark`) for editing.
+        // The `---` delimiters ALWAYS render as the container's darker-grey fence band
+        // (`cm-block-top` / `cm-block-bottom`: grey fill + grey left-line segment + that end's
+        // rounded corners) — bug #10, 5th round: one homogeneous card whose fence rows alone go
+        // grey (see the `blockTopRule` comment above). The literal dashes stay VISIBLE in very dim
+        // mono (`fenceMark`) inside the band; a hidden line would collapse to zero height, erasing
+        // the rounded corners (see the fenceMark comment). On the caret line they brighten
+        // (`syntaxMark`) for editing.
         const isDelim = line.number === frontmatterOpen || line.number === frontmatterClose;
         if (isDelim) {
-          deco.push(fenceBar.range(line.from));
+          deco.push((line.number === frontmatterOpen ? blockTopRule : blockBottomRule).range(line.from));
           if (line.to > line.from) deco.push((onCursor ? syntaxMark : fenceMark).range(line.from, line.to));
           pos = line.to + 1;
           continue;
         }
-        // Property rows carry their 1-based in-block line number (the `---` delimiters never do).
-        // Plain `cm-frontmatter` only — no shared chrome with the fence bar; a body row reverts to
-        // the normal editor background, no fill, no side edges (bug #10, 4th round).
-        deco.push(numberedLine("cm-frontmatter", line.number - (frontmatterOpen ?? 0)).range(line.from));
+        // Property rows carry their 1-based in-block line number (the `---` delimiters never do),
+        // matching fenced code, plus `cm-block-mid` for the container's uniform body tint + the
+        // accent-colored left line (see the `blockTopRule` comment above).
+        deco.push(numberedLine("cm-frontmatter cm-block-mid", line.number - (frontmatterOpen ?? 0)).range(line.from));
         // Mark the `key:` portion (`.cm-fm-key` → a dimmed neutral grey, not accent), leaving values --fg.
         const km = FM_KEY_RE.exec(text);
         if (km) {
@@ -542,35 +550,35 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         continue;
       }
 
-      // fenced code block. The ``` fences ALWAYS render as a self-contained `cm-fence-bar` (grey
-      // fill + left accent, rounded on all four corners) — on AND off cursor (bug #10, 4th round:
-      // dialed back from the 3rd-round whole-card fill to just the fence line). The opening fence
-      // also shows the lang + copy header widget (riding the bar) when rendered; the closing ```
-      // stays dim-visible. Entering edit mode (double-click / typing) reveals the raw ``` on both
-      // fences without disturbing the bar, which never keys off reveal state. Body lines carry no
-      // chrome at all — plain `cm-codeblock` text, same as the surrounding editor background.
+      // fenced code block. The whole block is ONE homogeneous container (bug #10, 5th round):
+      // uniform body tint + a continuous left accent line, with the ``` fence rows as darker-grey
+      // bands whose left-line segment shifts to grey (rounded corners on the container's roof and
+      // floor) — on AND off cursor. The opening fence also shows the lang + copy header widget
+      // (riding the top band) when rendered; the closing ``` stays dim-visible. Entering edit mode
+      // (double-click / typing) reveals the raw ``` on both fences without disturbing the
+      // container, which never keys off reveal state.
       const codeBlock = codeBlockByLine.get(line.number);
       if (codeBlock) {
         const revealed = activeCodeOpen === codeBlock.open;
         const isOpen = line.number === codeBlock.open;
         const isClose = line.number === codeBlock.close;
         if (isOpen) {
-          // Opening fence: the bar always; header widget when rendered, raw ``` when revealed.
-          deco.push(fenceBar.range(line.from));
+          // Opening fence: top grey band always; header widget when rendered, raw ``` when revealed.
+          deco.push(blockTopRule.range(line.from));
           if (!revealed && line.to > line.from) {
             deco.push(Decoration.replace({ widget: new CodeHeaderWidget(codeBlock.lang, codeBlock.body) }).range(line.from, line.to));
           }
         } else if (isClose) {
-          // Closing fence: the bar always. The raw ``` stays VISIBLE in very dim mono (`fenceMark`)
-          // — "same with code blocks" in the #10 ask, and hiding it would collapse the line and
-          // erase the bar's rounded corners (see the fenceMark comment). In edit mode (revealed) it
-          // renders unmarked at full mono contrast.
-          deco.push(fenceBar.range(line.from));
+          // Closing fence: bottom grey band always. The raw ``` stays VISIBLE in very dim mono
+          // (`fenceMark`) — "same with code blocks" in the #10 ask, and hiding it would collapse
+          // the line and erase the container's bottom rounded corners (see the fenceMark comment).
+          // In edit mode (revealed) it renders unmarked at full mono contrast.
+          deco.push(blockBottomRule.range(line.from));
           if (!revealed && line.to > line.from) deco.push(fenceMark.range(line.from, line.to));
         } else {
-          // Body line: 1-based in-block number in the gutter. No fill, no left/right edge (bug #10,
-          // 4th round) — reads as plain monospace text, same background as the rest of the editor.
-          deco.push(numberedLine("cm-codeblock", line.number - codeBlock.open).range(line.from));
+          // Body line: 1-based in-block number in the gutter, plus `cm-block-mid` for the
+          // container's uniform tint + accent left line.
+          deco.push(numberedLine("cm-codeblock cm-block-mid", line.number - codeBlock.open).range(line.from));
         }
         pos = line.to + 1;
         continue;
@@ -1229,42 +1237,67 @@ export const livePreview = [
       "padding-right": "0.62em",
       color: "color-mix(in srgb, var(--fg) 70%, transparent)",
     },
-    // Code blocks: plain monospace text — no fill, no border, no left/right edge (bug #10, 4th
-    // round: the user dialed the whole-block card fill back to JUST the fence line — see the
-    // `fenceBar` comment near the top of the file). A body line looks exactly like ordinary editor
-    // background now; only `.cm-fence-bar` below carries any chrome.
+    // Code blocks: monospace text; the container chrome (uniform tint + accent left line) comes
+    // from `.cm-block-mid` (always co-applied — see the `blockTopRule` comment near the top of the
+    // file), not from this rule.
     ".cm-codeblock": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))", "line-height": "1.5" },
     // In-block line numbers (`.cm-code-numbered`) are styled by `codeLineNumberTheme`
     // (codeLineNumbers.ts), shared with the ```query source view. Positioned relative to the
-    // line's own padding box (`left: -2.7em`), unaffected by the (now absent) body padding.
+    // line's own padding box (`left: -2.7em`), so the `.cm-block-mid` padding below doesn't shift
+    // it — padding is inside the box it's measured from.
     //
-    // The ONE bar class shared by every fence line — frontmatter's opening/closing `---`, a code
-    // block's opening/closing ``` (bug #10, 4th round — see the `fenceBar` comment near the top of
-    // the file for the full history). A subtle grey fill + a GREY (never accent) left accent edge,
-    // both `color-mix` off `var(--fg)` so they read correctly on light AND dark themes, rounded on
-    // all four corners since this is now a self-contained bar rather than one wall of a taller card.
-    // The left edge is an INSET box-shadow (not a real CSS `border`), so nothing shifts the text
-    // layout. Open and close fences render IDENTICALLY — there's no card roof/floor left to
-    // distinguish, so a single class covers both (`fenceBar` in the ViewPlugin above is pushed at
-    // both the opening and the closing fence line).
-    ".cm-fence-bar": {
+    // The homogeneous container BODY shared by every non-fence line of a frontmatter panel /
+    // fenced code block (bug #10, 5th round — see the `blockTopRule` comment near the top of the
+    // file for the full design): a uniform subtle tint + the continuous left vertical line in the
+    // theme ACCENT (the reference screenshot's blue — theme-aware since it IS `var(--accent)`).
+    // Horizontal padding gives the text breathing room off the line; pure padding, so it doesn't
+    // affect the reading column's outer alignment.
+    ".cm-block-mid": {
+      background: "color-mix(in srgb, var(--fg) 5%, transparent)",
+      padding: "0 0.5em",
+      "box-shadow": "inset 3px 0 0 var(--accent)",
+    },
+    // A block's TOP fence row (frontmatter opening `---`, code opening ```): the round-5 delta —
+    // a DARKER grey band across the container width (visibly distinct from the body tint), with
+    // the left line's segment shifted to grey. Same `inset 3px 0 0` geometry as `.cm-block-mid`,
+    // only the color differs, so the line reads seamless (no gap/step) as it crosses the band.
+    // Top corners rounded — the container's roof. Greys are `color-mix` off `var(--fg)` so the
+    // band reads correctly on light AND dark themes. The tiny top margin separates this block
+    // from ANY content above it (esp. an adjacent block's closing fence — two touching blocks
+    // stay visibly distinct); inside the block there are no margins, so the container stays one
+    // continuous piece.
+    ".cm-block-top": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
-      background: "color-mix(in srgb, var(--fg) 8%, transparent)",
-      padding: "0.15em 0.6em",
-      margin: "1px 0",
-      "border-radius": "6px",
+      background: "color-mix(in srgb, var(--fg) 12%, transparent)",
+      padding: "0.15em 0.5em",
+      margin: "2px 0 0",
+      "border-top-left-radius": "8px",
+      "border-top-right-radius": "8px",
       "box-shadow": "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
     },
-    // The always-visible fence text inside the bar (frontmatter `---`, code closing ```): very
+    // A block's BOTTOM fence row (frontmatter closing `---`, code closing ```): mirror of
+    // `.cm-block-top` — darker grey band, grey left-line segment, bottom corners rounded (the
+    // container's floor), bottom margin for adjacent-block separation.
+    ".cm-block-bottom": {
+      "font-family": MONO_FONT,
+      "font-size": "calc(1em * var(--mono-scale, 0.85))",
+      background: "color-mix(in srgb, var(--fg) 12%, transparent)",
+      padding: "0.15em 0.5em",
+      margin: "0 0 2px",
+      "border-bottom-left-radius": "8px",
+      "border-bottom-right-radius": "8px",
+      "box-shadow": "inset 3px 0 0 color-mix(in srgb, var(--fg) 40%, transparent)",
+    },
+    // The always-visible fence text inside the band (frontmatter `---`, code closing ```): very
     // dim — clearly quieter than the block's content, matching the reference's faint dashes —
-    // but never hidden (a hidden line collapses and erases the bar's rounded corners). The
+    // but never hidden (a hidden line collapses and erases the container's rounded corners). The
     // `> span` override is load-bearing (mirrors `.cm-fm-key`): CodeMirror nests syntax-highlighter
     // token spans inside the mark, and their own token color would win without it.
     ".cm-fence-syntax, .cm-fence-syntax > span": { color: "color-mix(in srgb, var(--fg) 30%, transparent)" },
-    // The header widget sits inside the opening fence's `cm-fence-bar` — it inherits that line's
-    // padding (its line carries the class) so the lang label/copy button sit inset from the left
-    // accent edge like the raw ``` text would, with no styling of its own needed here.
+    // The header widget rides the opening fence's grey band — it inherits that row's
+    // `.cm-block-top` padding, so the lang label/copy button sit inset from the left line like the
+    // raw ``` text would, with no styling of its own needed here.
     ".cm-code-headerwrap": { display: "block", width: "100%" },
     ".cm-code-header": {
       display: "flex",
@@ -1291,9 +1324,12 @@ export const livePreview = [
       transition: "color 120ms, opacity 120ms",
     },
     ".cm-code-copy:hover": { color: "var(--accent)", opacity: "1" },
-    // Frontmatter: plain monospace property rows — no fill, no border, no left/right edge (bug #10,
-    // 4th round, mirroring `.cm-codeblock` above). Only the opening/closing `---` (`.cm-fence-bar`)
-    // carry any chrome; a property row looks exactly like ordinary editor background.
+    // Frontmatter: monospace property rows; the container chrome (uniform tint + accent left
+    // line) comes from `.cm-block-mid` (always co-applied), matching the fenced code blocks above
+    // so the whole panel reads as one homogeneous "properties" card whose `---` rows alone are the
+    // darker grey bands (bug #10, 5th round). A translucent `.cm-block-mid` background does sit
+    // above CodeMirror's selection-background layer, but at 5% `--fg` the selection stays fully
+    // visible through it — a deliberate, barely-there trade-off for the card look.
     ".cm-frontmatter": {
       "font-family": MONO_FONT,
       "font-size": "calc(1em * var(--mono-scale, 0.85))",
