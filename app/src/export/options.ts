@@ -4,7 +4,15 @@
 import type { ExportOptions, RenderMode } from "./types";
 
 export function defaultExportOptions(): ExportOptions {
-  return { viewIndex: 0, mode: "data", calSpan: "month", calStart: "", weekStartsOnMonday: true, militaryTime: false };
+  return {
+    viewIndex: 0,
+    mode: "data",
+    calSpan: "month",
+    calStart: "",
+    weekStartsOnMonday: true,
+    militaryTime: false,
+    includeFrontmatter: true,
+  };
 }
 
 // View kinds that have a bespoke static "visual" renderer (calendarHtml / cardsHtml /

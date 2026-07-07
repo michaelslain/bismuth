@@ -456,3 +456,41 @@ describe("promptSearch (end-to-end with stubbed deps)", () => {
     }
   });
 });
+
+// ── #8 (5th bounce): a hung claude must become a visible timeout, never an endless wait ──
+import { raceWithTimeout } from "../src/searchPrompt";
+
+describe("raceWithTimeout", () => {
+  test("a never-resolving stream becomes a clear timeout error and aborts the controller", async () => {
+    const abort = new AbortController();
+    // Simulate consumeModelStream over a stream that dies when aborted (like the SDK's).
+    const work = new Promise((_res, rej) => {
+      abort.signal.addEventListener("abort", () => rej(new Error("stream torn down")), { once: true });
+    });
+    await expect(raceWithTimeout(work, abort, 30)).rejects.toThrow(/timed out after/);
+    expect(abort.signal.aborted).toBe(true);
+  });
+
+  test("a fast result passes through untouched", async () => {
+    const abort = new AbortController();
+    await expect(raceWithTimeout(Promise.resolve("ok"), abort, 5000)).resolves.toBe("ok");
+    expect(abort.signal.aborted).toBe(false);
+  });
+
+  test("a caller-initiated abort keeps the ORIGINAL error (not remapped to timeout)", async () => {
+    const external = new AbortController();
+    const abort = new AbortController();
+    const work = new Promise((_res, rej) => {
+      abort.signal.addEventListener("abort", () => rej(new Error("caller cancelled")), { once: true });
+    });
+    const p = raceWithTimeout(work, abort, 10_000, external.signal);
+    external.abort();
+    abort.abort(); // runModelReal wires external → abort; simulate that linkage
+    await expect(p).rejects.toThrow("caller cancelled");
+  });
+
+  test("work errors pass through unchanged when no timeout fired", async () => {
+    const abort = new AbortController();
+    await expect(raceWithTimeout(Promise.reject(new Error("real failure")), abort, 5000)).rejects.toThrow("real failure");
+  });
+});

@@ -20,7 +20,8 @@ The pane is a two-column layout: a live **preview** on the left (an `<iframe src
 - **View** (bases with >1 view) — a chip per base view, picking `viewIndex`.
 - **Content** (bases only) — the `Visual` / `Data` `RenderMode` toggle.
 - **Calendar span** + **Start day** (visual calendar only) — `month`/`week`/`3day`/`day` and the anchor date (blank = today). The span is remembered in `localStorage` under `bismuth.export.calSpan`.
-- **Format** — the valid format chips for the current file/mode (see Formats below).
+- **Frontmatter** (plain `.md` only, not a base) — an "Include frontmatter" toggle, default ON. See "Include/exclude frontmatter" below.
+- **Format** — the valid format chips for the current file/mode (see Formats below). A page-broken PNG export shows a small heads-up ("N pages → exports as N separate PNG files"); see "Page breaks" below.
 - **Theme** — `dark` or `light`.
 
 `browseSource`/`browseDest` short-circuit with a toast when not running under Tauri (`isTauri()`), since native pickers and arbitrary-folder writes are desktop-only.
@@ -99,6 +100,32 @@ const span: CalSpan = opts.calSpan;                                     // month
 
 Week/3day/day all render a column-per-day time grid (`timeGrid`): a left hour gutter, an all-day band on top, and timed events absolutely positioned at `44px/hour` (`HOUR_PX`), with simple lane assignment so overlapping events don't stack. Events come from `rowToEvent` (the exact mapping the live calendar uses) and are expanded recurrence-aware via `expandRecurrence`/`occurrencesIn`, so an exported calendar agrees with the on-screen one. `weekStartsOnMonday` and `militaryTime` (from `settings.calendar`) drive the week start and 12h/24h times.
 
+## Include/exclude frontmatter
+
+`ExportOptions.includeFrontmatter` (default `true`, preserving the historical behavior) controls whether a plain (non-base) note's leading YAML frontmatter block shows up in the exported output. It's ignored for a base (a base's frontmatter is its config — filters/formulas/views — never rendered as content in the first place, regardless of the toggle) and for sheets/drawings (no frontmatter concept).
+
+- **`md`** — `true` passes the raw file through unchanged (frontmatter and all); `false` strips the leading `---\n…\n---` block before writing.
+- **`html` / `pdf` / `png`** — the same strip applies to the markdown BEFORE `renderMarkdown`. With the block left in (the default), `marked` parses it as plain prose — the opening `---` becomes a thematic break (`<hr>`), and because YAML frontmatter always has a *second* `---` immediately after a paragraph of key/value lines, that second fence is parsed as a **Setext heading underline**, turning the frontmatter into a heading. Turning the toggle off avoids this entirely.
+
+The strip itself reuses the existing pure `stripFrontmatter` (`app/src/bases/cardBodySplit.ts`) — the same helper transclusion (`editor/embedBlock.ts`) and the "Detect AI text" scanner (`ai/aiDetect.ts`) already use to keep frontmatter out of a note's rendered/scanned body. It's tolerant of malformed YAML (it never parses the YAML, just slices off everything between a leading `---` fence and the next `---` fence) and never touches a `---` that isn't the very first line of the file (so a horizontal rule further down the document is left alone).
+
+CLI: pass `--no-frontmatter` to `bismuth export` to turn the toggle off (maps to `ExportOptions.includeFrontmatter: false`); omit it to keep the default (frontmatter included).
+
+## Page breaks
+
+A lone `<!-- pagebreak -->` comment line (invisible on screen and in Obsidian — inserted via the editor's slash menu, `id: "pagebreak"`) marks a page boundary. `bases/markdown.ts`'s `renderMarkdown` turns it into a zero-height `<div class="bismuth-page-break">` (masked/restored like wikilinks so a marker inside a code fence/span stays literal) that survives `sanitizeHtml`; `htmlTemplate.ts` gives it `break-after: page; page-break-after: always; height: 0`. Each format honors this marker differently, since only some formats can hold more than one page:
+
+- **PDF** — a single PDF with a forced page break at each marker. `export/htmlToPdf.ts`'s `htmlToCanvas` measures every `.bismuth-page-break` div's post-layout Y offset (ignoring one that lands outside the real content band — i.e. right at the very start/end of the document, which would otherwise slice off an empty page) and passes those offsets to `htmlToPdf`, which cuts a new Letter page at each one instead of only at the natural page-height boundary.
+- **HTML** — the marker becomes the CSS rule above: a no-op on screen (a live, continuously-scrolling document), but a forced page break if the exported `.html` file is printed (e.g. browser Print → Save as PDF) — print fidelity without changing the on-screen document.
+- **PNG** — a single raster image can't hold more than one page, so a note with page breaks exports as **one PNG file per section** instead of one file for the whole note: `note-1.png`, `note-2.png`, … (`ExportResult.files`). A note with no markers is unaffected (still a single `note.png`). The split happens at the TEXT level, before rendering — `export/pageBreaks.ts`'s pure `pageSections(text)`:
+  1. strips frontmatter FIRST (`stripFrontmatter`, same helper the frontmatter toggle uses) — regardless of `includeFrontmatter` — so a marker placed right after the frontmatter block never makes "page 1" just the frontmatter;
+  2. splits on `<!-- pagebreak -->` marker lines (`splitByPageBreaks`, code-fence/inline-code-safe via the same `maskCode`/`unmaskCode` `bases/markdown.ts` uses internally);
+  3. drops any section left blank after trimming (a marker at the very start/end, or two adjacent markers, would otherwise produce an empty page).
+
+  Each remaining section is independently rendered (`renderMarkdown`) and wrapped into its own self-contained HTML document, then rasterized via `deps.htmlToPng` — so `ExportResult.files` is only populated when there are 2+ real pages; the single-result fields (`bytes`/`filename`/`previewImg`) mirror page 1 for a caller that only looks at those. `ExportView.tsx`'s `doExport` writes/downloads every file in `files` (looping `writeToFolder`/`downloadFile`) and toasts an "Exported N pages…" summary instead of the single-file message; the panel shows a "N pages → N files" hint next to the Format chips once a page-broken note is selected with PNG chosen.
+- **`md`** — unaffected: the marker passes through as a literal `<!-- pagebreak -->` HTML comment in the raw text (same as any other export — `md` never renders through `renderMarkdown`).
+- **CSV / bases** — not applicable; page breaks are a plain-note concept (a base's cells render inline, not as blocks).
+
 ## The renderer: `exporters.ts`
 
 Both faces call into two functions, parameterized by an injected `ExportDeps` so the module stays unit-testable and bun-compilable:
@@ -137,7 +164,8 @@ Because `renderDocToPdf` doesn't stack while the app's PDF path does, a multi-pa
 
 ```
 bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE]
-  [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--vault <dir>]
+  [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]
+  [--no-frontmatter] [--vault <dir>]
 ```
 
 Flow:
@@ -150,10 +178,10 @@ Flow:
    - `htmlToPdf` / `htmlToPng` → **throw** the browser-only message
    - `drawingToPng` → core `renderDocToPng`
    - `katexCss` → returns `""` (the app's `?inline`-bundled KaTeX font CSS is Vite-only and unresolvable in a bun-compiled binary; CLI HTML exports still carry the math markup, just without embedded fonts)
-4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span` onto `defaultExportOptions()` (no-ops for non-base files).
-5. Bytes are written to `--out` (or `res.filename`).
+4. `optionsFrom(args)` maps `--view`/`--mode`/`--cal-start`/`--cal-span`/`--no-frontmatter` onto `defaultExportOptions()` (no-ops for non-base files; `--no-frontmatter` sets `includeFrontmatter: false`, see "Include/exclude frontmatter" above).
+5. Bytes are written to `--out` (or `res.filename`) — **except** a page-broken PNG note (`res.files.length > 1`, see "Page breaks" above), which writes every file to its own computed name instead (`--out` doesn't apply to a multi-file result). Unreachable today since `htmlToPng` throws first for a note/base/sheet in the CLI; kept ready for a future headless PNG rasterizer.
 
-So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format pdf`, and `bismuth export Calendar.md --mode visual --cal-span week --format html` all work headlessly; `bismuth export note.md --format pdf` errors with the "open in the app" hint.
+So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format pdf`, `bismuth export Calendar.md --mode visual --cal-span week --format html`, and `bismuth export Essay.md --format md --no-frontmatter` all work headlessly; `bismuth export note.md --format pdf` errors with the "open in the app" hint.
 
 ## Download flow
 
@@ -164,4 +192,4 @@ So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format
 
 The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), the deferred `htmlToPdf`/`htmlToPng` (dynamic-imported only when actually exporting a PDF/PNG, to keep `jspdf`+`html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
 
-Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/baseView.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`.
+Source: `app/src/ExportView.tsx`, `app/src/export/exporters.ts`, `app/src/export/types.ts`, `app/src/export/formats.ts`, `app/src/export/options.ts`, `app/src/export/pageBreaks.ts`, `app/src/export/baseView.ts`, `app/src/export/viewHtml.ts`, `app/src/export/calendarHtml.ts`, `app/src/export/csvTable.ts`, `app/src/export/htmlToPdf.ts`, `app/src/export/htmlTemplate.ts`, `app/src/export/drawingRaster.ts`, `app/src/export/download.ts`, `app/src/bases/cardBodySplit.ts`, `app/src/bases/markdown.ts`, `app/src/tabIds.ts`, `app/src/PaneContent.tsx`, `cli/src/commands/export.ts`.

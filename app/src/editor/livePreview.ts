@@ -22,6 +22,7 @@ import { numberedLine, codeLineNumberTheme } from "./codeLineNumbers";
 import { isThematicBreak } from "./thematicBreak";
 import { renderCalloutHtml, CALLOUT_TYPES, type CalloutHeader } from "./callout";
 import { renderNoteBody, renderInline } from "../bases/markdown";
+import { hide, syntaxMark, pushEmphasis } from "./inlineEmphasis";
 import { findBismuthWords } from "./bismuthWord";
 import { sanitizeHtml } from "../sanitizeHtml";
 import { computeBlockRegions, scanCalloutLineBlocks, FENCE_RE, type BlockRegions } from "./blockRegions";
@@ -54,10 +55,9 @@ function listDepth(state: EditorState, pos: number, indent: string): number {
   return Math.max(structural, raw);
 }
 
-const hide = Decoration.mark({ class: "cm-hidden-syntax" });
-const strong = Decoration.mark({ class: "cm-strong" });
-const em = Decoration.mark({ class: "cm-em" });
-const strike = Decoration.mark({ class: "cm-strike" });
+// `hide` (off-cursor delimiters), `syntaxMark` (revealed delimiters), and the emphasis marks
+// (`strong`/`em`/`strike`) + their regex pass live in ./inlineEmphasis (pure, bun-test-importable
+// — livePreview itself can't be imported under bun test because of its Solid .tsx imports).
 const code = Decoration.mark({ class: "cm-inline-code" });
 const link = Decoration.mark({ class: "cm-link" });
 const wikilink = Decoration.mark({ class: "cm-wikilink" });
@@ -69,10 +69,6 @@ const headingLines = [1, 2, 3, 4, 5, 6].map((l) => Decoration.line({ class: `cm-
 // The leading `#`s, revealed on the cursor line, render in the mono accent font
 // (matching the inline note title) rather than the serif heading face.
 const headingMark = Decoration.mark({ class: "cm-heading-mark" });
-// Every other markdown delimiter revealed on the cursor line (`**`, `*`, `~~`,
-// `` ` ``, `>`, link/wikilink brackets) renders in dim Monaspace Xenon so the
-// raw syntax never shows in the serif prose face.
-const syntaxMark = Decoration.mark({ class: "cm-syntax-mark" });
 const quoteLine = Decoration.line({ class: "cm-quote" });
 const taskDoneMark = Decoration.mark({ class: "cm-task-done" });
 // On the cursor line a list/task marker shows raw; render it in the mono font.
@@ -131,10 +127,7 @@ const BLOCK_MATH_RE = /\$\$([^$]+)\$\$/g;
 const INLINE_MATH_RE = /(?<!\$)\$([^$\n]+)\$(?!\$)/g;
 const INLINE_CODE_RE = /(`+)((?:(?!\1)[^\n])*?)\1/g;
 const FM_KEY_RE = /^(\s*)([A-Za-z0-9_$.-]+)\s*:/;
-const STRONG_STAR_RE = /\*\*([^*]+)\*\*/g;
-const STRONG_UNDERSCORE_RE = /__([^_]+)__/g;
-const EM_RE = /(?<![*\w])\*(?!\*)([^*\n]+?)\*(?![*\w])/g;
-const STRIKE_RE = /~~([^~]+)~~/g;
+// STRONG_STAR_RE / STRONG_UNDERSCORE_RE / EM_RE / STRIKE_RE live in ./inlineEmphasis.
 const WIKILINK_RE = /(?<!!)\[\[([^\]]+?)\]\]/g;
 const MD_LINK_RE = /\[([^\]]+)\]\(([^)]+)\)/g;
 const TAG_RE = /(^|\s)(#[\p{L}\d/_-]+)/gu;
@@ -330,33 +323,8 @@ class MathWidget extends WidgetType {
   }
 }
 
-/** Hide the delimiters of an inline token (off the cursor line) and style the inner text. */
-function pushInline(
-  deco: Range<Decoration>[], text: string, lineFrom: number, reveals: (from: number, to: number) => boolean,
-  re: RegExp, markLen: number, mark: Decoration, skip?: (from: number, to: number) => boolean,
-) {
-  for (const m of text.matchAll(re)) {
-    const s = lineFrom + (m.index ?? 0);
-    const end = s + m[0].length;
-    // Skip tokens overlapping a protected span (e.g. inline/block math): markdown
-    // emphasis must never touch `*`/`_`/`~` that live inside `$…$` (those are LaTeX).
-    if (skip && skip(s, end)) continue;
-    // Reveal raw syntax only when the caret/selection touches THIS token — not the
-    // whole line. So `**bold** *italic*` reveals only the span the cursor is inside.
-    const onCursor = reveals(s, end);
-    const innerStart = s + markLen, innerEnd = end - markLen;
-    if (innerEnd <= innerStart) continue;
-    deco.push(mark.range(innerStart, innerEnd));
-    if (!onCursor) {
-      deco.push(hide.range(s, innerStart));
-      deco.push(hide.range(innerEnd, end));
-    } else {
-      // Revealed: the delimiters render in dim Monaspace, not the prose serif.
-      deco.push(syntaxMark.range(s, innerStart));
-      deco.push(syntaxMark.range(innerEnd, end));
-    }
-  }
-}
+// pushInline / pushEmphasis (bold, italic, strikethrough — incl. the #58 delimiter-only math
+// guard so `**bold with $math$ inside**` still bolds) live in ./inlineEmphasis.
 
 /** Style each `[[wikilink]]` on a line — revealing only the basename/alias and hiding
  *  the brackets + folder path off the cursor line. Used for both body and frontmatter
@@ -795,11 +763,9 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
         }
       }
 
-      // inline tokens
-      pushInline(deco, text, line.from, revealsRange, STRONG_STAR_RE, 2, strong, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, STRONG_UNDERSCORE_RE, 2, strong, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, EM_RE, 1, em, inMathSpan);
-      pushInline(deco, text, line.from, revealsRange, STRIKE_RE, 2, strike, inMathSpan);
+      // inline emphasis (bold/italic/strike). `inMathSpan` guards delimiters inside `$…$`
+      // (LaTeX `*`/`_`/`~`), while a token that merely CONTAINS math still renders (#58).
+      pushEmphasis(deco, text, line.from, revealsRange, inMathSpan);
       // inline code: run-length-aware so a backtick can live INSIDE a span. A run of N
       // backticks opens a span that closes only on the next run of EXACTLY N backticks
       // (mirrors core/src/wikilinks.ts stripCode + CommonMark). The single-backtick regex

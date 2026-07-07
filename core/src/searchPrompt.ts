@@ -411,6 +411,42 @@ export async function consumeModelStream(
   );
 }
 
+// BUG #8 (5th bounce): a probe against the user's LIVE app found /search-prompt hanging for 16+
+// MINUTES with no reply — a spawned `claude` that never completes (bad env, stuck subprocess,
+// network limbo) previously waited forever, which the UI renders as an endless spinner / silent
+// nothing. A hard deadline converts "hangs forever" into a visible, diagnosable error.
+export const AI_SEARCH_TIMEOUT_MS = 120_000;
+
+/** Await `work`, but abort (via `abort`) and throw a clear timeout AppError after `ms`. If the
+ *  CALLER's signal caused the abort, the original error passes through untouched. Extracted so
+ *  the deadline semantics are unit-testable without spawning the SDK. */
+export async function raceWithTimeout<T>(
+  work: Promise<T>,
+  abort: AbortController,
+  ms: number,
+  externalSignal?: AbortSignal,
+): Promise<T> {
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abort.abort();
+  }, ms);
+  try {
+    return await work;
+  } catch (e) {
+    if (timedOut && !externalSignal?.aborted) {
+      throw new AppError(
+        "INTERNAL_ERROR",
+        `AI search timed out after ${Math.round(ms / 1000)}s — the claude process never responded. Check that claude works from a terminal, then try again`,
+        500,
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The real SDK model runner: one-shot query() over the user's `claude`, structured JSON out. */
 const runModelReal: ModelRunner = async ({ bin, root, question, context, signal }) => {
   const abort = new AbortController();
@@ -449,7 +485,7 @@ const runModelReal: ModelRunner = async ({ bin, root, question, context, signal 
     // Same construction-error handling shape as chat.ts:548-551.
     throw new AppError("INTERNAL_ERROR", `AI search failed to start: ${(e as Error).message}`, 500);
   }
-  return consumeModelStream(iterator);
+  return raceWithTimeout(consumeModelStream(iterator), abort, AI_SEARCH_TIMEOUT_MS, signal);
 };
 
 /**
