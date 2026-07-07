@@ -491,47 +491,72 @@ describe("#30 file drop into a cell", () => {
   });
 
   // Packaged Tauri never fires a DOM drop — the OS drop arrives as `bismuth-native-drag` with
-  // client-pixel COORDINATES, so Editor.tsx routes it via tableCellDropTargetAtPoint(view, x, y),
-  // which hit-tests the point with elementFromPoint. happy-dom returns null from elementFromPoint,
-  // so we stub it to prove the coordinate → cell wiring (the routing decision, engine-agnostic).
+  // client-pixel COORDINATES, so Editor.tsx routes it via tableCellDropTargetAtPoint(view, x, y).
+  // Resolution is GEOMETRIC (rect containment over the wrap + cell client rects — the same
+  // coordinate handling as the chat pane's working pointInDropRect hit-test), NOT
+  // elementFromPoint (which the resize-overlay strips intercept and whose answers WebKit has
+  // diverged on under page zoom). happy-dom lays out nothing (all rects are 0×0), so we stub
+  // per-element getBoundingClientRect with an explicit geometry to pin the coordinate → cell map.
   describe("native-drop coordinate → cell routing (#30, the packaged-app path)", () => {
-    const stubEFP = (doc: Document, fn: (x: number, y: number) => Element | null): (() => void) => {
-      const d = doc as unknown as { elementFromPoint: unknown };
-      const orig = d.elementFromPoint;
-      d.elementFromPoint = fn;
-      return () => { d.elementFromPoint = orig; };
+    type R = { left: number; top: number; right: number; bottom: number };
+    const stubRect = (el: Element, r: R): void => {
+      (el as unknown as { getBoundingClientRect: () => R & { width: number; height: number } }).getBoundingClientRect =
+        () => ({ ...r, width: r.right - r.left, height: r.bottom - r.top });
+    };
+    /** Lay out a mounted 2-col table: wrap (0,0)-(220,70); header row y 0-30, body row y 30-60;
+     *  col 0 x 0-100, col 1 x 100-200 (the wrap a bit wider/taller than the cells, like the real
+     *  edge-button margins). */
+    const layoutTable = (view: EditorView): void => {
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+      stubRect(wrap, { left: 0, top: 0, right: 220, bottom: 70 });
+      for (const el of Array.from(wrap.querySelectorAll<HTMLElement>("[data-cell]"))) {
+        const r = Number(el.getAttribute("data-r"));
+        const c = Number(el.getAttribute("data-c"));
+        stubRect(el, { left: c * 100, top: r * 30, right: c * 100 + 100, bottom: r * 30 + 30 });
+      }
     };
 
-    test("coordinates over a cell resolve to that cell's (r, c) + block range", () => {
+    test("coordinates inside a cell resolve to that cell's (r, c) + block range", () => {
       const view = mount("| A | B |\n| - | - |\n| x | y |");
-      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
-      const inner = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="1"]')!;
-      const restore = stubEFP(view.dom.ownerDocument, (x, y) => (x === 42 && y === 99 ? inner : null));
-      const target = tableCellDropTargetAtPoint(view, 42, 99);
-      restore();
+      layoutTable(view);
+      const target = tableCellDropTargetAtPoint(view, 150, 45); // inside body row, col 1
       expect(target).not.toBeNull();
       expect(target!.r).toBe(1);
       expect(target!.c).toBe(1);
       expect(Number.isInteger(target!.from)).toBe(true); // block anchor for the async insert
+      const header = tableCellDropTargetAtPoint(view, 50, 15); // header row, col 0
+      expect(header!.r).toBe(0);
+      expect(header!.c).toBe(0);
       view.destroy();
     });
 
-    test("coordinates NOT over a cell (elementFromPoint hits the body) resolve to null", () => {
+    test("a point inside the wrap but between/past cells snaps to the NEAREST cell", () => {
       const view = mount("| A | B |\n| - | - |\n| x | y |");
-      const restore = stubEFP(view.dom.ownerDocument, () => document.body);
-      expect(tableCellDropTargetAtPoint(view, 5, 5)).toBeNull();
-      restore();
+      layoutTable(view);
+      // (150, 65): below the body row (cells end at y=60) but still inside the wrap → r1c1.
+      const below = tableCellDropTargetAtPoint(view, 150, 65);
+      expect(below!.r).toBe(1);
+      expect(below!.c).toBe(1);
+      // (210, 45): right of col 1 (cells end at x=200) but inside the wrap → r1c1.
+      const right = tableCellDropTargetAtPoint(view, 210, 45);
+      expect(right!.r).toBe(1);
+      expect(right!.c).toBe(1);
       view.destroy();
     });
 
-    test("a cell belonging to ANOTHER view is rejected (split-pane scoping)", () => {
+    test("coordinates outside every table wrap resolve to null (note-body fallback)", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      layoutTable(view);
+      expect(tableCellDropTargetAtPoint(view, 500, 500)).toBeNull();
+      view.destroy();
+    });
+
+    test("only THIS view's tables are consulted (split-pane scoping; hidden 0x0 wraps skipped)", () => {
       const a = mount("| A | B |\n| - | - |\n| x | y |");
       const b = mount("| A | B |\n| - | - |\n| x | y |");
-      const bCell = b.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
-      // elementFromPoint returns view B's cell, but we ask view A to resolve it → null.
-      const restore = stubEFP(a.dom.ownerDocument, () => bCell);
-      expect(tableCellDropTargetAtPoint(a, 10, 10)).toBeNull();
-      restore();
+      layoutTable(b); // B's table occupies (0,0)-(220,70); A's rects stay 0×0 (hidden/unlaid)
+      expect(tableCellDropTargetAtPoint(a, 50, 45)).toBeNull(); // A ignores B's geometry
+      expect(tableCellDropTargetAtPoint(b, 50, 45)).not.toBeNull(); // B resolves its own cell
       a.destroy();
       b.destroy();
     });

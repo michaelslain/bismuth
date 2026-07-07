@@ -23,6 +23,8 @@ import {
   type TableGrid,
   type CellKeyEvent,
   surgicalTableEdit,
+  cellRectAtPoint,
+  type CellRect,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -505,4 +507,34 @@ test("surgicalTableEdit header edits land on line 0", () => {
   expect(lines[0]).toBe("| A! | b |");
   expect(lines[1]).toBe("| --- | --- |");
   expect(lines[2]).toBe("| x | y |");
+});
+
+// ── #30: coordinate → cell resolution (pure, pins the native-drop mapping) ─────
+// The widget collects each cell's client rect; cellRectAtPoint makes the geometric
+// decision — containing cell wins, else nearest (border/gutter drops snap onto the
+// visually-targeted table instead of falling through to the note body).
+const CR = (r: number, c: number): CellRect =>
+  ({ r, c, left: c * 100, top: r * 30, right: c * 100 + 100, bottom: r * 30 + 30 });
+const GRID_2X2: CellRect[] = [CR(0, 0), CR(0, 1), CR(1, 0), CR(1, 1)];
+
+test("cellRectAtPoint: a point inside a cell resolves to exactly that cell", () => {
+  expect(cellRectAtPoint(GRID_2X2, 50, 15)).toMatchObject({ r: 0, c: 0 });
+  expect(cellRectAtPoint(GRID_2X2, 150, 15)).toMatchObject({ r: 0, c: 1 });
+  expect(cellRectAtPoint(GRID_2X2, 50, 45)).toMatchObject({ r: 1, c: 0 });
+  expect(cellRectAtPoint(GRID_2X2, 150, 45)).toMatchObject({ r: 1, c: 1 });
+});
+
+test("cellRectAtPoint: a point on a shared border resolves deterministically (first containing)", () => {
+  // x=100 is the col0/col1 border: both rects contain it (inclusive edges); the first wins.
+  expect(cellRectAtPoint(GRID_2X2, 100, 15)).toMatchObject({ r: 0, c: 0 });
+});
+
+test("cellRectAtPoint: a point outside every cell snaps to the NEAREST cell", () => {
+  expect(cellRectAtPoint(GRID_2X2, 150, 70)).toMatchObject({ r: 1, c: 1 }); // below the grid
+  expect(cellRectAtPoint(GRID_2X2, 215, 10)).toMatchObject({ r: 0, c: 1 }); // right of the grid
+  expect(cellRectAtPoint(GRID_2X2, -5, -5)).toMatchObject({ r: 0, c: 0 }); // above-left corner
+});
+
+test("cellRectAtPoint: empty rect list resolves to null", () => {
+  expect(cellRectAtPoint([], 10, 10)).toBeNull();
 });
