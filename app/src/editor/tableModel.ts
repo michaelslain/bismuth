@@ -56,6 +56,25 @@ export function parseTableRow(line: string): string[] {
   return cells.map((c) => c.trim());
 }
 
+/** Char-offset spans (relative to the row's line start) of each CONTENT cell in a raw table-row
+ *  line, in grid-column order — the outer `|` rails and the empty pseudo-cells they create are
+ *  dropped, mirroring `parseTableRow`. A `\|` escape counts as cell text, never a delimiter. Used
+ *  to map a document offset that lands inside a table row to its grid COLUMN — e.g. the find bar
+ *  locating which rendered cell an active match sits in (#31). Pure. */
+export function parseRowCellSpans(line: string): { start: number; end: number }[] {
+  const cells: { start: number; end: number }[] = [];
+  let start = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\" && line[i + 1] === "|") { i++; continue; } // escaped pipe is cell text
+    if (line[i] === "|") { cells.push({ start, end: i }); start = i + 1; }
+  }
+  cells.push({ start, end: line.length });
+  const isEmpty = (s: { start: number; end: number }): boolean => line.slice(s.start, s.end).trim() === "";
+  if (cells.length && isEmpty(cells[0])) cells.shift(); // leading rail
+  if (cells.length && isEmpty(cells[cells.length - 1])) cells.pop(); // trailing rail
+  return cells;
+}
+
 /** Map one separator cell (`:---`, `:--:`, `---:`, `---`) to its alignment. */
 export function parseAlign(cell: string): Align {
   const t = cell.trim();
@@ -403,4 +422,18 @@ export function cellListContinuation(lineText: string): CellListEnter {
   const ol = CELL_OL_ITEM.exec(lineText);
   if (ol) return ol[3].trim() === "" ? "exit" : { marker: `${parseInt(ol[1], 10) + 1}${ol[2]} ` };
   return null;
+}
+
+// ── Enter action (pure, #42) ──────────────────────────────────────────────────
+// Pressing Enter inside a table cell should ONLY create a new row when the caret is in the
+// table's LAST row; on every other row Enter behaves like Shift+Enter (a soft line break
+// inside the cell). This keeps a mid-table Enter from stealing the caret to the row below
+// (the old `next-row` behavior) while letting a user grow the table by pressing Enter at the
+// bottom. `rowIndex` is 0-based over `cells` (row 0 = header); `rowCount` is the total row
+// count including the header. (In-cell list continuation is decided separately and wins.)
+export type EnterAction = "line-break" | "new-row";
+
+/** Enter creates a new row only on the last row; otherwise it inserts an in-cell line break. */
+export function enterAction(rowIndex: number, rowCount: number): EnterAction {
+  return rowIndex >= rowCount - 1 ? "new-row" : "line-break";
 }

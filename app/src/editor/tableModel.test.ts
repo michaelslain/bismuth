@@ -5,6 +5,7 @@ import {
   parseTableRow,
   parseAlign,
   parseTableBlock,
+  parseRowCellSpans,
   groupTableBlocks,
   serializeTable,
   formatTable,
@@ -12,6 +13,7 @@ import {
   displayWidth,
   decideCellKey,
   cellListContinuation,
+  enterAction,
   isSeparatorRow,
   insertRow,
   deleteRow,
@@ -346,6 +348,52 @@ test("cellListContinuation exits on an empty marker and ignores non-list lines",
   expect(cellListContinuation("plain text")).toBeNull();
   expect(cellListContinuation("-nospace")).toBeNull(); // a lone dash isn't a list marker
   expect(cellListContinuation("")).toBeNull();
+});
+
+// ── Enter action (#42 — new row only on the last row) ─────────────────────────
+
+test("enterAction returns 'new-row' ONLY on the last row, else 'line-break'", () => {
+  // A table with a header + 2 body rows → rowCount 3 (indices 0,1,2). Only row 2 grows the table.
+  expect(enterAction(0, 3)).toBe("line-break"); // header
+  expect(enterAction(1, 3)).toBe("line-break"); // middle body row
+  expect(enterAction(2, 3)).toBe("new-row"); // last body row
+});
+
+test("enterAction: a header-only table grows on Enter; a defensive out-of-range still resolves", () => {
+  expect(enterAction(0, 1)).toBe("new-row"); // only the header exists → Enter adds the first body row
+  expect(enterAction(5, 3)).toBe("new-row"); // rowIndex past the end (shouldn't happen) still grows
+});
+
+// ── parseRowCellSpans (#31 — map a doc offset to its grid column) ──────────────
+
+test("parseRowCellSpans returns content-cell spans, dropping the outer rails", () => {
+  const line = "| ab | cd | ef |";
+  const spans = parseRowCellSpans(line);
+  expect(spans.length).toBe(3);
+  // The offsets bracket each cell's content (with its surrounding spaces).
+  expect(spans.map((s) => line.slice(s.start, s.end))).toEqual([" ab ", " cd ", " ef "]);
+});
+
+test("parseRowCellSpans locates the column an in-row offset falls in", () => {
+  const line = "| hello | world | ok |";
+  const spans = parseRowCellSpans(line);
+  const colAt = (off: number): number => spans.findIndex((s) => off >= s.start && off <= s.end);
+  expect(colAt(line.indexOf("hello"))).toBe(0);
+  expect(colAt(line.indexOf("world"))).toBe(1);
+  expect(colAt(line.indexOf("ok"))).toBe(2);
+});
+
+test("parseRowCellSpans treats a \\| escape as cell text, not a delimiter", () => {
+  const line = "| a \\| b | c |";
+  const spans = parseRowCellSpans(line);
+  expect(spans.length).toBe(2); // the escaped pipe does NOT split the first cell
+  expect(line.slice(spans[0].start, spans[0].end)).toBe(" a \\| b ");
+});
+
+test("parseRowCellSpans handles a row without outer rails", () => {
+  const line = "a | b";
+  const spans = parseRowCellSpans(line);
+  expect(spans.map((s) => line.slice(s.start, s.end))).toEqual(["a ", " b"]);
 });
 
 // ── Pretty (aligned) source (#25) ─────────────────────────────────────────────

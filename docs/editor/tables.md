@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation, Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu, inline-markdown rendering in the display face, and `<br>`-carried bullet/number lists inside a cell. The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell (#15), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell (#30). The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
 
 ---
 
@@ -16,7 +16,9 @@ This document covers everything about how Bismuth renders and edits GitHub Flavo
 8. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
 9. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
 10. [Source / Raw-Edit Mode](#source--raw-edit-mode)
-11. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
+11. [Find-in-Table Highlighting (#31)](#find-in-table-highlighting-31)
+12. [File Drop Into a Cell (#30)](#file-drop-into-a-cell-30)
+13. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
 
 ---
 
@@ -233,7 +235,7 @@ Escapes HTML entities, then converts the `<br>` markers (`<br>` or `<BR>` or `<b
 
 #### `cellSourceFromDom(cell)` — internal
 
-Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers and collapses stray newline characters to spaces (a cell occupies exactly one markdown line). This is the inverse of `srcToEditHtml`.
+Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers. A contenteditable can encode an in-cell line break three ways depending on browser/edit history — a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n` **character** in a text node — so every one is normalized to the `<br>` marker. **A `\n` character maps to `<br>`, NOT a space (#15).** The old space-collapse was the reopened list bug: a typed list `- a\n- b` collapsed to `- a - b`, which `splitCellItems` deliberately refuses to re-split (a space *before* the dash reads as prose, so real sentences aren't chopped), so the list silently vanished. Mapping `\n` → `<br>` keeps the break, so the cell re-renders as the list the user typed. `.trim()` strips only surrounding whitespace, never the `<br>` markers (a deliberate trailing Shift+Enter break — a real `<br>` + ZWSP — and an intentional blank line typed as two breaks both survive). This is the inverse of `srcToEditHtml`.
 
 **Why not `innerText`?** A trailing `<br>` followed by nothing is silently dropped by `innerText`, causing Shift+Enter line breaks at the end of a cell to not save. `cellSourceFromDom`'s explicit node walk captures them correctly.
 
@@ -241,9 +243,10 @@ Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; al
 
 `mousedown` on a cell:
 
-1. Calls `e.stopPropagation()` + `e.preventDefault()` to prevent CodeMirror from stealing the click (which would move the editor selection to the widget boundary).
-2. Calls `cell.focus()`.
-3. Uses `caretRangeFromPoint` (Chrome/Safari) or `caretPositionFromPoint` (Firefox) to place the text caret at the exact click position, falling back to the end of cell content.
+1. **Right-click (`button === 2`, #43):** `preventDefault()` + `stopPropagation()` and return immediately, so the browser's contenteditable default of selecting the word under the pointer never fires. `preventDefault` does NOT clear an existing selection, so right-clicking *on* a selection keeps it; right-clicking elsewhere shows the menu with no new word highlighted. The context menu is opened by the separate `contextmenu` listener. (Before this, a right-click on a cell in edit mode both highlighted a word AND opened the menu.)
+2. Calls `e.stopPropagation()` + `e.preventDefault()` to prevent CodeMirror from stealing the click (which would move the editor selection to the widget boundary).
+3. Calls `cell.focus()`.
+4. Uses `caretRangeFromPoint` (Chrome/Safari) or `caretPositionFromPoint` (Firefox) to place the text caret at the exact click position, falling back to the end of cell content.
 
 ### Paste Handling
 
@@ -269,7 +272,7 @@ All key events inside cells are stopped from propagating to CodeMirror's keymap.
 | :------------------ | :------------------------------------------------------------------------------------------ |
 | `Tab`               | Move to the next cell (right). Wraps to the first cell of the next row. Blurs if at the last cell of the table (triggers commit). |
 | `Shift+Tab`         | Move to the previous cell (left). Wraps to the last cell of the previous row. Blurs if at the first cell. |
-| `Enter`             | Move to the cell directly below (same column). Blurs on the last row (triggers commit).    |
+| `Enter`             | **Row-aware (#42).** On any row EXCEPT the last, Enter inserts a soft in-cell line break — exactly like Shift+Enter. On the **last** row it grows the table by appending a blank body row and drops the caret into that new row's same column. (An in-cell list line still continues the list first — see below.) The pure decision is `enterAction(rowIndex, rowCount)` → `"line-break" \| "new-row"` in `tableModel.ts`. |
 | `Shift+Enter`       | Insert a soft line break within the current cell. Inserts a real `<br>` DOM node at the caret (not `execCommand("insertLineBreak")`). The break is stored as the literal string `<br>` in `data-src`. |
 | `Escape`            | Blur the cell (triggers commit).                                                            |
 | `Mod+A`             | Select all content in the focused cell (scoped to the cell; does not select the whole document). |
@@ -358,6 +361,33 @@ A table block can be toggled to show its raw pipe-table source for structural or
 
 When the user edits the raw source and then moves the cursor out, `tableWidgetField` in `livePreview.ts` rebuilds the `DecorationSet` via `buildTableWidgets`. The new `TableWidget` gets the freshly-parsed grid. `TableWidget.eq` compares serialized forms, so a semantic no-op edit (e.g., adding trailing space to a cell) does not force a DOM rebuild.
 
+> **Find (Cmd+F) does NOT reveal source (#31).** The find bar never flips a table to raw markdown — that behavior was rejected outright ("cmd+f converts tables to source, which is stupid"). Only the **manual** "Edit source" menu item reveals source. See [Find-in-Table Highlighting](#find-in-table-highlighting-31).
+
+---
+
+## Find-in-Table Highlighting (#31)
+
+A GFM table is an atomic block-replace widget that **hides its source**, so a Cmd+F match landing on a table line is invisible behind the widget. The find bar does **not** solve this by revealing raw source (rejected). Instead, matches are highlighted **in place, inside the rendered table DOM**.
+
+- **`tableFindHighlight`** (a `ViewPlugin` in `tableWidget.ts`, added to the editor next to `findExtension()`) reacts to doc / selection / search-query / viewport / panel changes. It reads the live `getSearchQuery(view.state)` and `searchPanelOpen(view.state)` from `@codemirror/search` — no new state field.
+- On each apply it **clears** every prior find `<mark>` from all `.cm-table-wrap`s (unwrap + `normalize`), then, while the panel is open with a valid non-empty query, walks each **display** cell's text nodes (skipping any cell in edit mode) and wraps each literal query occurrence in `<mark class="cm-table-find-match">`.
+- The **active match** (the block the find selection is genuinely inside, resolved via `groupTableBlocks` + `cellCoordForOffset` → `parseRowCellSpans`) gets the extra `cm-table-find-active` class and is `scrollIntoView`-ed.
+- Styling lives in `Editor.css` (`.cm-table-rendered mark.cm-table-find-match` / `.cm-table-find-active`), mirroring the prose `.cm-searchMatch` / `-selected` accent wash so a match reads the same in a cell as in prose.
+- It **never dispatches a transaction or reveals source**, and only touches the display face — so an in-progress cell edit is never disturbed. Closing the bar (empty query / panel closed) clears every mark.
+
+`findPanel.ts` therefore carries **zero** table logic — it just moves the selection like anywhere else, and the highlighter reacts.
+
+---
+
+## File Drop Into a Cell (#30)
+
+Dropping an image/PDF/media file onto a rendered table cell embeds it **into that cell**, not the note body. Because the table is an atomic block widget whose `contenteditable` cells reroute the browser's native file drop before CodeMirror's own `drop` handler can see it, the widget installs **capture-phase** `dragover` + `drop` listeners on its root DOM (`toDOM`):
+
+1. `dragover`: when the drag carries files, `preventDefault()` (marks the cell a valid drop target — without this no `drop` fires) + `stopPropagation()`.
+2. `drop`: resolve the target cell via `tableCellDropTarget(view, e.target)`; if it's over a cell, `preventDefault()` + `stopPropagation()` (so CM's bubble-phase `drop` never also fires — no double insert) and dispatch a `bismuth-table-drop` window event carrying `{ view, files, target, altKey }`.
+
+`Editor.tsx` listens for `bismuth-table-drop` (gated to its own `view`) and runs the **same** upload+embed flow as a note-body drop (`dropFilesIntoCell` → `uploadEmbed` → `insertEmbedsInTableCell` → `appendToCell`), so the file is saved into the vault and an `![[…]]` embed lands in the cell (which then renders as real media). `⌥`-drop or `attachments.onDrop: "reference"` inserts a bare `![[name]]` reference instead of copying.
+
 ---
 
 ## Inline Markdown in Cells (`inlineMarkdown.ts`)
@@ -376,7 +406,9 @@ Returns `InlineSeg[]`:
 type InlineSeg =
   | { type: "md"; raw: string }
   | { type: "wikilink"; target: string; alias: string | null }
-  | { type: "math"; expr: string };
+  | { type: "math"; expr: string }
+  | { type: "embed"; wiki: boolean; target: string; alt: string | null }
+  | { type: "tag"; name: string };   // an Obsidian #tag chip (#41)
 ```
 
 Segmentation rules (applied left to right, one character at a time):
@@ -384,7 +416,8 @@ Segmentation rules (applied left to right, one character at a time):
 1. **Wikilink** `[[target]]` or `[[target|alias]]`: detected at `[[`, scanned to the first `]]`. The alias separator is the first `|` inside the brackets.
 2. **Display math** `$$…$$`: the `$$` fence is passed through literally as text so the inner single-`$` scanner does not misread it as two inline-math spans.
 3. **Inline math** `$expr$`: detected when `$` is not followed by another `$`, not followed by space/tab, and the closing `$` is not preceded by space/tab and has no newline in between. `\$` inside the expression escapes the dollar. Currency-style `$5` (no closing match) falls through to `type: "md"`.
-4. **Everything else**: accumulated in a `buf`, emitted as `type: "md"` on flush.
+4. **Tag** `#tag` (#41): a `#` at the **start of the cell or right after whitespace**, whose body starts with a **letter** (`[A-Za-zÀ-ɏ]`) then word chars / `/` (nested tags) / `-`. These rules mirror the vault's tag matcher (`editor/tag.ts` + the reader's `bases/markdown.ts` `TAG_RE`), so `#123` (digit-led), `# heading` (space after `#`), `C#` (mid-word), and a URL fragment `x#y` are never treated as tags. A `#` inside a `[[wikilink]]` is a heading anchor and is consumed by the earlier wikilink rule, not this one.
+5. **Everything else**: accumulated in a `buf`, emitted as `type: "md"` on flush.
 
 ```ts
 tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
@@ -403,6 +436,7 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `"md"`       | `inlineMarked.parseInline(raw)` — GFM-enabled isolated `Marked` instance (~~strikethrough~~ + autolinks) |
 | `"wikilink"` | `<span class="cm-wikilink" data-wikilink="<target>"><alias or target></span>`               |
 | `"math"`     | `<span class="cm-inline-math" data-math="<expr>"><katex html or empty></span>` — lazy KaTeX |
+| `"tag"`      | `<span class="cm-tag" data-tag="<name>">#<name></span>` — the editor's tag mark (teal mono), so a tag in a cell reads identically to one in the note body (#41). Display-only, like tags in the editor body (no click navigation). |
 
 ### KaTeX Lazy Loading
 
@@ -420,6 +454,7 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `[txt](url)`       | `<a href="url">txt</a>` |
 | `[[Note]]`         | wikilink span        |
 | `[[Note\|Alias]]`  | wikilink span (alias text) |
+| `#tag`             | `.cm-tag` chip (letter-led, at start/after-whitespace; `#123`/`C#`/`# h` are not tags) |
 | `$expr$`           | KaTeX rendered span  |
 | `$$…$$`            | passed through literally (display math handled elsewhere) |
 
