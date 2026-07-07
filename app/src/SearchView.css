@@ -32,6 +32,29 @@
 .search-error { color: var(--danger); font-size: 12px; }
 /* .scount — muted result-count line. */
 .search-status { color: var(--text-muted); font-size: 11.5px; }
+.search-status-busy { display: flex; align-items: center; gap: 7px; }
+
+/* AI ("Bismuth AI") prompt mode: an accent ring on the box + a small mode banner. */
+.search-row-ai { border-color: color-mix(in srgb, var(--teal) 55%, var(--border)); }
+.search-ai-mode {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--teal);
+}
+
+/* A tiny spinner shown while the one-shot AI turn is in flight. */
+.search-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--teal) 30%, transparent);
+  border-top-color: var(--teal);
+  border-radius: 50%;
+  animation: search-spin 0.7s linear infinite;
+}
+@keyframes search-spin { to { transform: rotate(360deg); } }
 
 .search-results {
   flex: 1;
@@ -79,6 +102,14 @@
   margin-left: auto;
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* .sresult-reason — the AI's one-line rationale for why this note answers the question. */
+.sresult-reason {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding-left: 23px;
 }
 
 /* .sp — serif snippet line; the matched span is a teal-tinted <mark>. */

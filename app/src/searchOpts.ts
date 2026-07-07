@@ -18,6 +18,9 @@ export interface SearchResult {
   path: string;
   matchCount: number;
   snippets: MatchSnippet[];
+  /** Optional one-line rationale — only set by the AI prompt-search path (/search-prompt); the
+   *  literal /search path never sets it. Rendered as a faint caption in SearchView. */
+  reason?: string;
 }
 
 /** True if `pattern` compiles as a RegExp. Used to gate regex-mode searches. */

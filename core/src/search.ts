@@ -28,6 +28,9 @@ export interface SearchResult {
   path: string;
   matchCount: number;
   snippets: MatchSnippet[];
+  /** Optional one-line rationale — only set by the AI prompt-search path (searchPrompt.ts);
+   *  the literal /search path never populates it. Rendered as a faint caption in SearchView. */
+  reason?: string;
 }
 
 /** Escape a string for literal use inside a RegExp. */
@@ -260,4 +263,30 @@ export async function searchVault(root: string, query: string, opts: SearchOpts)
   // When regex (no BM25 order), sort by match count desc for a useful order.
   if (opts.regex) results.sort((a, b) => b.matchCount - a.matchCount);
   return results;
+}
+
+/**
+ * Rank vault notes for `query` and return the top `limit` as `{ path, body }` pairs — the SAME
+ * MiniSearch ranking searchVault uses (BM25, fuzzy for longer terms, prefix, filename/heading/tag
+ * boosts), but deliberately WITHOUT searchVault's post-ranking literal-snippet filter.
+ *
+ * searchVault drops every ranked hit whose body has no verbatim occurrence of the WHOLE query
+ * string (`findMatches(...).length === 0 → continue`). For a natural-language question — "where did
+ * I write about the Japan trip" — that sentence never appears literally in any note, so searchVault
+ * returns [] for exactly the inputs the AI prompt-search feature targets. This accessor keeps the
+ * useful tokenized/fuzzy ranking and hands the raw bodies to searchPrompt.ts, which re-derives a
+ * byte-exact snippet from the real body around a model-chosen verbatim quote. Used ONLY by AI
+ * prompt search; the literal /search path is unchanged.
+ */
+export async function rankCandidates(
+  root: string,
+  query: string,
+  limit = 30,
+): Promise<{ path: string; body: string }[]> {
+  if (!query.trim()) return [];
+  const { mini, bodies } = await getSearchIndex(root);
+  return mini
+    .search(query)
+    .slice(0, limit)
+    .map((h) => ({ path: h.id as string, body: bodies.get(h.id as string) ?? "" }));
 }
