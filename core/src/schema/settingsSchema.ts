@@ -229,6 +229,23 @@ export const SETTINGS_SCHEMA: Schema = {
     ],
     doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
   },
+  // The TAB-BAR action buttons (right of the tab strip) — same item shape and rendering as
+  // `toolbar`, so both bars are configured the same way. Defaults match what used to be
+  // hardcoded (new tab + terminal) plus the new-chat button the user asked for.
+  tabBar: {
+    type: { kind: "list", item: { kind: "object", fields: {
+      command: { type: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] }, doc: "Which command this button runs (a catalog id or daily-note:<id>). Use command: OR commands:, not both." },
+      commands: { type: { kind: "list", item: { kind: "enum", values: COMMAND_IDS, allowPrefixes: ["daily-note:"] } }, doc: "Multiple commands to run in sequence (alternative to command: field). Use command: OR commands:, not both." },
+      icon: { type: "icon", doc: 'Lucide icon name (e.g. "FilePlus") or an emoji shown on the button.' },
+      tooltip: { type: "string", doc: "Optional hover text (defaults to the command's label)." },
+    } } },
+    default: [
+      { command: "new-tab", icon: "SquarePlus" },
+      { command: "terminal", icon: "SquareTerminal" },
+      { command: "new-claude-chat", icon: "MessageSquare" },
+    ],
+    doc: "Buttons in the tab bar (right of the tab strip), in order. Same shape as `toolbar`.",
+  },
   // Daily-note types. Each registers a `daily-note:<id>` command (see core/commands)
   // that you reference from `toolbar` to get a button. Pressing it opens today's note
   // for that type, creating it from `template` the first time. Top-level list, read

@@ -1606,41 +1606,40 @@ export default function App() {
     return fileIcons().get(content) ?? "FileText";
   }
 
+  /** One configurable toolbar button (shared by the sidebar header bar + the tab bar).
+   *  Resolves to its command(s): a `commands: [...]` list wins, else the single `command`;
+   *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
+   *  The inbox button is special-cased as a DAEMON surface: hidden entirely while the daemon
+   *  is off, and it carries the live due-count badge the palette command can't. */
+  function CommandButton(props2: { btn: { command?: string; commands?: string[]; icon: string; tooltip?: string } }) {
+    const cmd = () => resolveButtonCommands(props2.btn, commands())[0];
+    const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
+    return (
+      <Show when={!hidden()}>
+        <Show
+          when={cmd()}
+          fallback={
+            <IconButton icon={props2.btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${props2.btn.command}`} />
+          }
+        >
+          {(c) => (
+            <span class="toolbar-btn-wrap">
+              <IconButton icon={props2.btn.icon} iconSize={18} label={props2.btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
+              <Show when={c().id === "open-inbox" && dueCount() > 0}>
+                <span class="toolbar-badge">{dueCount()}</span>
+              </Show>
+            </span>
+          )}
+        </Show>
+      </Show>
+    );
+  }
+
   return (
     <div class="layout" classList={{ "sidebar-hidden": !sidebarVisible() }}>
       <aside class="sidebar" classList={{ hidden: !sidebarVisible() }}>
         <div class="sidebar-icons">
-          <For each={settings.toolbar}>
-            {(btn) => {
-              // Resolve the button to its command(s): a `commands: [...]` list wins, else the
-              // single `command`. The button runs the FIRST resolvable command; it's disabled
-              // only when none resolve (see resolveButtonCommands).
-              const cmd = () => resolveButtonCommands(btn, commands())[0];
-              // The inbox button is a DAEMON surface: hidden entirely while the daemon is off
-              // (the default toolbar ships it for every vault), and it carries the live
-              // due-count badge the palette command can't.
-              const hidden = () => cmd()?.id === "open-inbox" && !settings.daemon.enabled;
-              return (
-                <Show when={!hidden()}>
-                  <Show
-                    when={cmd()}
-                    fallback={
-                      <IconButton icon={btn.icon || "CircleHelp"} iconSize={18} disabled label={`Unknown command: ${btn.command}`} />
-                    }
-                  >
-                    {(c) => (
-                      <span class="toolbar-btn-wrap">
-                        <IconButton icon={btn.icon} iconSize={18} label={btn.tooltip ?? c().label} onClick={(e) => c().action(e)} />
-                        <Show when={c().id === "open-inbox" && dueCount() > 0}>
-                          <span class="toolbar-badge">{dueCount()}</span>
-                        </Show>
-                      </span>
-                    )}
-                  </Show>
-                </Show>
-              );
-            }}
-          </For>
+          <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
         </div>
         <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
@@ -1722,8 +1721,9 @@ export default function App() {
             <div class="tab-caret" />
           </Show>
           <div class="tabbar-actions">
-            <IconButton icon="SquarePlus" label="New tab" iconSize={18} onClick={() => newTab()} />
-            <IconButton icon="SquareTerminal" label="Open Terminal" iconSize={18} onClick={() => openTerminal()} />
+            {/* Settings-driven like the sidebar bar (tabBar: in .settings) — defaults are the
+                previously-hardcoded new-tab + terminal, plus new-chat. */}
+            <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
           </div>
         </div>
         <div class="editor-body" ref={editorBodyEl}>
