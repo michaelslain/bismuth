@@ -511,3 +511,22 @@ test("cold launch with no pinned tabs restores nothing and stashes the whole ses
   expect(restore.activeTabId).toBeNull();
   expect(contentsOf(stash)).toEqual(["a", "b"]);
 });
+
+// --- Pinned-tab protection: opening a file spawns a new tab instead of overwriting a pin ---
+import { shouldOpenInNewTab } from "./panes";
+
+test("shouldOpenInNewTab is true for a pinned active tab (its content is protected)", () => {
+  const [pinned] = tabsFrom(["a"], ["a"]);
+  expect(shouldOpenInNewTab(pinned)).toBe(true);
+});
+
+test("shouldOpenInNewTab is false for an unpinned active tab (navigate in place)", () => {
+  const [normal] = tabsFrom(["a"]);
+  expect(shouldOpenInNewTab(normal)).toBe(false);
+  // An explicit pinned:false behaves like an unpinned tab.
+  expect(shouldOpenInNewTab({ ...normal, pinned: false })).toBe(false);
+});
+
+test("shouldOpenInNewTab is true when there is no active tab (nothing to replace)", () => {
+  expect(shouldOpenInNewTab(null)).toBe(true);
+});
