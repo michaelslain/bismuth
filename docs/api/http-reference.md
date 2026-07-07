@@ -232,6 +232,13 @@ These are POSTs (or could be), but they are **not** vault mutations — they liv
 - **Errors:** an invalid regex (etc.) is caught and returned as `400` with the error message (so the UI shows it inline) — NOT a 500.
 - **Cache/SSE:** none.
 
+### `POST /search-prompt`
+- **Body:** `{ query: string }` — a natural-language question, not a keyword string.
+- **Action:** `promptSearch(vault, query)` (`core/src/searchPrompt.ts`): ranks MiniSearch candidates for `query` (`rankCandidates`, same index as `/search`), bounds them into a context (≤30 notes, ≤1200 chars/note excerpt, ≤36K chars total), then runs ONE Haiku turn (`claude-haiku-4-5` via the Agent SDK, spawning the user's own `claude` binary — `pathToClaudeCodeExecutable`, discovered by `whichClaude()`) asking it to pick + quote the notes that answer the question. Every returned path is validated against the candidate set (hallucinated paths are hard-rejected); every snippet is re-derived byte-exact from the REAL note body (never the model's own text) via located-quote → keyword-anchor → first-line-preview fallback tiers.
+- **Response:** `SearchResult[]` (same shape as `/search`), each with an added `reason` — the model's one-line rationale.
+- **Errors:** `400` (`AppError("EINVAL", ...)`) when `claude` isn't on PATH. `500` when the model call fails to start, reports a non-success `result` subtype, or — the fix for a silent-failure bug that repeatedly reopened — when the SDK's message stream ends WITHOUT ever emitting a `result` message at all (an early `claude` exit: not logged in, killed, crashed, unexpected output). That case used to fall through to an empty `[]`, indistinguishable in the UI from "the AI ran and found nothing"; it's now a `500` with a diagnosable message instead (`consumeModelStream` in `searchPrompt.ts`).
+- **Cache/SSE:** none (read-only despite POST). The daemon is NOT involved — always-on per vault, gated only on Claude Code being installed.
+
 ### `POST /list-dir`
 - **Body:** `{ path?: string, only?: "dir" | "file" }`. `path` is the partial filesystem path the user is typing (absolute or `~`-relative); `only` narrows to dirs or files.
 - **Action:** `listFsPaths(path, only)` (`core/src/fsPaths.ts`) — `readdir`s the parent of `path` and returns matching children, display paths preserving the `~`/`/` form. Backs `scope: "fs"` settings autocomplete (filesystem-path settings).
@@ -558,6 +565,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/backup` | read | no |
 | POST | `/open-folder` | read | no |
 | POST | `/search` | read | no |
+| POST | `/search-prompt` | read | no |
 | GET | `/cards/decks` | read | no |
 | GET | `/cards/all` | read | no |
 | GET | `/cards/note` | read | no |
