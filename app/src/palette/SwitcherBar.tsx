@@ -4,8 +4,9 @@
 // expands to fill the window (the home/new-tab view) and THIS bar sits big at the top where
 // the tab strip was. Typing fuzzy-filters vault files (same matching + frecency blend as the
 // Cmd+P palette, via rankItems), a live dropdown lists the hits, Enter opens the selected
-// file, and Esc leaves switcher mode (App restores the prior view). The active row is
-// reported up (onActiveChange) so App can highlight the matching node in the backdrop graph.
+// file, and Esc leaves switcher mode (App restores the prior view). The full ranked result
+// set is reported up (onResultsChange) so App can light up EVERY matching note in the
+// backdrop graph while you type — the graph reads as the same surface as the search.
 import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { Icon } from "../icons/Icon";
 import { SearchBar } from "../ui/SearchBar";
@@ -20,9 +21,11 @@ import "./switcher.css";
 type Props = {
   onClose: () => void;
   openFile: (path: string) => void;
-  // The currently-highlighted row's file path (or null) — App maps it to a graph node to
-  // highlight in the backdrop. Fires on selection move and on close (null).
-  onActiveChange?: (path: string | null) => void;
+  // The full ranked result set's file paths — App maps them to graph node ids and lights
+  // up every matching note in the backdrop graph. Fires on every query change and on close
+  // (empty). Empty while the query is blank (don't flood the graph with all frecent files
+  // before the user has typed).
+  onResultsChange?: (paths: string[]) => void;
 };
 
 export function SwitcherBar(props: Props) {
@@ -73,12 +76,13 @@ export function SwitcherBar(props: Props) {
     listRef?.querySelector<HTMLElement>(".palette-row.selected")?.scrollIntoView({ block: "nearest" });
   });
 
-  // Report the highlighted file up so the backdrop graph can highlight its node.
+  // Report the full ranked result set up so the backdrop graph lights up EVERY matching
+  // note (not just the active row). Blank query → report nothing so opening Cmd+O doesn't
+  // flood the graph with all frecent files before the user has typed.
   createEffect(() => {
-    const r = results()[selected()];
-    props.onActiveChange?.(r ? r.item.id : null);
+    props.onResultsChange?.(query().trim() ? results().map((r) => r.item.id) : []);
   });
-  onCleanup(() => props.onActiveChange?.(null));
+  onCleanup(() => props.onResultsChange?.([]));
 
   // Same stationary-pointer guard as the palette: don't let a mouseenter under a still
   // cursor steal the keyboard default; only a real mousemove reselects.

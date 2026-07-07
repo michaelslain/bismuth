@@ -9,6 +9,7 @@ import { Icon } from "./icons/Icon";
 const GraphView = lazy(() => import("./GraphView").then((m) => ({ default: m.GraphView })));
 import { CommandPalette } from "./palette/CommandPalette";
 import { SwitcherBar } from "./palette/SwitcherBar";
+import { switcherMatchNodeIds } from "./palette/switcherMatches";
 import { TemplatePalette } from "./palette/TemplatePalette";
 import { bindCommands, resolveButtonCommands, type GraphMode } from "./commands";
 import { BASE_VIEW_KINDS } from "./baseViews";
@@ -381,18 +382,16 @@ export default function App() {
   const [palette, setPalette] = createSignal<"command" | "template" | null>(null);
   // Cmd+O "switcher mode": instead of a centered modal, the knowledge graph expands to fill
   // the window (the home/new-tab view) and a big search bar (SwitcherBar) sits at the top
-  // where the tab strip was. Esc leaves it and restores the prior view. `switcherMatchPath`
-  // is the highlighted row's file path, mirrored onto the backdrop graph as a node highlight.
+  // where the tab strip was. Esc leaves it and restores the prior view. `switcherResultPaths`
+  // are the current search results' file paths, mirrored onto the backdrop graph so EVERY
+  // matching note lights up (not just the active row).
   const [switcherOpen, setSwitcherOpen] = createSignal(false);
-  const [switcherMatchPath, setSwitcherMatchPath] = createSignal<string | null>(null);
+  const [switcherResultPaths, setSwitcherResultPaths] = createSignal<string[]>([]);
   const openSwitcher = () => setSwitcherOpen(true);
-  const closeSwitcher = () => { setSwitcherOpen(false); setSwitcherMatchPath(null); };
-  // Graph-node id (a note path minus ".md") for the switcher's active file; only .md notes
-  // are graph nodes, so non-note files (settings/sheet/draw) highlight nothing.
-  const switcherMatchNodeId = createMemo<string | null>(() => {
-    const p = switcherMatchPath();
-    return p && p.endsWith(".md") ? p.slice(0, -3) : null;
-  });
+  const closeSwitcher = () => { setSwitcherOpen(false); setSwitcherResultPaths([]); };
+  // Graph-node ids (note paths minus ".md") for the current result set; only .md notes are
+  // graph nodes, so non-note files (settings/sheet/draw) highlight nothing (switcherMatches.ts).
+  const switcherMatchIds = createMemo<string[]>(() => switcherMatchNodeIds(switcherResultPaths()));
   // Right-click pane menu: which leaf and where to anchor the menu, or null.
   const [paneMenu, setPaneMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const paneMenuItems = (leafId: string): MenuItem[] => [
@@ -1785,7 +1784,7 @@ export default function App() {
         {/* Cmd+O switcher: a big search bar absolutely positioned over the tab strip while
             switcher mode is on. The graph floater (below) fills the body behind it. */}
         <Show when={switcherOpen()}>
-          <SwitcherBar onClose={closeSwitcher} openFile={openFile} onActiveChange={setSwitcherMatchPath} />
+          <SwitcherBar onClose={closeSwitcher} openFile={openFile} onResultsChange={setSwitcherResultPaths} />
         </Show>
         <div class="tabbar" data-tabstrip="true">
           <div class="tabbar-nav">
@@ -1967,7 +1966,7 @@ export default function App() {
           only apply in the cramped sidebar square, not when it covers a full graph pane. */}
       <div class="graph-floater" classList={{ docked: anyTabOpen() && !activeTabShowsGraph() && !switcherOpen() }} ref={floater}>
         <Suspense fallback={<div class="graph-root" />}>
-          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchId={switcherOpen() ? switcherMatchNodeId() : null} />
+          <GraphView fill mini={anyTabOpen() && !activeTabShowsGraph() && !switcherOpen()} graph={displayGraph()} onOpen={(id) => { openFile(id + ".md"); closeSwitcher(); }} mode={mode()} setMode={setMode} active={focusedContent()} onDaemonChanged={refreshDaemon} searchMatchIds={switcherOpen() ? switcherMatchIds() : null} />
         </Suspense>
       </div>
       <Show when={palette() === "command"}>
