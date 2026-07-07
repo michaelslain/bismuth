@@ -61,6 +61,33 @@ export const COMMAND_CATALOG: CommandSpec[] = [
 /** All command ids, in catalog order. */
 export const COMMAND_IDS: string[] = COMMAND_CATALOG.map((c) => c.id);
 
+/**
+ * Commands that MUST NOT be fired via the app-control channel (`bismuth app run …` → POST
+ * /ui/command → run-command). Two classes: heavyweight/system verbs an unattended CLI or daemon
+ * caller shouldn't trigger blindly (spawning a window/backend, updating the app/daemon), and
+ * opening a Claude chat — a live, RECURSIVE Agent-SDK session, a materially different trust boundary
+ * than opening a note. Enforced authoritatively by the POST /ui/command route AND mirrored in the
+ * frontend dispatch (app/src/uiControlClient.ts) as defense in depth. Auditable + reversible: one
+ * list. (Opening a chat TAB is additionally blocked by open-tab rejecting a `::chat:` content.)
+ */
+export const UI_CONTROL_BLOCKLIST: string[] = [
+  "new-window",
+  "open-folder",
+  "update-app",
+  "update-daemon",
+  "new-claude-chat",
+];
+
+/** True if a command id may be run via app control (in the catalog and not blocklisted). */
+export function isUiControlAllowed(id: string): boolean {
+  return COMMAND_IDS.includes(id) && !UI_CONTROL_BLOCKLIST.includes(id);
+}
+
+/** The command ids `bismuth app run` accepts — the catalog minus the blocklist. */
+export function uiControlAllowedIds(): string[] {
+  return COMMAND_IDS.filter((id) => !UI_CONTROL_BLOCKLIST.includes(id));
+}
+
 /** Label for a command id, or undefined if the id is unknown. */
 export function commandLabel(id: string): string | undefined {
   return COMMAND_CATALOG.find((c) => c.id === id)?.label;

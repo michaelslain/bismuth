@@ -3,7 +3,7 @@
 // `.daemon/pages/<slug>.md` (+ optionally a `.state/<slug>.json` sidecar) directly to disk and
 // asserts listDaemonPages/resolvePage/markPageFailed's contract.
 import { test, expect, afterEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,6 +14,7 @@ import {
   listDaemonPages,
   resolvePage,
   markPageFailed,
+  createDaemonPage,
 } from "../src/daemonPages";
 
 const created: string[] = [];
@@ -234,4 +235,41 @@ test("markPageFailed never clobbers a settled outcome (compare-and-swap on the l
   const state = readPageState(vault, "p1");
   expect(state?.status).toBe("done");
   expect(state?.daemonNote).toBe("Sent 3 replies.");
+});
+
+test("createDaemonPage writes validated frontmatter + actions, then reads back via listDaemonPages", () => {
+  const vault = makeVault();
+  const res = createDaemonPage(vault, {
+    slug: "reply-drafts",
+    title: "Reply drafts ready",
+    body: "## Reply to Jane\nHi Jane",
+    source: "cron:answer-emails",
+    actions: [
+      { id: "send", label: "Send", kind: "primary", prompt: "send the replies" },
+      { id: "discard", label: "Discard", kind: "danger" },
+    ],
+  });
+  expect(res).toEqual({ path: ".daemon/pages/reply-drafts.md", slug: "reply-drafts" });
+
+  const raw = readFileSync(join(vaultPagesDir(vault), "reply-drafts.md"), "utf8");
+  expect(raw).toContain("type: daemon-page");
+  expect(raw).toContain("source: cron:answer-emails");
+  expect(raw).toContain("## Reply to Jane");
+
+  const pages = listDaemonPages(vault, 7);
+  const page = pages.find((p) => p.slug === "reply-drafts");
+  expect(page).toBeDefined();
+  expect(page!.title).toBe("Reply drafts ready");
+  expect(page!.status).toBe("pending");
+  expect(page!.actions.map((a) => a.id)).toEqual(["send", "discard"]);
+  // The approve action's prompt round-trips, so resolvePage can later fire it.
+  expect(page!.actions.find((a) => a.id === "send")!.prompt).toBe("send the replies");
+});
+
+test("createDaemonPage rejects a bad slug and refuses to clobber an existing page", () => {
+  const vault = makeVault();
+  expect(() => createDaemonPage(vault, { slug: "a/b" })).toThrow();
+  expect(() => createDaemonPage(vault, { slug: ".hidden" })).toThrow();
+  createDaemonPage(vault, { slug: "once" });
+  expect(() => createDaemonPage(vault, { slug: "once" })).toThrow(/already exists/);
 });

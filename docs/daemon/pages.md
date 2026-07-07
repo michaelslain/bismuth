@@ -42,6 +42,19 @@ Hi Jane, ...
 - **The body is the editable draft** and is the source of truth for exact wording — the user can edit it in the normal editor before pressing an action.
 - A short authoring guide, `<vault>/.daemon/PAGES.md`, is seeded non-clobbering (like `identity.md`) alongside every vault's brain (`daemon/src/daemon/pagesGuide.ts` + `seeds.ts`) so any page-authoring session — a cron, the persistent vault thread — can `Read` it; there is no hardcoded page-format knowledge anywhere else.
 
+### Creating a page via CLI / MCP
+
+A page can also be authored programmatically — from a Claude session (the bismuth MCP's `bismuth_cli` tool) or the shell — through a **validated helper**, so the intricate nested `actions[]` frontmatter that `resolvePage` depends on is never hand-assembled:
+
+```bash
+bismuth page create reply-drafts \
+  --title "Reply drafts ready" --source "cron:answer-emails" \
+  --body "## Reply to Jane\n…" \
+  --actions '[{"id":"send","label":"Send","kind":"primary","prompt":"Send each reply exactly as written."},{"id":"discard","label":"Discard","kind":"danger"}]'
+```
+
+`bismuth page create` calls `core/src/daemonPages.ts` `createDaemonPage` (also reachable at `POST /daemon/pages`), which validates the slug, stamps `type: daemon-page` + `createdAt`, serializes the `actions[]` via the `yaml` library, and writes atomically (temp+rename) — refusing to clobber an existing page. `bismuth page list|resolve|mark-failed` cover the rest of the inbox lifecycle headlessly. This is part of the [app-control surface](../mcp/app-control.md) and adds **no new MCP tool** (it rides `bismuth_cli`).
+
 ## Dynamic state — the `.state` sidecar
 
 A page's execution state (`status`, the resolved prompt, model/timeout, the daemon's completion note) lives in a **separate JSON sidecar**, never the page's own frontmatter:

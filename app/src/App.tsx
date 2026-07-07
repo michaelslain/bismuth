@@ -54,6 +54,8 @@ import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
 import { isExportable } from "./export/formats";
 import { publishEditorTabs } from "./chatContext";
+import { connectUiControl, type UiControlHandle, type UiTabsSnapshot } from "./uiControlClient";
+import { UI_CONTROL_BLOCKLIST } from "../../core/src/commands";
 import {
   type Tab, type PaneNode, type Dir, type Rect, makeTab,
   splitLeaf, closeLeaf, equalize, focusNeighbor,
@@ -903,10 +905,42 @@ export default function App() {
   // appearance.icon (see src-tauri/src/lib.rs) — doing it from the webview after
   // first paint blanks the WKWebView on macOS, so it is intentionally NOT done here.
   document.title = "Bismuth";
+  // The core→frontend control channel (app/src/uiControlClient.ts). Assigned in onMount below (once
+  // the tab helpers it drives exist); the persistence effect heartbeats through it when live.
+  let uiControl: UiControlHandle | null = null;
+  // Build the tab/pane snapshot the `list-tabs` command returns AND the /ui/windows heartbeat uses.
+  // Cheap (tabs are few); terminals get a 1-based index so their labels read "Terminal N".
+  const listTabsSnapshot = (): UiTabsSnapshot => {
+    let termIndex = 0;
+    const active = activeTabId();
+    const outTabs = tabs().map((t) => {
+      const ls = leaves(t.root);
+      const leafSummaries = ls.map((l) => {
+        const idx = l.content.startsWith(TERMINAL_PREFIX) ? ++termIndex : undefined;
+        return {
+          leafId: l.id,
+          content: l.content,
+          label: contentLabel(l.content, idx),
+          icon: contentIcon(l.content),
+          active: l.id === t.focusId,
+        };
+      });
+      const focused = leafSummaries.find((s) => s.active) ?? leafSummaries[0];
+      return {
+        tabId: t.id,
+        label: t.name || focused?.label || "",
+        active: t.id === active,
+        leaves: leafSummaries,
+      };
+    });
+    return { tabs: outTabs, activeTabId: active };
+  };
   // Persist tab/pane layout whenever it changes. On a cold launch the startup logic above decides
-  // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is.
+  // NOT to restore it (stashing it for Cmd+Shift+T instead); on a reload it's restored as-is. The
+  // same signal read also heartbeats the control channel (one extra send, no new state).
   createEffect(() => {
     localStorage.setItem(TABS_STORAGE_KEY, serializeTabs(tabs(), activeTabId()));
+    uiControl?.heartbeat(listTabsSnapshot());
   });
   // Stack of recently-closed tabs for "Reopen closed tab" (Cmd+Shift+T). Whole-tab closes
   // (the tab X, the Close-tab command, or closing a single-pane tab's last pane) push here;
@@ -981,6 +1015,41 @@ export default function App() {
     e.stopPropagation();
     closeTabById(id);
   };
+
+  // Open the core→frontend control channel now that the tab helpers it drives exist. Wires the five
+  // app-control actions to App state; the blocklist + chat exclusion are enforced here (and again on
+  // the server) so opening a live recursive Agent-SDK chat stays off the app-control surface.
+  onMount(() => {
+    const handle = connectUiControl(resolveWindowId(), {
+      listTabs: () => listTabsSnapshot(),
+      openTab: ({ content, newTab }) => {
+        if (typeof content !== "string" || !content) return { ok: false, error: "missing content" };
+        if (content.startsWith(CHAT_PREFIX)) return { ok: false, error: "opening chat tabs via app control is disabled" };
+        (newTab ? openInNewTab : openFile)(content);
+        return { ok: true, opened: content };
+      },
+      closeTab: ({ tabId }) => {
+        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
+        closeTabById(tabId);
+        return { ok: true };
+      },
+      focusTab: ({ tabId }) => {
+        if (!tabs().some((t) => t.id === tabId)) return { ok: false, error: `no tab "${tabId}"` };
+        setActiveTabId(tabId);
+        return { ok: true };
+      },
+      runCommand: ({ id }) => {
+        if (UI_CONTROL_BLOCKLIST.includes(id)) return { ok: false, error: `command "${id}" is not allowed via app control` };
+        const cmd = commands().get(id);
+        if (!cmd) return { ok: false, error: `unknown command "${id}"` };
+        cmd.action();
+        return { ok: true };
+      },
+    });
+    uiControl = handle;
+    handle.heartbeat(listTabsSnapshot()); // seed the window list before the first tab change
+    onCleanup(() => handle.disconnect());
+  });
 
   // Close a given pane of the active tab. Collapses its parent split; if it was the
   // last pane in the tab, the tab itself closes.

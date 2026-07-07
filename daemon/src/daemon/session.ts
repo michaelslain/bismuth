@@ -4,6 +4,7 @@ import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
+import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 
 // The compiled daemon binary doesn't bundle the Agent SDK's native CLI, and runs under launchd with
 // a minimal PATH, so the SDK can't find `claude` on its own — resolve the user's real binary once
@@ -85,6 +86,68 @@ export interface SendOptions {
   newSession?: boolean
 }
 
+/** The bundled Bismuth tools available to a daemon session (undefined when the GUI app never
+ *  installed them). Injected so buildQueryOptions is pure + unit-testable without touching disk. */
+export interface BismuthTools {
+  mcp?: string
+  cli?: string
+  docs?: string
+}
+
+/**
+ * Assemble the SDK `query()` options for one vault session. Extracted from sendMessage so the
+ * MCP/env wiring — the change most likely to silently regress — is unit-testable without invoking
+ * the real SDK. Pure over its inputs (systemPrompt + tools resolved by the caller).
+ *
+ * The MCP block is the fix for the vault-targeting gap: without it, `bismuth_cli` from a daemon
+ * session had no reliable BISMUTH_VAULT. When the bundled bismuth-mcp exists we give the session the
+ * machine-wide bismuth MCP (docs + CLI + memory), targeting THIS vault via env — BISMUTH_VAULT reaches
+ * the CLI through the MCP server's own env regardless of cwd (mcp/src/cli.ts passes env through). We
+ * also set `settingSources: []` so the daemon does NOT inherit a human's ambient `-s user` MCP config
+ * — explicit > implicit for an unattended process (chat.ts deliberately does the opposite: it wants
+ * the user's interactive config). SDK version skew: core resolves @anthropic-ai/claude-agent-sdk
+ * 0.3.186, the daemon 0.2.141 — both expose Options.mcpServers, settingSources, and
+ * McpStdioServerConfig.env, so this shape typechecks + runs under either.
+ */
+export function buildQueryOptions(
+  ctx: VaultContext,
+  opts: SendOptions | undefined,
+  existingSessionId: string | undefined,
+  tools: { claudeBin?: string; systemPrompt: string } & BismuthTools,
+): Record<string, unknown> {
+  const options: Record<string, unknown> = {
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    // Operate inside the vault, with this vault's memory dir injected so the bot's memory
+    // tools target the right brain, and the vault's daemon name as the bot's identity.
+    cwd: ctx.root,
+    env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
+    appendSystemPrompt: tools.systemPrompt,
+    model: opts?.model ?? "haiku",
+  }
+
+  // Point the SDK at the user's installed claude binary (machine-login auth, no API key).
+  if (tools.claudeBin) options.pathToClaudeCodeExecutable = tools.claudeBin
+
+  if (opts?.effort) {
+    options.thinkingBudget = opts.effort === "high" ? "high" : opts.effort === "low" ? "low" : "medium"
+  }
+
+  if (existingSessionId && !opts?.newSession) {
+    options.resume = existingSessionId
+  }
+
+  if (tools.mcp) {
+    const env: Record<string, string> = { BISMUTH_VAULT: ctx.root, BISMUTH_MEMORY_DIR: ctx.memoryDir }
+    if (tools.docs) env.BISMUTH_DOCS_DIR = tools.docs
+    if (tools.cli) env.BISMUTH_CLI = tools.cli
+    options.mcpServers = { bismuth: { command: tools.mcp, env } }
+    options.settingSources = []
+  }
+
+  return options
+}
+
 /**
  * Send a message to a vault's bot session. ONE machine runtime multiplexes every enabled
  * vault: the per-call cwd (vault root), env (BISMUTH_MEMORY_DIR → this vault's memory),
@@ -102,24 +165,14 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
 
   const existingSessionId = await getSessionId(ctx)
 
-  const options: Record<string, unknown> = {
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
-    // Operate inside the vault, with this vault's memory dir injected so the bot's memory
-    // tools target the right brain, and the vault's daemon name as the bot's identity.
-    cwd: ctx.root,
-    env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
-    appendSystemPrompt: await buildSystemPrompt(ctx),
-    model: opts?.model ?? "haiku",
-  }
-
-  // Point the SDK at the user's installed claude binary (machine-login auth, no API key).
-  const bin = claudeBin()
-  if (bin) options.pathToClaudeCodeExecutable = bin
-
-  if (opts?.effort) {
-    options.thinkingBudget = opts.effort === "high" ? "high" : opts.effort === "low" ? "low" : "medium"
-  }
+  const options = buildQueryOptions(ctx, opts, existingSessionId, {
+    claudeBin: claudeBin(),
+    systemPrompt: await buildSystemPrompt(ctx),
+    // existsSync-gated: absent (app never installed the tools) → no MCP block, graceful degrade.
+    mcp: mcpBin(),
+    cli: cliBin(),
+    docs: docsDir(),
+  })
 
   const needsAc = opts?.abortController || opts?.timeoutSecs
   const ac = opts?.abortController ?? (needsAc ? new AbortController() : undefined)
@@ -131,10 +184,6 @@ export async function sendMessage(message: string, ctx: VaultContext, opts?: Sen
       console.log(`[session:${ctx.name}] Timeout reached (${opts.timeoutSecs}s), aborting session`)
       ac.abort()
     }, opts.timeoutSecs * 1000)
-  }
-
-  if (existingSessionId && !opts?.newSession) {
-    options.resume = existingSessionId
   }
 
   let latestSessionId = existingSessionId ?? "unknown"

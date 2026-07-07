@@ -117,6 +117,11 @@ export function buildPtyEnv(p: PtyEnvParams): Record<string, string> {
   env.DISABLE_UPDATE_PROMPT = "true";
   env.CLAUDE_RELAY_URL = p.relayUrl;
   env.CLAUDE_TERMINAL_ID = p.terminalId;
+  // Point the `bismuth` CLI (and, through it, the bismuth MCP) at THIS app's core, dynamic port
+  // and all — so `bismuth app …` run from inside a tab drives the right window with no run-registry
+  // lookup. The relay URL IS this core's base (see spawnSession). The `app` CLI group reads
+  // BISMUTH_API first (then CLAUDE_RELAY_URL, then the run-registry, then :4321).
+  env.BISMUTH_API = p.relayUrl;
   // Scope memory injection to Bismuth sessions, gated on the daemon: presence of this var
   // is the gate (recall/collect hooks + memory MCP tools no-op without it). The caller only
   // sets memoryDir when settings.daemon.enabled, so "off" simply omits it.

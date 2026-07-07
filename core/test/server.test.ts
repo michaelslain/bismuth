@@ -6,6 +6,7 @@ import { createServer } from "../src/server";
 import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
 import { resetRelay } from "../src/relay";
+import { resetUiControl } from "../src/uiControl";
 import { createTerminalSession, killSession } from "../src/terminal";
 import { makeSampleVault } from "./helpers";
 
@@ -1589,6 +1590,127 @@ test("POST /tasks/archive with no path sweeps the whole vault", async () => {
     expect(res.files).toBe(2);
     expect(await readNote(vault, "one.md")).toBe("- [ ] keep");
     expect(await readNote(vault, "two.md")).toBe("- [/] doing");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("app control: /ui/windows lists a connected window; /ui/command relays through the WS", async () => {
+  resetUiControl();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    // No window connected yet.
+    expect(await (await fetch(`${base}/ui/windows`)).json()).toEqual([]);
+    const noWin = await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "list-tabs" }),
+    });
+    expect(noWin.status).toBe(404); // "no Bismuth window is open"
+
+    // Connect a fake window over the control WS + answer its list-tabs command.
+    const snapshot = {
+      activeTabId: "t1",
+      tabs: [{ tabId: "t1", label: "Note", active: true, leaves: [{ leafId: "l1", content: "a.md", label: "a", active: true }] }],
+    };
+    const ws = new WebSocket(`ws://localhost:${server.port}/ui?w=w1`);
+    await new Promise<void>((res, rej) => {
+      ws.onopen = () => res();
+      ws.onerror = () => rej(new Error("ws error"));
+    });
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data as string);
+      if (msg.type === "command") ws.send(JSON.stringify({ type: "reply", reqId: msg.reqId, ok: true, result: snapshot }));
+    };
+    ws.send(JSON.stringify({ type: "tabs", snapshot }));
+    await new Promise((r) => setTimeout(r, 60)); // let the heartbeat land
+
+    const windows = await (await fetch(`${base}/ui/windows`)).json();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]).toMatchObject({ id: "w1", activeTabId: "t1", tabCount: 1 });
+
+    // list-tabs round-trips through the socket.
+    const reply = await (await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "list-tabs" }),
+    })).json();
+    expect(reply.ok).toBe(true);
+    expect(reply.result).toEqual(snapshot);
+
+    ws.close();
+  } finally {
+    server.stop(true);
+    resetUiControl();
+  }
+});
+
+test("app control: run-command blocklist + open-tab chat exclusion are enforced server-side (403)", async () => {
+  resetUiControl();
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const blocked = await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "run-command", args: { id: "new-claude-chat" } }),
+    });
+    expect(blocked.status).toBe(403);
+
+    const chat = await fetch(`${base}/ui/command`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "open-tab", args: { content: "::chat:x" } }),
+    });
+    expect(chat.status).toBe(403);
+  } finally {
+    server.stop(true);
+    resetUiControl();
+  }
+});
+
+test("POST /daemon/pages creates a validated page under .daemon/pages and lists it", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const created = await (await fetch(`${base}/daemon/pages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        slug: "reply-drafts",
+        title: "Reply drafts",
+        body: "## Draft\nhi",
+        actions: [{ id: "send", label: "Send", kind: "primary", prompt: "send it" }],
+      }),
+    })).json();
+    expect(created).toMatchObject({ path: ".daemon/pages/reply-drafts.md", slug: "reply-drafts" });
+
+    const raw = await readNote(vault, ".daemon/pages/reply-drafts.md");
+    expect(raw).toContain("type: daemon-page");
+    expect(raw).toContain("- id: send");
+
+    const pages = await (await fetch(`${base}/daemon/pages`)).json();
+    expect(pages.some((p: any) => p.slug === "reply-drafts")).toBe(true);
+
+    // Duplicate slug is refused (409).
+    const dup = await fetch(`${base}/daemon/pages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug: "reply-drafts" }),
+    });
+    expect(dup.status).toBe(409);
+
+    // A slug with a slash is rejected (400).
+    const bad = await fetch(`${base}/daemon/pages`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ slug: "a/b" }),
+    });
+    expect(bad.status).toBe(400);
   } finally {
     server.stop(true);
   }

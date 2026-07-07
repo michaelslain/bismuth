@@ -44,6 +44,9 @@ import {
   sessionHistoryFrames,
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
+import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
+import { UI_CONTROL_BLOCKLIST } from "./commands";
+import { writeRunRecord } from "./runRegistry";
 import { createChangeTracker, isSettingsPath } from "./changeClassifier";
 import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsForFrontend, loadAppConfig, readDaemonEnabledSync, type AppConfig, SETTINGS_FILE, setFolderIcon, readDailyNotes } from "./settings";
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
@@ -56,7 +59,7 @@ import { fileBasename } from "./pathUtils";
 import { isInkSidecarPath } from "./drawing/ink";
 import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName, registerVaultRoot } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
-import { listDaemonPages, resolvePage, markPageFailed, DAEMON_PAGE_RE } from "./daemonPages";
+import { listDaemonPages, resolvePage, markPageFailed, createDaemonPage, DAEMON_PAGE_RE, type CreatePageInput } from "./daemonPages";
 import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
@@ -720,6 +723,41 @@ export function createServer(cfg: CoreConfig) {
       return ok({ ok: true });
     },
 
+    // App-control read surface (see core/src/uiControl.ts) — the ONLY channel that drives a running
+    // window's tabs from outside the webview, powering the `app` CLI group and (through bismuth_cli)
+    // MCP app control. Like /relay/* these live in the READ table: /ui/command relays a request to a
+    // window and returns its reply; any vault mutation the window then performs runs its OWN
+    // invalidation path, so there's nothing for the command route to invalidate.
+
+    // Every connected window (id, distinct label, active tab, tab count). Empty [] when none are open.
+    "GET /ui/windows": async (_, __) => {
+      return ok(listWindows());
+    },
+
+    // Relay one command to a window and return its {ok, result|error}. `windowId` picks a specific
+    // window; omitted, the single open window is used (0 → 404, many → 409). Two auditable gates run
+    // BEFORE dispatch (mirrored client-side in uiControlClient.ts): run-command refuses any
+    // blocklisted id (heavyweight verbs + opening chat), and open-tab refuses `::chat:` content —
+    // opening a live recursive Agent-SDK chat is a deliberately different trust boundary.
+    "POST /ui/command": async (req, __) => {
+      const { windowId, action, args } = (await req.json()) as { windowId?: string; action?: string; args?: unknown };
+      if (typeof action !== "string" || !action) return error("missing action", 400);
+      if (action === "run-command") {
+        const id = (args as { id?: unknown } | undefined)?.id;
+        if (typeof id !== "string" || !id) return error("run-command requires args.id", 400);
+        if (UI_CONTROL_BLOCKLIST.includes(id)) return error(`command "${id}" is not allowed via app control`, 403);
+      }
+      if (action === "open-tab") {
+        const content = (args as { content?: unknown } | undefined)?.content;
+        if (typeof content === "string" && content.startsWith("::chat:")) {
+          return error("opening chat tabs via app control is disabled", 403);
+        }
+      }
+      const target = resolveTarget(windowId);
+      if (!target.ok) return error(target.error, target.status);
+      return ok(await sendCommand(target.id, action, args));
+    },
+
     "GET /tasks": async (_, __) => {
       return ok(await collectVaultTasks(cfg.vault));
     },
@@ -1327,6 +1365,20 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.file, // row-based reviews invalidate the base file; legacy reviews leave paths empty
     ),
 
+    // Author a daemon inbox page with validated frontmatter (core/src/daemonPages.ts's
+    // createDaemonPage). A genuine vault write (the page .md lands under .daemon/pages/ and shows in
+    // the sidebar), so — unlike the /daemon/pages/{resolve,mark-failed} sidecar writes in the READ
+    // table — this is a MUTATION: `pathOf` returns the new page path so classifyVault (DAEMON_PAGE_RE)
+    // marks the tree dirty and the inbox refreshes. Exposed via the `page` CLI group so an MCP/daemon
+    // caller creates a well-formed page instead of a fragile raw file write (still zero new MCP tools).
+    "POST /daemon/pages": mutatingHandler(
+      async (req) => {
+        const body = (await req.json()) as CreatePageInput;
+        return ok(createDaemonPage(cfg.vault, body));
+      },
+      (b) => (typeof b?.slug === "string" && b.slug ? `.daemon/pages/${b.slug}.md` : undefined),
+    ),
+
     // Claim a device as the daemon owner: write owner.json (byte-compatible
     // with what the daemon reads). owner.json lives outside the vault, so there's
     // nothing in the graph/tree caches to invalidate — pass a stable constant scope
@@ -1364,7 +1416,11 @@ export function createServer(cfg: CoreConfig) {
   // drive the headless Claude Code chat driver (core/src/chat.ts).
   type TermWsData = { kind: "terminal"; sessionId: string; dataSub?: { dispose(): void }; exitSub?: { dispose(): void } };
   type ChatWsData = { kind: "chat"; chatId: string; rebind: boolean };
-  type WsData = TermWsData | ChatWsData;
+  // The per-window control socket (core/src/uiControl.ts). `send` is the JSON-frame sender bound in
+  // `open`, kept so `close` can identity-guard unregister (a stale close must not drop a reconnected
+  // window that already re-registered under the same windowId).
+  type UiWsData = { kind: "ui"; windowId: string; send?: (frame: unknown) => void };
+  type WsData = TermWsData | ChatWsData | UiWsData;
   const server = Bun.serve<WsData>({
     port: cfg.port ?? 4321,
     // Bun's default idleTimeout is 10s, which would drop a connection mid-request for the
@@ -1454,6 +1510,23 @@ export function createServer(cfg: CoreConfig) {
         return new Response(null, { status: 101 });
       }
 
+      // UI-control WebSocket — the core→frontend command channel (core/src/uiControl.ts). Same
+      // origin allow-list as /terminal + /chat. `?w=<id>` is the window's stable id (windowId.ts);
+      // absent → "main" (the primary window). Registered on open, keyed by that id.
+      if (req.method === "GET" && url.pathname === "/ui") {
+        const origin = req.headers.get("origin");
+        const allowed =
+          !origin ||
+          /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+          /^tauri:\/\//.test(origin) ||
+          /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/.test(origin);
+        if (!allowed) return withCors(error("forbidden origin", 403));
+        const windowId = url.searchParams.get("w") || "main";
+        const upgraded = server.upgrade(req, { data: { kind: "ui", windowId } as UiWsData });
+        if (!upgraded) return withCors(error("upgrade failed", 400));
+        return new Response(null, { status: 101 });
+      }
+
       const route = `${req.method} ${url.pathname}`;
       const handler = routes[route] ?? mutatingRoutes[route];
 
@@ -1472,6 +1545,16 @@ export function createServer(cfg: CoreConfig) {
 
     websocket: {
       open(ws) {
+        if (ws.data.kind === "ui") {
+          // Register this window's control socket. `send` pushes JSON command frames; it's stashed on
+          // ws.data so `close` can identity-guard the unregister.
+          const send = (frame: unknown) => {
+            try { ws.send(JSON.stringify(frame)); } catch { /* socket closed */ }
+          };
+          ws.data.send = send;
+          registerWindow(ws.data.windowId, send);
+          return;
+        }
         if (ws.data.kind === "chat") {
           // A reconnect (same chatId) mid-turn: re-point the live session's sink at THIS new socket
           // and cancel its grace-period teardown, so in-flight drain frames (incl. the turn's tail
@@ -1503,6 +1586,24 @@ export function createServer(cfg: CoreConfig) {
         data.exitSub = s.pty.onExit(() => { try { ws.close(1000, "exited"); } catch { /* */ } });
       },
       message(ws, msg) {
+        if (ws.data.kind === "ui") {
+          // Two client→core frames on the control socket:
+          //   {type:"tabs", snapshot}                 → the tab-layout heartbeat (powers /ui/windows)
+          //   {type:"reply", reqId, ok, result, error} → answer to a command core sent
+          const text = msg instanceof ArrayBuffer || msg instanceof Uint8Array ? dec.decode(msg) : (msg as string);
+          let parsed: { type?: string; snapshot?: UiTabsSnapshot; reqId?: string; ok?: boolean; result?: unknown; error?: string };
+          try { parsed = JSON.parse(text); } catch { return; }
+          if (parsed.type === "tabs" && parsed.snapshot) {
+            updateTabs(ws.data.windowId, parsed.snapshot);
+          } else if (parsed.type === "reply" && typeof parsed.reqId === "string") {
+            resolveReply(parsed.reqId, {
+              ok: parsed.ok === true,
+              result: parsed.result,
+              error: typeof parsed.error === "string" ? parsed.error : undefined,
+            });
+          }
+          return;
+        }
         if (ws.data.kind === "chat") {
           // Chat protocol is text JSON, driving the visual Claude Code session (core/src/chat.ts):
           //   {type:"user",text,images?}                      → run a turn (slash commands are just text;
@@ -1603,6 +1704,12 @@ export function createServer(cfg: CoreConfig) {
         }
       },
       close(ws, code) {
+        if (ws.data.kind === "ui") {
+          // Identity-guarded (uiControl.ts): a stale close after a reconnect re-registered a new
+          // socket under this windowId is a no-op, so the live window isn't dropped.
+          unregisterWindow(ws.data.windowId, ws.data.send);
+          return;
+        }
         if (ws.data.kind === "chat") {
           // A CLEAN close (1000) is an intentional tab-close → tear the session down now. An
           // ABNORMAL close (reload 1001, network drop 1006) → detach the sink (frames buffer for
@@ -1633,6 +1740,13 @@ export function createServer(cfg: CoreConfig) {
       },
     },
   });
+
+  // Drop this core's discovery record (~/.bismuth/run/<vault>.json = {port, vault, pid}) now that
+  // Bun.serve has bound its (possibly dynamic) port, so an out-of-app caller — the `bismuth app …`
+  // CLI, the launchd daemon — can find which port serves this vault. Best-effort; cleaned up on exit.
+  if (typeof server.port === "number") {
+    writeRunRecord({ port: server.port, vault: cfg.vault, pid: process.pid });
+  }
 
   // Pre-warm one login shell so the first terminal tab paints its prompt instantly
   // (cwd = vault, reporting to this server's port). Guarded so a spawn failure here can
