@@ -233,7 +233,7 @@ Miscellaneous layout sizing for panes, palettes, and Bases views.
 
 | Key | Type | Default | Bounds | Doc |
 |-----|------|---------|--------|-----|
-| `verticalTabs` | boolean | `false` | — | Show tabs as vertical "book spines" (bookshelf mode) instead of the classic horizontal strip. Tabs still sit along the top; each chip is rotated so its label reads top→bottom, laid left→right like books on a shelf. |
+| `verticalTabs` | boolean | `false` | — | Show tabs as a vertical rail on the right edge of the app instead of the classic horizontal strip. Collapsed the rail shows just each tab's icon; hovering it expands to reveal the full tab names. |
 | `paletteTopOffset` | string | `12vh` | — | How far down the screen the command palette appears (CSS length, e.g. `12vh`). |
 | `paneDividerWidth` | number | `5` | min `3`, max `12` | Thickness of the draggable divider between split panes (px). |
 | `cardGridMinWidth` | number | `220` | min `150`, max `360` | Minimum card width in the Bases cards view (px). |

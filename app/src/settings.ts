@@ -97,7 +97,7 @@ export interface Settings {
     timeZone: string;        // IANA tz for naive events ("" = system)
   };
   ui: {
-    verticalTabs: boolean;     // bookshelf tab mode — rotate tab chips into vertical book spines
+    verticalTabs: boolean;     // vertical tab rail on the right edge (icon-only, expands to names on hover)
     paletteTopOffset: string;  // CSS length, e.g. "12vh"
     paneDividerWidth: number;  // px
     cardGridMinWidth: number;     // px

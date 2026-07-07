@@ -109,7 +109,11 @@ body { background: var(--bg); color: var(--fg); }
    animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
    transitioning that property instead gives a smooth, frame-by-frame collapse. */
 @property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 280px; }
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); grid-template-columns: var(--sidebar-w) 1fr; height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+/* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
+   its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
+   overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.layout.has-rail { --rail-w: 48px; }
 .sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
@@ -150,8 +154,8 @@ body { background: var(--bg); color: var(--fg); }
 /* Toolzone icons match the design's .iconbtn: a 28×28 rounded box, muted (--lo)
    resting color rising to --fg on hover — not full-strength white at rest. Shared by
    the sidebar toolbar, the tab-strip actions, and the empty-pane new-terminal icon. */
-.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tabbar-nav .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
-.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tabbar-nav .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
+.sidebar-icons .btn--icon, .tabbar-actions .btn--icon, .tabbar-nav .btn--icon, .tab-rail-actions .btn--icon, .tab-rail-nav .btn--icon, .empty .btn--icon { width: 28px; height: 28px; padding: 0; border-radius: 7px; color: var(--text-muted); opacity: 1; }
+.sidebar-icons .btn--icon:hover:not(:disabled), .tabbar-actions .btn--icon:hover:not(:disabled), .tabbar-nav .btn--icon:hover:not(:disabled), .tab-rail-actions .btn--icon:hover:not(:disabled), .tab-rail-nav .btn--icon:hover:not(:disabled), .empty .btn--icon:hover:not(:disabled) { color: var(--fg); background: var(--hover-bg); }
 .sidebar-logo { width: 18px; height: 18px; flex-shrink: 0; margin-right: 4px; display: block; }
 .sidebar canvas { display: block; }
 /* File-tree row icons (Lucide SVGs). Inherit currentColor; never shrink in the flex row.
@@ -274,73 +278,80 @@ body { background: var(--bg); color: var(--fg); }
    a new tab). Tab-on-tab reorder uses the neighbor-slide gap instead. */
 .tab-caret { width: 2px; align-self: stretch; margin: 3px 0; background: var(--accent); border-radius: 2px; box-shadow: 0 0 6px var(--accent); flex: 0 0 auto; }
 
-/* ── Bookshelf (vertical) tab mode ─────────────────────────────────────────────────
-   `ui.verticalTabs` toggles `.vertical-tabs` onto the strip (App.tsx). Each tab chip
-   becomes a vertical "book spine": `writing-mode: sideways-lr` both reflows the chip's
-   own flex main axis to run vertically AND rotates the Latin label into the European
-   book-spine orientation (reads bottom→top, letter-tops toward the LEFT — tilt your
-   head LEFT). We use `sideways-lr` (NOT `vertical-rl`) so the spine reads this natural
-   "tilt-head-left" direction — the OPPOSITE of the earlier top→bottom orientation —
-   and it's fully supported in the app's WebKit / Tauri WKWebView runtime. writing-mode
-   is used deliberately in place of a `transform: rotate()` so the text genuinely reflows
-   and each chip keeps a real, sized box for the flex layout — a rotate() would keep the
-   pre-rotation (wide) box and overflow the strip. (Because sideways-lr's inline axis
-   runs bottom→top, the chip's icon anchors toward the bottom of the spine — a
-   visual-polish detail pending an in-browser eyeball.)
+/* ── Vertical tab rail (ui.verticalTabs) ─────────────────────────────────────────────
+   `ui.verticalTabs` hides the horizontal .tabbar and renders a .tab-rail on the RIGHT
+   edge of the app instead (App.tsx, as the .layout grid's third column). Collapsed it's a
+   narrow icon column; on HOVER (or focus-within, so an in-rail rename stays open) it
+   widens leftward to reveal each tab's full name, then collapses on mouseleave.
 
-   The strip itself stays a HORIZONTAL flex row, so spines are laid left→right and the
-   existing drag-reorder `translateX` (physical, writing-mode-independent) + drop caret
-   keep working unchanged. Spines hang from the top rail (align-items: flex-start). The
-   leading back/forward nav + the trailing tabBar action buttons ("+", terminal, chat)
-   each stack into a VERTICAL column (flex-direction: column) so the whole strip — nav,
-   spines, actions — reads as one vertical shelf. TRADEOFF: because a spine is taller
-   than the classic 40px strip, the tab-strip bottom border no longer lines up with the
-   41px sidebar toolzone divider in this mode (they align at the TOP instead) —
-   intentional. Exact spine width/height + orientation + the toolbar-column padding are
-   visual-polish knobs that still want a real in-browser eyeball. */
-.tabbar.vertical-tabs {
-  align-items: flex-start;          /* spines + the two toolbars hang from the top rail */
-  --tab-spine-w: 34px;              /* fixed narrow spine width */
-  --tab-spine-h: 132px;             /* spine height (taller than the 40px horizontal strip) */
+   The .tab-rail cell only ever reserves the COLLAPSED width in the grid (--rail-w, 48px);
+   the actual surface (.tab-rail-inner) is absolutely anchored to the right and animates
+   its own width, OVERFLOWING leftward over the editor — so the expand/collapse is a pure
+   overlay and the editor body never reflows on hover. Layout: back/forward nav at the top,
+   the scrollable tab-row list in the middle, the +/terminal/chat actions pinned at the
+   bottom — all stacked vertically. The "arc" is a subtle inline translateX bow on the rows
+   (railArcShift in App.tsx) that CSS zeroes once expanded so names align flush.
+   NOTE: exact widths (48/240px), row spacing, and the arc amplitude are visual-polish
+   knobs that still want an in-browser eyeball (the browser was down at authoring time). */
+.tab-rail { position: relative; z-index: 6; }
+.tab-rail-inner {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 48px;                       /* collapsed: icon column only (matches --rail-w) */
+  display: flex; flex-direction: column;
+  background: var(--rail);
+  border-left: 1px solid var(--border-soft);
+  overflow: hidden;                  /* clips labels/close-X while collapsed */
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
 }
-.tabbar.vertical-tabs .tab {
-  writing-mode: sideways-lr;        /* reflow the chip vertically + rotate the label to a bottom→top spine */
-  width: var(--tab-spine-w);
-  min-width: var(--tab-spine-w);
-  height: var(--tab-spine-h);
-  padding: 12px 0;                  /* padding now runs along the vertical (block) axis */
-  justify-content: flex-start;      /* label span (flex:1) fills the spine's vertical main axis */
+.tab-rail:hover .tab-rail-inner,
+.tab-rail:focus-within .tab-rail-inner {
+  width: 240px;                      /* expanded: icon + full name + close/pin */
+  box-shadow: -10px 0 28px -14px rgba(0, 0, 0, 0.5);
 }
-/* Label fills the middle of the spine (pushing the close-X to the bottom) and truncates
-   with an ellipsis along the vertical axis instead of stretching the spine taller. */
-.tabbar.vertical-tabs .tab > span {
-  top: 0;                           /* drop the horizontal-mode 1px optical nudge */
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+@media (prefers-reduced-motion: reduce) { .tab-rail-inner { transition: none; } }
+
+/* Top nav + bottom actions: buttons stacked vertically, left-padded so a 28px button
+   centers in the 48px collapsed rail ((48-28)/2 = 10px). */
+.tab-rail-nav, .tab-rail-actions { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; flex: 0 0 auto; }
+.tab-rail-nav { border-bottom: 1px solid var(--border-soft); }
+.tab-rail-actions { border-top: 1px solid var(--border-soft); margin-top: auto; }
+
+/* The scrollable row list fills the middle. */
+.tab-rail-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 6px 0; display: flex; flex-direction: column; gap: 2px; }
+
+/* A tab row: icon + (revealed) label + close/pin. margin 5px + padding 11px puts the 16px
+   icon's centre at 24px = the middle of the 48px collapsed rail. The label + trailing
+   button overflow past 48px and are clipped by .tab-rail-inner until it expands. */
+.tab-rail-row {
+  display: flex; align-items: center; gap: 10px;
+  height: 34px; min-height: 34px; box-sizing: border-box;
+  margin: 0 5px; padding: 0 11px; border-radius: 8px;
+  color: var(--text-muted); cursor: pointer; user-select: none;
+  white-space: nowrap; position: relative;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
-/* Icon + close/pin glyphs stay upright (writing-mode never rotates replaced/SVG content);
-   just clear the horizontal-mode negative margins so they center in the narrow spine. */
-.tabbar.vertical-tabs .tab > svg,
-.tabbar.vertical-tabs .tab .tab-x,
-.tabbar.vertical-tabs .tab .tab-pin { margin: 0; }
-/* Pinned spine stays compact (icon + pin glyph, no label): a short "book" on the shelf. */
-.tabbar.vertical-tabs .tab.pinned {
-  height: auto;
-  min-height: calc(var(--tab-spine-w) + 20px);
-  padding: 10px 0;
-}
-/* Stack the leading nav (< >) + trailing action ("+", terminal, chat) groups into
-   VERTICAL columns, hung from the top rail, so they read as part of the vertical shelf
-   rather than a horizontal toolbar row. (Base rules keep gap: 3px + align-items: center,
-   which now centers each button on the column's horizontal cross-axis.) */
-.tabbar.vertical-tabs .tabbar-nav,
-.tabbar.vertical-tabs .tabbar-actions {
-  flex-direction: column;
-  align-self: flex-start;
-  padding: 8px;
-}
+.tab-rail-row:hover { background: var(--hover-bg); color: var(--fg); }
+.tab-rail-row.active { background: var(--surface-2); color: var(--fg); }
+.tab-rail-icon { flex: 0 0 auto; color: var(--faint); }
+.tab-rail-row:hover .tab-rail-icon, .tab-rail-row.active .tab-rail-icon { color: var(--fg); }
+/* Label is revealed with the rail: it takes flex space always (so the collapsed row still
+   sizes the same) but fades in only once expanded. */
+.tab-rail-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; opacity: 0; transition: opacity 0.16s ease; }
+.tab-rail:hover .tab-rail-label, .tab-rail:focus-within .tab-rail-label { opacity: 1; }
+/* Once expanded, drop the collapsed-only arc bow so names/icons align in a straight column
+   (beats the inline transform via !important). */
+.tab-rail:hover .tab-rail-row, .tab-rail:focus-within .tab-rail-row { transform: none !important; }
+
+/* Close / pin trailing button. Hidden until the rail is expanded; the close X then shows
+   on row-hover, while a pinned row keeps its pin visible (like the horizontal strip). */
+.tab-rail-row .tab-x, .tab-rail-row .tab-pin { flex: 0 0 auto; padding: 2px; opacity: 0; color: var(--text-muted); transition: opacity 0.12s ease; }
+.tab-rail-row .tab-pin { color: var(--accent, var(--fg)); }
+.tab-rail:hover .tab-rail-row.pinned .tab-pin { opacity: 0.85; }
+.tab-rail:hover .tab-rail-row:hover .tab-x,
+.tab-rail:hover .tab-rail-row:hover .tab-pin,
+.tab-rail:focus-within .tab-rail-row.pinned .tab-pin { opacity: 1; }
+/* The inline rename input sits in place of the label; give it room within the expanded row. */
+.tab-rail-row .tab-rename { flex: 1; min-width: 0; width: auto; margin: 0; }
 
 /* Floating ghost that follows the cursor during a tab/pane drag. */
 .drag-ghost {
