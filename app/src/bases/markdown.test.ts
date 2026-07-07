@@ -70,6 +70,49 @@ describe("renderMarkdown — page break marker", () => {
   });
 });
 
+// Every whole-word "bismuth" is wrapped in a `.bismuth-word` span (the iridescent gradient),
+// but never inside code / URLs / wikilinks, and never mid-word. `class="bismuth-word"` is used
+// as the discriminator so it doesn't collide with `bismuth-wikilink` / `bismuth-tag` classes.
+describe("renderMarkdown — iridescent bismuth", () => {
+  test("wraps a whole-word 'bismuth' in prose, preserving case", () => {
+    expect(renderMarkdown("bismuth is a metal")).toContain('<span class="bismuth-word">bismuth</span>');
+    expect(renderMarkdown("Bismuth")).toContain('<span class="bismuth-word">Bismuth</span>');
+    expect(renderMarkdown("BISMUTH")).toContain('<span class="bismuth-word">BISMUTH</span>');
+  });
+
+  test("wraps every occurrence on a line", () => {
+    const html = renderMarkdown("bismuth and more bismuth");
+    expect(html.match(/class="bismuth-word"/g)?.length).toBe(2);
+  });
+
+  test("does not match a partial word", () => {
+    expect(renderMarkdown("bismuths are plural")).not.toContain('class="bismuth-word"');
+    expect(renderMarkdown("embismuth")).not.toContain('class="bismuth-word"');
+  });
+
+  test("stays literal inside an inline code span", () => {
+    const html = renderMarkdown("use `bismuth` here");
+    expect(html).not.toContain('class="bismuth-word"');
+    expect(html).toContain("<code>bismuth</code>");
+  });
+
+  test("stays literal inside a fenced code block", () => {
+    expect(renderMarkdown("```\nbismuth\n```")).not.toContain('class="bismuth-word"');
+  });
+
+  test("stays literal inside a bare URL", () => {
+    const html = renderMarkdown("see https://bismuth.example.com now");
+    expect(html).not.toContain('class="bismuth-word"');
+    expect(html).toContain("bismuth.example.com");
+  });
+
+  test("stays literal inside a wikilink label (renderNoteBody)", () => {
+    const html = renderNoteBody("[[bismuth crystals]]");
+    expect(html).not.toContain('class="bismuth-word"');
+    expect(html).toContain('class="bismuth-wikilink"');
+  });
+});
+
 describe("renderNoteBody — wikilinks/tags vs code", () => {
   test("a wikilink in prose becomes an anchor", () => {
     const html = renderNoteBody("see [[Another Note]] here");
