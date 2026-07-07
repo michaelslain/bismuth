@@ -1074,11 +1074,14 @@ export function ChatView(props: { chatId: string }) {
     <div class="chat-host">
       <ViewBar>
         <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
-        {/* Model: a live picker once the session reports its supported models (set_model is wired
-            end-to-end); before that (or for single-model logins) a read-only label showing the
-            best-known model — this session's model, else the last-used one, else a neutral default —
-            so the toolbar is populated the instant the chat opens (BUG #14), updated live when the
-            manifest/models frames land. */}
+        {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
+            which the backend now emits EAGERLY on session spawn (core/src/chat.ts emitSupportedModels),
+            so the picker is populated and switchable the instant the chat opens, BEFORE the first
+            message (set_model is wired end-to-end and works pre-turn). Its value is the best-known
+            model — this session's manifest model, else the last-used one (persisted) — so switching
+            pre-send is reflected via rememberModel→displayModel. Before the models frame lands (or for
+            single-model logins) a read-only best-known label. Placeholder covers the brand-new install
+            with no prior chat, where no active model is known yet until the user picks one. */}
         <Show
           when={models().length > 1}
           fallback={
@@ -1088,6 +1091,7 @@ export function ChatView(props: { chatId: string }) {
           <Select
             class="chat-model-select"
             value={displayModel()}
+            placeholder="Default model"
             options={models().map((m) => ({ value: m.value, label: m.label }))}
             onChange={switchModel}
           />
