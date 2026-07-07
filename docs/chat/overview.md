@@ -101,7 +101,7 @@ The `/chat` WebSocket is a text-JSON protocol. Server → client is the `ChatFra
 
 | Client → server | Effect |
 | --- | --- |
-| `{type:"user", text}` | Run a turn — `chatSend()`. Slash commands are just text. |
+| `{type:"user", text}` | Run a turn — `chatSend()`. Slash commands are just text, with one exception: `/mcp` is answered locally (see below). |
 | `{type:"resume", sessionId}` | Bind this chat to an existing session — `chatResume()`. Its `init` manifest streams back. |
 | `{type:"permission_response", id, behavior, always?}` | Answer a `permission` frame — `chatRespondPermission()`. |
 | `{type:"set_permission_mode", mode}` | Switch permission mode live — `chatSetPermissionMode()`. |
@@ -123,6 +123,12 @@ The `ChatFrame` union (server → client):
 - `{type:"context", percentage, totalTokens, maxTokens}` — context-window usage after each completed turn (`Query.getContextUsage()`) — the header pill (warns past ~80%).
 - `{type:"done"}` — the turn is fully drained (pushed after `result`).
 - `{type:"error", code, message}` — `no-claude` (CLI missing — surface setup), `spawn`/`exit` (child failed), or `error` (an SDK/turn error).
+
+### Locally-answered slash commands: `/mcp` (BUG #39)
+
+Almost every slash command is "just text" — `sendMessage` pushes it into the input queue unmodified and the spawned `claude` CLI does its own detection/expansion, exactly like the TUI. The SDK is well-behaved about unrecognized or non-interactive input: a bogus command comes back as a synthetic assistant reply ("Unknown command: /x"), and a command that's genuinely TUI-only (`/help`, `/status`, `/permissions`, `/mcp`, …) comes back as a synthetic "`/x` isn't available in this environment." — never a crash, never silence. (This is also why `manifest.slashCommands` never lists these TUI-only commands: the SDK's own `init` event only advertises the subset that can do something useful headlessly.)
+
+`/mcp` is the one exception worth a real implementation, since Claude Code's own `/mcp` is genuinely useful (the connected/failed/needs-auth server list with tool counts) but the non-interactive stub throws that away. `isMcpCommand(text)` (`core/src/chat.ts`) matches a bare `/mcp` (no arguments) and, instead of forwarding it, `answerMcpCommand` calls `Query.mcpServerStatus()` directly — the same control-plane call `emitInitManifest` already uses for the header's connected/total count — and renders the result with `formatMcpStatus` (pure, unit-tested in `core/test/chat.test.ts`) as a normal `assistant-text` reply, followed by a synthetic `result`/`done` pair so the client's turn-end handling (including the mid-turn queued-message dispatch) needs no special case. It never touches the real input queue or session transcript: this is introspection of already-live session state, not a conversational turn, so it costs nothing, can't fail against the model, and simply won't appear if that session's history is ever replayed (like the synthetic init-time manifest itself).
 
 ### Streaming and de-dup
 

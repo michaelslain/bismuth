@@ -20,6 +20,8 @@ import {
   abortTurn,
   extractEditorContextPaths,
   unstreamedAssistantFrames,
+  isMcpCommand,
+  formatMcpStatus,
   type ChatFrame,
   type ChatSearchDoc,
 } from "../src/chat";
@@ -163,6 +165,71 @@ describe("unstreamedAssistantFrames (BUG #19: slash-command output de-dupe)", ()
 
   test("non-array content (a plain string) yields nothing", () => {
     expect(unstreamedAssistantFrames({ message: { content: "plain" } }, 0, 0)).toEqual([]);
+  });
+});
+
+// BUG #39: "/mcp" is answered LOCALLY (from Query.mcpServerStatus()) instead of forwarded to the
+// CLI subprocess — verified against a live session, the SDK's own "/mcp" is a TUI-only interactive
+// picker that stubs out to "isn't available in this environment" when run programmatically. Both
+// halves of the fix are pure: isMcpCommand (does this text mean "run the local handler?") and
+// formatMcpStatus (render the reply body from a snapshot of server statuses).
+describe("isMcpCommand (BUG #39: which turns get answered locally)", () => {
+  test("matches the bare command", () => {
+    expect(isMcpCommand("/mcp")).toBe(true);
+  });
+
+  test("matches with surrounding whitespace", () => {
+    expect(isMcpCommand("  /mcp  ")).toBe(true);
+    expect(isMcpCommand("/mcp\n")).toBe(true);
+  });
+
+  test("is case-insensitive", () => {
+    expect(isMcpCommand("/MCP")).toBe(true);
+    expect(isMcpCommand("/Mcp")).toBe(true);
+  });
+
+  test("does not match a command WITH arguments — forwarded to the CLI as normal", () => {
+    expect(isMcpCommand("/mcp bismuth")).toBe(false);
+  });
+
+  test("does not match another command, or plain text that merely mentions mcp", () => {
+    expect(isMcpCommand("/mcpx")).toBe(false);
+    expect(isMcpCommand("/context")).toBe(false);
+    expect(isMcpCommand("tell me about mcp")).toBe(false);
+    expect(isMcpCommand("")).toBe(false);
+  });
+});
+
+describe("formatMcpStatus (BUG #39: the /mcp reply body)", () => {
+  test("no servers configured → a plain, friendly sentence, not an empty list", () => {
+    expect(formatMcpStatus([])).toBe("No MCP servers are configured for this session.");
+  });
+
+  test("lists each server's name, status, and tool count", () => {
+    const text = formatMcpStatus([
+      { name: "bismuth", status: "connected", toolCount: 5 },
+      { name: "touchdesigner-mcp", status: "failed" },
+    ]);
+    expect(text).toContain("MCP Servers");
+    expect(text).toContain("**bismuth** — connected — 5 tools");
+    expect(text).toContain("**touchdesigner-mcp** — failed");
+  });
+
+  test("singular 'tool' for a count of exactly 1", () => {
+    const text = formatMcpStatus([{ name: "solo", status: "connected", toolCount: 1 }]);
+    expect(text).toContain("1 tool");
+    expect(text).not.toContain("1 tools");
+  });
+
+  test("omits the tool count entirely when undefined (e.g. a pending/failed server)", () => {
+    const text = formatMcpStatus([{ name: "pending-server", status: "pending" }]);
+    expect(text).toContain("**pending-server** — pending");
+    expect(text).not.toContain("tool");
+  });
+
+  test("a tool count of 0 is still shown (an explicit zero, not omitted)", () => {
+    const text = formatMcpStatus([{ name: "empty", status: "connected", toolCount: 0 }]);
+    expect(text).toContain("0 tools");
   });
 });
 
@@ -352,6 +419,28 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     const texts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text");
     expect(texts.length).toBeGreaterThan(0);
     expect(texts.map((t) => t.text).join("")).toMatch(/context/i);
+  }, 180_000);
+
+  // BUG #39: "/mcp" must show the REAL MCP server list (name/status/tool count), never the SDK's
+  // own "isn't available in this environment" stub (verified live: that's what a bare, forwarded
+  // "/mcp" produces when this app's `claude` is driven programmatically — see isMcpCommand's docs).
+  test("BUG #39: /mcp shows real server status, not the SDK's non-interactive stub", async () => {
+    const cwd = await newTempDir();
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    const { sink, frames, waitFor } = makeCollector();
+
+    sendMessage(chatId, "/mcp", cwd, sink);
+
+    await waitFor((f) => f.type === "done");
+    const texts = frames.filter((f): f is Extract<ChatFrame, { type: "assistant-text" }> => f.type === "assistant-text");
+    expect(texts.length).toBeGreaterThan(0);
+    const combined = texts.map((t) => t.text).join("");
+    expect(combined).toMatch(/MCP Servers|No MCP servers are configured/);
+    expect(combined).not.toMatch(/isn't available in this environment/i);
+    // A real turn (result.numTurns > 0) never happened — this was answered locally.
+    const result = frames.find((f): f is Extract<ChatFrame, { type: "result" }> => f.type === "result");
+    expect(result?.isError).toBe(false);
   }, 180_000);
 
   test("permission ALLOW: approving Write creates the file", async () => {
