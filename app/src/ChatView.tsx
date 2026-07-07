@@ -52,6 +52,25 @@ const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "bypassPermissions", label: "Bypass" },
 ];
 
+// The APP-LEVEL default permission mode for the visual chat (BUG #14): every chat starts in Bypass
+// so tool use isn't gated by an approval prompt by default. Applied CLIENT-SIDE — the header Select
+// is seeded to it, and it's pushed to the session on its first manifest via set_permission_mode —
+// rather than in the backend query() options, so headless/direct callers keep the user's own Claude
+// Code config (and the live permission tests keep exercising canUseTool). Changeable live any time.
+const DEFAULT_PERMISSION_MODE = "bypassPermissions";
+
+// The header shows a model label the instant the chat opens (BUG #14) — before this session's
+// manifest / `models` frames land — by remembering the last model used in ANY chat. A transient
+// localStorage key (like the graph's 2D/3D toggle), not a user-facing `.settings` value.
+const LAST_MODEL_KEY = "bismuth.chat.lastModel";
+function readLastModel(): string {
+  try {
+    return localStorage.getItem(LAST_MODEL_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 // The image MIME types the Claude Agent SDK accepts as base64 image blocks. Deliberately NARROWER
 // than the editor's attachment set (no svg/pdf) — those aren't valid `image` content blocks. A
 // dropped/pasted file outside this set is rejected rather than sent.
@@ -231,12 +250,29 @@ export function ChatView(props: { chatId: string }) {
   const [attachments, setAttachments] = createSignal<Attachment[]>([]);
   const [streaming, setStreaming] = createSignal(false);
   const [manifest, setManifest] = createSignal<ChatManifest | null>(null);
+  // The permission mode shown in the header Select. Seeded to the app DEFAULT (Bypass) so the
+  // control is populated — reflecting the real default — the instant the chat opens, before any
+  // session/manifest exists (BUG #14). This is the display source of truth: the user's picks update
+  // it, and on a session's FIRST manifest it's pushed down to the session (see onFrame "manifest").
+  const [permMode, setPermMode] = createSignal<string>(DEFAULT_PERMISSION_MODE);
   // A fatal setup state (claude not installed) — replaces the transcript with guidance.
   const [setupError, setSetupError] = createSignal(false);
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
   const [turnError, setTurnError] = createSignal<string | null>(null);
   // The models this login can run (`models` frame, once per session) — powers the header picker.
   const [models, setModels] = createSignal<{ value: string; label: string; description: string }[]>([]);
+  // The last model used in ANY chat (persisted) — shown in the header as a sensible default before
+  // this session's manifest/`models` frames land, so the model area is never blank (BUG #14).
+  const [lastModel, setLastModel] = createSignal(readLastModel());
+  const rememberModel = (model: string) => {
+    if (!model) return;
+    setLastModel(model);
+    try {
+      localStorage.setItem(LAST_MODEL_KEY, model);
+    } catch {
+      /* localStorage unavailable — the in-memory signal still updates the header */
+    }
+  };
   // Context-window usage after each completed turn (`context` frame) — the header pill.
   const [context, setContext] = createSignal<{ percentage: number; totalTokens: number; maxTokens: number } | null>(null);
   // Turns staged while a turn is streaming (Claude Code TUI parity): dispatched one at a time
@@ -285,6 +321,11 @@ export function ChatView(props: { chatId: string }) {
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectAttempt = 0;
   let disposed = false;
+  // Latched false at each new/resumed session: the app default (Bypass) is pushed to the backend on
+  // the session's FIRST manifest (the SDK spawns it in the user's config mode) — see onFrame
+  // "manifest". After that first turn, the manifest is trusted as the live mode so server-side
+  // transitions (e.g. plan-mode exit) are reflected instead of fought (BUG #14).
+  let modeEnforced = false;
   // A resume requested before the socket was OPEN — flushed on the next onopen so a picked session
   // still binds even if the WS was momentarily connecting/reconnecting.
   let pendingResume: string | null = null;
@@ -361,6 +402,19 @@ export function ChatView(props: { chatId: string }) {
     switch (frame.type) {
       case "manifest":
         setManifest(frame.manifest);
+        rememberModel(frame.manifest.model); // keep the "last model" fallback fresh for next open
+        if (!modeEnforced) {
+          // First manifest of this session: the SDK spawned it in the user's OWN config mode, but
+          // the header/app default is Bypass (permMode's seed) — or the user picked a mode before
+          // the first turn. Push our desired mode down so the session matches the header (BUG #14).
+          modeEnforced = true;
+          if (frame.manifest.permissionMode !== permMode()) {
+            sendJson({ type: "set_permission_mode", mode: permMode() });
+          }
+        } else {
+          // Later turns: trust the manifest as the live mode (reflects any server-side transition).
+          setPermMode(frame.manifest.permissionMode);
+        }
         break;
       case "user-message":
         // A replayed past user turn (history only — live user messages come from send(), not the
@@ -692,14 +746,16 @@ export function ChatView(props: { chatId: string }) {
   };
 
   const setPermissionMode = (mode: string) => {
+    // permMode is the header's source of truth (seeded to the app default before any session), so
+    // update it immediately — even before a session exists, the picked mode is held and later pushed
+    // down on the first manifest. sendJson is a no-op server-side until the session exists.
+    setPermMode(mode);
     sendJson({ type: "set_permission_mode", mode });
-    // Optimistically reflect it; the next manifest frame confirms.
-    const m = manifest();
-    if (m) setManifest({ ...m, permissionMode: mode });
   };
 
   const switchModel = (model: string) => {
     sendJson({ type: "set_model", model });
+    rememberModel(model); // persist so the next chat shows this as its default before its manifest
     // Optimistically reflect it; the next turn's init manifest confirms.
     const m = manifest();
     if (m) setManifest({ ...m, model });
@@ -712,6 +768,8 @@ export function ChatView(props: { chatId: string }) {
     setStreaming(false);
     setTurnError(null);
     setManifest(null);
+    // Back to the app default (Bypass) — the next session re-enforces it on its first manifest.
+    setPermMode(DEFAULT_PERMISSION_MODE);
     setQueuedTurns([]);
     setContext(null);
     // The conversation this tab was named after is gone — revert the tab label to the persona
@@ -724,6 +782,8 @@ export function ChatView(props: { chatId: string }) {
   const reconnectOn = (id: string) => {
     clearTimeout(reconnectTimer);
     reconnectAttempt = 0;
+    // A new/resumed session re-enforces the app-default permission mode on its first manifest.
+    modeEnforced = false;
     // A deliberate switch invalidates anything queued for the OLD socket: a stale stashed resume
     // would otherwise be flushed by the NEW socket's onopen (silently resuming a session the user
     // just navigated away from), and queued permission answers belong to a session being closed.
@@ -944,6 +1004,10 @@ export function ChatView(props: { chatId: string }) {
 
   // ── Render ──────────────────────────────────────────────────────────────────────────────
   const mcpConnected = () => (manifest()?.mcpServers ?? []).filter((s) => /connect|ready|ok/i.test(s.status)).length;
+  // The model label the header shows: this session's manifest model once it arrives, else the
+  // last-used model (persisted). Empty only on a brand-new install with no prior chat — rendered as
+  // a neutral "Default model" placeholder — so the model area is never blank before the first turn.
+  const displayModel = () => manifest()?.model || lastModel();
   // The pre-first-delta waiting dots: streaming with no assistant output for the CURRENT turn
   // yet. Queued (staged, unsent) user bubbles belong to future turns — skip them, or the dots
   // would vanish/misplace the moment a follow-up is staged.
@@ -964,24 +1028,27 @@ export function ChatView(props: { chatId: string }) {
     <div class="chat-host">
       <ViewBar>
         <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
-        {/* Model: a live picker once the session reports its supported models (set_model is
-            wired end-to-end); a read-only span before that / for single-model logins. */}
+        {/* Model: a live picker once the session reports its supported models (set_model is wired
+            end-to-end); before that (or for single-model logins) a read-only label showing the
+            best-known model — this session's model, else the last-used one, else a neutral default —
+            so the toolbar is populated the instant the chat opens (BUG #14), updated live when the
+            manifest/models frames land. */}
         <Show
           when={models().length > 1}
           fallback={
-            <Show when={manifest()?.model}>
-              {(model) => <span class="chat-model" title="Active model">{model()}</span>}
-            </Show>
+            <span class="chat-model" title="Active model">{displayModel() || "Default model"}</span>
           }
         >
           <Select
             class="chat-model-select"
-            value={manifest()?.model ?? ""}
+            value={displayModel()}
             options={models().map((m) => ({ value: m.value, label: m.label }))}
             onChange={switchModel}
           />
         </Show>
         <ViewBarSpacer />
+        {/* Tools / MCP / context stats: counts that only mean something once the manifest reports
+            them, so these stay gated on it (nothing sensible to show before the first turn). */}
         <Show when={manifest()}>
           {(m) => (
             <>
@@ -1006,15 +1073,18 @@ export function ChatView(props: { chatId: string }) {
                   </span>
                 )}
               </Show>
-              <Select
-                class="chat-mode-select"
-                value={m().permissionMode}
-                options={PERMISSION_MODES}
-                onChange={setPermissionMode}
-              />
             </>
           )}
         </Show>
+        {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
+            populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
+            updated live — the user's picks and each manifest flow through permMode(). */}
+        <Select
+          class="chat-mode-select"
+          value={permMode()}
+          options={PERMISSION_MODES}
+          onChange={setPermissionMode}
+        />
         {/* History (resume a past Claude Code session) + New (fresh session) — always available,
             even before the first turn's manifest. The history panel anchors to this wrapper. */}
         <div class="chat-history-anchor">
