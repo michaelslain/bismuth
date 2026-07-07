@@ -3,6 +3,7 @@ import {
   buildCandidateContext,
   buildPrompt,
   buildSnippet,
+  bestSnippet,
   parseModelOutput,
   validateResults,
   promptSearch,
@@ -82,6 +83,60 @@ describe("buildSnippet (byte-exact + anti-hallucination)", () => {
   test("empty quote is rejected", () => {
     expect(buildSnippet(body, "")).toBeNull();
   });
+
+  // BUG #8 root cause: notes are hard-wrapped, so the model reflows the wrapped newlines into
+  // spaces in its quote. Neither exact nor case-insensitive indexOf finds it even though every word
+  // is present in order — which silently rejected ~every AI result. The whitespace-normalized
+  // fallback must locate it and still slice a byte-exact single-line snippet from the real body.
+  test("locates a quote whose hard-wrapped newlines the model reflowed into spaces", () => {
+    const wrapped = "We spent two weeks travelling through Japan in the\nspring. Kyoto was the highlight of the trip.";
+    const reflowed = "travelling through Japan in the spring. Kyoto was the highlight"; // newline → space
+    expect(wrapped.indexOf(reflowed)).toBe(-1); // exact indexOf genuinely misses (the old gate)
+    const snip = buildSnippet(wrapped, reflowed)!;
+    expect(snip).not.toBeNull();
+    expect(snip.line).toBe(1); // clamped to the first line of the span
+    const lines = wrapped.split("\n");
+    expect(snip.before + snip.match + snip.after).toBe(lines[snip.line - 1]);
+    expect(snip.match).toContain("travelling through Japan in the"); // real body bytes on line 1
+  });
+
+  test("normalized fallback collapses runs of spaces/tabs too, not just newlines", () => {
+    const spaced = "the   grind\tsize matters more than the beans";
+    const snip = buildSnippet(spaced, "grind size matters")!;
+    expect(snip).not.toBeNull();
+    expect(snip.match).toContain("grind");
+  });
+});
+
+describe("bestSnippet (located → keyword → preview fallback tiers)", () => {
+  const body = "# Coffee notes\n\nThe grind size matters more than the beans for a bright clean cup.";
+
+  test("tier 1: returns the located quote when present", () => {
+    const s = bestSnippet(body, "grind size matters")!;
+    expect(s.match).toBe("grind size matters");
+  });
+
+  test("tier 2: derives a snippet from a quote keyword when the quote isn't locatable verbatim", () => {
+    // The quote paraphrases, but shares the content word "beans" with the body.
+    const s = bestSnippet(body, "notes on choosing good beans and roast level")!;
+    expect(s.match).toBe("beans");
+  });
+
+  test("tier 2: falls through to a question keyword when no quote keyword matches", () => {
+    const s = bestSnippet(body, "utterly unrelated wording xyzzy", "how do I pick a grind")!;
+    expect(s.match).toBe("grind");
+  });
+
+  test("tier 3: first-line preview when nothing matches at all", () => {
+    const s = bestSnippet(body, "xyzzy plugh", "foobar")!;
+    expect(s.match).toBe(""); // un-highlighted preview
+    expect(s.after).toBe("# Coffee notes");
+  });
+
+  test("returns null only for an empty/all-blank body", () => {
+    expect(bestSnippet("", "anything")).toBeNull();
+    expect(bestSnippet("   \n\t\n", "anything")).toBeNull();
+  });
 });
 
 describe("validateResults (mapping + rejection)", () => {
@@ -101,12 +156,50 @@ describe("validateResults (mapping + rejection)", () => {
     expect(out[0].snippets[0].before + out[0].snippets[0].match + out[0].snippets[0].after).toBe(line);
   });
 
-  test("rejects a path not in the candidate set", () => {
+  test("still hard-rejects a path not in the candidate set (the security boundary)", () => {
     expect(validateResults([{ path: "ghost.md", quote: "alpha" }], bodies)).toEqual([]);
   });
 
-  test("rejects a quote absent from the real body", () => {
-    expect(validateResults([{ path: "a.md", quote: "not in the file at all" }], bodies)).toEqual([]);
+  // BUG #8: the loosened validation. A reflowed / paraphrased quote must NO LONGER drop a correctly
+  // chosen candidate — instead we surface it with a snippet sliced byte-for-byte from the real body.
+  test("a reflowed (newline→space) quote now SURVIVES with a byte-exact body snippet", () => {
+    // The model joined a.md's wrapped lines with a space; exact/CI indexOf miss it.
+    const quote = "some unique phrase to quote tail";
+    expect(bodies.get("a.md")!.indexOf(quote)).toBe(-1);
+    const out = validateResults([{ path: "a.md", quote }], bodies);
+    expect(out.length).toBe(1);
+    expect(out[0].path).toBe("a.md");
+    const s = out[0].snippets[0];
+    const line = bodies.get("a.md")!.split("\n")[s.line - 1];
+    expect(s.before + s.match + s.after).toBe(line); // real body line, not model text
+  });
+
+  test("a fully paraphrased quote still surfaces the candidate via a question-keyword snippet", () => {
+    // None of the paraphrase words are in the body, but the question keyword "phrase" is — anchor
+    // there rather than dropping a note the model correctly picked.
+    const out = validateResults(
+      [{ path: "a.md", quote: "a completely reworded summary" }],
+      bodies,
+      "where is the unique phrase",
+    );
+    expect(out.length).toBe(1);
+    const s = out[0].snippets[0];
+    expect(s.match.length).toBeGreaterThan(0);
+    expect(bodies.get("a.md")!).toContain(s.match); // sliced from the real body
+  });
+
+  test("an unlocatable quote with no keyword match still surfaces the note (first-line preview)", () => {
+    const out = validateResults([{ path: "b.md", quote: "qqqqqq wwwwww eeeeee" }], bodies);
+    expect(out.length).toBe(1);
+    expect(out[0].path).toBe("b.md");
+    const s = out[0].snippets[0];
+    expect(s.before + s.match + s.after).toBe("beta only"); // whole first line, un-highlighted
+  });
+
+  test("skips a candidate with a truly empty body (nothing to show)", () => {
+    const withEmpty = new Map(bodies);
+    withEmpty.set("empty.md", "");
+    expect(validateResults([{ path: "empty.md", quote: "anything" }], withEmpty)).toEqual([]);
   });
 
   test("preserves model order and keeps at most one result per path", () => {
@@ -190,6 +283,32 @@ describe("promptSearch (end-to-end with stubbed deps)", () => {
       expect(results[0].reason).toBe("trip note");
       // The model only ever saw the bounded candidate context, never the raw vault.
       expect(sawContext).toContain("path: japan.md");
+    } finally {
+      searchPromptDeps.whichClaude = realWhich;
+      searchPromptDeps.runModel = realRun;
+      invalidateSearchIndex(root);
+    }
+  });
+
+  test("BUG #8: a reflowed multi-line quote from the model survives end-to-end", async () => {
+    const bodyText = "# Deep work\nProtecting a few hours of uninterrupted\ndeep work every day is the one thing that matters.";
+    const root = makeVault({ "wrapped.md": bodyText });
+    const realWhich = searchPromptDeps.whichClaude;
+    const realRun = searchPromptDeps.runModel;
+    searchPromptDeps.whichClaude = () => "/fake/claude";
+    // The model reflows the note's hard-wrapped newline into a space — the exact real-world failure
+    // that used to make validateResults drop every result and show the user an empty AI search.
+    searchPromptDeps.runModel = async () => ({
+      structured: { results: [{ path: "wrapped.md", quote: "uninterrupted deep work every day", reason: "answers it" }] },
+      resultText: undefined,
+    });
+    try {
+      const results = await promptSearch(root, "how do I do focused work");
+      expect(results.length).toBe(1);
+      expect(results[0].path).toBe("wrapped.md");
+      const s = results[0].snippets[0];
+      expect(bodyText.split("\n")[s.line - 1]).toBe(s.before + s.match + s.after); // real body bytes
+      expect(s.match.length).toBeGreaterThan(0);
     } finally {
       searchPromptDeps.whichClaude = realWhich;
       searchPromptDeps.runModel = realRun;

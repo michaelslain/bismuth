@@ -4,14 +4,21 @@
 // auth — never an API key, exactly like chat.ts) to re-rank the MiniSearch candidates and pick the
 // notes that genuinely answer the question.
 //
-// Anti-hallucination is structural, not hopeful:
+// Anti-hallucination is structural, not hopeful — but the SECURITY boundary is the PATH, not the
+// quote. Loosening the quote check (BUG #8) is safe because every rendered snippet is still sliced
+// byte-for-byte out of the REAL body, never from model text:
 //   1. The model may only choose from the Stage-1 candidate PATHS (rankCandidates) — any path it
-//      returns that isn't in that set is rejected.
-//   2. For each chosen note the model must copy a VERBATIM `quote` from that note's text; the
-//      backend re-locates that quote in the REAL body via indexOf (case-insensitive fallback) and
-//      rejects anything it can't find. A paraphrased/invented quote is dropped.
-//   3. The rendered snippet is sliced byte-for-byte out of the real body — never from model text —
-//      so SearchView renders it identically to a literal hit (same MatchSnippet shape).
+//      returns that isn't in that set is rejected outright. This is the only hard rejection.
+//   2. For each chosen note we try to locate the model's `quote` in the REAL body to highlight the
+//      exact span: verbatim indexOf, then case-insensitive, then WHITESPACE-NORMALIZED (the model
+//      routinely reflows a note's hard-wrapped newlines into spaces, so an exact/CI indexOf misses
+//      even though every word is present in order — this was silently rejecting ~every result).
+//   3. If the quote can't be located even after normalization, we DO NOT drop the result — the path
+//      is already validated, so we derive a snippet from the real body around the best shared keyword
+//      (from the quote, then the question), falling back to the note's first line. The user always
+//      sees the notes the model chose, with a real body snippet.
+//   4. Every snippet's before/match/after is sliced from the real body bytes — SearchView renders it
+//      identically to a literal hit (same MatchSnippet shape).
 //
 // The daemon is deliberately NOT involved (latency + it's off by default); this path is always-on in
 // every vault, gated only on Claude Code being installed (whichClaude()).
@@ -180,51 +187,176 @@ function lineNumberAt(body: string, idx: number): number {
 }
 
 /**
- * Build a byte-exact single-line `MatchSnippet` for `quote` within `body`, or null if the quote
- * isn't actually present (the anti-hallucination gate). The match is located by exact indexOf, then
- * a case-insensitive fallback; either way the returned `before`/`match`/`after` are sliced from the
- * REAL body bytes around the hit (never from the model's quote), and are clamped to the single line
- * containing the hit's start so `before + match + after === body.split("\n")[line-1]` always holds —
- * exactly the shape SearchView renders. Pure + exported for tests.
+ * Build the clamped single-line `MatchSnippet` for the ORIGINAL byte range `[start, end)` of `body`.
+ * `before`/`match`/`after` are sliced from the real body bytes and clamped to the single line
+ * containing `start`, so `before + match + after === body.split("\n")[line-1]` always holds — exactly
+ * the shape SearchView renders. A range spanning multiple lines shows just its first line.
  */
-export function buildSnippet(body: string, quote: string): MatchSnippet | null {
-  if (!quote) return null;
-  let idx = body.indexOf(quote);
-  const len = quote.length;
-  if (idx < 0) {
-    // Case-insensitive fallback: locate on the lowercased copies, then slice the REAL bytes so the
-    // snippet stays byte-exact to what's actually in the file.
-    const lc = body.toLowerCase().indexOf(quote.toLowerCase());
-    if (lc < 0) return null;
-    idx = lc;
-  }
-  const lineStart = body.lastIndexOf("\n", idx - 1) + 1; // 0 when there's no preceding newline
-  let lineEnd = body.indexOf("\n", idx);
+function snippetAt(body: string, start: number, end: number): MatchSnippet {
+  const lineStart = body.lastIndexOf("\n", start - 1) + 1; // 0 when there's no preceding newline
+  let lineEnd = body.indexOf("\n", start);
   if (lineEnd < 0) lineEnd = body.length;
-  const matchEnd = Math.min(idx + len, lineEnd); // clamp a multi-line quote to its first line
+  const matchEnd = Math.min(end, lineEnd); // clamp a multi-line span to its first line
   return {
-    line: lineNumberAt(body, idx),
-    before: body.slice(lineStart, idx),
-    match: body.slice(idx, matchEnd),
+    line: lineNumberAt(body, start),
+    before: body.slice(lineStart, start),
+    match: body.slice(start, matchEnd),
     after: body.slice(matchEnd, lineEnd),
   };
 }
 
 /**
- * Turn raw model results into validated, byte-exact `SearchResult[]` in model order. Rejects (a) any
- * path not in `bodiesByPath` (a path the model never saw / invented) and (b) any quote not found in
- * that path's real body. At most one result per path. Pure + exported for tests.
+ * Collapse every run of whitespace in `body` to a single space, returning the normalized string plus
+ * a map from each normalized-char index back to the ORIGINAL body index it came from (a whitespace
+ * run maps to the run's first byte). Lets us locate a quote whose whitespace the model reflowed —
+ * hard-wrapped newlines collapsed into spaces is the overwhelmingly common case — while still slicing
+ * the rendered snippet out of the real bytes. Pure.
  */
-export function validateResults(raw: ModelResult[], bodiesByPath: Map<string, string>): SearchResult[] {
+function normalizeWithMap(body: string): { norm: string; map: number[] } {
+  let norm = "";
+  const map: number[] = [];
+  const n = body.length;
+  let i = 0;
+  while (i < n) {
+    if (/\s/.test(body[i])) {
+      map.push(i);
+      norm += " ";
+      i++;
+      while (i < n && /\s/.test(body[i])) i++; // swallow the rest of the whitespace run
+    } else {
+      map.push(i);
+      norm += body[i];
+      i++;
+    }
+  }
+  return { norm, map };
+}
+
+/**
+ * Locate `quote` in `body` ignoring case AND whitespace differences (collapsed runs / reflowed
+ * newlines). Returns the ORIGINAL `[start, end)` byte range of the match, or null. Pure.
+ */
+function locateNormalized(body: string, quote: string): { start: number; end: number } | null {
+  const q = quote.replace(/\s+/g, " ").trim();
+  if (!q) return null;
+  const { norm, map } = normalizeWithMap(body);
+  const ni = norm.toLowerCase().indexOf(q.toLowerCase());
+  if (ni < 0) return null;
+  const start = map[ni];
+  // The last matched normalized char is non-whitespace (q is trimmed), so it occupies exactly one
+  // original byte — its end is map[last] + 1.
+  const end = map[ni + q.length - 1] + 1;
+  return { start, end };
+}
+
+/**
+ * Build a byte-exact single-line `MatchSnippet` for `quote` within `body`, or null if the quote
+ * can't be located at all. Tries exact indexOf, then case-insensitive, then whitespace-normalized —
+ * the returned `before`/`match`/`after` are always sliced from the REAL body bytes around the hit
+ * (never from the model's quote). Pure + exported for tests.
+ */
+export function buildSnippet(body: string, quote: string): MatchSnippet | null {
+  if (!quote) return null;
+  const exact = body.indexOf(quote);
+  if (exact >= 0) return snippetAt(body, exact, exact + quote.length);
+  const ci = body.toLowerCase().indexOf(quote.toLowerCase()); // same length as quote → end = ci+len
+  if (ci >= 0) return snippetAt(body, ci, ci + quote.length);
+  const located = locateNormalized(body, quote);
+  if (located) return snippetAt(body, located.start, located.end);
+  return null;
+}
+
+// Short function/stop words that make poor snippet anchors — skipped when deriving a fallback
+// keyword so we don't highlight "the"/"with"/"about" instead of the real subject.
+const STOPWORDS = new Set([
+  "about", "above", "after", "again", "against", "along", "among", "around", "because", "been",
+  "before", "being", "below", "between", "both", "does", "doing", "during", "each", "from", "have",
+  "having", "here", "into", "just", "like", "more", "most", "much", "only", "other", "over", "same",
+  "some", "such", "than", "that", "their", "them", "then", "there", "these", "they", "this", "those",
+  "through", "under", "until", "very", "were", "what", "when", "where", "which", "while", "with",
+  "would", "your", "yours", "note", "notes", "write", "wrote", "written",
+]);
+
+/**
+ * Distinctive lowercased word tokens from `text`, longest first (content words outrank short
+ * function words) and deduped — candidate anchors for a body-derived fallback snippet. Pure.
+ */
+function keywordsOf(text: string): string[] {
+  const words = (text.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) ?? []).filter(
+    (w) => w.length >= 4 && !STOPWORDS.has(w),
+  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const w of words) if (!seen.has(w)) { seen.add(w); out.push(w); }
+  out.sort((a, b) => b.length - a.length);
+  return out;
+}
+
+/**
+ * Fallback snippet for a validated candidate whose quote couldn't be located verbatim: highlight the
+ * first `keywords` term that appears in the body (case-insensitive). Returns null if none match. Pure.
+ */
+function deriveKeywordSnippet(body: string, keywords: string[]): MatchSnippet | null {
+  const lc = body.toLowerCase();
+  for (const kw of keywords) {
+    const idx = lc.indexOf(kw);
+    if (idx >= 0) return snippetAt(body, idx, idx + kw.length);
+  }
+  return null;
+}
+
+/**
+ * Last-resort snippet: the note's first non-blank line as a plain (un-highlighted) preview, so a
+ * validated candidate is NEVER dropped just because we couldn't pin a span. Returns null for an
+ * all-blank body. Pure.
+ */
+function previewSnippet(body: string): MatchSnippet | null {
+  const lines = body.split("\n");
+  let off = 0;
+  for (const line of lines) {
+    if (line.trim()) {
+      return { line: lineNumberAt(body, off), before: "", match: "", after: line };
+    }
+    off += line.length + 1; // +1 for the "\n" split removed
+  }
+  return null;
+}
+
+/**
+ * Best available byte-exact snippet for a validated candidate: the located quote if possible, else a
+ * keyword-derived snippet (quote words, then question words), else the first-line preview. Returns
+ * null only when the body is empty/all-blank. Pure + exported for tests.
+ */
+export function bestSnippet(body: string, quote: string, question = ""): MatchSnippet | null {
+  return (
+    buildSnippet(body, quote) ??
+    deriveKeywordSnippet(body, [...keywordsOf(quote), ...keywordsOf(question)]) ??
+    previewSnippet(body)
+  );
+}
+
+/**
+ * Turn raw model results into validated, byte-exact `SearchResult[]` in model order. The ONLY hard
+ * rejection is a path not in `bodiesByPath` (a path the model never saw / invented) — the security
+ * boundary. A result whose `quote` can't be located verbatim is NOT dropped (BUG #8: paraphrased /
+ * reflowed quotes were nuking every result); instead `bestSnippet` derives a real body snippet around
+ * the best shared keyword, falling back to the note's first line. `question` seeds that keyword
+ * fallback. At most one result per path; a truly empty body is skipped. Pure + exported for tests.
+ */
+export function validateResults(
+  raw: ModelResult[],
+  bodiesByPath: Map<string, string>,
+  question = "",
+): SearchResult[] {
   const out: SearchResult[] = [];
   const seen = new Set<string>();
   for (const r of raw) {
     if (!r || typeof r.path !== "string" || typeof r.quote !== "string") continue;
     if (seen.has(r.path)) continue;
     const body = bodiesByPath.get(r.path);
-    if (body === undefined) continue; // hallucinated / out-of-candidate path
-    const snippet = buildSnippet(body, r.quote);
-    if (!snippet) continue; // paraphrased / invented quote — not present in the real body
+    if (body === undefined) continue; // hallucinated / out-of-candidate path — the one hard reject
+    const snippet = bestSnippet(body, r.quote, question);
+    if (!snippet) continue; // empty/all-blank body — nothing to show
     seen.add(r.path);
     const reason = typeof r.reason === "string" ? r.reason.trim() : "";
     out.push({ path: r.path, matchCount: 1, snippets: [snippet], ...(reason ? { reason } : {}) });
@@ -304,5 +436,5 @@ export async function promptSearch(root: string, question: string, signal?: Abor
     if (e instanceof AppError) throw e;
     throw new AppError("INTERNAL_ERROR", `AI search failed: ${(e as Error).message}`, 500);
   }
-  return validateResults(parseModelOutput(out.structured, out.resultText), bodiesByPath);
+  return validateResults(parseModelOutput(out.structured, out.resultText), bodiesByPath, q);
 }

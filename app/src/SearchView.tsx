@@ -76,6 +76,9 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
     if (!q) { setResults([]); setStatus(""); return; }
     const gen = searchGen;
     setError(null);
+    // Clear any prior (keyword or AI) results so the in-flight loading state owns the results area —
+    // no stale list lingering under the spinner, no blank-looking screen while Haiku thinks.
+    setResults([]);
     setPromptBusy(true);
     setStatus("Asking Bismuth AI…");
     api.searchPrompt(q)
@@ -239,19 +242,44 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             <TextButton size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
           </SearchBar>
         </Show>
-        <Show when={error()}><div class="search-error">{error()}</div></Show>
-        <Show when={!error() && status()}>
-          <div class={`search-status${promptBusy() ? " search-status-busy" : ""}`}>
-            <Show when={promptBusy()}><span class="search-spinner" /></Show>
-            {status()}
-          </div>
+        {/* Header status/error lines are COMPACT echoes, shown only when a result list is present.
+            When the results area would otherwise be blank (loading / error / empty), the prominent
+            panels in .search-results own the messaging instead — so the state is never duplicated
+            and never a blank screen. */}
+        <Show when={error() && results().length > 0}>
+          <div class="search-error">{error()}</div>
+        </Show>
+        <Show when={!error() && !promptBusy() && status() && results().length > 0}>
+          <div class="search-status">{status()}</div>
         </Show>
       </div>
 
       <div class="search-results">
+        {/* Three mutually-exclusive "no list yet" states, each unmistakable so the user is never
+            left staring at a blank pane (BUG #8): LOADING (AI turn in flight) → ERROR (the request
+            failed) → EMPTY (ran, nothing to show). The results <For> renders only when a list exists. */}
+        <Show when={promptBusy()}>
+          <div class="search-state">
+            <span class="search-spinner search-spinner-lg" />
+            <div class="search-state-title">Searching your vault with Bismuth AI…</div>
+            <div class="search-state-hint">Reading your notes to find what answers your question</div>
+          </div>
+        </Show>
+        {/* Error: distinct from "found nothing". Shows the backend's actual message (e.g. "AI search
+            needs Claude Code installed") so a broken setup is diagnosable, not silent. */}
+        <Show when={!promptBusy() && !!error()}>
+          <div class="search-state search-state-error">
+            <Icon value="TriangleAlert" size={24} class="search-state-error-icon" />
+            <div class="search-state-title">{promptMode() ? "Bismuth AI couldn’t complete the search" : "Search failed"}</div>
+            <div class="search-state-msg">{error()}</div>
+            <Show when={promptMode()}>
+              <div class="search-state-hint">Press <kbd class="search-kbd">Esc</kbd> to return to keyword search</div>
+            </Show>
+          </div>
+        </Show>
         {/* Empty state: a non-empty query with zero results. In literal mode it's a clear CTA to
             escalate to the AI (click, or the Enter that onEnter already handles); in AI mode it
-            reports the model found nothing. Hidden while an AI turn is in flight (spinner shows). */}
+            reports the model found nothing. Hidden while an AI turn is in flight or on error. */}
         <Show when={!!query() && !error() && !promptBusy() && results().length === 0}>
           <Show
             when={promptMode()}
