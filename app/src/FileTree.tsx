@@ -319,7 +319,16 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
   const onKey = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null;
     const typing = target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-    if (!typing && (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+    // `!e.shiftKey` matters even when an editor IS focused (so `typing` is true and this whole
+    // branch is skipped): CodeMirror's own historyKeymap bindings set `preventDefault` but not
+    // `stopPropagation` on Mod-z/Mod-Shift-z, so the keydown still bubbles all the way to this
+    // window-level listener after CM has already handled it. Without the shift check, THIS
+    // listener also matched Mod-Shift-z (`.toLowerCase()` folds "Z" back to "z" regardless of
+    // Shift) whenever focus wasn't on an editable element (e.g. between two panes, or right after
+    // a table-cell edit commits and blurs without refocusing the editor) — silently eating a
+    // REDO keystroke as a (usually no-op) "restore last deleted file" instead of leaving it alone
+    // (#44). Mod-Shift-Z has never been this app's redo-a-delete shortcut, only Mod-Z is.
+    if (!typing && (e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
       e.preventDefault();
       undoLastDelete();
       return;

@@ -294,6 +294,17 @@ function commitEmbedSize(view: EditorView, dom: HTMLElement, size: string): void
   const edit = computeSizeEdit(line.text, line.from, pos, size);
   if (!edit) return;
   if (view.state.sliceDoc(edit.from, edit.to) === edit.insert) return; // already this size
+  // Move CM's own selection to the edit FIRST so a later undo restores it HERE, not wherever
+  // `state.selection` happened to be. A drag-resize commits from the widget's own resize
+  // handle — a DOM element CM's own selection tracking never sees — so `state.selection` is
+  // still wherever it was before this drag. Setting `selection:` on the CHANGES transaction
+  // below wouldn't retroactively fix this: CM's history() records an edit's undo-position from
+  // the selection as it was BEFORE the edit (`tr.startState.selection`), not the after-state a
+  // same-transaction `selection:` sets (see @codemirror/commands' `HistEvent.fromTransaction`).
+  // Left unmoved, a later undo would restore that stale before-edit position — often the doc
+  // end — instead of back to this embed (#44). A plain selection-only dispatch doesn't scroll
+  // (no `scrollIntoView`), so this is visually inert.
+  view.dispatch({ selection: { anchor: edit.from } });
   view.dispatch({ changes: edit });
 }
 
