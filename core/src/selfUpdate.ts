@@ -50,14 +50,26 @@ function buildPath(): string {
     .join(":");
 }
 
+/** A stable macOS code-signing identity for update rebuilds: APPLE_SIGNING_IDENTITY if the
+ *  environment carries one, else the first login-keychain codesigning certificate whose name
+ *  contains "Bismuth" (the documented one-time self-signed setup). Null → ad-hoc as before. */
+async function findSigningIdentity(): Promise<string | null> {
+  if (process.platform !== "darwin") return null;
+  if (process.env.APPLE_SIGNING_IDENTITY) return process.env.APPLE_SIGNING_IDENTITY;
+  const probe = await runProc(["security", "find-identity", "-v", "-p", "codesigning"], { timeoutMs: 10_000 });
+  if (probe.code !== 0) return null;
+  const line = probe.stdout.split("\n").find((l) => l.includes("Bismuth"));
+  return line?.match(/"([^"]+)"/)?.[1] ?? null;
+}
+
 async function runProc(
   cmd: string[],
-  opts: { cwd?: string; timeoutMs?: number } = {},
+  opts: { cwd?: string; timeoutMs?: number; env?: Record<string, string> } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
     const proc = Bun.spawn(cmd, {
       cwd: opts.cwd,
-      env: { ...process.env, PATH: buildPath() },
+      env: { ...process.env, PATH: buildPath(), ...(opts.env ?? {}) },
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",
@@ -222,9 +234,18 @@ async function runPipeline(repoRoot: string, appPath: string): Promise<void> {
     // mode. Resolve bun from PATH: in the COMPILED sidecar process.execPath is the sidecar
     // binary, NOT bun, so we must look bun up (buildPath includes ~/.bun/bin).
     const bun = Bun.which("bun", { PATH: buildPath() }) ?? "bun";
+    // Stable code identity (macOS): with only ad-hoc signing, every rebuild changes the
+    // .app's CDHash, and macOS TCC — which pins Files-and-Folders grants to the code
+    // identity — silently revokes the user's folder permissions on EVERY update. If a
+    // signing identity exists (a certificate containing "Bismuth" in the login keychain,
+    // created once via Keychain Access → Certificate Assistant → "Code Signing"; see
+    // docs/overview/install.md), pass it to Tauri (APPLE_SIGNING_IDENTITY) so the identity
+    // stays stable across rebuilds and grants survive. Opt-in: no cert → same as before.
+    const signingIdentity = await findSigningIdentity();
     const build = await runProc([bun, "run", "tauri", "build", "--bundles", "app"], {
       cwd: join(repoRoot, "app"),
       timeoutMs: 900_000,
+      ...(signingIdentity ? { env: { APPLE_SIGNING_IDENTITY: signingIdentity } } : {}),
     });
     if (build.code !== 0) {
       state = { phase: "error", message: "build failed", log: tail(build.stderr || build.stdout) };

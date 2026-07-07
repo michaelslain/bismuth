@@ -81,6 +81,12 @@ function brainSubgraphs(graph: GraphData): { second: GraphData; third: GraphData
 // survives a process restart — without it, the first structural edit after relaunch paid a cold
 // PivotMDS. Only the FULL graph is seeded here (not subgraph/view layouts), keyed by vaultKey.
 const lastFullLayout = new Map<string, Layout>();
+// Per-view (2nd = note+tag, 3rd = memory) warm-start seeds, mirroring lastFullLayout. Without
+// these, computeViewLayouts took the full COLD path (pivotMDS + all refine ticks) on every
+// structural edit while in 2nd/3rd-brain mode — the seeds make view rebuilds incremental like
+// the full graph's. Keyed with a suffix so the on-disk copies never collide with the full seed.
+const lastSecondLayout = new Map<string, Layout>();
+const lastThirdLayout = new Map<string, Layout>();
 
 /** Stable signature of the graph's structure (node set + edge endpoints) — changes when the graph does.
  *  Edges are hashed by their sorted `from|to|kind` keys, not just their count, so retargeting a wikilink
@@ -232,8 +238,17 @@ export function peekLayout(graph: GraphData, vaultKey: string): Layout | null {
  */
 export async function computeViewLayouts(graph: GraphData, vaultKey: string): Promise<{ second: ViewLayout; third: ViewLayout }> {
   const { second: secondGraph, third: thirdGraph } = brainSubgraphs(graph);
-  const second = await layoutFor(secondGraph, vaultKey);
-  const third = await layoutFor(thirdGraph, vaultKey);
+  // Warm-start each view from its previous layout (in-memory, then on-disk) exactly like
+  // attachLayout does for the full graph — a structural edit then pins unchanged nodes and
+  // settles only the new ones instead of re-running the whole cold pipeline.
+  const secondSeed = lastSecondLayout.get(vaultKey) ?? readSeed(`${vaultKey}::second`) ?? undefined;
+  const second = await layoutFor(secondGraph, vaultKey, secondSeed);
+  lastSecondLayout.set(vaultKey, second);
+  void writeSeed(`${vaultKey}::second`, second);
+  const thirdSeed = lastThirdLayout.get(vaultKey) ?? readSeed(`${vaultKey}::third`) ?? undefined;
+  const third = await layoutFor(thirdGraph, vaultKey, thirdSeed);
+  lastThirdLayout.set(vaultKey, third);
+  void writeSeed(`${vaultKey}::third`, third);
   return { second: toViewLayout(second), third: toViewLayout(third) };
 }
 
