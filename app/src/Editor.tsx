@@ -85,11 +85,17 @@ const editorTheme = EditorView.theme({
     borderLeftWidth: "2px",
     transition: "left 70ms ease-out, top 70ms ease-out", // smooth glide
   },
-  ".cm-selectionBackground, .cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
-  // CodeMirror's baseTheme paints the FOCUSED selection with a high-specificity
-  // selector (.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground,
-  // a pale-lavender default). A plain "&.cm-focused .cm-selectionBackground" loses to
-  // it — so match that exact selector here to keep the accent tint while focused.
+  ".cm-content ::selection": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
+  // CodeMirror's baseTheme paints the drawSelection layer (`.cm-selectionBackground`) with
+  // high-specificity selectors: the UNFOCUSED range via `&light .cm-selectionBackground`
+  // (#d9d9d9 — a near-invisible pale gray on light themes) and the FOCUSED range via
+  // `&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground` (pale lavender),
+  // both at (0,2,0)/higher specificity. A plain ".cm-selectionBackground" (also (0,2,0)) only
+  // wins the UNFOCUSED tie by source order — fragile — so raise our specificity to reliably keep
+  // the accent tint whether or not the editor holds focus. This matters for Cmd+F: while the find
+  // input has focus the editor is UNFOCUSED, so the match's "selection" must not fall back to the
+  // invisible gray. (Match the exact focused selector too so the accent tint wins while focused.)
+  ".cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 30%, transparent)" },
   "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--accent) 38%, transparent)" },
   ".cm-gutters": { backgroundColor: "transparent", border: "none", color: "color-mix(in srgb, var(--fg) 35%, transparent)" },
   // The autocomplete popup styling lives in the shared `completionTheme` (editor/completionDisplay.ts)
