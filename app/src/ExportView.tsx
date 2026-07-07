@@ -9,10 +9,11 @@ import { TextInput } from "./ui/TextInput";
 import { pushToast } from "./Toast";
 import { isTauri } from "./nativeMenu";
 import { pickFile, pickFolder } from "./appWindow";
-import { formatsForOptions } from "./export/formats";
+import { formatsForOptions, ext } from "./export/formats";
 import { defaultModeForView } from "./export/options";
 import { readThemePalette } from "./export/resolvePalette";
 import { renderExport, renderPreview } from "./export/exporters";
+import { pageSections } from "./export/pageBreaks";
 import { drawingToPng } from "./export/drawingRaster";
 import { downloadFile, writeToFolder } from "./export/download";
 import { readCache, writeCache } from "./viewCache";
@@ -113,6 +114,11 @@ export function ExportView(props: { path: string }) {
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
   const [busy, setBusy] = createSignal(false);
 
+  // Non-base `.md` only: whether the note's leading YAML frontmatter is included in the
+  // export. Default true (the historical behavior — a base's own frontmatter is config, never
+  // rendered as content, so the control only makes sense for a plain note).
+  const [includeFrontmatter, setIncludeFrontmatter] = createSignal(true);
+
   // Read the source file once per path: if it's a `type: base` md, expose its views so we
   // can offer a view picker + visual/data toggle. null for any non-base file (prose md /
   // sheet / draw) — none of the base controls render then.
@@ -131,6 +137,21 @@ export function ExportView(props: { path: string }) {
   const views = () => baseInfo()?.views ?? [];
   const selectedView = (): ViewConfig | undefined => views()[viewIndex()];
   const showCalendar = () => isBase() && mode() === "visual" && selectedView()?.type === "calendar";
+
+  // How many `<!-- pagebreak -->`-delimited pages a plain note has — only meaningful for a
+  // non-base `.md` file. A PNG export of a multi-page note writes ONE file per page (see
+  // export/pageBreaks.ts); this just powers a small heads-up in the panel so the user isn't
+  // surprised by getting back several files instead of one.
+  const [pageCount] = createResource(
+    () => (!isBase() && ext(srcPath()) === "md" ? srcPath() : null),
+    async (p) => {
+      try {
+        return pageSections(await api.read(p)).length;
+      } catch {
+        return 1;
+      }
+    },
+  );
 
   // Reset per-file selections when the source changes (a different base may have fewer
   // views, and the mode default should re-derive from the new file's view kind).
@@ -158,6 +179,7 @@ export function ExportView(props: { path: string }) {
     // Resolve the live app theme (colors + font) so the export matches the app. Keyed into
     // the preview resource below via theme()/settings so it re-resolves on theme changes.
     palette: readThemePalette(theme()),
+    includeFrontmatter: includeFrontmatter(),
   });
 
   const formats = () => formatsForOptions(srcPath(), isBase(), mode());
@@ -170,7 +192,18 @@ export function ExportView(props: { path: string }) {
   // Preview only — cheap, no byte/PDF generation, so switching source/format/options is
   // instant. Keyed on every option so the preview tracks the controls.
   const [result] = createResource(
-    () => [srcPath(), format(), theme(), viewIndex(), mode(), calSpan(), calStart(), settings.calendar.weekStartsOnMonday] as const,
+    () =>
+      [
+        srcPath(),
+        format(),
+        theme(),
+        viewIndex(),
+        mode(),
+        calSpan(),
+        calStart(),
+        settings.calendar.weekStartsOnMonday,
+        includeFrontmatter(),
+      ] as const,
     async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm, buildOptions()),
   );
 
@@ -226,16 +259,29 @@ export function ExportView(props: { path: string }) {
     setBusy(true);
     try {
       const r = await renderExport(srcPath(), format(), deps, theme(), buildOptions());
+      // A page-break-split PNG export (see export/pageBreaks.ts) produces several files —
+      // `files` carries the full set; every other export is the single-result shape (`bytes`
+      // + `filename` alone), so wrap it the same way for one write/download loop below.
+      const files = r.files ?? [{ filename: r.filename, bytes: r.bytes }];
       const dest = destFolder().trim();
       if (dest && isTauri()) {
-        const written = await writeToFolder(dest, r.filename, r.bytes);
-        pushToast(`Exported ${r.filename} → ${written}`);
-      } else {
-        await downloadFile(r.filename, r.bytes, r.mime);
+        const written: string[] = [];
+        for (const f of files) written.push(await writeToFolder(dest, f.filename, f.bytes));
         pushToast(
-          dest
-            ? `Exported ${r.filename} to Downloads (folder export needs the desktop app)`
-            : `Exported ${r.filename} to Downloads`,
+          files.length > 1
+            ? `Exported ${files.length} pages → ${dest}`
+            : `Exported ${r.filename} → ${written[0]}`,
+        );
+      } else {
+        for (const f of files) await downloadFile(f.filename, f.bytes, r.mime);
+        pushToast(
+          files.length > 1
+            ? dest
+              ? `Exported ${files.length} pages to Downloads (folder export needs the desktop app)`
+              : `Exported ${files.length} pages to Downloads`
+            : dest
+              ? `Exported ${r.filename} to Downloads (folder export needs the desktop app)`
+              : `Exported ${r.filename} to Downloads`,
         );
       }
     } catch (e) {
@@ -384,6 +430,19 @@ export function ExportView(props: { path: string }) {
           </div>
         </Show>
 
+        {/* Plain note only (a base's frontmatter is config, never rendered content): whether
+            the YAML frontmatter block is included in md/html/pdf/png output. */}
+        <Show when={!isBase() && ext(srcPath()) === "md"}>
+          <div class="field">
+            <span class="flab">Frontmatter</span>
+            <div class="fopts">
+              <Chip selected={includeFrontmatter()} onClick={() => setIncludeFrontmatter(!includeFrontmatter())}>
+                Include frontmatter
+              </Chip>
+            </div>
+          </div>
+        </Show>
+
         <div class="field">
           <span class="flab">Format</span>
           <div class="fopts">
@@ -395,6 +454,13 @@ export function ExportView(props: { path: string }) {
               )}
             </For>
           </div>
+          {/* PNG can't hold more than one page, so a page-broken note exports as N separate
+              files (note-1.png, note-2.png, …) instead of one — flag that up front. */}
+          <Show when={format() === "png" && (pageCount() ?? 1) > 1}>
+            <span class="exp-hint">
+              {pageCount()} pages (page breaks) → exports as {pageCount()} separate PNG files
+            </span>
+          </Show>
         </div>
 
         <div class="field">

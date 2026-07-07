@@ -5,7 +5,7 @@
 // with a clear message. Drawings go straight through the headless core renderer.
 import { readFileSync, writeFileSync } from "node:fs";
 import type { CommandMap } from "../types";
-import { flag, requireVault, fail, today, out } from "../args";
+import { flag, bool, requireVault, fail, today, out } from "../args";
 import { readNote } from "../../../core/src/files";
 import { resolveSource } from "../../../core/src/bases/source";
 import { parseDoc } from "../../../core/src/drawing/model";
@@ -27,12 +27,13 @@ function optionsFrom(args: string[]): ExportOptions {
   if (start) o.calStart = start;
   const span = flag(args, "cal-span");
   if (span === "month" || span === "week" || span === "3day" || span === "day") o.calSpan = span as CalSpan;
+  if (bool(args, "no-frontmatter")) o.includeFrontmatter = false;
   return o;
 }
 
 async function run(args: string[]): Promise<void> {
   const file = args.find((a) => !a.startsWith("--"));
-  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day]");
+  if (!file) fail("usage: bismuth export <file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter]");
   const fmt = (flag(args, "format") ?? (file.endsWith(".draw") ? "png" : "md")) as ExportFormat;
 
   // Drawings: headless core renderer (both png + pdf work without a browser).
@@ -72,6 +73,15 @@ async function run(args: string[]): Promise<void> {
     },
   };
   const res = await renderExport(file, fmt, deps, "dark", optionsFrom(args));
+  // A `<!-- pagebreak -->`-split PNG note (see app/src/export/pageBreaks.ts) yields several
+  // files, one per page — `--out` (a single path) doesn't apply, so each writes to its own
+  // computed name. Unreachable today for the app-only png/pdf-of-notes paths above (they throw
+  // before producing bytes), kept for when a headless PNG rasterizer lands.
+  if (res.files && res.files.length > 1) {
+    for (const f of res.files) writeFileSync(f.filename, f.bytes);
+    out(`wrote ${res.files.map((f) => f.filename).join(", ")}`, args);
+    return;
+  }
   const outPath = flag(args, "out") ?? res.filename;
   writeFileSync(outPath, res.bytes);
   out(`wrote ${outPath}`, args);
@@ -80,7 +90,7 @@ async function run(args: string[]): Promise<void> {
 export const commands: CommandMap = {
   export: {
     summary: "Export a note/base/sheet/drawing to md|html|png|pdf|csv (pdf/png of notes is app-only)",
-    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--vault <dir>]",
+    usage: "<file> [--format md|html|png|pdf|csv] [--out FILE] [--view N] [--mode data|visual] [--cal-start YYYY-MM-DD] [--cal-span month|week|3day|day] [--no-frontmatter] [--vault <dir>]",
     run,
   },
 };
