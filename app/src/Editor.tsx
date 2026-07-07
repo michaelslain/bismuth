@@ -39,7 +39,7 @@ import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { InkOverlay } from "./editor/ink/InkOverlay";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
-import { parseWikilink, resolveNotePath, findHeadingLineIndex, type NoteCandidate } from "./editor/wikilink";
+import { parseWikilink, resolveNotePath, findHeadingLineIndex, wikilinkOpenPath, type NoteCandidate } from "./editor/wikilink";
 import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
 import type { NativeDragDetail } from "./nativeDrop";
 import { findBareUrls } from "./editor/urls";
@@ -1062,7 +1062,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
                   const resolved = resolveNotePath(target, props.noteNames());
                   // Object detail (not a bare string) so a `#heading` anchor rides along —
                   // App routes it through pendingAnchor → the opened editor scrolls to it.
-                  window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: (resolved ?? target) + ".md", heading } }));
+                  // wikilinkOpenPath (not a bare "+ .md") so an unresolved target naming a
+                  // previewable attachment (e.g. `[[Screenshot ….png]]`) opens as-is instead of
+                  // routing to a blank nonexistent note (#38).
+                  window.dispatchEvent(new CustomEvent("bismuth-open", { detail: { path: wikilinkOpenPath(target, resolved), heading } }));
                   return true;
                 }
               }
