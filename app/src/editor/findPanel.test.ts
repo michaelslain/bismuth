@@ -7,7 +7,7 @@
 import { test, expect, describe } from "bun:test";
 import { EditorState, Text } from "@codemirror/state";
 import { SearchQuery } from "@codemirror/search";
-import { nextMatchFrom, tableBlockAtRange, tableBlockStartForRange, tableRevealDecision, nextOwnedTable } from "./findPanel";
+import { nextMatchFrom, tableBlockAtRange, tableBlockStartForRange, tableRevealDecision, nextOwnedTable, reconcileTableReveal } from "./findPanel";
 
 const q = (search: string, caseSensitive = false) =>
   new SearchQuery({ search, caseSensitive, literal: true });
@@ -173,5 +173,53 @@ describe("nextOwnedTable (what the find bar must revert on close)", () => {
 
   test("find keeps owning a table while the match stays inside it", () => {
     expect(nextOwnedTable(3, { target: 3, reveal: null })).toBe(3);
+  });
+});
+
+// #31 (the reopened bug): the PRIOR fix scoped the REVEAL but left the REVERT implicit — it relied
+// on activeTableField auto-clearing once a *dispatched selection* left the block. On the no-match /
+// empty-query path the find bar dispatched nothing, so a table revealed by an earlier matching
+// keystroke stayed STUCK in raw source ("Cmd+F flipped my table to source"). `reconcileTableReveal`
+// makes the revert explicit; these are the transitions the live headless view confirmed were broken.
+describe("reconcileTableReveal (reveal + EXPLICIT revert lifecycle)", () => {
+  const blocks = [
+    { from: 10, to: 40, startLine: 3 },
+    { from: 60, to: 90, startLine: 8 },
+  ];
+  const m = (from: number, to: number) => ({ from, to });
+
+  test("match inside a not-active table → reveal it and own it", () => {
+    expect(reconcileTableReveal(blocks, m(15, 20), null, null)).toEqual({ reveal: 3, revert: false, owned: 3 });
+  });
+
+  test("match inside the already-active table find owns → keep (no re-dispatch), still owned", () => {
+    expect(reconcileTableReveal(blocks, m(15, 20), 3, 3)).toEqual({ reveal: null, revert: false, owned: 3 });
+  });
+
+  test("match auto-switching to another table (already active) → refresh ownership, no re-dispatch", () => {
+    expect(reconcileTableReveal(blocks, m(70, 75), 8, 3)).toEqual({ reveal: null, revert: false, owned: 8 });
+  });
+
+  test("NO MATCH while find owns the active table → REVERT it (the stuck-in-source fix)", () => {
+    // The decisive case: empty / non-matching query. Prior code dispatched nothing → table stuck.
+    expect(reconcileTableReveal(blocks, null, 3, 3)).toEqual({ reveal: null, revert: true, owned: null });
+  });
+
+  test("prose match while find owns the active table → REVERT it", () => {
+    expect(reconcileTableReveal(blocks, m(45, 55), 3, 3)).toEqual({ reveal: null, revert: true, owned: null });
+  });
+
+  test("NO MATCH but the active table is MANUALLY opened (find owns nothing) → never revert it", () => {
+    // active=3 (user's Edit-source table), owned=null → find must not collapse the user's table.
+    expect(reconcileTableReveal(blocks, null, 3, null)).toEqual({ reveal: null, revert: false, owned: null });
+  });
+
+  test("NO MATCH and nothing is active/owned → no-op", () => {
+    expect(reconcileTableReveal(blocks, null, null, null)).toEqual({ reveal: null, revert: false, owned: null });
+  });
+
+  test("prose match but find's owned table already auto-cleared (owned≠active) → just drop the claim", () => {
+    // active already null (a prior selection change auto-cleared it); stale owned=3 → no double revert.
+    expect(reconcileTableReveal(blocks, m(45, 55), null, 3)).toEqual({ reveal: null, revert: false, owned: null });
   });
 });
