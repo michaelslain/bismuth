@@ -1,0 +1,103 @@
+/* app/src/PreviewView.css — read-only file preview tab (images / PDFs / code / binary). */
+.preview-app {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* Top action bar: filename on the left, Annotate / Open-with / Reveal on the right. */
+.preview-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+.preview-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--fg) 78%, transparent);
+}
+.preview-name-text {
+  font-family: 'Monaspace Xenon', ui-monospace, monospace;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+/* Body fills the rest and scrolls its own content — never the page. */
+.preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: auto;
+  display: flex;
+}
+
+/* Image: centered, contained, on a subtle checkerboard so transparency reads clearly. */
+.preview-image {
+  margin: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  padding: 16px;
+  box-sizing: border-box;
+  background-image:
+    linear-gradient(45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(-45deg, color-mix(in srgb, var(--fg) 6%, transparent) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%),
+    linear-gradient(-45deg, transparent 75%, color-mix(in srgb, var(--fg) 6%, transparent) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+
+/* PDF: fill the pane; the browser's native viewer provides scroll/zoom. */
+.preview-pdf {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--surface-2);
+}
+
+/* Code/text: read-only monospace, own horizontal + vertical scroll. */
+.preview-code {
+  flex: 1 1 auto;
+  width: 100%;
+  margin: 0;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  font-family: 'Monaspace Xenon', ui-monospace, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--fg);
+  white-space: pre;
+  overflow: auto;
+  tab-size: 2;
+}
+
+/* Binary / unsupported: centered "not available" block + an Open-with button. */
+.preview-external {
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}

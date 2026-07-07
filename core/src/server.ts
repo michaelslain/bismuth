@@ -653,6 +653,17 @@ export function createServer(cfg: CoreConfig) {
       });
     },
 
+    // Resolve a vault-relative path to its ABSOLUTE machine-local path (FILENAME-FIRST, like
+    // /asset; traversal-guarded inside resolveAsset). Backs the preview tab's "Open in default
+    // app" / "Reveal in Finder" affordances, which need a real filesystem path to hand to the OS
+    // opener. Read-only; 404 when nothing matches.
+    "GET /abs-path": async (_, url) => {
+      const path = requireQueryParam(url, "path");
+      const abs = await resolveAsset(cfg.vault, path);
+      if (!abs) return error("not found", 404);
+      return ok({ path: abs });
+    },
+
     // Save pasted/dropped attachment bytes into the vault. The frontend sends the desired
     // vault-relative path (under the configured attachments folder) as ?path= and the raw
     // bytes as the body; the backend de-collides the name and returns the path actually used
