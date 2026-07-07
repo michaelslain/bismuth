@@ -37,3 +37,24 @@ export function findBismuthWords(text: string): BismuthSpan[] {
 export function wrapBismuthWords(text: string, wrap: (word: string) => string): string {
   return text.replace(new RegExp(BISMUTH_SRC, "giu"), (m) => wrap(m));
 }
+
+/** Wrap every whole-word "bismuth" in a raw markdown/HTML SOURCE via `wrap(word)`, while never
+ *  touching a protected region — the mask → wrap → restore transform shared by every surface that
+ *  injects the iridescent span into raw source (reading-mode `bases/markdown.ts`, the editable
+ *  table-cell renderer `editor/inlineMarkdown.ts`). Each caller passes its OWN `protectRe` (a
+ *  global-flagged regex matching the spans it must not touch — code / links / URLs / wikilinks /
+ *  tags / HTML), so the two surfaces can protect slightly different things while sharing the
+ *  error-prone masking boilerplate. Every masked span is restored verbatim before the result is
+ *  handed to the markdown engine, so over-masking only ever SKIPS the effect on an edge — it never
+ *  corrupts output. Cheap-gated (no whole-word match → the input is returned untouched). Pure. */
+export function bismuthWrapSource(src: string, protectRe: RegExp, wrap: (word: string) => string): string {
+  if (!BISMUTH_SCAN_RE.test(src)) return src;
+  const codes: string[] = [];
+  // A private-use sentinel (built at runtime so no raw control char lives in the source) brackets
+  // each masked index; unlike a bare number/space token it can't collide with real prose (a lone
+  // "5" or a literal `<…>`), and it's restored verbatim before the markdown engine ever sees it.
+  const S = String.fromCharCode(0xe000);
+  const masked = src.replace(protectRe, (m) => S + (codes.push(m) - 1) + S);
+  const wrapped = wrapBismuthWords(masked, wrap);
+  return wrapped.replace(new RegExp(S + "(\\d+)" + S, "g"), (_m, i) => codes[Number(i)] ?? "");
+}

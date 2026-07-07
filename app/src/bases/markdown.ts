@@ -3,7 +3,7 @@ import { sanitizeHtml } from "../sanitizeHtml";
 import { escapeHtml, escapeAttr } from "../htmlEscape";
 import { renderMath, onMathReady } from "../editor/katexLoader";
 import { parseCalloutHeader, renderCalloutHtml, type CalloutHeader } from "../editor/callout";
-import { BISMUTH_SCAN_RE, wrapBismuthWords } from "../editor/bismuthWord";
+import { BISMUTH_SCAN_RE, bismuthWrapSource } from "../editor/bismuthWord";
 import { renderCellListHtml } from "../editor/cellList";
 
 // GFM + single-newline line breaks. marked passes raw HTML in the markdown
@@ -162,10 +162,10 @@ marked.use({ extensions: [mathBlockExt, mathInlineExt, calloutBlockExt] });
 const BISMUTH_PROTECT_RE =
   /```[\s\S]*?```|~~~[\s\S]*?~~~|`+[^`\n]*?`+|<a\b[^>]*>[\s\S]*?<\/a>|<span\b[^>]*>[\s\S]*?<\/span>|<[^>]+>|\[\[[^\]]*?\]\]|\[[^\]]*?\]\([^)]*?\)|https?:\/\/[^\s<>)\]]+/gi;
 function iridescentBismuth(src: string): string {
-  const codes: string[] = [];
-  const masked = src.replace(BISMUTH_PROTECT_RE, (m) => `\u0000${codes.push(m) - 1}\u0000`);
-  const wrapped = wrapBismuthWords(masked, (w) => `<span class="bismuth-word">${escapeHtml(w)}</span>`);
-  return wrapped.replace(/\u0000(\d+)\u0000/g, (_m, i) => codes[Number(i)] ?? "");
+  // Shared mask → wrap → restore transform (editor/bismuthWord.ts) — this surface passes its own
+  // protected-span set (fenced/inline code, injected <a>/<span> + any tag, wikilinks, md links,
+  // bare URLs); the editable-table-cell renderer passes a different one.
+  return bismuthWrapSource(src, BISMUTH_PROTECT_RE, (w) => `<span class="bismuth-word">${escapeHtml(w)}</span>`);
 }
 
 // ── Lists inside table cells ──────────────────────────────────────────────────
