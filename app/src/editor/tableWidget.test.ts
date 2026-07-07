@@ -768,6 +768,64 @@ describe("#49 in-cell emoji autocomplete", () => {
     expect(menu.isOpen()).toBe(false);
     view.destroy();
   });
+
+  // #49 re-bounce ("looks completely different than the other emoji list"): visual parity with
+  // the editor's own completion popup is STRUCTURAL — the popup must carry CodeMirror's exact
+  // tooltip classes + DOM shape and mount inside the editor root, so the shared completionTheme
+  // (editor/completionDisplay.ts) + CM's base autocomplete theme style both popups identically.
+  describe("visual parity with the editor's autocomplete popup (shared CSS hooks)", () => {
+    test("popup mounts INSIDE the editor root with CM's tooltip classes and ul/li/label shape", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+      const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+      cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      cell.textContent = ":fire";
+      caretAtEnd(cell);
+      cell.dispatchEvent(new Event("input", { bubbles: true }));
+      // The popup is a child of view.dom (the editor root), NOT document.body — that's what
+      // scopes CM's completion theme onto it.
+      const popup = view.dom.querySelector<HTMLElement>(".cm-cell-emoji-menu")!;
+      expect(popup).not.toBeNull();
+      expect(popup.parentElement).toBe(view.dom);
+      // CodeMirror's exact tooltip container classes.
+      expect(popup.classList.contains("cm-tooltip")).toBe(true);
+      expect(popup.classList.contains("cm-tooltip-autocomplete")).toBe(true);
+      // The same ul[role=listbox] > li[role=option] > .cm-completionLabel structure CM renders.
+      const ul = popup.querySelector("ul")!;
+      expect(ul.getAttribute("role")).toBe("listbox");
+      const rows = Array.from(ul.querySelectorAll("li"));
+      expect(rows.length).toBeGreaterThan(1);
+      for (const li of rows) expect(li.getAttribute("role")).toBe("option");
+      // Exactly ONE selected row, marked the way CM marks it ([aria-selected]).
+      expect(ul.querySelectorAll("li[aria-selected]").length).toBe(1);
+      expect(rows[0].hasAttribute("aria-selected")).toBe(true);
+      // Row content is one .cm-completionLabel with the EDITOR's emoji label format:
+      // glyph + two spaces + :shortcode: (autocomplete.ts emojiSource).
+      const label = rows[0].querySelector<HTMLElement>(".cm-completionLabel")!;
+      expect(label).not.toBeNull();
+      const menu = (wrap as unknown as { _emojiMenu: CellEmojiMenu })._emojiMenu;
+      const e = menu.activeEntry()!;
+      expect(label.textContent).toBe(`${e.char}  :${e.name}:`);
+      view.destroy();
+    });
+
+    test("ArrowDown moves [aria-selected] to the next row (the shared theme's selection hook)", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+      const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+      cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+      cell.textContent = ":fire";
+      caretAtEnd(cell);
+      cell.dispatchEvent(new Event("input", { bubbles: true }));
+      cell.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      const ul = view.dom.querySelector<HTMLElement>(".cm-cell-emoji-menu ul")!;
+      const rows = Array.from(ul.querySelectorAll("li"));
+      expect(rows[0].hasAttribute("aria-selected")).toBe(false);
+      expect(rows[1].hasAttribute("aria-selected")).toBe(true);
+      expect(ul.querySelectorAll("li[aria-selected]").length).toBe(1);
+      view.destroy();
+    });
+  });
 });
 
 // ── #46: hasActiveCellEdit — the guard that defers disk reconciles while a cell is being

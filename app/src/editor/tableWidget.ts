@@ -626,7 +626,9 @@ export class TableWidget extends WidgetType {
     // In-cell `:emoji:` autocomplete (#49). A cell is a contenteditable island outside CM's input
     // pipeline, so the editor's emoji completion never runs there — this per-widget menu reuses the
     // SAME searchEmoji data source and inserts the chosen glyph. Torn down on cell blur + destroy.
-    const emojiMenu = new CellEmojiMenu();
+    // Host the popup inside the editor root (view.dom) so CM's scoped completion theme styles it
+    // identically to the editor's own autocomplete popup (see CellEmojiMenu's class doc, #49).
+    const emojiMenu = new CellEmojiMenu(view.dom);
     (root as unknown as { _emojiMenu?: CellEmojiMenu })._emojiMenu = emojiMenu;
 
     const table = document.createElement("table");
