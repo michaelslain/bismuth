@@ -340,15 +340,10 @@ export default function App() {
   // openFile), so they move through history without re-recording.
   const HISTORY_CAP = 100;
   const histories = new Map<string, { stack: string[]; idx: number }>();
-  // A monotonic version counter that ticks on every history mutation. The `histories` Map
-  // isn't a reactive store, so the toolbar's can-go-back/forward memos track THIS signal (plus
-  // the focused leaf) to recompute their enabled state after a record/navigate.
-  const [histVer, setHistVer] = createSignal(0);
   const recordNav = (leafId: string, content: string) => {
     const h = histories.get(leafId);
     if (!h) {
       histories.set(leafId, { stack: [content], idx: 0 });
-      setHistVer((v) => v + 1);
       return;
     }
     if (h.stack[h.idx] === content) return; // already current — a focus, not a navigation
@@ -357,7 +352,6 @@ export default function App() {
     const overflow = Math.max(0, trimmed.length - HISTORY_CAP);
     h.stack = overflow ? trimmed.slice(overflow) : trimmed;
     h.idx = h.stack.length - 1;
-    setHistVer((v) => v + 1);
   };
   // Move the active tab's focused pane through its history by `delta` (−1 back, +1 forward).
   const navigateHistory = (delta: 1 | -1) => {
@@ -370,25 +364,12 @@ export default function App() {
     if (next < 0 || next >= h.stack.length) return;
     h.idx = next;
     updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, h.stack[next]) }));
-    setHistVer((v) => v + 1);
   };
+  // Walk the focused pane's nav history. No on-screen buttons — invoked only via the
+  // history-back / history-forward keybindings (Mod+[ / Mod+]) and the command palette
+  // (wired through bindCommands below).
   const historyBack = () => navigateHistory(-1);
   const historyForward = () => navigateHistory(1);
-  // Whether the focused pane can step back / forward in its history. Tracks histVer() (mutations)
-  // AND the active tab (its focusId changes as panes/tabs switch) so the toolbar buttons enable/
-  // disable live. The two visible chevrons in the tab strip read these.
-  const canGoBack = createMemo(() => {
-    histVer();
-    const leafId = activeTab()?.focusId;
-    const h = leafId ? histories.get(leafId) : undefined;
-    return !!h && h.idx > 0;
-  });
-  const canGoForward = createMemo(() => {
-    histVer();
-    const leafId = activeTab()?.focusId;
-    const h = leafId ? histories.get(leafId) : undefined;
-    return !!h && h.idx < h.stack.length - 1;
-  });
   // Left sidebar visibility (Option+S / "Toggle sidebar" command). Persisted.
   const [sidebarVisible, setSidebarVisible] = createSignal(
     localStorage.getItem(SIDEBAR_STORAGE_KEY) !== "0",
@@ -1838,22 +1819,6 @@ export default function App() {
             entirely by the right-edge .tab-rail rendered below (outside .editor-pane). */}
         <Show when={!settings.ui.verticalTabs}>
         <div class="tabbar" data-tabstrip="true">
-          <div class="tabbar-nav">
-            <IconButton
-              icon="ChevronLeft"
-              label="Back (⌘[)"
-              iconSize={18}
-              disabled={!canGoBack()}
-              onClick={() => historyBack()}
-            />
-            <IconButton
-              icon="ChevronRight"
-              label="Forward (⌘])"
-              iconSize={18}
-              disabled={!canGoForward()}
-              onClick={() => historyForward()}
-            />
-          </div>
           <Index each={tabs()}>
             {(t, i) => (
               <>
@@ -2021,21 +1986,16 @@ export default function App() {
           strip. The .tab-rail cell reserves the COLLAPSED width in the .layout grid's third
           column; .tab-rail-inner is absolutely anchored to the right edge and widens leftward
           OVER the editor on hover (via CSS :hover / :focus-within), so the editor never
-          reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the back/forward
-          nav (‹ › side-by-side once expanded), then the scrollable tab-row list. Collapsed
-          (48px) the toolbar + nav wrap into a centered single-icon column aligned with the
-          tab icons below; expanded (240px) they lay out as horizontal rows. Rows sit in a
-          straight, centered icon column (no arc offset). */}
+          reflows. Top-to-bottom: the +/terminal/chat action TOOLBAR, then the scrollable
+          tab-row list. Collapsed (48px) the toolbar wraps into a centered single-icon column
+          aligned with the tab icons below; expanded (240px) it lays out as horizontal rows.
+          Rows sit in a straight, centered icon column (no arc offset). */}
       <Show when={settings.ui.verticalTabs}>
         <div class="tab-rail">
           <div class="tab-rail-inner">
             <div class="tab-rail-actions">
               {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
               <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
-            </div>
-            <div class="tab-rail-nav">
-              <IconButton icon="ChevronLeft" label="Back (⌘[)" iconSize={18} disabled={!canGoBack()} onClick={() => historyBack()} />
-              <IconButton icon="ChevronRight" label="Forward (⌘])" iconSize={18} disabled={!canGoForward()} onClick={() => historyForward()} />
             </div>
             <div class="tab-rail-list">
               <Index each={tabs()}>
