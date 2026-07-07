@@ -20,7 +20,7 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { parseCellList } from "./cellList";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
@@ -311,6 +311,10 @@ describe("#42 Enter behavior by row", () => {
 
 // ── #43: right-click shows only the menu, never a word-select ──────────────────
 describe("#43 right-click does not word-select", () => {
+  // End the right-button gesture the way a real click does, so the widget's onEnd runs finalize
+  // and removes the document-level selectstart guard (no cross-test leak on the shared document).
+  const endGesture = (): void => document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+
   test("right mousedown on a cell is prevented (suppresses native word-select) and keeps a selection", () => {
     const view = mount("| A | B |\n| - | - |\n| hello world | y |");
     const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
@@ -327,6 +331,7 @@ describe("#43 right-click does not word-select", () => {
     const md = new MouseEvent("mousedown", { button: 2, bubbles: true, cancelable: true });
     cell.dispatchEvent(md);
     expect(md.defaultPrevented).toBe(true); // native word-select suppressed
+    endGesture();
     expect(window.getSelection()?.toString()).toBe(before); // existing selection preserved
     view.destroy();
   });
@@ -339,7 +344,79 @@ describe("#43 right-click does not word-select", () => {
     const md = new MouseEvent("mousedown", { button: 2, bubbles: true, cancelable: true });
     cell.dispatchEvent(md);
     expect(md.defaultPrevented).toBe(true);
+    endGesture();
     view.destroy();
+  });
+
+  // WebKit-specific proof: Safari word-selects on right-click via the `selectstart` step, ignoring
+  // the mousedown default. suppressRightClickWordSelect cancels that selectstart AND restores the
+  // pre-press selection. happy-dom never word-selects on its own, so we DRIVE the WebKit shape:
+  // dispatch the selectstart WebKit would fire, and simulate it having word-selected anyway.
+  describe("suppressRightClickWordSelect (the WebKit mechanism)", () => {
+    const cellWith = (text: string): HTMLElement => {
+      const c = document.createElement("td");
+      c.setAttribute("contenteditable", "true");
+      c.textContent = text;
+      document.body.appendChild(c);
+      return c;
+    };
+    const selectAll = (cell: HTMLElement): void => {
+      const s = window.getSelection()!;
+      const r = document.createRange();
+      r.selectNodeContents(cell);
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+
+    test("cancels the selectstart WebKit fires during the right-button press", () => {
+      const cell = cellWith("hello world");
+      window.getSelection()?.removeAllRanges();
+      const finalize = suppressRightClickWordSelect(cell);
+      const ss = new Event("selectstart", { bubbles: true, cancelable: true });
+      document.dispatchEvent(ss);
+      expect(ss.defaultPrevented).toBe(true); // WebKit's word-select is cancelled before it starts
+      finalize();
+    });
+
+    test("restores an EXISTING selection if WebKit word-selected anyway (belt-and-suspenders)", () => {
+      const cell = cellWith("hello world");
+      selectAll(cell); // the user's existing selection at press time
+      const before = window.getSelection()?.toString();
+      const finalize = suppressRightClickWordSelect(cell);
+      // Simulate WebKit collapsing/replacing the selection with a single word.
+      const s = window.getSelection()!;
+      const wordRange = document.createRange();
+      wordRange.setStart(cell.firstChild!, 0);
+      wordRange.setEnd(cell.firstChild!, 5); // "hello"
+      s.removeAllRanges();
+      s.addRange(wordRange);
+      finalize();
+      expect(window.getSelection()?.toString()).toBe(before); // the whole-cell selection is back
+    });
+
+    test("a right-click with NO prior selection ends with no selection (new word-select undone)", () => {
+      const cell = cellWith("hello world");
+      window.getSelection()?.removeAllRanges();
+      const finalize = suppressRightClickWordSelect(cell);
+      // WebKit word-selected "world" despite no prior selection.
+      const s = window.getSelection()!;
+      const wordRange = document.createRange();
+      wordRange.setStart(cell.firstChild!, 6);
+      wordRange.setEnd(cell.firstChild!, 11);
+      s.removeAllRanges();
+      s.addRange(wordRange);
+      finalize();
+      expect(window.getSelection()?.toString()).toBe(""); // no lingering word-select
+    });
+
+    test("finalize removes the guard — a later selectstart is NOT cancelled", () => {
+      const cell = cellWith("hello world");
+      const finalize = suppressRightClickWordSelect(cell);
+      finalize();
+      const ss = new Event("selectstart", { bubbles: true, cancelable: true });
+      document.dispatchEvent(ss);
+      expect(ss.defaultPrevented).toBe(false); // normal selection works again once the press ends
+    });
   });
 });
 

@@ -219,6 +219,43 @@ function insertTextAtCaret(text: string): void {
   sel.addRange(next);
 }
 
+/** WebKit-safe suppression of the right-click word-select (#43). Chromium selects the word under
+ *  the pointer as the DEFAULT ACTION of a right mousedown, cancelable with `preventDefault()` on
+ *  that mousedown — which is what the prior fix did. WebKit/Safari does NOT honor that: its
+ *  select-word-on-right-click fires regardless of the mousedown default, driven by the `selectstart`
+ *  step of the gesture. So in the packaged app (Tauri WKWebView = Safari) a right-click still
+ *  highlighted a word AND opened the menu.
+ *
+ *  This closes the gap two ways for the duration of the right-button press:
+ *    1. a CAPTURE-phase `selectstart` guard that `preventDefault()`s — cancels WebKit's NEW
+ *       word-selection before it starts (the primary, engine-agnostic mechanism);
+ *    2. belt-and-suspenders for any engine/version that selects without a cancelable `selectstart`:
+ *       SAVE the selection present at press time and RESTORE it when the gesture ends.
+ *  An EXISTING selection is preserved; a right-click with no prior selection ends with none (any new
+ *  word-select is undone). Returns a `finalize()` the caller runs on `contextmenu` / `mouseup` to
+ *  remove the guard and restore. Touches only the document + Selection (no widget state), so it's
+ *  unit-testable headlessly — a dispatched `selectstart` proves the WebKit path even where the DOM
+ *  engine (happy-dom) never word-selects on its own. */
+export function suppressRightClickWordSelect(cell: HTMLElement): () => void {
+  const doc = cell.ownerDocument;
+  const win = doc.defaultView ?? (typeof window !== "undefined" ? window : null);
+  const sel = win?.getSelection?.() ?? null;
+  const saved = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+  const onSelectStart = (ev: Event): void => { ev.preventDefault(); };
+  doc.addEventListener("selectstart", onSelectStart, true);
+  let done = false;
+  return (): void => {
+    if (done) return;
+    done = true;
+    doc.removeEventListener("selectstart", onSelectStart, true);
+    const s = win?.getSelection?.() ?? null;
+    if (!s) return;
+    // Restore the pre-press selection (an existing one survives), or clear a new word-select.
+    if (saved) { s.removeAllRanges(); s.addRange(saved); }
+    else s.removeAllRanges();
+  };
+}
+
 /** Typing a configured wrap character (`*`/`_`/`~`/backtick by default —
  *  `settings.editor.wrapSelectionChars`) over a non-empty selection surrounds it instead of
  *  replacing it, matching the main editor's `wrapSelection` extension (editor/wrapSelection.ts)
@@ -628,15 +665,26 @@ export class TableWidget extends WidgetType {
         // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
-          // Right-click (#43): show ONLY the context menu, never a NEW selection. Chromium's
-          // contenteditable default selects the word under the pointer on a right mousedown — so
-          // right-clicking both highlighted the word AND opened the menu. `preventDefault` here
-          // suppresses that word-select without clearing an EXISTING selection (a right-click on a
-          // selection keeps it), and the separate `contextmenu` listener still opens the menu. We
-          // stop propagation so CM doesn't also act, and return before the caret-placement path.
+          // Right-click (#43): show ONLY the context menu, never a NEW selection. `preventDefault`
+          // suppresses Chromium's select-word-on-right-mousedown default (without clearing an
+          // EXISTING selection — a right-click on a selection keeps it), and the separate
+          // `contextmenu` listener still opens the menu. But WebKit/Safari (the packaged Tauri
+          // WKWebView) word-selects REGARDLESS of the mousedown default, so we also install a
+          // `selectstart`-cancel + save/restore guard for the press and tear it down when the
+          // gesture ends. stopPropagation keeps CM from also acting; we return before caret-placement.
           if (me.button === 2) {
             e.preventDefault();
             e.stopPropagation();
+            const finalize = suppressRightClickWordSelect(cell);
+            const onEnd = (): void => {
+              cell.ownerDocument.removeEventListener("contextmenu", onEnd, true);
+              cell.ownerDocument.removeEventListener("mouseup", onEnd, true);
+              finalize();
+            };
+            // Capture phase so the restore runs BEFORE the table's bubble-phase contextmenu opens
+            // the menu (the menu then sees the correct, preserved selection state).
+            cell.ownerDocument.addEventListener("contextmenu", onEnd, true);
+            cell.ownerDocument.addEventListener("mouseup", onEnd, true);
             return;
           }
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
