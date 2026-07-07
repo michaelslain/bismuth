@@ -265,11 +265,31 @@ export default function App() {
     setTerminalHostRects(measure("data-terminal-host"));
     setChatHostRects(measure("data-chat-host"));
   };
+  // A ResizeObserver bound to the CURRENT active tab's overlay host placeholders. Observing each
+  // host DIRECTLY (not just the editor body) catches a host's own box changing without the body
+  // resizing — a split-divider drag that resizes one leaf, or the frame-late Suspense mount
+  // settling — so a chat/terminal overlay can never be stranded over a stale rect.
+  let hostRO: ResizeObserver | undefined;
+  const observeHosts = (): void => {
+    if (!hostRO || !editorBodyEl) return;
+    hostRO.disconnect();
+    for (const host of editorBodyEl.querySelectorAll<HTMLElement>("[data-terminal-host],[data-chat-host]")) {
+      hostRO.observe(host);
+    }
+  };
   // Re-measure whenever the active tab's tree changes — Solid runs this effect after the
-  // render that placed/removed host elements, so getBoundingClientRect is current.
+  // render that placed/removed host elements, so getBoundingClientRect is current. Measure in a
+  // microtask (hosts are in the DOM by then) and rebind the per-host observer to the new tab's
+  // hosts, then measure AGAIN a frame later: the Suspense-lazy ChatView/Terminal overlay resolves
+  // a frame after its host mounts and flex/transition sizes settle post-layout, so a single
+  // synchronous measure can latch a pre-settle rect.
   createEffect(() => {
     activeTab(); // track
-    queueMicrotask(measureOverlayHosts);
+    queueMicrotask(() => {
+      measureOverlayHosts();
+      observeHosts();
+    });
+    requestAnimationFrame(measureOverlayHosts);
   });
 
   const updateActiveTab = (fn: (t: Tab) => Tab) =>
@@ -1616,12 +1636,24 @@ export default function App() {
     onCleanup(() => window.removeEventListener("resize", placeFloater));
   });
   // Keep the terminal overlays AND the graph floater in sync when the body resizes
-  // (window resize, sidebar toggle, divider drag).
+  // (window resize, sidebar toggle, divider drag). Belt-and-suspenders: the editor-body observer
+  // catches body-level reflows, the per-host observer (hostRO) catches a single leaf resizing, and
+  // a window 'resize' listener catches any layout shift that repositions a host without changing
+  // its size (so a host's rect can't drift while an overlay stays put). All three re-measure the
+  // same cheap function.
   onMount(() => {
     if (!editorBodyEl) return;
     const ro = new ResizeObserver(() => { measureOverlayHosts(); placeFloater(); });
     ro.observe(editorBodyEl);
-    onCleanup(() => ro.disconnect());
+    hostRO = new ResizeObserver(() => measureOverlayHosts());
+    observeHosts(); // bind to whatever hosts the initial active tab rendered
+    const onResize = () => measureOverlayHosts();
+    window.addEventListener("resize", onResize);
+    onCleanup(() => {
+      ro.disconnect();
+      hostRO?.disconnect();
+      window.removeEventListener("resize", onResize);
+    });
   });
 
   // Maps each terminal content id (::term:<uuid>) to a 1-based index in order of
