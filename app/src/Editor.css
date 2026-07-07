@@ -116,3 +116,43 @@
   box-shadow: inset 0 0 0 2px var(--accent);
   border-radius: 3px;
 }
+
+/* ── Table-cell text selection color (#23) ─────────────────────────────────────
+   A table cell (editor/tableWidget.ts `.cm-td`) is a contenteditable inside a block
+   widget, so selecting text in it uses the browser's NATIVE ::selection. CodeMirror's
+   drawSelection injects, at Prec.highest, `.cm-content :focus ::selection { background:
+   Highlight !important }` (Highlight = the OS system selection color) for any focused
+   element inside the content — which overrides the editor's own accent tint, so a cell's
+   selection rendered as OS blue instead of the app selection color everywhere else.
+   Re-assert the editor selection color: the SAME accent tint CodeMirror draws for a
+   FOCUSED editor's `.cm-selectionBackground` (Editor.tsx line 99:
+   `color-mix(in srgb, var(--accent) 38%, transparent)`), so a cell's selection matches
+   the rest of the editor. The four class-level selectors (`.cm-editor .cm-content
+   .cm-table-rendered .cm-td`) give specificity (0,4,1) — strictly higher than CM's
+   `.cm-content :focus ::selection` (0,3,1) — so this wins deterministically alongside
+   `!important` (source order irrelevant). Both `::selection` and `::-moz-selection`. */
+.cm-editor .cm-content .cm-table-rendered .cm-td::selection,
+.cm-editor .cm-content .cm-table-rendered .cm-td ::selection {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+}
+.cm-editor .cm-content .cm-table-rendered .cm-td::-moz-selection,
+.cm-editor .cm-content .cm-table-rendered .cm-td ::-moz-selection {
+  background-color: color-mix(in srgb, var(--accent) 38%, transparent) !important;
+}
+
+/* ── Lists inside a table cell (#15) ───────────────────────────────────────────
+   A `<br>`-separated `- item` / `1. item` cell renders as `<ul>/<ol class="bismuth-cell-
+   list">` (editor/cellList.ts). App.css gives it compact spacing but does NOT set
+   list-style, so the markers rely on the UA default — and `list-style-type` is INHERITED,
+   so any ancestor that sets `list-style: none` (or a UA quirk inside a contenteditable)
+   silently strips the bullets, making the list look like plain lines. Force real, visible
+   markers here, scoped to the editor table (higher specificity than App.css's single
+   `.bismuth-cell-list` class), so a cell list is unmistakably a list with bullets/numbers. */
+.cm-editor .cm-td .bismuth-cell-list {
+  margin: 0;
+  padding-left: 1.4em;
+  list-style-position: outside;
+}
+.cm-editor .cm-td ul.bismuth-cell-list { list-style-type: disc; }
+.cm-editor .cm-td ol.bismuth-cell-list { list-style-type: decimal; }
+.cm-editor .cm-td .bismuth-cell-list li { display: list-item; margin: 0.05em 0; }
