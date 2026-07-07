@@ -484,6 +484,10 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 
 Raw HTML inside a cell is not further processed by this module; `marked` passes it through as-is (same model as `bases/markdown.ts`). The trust model is vault-owner content; no external sanitization is applied here.
 
+### Emphasis Spanning Math / Wikilinks (#58)
+
+Because `tokenizeInline` splits the source at math/wikilink/embed/tag boundaries and feeds each `md` run to `marked` **separately**, a bold/italic/strike token whose inner text *contains* one of those segments — `**Case 1: $hk \in H$.**` — used to reach `marked` as two non-closing runs (`**Case 1: ` and `.**`) and render literal `**` (the cell twin of the note-body #58 bug). A pre-pass in `renderInlineRun` now finds such **spanning** tokens on the whole source (`spanningEmphasisTokens`) and emits the HTML wrapper (`<strong>`/`<em>`/`<del>`, `<em><strong>` for `***…***`) around the recursively-rendered inner content. The reference semantics come from the note body's fix (`editor/inlineEmphasis.ts`, whose token regexes are imported — one source of truth): **only the delimiter runs must avoid math spans** — emphasis characters *inside* `$…$` are LaTeX and stay literal (`$a * b * c$` renders as one math span; a token whose closer sits mid-math is skipped). A plain emphasis token that spans nothing keeps the existing `marked` path unchanged.
+
 ---
 
 ## Lists Inside Cells (`cellList.ts`)
