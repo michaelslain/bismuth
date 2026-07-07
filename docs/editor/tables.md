@@ -233,9 +233,18 @@ The canonical cell source is stored in `data-src`. On `focusin` the widget calls
 
 Escapes HTML entities, then converts the `<br>` markers (`<br>` or `<BR>` or `<br/>` etc.) to real `<br>` DOM nodes. If the result ends with a `<br>`, appends a zero-width space (`​`) so the caret has a visible landing point after the break.
 
-#### `cellSourceFromDom(cell)` — internal
+#### `cellSourceFromDom(cell)` — internal (exported for tests)
 
-Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers. A contenteditable can encode an in-cell line break three ways depending on browser/edit history — a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n` **character** in a text node — so every one is normalized to the `<br>` marker. **A `\n` character maps to `<br>`, NOT a space (#15).** The old space-collapse was the reopened list bug: a typed list `- a\n- b` collapsed to `- a - b`, which `splitCellItems` deliberately refuses to re-split (a space *before* the dash reads as prose, so real sentences aren't chopped), so the list silently vanished. Mapping `\n` → `<br>` keeps the break, so the cell re-renders as the list the user typed. `.trim()` strips only surrounding whitespace, never the `<br>` markers (a deliberate trailing Shift+Enter break — a real `<br>` + ZWSP — and an intentional blank line typed as two breaks both survive). This is the inverse of `srcToEditHtml`.
+Walks the cell's DOM **recursively** into logical lines (`cellDomLines`), then joins them with the `<br>` marker, strips ZWSP fillers, and `.trim()`s. A contenteditable encodes an in-cell line break in one of **four** engine-dependent shapes, and every one is normalized to `<br>`:
+
+| Break shape in the DOM | Produced by | Read-back |
+| :--------------------- | :---------- | :-------- |
+| a real `<br>` element (at **any** depth, not just a direct child) | Shift+Enter (`insertBreakAtCaret`), some paste | `<br>` |
+| a raw `\n` **character** in a text node | some engines / paste | `<br>` |
+| a **block wrapper per line** — `<div>` / `<p>` / … | **WebKit/Safari** contenteditable (its default block), Chromium continuation lines | `<br>` between blocks |
+| — inline element (`<span>`/`<b>`/…) | rich paste | **no** break (text stays on its line) |
+
+**The block-wrapper case is the reopened #15 in the packaged WebKit (Tauri WKWebView) app.** Safari wraps each continuation line in a `<div>`; the old direct-child-only `<br>` walk concatenated those with **no** separator, so a typed list `- a`⏎`- b`⏎`- c` read back glued (`- a- b- c`) — re-splittable by `splitCellItems` *only* when the previous item ends in a non-space char, and **lost entirely** for a trailing-space item (`- a `⏎`- b` → `- a - b`, which is deliberately not re-split — a space before the dash reads as prose) or a plain two-line cell (`line one`⏎`line two` → `line oneline two`, words merged). Emitting a `<br>` at each block boundary makes the read-back uniform across engines, so the cell re-renders as the list/lines the user typed. A block whose content already ended with a `<br>` doesn't double-count, and an **empty** block adds no spurious line (a trailing Shift+Enter break stays exactly one `<br>`). `.trim()` strips only surrounding whitespace, never the `<br>` markers. This is the inverse of `srcToEditHtml`.
 
 **Why not `innerText`?** A trailing `<br>` followed by nothing is silently dropped by `innerText`, causing Shift+Enter line breaks at the end of a cell to not save. `cellSourceFromDom`'s explicit node walk captures them correctly.
 

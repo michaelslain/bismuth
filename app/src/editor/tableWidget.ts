@@ -100,34 +100,69 @@ function srcToEditHtml(src: string): string {
   return /<br>$/.test(html) ? html + ZWSP : html;
 }
 
-/** Read a cell's edit-face DOM back to single-line GFM source. The edit face holds only
- *  text nodes and <br> elements (see srcToEditHtml / insertBreakAtCaret), so each <br>
- *  maps to a `<br>` marker — including a TRAILING one, which `innerText` would silently
- *  drop (the root cause of a Shift+Enter break sometimes not saving). The inverse of
- *  `srcToEditHtml`.
- *
- *  A contenteditable can encode an in-cell line break THREE ways depending on browser /
- *  edit history: a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n`
- *  CHARACTER inside a text node. We normalize ALL of them to the `<br>` marker so the stored
- *  source is uniform and list detection (cellList.ts) sees the breaks. The `\n` case is the
- *  reopened #15 bug: it USED to collapse to a SPACE, turning a typed list "- a\n- b" into
- *  "- a - b" — which `splitCellItems` deliberately refuses to re-split (a space before the
- *  dash reads as prose, not a marker), so the list silently vanished. Mapping `\n` → `<br>`
- *  keeps the break, so the cell renders as the list the user typed. */
-function cellSourceFromDom(cell: HTMLElement): string {
-  let out = "";
-  cell.childNodes.forEach((n) => {
-    out += n.nodeName === "BR" ? "<br>" : (n.textContent ?? "");
-  });
-  // Drop ZWSP fillers, then encode any raw newline as an in-cell `<br>` break — NOT a space,
-  // which was the #15 list-loss bug (a typed "- a\n- b" collapsed to "- a - b" and stopped
-  // reading as a list, because splitCellItems refuses to split a space-before-dash as prose).
-  // `.trim()` only strips surrounding whitespace, never the `<br>` markers, so a deliberate
-  // trailing Shift+Enter break (a real `<br>` + ZWSP) — and any intentional blank line typed as
-  // two breaks — is preserved.
-  return out
+// Block-level element names a contenteditable can wrap a "line" of content in. WebKit/Safari's
+// contenteditable uses <div> as its DEFAULT block, so it wraps each continuation line in a <div>
+// (and some engines / paste paths use <p>); every such wrapper is a LINE BOUNDARY in the cell, not
+// glued-on text. Recognized so the DOM read-back below inserts a `<br>` between them (#15). Matched
+// by nodeName (uppercase), so it's engine-agnostic — no computed-style / display:block probe.
+const CELL_BLOCK_TAGS = new Set([
+  "DIV", "P", "LI", "UL", "OL", "BLOCKQUOTE", "SECTION", "ARTICLE", "PRE",
+  "H1", "H2", "H3", "H4", "H5", "H6", "FIGURE", "TABLE", "TR", "TBODY", "THEAD",
+]);
+
+/** Split a cell's edit-face DOM into its logical lines, normalizing EVERY line-break shape a
+ *  contenteditable can produce across engines: a real `<br>` element (at ANY depth, not just a
+ *  direct child), a raw `\n` CHARACTER inside a text node, AND a block-level wrapper (`<div>` /
+ *  `<p>` / …) per line. A block boundary ends the current line and starts the next; a block whose
+ *  content already ended with a `<br>` (already flushed) doesn't double-count, and an EMPTY block
+ *  adds no spurious line. Inline elements (`<span>`/`<b>`/…) keep their text on the current line.
+ *  Pure over the DOM. */
+function cellDomLines(cell: HTMLElement): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  const flush = (): void => { lines.push(cur); cur = ""; };
+  const walk = (node: Node): void => {
+    node.childNodes.forEach((n) => {
+      if (n.nodeName === "BR") {
+        flush();
+      } else if (n.nodeType === Node.TEXT_NODE) {
+        // A raw newline inside a text node is a line break too (some engines / paste paths).
+        const parts = (n.textContent ?? "").split(/\r?\n/);
+        parts.forEach((p, i) => { if (i > 0) flush(); cur += p; });
+      } else if (n.nodeType === Node.ELEMENT_NODE) {
+        if (CELL_BLOCK_TAGS.has(n.nodeName)) {
+          if (cur !== "") flush(); // a block starts on a fresh line
+          walk(n);
+          if (cur !== "") flush(); // …and its residual content ends the line (a trailing <br> already flushed)
+        } else {
+          walk(n); // inline element (span/b/i/a/…): its content stays on the current line
+        }
+      }
+    });
+  };
+  walk(cell);
+  if (cur !== "") flush();
+  return lines;
+}
+
+/** Read a cell's edit-face DOM back to single-line GFM source, mapping EVERY in-cell line break —
+ *  a `<br>` element (any depth), a raw `\n` character, OR a `<div>`/`<p>` block wrapper — to the
+ *  uniform `<br>` marker, so list detection (cellList.ts) sees the breaks in EVERY engine (#15).
+ *  The direct-child-only `<br>` walk this replaced was Chromium-shaped: in the packaged WebKit
+ *  (Tauri WKWebView) app, contenteditable wraps each continuation line in a `<div>`, so a typed
+ *  list "- a"⏎"- b"⏎"- c" read back as sibling `<div>`s concatenated with NO separator —
+ *  "- a- b- c" at best (only re-splittable when the previous item ends in a non-space char) and,
+ *  with any trailing space or a plain two-line cell, the break was LOST entirely ("line one"⏎
+ *  "line two" → "line oneline two"). Emitting a `<br>` per block boundary makes the stored source
+ *  uniform so the cell re-renders as the list/lines the user typed, regardless of engine.
+ *  `innerText` is still wrong here (it drops a TRAILING `<br>`, breaking a Shift+Enter-at-end
+ *  break); this explicit walk keeps it. ZWSP fillers are stripped; `.trim()` strips only
+ *  surrounding whitespace, never the `<br>` markers (a deliberate trailing break survives). The
+ *  inverse of `srcToEditHtml`. */
+export function cellSourceFromDom(cell: HTMLElement): string {
+  return cellDomLines(cell)
+    .join("<br>")
     .replace(new RegExp(ZWSP, "g"), "")
-    .replace(/\r?\n/g, "<br>")
     .trim();
 }
 

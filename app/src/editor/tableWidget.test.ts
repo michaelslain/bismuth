@@ -20,7 +20,8 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, hasActiveCellEdit, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { parseCellList } from "./cellList";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
 import { externalReconcileSpec } from "./reconcileDispatch";
@@ -148,6 +149,116 @@ describe("#15 lists in table cells", () => {
     cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
     expect(cell.dataset.src).toBe("- a<br>- b<br>- c"); // breaks preserved, NOT collapsed to spaces
     expect(cell.querySelector("ul")).not.toBeNull(); // and it renders as the list the user typed
+    expect(cell.querySelectorAll("li").length).toBe(3);
+    view.destroy();
+  });
+});
+
+// ── #15 (WEBKIT read-back): cellSourceFromDom normalizes EVERY engine's break shape ───────────
+// The pure render path (renderInlineMarkdown → cellList) is engine-agnostic and Chrome-verified, so
+// the live "lists don't render in the packaged app" failure is the WEBKIT READ-BACK: Tauri's
+// WKWebView is Safari, whose contenteditable wraps each continuation line in a <div> (its default
+// block) rather than emitting a direct-child <br>. The OLD read-back walked ONLY direct-child <br>
+// nodes and concatenated everything else's textContent with NO separator, so a typed list came back
+// glued ("- a- b- c") — re-splittable ONLY when the previous item ends in a non-space char, and LOST
+// entirely for a trailing-space item or a plain two-line cell. These feed the EXACT WebKit DOM shapes
+// through cellSourceFromDom and assert a clean <br>-joined source that list detection then accepts.
+describe("#15 WebKit read-back: cellSourceFromDom normalizes div/p/br/\\n shapes", () => {
+  // Build a <td> and populate it from a builder, so a test can assemble the precise DOM WebKit
+  // produces (bare text, sibling <div>s, nested <br>, <p> wrappers, …).
+  const td = (build: (cell: HTMLElement) => void): HTMLElement => {
+    const cell = document.createElement("td");
+    build(cell);
+    return cell;
+  };
+  const div = (html: string): HTMLElement => { const d = document.createElement("div"); d.innerHTML = html; return d; };
+  const p = (html: string): HTMLElement => { const el = document.createElement("p"); el.innerHTML = html; return el; };
+
+  test("WebKit sibling <div> lines (the default block) → <br>-joined, renders as a list", () => {
+    const cell = td((c) => { c.appendChild(div("- a")); c.appendChild(div("- b")); c.appendChild(div("- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: false, items: ["a", "b", "c"] });
+  });
+
+  test("WebKit first-line-bare + <div> continuation lines → <br>-joined", () => {
+    const cell = td((c) => { c.appendChild(document.createTextNode("- a")); c.appendChild(div("- b")); c.appendChild(div("- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("a <br> NESTED inside a <div> is still a break (not just direct children)", () => {
+    const cell = td((c) => { c.appendChild(div("- a<br>- b")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b");
+  });
+
+  test("<p>-wrapped lines (some engines / paste) → <br>-joined ordered list", () => {
+    const cell = td((c) => { c.appendChild(p("1. mix")); c.appendChild(p("2. bake")); });
+    expect(cellSourceFromDom(cell)).toBe("1. mix<br>2. bake");
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: true, items: ["mix", "bake"] });
+  });
+
+  test("raw \\n characters in one text node still map to <br> (the prior fix, kept)", () => {
+    const cell = td((c) => { c.appendChild(document.createTextNode("- a\n- b\n- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("trailing-SPACE list items survive (the case glued re-split can't recover)", () => {
+    // "- item one " ends in a SPACE, so the old glued concatenation "- item one - item two" was NOT
+    // re-split (space-before-dash reads as prose) and the list vanished. Block boundaries fix it.
+    const cell = td((c) => { c.appendChild(div("- item one ")); c.appendChild(div("- item two")); });
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: false, items: ["item one", "item two"] });
+  });
+
+  test("a plain two-line WebKit cell keeps its break (no word-merge)", () => {
+    // The most damning WebKit merge: "line one" + <div>line two</div> USED to read "line oneline two".
+    const cell = td((c) => { c.appendChild(document.createTextNode("line one")); c.appendChild(div("line two")); });
+    expect(cellSourceFromDom(cell)).toBe("line one<br>line two");
+  });
+
+  test("a trailing empty block (Shift+Enter at end) yields ONE trailing break, not two", () => {
+    const cell = td((c) => { c.appendChild(div("a")); c.appendChild(div("<br>")); });
+    expect(cellSourceFromDom(cell)).toBe("a<br>");
+  });
+
+  test("a single empty block / lone <br> reads back empty (no phantom line)", () => {
+    expect(cellSourceFromDom(td((c) => c.appendChild(div("<br>"))))).toBe("");
+    expect(cellSourceFromDom(td((c) => c.appendChild(document.createElement("br"))))).toBe("");
+  });
+
+  test("round-trips a clean <br> source: srcToEditHtml-shaped DOM reads back identically", () => {
+    // srcToEditHtml turns "- a<br>- b<br>- c" into text/br/text/br/text direct children.
+    const cell = td((c) => {
+      c.appendChild(document.createTextNode("- a"));
+      c.appendChild(document.createElement("br"));
+      c.appendChild(document.createTextNode("- b"));
+      c.appendChild(document.createElement("br"));
+      c.appendChild(document.createTextNode("- c"));
+    });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("inline elements (span/b) stay on their line — a break only comes from blocks/br/\\n", () => {
+    const cell = td((c) => {
+      const d1 = document.createElement("div");
+      d1.appendChild(document.createTextNode("- "));
+      const b = document.createElement("b"); b.textContent = "bold"; d1.appendChild(b);
+      d1.appendChild(document.createTextNode(" x"));
+      c.appendChild(d1);
+      c.appendChild(div("- next"));
+    });
+    // The <b>'s textContent ("bold") stays on the line; only the two <div>s create the break.
+    expect(cellSourceFromDom(cell)).toBe("- bold x<br>- next");
+  });
+
+  test("end-to-end via the widget: a cell edited as sibling <div>s commits + renders as a list", () => {
+    const view = mount("| Task | Notes |\n| ---- | ----- |\n| Shop | x |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelectorAll<HTMLElement>("[data-cell]")[3]; // body row, col 1
+    cell.dataset.editing = "1";
+    // Simulate WebKit's contenteditable div-per-line structure after typing a bullet list.
+    cell.replaceChildren(div("- milk"), div("- eggs"), div("- bread"));
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(cell.dataset.src).toBe("- milk<br>- eggs<br>- bread");
+    expect(cell.querySelector("ul")).not.toBeNull();
     expect(cell.querySelectorAll("li").length).toBe(3);
     view.destroy();
   });
