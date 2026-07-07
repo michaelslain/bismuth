@@ -20,7 +20,9 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, hasActiveCellEdit, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { parseCellList } from "./cellList";
+import { CellEmojiMenu, replaceTokenBeforeCaret } from "./cellEmoji";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
 import { externalReconcileSpec } from "./reconcileDispatch";
@@ -153,6 +155,116 @@ describe("#15 lists in table cells", () => {
   });
 });
 
+// ── #15 (WEBKIT read-back): cellSourceFromDom normalizes EVERY engine's break shape ───────────
+// The pure render path (renderInlineMarkdown → cellList) is engine-agnostic and Chrome-verified, so
+// the live "lists don't render in the packaged app" failure is the WEBKIT READ-BACK: Tauri's
+// WKWebView is Safari, whose contenteditable wraps each continuation line in a <div> (its default
+// block) rather than emitting a direct-child <br>. The OLD read-back walked ONLY direct-child <br>
+// nodes and concatenated everything else's textContent with NO separator, so a typed list came back
+// glued ("- a- b- c") — re-splittable ONLY when the previous item ends in a non-space char, and LOST
+// entirely for a trailing-space item or a plain two-line cell. These feed the EXACT WebKit DOM shapes
+// through cellSourceFromDom and assert a clean <br>-joined source that list detection then accepts.
+describe("#15 WebKit read-back: cellSourceFromDom normalizes div/p/br/\\n shapes", () => {
+  // Build a <td> and populate it from a builder, so a test can assemble the precise DOM WebKit
+  // produces (bare text, sibling <div>s, nested <br>, <p> wrappers, …).
+  const td = (build: (cell: HTMLElement) => void): HTMLElement => {
+    const cell = document.createElement("td");
+    build(cell);
+    return cell;
+  };
+  const div = (html: string): HTMLElement => { const d = document.createElement("div"); d.innerHTML = html; return d; };
+  const p = (html: string): HTMLElement => { const el = document.createElement("p"); el.innerHTML = html; return el; };
+
+  test("WebKit sibling <div> lines (the default block) → <br>-joined, renders as a list", () => {
+    const cell = td((c) => { c.appendChild(div("- a")); c.appendChild(div("- b")); c.appendChild(div("- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: false, items: ["a", "b", "c"] });
+  });
+
+  test("WebKit first-line-bare + <div> continuation lines → <br>-joined", () => {
+    const cell = td((c) => { c.appendChild(document.createTextNode("- a")); c.appendChild(div("- b")); c.appendChild(div("- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("a <br> NESTED inside a <div> is still a break (not just direct children)", () => {
+    const cell = td((c) => { c.appendChild(div("- a<br>- b")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b");
+  });
+
+  test("<p>-wrapped lines (some engines / paste) → <br>-joined ordered list", () => {
+    const cell = td((c) => { c.appendChild(p("1. mix")); c.appendChild(p("2. bake")); });
+    expect(cellSourceFromDom(cell)).toBe("1. mix<br>2. bake");
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: true, items: ["mix", "bake"] });
+  });
+
+  test("raw \\n characters in one text node still map to <br> (the prior fix, kept)", () => {
+    const cell = td((c) => { c.appendChild(document.createTextNode("- a\n- b\n- c")); });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("trailing-SPACE list items survive (the case glued re-split can't recover)", () => {
+    // "- item one " ends in a SPACE, so the old glued concatenation "- item one - item two" was NOT
+    // re-split (space-before-dash reads as prose) and the list vanished. Block boundaries fix it.
+    const cell = td((c) => { c.appendChild(div("- item one ")); c.appendChild(div("- item two")); });
+    expect(parseCellList(cellSourceFromDom(cell))).toEqual({ ordered: false, items: ["item one", "item two"] });
+  });
+
+  test("a plain two-line WebKit cell keeps its break (no word-merge)", () => {
+    // The most damning WebKit merge: "line one" + <div>line two</div> USED to read "line oneline two".
+    const cell = td((c) => { c.appendChild(document.createTextNode("line one")); c.appendChild(div("line two")); });
+    expect(cellSourceFromDom(cell)).toBe("line one<br>line two");
+  });
+
+  test("a trailing empty block (Shift+Enter at end) yields ONE trailing break, not two", () => {
+    const cell = td((c) => { c.appendChild(div("a")); c.appendChild(div("<br>")); });
+    expect(cellSourceFromDom(cell)).toBe("a<br>");
+  });
+
+  test("a single empty block / lone <br> reads back empty (no phantom line)", () => {
+    expect(cellSourceFromDom(td((c) => c.appendChild(div("<br>"))))).toBe("");
+    expect(cellSourceFromDom(td((c) => c.appendChild(document.createElement("br"))))).toBe("");
+  });
+
+  test("round-trips a clean <br> source: srcToEditHtml-shaped DOM reads back identically", () => {
+    // srcToEditHtml turns "- a<br>- b<br>- c" into text/br/text/br/text direct children.
+    const cell = td((c) => {
+      c.appendChild(document.createTextNode("- a"));
+      c.appendChild(document.createElement("br"));
+      c.appendChild(document.createTextNode("- b"));
+      c.appendChild(document.createElement("br"));
+      c.appendChild(document.createTextNode("- c"));
+    });
+    expect(cellSourceFromDom(cell)).toBe("- a<br>- b<br>- c");
+  });
+
+  test("inline elements (span/b) stay on their line — a break only comes from blocks/br/\\n", () => {
+    const cell = td((c) => {
+      const d1 = document.createElement("div");
+      d1.appendChild(document.createTextNode("- "));
+      const b = document.createElement("b"); b.textContent = "bold"; d1.appendChild(b);
+      d1.appendChild(document.createTextNode(" x"));
+      c.appendChild(d1);
+      c.appendChild(div("- next"));
+    });
+    // The <b>'s textContent ("bold") stays on the line; only the two <div>s create the break.
+    expect(cellSourceFromDom(cell)).toBe("- bold x<br>- next");
+  });
+
+  test("end-to-end via the widget: a cell edited as sibling <div>s commits + renders as a list", () => {
+    const view = mount("| Task | Notes |\n| ---- | ----- |\n| Shop | x |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelectorAll<HTMLElement>("[data-cell]")[3]; // body row, col 1
+    cell.dataset.editing = "1";
+    // Simulate WebKit's contenteditable div-per-line structure after typing a bullet list.
+    cell.replaceChildren(div("- milk"), div("- eggs"), div("- bread"));
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(cell.dataset.src).toBe("- milk<br>- eggs<br>- bread");
+    expect(cell.querySelector("ul")).not.toBeNull();
+    expect(cell.querySelectorAll("li").length).toBe(3);
+    view.destroy();
+  });
+});
+
 // ── #41: #tags in a table cell render as chips ────────────────────────────────
 describe("#41 tags in table cells", () => {
   test("a #tag in a cell renders as a .cm-tag chip; false-positives stay literal", () => {
@@ -200,6 +312,10 @@ describe("#42 Enter behavior by row", () => {
 
 // ── #43: right-click shows only the menu, never a word-select ──────────────────
 describe("#43 right-click does not word-select", () => {
+  // End the right-button gesture the way a real click does, so the widget's onEnd runs finalize
+  // and removes the document-level selectstart guard (no cross-test leak on the shared document).
+  const endGesture = (): void => document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+
   test("right mousedown on a cell is prevented (suppresses native word-select) and keeps a selection", () => {
     const view = mount("| A | B |\n| - | - |\n| hello world | y |");
     const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
@@ -216,6 +332,7 @@ describe("#43 right-click does not word-select", () => {
     const md = new MouseEvent("mousedown", { button: 2, bubbles: true, cancelable: true });
     cell.dispatchEvent(md);
     expect(md.defaultPrevented).toBe(true); // native word-select suppressed
+    endGesture();
     expect(window.getSelection()?.toString()).toBe(before); // existing selection preserved
     view.destroy();
   });
@@ -228,6 +345,110 @@ describe("#43 right-click does not word-select", () => {
     const md = new MouseEvent("mousedown", { button: 2, bubbles: true, cancelable: true });
     cell.dispatchEvent(md);
     expect(md.defaultPrevented).toBe(true);
+    endGesture();
+    view.destroy();
+  });
+
+  // WebKit-specific proof: Safari word-selects on right-click via the `selectstart` step, ignoring
+  // the mousedown default. suppressRightClickWordSelect cancels that selectstart AND restores the
+  // pre-press selection. happy-dom never word-selects on its own, so we DRIVE the WebKit shape:
+  // dispatch the selectstart WebKit would fire, and simulate it having word-selected anyway.
+  describe("suppressRightClickWordSelect (the WebKit mechanism)", () => {
+    const cellWith = (text: string): HTMLElement => {
+      const c = document.createElement("td");
+      c.setAttribute("contenteditable", "true");
+      c.textContent = text;
+      document.body.appendChild(c);
+      return c;
+    };
+    const selectAll = (cell: HTMLElement): void => {
+      const s = window.getSelection()!;
+      const r = document.createRange();
+      r.selectNodeContents(cell);
+      s.removeAllRanges();
+      s.addRange(r);
+    };
+
+    test("cancels the selectstart WebKit fires during the right-button press", () => {
+      const cell = cellWith("hello world");
+      window.getSelection()?.removeAllRanges();
+      const finalize = suppressRightClickWordSelect(cell);
+      const ss = new Event("selectstart", { bubbles: true, cancelable: true });
+      document.dispatchEvent(ss);
+      expect(ss.defaultPrevented).toBe(true); // WebKit's word-select is cancelled before it starts
+      finalize();
+    });
+
+    test("restores an EXISTING selection if WebKit word-selected anyway (belt-and-suspenders)", () => {
+      const cell = cellWith("hello world");
+      selectAll(cell); // the user's existing selection at press time
+      const before = window.getSelection()?.toString();
+      const finalize = suppressRightClickWordSelect(cell);
+      // Simulate WebKit collapsing/replacing the selection with a single word.
+      const s = window.getSelection()!;
+      const wordRange = document.createRange();
+      wordRange.setStart(cell.firstChild!, 0);
+      wordRange.setEnd(cell.firstChild!, 5); // "hello"
+      s.removeAllRanges();
+      s.addRange(wordRange);
+      finalize();
+      expect(window.getSelection()?.toString()).toBe(before); // the whole-cell selection is back
+    });
+
+    test("a right-click with NO prior selection ends with no selection (new word-select undone)", () => {
+      const cell = cellWith("hello world");
+      window.getSelection()?.removeAllRanges();
+      const finalize = suppressRightClickWordSelect(cell);
+      // WebKit word-selected "world" despite no prior selection.
+      const s = window.getSelection()!;
+      const wordRange = document.createRange();
+      wordRange.setStart(cell.firstChild!, 6);
+      wordRange.setEnd(cell.firstChild!, 11);
+      s.removeAllRanges();
+      s.addRange(wordRange);
+      finalize();
+      expect(window.getSelection()?.toString()).toBe(""); // no lingering word-select
+    });
+
+    test("finalize removes the guard — a later selectstart is NOT cancelled", () => {
+      const cell = cellWith("hello world");
+      const finalize = suppressRightClickWordSelect(cell);
+      finalize();
+      const ss = new Event("selectstart", { bubbles: true, cancelable: true });
+      document.dispatchEvent(ss);
+      expect(ss.defaultPrevented).toBe(false); // normal selection works again once the press ends
+    });
+  });
+});
+
+// ── #50: clicking a cell must not scroll the viewport to it ────────────────────
+describe("#50 clicking a cell does not scroll", () => {
+  test("a left mousedown focuses the cell with preventScroll:true", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    // Spy on focus to capture the options the click path passes (a bare focus() scrolls the
+    // element into view — the #50 "clicking a cell scrolls to it" bug; preventScroll suppresses it).
+    let opts: { preventScroll?: boolean } | undefined | "unset" = "unset";
+    const orig = cell.focus.bind(cell);
+    cell.focus = ((o?: { preventScroll?: boolean }) => { opts = o; orig(o as FocusOptions); }) as HTMLElement["focus"];
+    cell.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    expect(opts).not.toBe("unset"); // the click focused the cell
+    expect((opts as { preventScroll?: boolean })?.preventScroll).toBe(true);
+    view.destroy();
+  });
+
+  test("Tab-navigating to a cell also focuses with preventScroll:true", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const first = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    const next = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="1"]')!;
+    let opts: { preventScroll?: boolean } | undefined | "unset" = "unset";
+    const orig = next.focus.bind(next);
+    next.focus = ((o?: { preventScroll?: boolean }) => { opts = o; orig(o as FocusOptions); }) as HTMLElement["focus"];
+    first.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    first.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    expect((opts as { preventScroll?: boolean })?.preventScroll).toBe(true);
     view.destroy();
   });
 });
@@ -267,6 +488,99 @@ describe("#30 file drop into a cell", () => {
     expect(detail!.target.r).toBe(1); // the body row it was dropped on
     expect(detail!.target.c).toBe(0);
     view.destroy();
+  });
+
+  // Packaged Tauri never fires a DOM drop — the OS drop arrives as `bismuth-native-drag` with
+  // client-pixel COORDINATES, so Editor.tsx routes it via tableCellDropTargetAtPoint(view, x, y),
+  // which hit-tests the point with elementFromPoint. happy-dom returns null from elementFromPoint,
+  // so we stub it to prove the coordinate → cell wiring (the routing decision, engine-agnostic).
+  describe("native-drop coordinate → cell routing (#30, the packaged-app path)", () => {
+    const stubEFP = (doc: Document, fn: (x: number, y: number) => Element | null): (() => void) => {
+      const d = doc as unknown as { elementFromPoint: unknown };
+      const orig = d.elementFromPoint;
+      d.elementFromPoint = fn;
+      return () => { d.elementFromPoint = orig; };
+    };
+
+    test("coordinates over a cell resolve to that cell's (r, c) + block range", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+      const inner = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="1"]')!;
+      const restore = stubEFP(view.dom.ownerDocument, (x, y) => (x === 42 && y === 99 ? inner : null));
+      const target = tableCellDropTargetAtPoint(view, 42, 99);
+      restore();
+      expect(target).not.toBeNull();
+      expect(target!.r).toBe(1);
+      expect(target!.c).toBe(1);
+      expect(Number.isInteger(target!.from)).toBe(true); // block anchor for the async insert
+      view.destroy();
+    });
+
+    test("coordinates NOT over a cell (elementFromPoint hits the body) resolve to null", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const restore = stubEFP(view.dom.ownerDocument, () => document.body);
+      expect(tableCellDropTargetAtPoint(view, 5, 5)).toBeNull();
+      restore();
+      view.destroy();
+    });
+
+    test("a cell belonging to ANOTHER view is rejected (split-pane scoping)", () => {
+      const a = mount("| A | B |\n| - | - |\n| x | y |");
+      const b = mount("| A | B |\n| - | - |\n| x | y |");
+      const bCell = b.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+      // elementFromPoint returns view B's cell, but we ask view A to resolve it → null.
+      const restore = stubEFP(a.dom.ownerDocument, () => bCell);
+      expect(tableCellDropTargetAtPoint(a, 10, 10)).toBeNull();
+      restore();
+      a.destroy();
+      b.destroy();
+    });
+  });
+});
+
+// ── #52: only column WIDTH is resizable — never row HEIGHT ─────────────────────
+describe("#52 row height is not resizable", () => {
+  test("the widget offers column-resize handles but NO row-resize handles", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |\n| p | q | r |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    expect(wrap.querySelectorAll(".cm-col-resize").length).toBe(3); // one per column
+    expect(wrap.querySelectorAll(".cm-row-resize").length).toBe(0); // row height is auto (#52)
+    view.destroy();
+  });
+
+  test("no row-resize handle even with many rows; column handles scale with columns", () => {
+    const view = mount("| A | B |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n| 7 | 8 |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    expect(wrap.querySelectorAll(".cm-row-resize").length).toBe(0);
+    expect(wrap.querySelectorAll(".cm-col-resize").length).toBe(2);
+    view.destroy();
+  });
+});
+
+// ── #53: centering is not possible — a center column renders LEFT ──────────────
+describe("#53 center alignment renders as left", () => {
+  test("a :-: (center) column renders left; left/right still apply", () => {
+    // Columns: left (:--), center (:-:), right (--:).
+    const view = mount("| L | C | R |\n| :-- | :-: | --: |\n| a | b | c |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cellAt = (r: number, c: number): HTMLElement =>
+      wrap.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`)!;
+    // Header + body rows: the center column is NEVER centered (renders left = no textAlign set).
+    for (const r of [0, 1]) {
+      expect(cellAt(r, 0).style.textAlign).toBe("left"); // left column keeps left
+      expect(cellAt(r, 1).style.textAlign).not.toBe("center"); // center column is NOT centered (#53)
+      expect(cellAt(r, 1).style.textAlign).toBe(""); // …it renders as default (left)
+      expect(cellAt(r, 2).style.textAlign).toBe("right"); // right column keeps right
+    }
+    view.destroy();
+  });
+
+  test("the center source stays parseable and round-trips (only the RENDER changes)", () => {
+    // Source with a center column parses fine and re-serializes with :-: intact — we do not
+    // rewrite the user's file; we only refuse to render it centered.
+    const doc = "| C |\n| :-: |\n| x |";
+    const { blocks } = groupTableBlocks(EditorState.create({ doc }).doc);
+    expect(blocks[0].aligns).toEqual(["center"]); // still parses as center (source parseable)
   });
 });
 
@@ -322,6 +636,111 @@ describe("#31 find highlights inside the rendered table", () => {
     view.dispatch({ effects: setSearchQuery.of(new SearchQuery({ search: "", literal: true })) });
     wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
     expect(wrap.querySelectorAll(`mark.${TABLE_FIND_MATCH_CLASS}`).length).toBe(0);
+    view.destroy();
+  });
+});
+
+// ── #49: in-cell :emoji: autocomplete ──────────────────────────────────────────
+describe("#49 in-cell emoji autocomplete", () => {
+  // A standalone contenteditable cell + a collapsed caret at its end, so the caret-read helpers see it.
+  const editableCell = (text: string): HTMLElement => {
+    const cell = document.createElement("td");
+    cell.setAttribute("data-cell", "");
+    cell.setAttribute("contenteditable", "true");
+    cell.textContent = text;
+    document.body.appendChild(cell);
+    caretAtEnd(cell);
+    return cell;
+  };
+
+  test("replaceTokenBeforeCaret swaps the :query token for the glyph and leaves the caret after it", () => {
+    const cell = editableCell("see :fire");
+    expect(replaceTokenBeforeCaret(cell, 5, "🔥")).toBe(true); // ":fire" = 5 chars
+    expect(cell.textContent).toBe("see 🔥");
+    // caret sits after the inserted glyph
+    const sel = window.getSelection()!;
+    expect(sel.getRangeAt(0).collapsed).toBe(true);
+  });
+
+  test("replaceTokenBeforeCaret returns false when the token doesn't fit before the caret", () => {
+    const cell = editableCell(":a");
+    expect(replaceTokenBeforeCaret(cell, 9, "😀")).toBe(false); // 9 > available chars
+    expect(cell.textContent).toBe(":a"); // untouched
+  });
+
+  test("the controller opens on a :query with matches and closes when the token breaks", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell(":fire");
+    menu.onInput(cell);
+    expect(menu.isOpen()).toBe(true);
+    expect(menu.activeEntry()).not.toBeNull();
+    expect(menu.activeEntry()!.char.length).toBeGreaterThan(0); // a real glyph
+
+    // Break the token (no colon) → the menu closes.
+    cell.textContent = "plain";
+    caretAtEnd(cell);
+    menu.onInput(cell);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  test("Up/Down move the highlight; Escape closes; a char key is not consumed", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell(":smile");
+    menu.onInput(cell);
+    const first = menu.activeEntry();
+    expect(menu.handleKeydown(cell, "ArrowDown")).toBe(true);
+    expect(menu.activeEntry()).not.toBe(first); // highlight moved
+    expect(menu.handleKeydown(cell, "a")).toBe(false); // a character falls through to typing
+    expect(menu.handleKeydown(cell, "Escape")).toBe(true);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  test("accept inserts the highlighted glyph in place of the token", () => {
+    const menu = new CellEmojiMenu();
+    const cell = editableCell("hi :fire");
+    menu.onInput(cell);
+    const glyph = menu.activeEntry()!.char;
+    menu.accept(cell);
+    expect(cell.textContent).toBe(`hi ${glyph}`);
+    expect(menu.isOpen()).toBe(false);
+    menu.destroy();
+  });
+
+  // End-to-end through the mounted widget: type ":fire" in a cell, the widget's own input listener
+  // opens its menu, and pressing Enter accepts the glyph (NOT a new row / list-continuation).
+  test("end-to-end: typing :fire in a cell shows the menu; Enter inserts the glyph, not a new row", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true })); // edit face
+    cell.textContent = ":fire";
+    caretAtEnd(cell);
+    cell.dispatchEvent(new Event("input", { bubbles: true })); // widget → emojiMenu.onInput
+    const menu = (wrap as unknown as { _emojiMenu: CellEmojiMenu })._emojiMenu;
+    expect(menu.isOpen()).toBe(true);
+    const glyph = menu.activeEntry()!.char;
+    const rowsBefore = groupTableBlocks(view.state.doc).blocks[0].cells.length;
+    cell.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(cell.textContent).toBe(glyph); // the ":fire" token became the emoji
+    expect(menu.isOpen()).toBe(false);
+    expect(groupTableBlocks(view.state.doc).blocks[0].cells.length).toBe(rowsBefore); // Enter did NOT grow the table
+    view.destroy();
+  });
+
+  test("closing / reopening: a cell blur closes the menu", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    cell.textContent = ":fire";
+    caretAtEnd(cell);
+    cell.dispatchEvent(new Event("input", { bubbles: true }));
+    const menu = (wrap as unknown as { _emojiMenu: CellEmojiMenu })._emojiMenu;
+    expect(menu.isOpen()).toBe(true);
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(menu.isOpen()).toBe(false);
     view.destroy();
   });
 });

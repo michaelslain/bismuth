@@ -33,6 +33,7 @@ import {
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
+import { CellEmojiMenu } from "./cellEmoji";
 import { renderInlineMarkdown } from "./inlineMarkdown";
 import { minimalChange } from "./normalizeFrontmatter";
 import { onMathReady } from "./katexLoader";
@@ -100,34 +101,69 @@ function srcToEditHtml(src: string): string {
   return /<br>$/.test(html) ? html + ZWSP : html;
 }
 
-/** Read a cell's edit-face DOM back to single-line GFM source. The edit face holds only
- *  text nodes and <br> elements (see srcToEditHtml / insertBreakAtCaret), so each <br>
- *  maps to a `<br>` marker — including a TRAILING one, which `innerText` would silently
- *  drop (the root cause of a Shift+Enter break sometimes not saving). The inverse of
- *  `srcToEditHtml`.
- *
- *  A contenteditable can encode an in-cell line break THREE ways depending on browser /
- *  edit history: a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n`
- *  CHARACTER inside a text node. We normalize ALL of them to the `<br>` marker so the stored
- *  source is uniform and list detection (cellList.ts) sees the breaks. The `\n` case is the
- *  reopened #15 bug: it USED to collapse to a SPACE, turning a typed list "- a\n- b" into
- *  "- a - b" — which `splitCellItems` deliberately refuses to re-split (a space before the
- *  dash reads as prose, not a marker), so the list silently vanished. Mapping `\n` → `<br>`
- *  keeps the break, so the cell renders as the list the user typed. */
-function cellSourceFromDom(cell: HTMLElement): string {
-  let out = "";
-  cell.childNodes.forEach((n) => {
-    out += n.nodeName === "BR" ? "<br>" : (n.textContent ?? "");
-  });
-  // Drop ZWSP fillers, then encode any raw newline as an in-cell `<br>` break — NOT a space,
-  // which was the #15 list-loss bug (a typed "- a\n- b" collapsed to "- a - b" and stopped
-  // reading as a list, because splitCellItems refuses to split a space-before-dash as prose).
-  // `.trim()` only strips surrounding whitespace, never the `<br>` markers, so a deliberate
-  // trailing Shift+Enter break (a real `<br>` + ZWSP) — and any intentional blank line typed as
-  // two breaks — is preserved.
-  return out
+// Block-level element names a contenteditable can wrap a "line" of content in. WebKit/Safari's
+// contenteditable uses <div> as its DEFAULT block, so it wraps each continuation line in a <div>
+// (and some engines / paste paths use <p>); every such wrapper is a LINE BOUNDARY in the cell, not
+// glued-on text. Recognized so the DOM read-back below inserts a `<br>` between them (#15). Matched
+// by nodeName (uppercase), so it's engine-agnostic — no computed-style / display:block probe.
+const CELL_BLOCK_TAGS = new Set([
+  "DIV", "P", "LI", "UL", "OL", "BLOCKQUOTE", "SECTION", "ARTICLE", "PRE",
+  "H1", "H2", "H3", "H4", "H5", "H6", "FIGURE", "TABLE", "TR", "TBODY", "THEAD",
+]);
+
+/** Split a cell's edit-face DOM into its logical lines, normalizing EVERY line-break shape a
+ *  contenteditable can produce across engines: a real `<br>` element (at ANY depth, not just a
+ *  direct child), a raw `\n` CHARACTER inside a text node, AND a block-level wrapper (`<div>` /
+ *  `<p>` / …) per line. A block boundary ends the current line and starts the next; a block whose
+ *  content already ended with a `<br>` (already flushed) doesn't double-count, and an EMPTY block
+ *  adds no spurious line. Inline elements (`<span>`/`<b>`/…) keep their text on the current line.
+ *  Pure over the DOM. */
+function cellDomLines(cell: HTMLElement): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  const flush = (): void => { lines.push(cur); cur = ""; };
+  const walk = (node: Node): void => {
+    node.childNodes.forEach((n) => {
+      if (n.nodeName === "BR") {
+        flush();
+      } else if (n.nodeType === Node.TEXT_NODE) {
+        // A raw newline inside a text node is a line break too (some engines / paste paths).
+        const parts = (n.textContent ?? "").split(/\r?\n/);
+        parts.forEach((p, i) => { if (i > 0) flush(); cur += p; });
+      } else if (n.nodeType === Node.ELEMENT_NODE) {
+        if (CELL_BLOCK_TAGS.has(n.nodeName)) {
+          if (cur !== "") flush(); // a block starts on a fresh line
+          walk(n);
+          if (cur !== "") flush(); // …and its residual content ends the line (a trailing <br> already flushed)
+        } else {
+          walk(n); // inline element (span/b/i/a/…): its content stays on the current line
+        }
+      }
+    });
+  };
+  walk(cell);
+  if (cur !== "") flush();
+  return lines;
+}
+
+/** Read a cell's edit-face DOM back to single-line GFM source, mapping EVERY in-cell line break —
+ *  a `<br>` element (any depth), a raw `\n` character, OR a `<div>`/`<p>` block wrapper — to the
+ *  uniform `<br>` marker, so list detection (cellList.ts) sees the breaks in EVERY engine (#15).
+ *  The direct-child-only `<br>` walk this replaced was Chromium-shaped: in the packaged WebKit
+ *  (Tauri WKWebView) app, contenteditable wraps each continuation line in a `<div>`, so a typed
+ *  list "- a"⏎"- b"⏎"- c" read back as sibling `<div>`s concatenated with NO separator —
+ *  "- a- b- c" at best (only re-splittable when the previous item ends in a non-space char) and,
+ *  with any trailing space or a plain two-line cell, the break was LOST entirely ("line one"⏎
+ *  "line two" → "line oneline two"). Emitting a `<br>` per block boundary makes the stored source
+ *  uniform so the cell re-renders as the list/lines the user typed, regardless of engine.
+ *  `innerText` is still wrong here (it drops a TRAILING `<br>`, breaking a Shift+Enter-at-end
+ *  break); this explicit walk keeps it. ZWSP fillers are stripped; `.trim()` strips only
+ *  surrounding whitespace, never the `<br>` markers (a deliberate trailing break survives). The
+ *  inverse of `srcToEditHtml`. */
+export function cellSourceFromDom(cell: HTMLElement): string {
+  return cellDomLines(cell)
+    .join("<br>")
     .replace(new RegExp(ZWSP, "g"), "")
-    .replace(/\r?\n/g, "<br>")
     .trim();
 }
 
@@ -182,6 +218,43 @@ function insertTextAtCaret(text: string): void {
   next.collapse(true);
   sel.removeAllRanges();
   sel.addRange(next);
+}
+
+/** WebKit-safe suppression of the right-click word-select (#43). Chromium selects the word under
+ *  the pointer as the DEFAULT ACTION of a right mousedown, cancelable with `preventDefault()` on
+ *  that mousedown — which is what the prior fix did. WebKit/Safari does NOT honor that: its
+ *  select-word-on-right-click fires regardless of the mousedown default, driven by the `selectstart`
+ *  step of the gesture. So in the packaged app (Tauri WKWebView = Safari) a right-click still
+ *  highlighted a word AND opened the menu.
+ *
+ *  This closes the gap two ways for the duration of the right-button press:
+ *    1. a CAPTURE-phase `selectstart` guard that `preventDefault()`s — cancels WebKit's NEW
+ *       word-selection before it starts (the primary, engine-agnostic mechanism);
+ *    2. belt-and-suspenders for any engine/version that selects without a cancelable `selectstart`:
+ *       SAVE the selection present at press time and RESTORE it when the gesture ends.
+ *  An EXISTING selection is preserved; a right-click with no prior selection ends with none (any new
+ *  word-select is undone). Returns a `finalize()` the caller runs on `contextmenu` / `mouseup` to
+ *  remove the guard and restore. Touches only the document + Selection (no widget state), so it's
+ *  unit-testable headlessly — a dispatched `selectstart` proves the WebKit path even where the DOM
+ *  engine (happy-dom) never word-selects on its own. */
+export function suppressRightClickWordSelect(cell: HTMLElement): () => void {
+  const doc = cell.ownerDocument;
+  const win = doc.defaultView ?? (typeof window !== "undefined" ? window : null);
+  const sel = win?.getSelection?.() ?? null;
+  const saved = sel && sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+  const onSelectStart = (ev: Event): void => { ev.preventDefault(); };
+  doc.addEventListener("selectstart", onSelectStart, true);
+  let done = false;
+  return (): void => {
+    if (done) return;
+    done = true;
+    doc.removeEventListener("selectstart", onSelectStart, true);
+    const s = win?.getSelection?.() ?? null;
+    if (!s) return;
+    // Restore the pre-press selection (an existing one survives), or clear a new word-select.
+    if (saved) { s.removeAllRanges(); s.addRange(saved); }
+    else s.removeAllRanges();
+  };
 }
 
 /** Typing a configured wrap character (`*`/`_`/`~`/backtick by default —
@@ -381,6 +454,25 @@ export function tableCellDropTarget(
   return { from: range.from, to: range.to, r, c };
 }
 
+/** Resolve native-drop client COORDINATES to a table cell drop target in THIS view (#30). In the
+ *  PACKAGED Tauri app an OS file drag never fires a DOM `drop` — Tauri intercepts it and
+ *  `nativeDrop.ts` re-broadcasts it as `bismuth-native-drag` with client-pixel coords, so the
+ *  widget's own capture-phase DOM `drop` listeners (which only help dev-in-Chrome) never see it.
+ *  Editor.tsx's native-drop consumer calls this to hit-test the drop point against the rendered
+ *  table via `elementFromPoint`, then routes a hit through the SAME upload+embed-into-cell flow the
+ *  DOM drop uses. `view.dom.contains` scopes the hit to this editor, so a drop over another split
+ *  pane's table never lands here. Returns null when the point isn't over a cell of this view. */
+export function tableCellDropTargetAtPoint(
+  view: EditorView,
+  x: number,
+  y: number,
+): { from: number; to: number; r: number; c: number } | null {
+  const doc = view.dom.ownerDocument;
+  const el = doc?.elementFromPoint?.(x, y) ?? null;
+  if (!el || !view.dom.contains(el)) return null; // point isn't inside this editor's DOM
+  return tableCellDropTarget(view, el);
+}
+
 /** Insert `embeds` (`![[…]]` markers) into cell (r, c) of the table whose block currently
  *  spans `anchorFrom`, then commit the reformatted table back to source (#30). The drop's
  *  upload is async, so the block is RE-RESOLVED from the live doc here (its start position is
@@ -503,6 +595,12 @@ export class TableWidget extends WidgetType {
     root.className = "cm-table-wrap";
     root.setAttribute("contenteditable", "false");
 
+    // In-cell `:emoji:` autocomplete (#49). A cell is a contenteditable island outside CM's input
+    // pipeline, so the editor's emoji completion never runs there — this per-widget menu reuses the
+    // SAME searchEmoji data source and inserts the chosen glyph. Torn down on cell blur + destroy.
+    const emojiMenu = new CellEmojiMenu();
+    (root as unknown as { _emojiMenu?: CellEmojiMenu })._emojiMenu = emojiMenu;
+
     const table = document.createElement("table");
     table.className = "cm-table-rendered";
 
@@ -537,7 +635,9 @@ export class TableWidget extends WidgetType {
     const focusCell = (r: number, c: number): boolean => {
       const el = root.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`);
       if (!el) return false;
-      el.focus();
+      // `preventScroll` so Tab/Enter cell-to-cell navigation (and the Enter-grows-a-row focus)
+      // never jumps the viewport — the scroll is pinned by dispatchKeepScroll where it matters (#50).
+      el.focus({ preventScroll: true });
       // place caret at end
       const sel = window.getSelection();
       if (sel) {
@@ -574,14 +674,22 @@ export class TableWidget extends WidgetType {
         cell.setAttribute("data-c", String(c));
         cell.setAttribute("contenteditable", "true");
         cell.setAttribute("spellcheck", "false");
+        // Apply only left/right alignment. Center is NOT rendered (#53): "centering in tables
+        // should not be possible." A `:-:` separator still PARSES to `"center"` (source stays
+        // valid + round-trips), but a center column renders left — so no cell is ever centered and
+        // there's no widget affordance that produces one. (The widget offers no alignment UI at all;
+        // alignment comes only from the raw separator row.)
         const a = this.aligns[c] ?? "none";
-        if (a !== "none") cell.style.textAlign = a;
+        if (a === "left" || a === "right") cell.style.textAlign = a;
         cell.dataset.src = row[c] ?? ""; // raw markdown source (source of truth)
         renderDisplay(cell); // initial face: rendered inline markdown
         // Swap to the raw-source face on focus and back to the rendered face on blur, so
         // the cell shows formatted markdown when idle but is edited as plain source.
         cell.addEventListener("focusin", () => enterEdit(cell));
-        cell.addEventListener("focusout", () => leaveEdit(cell));
+        cell.addEventListener("focusout", () => { emojiMenu.close(); leaveEdit(cell); });
+        // In-cell `:emoji:` autocomplete (#49): re-evaluate the popup on every input (typing /
+        // delete / paste). Cheap — it just reads the caret line and matches a `:query`.
+        cell.addEventListener("input", () => emojiMenu.onInput(cell));
         // Take control of the mousedown so CodeMirror's own handler doesn't move the
         // editor selection to the (atomic) widget boundary and focus the doc instead of
         // the cell (stopPropagation). Once the cell is already in its editable (raw-source)
@@ -594,15 +702,26 @@ export class TableWidget extends WidgetType {
         // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
-          // Right-click (#43): show ONLY the context menu, never a NEW selection. Chromium's
-          // contenteditable default selects the word under the pointer on a right mousedown — so
-          // right-clicking both highlighted the word AND opened the menu. `preventDefault` here
-          // suppresses that word-select without clearing an EXISTING selection (a right-click on a
-          // selection keeps it), and the separate `contextmenu` listener still opens the menu. We
-          // stop propagation so CM doesn't also act, and return before the caret-placement path.
+          // Right-click (#43): show ONLY the context menu, never a NEW selection. `preventDefault`
+          // suppresses Chromium's select-word-on-right-mousedown default (without clearing an
+          // EXISTING selection — a right-click on a selection keeps it), and the separate
+          // `contextmenu` listener still opens the menu. But WebKit/Safari (the packaged Tauri
+          // WKWebView) word-selects REGARDLESS of the mousedown default, so we also install a
+          // `selectstart`-cancel + save/restore guard for the press and tear it down when the
+          // gesture ends. stopPropagation keeps CM from also acting; we return before caret-placement.
           if (me.button === 2) {
             e.preventDefault();
             e.stopPropagation();
+            const finalize = suppressRightClickWordSelect(cell);
+            const onEnd = (): void => {
+              cell.ownerDocument.removeEventListener("contextmenu", onEnd, true);
+              cell.ownerDocument.removeEventListener("mouseup", onEnd, true);
+              finalize();
+            };
+            // Capture phase so the restore runs BEFORE the table's bubble-phase contextmenu opens
+            // the menu (the menu then sees the correct, preserved selection state).
+            cell.ownerDocument.addEventListener("contextmenu", onEnd, true);
+            cell.ownerDocument.addEventListener("mouseup", onEnd, true);
             return;
           }
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
@@ -620,7 +739,10 @@ export class TableWidget extends WidgetType {
           e.stopPropagation();
           if (cell.dataset.editing === "1") return; // native caret + drag-to-select
           e.preventDefault();
-          cell.focus();
+          // `preventScroll` — a plain `.focus()` scrolls the focused element into view, so clicking
+          // a cell (especially a tall table half-off-screen) yanked the viewport to it (#50). We
+          // place our own caret below and pin the viewport; focusing must never move it.
+          cell.focus({ preventScroll: true });
           const sel = window.getSelection();
           if (!sel) return;
           // caretRangeFromPoint (Chrome/Safari) / caretPositionFromPoint (Firefox).
@@ -654,6 +776,14 @@ export class TableWidget extends WidgetType {
         });
         cell.addEventListener("keydown", (e) => {
           const ev = e as KeyboardEvent;
+          // While the in-cell emoji menu is open (#49), it owns Up/Down (navigate), Enter/Tab
+          // (accept), Escape/Left/Right (close) — so those never fall through to the cell's own
+          // Tab/Enter/Escape handling. Only a plain, unmodified key ever drives the menu.
+          if (!ev.metaKey && !ev.ctrlKey && !ev.altKey && emojiMenu.handleKeydown(cell, ev.key)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            return;
+          }
           // A configured wrap char (e.g. backtick) typed over a selection surrounds it — see
           // wrapCellSelectionOnType (#45). Checked before decideCellKey/the modifier-driven
           // actions below since it only ever matches a plain, unmodified single character.
@@ -821,24 +951,20 @@ export class TableWidget extends WidgetType {
       this.openCellMenu(view, root, e as MouseEvent, Number(td.getAttribute("data-r")), Number(td.getAttribute("data-c")));
     });
 
-    // ---- Drag-to-resize: column widths + row heights -------------------------
-    // GFM has no syntax for cell sizes, so these live outside the source. A thin grab
-    // strip on each column/row border lives in an overlay (kept OUT of the contenteditable
-    // cells, which rewrite their content on focus). Chosen sizes are persisted per-note in
-    // localStorage so they survive both a widget rebuild and a full reload.
+    // ---- Drag-to-resize: COLUMN WIDTHS ONLY ----------------------------------
+    // GFM has no syntax for cell sizes, so widths live outside the source. A thin grab strip on
+    // each column border lives in an overlay (kept OUT of the contenteditable cells, which rewrite
+    // their content on focus). Chosen widths are persisted per-note in localStorage so they survive
+    // both a widget rebuild and a full reload. ROW HEIGHT IS NOT RESIZABLE (#52): a row's height is
+    // always automatic from its content — only column width is user-adjustable. (Any `rows` heights
+    // in older persisted data are ignored; height stays auto.)
     const MIN_COL = 40;
-    const MIN_ROW = 24;
 
     const stored = loadSizes(this.notePath, sizeKey(this.cells));
-    if (stored) {
-      if (stored.cols.some((w) => w != null)) {
-        table.style.tableLayout = "fixed";
-        stored.cols.forEach((w, c) => {
-          if (w != null && colEls[c]) colEls[c].style.width = `${w}px`;
-        });
-      }
-      stored.rows.forEach((h, r) => {
-        if (h != null && rowEls[r]) rowEls[r].style.height = `${h}px`;
+    if (stored && stored.cols.some((w) => w != null)) {
+      table.style.tableLayout = "fixed";
+      stored.cols.forEach((w, c) => {
+        if (w != null && colEls[c]) colEls[c].style.width = `${w}px`;
       });
     }
 
@@ -846,19 +972,18 @@ export class TableWidget extends WidgetType {
     overlay.className = "cm-table-overlay";
     overlay.setAttribute("contenteditable", "false");
     const colHandles: HTMLElement[] = [];
-    const rowHandles: HTMLElement[] = [];
 
     const persist = (): void => {
+      // Only column widths are persisted; row heights are always auto (#52) → `rows: []`.
       saveSizes(this.notePath, sizeKey(this.cells), {
         cols: colEls.map((c) => (c.style.width ? parseFloat(c.style.width) : null)),
-        rows: rowEls.map((tr) => (tr.style.height ? parseFloat(tr.style.height) : null)),
+        rows: [],
       });
     };
 
-    // Re-place every handle on its border. The table sits at the wrap origin, so offsets
+    // Re-place every COLUMN handle on its border. The table sits at the wrap origin, so offsets
     // are measured against it; called after attach, on table resize, and live mid-drag.
     const layout = (): void => {
-      const tw = table.offsetWidth;
       const th = table.offsetHeight;
       const ox = table.offsetLeft;
       const oy = table.offsetTop;
@@ -873,22 +998,11 @@ export class TableWidget extends WidgetType {
           h.style.height = `${th}px`;
         }
       });
-      let y = oy;
-      rowEls.forEach((tr, r) => {
-        y += tr.offsetHeight;
-        const h = rowHandles[r];
-        if (h) {
-          h.style.top = `${y}px`;
-          h.style.left = `${ox}px`;
-          h.style.width = `${tw}px`;
-        }
-      });
     };
 
-    // Shared mousedown→drag plumbing for both axes: freeze a start value, follow the
-    // pointer along the chosen axis, then persist + restore the cursor on release.
-    const startDrag = (
-      axis: "col" | "row",
+    // Column-drag plumbing: freeze the start width, follow the pointer along X, then persist +
+    // restore the cursor on release. (Row-height drag was removed for #52 — height is auto.)
+    const startColDrag = (
       getStart: () => number,
       apply: (delta: number, start: number) => void,
       e: MouseEvent,
@@ -896,9 +1010,9 @@ export class TableWidget extends WidgetType {
       e.preventDefault();
       e.stopPropagation();
       const start = getStart();
-      const origin = axis === "col" ? e.clientX : e.clientY;
+      const origin = e.clientX;
       const onMove = (me: MouseEvent): void => {
-        apply((axis === "col" ? me.clientX : me.clientY) - origin, start);
+        apply(me.clientX - origin, start);
         layout();
       };
       const onUp = (): void => {
@@ -909,7 +1023,7 @@ export class TableWidget extends WidgetType {
         persist();
         layout();
       };
-      document.body.style.cursor = axis === "col" ? "col-resize" : "row-resize";
+      document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -919,8 +1033,7 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("div");
       handle.className = "cm-col-resize";
       handle.addEventListener("mousedown", (e) =>
-        startDrag(
-          "col",
+        startColDrag(
           () => {
             // First drag freezes the content-derived widths and switches to fixed layout
             // so every later drag stays stable.
@@ -942,23 +1055,6 @@ export class TableWidget extends WidgetType {
       overlay.appendChild(handle);
       colHandles.push(handle);
     }
-
-    rowEls.forEach((tr) => {
-      const handle = document.createElement("div");
-      handle.className = "cm-row-resize";
-      handle.addEventListener("mousedown", (e) =>
-        startDrag(
-          "row",
-          () => tr.offsetHeight,
-          (delta, start) => {
-            tr.style.height = `${Math.max(MIN_ROW, start + delta)}px`;
-          },
-          e as MouseEvent,
-        ),
-      );
-      overlay.appendChild(handle);
-      rowHandles.push(handle);
-    });
 
     root.appendChild(overlay);
 
@@ -997,11 +1093,12 @@ export class TableWidget extends WidgetType {
     return outer;
   }
 
-  // Stop the layout observer when CodeMirror drops this widget's DOM. CM hands us the
-  // toDOM root (the outer block); the observer is stored on the inner `.cm-table-wrap`.
+  // Stop the layout observer + tear down the emoji popup when CodeMirror drops this widget's DOM.
+  // CM hands us the toDOM root (the outer block); both live on the inner `.cm-table-wrap`.
   destroy(dom: HTMLElement): void {
     const wrap = (dom.classList.contains("cm-table-wrap") ? dom : dom.querySelector(".cm-table-wrap")) as HTMLElement | null;
     (wrap as unknown as { _tableRO?: ResizeObserver } | null)?._tableRO?.disconnect();
+    (wrap as unknown as { _emojiMenu?: CellEmojiMenu } | null)?._emojiMenu?.destroy();
   }
 
   // Build + dispatch the right-click menu for the cell at (r, c). Insert/delete act on

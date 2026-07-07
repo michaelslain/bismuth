@@ -52,7 +52,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { insertEmbedsInTableCell, tableFindHighlight, hasActiveCellEdit } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, hasActiveCellEdit } from "./editor/tableWidget";
 import { threeWayMerge } from "./editor/saveReconcile";
 import { ExternalReload, externalReconcileSpec } from "./editor/reconcileDispatch";
 import "./Editor.css";
@@ -304,6 +304,52 @@ const isEmbeddablePath = (path: string): boolean => {
   const dot = base.lastIndexOf(".");
   return dot !== -1 && EMBEDDABLE_EXT.has(base.slice(dot + 1).toLowerCase());
 };
+
+/** Native (Tauri) path drop INTO a table cell (#30): read each file's bytes, upload (unless
+ *  `reference`, which keeps a bare `![[name]]`), and place the resulting embeds into the dropped-on
+ *  cell — the native-path analog of `dropFilesIntoCell` (which takes browser `File`s). In the
+ *  packaged app an OS drop reaches us ONLY via `bismuth-native-drag` (Tauri intercepts the DOM
+ *  drop), so the table widget's own capture-phase drop handler never runs for a real file drag —
+ *  this is the path that makes "drag an image into a cell" work in the real app. Uploads are batched
+ *  into ONE table edit. Falls back to a note-body insert if the table/cell has vanished by insert
+ *  time. Desktop-only (the fs-plugin import is never reached in a browser). */
+async function embedNativePathsIntoCell(
+  view: EditorView,
+  paths: string[],
+  notePath: string | null,
+  reference: boolean,
+  target: { from: number; r: number; c: number },
+): Promise<void> {
+  const embeds: string[] = [];
+  if (reference) {
+    for (const p of paths) embeds.push(`![[${p.split("/").pop() ?? p}]]`);
+  } else {
+    let readFile: (p: string) => Promise<Uint8Array>;
+    try {
+      ({ readFile } = await import("@tauri-apps/plugin-fs"));
+    } catch (e) {
+      pushToast("Couldn't read dropped file — see console");
+      console.error("fs plugin import failed", e);
+      return;
+    }
+    for (const p of paths) {
+      try {
+        const bytes = await readFile(p);
+        const name = p.split("/").pop() ?? p;
+        const embed = await uploadEmbed(new Blob([bytes as BlobPart]), name, notePath);
+        if (embed) embeds.push(embed);
+      } catch (e) {
+        pushToast(`Couldn't read ${p.split("/").pop() ?? p}`);
+        console.error("native drop read failed", e);
+      }
+    }
+  }
+  if (embeds.length === 0) return;
+  // Same as dropFilesIntoCell: if the table/cell is gone by insert time, don't lose the drop.
+  if (!insertEmbedsInTableCell(view, target.from, target.r, target.c, embeds)) {
+    for (const embed of embeds) insertEmbedStandalone(view, embed);
+  }
+}
 
 /** Read each dragged OS file's bytes (Tauri fs plugin — paths are real on-disk paths from the
  *  native drag-drop handler) and embed it through the SAME copy-into-attachments + insert flow as
@@ -615,6 +661,17 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       const embeddable = d.paths.filter(isEmbeddablePath);
       if (embeddable.length === 0) return;
       const v = view;
+      // #30: if the native drop landed ON a rendered table cell, embed INTO that cell (the
+      // packaged app never fires a DOM drop, so the widget's own capture-phase drop handler can't
+      // do this — this native path is what makes an image-drop-into-a-cell work in the real app).
+      // A rendered table is an atomic block widget, so `posAtCoords` below would otherwise map the
+      // drop to the block BOUNDARY and land the image beside the table. The native drag carries no
+      // modifier keys, so reference-vs-copy comes only from the attachment setting here.
+      const cellTarget = tableCellDropTargetAtPoint(v, d.x, d.y);
+      if (cellTarget) {
+        void embedNativePathsIntoCell(v, embeddable, activePath, settings.attachments.onDrop === "reference", cellTarget);
+        return;
+      }
       const pos = v.posAtCoords({ x: d.x, y: d.y });
       if (pos != null) v.dispatch({ selection: { anchor: pos } });
       void embedNativePaths(v, embeddable, activePath);

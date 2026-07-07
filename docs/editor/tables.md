@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell (#15), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell (#30). The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15), in-cell `:emoji:` autocomplete (#49), no center alignment (#53), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30). Focusing a cell never scrolls the viewport (#50). The modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`), and the in-cell emoji autocomplete (`cellEmoji.ts`).
 
 ---
 
@@ -83,6 +83,8 @@ Maps one separator-row cell string to an `Align`:
 | `:-:`          | `"center"` |
 
 Leading/trailing whitespace is trimmed before testing.
+
+> **Center alignment renders as LEFT (#53).** "Centering in tables should not be possible." A `:-:` separator still **parses** to `"center"` and **round-trips** through `serializeTable` (the source stays valid and is never rewritten), but the widget applies `text-align` only for `"left"` / `"right"` — a center column renders left. The widget offers **no** alignment UI (no cell/column menu item sets alignment; it comes only from the raw separator row), so there is no affordance that produces a centered cell. Reading-mode surfaces that use `marked`'s own table tokenizer (`app/src/bases/markdown.ts`) still emit `align="center"` for a `:-:` column — to make centering impossible everywhere, that renderer's `tablecell` should map `center` → `left` too.
 
 ### Block Parsing: `parseTableBlock(lines)`
 
@@ -233,9 +235,18 @@ The canonical cell source is stored in `data-src`. On `focusin` the widget calls
 
 Escapes HTML entities, then converts the `<br>` markers (`<br>` or `<BR>` or `<br/>` etc.) to real `<br>` DOM nodes. If the result ends with a `<br>`, appends a zero-width space (`​`) so the caret has a visible landing point after the break.
 
-#### `cellSourceFromDom(cell)` — internal
+#### `cellSourceFromDom(cell)` — internal (exported for tests)
 
-Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; all other nodes contribute their `textContent`. Strips ZWSP fillers. A contenteditable can encode an in-cell line break three ways depending on browser/edit history — a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n` **character** in a text node — so every one is normalized to the `<br>` marker. **A `\n` character maps to `<br>`, NOT a space (#15).** The old space-collapse was the reopened list bug: a typed list `- a\n- b` collapsed to `- a - b`, which `splitCellItems` deliberately refuses to re-split (a space *before* the dash reads as prose, so real sentences aren't chopped), so the list silently vanished. Mapping `\n` → `<br>` keeps the break, so the cell re-renders as the list the user typed. `.trim()` strips only surrounding whitespace, never the `<br>` markers (a deliberate trailing Shift+Enter break — a real `<br>` + ZWSP — and an intentional blank line typed as two breaks both survive). This is the inverse of `srcToEditHtml`.
+Walks the cell's DOM **recursively** into logical lines (`cellDomLines`), then joins them with the `<br>` marker, strips ZWSP fillers, and `.trim()`s. A contenteditable encodes an in-cell line break in one of **four** engine-dependent shapes, and every one is normalized to `<br>`:
+
+| Break shape in the DOM | Produced by | Read-back |
+| :--------------------- | :---------- | :-------- |
+| a real `<br>` element (at **any** depth, not just a direct child) | Shift+Enter (`insertBreakAtCaret`), some paste | `<br>` |
+| a raw `\n` **character** in a text node | some engines / paste | `<br>` |
+| a **block wrapper per line** — `<div>` / `<p>` / … | **WebKit/Safari** contenteditable (its default block), Chromium continuation lines | `<br>` between blocks |
+| — inline element (`<span>`/`<b>`/…) | rich paste | **no** break (text stays on its line) |
+
+**The block-wrapper case is the reopened #15 in the packaged WebKit (Tauri WKWebView) app.** Safari wraps each continuation line in a `<div>`; the old direct-child-only `<br>` walk concatenated those with **no** separator, so a typed list `- a`⏎`- b`⏎`- c` read back glued (`- a- b- c`) — re-splittable by `splitCellItems` *only* when the previous item ends in a non-space char, and **lost entirely** for a trailing-space item (`- a `⏎`- b` → `- a - b`, which is deliberately not re-split — a space before the dash reads as prose) or a plain two-line cell (`line one`⏎`line two` → `line oneline two`, words merged). Emitting a `<br>` at each block boundary makes the read-back uniform across engines, so the cell re-renders as the list/lines the user typed. A block whose content already ended with a `<br>` doesn't double-count, and an **empty** block adds no spurious line (a trailing Shift+Enter break stays exactly one `<br>`). `.trim()` strips only surrounding whitespace, never the `<br>` markers. This is the inverse of `srcToEditHtml`.
 
 **Why not `innerText`?** A trailing `<br>` followed by nothing is silently dropped by `innerText`, causing Shift+Enter line breaks at the end of a cell to not save. `cellSourceFromDom`'s explicit node walk captures them correctly.
 
@@ -243,9 +254,9 @@ Iterates `cell.childNodes`. Each `BR` node becomes the literal string `<br>`; al
 
 `mousedown` on a cell:
 
-1. **Right-click (`button === 2`, #43):** `preventDefault()` + `stopPropagation()` and return immediately, so the browser's contenteditable default of selecting the word under the pointer never fires. `preventDefault` does NOT clear an existing selection, so right-clicking *on* a selection keeps it; right-clicking elsewhere shows the menu with no new word highlighted. The context menu is opened by the separate `contextmenu` listener. (Before this, a right-click on a cell in edit mode both highlighted a word AND opened the menu.)
+1. **Right-click (`button === 2`, #43):** `preventDefault()` + `stopPropagation()` and return immediately. `preventDefault` cancels **Chromium's** select-word-on-right-mousedown default without clearing an existing selection (right-clicking *on* a selection keeps it). But **WebKit/Safari** — the packaged Tauri WKWebView — word-selects on right-click *regardless* of the mousedown default: its selection is driven by the `selectstart` step of the gesture, not the mousedown. So the widget also installs `suppressRightClickWordSelect(cell)` for the press: a **capture-phase `selectstart` guard** that `preventDefault()`s (cancels WebKit's new word-selection before it starts) plus a **save/restore** of the pre-press selection (belt-and-suspenders for any engine that selects without a cancelable `selectstart`). An existing selection is preserved; a right-click with no prior selection ends with none. The guard is torn down (and the selection restored) on the gesture-ending `contextmenu` / `mouseup` — the capture-phase restore runs *before* the table's bubble-phase `contextmenu` opens the menu, so the menu sees the correct selection. The context menu itself is opened by the separate `contextmenu` listener. (Before this, the Chromium-only `preventDefault` left the packaged WebKit app still highlighting a word AND opening the menu.)
 2. Calls `e.stopPropagation()` + `e.preventDefault()` to prevent CodeMirror from stealing the click (which would move the editor selection to the widget boundary).
-3. Calls `cell.focus()`.
+3. Calls `cell.focus({ preventScroll: true })`. **The `preventScroll` is load-bearing (#50):** a plain `.focus()` scrolls the focused element into view, so clicking a cell — especially in a tall table that's partly off-screen — yanked the viewport down to that cell. `focusCell` (Tab/Enter cell-to-cell navigation and the Enter-grows-a-row focus) passes `preventScroll: true` for the same reason; where a table edit legitimately changes block height, the viewport is pinned by `dispatchKeepScroll`, never by a focus scroll.
 4. Uses `caretRangeFromPoint` (Chrome/Safari) or `caretPositionFromPoint` (Firefox) to place the text caret at the exact click position, falling back to the end of cell content.
 
 ### Paste Handling
@@ -284,11 +295,11 @@ All key events inside cells are stopped from propagating to CodeMirror's keymap.
 
 ## Drag-Resize and Size Persistence
 
-GFM markdown has no syntax for cell sizes. Sizes are stored **outside the markdown source** and applied as visual-only overrides.
+GFM markdown has no syntax for cell sizes. **Only column width is user-adjustable** — row height is always automatic from content (#52). Column widths are stored **outside the markdown source** and applied as visual-only overrides.
 
 ### Storage
 
-Sizes are persisted in `localStorage` under the key `bismuth:table-size:<notePath>`. The value is a JSON object mapping `sizeKey` (the JSON-serialized header row, e.g. `'["Name","Age"]'`) to `{ cols: (number | null)[], rows: (number | null)[] }`.
+Sizes are persisted in `localStorage` under the key `bismuth:table-size:<notePath>`. The value is a JSON object mapping `sizeKey` (the JSON-serialized header row, e.g. `'["Name","Age"]'`) to `{ cols: (number | null)[], rows: (number | null)[] }`. The `rows` array is kept in the shape for backward-compatibility but is **always written empty** (`[]`) and **ignored on load** — height is auto (#52). Any row heights in older persisted data are silently dropped.
 
 - If `notePath` is `null` (path-less buffer, not used in practice), sizes fall back to an in-memory `Map`.
 - If `localStorage` is unavailable or throws, the same in-memory fallback is used.
@@ -300,9 +311,9 @@ Each column gets a `<div class="cm-col-resize">` positioned via an absolutely-po
 
 On the first drag of a column, the table switches from `tableLayout: auto` to `tableLayout: fixed` and each `<col>` element's `width` is frozen to the current measured cell width. Subsequent drags move a `<col>`'s width directly. Minimum column width: 40px.
 
-### Row Resize
+### Row Height (auto — not resizable, #52)
 
-Each row gets a `<div class="cm-row-resize">` handle in the overlay. Dragging sets `tr.style.height`. Minimum row height: 24px.
+There is **no** row-resize handle. A row's height is always determined by its content (`min-height`/`line-height` on the cells). "Only width should be able to be changed in cells — column width, not row height; that should be automatic." The widget renders `cm-col-resize` handles only; there is no `cm-row-resize` element or drag path.
 
 ### Handle Layout
 
@@ -387,6 +398,15 @@ Dropping an image/PDF/media file onto a rendered table cell embeds it **into tha
 2. `drop`: resolve the target cell via `tableCellDropTarget(view, e.target)`; if it's over a cell, `preventDefault()` + `stopPropagation()` (so CM's bubble-phase `drop` never also fires — no double insert) and dispatch a `bismuth-table-drop` window event carrying `{ view, files, target, altKey }`.
 
 `Editor.tsx` listens for `bismuth-table-drop` (gated to its own `view`) and runs the **same** upload+embed flow as a note-body drop (`dropFilesIntoCell` → `uploadEmbed` → `insertEmbedsInTableCell` → `appendToCell`), so the file is saved into the vault and an `![[…]]` embed lands in the cell (which then renders as real media). `⌥`-drop or `attachments.onDrop: "reference"` inserts a bare `![[name]]` reference instead of copying.
+
+### Packaged app: the native-drop path (the only one that fires in Tauri)
+
+The capture-phase DOM `dragover`/`drop` listeners above **only fire in a browser** (dev-in-Chrome). In the **packaged Tauri app**, an OS file drag never reaches any DOM `drop` listener at all — Tauri's native drag-drop handler intercepts it and `app/src/nativeDrop.ts` re-broadcasts it as a `bismuth-native-drag` window event carrying the dropped **paths** + the cursor position in **client pixels**. So a real image-into-a-cell drop is served entirely by `Editor.tsx`'s native-drop consumer:
+
+1. It hit-tests the drop point against a rendered table with **`tableCellDropTargetAtPoint(view, x, y)`** — `view.dom.ownerDocument.elementFromPoint(x, y)` → `.closest("[data-cell]")` → the cell's `(r, c)` + the block's current source range. `view.dom.contains(el)` scopes the hit to this editor, so a drop over another split pane's table never lands here. A rendered table is an atomic block widget, so without this the fallback `posAtCoords` would map the drop to the block **boundary** and land the image *beside* the table.
+2. On a cell hit it routes through **`embedNativePathsIntoCell`** — the native-path analog of `dropFilesIntoCell`: read each path's bytes via the Tauri fs plugin, `uploadEmbed`, then `insertEmbedsInTableCell` (falling back to a note-body insert if the table/cell has vanished). No cell hit → the existing note-body native embed (`embedNativePaths`).
+
+A native drag carries **no modifier keys**, so reference-vs-copy comes only from `attachments.onDrop` here (there's no `⌥`-drop signal in the native event). The coordinate→cell routing is unit-tested by stubbing `elementFromPoint`.
 
 ---
 
@@ -517,6 +537,20 @@ The table widget is wired into the editor's live-preview extension via three pie
 Block decorations (like the table widget) must come from a `StateField` — CodeMirror forbids them from `ViewPlugin`. This is why `tableWidgetField` is a `StateField` even though it also reacts to view-level signals.
 
 The widget's `eq` method prevents unnecessary DOM rebuilds: if the serialized markdown has not changed (e.g., a cursor moved elsewhere in the document), the existing DOM is kept and any in-progress cell edit is preserved.
+
+---
+
+## In-Cell Emoji Autocomplete (#49)
+
+A table cell is a plain `contenteditable` DOM island that lives **outside** CodeMirror's input pipeline, so the editor's own `:emoji:` completion (`editor/autocomplete.ts` `emojiSource`) never runs inside it — the same class of gap as the in-cell wrap-on-type (`wrapCellSelectionOnType`, #45) and list-continuation features. `editor/cellEmoji.ts` restores it as a lightweight, self-contained popup:
+
+- **Trigger (pure):** `emojiTokenBeforeCaret(beforeCaret)` reuses the editor's `matchEmojiPrefix`, so the trigger rules are identical — a `:` at the start of the cell line or after whitespace opens the popup (`key:value`, `http://x`, `12:30` never fire). It returns the bare `query` plus `tokenLen` (the character count the `:query[:]` token occupies before the caret).
+- **Data source:** the SAME `searchEmoji(query)` the editor uses (`editor/emoji.ts` — one ranked dataset, so a cell shows the identical suggestions), capped to 8 rows.
+- **Key handling (pure):** `emojiMenuKey(key)` maps Up/Down → navigate, Enter/Tab → accept, Escape / Left / Right / Home / End → close. While the menu is open, the cell's `keydown` gives it first refusal, so Enter accepts the glyph instead of growing the table or continuing a list, and Tab accepts instead of moving cells. A character key falls through to normal typing, which re-evaluates the popup on the resulting `input`.
+- **Insertion (deterministic Range op):** `replaceTokenBeforeCaret(cell, tokenLen, glyph)` deletes the `:query[:]` token and inserts the glyph via a `Range` — **not** `execCommand` — so it behaves the same in every engine (mirroring `insertBreakAtCaret`).
+- **Popup DOM:** `CellEmojiMenu` appends the popup to `document.body` (never inside the `contenteditable`, so it can't become cell source or be clobbered by the display/edit face swap), positioned `fixed` at the caret. It's one instance per table widget, torn down on the cell's blur and on the widget's `destroy`. Picking a row uses `mousedown` + `preventDefault` so the choice never blurs the cell (which would commit + destroy the edit face first). Styling: `.cm-cell-emoji-menu` in `Editor.css`.
+
+The trigger + key decision are unit-tested as pure functions (`cellEmoji.test.ts`); the caret read, token replacement, and end-to-end widget flow (type `:fire`, Enter inserts the glyph, no new row) are covered under happy-dom (`tableWidget.test.ts`).
 
 ---
 
