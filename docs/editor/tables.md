@@ -270,7 +270,7 @@ All key events inside cells are stopped from propagating to CodeMirror's keymap.
 | :------------------ | :------------------------------------------------------------------------------------------ |
 | `Tab`               | Move to the next cell (right). Wraps to the first cell of the next row. Blurs if at the last cell of the table (triggers commit). |
 | `Shift+Tab`         | Move to the previous cell (left). Wraps to the last cell of the previous row. Blurs if at the first cell. |
-| `Enter`             | Move to the cell directly below (same column). Blurs on the last row (triggers commit).    |
+| `Enter`             | **Row-aware (#42).** On any row EXCEPT the last, Enter inserts a soft in-cell line break — exactly like Shift+Enter. On the **last** row it grows the table by appending a blank body row and drops the caret into that new row's same column. (An in-cell list line still continues the list first — see below.) The pure decision is `enterAction(rowIndex, rowCount)` → `"line-break" \| "new-row"` in `tableModel.ts`. |
 | `Shift+Enter`       | Insert a soft line break within the current cell. Inserts a real `<br>` DOM node at the caret (not `execCommand("insertLineBreak")`). The break is stored as the literal string `<br>` in `data-src`. |
 | `Escape`            | Blur the cell (triggers commit).                                                            |
 | `Mod+A`             | Select all content in the focused cell (scoped to the cell; does not select the whole document). |

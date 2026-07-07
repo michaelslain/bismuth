@@ -40,6 +40,13 @@ const STORE_PREFIX = "bismuth:table-size:";
 const memStore = new Map<string, TableSizes>();
 const sizeKey = (cells: string[][]): string => JSON.stringify(cells[0] ?? []);
 
+// When Enter on the LAST row grows the table (#42), committing the new row REBUILDS the widget
+// (a doc change → a fresh `TableWidget.toDOM`), so the old cell's focus is lost. We stash the
+// grid coordinate to focus and let the NEXT rebuild of the same table (matched by its stable
+// header `sizeKey`, which a row insert doesn't change) claim it. One-shot: consumed by the first
+// matching `toDOM`. Module-level because the committing widget instance is discarded on rebuild.
+let pendingCellFocus: { key: string; r: number; c: number } | null = null;
+
 function loadSizes(path: string | null, key: string): TableSizes | null {
   try {
     if (path && typeof localStorage !== "undefined") {
@@ -607,7 +614,7 @@ export class TableWidget extends WidgetType {
             case "next-row": {
               ev.preventDefault();
               // In-cell list continuation (#15): if the caret's line is a `- `/`N.` list
-              // item, Enter continues the list in-cell instead of jumping rows.
+              // item, Enter continues the list in-cell instead of anything else.
               const lineInfo = caretCellLine(cell);
               const cont = lineInfo ? cellListContinuation(lineInfo.line) : null;
               if (cont && cont !== "exit") {
@@ -617,11 +624,18 @@ export class TableWidget extends WidgetType {
                 return;
               }
               if (cont === "exit" && lineInfo) {
-                // Empty marker → drop it and leave the list, then fall through to next-row.
+                // Empty marker → drop it and leave the list, then apply the base Enter action.
                 deleteCurrentLine(lineInfo.beforeLen, lineInfo.afterLen);
               }
-              if (r + 1 < this.cells.length) focusCell(r + 1, c);
-              else cell.blur(); // last row → commit on focusout
+              // #42: Enter behaves like Shift+Enter (a soft in-cell line break) on EVERY row
+              // except the LAST, where it grows the table by a row and drops the caret into it.
+              if (enterAction(r, this.cells.length) === "line-break") {
+                insertBreakAtCaret();
+                return;
+              }
+              // Last row → append a blank row and focus its same column after the widget rebuilds.
+              pendingCellFocus = { key: sizeKey(this.cells), r: this.cells.length, c };
+              this.commit(view, root, (g) => insertRow(g, g.cells.length));
               return;
             }
             case "leave":
@@ -823,6 +837,17 @@ export class TableWidget extends WidgetType {
     }
     if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(layout);
     else layout();
+
+    // Claim a pending caret-focus request left by an Enter-grows-a-row commit (#42): if it names
+    // THIS table (same stable header key) and a cell that now exists, focus it once CM has attached
+    // the freshly-built widget. One-shot — cleared as soon as it's claimed.
+    if (pendingCellFocus && pendingCellFocus.key === sizeKey(this.cells)) {
+      const { r, c } = pendingCellFocus;
+      pendingCellFocus = null;
+      const doFocus = (): void => { focusCell(r, c); };
+      if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(doFocus);
+      else doFocus();
+    }
 
     // Outer block carries the vertical spacing as PADDING so CodeMirror measures it (a
     // margin on `root` would be excluded from CM's block-height model, drawing the caret

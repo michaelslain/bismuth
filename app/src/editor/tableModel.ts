@@ -404,3 +404,17 @@ export function cellListContinuation(lineText: string): CellListEnter {
   if (ol) return ol[3].trim() === "" ? "exit" : { marker: `${parseInt(ol[1], 10) + 1}${ol[2]} ` };
   return null;
 }
+
+// ── Enter action (pure, #42) ──────────────────────────────────────────────────
+// Pressing Enter inside a table cell should ONLY create a new row when the caret is in the
+// table's LAST row; on every other row Enter behaves like Shift+Enter (a soft line break
+// inside the cell). This keeps a mid-table Enter from stealing the caret to the row below
+// (the old `next-row` behavior) while letting a user grow the table by pressing Enter at the
+// bottom. `rowIndex` is 0-based over `cells` (row 0 = header); `rowCount` is the total row
+// count including the header. (In-cell list continuation is decided separately and wins.)
+export type EnterAction = "line-break" | "new-row";
+
+/** Enter creates a new row only on the last row; otherwise it inserts an in-cell line break. */
+export function enterAction(rowIndex: number, rowCount: number): EnterAction {
+  return rowIndex >= rowCount - 1 ? "new-row" : "line-break";
+}
