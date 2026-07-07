@@ -134,7 +134,9 @@
   outline: none;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
-.ui-input::placeholder { color: var(--text-muted); }
+/* The placeholder is UI chrome, not typed prose — mono (not the value's Lora) at the standard
+   13px UI size, so a hint reads distinctly from what you actually type. */
+.ui-input::placeholder { color: var(--text-muted); font-family: var(--ui-font-stack); font-size: 13px; }
 .ui-input:hover:not(:focus) { border-color: var(--border); }
 /* Signature focus treatment: accent border + a soft accent glow ring. */
 .ui-input:focus, .ui-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }

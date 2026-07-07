@@ -12,6 +12,7 @@ import {
   sessionHistoryFrames,
   stripEditorContext,
   makeUserMessage,
+  abortTurn,
   type ChatFrame,
 } from "../src/chat";
 import { whichClaude } from "../src/claudeWhich";
@@ -215,6 +216,33 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     }
     expect(exists).toBe(false);
   }, 180_000);
+
+  // Escape/Stop in the UI calls abortTurn(), which interrupt()s the in-flight turn. The Claude
+  // Agent SDK reports an interrupted turn's `result` as an ERROR (subtype "error_during_execution",
+  // is_error: true, terminal_reason "aborted_streaming") — indistinguishable on the wire from a
+  // real failure. Without ChatSession.aborting (chat.ts), that would surface in the UI as "The
+  // turn ended with an error." for a perfectly deliberate Stop.
+  test("abortTurn: an interrupted turn's result frame is NOT reported as an error", async () => {
+    const cwd = await newTempDir();
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    const { sink, waitFor } = makeCollector();
+
+    sendMessage(
+      chatId,
+      "Count slowly from 1 to 50, one number per line, with a short reasoning sentence before each number.",
+      cwd,
+      sink,
+    );
+    // Let the turn actually start before interrupting it mid-stream.
+    await waitFor((f) => f.type === "assistant-text" || f.type === "thinking" || f.type === "tool-use");
+    abortTurn(chatId);
+
+    const result = await waitFor((f) => f.type === "result");
+    expect(result.type).toBe("result");
+    if (result.type === "result") expect(result.isError).toBe(false);
+    await waitFor((f) => f.type === "done");
+  }, 60_000);
 });
 
 // The session history picker. These read the SDK's on-disk session store (the user's terminal +

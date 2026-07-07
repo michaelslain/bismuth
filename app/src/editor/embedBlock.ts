@@ -382,6 +382,39 @@ function commitEmbedSize(view: EditorView, dom: HTMLElement, size: string): void
   view.dispatch({ changes: { from: mhit.from, to: mhit.to, insert: replacement } });
 }
 
+// Elements that keep their OWN click instead of revealing the source: native audio/video
+// controls, a PDF's iframe, an in-body link (note transclusion), and the resize handle.
+const EMBED_KEEP_OWN_CLICK = "audio, video, iframe, a, .cm-embed-handle";
+
+/** A plain click on an embed's rendered chrome (the image itself, a note transclusion's title,
+ *  etc.) drops the cursor onto its source so decorationsFor's cursor check reveals the raw
+ *  `![[...]]`/`![]()` text for editing — otherwise a standalone embed (esp. one with no visible
+ *  "handle" of its own, like a plain image) can never be clicked into, since EmbedWidget's
+ *  ignoreEvent() (by design) swallows every event so PDF scroll / audio-video controls / the
+ *  resize handle keep working. Mirrors the `.cm-html-block` click-reveal in livePreview.ts —
+ *  same domEventHandlers mechanism, which (like the callout widget's dblclick reveal) runs
+ *  regardless of what the widget's own ignoreEvent() returns. Arrow-key navigation already
+ *  reveals via the selection-driven StateField update; this is the click half of that same gate. */
+const embedRevealOnClick = EditorView.domEventHandlers({
+  mousedown(event, view) {
+    if ((event as MouseEvent).button !== 0) return false; // left-click only
+    const target = event.target as HTMLElement | null;
+    if (!target || target.closest(EMBED_KEEP_OWN_CLICK)) return false;
+    const wrap = target.closest<HTMLElement>(".cm-embed-block, .cm-embed-inline");
+    if (!wrap) return false;
+    let pos: number;
+    try {
+      pos = view.posAtDOM(wrap);
+    } catch {
+      return false;
+    }
+    event.preventDefault();
+    view.dispatch({ selection: { anchor: pos } });
+    view.focus();
+    return true;
+  },
+});
+
 const embedTheme = EditorView.theme({
   ".cm-embed-block": { display: "block", margin: "0.5em 0" },
   ".cm-embed-inline": { display: "inline-block", "vertical-align": "middle", margin: "0 2px" },
@@ -464,5 +497,5 @@ export function embedBlock(getNotes: () => NoteCandidate[]): Extension {
     destroy() { view = undefined; }
   });
 
-  return [field, captureView, embedTheme];
+  return [field, captureView, embedTheme, embedRevealOnClick];
 }

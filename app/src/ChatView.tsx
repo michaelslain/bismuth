@@ -24,6 +24,8 @@ import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
 import { EmptyState } from "./ui/EmptyState";
 import { Icon } from "./icons/Icon";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
+import { openContextMenu } from "./nativeMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest } from "../../core/src/chat";
@@ -250,6 +252,10 @@ export function ChatView(props: { chatId: string }) {
   const [historyOpen, setHistoryOpen] = createSignal(false);
   const [historyLoading, setHistoryLoading] = createSignal(false);
   const [sessions, setSessions] = createSignal<ChatSessionInfo[]>([]);
+
+  // Right-click menu on a prose bubble (user or assistant) — Reply / Copy. Same <ContextMenu>
+  // surface + openContextMenu wiring FileTree/DaemonList use, owned locally (no App.tsx change).
+  const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
 
   let ws: WebSocket | undefined;
   let list!: HTMLDivElement;
@@ -858,6 +864,48 @@ export function ChatView(props: { chatId: string }) {
     window.dispatchEvent(new CustomEvent("bismuth-open", { detail: href }));
   };
 
+  // ── Bubble right-click menu (Reply / Copy) ────────────────────────────────────────────────
+  /** Copy a message's raw markdown to the clipboard — shared by the hover copy button (CopyButton)
+   *  and the right-click menu's Copy item, so both surfaces do exactly the same thing. */
+  const copyMessage = (text: string) => {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => pushToast("Copied"))
+      .catch(() => pushToast("Couldn't copy"));
+  };
+
+  // A quoted head this long is plenty to identify what's being replied to without the composer
+  // drowning in it — long messages truncate with an ellipsis.
+  const QUOTE_HEAD_MAX = 300;
+
+  /** "Reply": quote the message as a markdown blockquote prefixed onto the composer draft, then
+   *  focus the composer and bring it into view — mirrors quoting a message in any chat client. */
+  const replyToMessage = (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    const head = trimmed.length > QUOTE_HEAD_MAX ? `${trimmed.slice(0, QUOTE_HEAD_MAX).trimEnd()}…` : trimmed;
+    const quote = head
+      .split("\n")
+      .map((line) => `> ${line}`)
+      .join("\n");
+    setDraft((d) => `${quote}\n\n${d}`);
+    queueMicrotask(() => autoGrow());
+    ta?.focus();
+    ta?.scrollIntoView({ block: "nearest" });
+  };
+
+  /** Right-click a prose bubble (user or assistant) → Reply / Copy. Same <ContextMenu> surface +
+   *  openContextMenu wiring as everywhere else in the app (FileTree, DaemonList). */
+  const onBubbleContextMenu = (e: MouseEvent, text: string) => {
+    if (!text.trim()) return; // nothing to quote/copy (e.g. an image-only bubble)
+    e.preventDefault();
+    const items: MenuItem[] = [
+      { label: "Reply", icon: "Reply", onSelect: () => replyToMessage(text) },
+      { label: "Copy", icon: "Copy", onSelect: () => copyMessage(text) },
+    ];
+    openContextMenu(e.clientX, e.clientY, items, setMenu);
+  };
+
   onMount(() => {
     connect();
     ta?.focus();
@@ -1007,7 +1055,10 @@ export function ChatView(props: { chatId: string }) {
                       </Show>
                     </div>
                     <Show when={(item as UserItem).text.trim()}>
-                      <div class="chat-bubble-wrap">
+                      <div
+                        class="chat-bubble-wrap"
+                        onContextMenu={(e) => onBubbleContextMenu(e, (item as UserItem).text)}
+                      >
                         <div class="chat-bubble user" innerHTML={renderNoteBody((item as UserItem).text)} />
                         <CopyButton text={(item as UserItem).text} />
                       </div>
@@ -1121,6 +1172,9 @@ export function ChatView(props: { chatId: string }) {
           </div>
         </div>
       </Show>
+      <Show when={menu()}>
+        {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
+      </Show>
     </div>
   );
 
@@ -1213,7 +1267,7 @@ export function ChatView(props: { chatId: string }) {
   function TextBubble(p: { part: TextPart }) {
     return (
       <Show when={p.part.text.trim()}>
-        <div class="chat-bubble-wrap">
+        <div class="chat-bubble-wrap" onContextMenu={(e) => onBubbleContextMenu(e, p.part.text)}>
           <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
           <CopyButton text={p.part.text} />
         </div>
@@ -1230,12 +1284,7 @@ export function ChatView(props: { chatId: string }) {
         label="Copy message"
         iconSize={13}
         class="chat-copy-btn"
-        onClick={() => {
-          navigator.clipboard
-            .writeText(p.text)
-            .then(() => pushToast("Copied"))
-            .catch(() => pushToast("Couldn't copy"));
-        }}
+        onClick={() => copyMessage(p.text)}
       />
     );
   }
