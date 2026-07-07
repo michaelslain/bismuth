@@ -10,7 +10,7 @@ import { Editor } from "./Editor";
 import { BlockEditor } from "./BlockEditor";
 import { settings } from "./settings";
 import { api } from "./api";
-import { flushFocusedEditor } from "./editorRegistry";
+import { flushEditorByPath } from "./editorRegistry";
 import { pushToast } from "./Toast";
 import { ViewBar, Crumb, ViewBarSpacer } from "./ui/ViewBar";
 import { TextButton } from "./ui/TextButton";
@@ -54,10 +54,12 @@ export function InboxPageView(props: {
   async function press(actionId: string): Promise<void> {
     setPressingId(actionId);
     try {
-      // Flush the buffer to disk FIRST, so the daemon acts on exactly what's on screen — not a
-      // stale, still-debounced autosave. (CodeMirror only; BlockEditor doesn't register with
+      // Flush THIS page's buffer to disk FIRST, so the daemon acts on exactly what's on
+      // screen — not a stale, still-debounced autosave. Scoped by path: in a split layout the
+      // last-focused view can be a DIFFERENT note, so a focused-editor flush would persist the
+      // wrong buffer and skip this one. (CodeMirror only; BlockEditor doesn't register with
       // editorRegistry — the same pre-existing gap the rename flow (NoteTitle.tsx) already has.)
-      await flushFocusedEditor();
+      await flushEditorByPath(props.path);
       const res = await api.resolveDaemonPage(props.path, actionId);
       if (res.alreadyResolved) pushToast("Already resolved");
       await refreshDaemonPages();
@@ -69,8 +71,14 @@ export function InboxPageView(props: {
   }
 
   async function markFailed(): Promise<void> {
-    await api.markDaemonPageFailed(props.path);
-    await refreshDaemonPages();
+    try {
+      await api.markDaemonPageFailed(props.path);
+      await refreshDaemonPages();
+    } catch (e) {
+      // The escape hatch itself needs an escape hatch: with the backend unreachable a silent
+      // no-op looks like the button is broken. Say what happened.
+      pushToast(`Couldn't mark failed: ${(e as Error).message}`);
+    }
   }
 
   return (
@@ -78,7 +86,9 @@ export function InboxPageView(props: {
       <ViewBar class="inbox-page-bar">
         <Crumb icon="Inbox">Daemon inbox</Crumb>
         <ViewBarSpacer />
-        <Show when={notOwner() && page()?.status === "pending"}>
+        {/* Stays visible through "working" — a non-owner press is exactly when the user most
+            needs to know the daemon will consume the trigger without firing. */}
+        <Show when={notOwner() && (page()?.status === "pending" || page()?.status === "working")}>
           <span class="inbox-page-note inbox-page-note-warn">
             This device isn't the daemon owner — approving here won't fire.
           </span>
@@ -87,7 +97,11 @@ export function InboxPageView(props: {
           {(p) => (
             <Switch>
               <Match when={stuck()}>
-                <span class="inbox-page-note inbox-page-note-warn">No response — daemon may be offline.</span>
+                <span class="inbox-page-note inbox-page-note-warn">
+                  {notOwner()
+                    ? "This device isn't the daemon owner — the approval never fired. Approve from the owner device."
+                    : "No response — daemon may be offline."}
+                </span>
                 <TextButton onClick={markFailed}>MARK FAILED</TextButton>
               </Match>
               <Match when={p.status === "pending" || p.status === "working"}>
@@ -96,7 +110,7 @@ export function InboxPageView(props: {
                     <TextButton
                       variant={a.kind === "primary" ? "selected" : "normal"}
                       danger={a.kind === "danger"}
-                      disabled={p.status === "working"}
+                      disabled={p.status === "working" || pressingId() !== null}
                       onClick={() => press(a.id)}
                     >
                       {p.status === "working" && pressingId() === a.id ? "WORKING…" : a.label.toUpperCase()}

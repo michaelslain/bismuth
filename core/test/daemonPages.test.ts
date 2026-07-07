@@ -158,7 +158,7 @@ test("resolvePage: idempotent when already terminal (double-click / cross-window
   expect(existsSync(join(pageTriggerDir(vault), "p1"))).toBe(false);
 });
 
-test("markPageFailed force-writes 'failed' with no daemon involvement", () => {
+test("markPageFailed marks a working page 'failed' with no daemon involvement", () => {
   const vault = makeVault();
   writePage(vault, "p1", `type: daemon-page\ntitle: P1\ncreatedAt: 2026-07-06T08:00:00.000Z`);
   writeState(vault, "p1", { status: "working", pressedAction: "send", pressedAt: "2026-07-06T08:05:00.000Z" });
@@ -198,4 +198,40 @@ test("listDaemonPages never GCs a pending/working page regardless of age", () =>
   const pages = listDaemonPages(vault, 7);
   expect(pages).toHaveLength(1);
   expect(pages[0].status).toBe("pending");
+});
+
+test("resolvePage: a FAILED page is retryable — approve re-runs the full round-trip", () => {
+  const vault = makeVault();
+  writePage(vault, "p1", `type: daemon-page\ntitle: P1\ncreatedAt: 2026-07-06T08:00:00.000Z\nactions:\n  - id: send\n    label: Send\n    prompt: go`);
+  writeState(vault, "p1", { status: "failed", pressedAction: "send", pressedAt: "2026-07-06T08:05:00.000Z", daemonNote: "boom", completedAt: "2026-07-06T08:06:00.000Z" });
+  const result = resolvePage(vault, ".daemon/pages/p1.md", "send");
+  expect(result).toEqual({ status: "working", alreadyResolved: false });
+  const state = readPageState(vault, "p1");
+  // A fresh working state — the stale failure note/completion don't linger into the retry.
+  expect(state?.status).toBe("working");
+  expect(state?.daemonNote).toBeUndefined();
+  expect(state?.completedAt).toBeUndefined();
+  expect(existsSync(join(pageTriggerDir(vault), "p1"))).toBe(true); // trigger re-dropped
+});
+
+test("resolvePage: a WORKING page rejects a second press (mid-flight double-click / two windows)", () => {
+  const vault = makeVault();
+  writePage(vault, "p1", `type: daemon-page\ntitle: P1\ncreatedAt: 2026-07-06T08:00:00.000Z\nactions:\n  - id: send\n    label: Send\n    prompt: go\n  - id: discard\n    label: Discard`);
+  writeState(vault, "p1", { status: "working", pressedAction: "send", pressedAt: "2026-07-06T08:05:00.000Z", prompt: "go", timeoutSecs: 300 });
+  // Even a DIFFERENT action is rejected mid-flight — the in-flight run's parameters survive.
+  const result = resolvePage(vault, ".daemon/pages/p1.md", "discard");
+  expect(result).toEqual({ status: "working", alreadyResolved: true });
+  expect(readPageState(vault, "p1")?.pressedAction).toBe("send");
+  expect(existsSync(join(pageTriggerDir(vault), "p1"))).toBe(false); // no second trigger
+});
+
+test("markPageFailed never clobbers a settled outcome (compare-and-swap on the live sidecar)", () => {
+  const vault = makeVault();
+  writePage(vault, "p1", `type: daemon-page\ntitle: P1\ncreatedAt: 2026-07-06T08:00:00.000Z`);
+  // The daemon settled 'done' between the client's stale "stuck" render and the click.
+  writeState(vault, "p1", { status: "done", pressedAction: "send", pressedAt: "2026-07-06T08:05:00.000Z", daemonNote: "Sent 3 replies.", completedAt: "2026-07-06T08:15:00.000Z" });
+  markPageFailed(vault, ".daemon/pages/p1.md");
+  const state = readPageState(vault, "p1");
+  expect(state?.status).toBe("done");
+  expect(state?.daemonNote).toBe("Sent 3 replies.");
 });

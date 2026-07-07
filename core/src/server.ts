@@ -283,6 +283,7 @@ export function createServer(cfg: CoreConfig) {
     p.startsWith(".daemon/") &&
     !isDaemonMemoryPath(p) &&
     p !== ".daemon/identity.md" && // the user-editable personality file — show it in the sidebar
+    p !== ".daemon/PAGES.md" && // the seeded page-format guide — show it in the sidebar (explicit allowlist, not "any root .md", so future runtime files stay noise)
     !DAEMON_DEF_RE.test(p) &&
     !DAEMON_PAGE_RE.test(p);
 

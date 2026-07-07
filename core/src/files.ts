@@ -294,14 +294,42 @@ export function uniqueAssetPath(root: string, rel: string): string {
  * operation. Symmetry note: deleteEntry carries sidecars to the TRASH-path-derived locations,
  * so POST /restore (which is just moveEntry(trashPath, to)) carries them back automatically.
  */
+// A daemon approval page (`.daemon/pages/<slug>.md`) keeps its execution state in a slug-keyed
+// JSON sidecar (`.daemon/pages/.state/<slug>.json`). Kept in sync here so a rename/trash/restore
+// through the tree or CLI never strands the state (see core/src/daemonPages.ts). Outside the
+// pages dir (e.g. in the trash) the state rides co-located as `<path>.pagestate.json`, which the
+// slug-derived form maps back to on restore.
+const PAGE_MD_RE = /^\.daemon\/pages\/[^/.][^/]*\.md$/;
+const pageStateFor = (p: string): string =>
+  PAGE_MD_RE.test(p) ? `.daemon/pages/.state/${p.slice(p.lastIndexOf("/") + 1, -3)}.json` : `${p}.pagestate.json`;
+
 function carrySidecars(root: string, from: string, to: string, wasDir: boolean): void {
+  const isPageMove = !wasDir && (PAGE_MD_RE.test(from) || PAGE_MD_RE.test(to));
   const pairs: Array<[string, string]> = wasDir
     ? [[`.ink/${from}`, `.ink/${to}`]]
     : [
         [`.ink/${from}.ink`, `.ink/${to}.ink`],
         // A .draw's own sidecar would be `x.draw.draw` — never a thing; skip the probe.
         ...(from.endsWith(".draw") ? [] : ([[`${from}.draw`, `${to}.draw`]] as Array<[string, string]>)),
+        ...(isPageMove ? ([[pageStateFor(from), pageStateFor(to)]] as Array<[string, string]>) : []),
+        // A rename WITHIN pages/ carries a pending trigger to the new slug (the queued action
+        // survives — a trigger left on the old slug would fire against a missing page).
+        ...(!wasDir && PAGE_MD_RE.test(from) && PAGE_MD_RE.test(to)
+          ? ([[
+              `.daemon/pages/.triggers/${from.slice(from.lastIndexOf("/") + 1, -3)}`,
+              `.daemon/pages/.triggers/${to.slice(to.lastIndexOf("/") + 1, -3)}`,
+            ]] as Array<[string, string]>)
+          : []),
       ];
+  // A page LEAVING `.daemon/pages/` (trash or move-out) can't be triggered anymore — drop any
+  // pending trigger for its slug so the daemon never fires an action for a page that's gone.
+  if (!wasDir && PAGE_MD_RE.test(from) && !PAGE_MD_RE.test(to)) {
+    try {
+      rmSync(join(root, `.daemon/pages/.triggers/${from.slice(from.lastIndexOf("/") + 1, -3)}`), { force: true });
+    } catch {
+      /* best-effort */
+    }
+  }
   for (const [f, t] of pairs) {
     try {
       const fAbs = join(root, f);

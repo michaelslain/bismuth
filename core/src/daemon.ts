@@ -17,7 +17,7 @@
 //
 // Every function tolerates missing/malformed files and NEVER throws (a daemon
 // that has never run yet, or a partially-written file, degrades to empty/null).
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync, cpSync, existsSync, renameSync } from "node:fs";
 import { parseFrontmatter, setFrontmatterKey } from "./frontmatter";
@@ -51,6 +51,12 @@ export function vaultDaemonDir(vault: string): string {
  */
 export function registerVaultRoot(vault: string, home: string = daemonMachineDir()): void {
   const root = resolve(vault);
+  // Guard a PERSISTENT machine registry against throwaway vaults: every `bun test core` boot
+  // (and any dev server pointed at a temp dir) used to append its ephemeral mkdtemp vault
+  // here, bloating vaults.json into hundreds of dead entries the daemon skipped every tick.
+  // A temp-dir HOME is itself throwaway (a test sandbox), so it keeps full mechanics.
+  const realHome = !isTempPath(resolve(home));
+  if (realHome && isTempPath(root)) return;
   const file = join(home, "vaults.json");
   try {
     let known: string[] = [];
@@ -60,14 +66,27 @@ export function registerVaultRoot(vault: string, home: string = daemonMachineDir
     } catch {
       // absent/malformed → start fresh
     }
-    if (known.includes(root)) return;
+    // Self-healing (real home only): drop temp-dir strays from before this guard and vanished
+    // vaults while we're writing anyway — the registry stays a small list of real brains.
+    const pruned = realHome ? known.filter((v) => !isTempPath(v) && existsSync(v)) : known;
+    if (pruned.includes(root)) {
+      if (pruned.length === known.length) return; // nothing to heal, nothing to add
+    } else {
+      pruned.push(root);
+    }
     mkdirSync(home, { recursive: true });
     const tmp = join(home, `vaults.json.${process.pid}.tmp`);
-    writeFileSync(tmp, JSON.stringify([...known, root], null, 2));
+    writeFileSync(tmp, JSON.stringify(pruned, null, 2));
     renameSync(tmp, file);
   } catch {
     // best-effort — never blocks boot
   }
+}
+
+/** True for paths under the OS temp root(s) — throwaway by definition, never daemon-adoptable. */
+function isTempPath(p: string): boolean {
+  const roots = [resolve(tmpdir()), "/tmp", "/private/tmp", "/var/folders"];
+  return roots.some((r) => p === r || p.startsWith(r + "/"));
 }
 
 /**

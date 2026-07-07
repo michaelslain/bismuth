@@ -230,8 +230,9 @@ export interface ResolveResult {
  * Resolve a pressed action on a page. Re-reads the page fresh (so it acts on exactly what's on
  * disk — the frontend flushes its buffer before calling this) and looks up `actionId` in its
  * frontmatter `actions[]`.
- *  - Already terminal (done/failed/dismissed) => idempotent no-op, guarding double-click / a
- *    race between two open windows against the same page.
+ *  - done/dismissed => idempotent no-op; "working" is guarded the same way, so a double-click
+ *    or a second window can't re-fire (and clobber) a mid-flight run. "failed" is deliberately
+ *    NOT terminal here: pressing again re-runs the round-trip (the documented retry flow).
  *  - No `prompt` (a pure dismiss) => write `dismissed`. No daemon involvement.
  *  - Has `prompt` (approve) => write `working` with the resolved prompt/model/timeout, then drop
  *    a trigger file the daemon's `processPageTriggers` polls (~5s).
@@ -250,7 +251,7 @@ export function resolvePage(vault: string, path: string, actionId: string): Reso
 
   const slug = slugOf(path);
   const currentStatus = readPageState(vault, slug)?.status ?? "pending";
-  if (currentStatus === "done" || currentStatus === "failed" || currentStatus === "dismissed") {
+  if (currentStatus === "done" || currentStatus === "dismissed" || currentStatus === "working") {
     return { status: currentStatus, alreadyResolved: true };
   }
 
@@ -273,15 +274,19 @@ export function resolvePage(vault: string, path: string, actionId: string): Reso
 }
 
 /**
- * Belt-and-suspenders client escape hatch (see plan §5): force-write `failed` with no daemon
+ * Belt-and-suspenders client escape hatch (see plan §5): mark a page `failed` with no daemon
  * involvement, for when a page reads `working` implausibly long (the daemon process itself died
- * mid-run, no writer left to ever settle it). Always succeeds regardless of current status — the
- * UI only offers this affordance once it's already decided the page is stuck.
+ * mid-run, no writer left to ever settle it). Compare-and-swap against the LIVE sidecar: if the
+ * daemon already settled a real outcome (done/failed/dismissed) between the client's stale
+ * "stuck" render and this call, that outcome wins — the daemon is the authoritative writer, and
+ * a genuinely-sent email must never be relabeled "failed" by a late click.
  */
 export function markPageFailed(vault: string, path: string): void {
   assertPagePath(path);
   const slug = slugOf(path);
   const existing = readPageState(vault, slug);
+  const cur = existing?.status;
+  if (cur === "done" || cur === "failed" || cur === "dismissed") return;
   writePageState(vault, slug, {
     ...existing,
     status: "failed",

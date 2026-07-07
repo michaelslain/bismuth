@@ -347,3 +347,36 @@ test("move without any sidecar behaves exactly as before", async () => {
   expect(existsSync(join(dir, "moved.md"))).toBe(true);
   expect(existsSync(join(dir, ".ink"))).toBe(false);
 });
+
+test("moveEntry carries a daemon page's state sidecar (slug-keyed) and drops its stale trigger", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-pagestate-"));
+  await writeNote(dir, ".daemon/pages/reply.md", "---\ntype: daemon-page\n---\n\nbody");
+  await writeNote(dir, ".daemon/pages/.state/reply.json", '{"status":"failed"}');
+  await writeNote(dir, ".daemon/pages/.triggers/reply", "2026-07-06T00:00:00.000Z");
+  moveEntry(dir, ".daemon/pages/reply.md", ".daemon/pages/reply-v2.md");
+  expect(existsSync(join(dir, ".daemon/pages/.state/reply.json"))).toBe(false);
+  expect(existsSync(join(dir, ".daemon/pages/.state/reply-v2.json"))).toBe(true);
+  // An in-pages rename carries the pending trigger to the new slug (the queued action survives).
+  expect(existsSync(join(dir, ".daemon/pages/.triggers/reply"))).toBe(false);
+  expect(existsSync(join(dir, ".daemon/pages/.triggers/reply-v2"))).toBe(true);
+  // Moving OUT of pages/ drops the trigger (nothing to fire) and co-locates the state.
+  moveEntry(dir, ".daemon/pages/reply-v2.md", "archived-reply.md");
+  expect(existsSync(join(dir, ".daemon/pages/.state/reply-v2.json"))).toBe(false);
+  expect(existsSync(join(dir, "archived-reply.md.pagestate.json"))).toBe(true);
+  expect(existsSync(join(dir, ".daemon/pages/.triggers/reply-v2"))).toBe(false);
+});
+
+test("delete then restore round-trips a daemon page's state through the trash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bismuth-files-pagetrash-"));
+  await writeNote(dir, ".daemon/pages/drafts.md", "---\ntype: daemon-page\n---\n\nbody");
+  await writeNote(dir, ".daemon/pages/.state/drafts.json", '{"status":"done"}');
+  await writeNote(dir, ".daemon/pages/.triggers/drafts", "t");
+  const { trashPath } = deleteEntry(dir, ".daemon/pages/drafts.md");
+  expect(existsSync(join(dir, ".daemon/pages/.state/drafts.json"))).toBe(false);
+  expect(existsSync(join(dir, `${trashPath}.pagestate.json`))).toBe(true);
+  // A deleted page can never fire — its pending trigger is dropped, not carried.
+  expect(existsSync(join(dir, ".daemon/pages/.triggers/drafts"))).toBe(false);
+  // POST /restore is moveEntry(trashPath, to) — the state maps back to its slug-keyed home.
+  moveEntry(dir, trashPath, ".daemon/pages/drafts.md");
+  expect(existsSync(join(dir, ".daemon/pages/.state/drafts.json"))).toBe(true);
+});
