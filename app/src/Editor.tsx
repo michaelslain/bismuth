@@ -658,6 +658,34 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       }, lastSavedText === undefined ? Math.min(settings.editor.autoSaveDelay, 150) : settings.editor.autoSaveDelay);
     });
 
+    // Undo/redo can revert an edit whose block widget (a table, an embed, …) must remount at a
+    // different height — e.g. undoing a table-cell edit rebuilds that TableWidget. CM's own
+    // scrollIntoView (part of every undo/redo transaction, see @codemirror/commands'
+    // historyKeymap) already lands the viewport at the right spot SYNCHRONOUSLY, but the
+    // widget's async re-measure (a frame or two later, once its real height is known) can still
+    // nudge scrollTop afterward — the same settle race `dispatchKeepScroll` (tableWidget.ts) and
+    // the settings-typography guard below already harden other paths against. Re-assert the
+    // (already correct) post-undo position across a couple of measure cycles so that settle
+    // can't drag the viewport away from the undone edit (#44).
+    const undoRedoScrollGuard = EditorView.updateListener.of((u) => {
+      if (!u.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))) return;
+      const v = u.view;
+      const keep = v.scrollDOM.scrollTop;
+      let cycles = 0;
+      const repin = () => {
+        if (view !== v) return; // buffer switched / view destroyed
+        v.requestMeasure({
+          read: () => null,
+          write: () => {
+            if (view !== v) return;
+            if (v.scrollDOM.scrollTop !== keep) v.scrollDOM.scrollTop = keep;
+            if (++cycles < 6) repin();
+          },
+        });
+      };
+      repin();
+    });
+
     // Shared base for every buffer: editing, theme, gutters, autosave.
     const base = [
       // Draw mode switches USER editing off (contenteditable/IME/tab order) without touching
@@ -712,6 +740,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // The keybinding is wired below (host capture handler) so it stays rebindable.
       findExtension(),
       autosave,
+      undoRedoScrollGuard,
       // Right-click a spelling / grammar / property mark → the shared app menu.
       editorContextMenu(),
     ];

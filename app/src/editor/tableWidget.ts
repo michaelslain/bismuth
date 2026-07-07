@@ -333,6 +333,17 @@ export function insertEmbedsInTableCell(
   const from = doc.line(block.startLine).from;
   const to = doc.line(block.endLine).to;
   if (view.state.sliceDoc(from, to) === md) return false;
+  // Move CM's own selection to the block start BEFORE committing (like "Edit source" already
+  // does below) — a cell's contenteditable DOM lives outside CM's own selection tracking, so
+  // `state.selection` is still wherever it was before this drop (e.g. wherever the user was
+  // last typing). That matters because CM's history() records an edit's undo-position from the
+  // selection as it was BEFORE the edit (`tr.startState.selection` — see
+  // @codemirror/commands' `HistEvent.fromTransaction`), not whatever `selection:` the edit's OWN
+  // transaction spec sets (that only affects the AFTER state). Left unmoved, a later undo would
+  // restore that stale before-edit position — often the doc end — instead of back to this table
+  // (#44). A plain selection-only dispatch doesn't scroll (no `scrollIntoView`), so this is
+  // visually inert.
+  view.dispatch({ selection: { anchor: from } });
   // Growing the cell can change the block widget's height — pin the scroll like every other
   // table edit so CM's async height re-measure doesn't yank the viewport.
   dispatchKeepScroll(view, { changes: { from, to, insert: md } });
@@ -379,6 +390,16 @@ export class TableWidget extends WidgetType {
     grid = transform?.(grid) ?? grid;
     const md = formatTable(grid); // column-padded, LLM-readable GFM
     if (view.state.sliceDoc(range.from, range.to) === md) return; // no-op: skip churn
+    // Move CM's own selection to the block start FIRST, matching "Edit source" (openCellMenu
+    // below): every cell edit here happens inside a contenteditable DOM island CM's own
+    // selection never tracks, so `state.selection` is still wherever it was before this edit. A
+    // changes-only dispatch's OWN `selection:` field can't fix this retroactively — CM's
+    // history() records an edit's undo-position from the selection as it was BEFORE the edit
+    // (`tr.startState.selection`), not the after-state a same-transaction `selection:` sets (see
+    // @codemirror/commands' `HistEvent.fromTransaction`). Left unmoved, a later undo restores
+    // that stale before-edit position — often the doc end — instead of back here (#44). A plain
+    // selection-only dispatch doesn't scroll (no `scrollIntoView`), so this is visually inert.
+    view.dispatch({ selection: { anchor: range.from } });
     // Pin the scroll position: growing the table (add row/column) re-lays the block
     // widget and CM's async height re-measure would otherwise scroll the viewport away.
     dispatchKeepScroll(view, { changes: { from: range.from, to: range.to, insert: md } });
