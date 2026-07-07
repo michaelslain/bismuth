@@ -11,6 +11,8 @@ import { formatsFor, ext } from "./formats";
 import { defaultExportOptions } from "./options";
 import { paletteFor } from "./exportTheme";
 import { parseFrontmatter } from "../../../core/src/frontmatter";
+import { stripFrontmatter } from "../bases/cardBodySplit";
+import { pageSections } from "./pageBreaks";
 import { whenMathReady } from "../editor/katexLoader";
 import type { ExportFormat, ExportResult, ExportPreview, ExportDeps, ExportTheme, ExportOptions, ThemePalette } from "./types";
 
@@ -49,7 +51,10 @@ async function bodyHtml(
     }
     return { html: tableToHtml(await baseToTable(path, deps, opts.viewIndex)), css: "" };
   }
-  if (kind === "md") return { html: renderMarkdown(text), css: "" };
+  if (kind === "md") {
+    const body = opts.includeFrontmatter ? text : stripFrontmatter(text);
+    return { html: renderMarkdown(body), css: "" };
+  }
   throw new Error(`No HTML body for ${kind || "this file"}`);
 }
 
@@ -93,13 +98,32 @@ async function wrapBody(
   return wrapHtmlDocument(body, name, palette, view + katex);
 }
 
+// Render one `<!-- pagebreak -->`-delimited section (raw markdown, already frontmatter-stripped
+// by pageSections) to a self-contained HTML document — the per-page analogue of
+// renderedBody+wrapBody for a plain path, used by the PNG page-splitter below. Same math-guard
+// as renderedBody: re-render once KaTeX is ready if the first pass left an unrendered placeholder.
+async function renderSectionDoc(
+  section: string,
+  name: string,
+  deps: ExportDeps,
+  palette: ThemePalette,
+): Promise<string> {
+  let html = renderMarkdown(section);
+  if (UNRENDERED_MATH.test(html)) {
+    await whenMathReady();
+    html = renderMarkdown(section);
+  }
+  return wrapBody(html, name, palette, deps);
+}
+
 // The exact markdown text a `md` export would write — also shown (in a <pre>) as the
 // md-format preview so it isn't blank.
 async function markdownText(path: string, deps: ExportDeps, opts: ExportOptions): Promise<string> {
   const text = await deps.read(path);
-  // A `type: base` md exports its chosen view's table as a markdown table; any other md
-  // is its own text.
-  return isBaseText(text) ? tableToMarkdown(await baseToTable(path, deps, opts.viewIndex)) : text;
+  // A `type: base` md exports its chosen view's table as a markdown table (no frontmatter in
+  // that output regardless); any other md is its own text, minus frontmatter when excluded.
+  if (isBaseText(text)) return tableToMarkdown(await baseToTable(path, deps, opts.viewIndex));
+  return opts.includeFrontmatter ? text : stripFrontmatter(text);
 }
 
 // CSV is base-only (a flat-table format). Non-base files have no sensible CSV form.
@@ -189,6 +213,37 @@ export async function renderExport(
       if (kind === "draw") {
         const { bytes, dataUrl } = await deps.drawingToPng(await deps.read(path), theme);
         return { bytes, mime: "image/png", filename: `${name}.png`, previewImg: dataUrl };
+      }
+      // A plain (non-base) note with `<!-- pagebreak -->` markers can't fit more than one page
+      // in a single raster image — PDF instead slices ONE document into many pages (htmlToPdf.ts
+      // reads the same marker off the rendered canvas), but a PNG has no such "many pages, one
+      // file" container, so each marker-delimited section renders + rasterizes to its OWN file
+      // (`name-1.png`, `name-2.png`, …). A note with no markers takes the single-file path below
+      // exactly as before (pageSections returns one section, so `sections.length > 1` is false).
+      // Note: pageSections ALWAYS strips frontmatter when computing pages (see its doc comment),
+      // independent of `opts.includeFrontmatter` — frontmatter is never a page of its own.
+      if (kind === "md") {
+        const raw = await deps.read(path);
+        if (!isBaseText(raw)) {
+          const sections = pageSections(raw);
+          if (sections.length > 1) {
+            const files: { filename: string; bytes: Uint8Array }[] = [];
+            let firstDataUrl: string | undefined;
+            for (let i = 0; i < sections.length; i++) {
+              const doc = await renderSectionDoc(sections[i], `${name} (page ${i + 1})`, deps, palette);
+              const { bytes, dataUrl } = await deps.htmlToPng(doc);
+              if (i === 0) firstDataUrl = dataUrl;
+              files.push({ filename: `${name}-${i + 1}.png`, bytes });
+            }
+            return {
+              bytes: files[0].bytes,
+              mime: "image/png",
+              filename: files[0].filename,
+              previewImg: firstDataUrl,
+              files,
+            };
+          }
+        }
       }
       const { html, css } = await renderedBody(path, deps, opts, palette);
       const doc = await wrapBody(html, name, palette, deps, css);

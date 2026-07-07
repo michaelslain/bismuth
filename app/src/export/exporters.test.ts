@@ -159,3 +159,95 @@ describe("export options — view selection / data vs visual / csv", () => {
     expect(r.previewHtml).not.toContain("exp-cal-month");
   });
 });
+
+describe("include/exclude frontmatter", () => {
+  const FM_NOTE = "---\ntitle: Foo\ntags: [a]\n---\n# Title\n\nbody text";
+  const withFm = (over: Partial<ExportDeps> = {}) => deps({ read: async () => FM_NOTE, ...over });
+
+  test("md export includes frontmatter by default (unchanged historical behavior)", async () => {
+    const r = await renderExport("note.md", "md", withFm());
+    expect(enc.decode(r.bytes)).toBe(FM_NOTE);
+  });
+
+  test("md export strips frontmatter when includeFrontmatter is false", async () => {
+    const r = await renderExport("note.md", "md", withFm(), "dark", opts({ includeFrontmatter: false }));
+    const text = enc.decode(r.bytes);
+    expect(text).toBe("# Title\n\nbody text");
+    expect(text).not.toContain("title: Foo");
+  });
+
+  test("html export renders frontmatter (as literal prose text) by default", async () => {
+    const r = await renderExport("note.md", "html", withFm());
+    expect(r.previewHtml).toContain("title: Foo");
+    expect(r.previewHtml).toContain("<h1>Title</h1>");
+  });
+
+  test("html export excludes frontmatter from the rendered body when off", async () => {
+    const r = await renderExport("note.md", "html", withFm(), "dark", opts({ includeFrontmatter: false }));
+    expect(r.previewHtml).not.toContain("title: Foo");
+    expect(r.previewHtml).toContain("<h1>Title</h1>");
+  });
+
+  test("a note with no frontmatter is unaffected by the toggle either way", async () => {
+    const on = await renderExport("a/note.md", "md", deps(), "dark", opts({ includeFrontmatter: true }));
+    const off = await renderExport("a/note.md", "md", deps(), "dark", opts({ includeFrontmatter: false }));
+    expect(enc.decode(on.bytes)).toBe(enc.decode(off.bytes));
+  });
+
+  test("a base file's frontmatter (config, not content) never appears regardless of the toggle", async () => {
+    const r = await renderExport("Reading.md", "md", deps(), "dark", opts({ includeFrontmatter: false }));
+    expect(enc.decode(r.bytes)).toContain("| name | author |");
+  });
+});
+
+describe("PNG export split by page-break markers", () => {
+  const MARK = "<!-- pagebreak -->";
+
+  test("no markers -> a single png, filename unchanged", async () => {
+    const r = await renderExport("note.md", "png", deps());
+    expect(r.filename).toBe("note.png");
+    expect(r.files).toBeUndefined();
+  });
+
+  test("one marker -> two numbered png files; the single-result fields mirror page 1", async () => {
+    const d = deps({ read: async () => `Page one\n${MARK}\nPage two` });
+    const r = await renderExport("note.md", "png", d);
+    expect(r.files?.map((f) => f.filename)).toEqual(["note-1.png", "note-2.png"]);
+    expect(r.filename).toBe("note-1.png");
+    expect(r.previewImg).toStartWith("data:image/png");
+  });
+
+  test("many markers -> that many files, each rasterized independently", async () => {
+    let calls = 0;
+    const d = deps({
+      read: async () => `one\n${MARK}\ntwo\n${MARK}\nthree`,
+      htmlToPng: async (html) => {
+        calls++;
+        return { bytes: new TextEncoder().encode("PNG:" + html.length), dataUrl: "data:image/png;base64,AQI=" };
+      },
+    });
+    const r = await renderExport("note.md", "png", d);
+    expect(calls).toBe(3);
+    expect(r.files?.map((f) => f.filename)).toEqual(["note-1.png", "note-2.png", "note-3.png"]);
+  });
+
+  test("frontmatter never becomes its own page, even with includeFrontmatter: true", async () => {
+    const d = deps({ read: async () => `---\ntitle: Foo\n---\nPage one\n${MARK}\nPage two` });
+    const r = await renderExport("note.md", "png", d, "dark", opts({ includeFrontmatter: true }));
+    expect(r.files).toHaveLength(2); // not 3 — the frontmatter never counts as a page
+  });
+
+  test("a base file's rendered table is never split into pages", async () => {
+    const d = deps({ read: async () => BASE_MD });
+    const r = await renderExport("Reading.md", "png", d);
+    expect(r.files).toBeUndefined();
+    expect(r.filename).toBe("Reading.png");
+  });
+
+  test("PDF export of a page-break note is a single result — page slicing happens at the canvas level in htmlToPdf.ts, not here", async () => {
+    const d = deps({ read: async () => `Page one\n${MARK}\nPage two` });
+    const r = await renderExport("note.md", "pdf", d);
+    expect(r.files).toBeUndefined();
+    expect(r.filename).toBe("note.pdf");
+  });
+});
