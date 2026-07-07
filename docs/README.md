@@ -93,7 +93,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 
 ## Daemon (`@bismuth/daemon`)
 
-The in-repo background runtime — **one machine process that multiplexes per-vault "brains"**, absorbed from the former standalone `claude-bot` sibling repo. Machine identity lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session, `identity.md`) lives under `<vault>/.daemon`.
+The in-repo background runtime — **one machine process that multiplexes per-vault "brains"**. Machine identity lives at `~/.bismuth/daemon`; each enabled vault's brain (crons, processes, memory, session, `identity.md`) lives under `<vault>/.daemon`.
 
 - [Overview](daemon/overview.md) — what the daemon is, the machine-vs-vault split, the `daemon.enabled` switch, the daemon graph mode
 - [Lifecycle](daemon/lifecycle.md) — the supervisor: boot order, reconcile loop, per-vault session, single-owner gating, install/service (launchd/systemd)
@@ -101,7 +101,7 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [Pages (inbox)](daemon/pages.md) — daemon-authored pages awaiting approval/dismissal: format, `.state` sidecar, delivery, the button-press → execution → completion lifecycle, `::inbox`
 - [Memory store](daemon/memory.md) — the per-vault markdown memory graph: note format, backlinks, query vs search, the dream cycle
 - [Communication & hooks](daemon/communication.md) — the relay recall/collect hooks + single-owner device gating (no cross-machine messaging)
-- [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy `~/.claude-bot` migration
+- [Storage](daemon/storage.md) — the two-tier on-disk layout (`~/.bismuth/daemon` + `<vault>/.daemon`) and the legacy-state migration
 
 ## Interfaces
 

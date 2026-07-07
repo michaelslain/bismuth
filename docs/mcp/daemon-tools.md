@@ -1,6 +1,6 @@
 # Daemon tools (daemon-gated, per-vault)
 
-When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server exposes **ten more tools** — the daemon control surface: crons, background processes, the daemon inbox (pages), and daemon status / device ownership. They live in `mcp/src/daemon.ts` and are the restored equivalent of the tools the former standalone `claude-bot` MCP exposed before it was absorbed into `@bismuth/daemon` (that migration dropped them).
+When the [daemon](../daemon/overview.md) is enabled for the active vault, the Bismuth MCP server exposes **ten more tools** — the daemon control surface: crons, background processes, the daemon inbox (pages), and daemon status / device ownership. They live in `mcp/src/daemon.ts`.
 
 ## Gating (same signal as the memory tools)
 
@@ -29,13 +29,9 @@ Vault-scoped tools inject `--vault <root>`; the root is derived from `BISMUTH_ME
 
 `page_create`'s `actions` is an array of `{id, label, kind?, prompt?, model?, timeout?}`; the tool JSON-stringifies it into the CLI's `--actions '<json>'` so the caller never hand-writes the nested `actions[]` YAML that `resolvePage` depends on.
 
-## Mapping from the old `claude-bot` MCP (26 tools)
+## Known gaps (no clean CLI path yet — follow-ups)
 
-The old catalog and where each lands today:
-
-- **Restored (CLI bridge):** `remember`/`recall`/`forget` (memory tools — see [overview.md](overview.md)); `status` → `daemon_status`; `device_list` → `daemon_devices`; `device_info`/`set_owner_device` → `daemon_owner` (+ `daemon_status`); `cron_list`/`process_list` → `daemon_list`; `cron_run` (and `dream_run` = run the `dream` cron) → `cron_run`; `cron_update` (enable/disable subset) → `cron_toggle`; `process_enable`/`process_disable` → `process_toggle`; `setup` → `bismuth daemon setup` (via `bismuth_cli`).
-- **New capability (not in the old surface):** the daemon **inbox** — `page_list`/`page_create`/`page_resolve` (+ `page mark-failed` via `bismuth_cli`).
-- **Still missing (no clean CLI path yet — follow-ups):** `dream_config`/`dream_status` (dream config now lives in the `dream` cron's frontmatter — edit the file); `cron_create`/`cron_delete`/`cron_stop`; `process_start`/`process_stop` (runtime start/stop, distinct from enable/disable); `message_bot` (superseded by the visual Claude chat / daemon session — no headless send); `restart`/`stop`/`uninstall` (daemon lifecycle — `bismuth daemon update`/`setup` cover re-register; a full stop/uninstall CLI isn't wired). Each of these wants a `bismuth` CLI command first, then a thin tool here — rather than a fragile direct reimplementation in the MCP.
+`dream_config`/`dream_status` (dream config now lives in the `dream` cron's frontmatter — edit the file); `cron_create`/`cron_delete`/`cron_stop`; `process_start`/`process_stop` (runtime start/stop, distinct from enable/disable); `message_bot` (superseded by the visual Claude chat / daemon session — no headless send); `restart`/`stop`/`uninstall` (daemon lifecycle — `bismuth daemon update`/`setup` cover re-register; a full stop/uninstall CLI isn't wired). Each of these wants a `bismuth` CLI command first, then a thin tool here — rather than a fragile direct reimplementation in the MCP.
 
 ## Source
 

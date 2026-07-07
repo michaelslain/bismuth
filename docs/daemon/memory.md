@@ -6,7 +6,7 @@ This page documents that store: where notes live, the note model and on-disk for
 
 ## One brain per vault — no machine-global memory
 
-> **There is no machine-global memory dir anymore.** The former standalone claude-bot kept a single `~/.claude-bot/memory`; that model is gone. The daemon is **one machine process that multiplexes per-vault brains**, and each enabled vault's memory lives under its own **`<vault>/.daemon/memory`** (`vaultPaths(root).memoryDir` in `daemon/src/lib/config.ts`). `~/.claude-bot/memory` survives only as a one-time, copy-only legacy migration source.
+> **There is no machine-global memory dir.** The daemon is **one machine process that multiplexes per-vault brains**, and each enabled vault's memory lives under its own **`<vault>/.daemon/memory`** (`vaultPaths(root).memoryDir` in `daemon/src/lib/config.ts`). `~/.claude-bot/memory` survives only as a one-time, copy-only legacy migration source.
 
 The `@bismuth/memory` package (`memory/src/`) is **pure** and takes the memory dir explicitly. Every public function's `dir` parameter defaults to `getMemoryDir()`, which reads the **`BISMUTH_MEMORY_DIR`** env var and **throws** when it is unset:
 
@@ -23,7 +23,7 @@ So a missing dir fails loudly instead of silently reading the wrong place. Three
 - The **daemon runtime** passes the active vault's `ctx.memoryDir` explicitly on every call (e.g. `dream(ctx)` uses `ctx.memoryDir`).
 - The **per-session MCP** memory tools and the **relay** recall/collect hooks run inside Bismuth terminals where `core/src/terminal.ts` injects `BISMUTH_MEMORY_DIR` — **only when `settings.daemon.enabled` is true for that vault**.
 
-This is why memory is recalled/collected strictly for vault-scoped sessions, never globally the way the old `~/.claude/settings.json` hooks did.
+This is why memory is recalled/collected strictly for vault-scoped sessions, never globally via `~/.claude/settings.json`.
 
 ## There is NO index file
 

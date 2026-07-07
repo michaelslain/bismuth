@@ -222,7 +222,7 @@ File contents:
 
 ## 6. The Daemon: Machine Home + Per-Vault Brains
 
-The former standalone **claude-bot** sibling repo has been absorbed into the in-repo **`@bismuth/daemon`** workspace (`daemon/src/**`). It is **one machine process that multiplexes per-vault "brains"** — machine-level identity in a single home dir, plus a separate `.daemon` brain folder inside each enabled vault. `core/src/daemon.ts` is Bismuth's read/write window onto this on-disk state; it only ever writes `owner.json` and the cron/process control files.
+The in-repo **`@bismuth/daemon`** workspace (`daemon/src/**`) is **one machine process that multiplexes per-vault "brains"** — machine-level identity in a single home dir, plus a separate `.daemon` brain folder inside each enabled vault. `core/src/daemon.ts` is Bismuth's read/write window onto this on-disk state; it only ever writes `owner.json` and the cron/process control files.
 
 ### 6.1 Machine Home Directory Resolution
 
@@ -269,7 +269,7 @@ Each enabled vault keeps its own **brain** — crons, processes, memory, session
       <basename>         — ISO timestamp file; nudges daemon to reconcile process runtime
 ```
 
-The daemon's **name** comes from `<vault>/.daemon/identity.md`'s `name:` frontmatter (`daemonIdentityName(vault)`), defaulting to `"daemon"` when absent — it is not a setting, and the daemon-graph hub label is `"daemon"` (never `"claude-bot"`).
+The daemon's **name** comes from `<vault>/.daemon/identity.md`'s `name:` frontmatter (`daemonIdentityName(vault)`), defaulting to `"daemon"` when absent — it is not a setting, and the daemon-graph hub label is `"daemon"`.
 
 The default crons are **embedded string constants** in the daemon binary (`daemon/src/daemon/defaultCrons.ts`: `dream` = hourly memory consolidation, `vault-review` = every-4-hours model-of-the-user pass), seeded **non-clobbering** into `<vault>/.daemon/crons` on setup by `reconcileSeeds` (`daemon/src/daemon/seeds.ts`) — existing files are never overwritten.
 
@@ -306,11 +306,11 @@ Throws if `deviceId` is not a known device in `devices.json`.
 
 ### 6.5 Install & Lifecycle
 
-Bismuth never starts the daemon as a Tauri child — it must outlive the app to keep firing crons. Setup lives in `core/src/daemonInstall.ts` (there is no `core/src/claudebot.ts`): `installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin` (version-gated by a size+mtime marker), then runs `<bin> --ensure-installed` to register the OS service. `installStatus()` returns `{ installed, running, binPath }`; `runSetup()` returns `{ ok, binPath, error? }` and is what `POST /daemon/update` calls. The service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon` (`daemon/src/lib/platform.ts`). The daemon updates **with the app** — there is no `daemon.autoUpdate` setting and no git-pull self-update.
+Bismuth never starts the daemon as a Tauri child — it must outlive the app to keep firing crons. Setup lives in `core/src/daemonInstall.ts`: `installDaemonFromBundle()` copies the bundled `bismuth-daemon` binary to `~/.bismuth/bin` (version-gated by a size+mtime marker), then runs `<bin> --ensure-installed` to register the OS service. `installStatus()` returns `{ installed, running, binPath }`; `runSetup()` returns `{ ok, binPath, error? }` and is what `POST /daemon/update` calls. The service ids are launchd `com.bismuth.daemon` / systemd `bismuth-daemon` (`daemon/src/lib/platform.ts`). The daemon updates **with the app** — there is no `daemon.autoUpdate` setting and no git-pull self-update.
 
 ### 6.6 Legacy Migration
 
-`migrateDaemonState(vault)` performs a **one-time, copy-only** import of a legacy standalone claude-bot brain (`~/.claude-bot/{memory,crons,processes}`, overridable via `BISMUTH_LEGACY_CLAUDE_BOT_DIR`) into `<vault>/.daemon`. It is per-file merge (never clobbers seeded defaults or existing notes), gated machine-wide by a `.claude-bot-migrated` marker in the machine home recording the destination vault, so the brain lands in exactly one vault. The legacy source is **never deleted or moved** — it stays as a permanent backup. Best-effort; never throws.
+`migrateDaemonState(vault)` performs a **one-time, copy-only** import of a legacy brain directory (`~/.claude-bot/{memory,crons,processes}`, overridable via `BISMUTH_LEGACY_CLAUDE_BOT_DIR`) into `<vault>/.daemon`. It is per-file merge (never clobbers seeded defaults or existing notes), gated machine-wide by a `.claude-bot-migrated` marker in the machine home recording the destination vault, so the brain lands in exactly one vault. The legacy source is **never deleted or moved** — it stays as a permanent backup. Best-effort; never throws.
 
 ### 6.7 Name Resolution
 
@@ -427,7 +427,7 @@ $BISMUTH_VAULT/                         # vault root (required)
     info/exclude                     # contains ".settings" + ".daemon" entries (added by backup.ts)
 
 $BISMUTH_MEMORY/                          # 3rd-brain memory dir (required; may be empty)
-  *.md                               # Claude-bot memory notes (mem: namespace in graph)
+  *.md                               # 3rd-brain memory notes (mem: namespace in graph)
 
 ~/.bismuth/layout-cache/      # backend layout cache (durable; outside vault to avoid watcher loop)
   v5-<16hex>.json                    # precomputed pos3d + pos2d per graph signature
