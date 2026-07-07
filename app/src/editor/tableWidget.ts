@@ -647,8 +647,13 @@ export class TableWidget extends WidgetType {
         cell.setAttribute("data-c", String(c));
         cell.setAttribute("contenteditable", "true");
         cell.setAttribute("spellcheck", "false");
+        // Apply only left/right alignment. Center is NOT rendered (#53): "centering in tables
+        // should not be possible." A `:-:` separator still PARSES to `"center"` (source stays
+        // valid + round-trips), but a center column renders left — so no cell is ever centered and
+        // there's no widget affordance that produces one. (The widget offers no alignment UI at all;
+        // alignment comes only from the raw separator row.)
         const a = this.aligns[c] ?? "none";
-        if (a !== "none") cell.style.textAlign = a;
+        if (a === "left" || a === "right") cell.style.textAlign = a;
         cell.dataset.src = row[c] ?? ""; // raw markdown source (source of truth)
         renderDisplay(cell); // initial face: rendered inline markdown
         // Swap to the raw-source face on focus and back to the rendered face on blur, so

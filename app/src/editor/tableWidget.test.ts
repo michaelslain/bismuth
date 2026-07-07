@@ -509,6 +509,33 @@ describe("#52 row height is not resizable", () => {
   });
 });
 
+// ── #53: centering is not possible — a center column renders LEFT ──────────────
+describe("#53 center alignment renders as left", () => {
+  test("a :-: (center) column renders left; left/right still apply", () => {
+    // Columns: left (:--), center (:-:), right (--:).
+    const view = mount("| L | C | R |\n| :-- | :-: | --: |\n| a | b | c |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cellAt = (r: number, c: number): HTMLElement =>
+      wrap.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`)!;
+    // Header + body rows: the center column is NEVER centered (renders left = no textAlign set).
+    for (const r of [0, 1]) {
+      expect(cellAt(r, 0).style.textAlign).toBe("left"); // left column keeps left
+      expect(cellAt(r, 1).style.textAlign).not.toBe("center"); // center column is NOT centered (#53)
+      expect(cellAt(r, 1).style.textAlign).toBe(""); // …it renders as default (left)
+      expect(cellAt(r, 2).style.textAlign).toBe("right"); // right column keeps right
+    }
+    view.destroy();
+  });
+
+  test("the center source stays parseable and round-trips (only the RENDER changes)", () => {
+    // Source with a center column parses fine and re-serializes with :-: intact — we do not
+    // rewrite the user's file; we only refuse to render it centered.
+    const doc = "| C |\n| :-: |\n| x |";
+    const { blocks } = groupTableBlocks(EditorState.create({ doc }).doc);
+    expect(blocks[0].aligns).toEqual(["center"]); // still parses as center (source parseable)
+  });
+});
+
 // ── #31: Cmd+F highlights IN the table, never flips it to source ───────────────
 describe("#31 find highlights inside the rendered table", () => {
   // A prose "foo", then a table with "foo" in two cells, then more prose.

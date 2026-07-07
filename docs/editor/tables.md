@@ -84,6 +84,8 @@ Maps one separator-row cell string to an `Align`:
 
 Leading/trailing whitespace is trimmed before testing.
 
+> **Center alignment renders as LEFT (#53).** "Centering in tables should not be possible." A `:-:` separator still **parses** to `"center"` and **round-trips** through `serializeTable` (the source stays valid and is never rewritten), but the widget applies `text-align` only for `"left"` / `"right"` — a center column renders left. The widget offers **no** alignment UI (no cell/column menu item sets alignment; it comes only from the raw separator row), so there is no affordance that produces a centered cell. Reading-mode surfaces that use `marked`'s own table tokenizer (`app/src/bases/markdown.ts`) still emit `align="center"` for a `:-:` column — to make centering impossible everywhere, that renderer's `tablecell` should map `center` → `left` too.
+
 ### Block Parsing: `parseTableBlock(lines)`
 
 Takes the raw lines of one table block (header at `lines[0]`, separator at `lines[1]`, body rows at `lines[2...]`) and returns `{ cells, aligns }`.
