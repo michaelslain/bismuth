@@ -100,7 +100,7 @@ A persistent personal-assistant daemon for this Bismuth vault…
 Bismuth's core is the **read/write window** onto the daemon's on-disk state. The "daemon" graph mode visualizes one vault's supervised work as a star graph (`core/src/daemonGraph.ts`):
 
 - **One hub** — `id: "::daemon"` (`DAEMON_NODE_ID`), `kind: "daemon"`, `label` = the daemon's name (default `"daemon"`, never `"claude-bot"`). There is **no** "you"/self node.
-- **One node per cron** — `id: "cron:<name>"`, `kind: "cron"`, carrying `DaemonVizState` (`{ enabled, running, lastResult, lastFiredMs, schedule }`).
+- **One node per cron** — `id: "cron:<name>"`, `kind: "cron"`, carrying `DaemonVizState` (`{ enabled, running, lastResult, lastFiredMs, schedule, on, watch }`). `on`/`watch` are only meaningful for a `file-change` cron (see [crons-and-processes.md](crons-and-processes.md#file-change-crons)); a schedule cron has `on: "schedule"` and no `watch`.
 - **One node per process** — `id: "process:<name>"`, `kind: "process"`.
 - **`supervises` edges** — hub → each cron/process.
 
@@ -143,7 +143,7 @@ On the first per-machine enable, `migrateDaemonState(vault)` (`core/src/daemon.t
 
 - [lifecycle.md](lifecycle.md) — the runtime: boot/shutdown, per-vault `startVault`/`stopVault`, the reconcile loop, the cron scheduler tick, the launchd/systemd service, install/update from the bundled binary.
 - [storage.md](storage.md) — the on-disk layout: the machine home (`~/.bismuth/daemon`) and a vault's `.daemon/` brain, file-by-file.
-- [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling, `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
+- [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling (time-based OR file-change), `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
 - [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the `::inbox` frontend surfaces.
 - [memory.md](memory.md) — the per-vault memory graph (`@bismuth/memory`): note format, backlinks, query vs. search, the `dream` consolidation cycle.
 - [communication.md](communication.md) — memory injection + the relay recall/collect hooks + the MCP `remember`/`recall`/`forget` tools, and device ownership/heartbeat coordination.
