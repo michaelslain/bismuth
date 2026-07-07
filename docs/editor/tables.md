@@ -376,7 +376,9 @@ Returns `InlineSeg[]`:
 type InlineSeg =
   | { type: "md"; raw: string }
   | { type: "wikilink"; target: string; alias: string | null }
-  | { type: "math"; expr: string };
+  | { type: "math"; expr: string }
+  | { type: "embed"; wiki: boolean; target: string; alt: string | null }
+  | { type: "tag"; name: string };   // an Obsidian #tag chip (#41)
 ```
 
 Segmentation rules (applied left to right, one character at a time):
@@ -384,7 +386,8 @@ Segmentation rules (applied left to right, one character at a time):
 1. **Wikilink** `[[target]]` or `[[target|alias]]`: detected at `[[`, scanned to the first `]]`. The alias separator is the first `|` inside the brackets.
 2. **Display math** `$$…$$`: the `$$` fence is passed through literally as text so the inner single-`$` scanner does not misread it as two inline-math spans.
 3. **Inline math** `$expr$`: detected when `$` is not followed by another `$`, not followed by space/tab, and the closing `$` is not preceded by space/tab and has no newline in between. `\$` inside the expression escapes the dollar. Currency-style `$5` (no closing match) falls through to `type: "md"`.
-4. **Everything else**: accumulated in a `buf`, emitted as `type: "md"` on flush.
+4. **Tag** `#tag` (#41): a `#` at the **start of the cell or right after whitespace**, whose body starts with a **letter** (`[A-Za-zÀ-ɏ]`) then word chars / `/` (nested tags) / `-`. These rules mirror the vault's tag matcher (`editor/tag.ts` + the reader's `bases/markdown.ts` `TAG_RE`), so `#123` (digit-led), `# heading` (space after `#`), `C#` (mid-word), and a URL fragment `x#y` are never treated as tags. A `#` inside a `[[wikilink]]` is a heading anchor and is consumed by the earlier wikilink rule, not this one.
+5. **Everything else**: accumulated in a `buf`, emitted as `type: "md"` on flush.
 
 ```ts
 tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
@@ -403,6 +406,7 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `"md"`       | `inlineMarked.parseInline(raw)` — GFM-enabled isolated `Marked` instance (~~strikethrough~~ + autolinks) |
 | `"wikilink"` | `<span class="cm-wikilink" data-wikilink="<target>"><alias or target></span>`               |
 | `"math"`     | `<span class="cm-inline-math" data-math="<expr>"><katex html or empty></span>` — lazy KaTeX |
+| `"tag"`      | `<span class="cm-tag" data-tag="<name>">#<name></span>` — the editor's tag mark (teal mono), so a tag in a cell reads identically to one in the note body (#41). Display-only, like tags in the editor body (no click navigation). |
 
 ### KaTeX Lazy Loading
 
@@ -420,6 +424,7 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `[txt](url)`       | `<a href="url">txt</a>` |
 | `[[Note]]`         | wikilink span        |
 | `[[Note\|Alias]]`  | wikilink span (alias text) |
+| `#tag`             | `.cm-tag` chip (letter-led, at start/after-whitespace; `#123`/`C#`/`# h` are not tags) |
 | `$expr$`           | KaTeX rendered span  |
 | `$$…$$`            | passed through literally (display math handled elsewhere) |
 

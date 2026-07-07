@@ -25,6 +25,11 @@ export type InlineSeg =
   | { type: "md"; raw: string }
   | { type: "wikilink"; target: string; alias: string | null }
   | { type: "math"; expr: string }
+  // An Obsidian `#tag` chip inside a cell (#41). Split out here so it renders as a styled tag
+  // span (like the note body / reader) instead of literal `#tag` text. `name` is the tag WITHOUT
+  // the leading `#`. Detection mirrors the vault's tag rules (start-of-cell/after-whitespace, and
+  // the tag must start with a LETTER) so `#123`, `# heading`, `C#` are never false-matched.
+  | { type: "tag"; name: string }
   // An IMAGE / PDF / media EMBED inside a cell (#30). `wiki` = `![[target]]` (target is the
   // inner text, e.g. "cat.png" or "doc.pdf#page=2"); non-wiki = a markdown `![alt](url)` image
   // (target is the url). Split out here so it renders as real media, not a `!` + wikilink chip
@@ -38,6 +43,12 @@ const CELL_EMBED_MAX_H = 240;
 
 // A markdown `![alt](url "title")` image, anchored at the start of the slice we test.
 const MD_IMAGE_AT = /^!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/;
+
+// An Obsidian `#tag`, anchored at the start of the slice we test (the caller has already checked
+// the char BEFORE it is start-of-cell or whitespace). The tag must start with a LETTER (Latin +
+// accents À-ɏ) then word chars / `/` (nested tags) / `-`, mirroring the reader's TAG_RE and
+// editor/tag.ts — so `#123`, `#`, `C#` are never treated as tags (false-positive guard, #41).
+const TAG_AT = /^#([A-Za-zÀ-ɏ][\w/-]*)/;
 
 // NOTE: this attr-escape additionally escapes `>` (via escapeHtml) — a different set
 // than the canonical escapeAttr (`& < "`) — so it stays local to preserve behavior.
@@ -110,6 +121,18 @@ export function tokenizeInline(src: string): InlineSeg[] {
             : { type: "wikilink", target: inner.slice(0, bar).trim(), alias: inner.slice(bar + 1).trim() },
         );
         i = close + 2;
+        continue;
+      }
+    }
+    // #tag — an Obsidian tag chip. Only at the start of the cell or right after whitespace (so a
+    // mid-word `C#` / a URL fragment `x#y` / a heading `# h` never match), and the tag body must
+    // start with a letter (TAG_AT), matching how tags parse in the note body and reader (#41).
+    if (src[i] === "#" && (i === 0 || /\s/.test(src[i - 1] ?? ""))) {
+      const m = TAG_AT.exec(src.slice(i));
+      if (m) {
+        flush();
+        segs.push({ type: "tag", name: m[1] });
+        i += m[0].length;
         continue;
       }
     }
@@ -210,6 +233,12 @@ function renderSeg(seg: InlineSeg, assetUrl: (t: string) => string): string {
     // "" until KaTeX lazy-loads; the widget re-renders the cell via onMathReady.
     const html = renderMath(seg.expr, false);
     return `<span class="cm-inline-math" data-math="${escapeAttr(seg.expr)}">${html}</span>`;
+  }
+  if (seg.type === "tag") {
+    // `.cm-tag` is the editor's tag mark (teal mono, livePreview theme), so a tag in a cell
+    // reads identically to one in the note body. `data-tag` carries the raw tag for parity with
+    // how tags are marked elsewhere. Display-only, like tags in the editor body (#41).
+    return `<span class="cm-tag" data-tag="${escapeAttr(seg.name)}">#${escapeHtml(seg.name)}</span>`;
   }
   if (seg.type === "embed") {
     return renderEmbedSeg(seg, assetUrl);

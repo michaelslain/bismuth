@@ -78,6 +78,49 @@ test("renderInlineMarkdown mixes a code span with a wikilink", () => {
   );
 });
 
+// --- #tags inside a cell (#41) --------------------------------------------------------
+// A `#tag` typed in a cell must render + read like a tag in normal note text (the `.cm-tag`
+// mark), NOT as literal `#tag` text. Detection mirrors the vault's tag rules (start-of-cell or
+// after whitespace, and the tag must start with a LETTER), so `#123`, `# heading`, `C#`, a URL
+// fragment `x#y` never false-match.
+
+test("tokenizeInline splits a #tag into its own segment", () => {
+  expect(tokenizeInline("meeting #work notes")).toEqual([
+    { type: "md", raw: "meeting " },
+    { type: "tag", name: "work" },
+    { type: "md", raw: " notes" },
+  ]);
+});
+
+test("tokenizeInline supports nested + hyphenated tags", () => {
+  expect(tokenizeInline("#area/health-log")).toEqual([{ type: "tag", name: "area/health-log" }]);
+});
+
+test("renderInlineMarkdown renders a #tag as the themed .cm-tag chip", () => {
+  expect(renderInlineMarkdown("a #work b")).toBe('a <span class="cm-tag" data-tag="work">#work</span> b');
+});
+
+test("renderInlineMarkdown does NOT treat non-tags as tags (false-positive guard)", () => {
+  // Pure-number, mid-word `#`, heading, and a URL fragment must all stay literal.
+  expect(renderInlineMarkdown("#123")).toBe("#123"); // starts with a digit → not a tag
+  expect(renderInlineMarkdown("C# rocks")).toBe("C# rocks"); // mid-word # (no whitespace before)
+  expect(renderInlineMarkdown("# heading")).toBe("# heading"); // space after # → heading, not a tag
+  expect(renderInlineMarkdown("see a#b")).toBe("see a#b"); // # not at a word boundary
+});
+
+test("renderInlineMarkdown renders a tag at the very start of a cell", () => {
+  expect(renderInlineMarkdown("#todo item")).toBe('<span class="cm-tag" data-tag="todo">#todo</span> item');
+});
+
+test("renderInlineMarkdown keeps a #tag out of a wikilink / code span", () => {
+  // A `#` inside a wikilink is a heading anchor (consumed by the wikilink), not a tag.
+  expect(renderInlineMarkdown("[[Note#section]]")).toBe(
+    '<span class="cm-wikilink" data-wikilink="Note#section">Note#section</span>',
+  );
+  // A `#word` inside a code span stays literal code (no tag chip).
+  expect(renderInlineMarkdown("`#work`")).toBe("<code>#work</code>");
+});
+
 // --- iridescent "bismuth" inside a table cell (#9) ------------------------------------
 // A cell's inline markdown must pick up the same iridescent gradient span as prose /
 // reading-mode surfaces, wrapping whole-word "bismuth" but never inside code / links /
