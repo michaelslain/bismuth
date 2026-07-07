@@ -11,6 +11,7 @@ import { IconButton } from "./ui/IconButton";
 import { Chip } from "./ui/Chip";
 import { SearchBar } from "./ui/SearchBar";
 import { Icon } from "./icons/Icon";
+import { recordUse, fileKey } from "./frecency";
 import "./SearchView.css";
 
 // Split a vault path into its filename (sans extension) and parent folder
@@ -220,7 +221,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
                 </Show>
                 <For each={r.snippets}>
                   {(s) => (
-                    <div class="sresult-snip" onClick={() => props.onOpen(r.path)}>
+                    <div class="sresult-snip" onClick={() => { recordUse(fileKey(r.path)); props.onOpen(r.path); }}>
                       <span class="sresult-line">{s.line}</span>
                       <span class="sresult-text">
                         {s.before}<mark>{s.match}</mark>{s.after}

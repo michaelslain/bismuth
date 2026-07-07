@@ -6,6 +6,7 @@ import { createMemo } from "solid-js";
 import { PaletteModal, type PaletteItem } from "./PaletteModal";
 import { contentLabel, contentIcon } from "../tabIds";
 import { vaultTree, refreshVaultTree } from "../treeStore";
+import { loadFrecency, recordUse, scoreOf, fileKey } from "../frecency";
 import type { TreeEntry } from "../../../core/src/graph";
 
 type Props = {
@@ -55,15 +56,24 @@ export function QuickSwitcher(props: Props) {
   // cache right now rather than waiting on it (the await would re-introduce the flash).
   void refreshVaultTree();
 
+  // Snapshot the frecency store once per open (fixed `now` — decay over the seconds the
+  // switcher is visible is negligible) so the ranking closure is cheap and stable. This
+  // makes an empty Cmd+O list most-recently/frequently-opened files first, and boosts
+  // frecent files in fuzzy results (see PaletteModal blend).
+  const store = loadFrecency();
+  const now = Date.now();
+
   return (
     <PaletteModal
       placeholder="Find a file..."
       items={items()}
+      frecency={(path) => scoreOf(store[fileKey(path)], now)}
       // Empty almost always means the cache hasn't warmed yet (cold boot) rather than a
       // truly empty vault, so frame it as loading; the kicked refresh fills it in.
       emptyText="Loading files…"
       onClose={props.onClose}
       onSelect={(item) => {
+        recordUse(fileKey(item.id)); // learn: opening a file boosts it next time
         props.openFile(item.id);
         props.onClose();
       }}
