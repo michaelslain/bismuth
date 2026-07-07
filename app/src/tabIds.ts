@@ -1,5 +1,7 @@
 // app/src/tabIds.ts
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
+import { previewKind } from "./preview/previewKind";
+
 export const SEARCH_TAB = "::search";
 export const EMPTY_PANE = "::empty";
 // The Knowledge Graph as a first-class tab (the "Open graph view" / "New tab" commands open this).
@@ -13,6 +15,12 @@ export const CHAT_PREFIX = "::chat:";
 // The daemon inbox — pages awaiting approval/dismissal (core/src/daemonPages.ts). One tab, like
 // SEARCH_TAB/GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
 export const INBOX_TAB = "::inbox";
+// Annotate (mark up) an image/PDF on the `.draw` sidecar surface: ANNOTATE_PREFIX + "<file path>".
+// This is the SECONDARY action reached from a preview's "Annotate" button — a plain image/PDF
+// path opens the lighter read-only PreviewView by default (see PaneContent).
+export const ANNOTATE_PREFIX = "::annotate:";
+/** Content id that opens `path`'s markup (annotate) surface. */
+export const annotatePath = (path: string): string => ANNOTATE_PREFIX + path;
 
 // The app's "settings page" is the single hidden `.settings` file (YAML) opened as an ordinary
 // file tab (there is no ::settings sentinel). We treat it as a first-class app: shown as "settings"
@@ -53,6 +61,8 @@ export function contentLabel(content: string, terminalIndex?: number): string {
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(CHAT_PREFIX)) return chatLabelProvider?.(content) ?? "Chat";
   if (content.startsWith(TERMINAL_PREFIX)) return `Terminal ${terminalIndex ?? "?"}`;
+  // Annotate tab: label as the bare filename (keeps its extension, like a preview tab).
+  if (content.startsWith(ANNOTATE_PREFIX)) return content.slice(ANNOTATE_PREFIX.length).split("/").pop() ?? content;
   if (isSettingsFile(content)) return "settings";
   return noteName(content);
 }
@@ -66,8 +76,16 @@ export function contentIcon(content: string): string | undefined {
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
   if (content.startsWith(CHAT_PREFIX)) return "MessageSquare";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";
+  if (content.startsWith(ANNOTATE_PREFIX)) return "PenTool"; // markup surface
   if (isSettingsFile(content)) return "Settings";
   if (content.endsWith(".sheet")) return "Table";
   if (content.endsWith(".draw")) return "PenTool";
+  // Preview tabs (images/PDFs/code/binary) get a kind-specific glyph.
+  switch (previewKind(content)) {
+    case "image": return "Image";
+    case "pdf": return "FileText";
+    case "code": return "Code";
+    case "external": return "File";
+  }
   return undefined;
 }

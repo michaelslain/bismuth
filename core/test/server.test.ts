@@ -73,6 +73,23 @@ test("GET /config returns the launch vault and memory paths", async () => {
   }
 });
 
+test("GET /abs-path resolves a vault-relative path to an absolute one (404 when missing)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const r = await fetch(`${base}/abs-path?path=essay.md`);
+    expect(r.status).toBe(200);
+    const { path } = (await r.json()) as { path: string };
+    expect(path).toBe(join(vault, "essay.md"));
+
+    const missing = await fetch(`${base}/abs-path?path=does-not-exist.png`);
+    expect(missing.status).toBe(404);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /agent-graph returns an object with nodes and edges arrays", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

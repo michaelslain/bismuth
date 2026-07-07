@@ -87,6 +87,42 @@ export async function openExternalUrl(url: string): Promise<void> {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+/**
+ * Open an absolute filesystem path in the OS's DEFAULT application ("Open with…" — e.g.
+ * Photoshop for a .psd, Preview for an image). Tauri-only: shells to the platform opener
+ * (`open` / `xdg-open` / `explorer`) via our own `open_path` command (lib.rs). Returns true
+ * when the handoff was kicked off, false in the browser or on failure — the caller toasts.
+ * The path must be ABSOLUTE + machine-local (resolve a vault-relative path via GET /abs-path
+ * first) since the OS opener has no notion of the vault.
+ */
+export async function openPathInDefaultApp(absPath: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_path", { path: absPath, reveal: false });
+    return true;
+  } catch (e) {
+    console.error("open_path failed", e);
+    return false;
+  }
+}
+
+/**
+ * Reveal an absolute path in the OS file manager (Finder "Reveal", Explorer "select"). Tauri-only;
+ * same `open_path` command with `reveal: true`. Returns true when kicked off, false otherwise.
+ */
+export async function revealPath(absPath: string): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_path", { path: absPath, reveal: true });
+    return true;
+  } catch (e) {
+    console.error("reveal path failed", e);
+    return false;
+  }
+}
+
 /** Returns true if a window was opened (or creation was kicked off in Tauri). */
 export async function openAppWindow(url: string, title = "Bismuth"): Promise<boolean> {
   // Stamp a fresh per-window id so the new window persists its tabs independently. Without
