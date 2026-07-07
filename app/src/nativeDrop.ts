@@ -35,6 +35,46 @@ type DropPayload = {
   position?: { x: number; y: number };
 };
 
+// ── Shared routing / classification helpers (pure, unit-tested in nativeDrop.test.ts) ─────────
+// A native drop is a WINDOW-level event; EVERY surface (chat / editor / terminal) receives it and
+// must decide whether the drop belongs to IT. These pure helpers make that routing decision testable
+// in isolation, so "which pane claims the drop at (x,y)" is verified without a DOM.
+
+/** The minimal rect the drop hit-test needs (satisfied by a DOMRect / getBoundingClientRect()). */
+export type DropRect = { left: number; right: number; top: number; bottom: number; width: number; height: number };
+
+/** The pane-routing decision for a forwarded native drop: does the cursor (already in CSS px) fall
+ *  inside `rect`? Each surface calls this with its OWN element's rect, so exactly the pane under the
+ *  cursor claims the drop. A hidden (display:none) pane has a 0×0 rect at the viewport origin, and a
+ *  drop is forwarded at (0,0) when Tauri reports no position — treat a 0×0 rect as NEVER-inside so
+ *  such a drop can't hit every backgrounded pane at once. */
+export function pointInDropRect(rect: DropRect, x: number, y: number): boolean {
+  if (rect.width === 0 && rect.height === 0) return false;
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+// A native drop hands over a filesystem PATH, never a MIME type — so a surface that only accepts
+// certain kinds (the chat composer accepts png/jpeg/gif/webp as SDK image blocks) classifies by
+// file extension. Deliberately NARROWER than the editor's embeddable set (no svg/pdf — those aren't
+// valid `image` content blocks).
+const CHAT_IMAGE_EXT: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+};
+
+/** The image MIME type for a dropped OS path, by extension, restricted to the set the chat composer
+ *  accepts. Returns null for a non-image (or extension-less) path so callers can skip it. Handles
+ *  both `/` and `\` separators and is case-insensitive. */
+export function imageMimeFromPath(path: string): string | null {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  const dot = base.lastIndexOf(".");
+  if (dot < 0) return null;
+  return CHAT_IMAGE_EXT[base.slice(dot + 1).toLowerCase()] ?? null;
+}
+
 let installed = false;
 let unlisten: (() => void) | undefined;
 
