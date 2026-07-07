@@ -67,6 +67,13 @@ export interface Transport {
   post(path: string, body: unknown): Promise<Response>;
   put(path: string, body: unknown): Promise<Response>;
   postJson<T>(path: string, body: unknown): Promise<T>;
+  /** PUT /file with an optimistic-concurrency guard (#46 — data-loss bug: an autosave racing an
+   *  external writer to the same file silently clobbered whichever side wrote last). Succeeds only
+   *  if the file still holds exactly `baseText`; on mismatch resolves `{ conflict: true, current }`
+   *  (the fresh on-disk content) instead of throwing, so the caller can merge instead of losing an
+   *  edit. Bypasses the generic `put()` verb (which always throws on a non-2xx response) the same
+   *  way `uploadAsset` below does, since a 409 here is an expected, handled outcome — not an error. */
+  writeFileChecked(path: string, contents: string, baseText: string): Promise<{ conflict: false } | { conflict: true; current: string }>;
   /** Upload attachment bytes to `targetPath`; returns the path actually written. */
   uploadAsset(targetPath: string, bytes: ArrayBuffer): Promise<string>;
   /** `src`-able URL for a vault media file (image/PDF/audio/video). */
@@ -133,6 +140,19 @@ export function httpTransport(base: string): Transport {
     post: (path: string, body: unknown) => request("POST", path, body) as Promise<Response>,
     put: (path: string, body: unknown) => request("PUT", path, body) as Promise<Response>,
     postJson: <T>(path: string, body: unknown) => request<T>("POST", path, body, "json") as Promise<T>,
+    writeFileChecked: async (path: string, contents: string, baseText: string) => {
+      const r = await fetch(`${base}/file`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, contents, baseText }),
+      });
+      if (r.status === 409) {
+        const { current } = (await r.json()) as { current: string };
+        return { conflict: true as const, current };
+      }
+      if (!r.ok) throw new Error(await r.text());
+      return { conflict: false as const };
+    },
     uploadAsset: async (targetPath: string, bytes: ArrayBuffer): Promise<string> => {
       const r = await fetch(`${base}/asset?path=${encodeURIComponent(targetPath)}`, {
         method: "POST",
@@ -202,6 +222,12 @@ export const api = {
   // editor autosave + .settings persistence actually reach disk.
   write: (path: string, contents: string) =>
     put("/file", { path, contents }).then(() => {}),
+  // Optimistic-concurrency write (#46): only writes if the file still holds `baseText`; a
+  // mismatch resolves a conflict instead of throwing, so the note editor's autosave can merge the
+  // two edits (see app/src/editor/saveReconcile.ts) rather than silently overwrite a concurrent
+  // external write. Used by Editor.tsx's autosave; every other write site keeps using `write`.
+  writeChecked: (path: string, contents: string, baseText: string) =>
+    transport.writeFileChecked(path, contents, baseText),
   backup: () => post("/backup", {}).then(() => {}),
   search: (query: string, opts: SearchOpts) =>
     postJson<SearchResult[]>("/search", { query, opts }),

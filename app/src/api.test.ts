@@ -27,6 +27,7 @@ describe("Transport seam (decouples api from HTTP for the mobile in-process back
       post: async (p: string) => { calls.push(`post ${p}`); return new Response("{}"); },
       put: async (p: string) => { calls.push(`put ${p}`); return new Response("{}"); },
       postJson: async <T>(p: string) => { calls.push(`postJson ${p}`); return {} as T; },
+      writeFileChecked: async () => { calls.push("writeFileChecked"); return { conflict: false }; },
       uploadAsset: async () => "x",
       assetUrl: (t: string) => `mem://${t}`,
       eventsUrl: () => "mem://events",

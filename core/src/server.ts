@@ -642,8 +642,27 @@ export function createServer(cfg: CoreConfig) {
       return new Response(noteText, { status: 200 });
     },
 
+    // Optional `baseText` is an OPTIMISTIC-CONCURRENCY guard (#46 — data-loss bug: an autosave
+    // racing an external writer to the same file silently clobbered whichever side wrote last).
+    // When present, the write only proceeds if the file still holds exactly `baseText` — the
+    // content the caller's buffer was derived from; a mismatch means someone else wrote to this
+    // file since, so we 409 with the CURRENT on-disk content instead of overwriting it, letting
+    // the caller (Editor.tsx's autosave, via `threeWayMerge` in saveReconcile.ts) merge the two
+    // edits rather than silently discarding one. Omitting `baseText` preserves the historical
+    // unconditional-write behavior for every other PUT /file caller (sheets, drawings, bases,
+    // settings import, template creation, …) — none of those have a meaningful "expected prior
+    // content" to compare against, and widening the check to all of them is out of scope here.
     "PUT /file": async (req, __) => {
-      const { path, contents } = (await req.json()) as { path: string; contents: string };
+      const { path, contents, baseText } = (await req.json()) as { path: string; contents: string; baseText?: string };
+      if (baseText !== undefined) {
+        const onDisk = await readNoteOrEmpty(cfg.vault, path);
+        if (onDisk !== baseText) {
+          return new Response(JSON.stringify({ current: onDisk }), {
+            status: 409,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+      }
       await writeNote(cfg.vault, path, contents);
       await invalidate(path);
       return ok();

@@ -53,6 +53,7 @@ import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from ".
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
 import { tableCellDropTarget, insertEmbedsInTableCell } from "./editor/tableWidget";
+import { threeWayMerge } from "./editor/saveReconcile";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -361,6 +362,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   // stale and the pending save is about to overwrite it (this is what made table edits
   // "disappear on click-off, reappear on reload").
   let pendingSave = false;
+  // The on-disk content this buffer's local edits are a DELTA from — the merge anchor for
+  // save()'s three-way reconcile (#46: an autosave used to be an unconditional last-write-wins
+  // PUT, silently discarding whichever side — local or external — wrote last). Set on load and
+  // after every successful write/reconcile; deliberately distinct from lastSavedText, which
+  // tracks what we last WROTE rather than what the buffer started from. See saveReconcile.ts.
+  let diskBase: string | undefined;
 
   // Value-dedupe the path. props.path is read through a chain (active tab → pane tree →
   // leaf content) that re-emits whenever the tab object changes — e.g. on every pane
@@ -416,10 +423,56 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     onCleanup(() => wrapper.removeEventListener("keydown", onDrawKey, true));
   });
 
+  // A save used to be an unconditional last-write-wins PUT /file: whatever the buffer held got
+  // written straight over disk, with no regard for whether disk had moved on since the buffer
+  // was loaded (#46 — DATA LOSS: an external CLI/daemon edit landing while a local edit was
+  // pending got silently clobbered by the pending autosave; the reverse also happened — the
+  // user's own newest keystrokes reverted when disk changed elsewhere mid-edit). Now: read the
+  // TRUE current disk content right before writing, three-way-merge it against `diskBase` (what
+  // this buffer's edits are a delta from) and `text` (the buffer), and use the server's optional
+  // `baseText` optimistic-concurrency check as a tighter belt-and-suspenders guard against a
+  // writer racing the read→write gap itself. A disjoint external edit merges in (and gets
+  // reconciled into the live buffer below); an overlapping one keeps the user's text and toasts —
+  // never a silent loss either direction. See app/src/editor/saveReconcile.ts.
+  const MAX_MERGE_ATTEMPTS = 5;
   const save = async (path: string, text: string) => {
-    lastSavedText = text; // record before the await so a fast echo still matches
-    await api.write(path, text);
-    primeNoteCache(path, text); // keep the body cache warm so a reopen is instant
+    let disk: string;
+    try {
+      disk = await api.read(path);
+    } catch {
+      disk = diskBase ?? text; // read failed (rare) — fall back to the pre-fix blind-write base
+    }
+    let finalText = text;
+    let conflicted = false;
+    for (let attempt = 0; ; attempt++) {
+      const merge = threeWayMerge(diskBase ?? disk, text, disk);
+      finalText = merge.text;
+      if (merge.conflict) conflicted = true; // toast once below, not once per retry
+      lastSavedText = finalText; // record before the await so a fast SSE echo still matches
+      if (attempt >= MAX_MERGE_ATTEMPTS) {
+        // A writer that keeps racing us this many times in a row is pathological — write
+        // unconditionally rather than drop the user's edit forever. Still strictly safer than
+        // the pre-fix behavior, which took this path on EVERY save, not just after 5 straight
+        // genuine collisions.
+        await api.write(path, finalText);
+        break;
+      }
+      const res = await api.writeChecked(path, finalText, disk);
+      if (!res.conflict) break;
+      disk = res.current; // disk moved again between our read and write — retry against it, no extra round trip
+    }
+    if (conflicted) {
+      pushToast("This note changed elsewhere while you were editing — your edits were kept, but check nearby content for an overwritten external change.");
+    }
+    diskBase = finalText;
+    primeNoteCache(path, finalText); // keep the body cache warm so a reopen is instant
+    // The merge may have pulled in a disjoint external edit the visible buffer doesn't show yet
+    // (e.g. the live-evidence typo fix) — reconcile it into the view so the screen matches disk.
+    // Only when the buffer hasn't moved on since `text` was captured; if the user kept typing,
+    // the next autosave cycle re-merges against this fresh diskBase and reconciles then.
+    if (view && finalText !== text && view.state.doc.toString() === text) {
+      view.dispatch({ changes: minimalChange(text, finalText), annotations: ExternalReload.of(true) });
+    }
     props.onSaved();
     if (settings.vault.backupOnSave) api.backup(); // local-git snapshot; no-op when nothing changed
   };
@@ -573,6 +626,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
     pendingSave = false;
+    diskBase = undefined; // different buffer — the merge anchor is set once the fresh text loads below
     // Switching NOTES always lands in text mode — but this effect also re-runs on any
     // settings.editor change (it reads those leaves to build the extensions), and a
     // settings-driven same-path rebuild must NOT silently kick the user out of draw mode
@@ -733,6 +787,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
         void api.write(path, text); // persist the reformat (best-effort; doc is the source of truth)
       }
     }
+    diskBase = text; // the merge anchor for save()'s three-way reconcile (#46) — this IS the buffer's starting content
     // Warm the path/template completion caches on settings open (async fetch) so the
     // FIRST `path`-typed popup has data instead of an empty list while it loads.
     if (isYaml && isSettingsBuffer(path)) { void vaultPaths(); void templatePaths(); }
@@ -1044,9 +1099,12 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       change.paths.includes(path);
     if (!affectsUs) return;
     if (change.version === lastIgnoredVersion) return;
-    // We have un-flushed local edits — disk is stale and the pending autosave is about to
-    // overwrite it. Reverting now would clobber the local edit (e.g. a just-committed table
-    // cell). Skip; the post-save echo reconciles cleanly once disk catches up.
+    // We have un-flushed local edits — don't touch the VISIBLE buffer yet; reverting now would
+    // clobber in-progress typing (e.g. a just-committed table cell). This used to also mean the
+    // upcoming autosave would blindly overwrite whatever landed on disk during this window (#46)
+    // — that's fixed at the source now: save() re-reads disk itself and three-way-merges (see
+    // saveReconcile.ts) rather than trusting a possibly-stale `diskBase`, so skipping the buffer
+    // reconcile here no longer risks losing the external edit once the pending save runs.
     if (pendingSave) return;
 
     let onDisk: string;
@@ -1059,6 +1117,7 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
     // Guard: path may have changed while awaiting.
     if (path !== props.path) return;
     if (!view) return; // view destroyed while we were awaiting
+    diskBase = onDisk; // buffer has no pending edits here, so this IS (or is about to become) its base
     const current = view.state.doc.toString();
     if (current === onDisk) {
       // No-op refresh (e.g., our own debounced save echoed back). Record so
