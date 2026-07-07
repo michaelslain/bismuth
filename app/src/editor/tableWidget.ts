@@ -6,24 +6,31 @@
 // The widget root is contenteditable=false so CodeMirror treats it as atomic and
 // leaves its inner selection alone, while ignoreEvent() keeps CM from acting on
 // clicks/keys inside it.
-import { EditorView, WidgetType } from "@codemirror/view";
+import { EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 import type { TransactionSpec } from "@codemirror/state";
+import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
 import {
   type Align,
+  type TableBlock,
   type TableGrid,
   type CellKeyAction,
   groupTableBlocks,
+  parseRowCellSpans,
   serializeTable,
   formatTable,
   prettifyTableBlock,
   decideCellKey,
   cellListContinuation,
+  enterAction,
   insertRow,
   deleteRow,
   insertColumn,
   deleteColumn,
   appendToCell,
 } from "./tableModel";
+// CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
+// the find-highlight text-node walk below.
+import type { Text as CMText } from "@codemirror/state";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { renderInlineMarkdown } from "./inlineMarkdown";
 import { onMathReady } from "./katexLoader";
@@ -41,6 +48,13 @@ type TableSizes = { cols: (number | null)[]; rows: (number | null)[] };
 const STORE_PREFIX = "bismuth:table-size:";
 const memStore = new Map<string, TableSizes>();
 const sizeKey = (cells: string[][]): string => JSON.stringify(cells[0] ?? []);
+
+// When Enter on the LAST row grows the table (#42), committing the new row REBUILDS the widget
+// (a doc change → a fresh `TableWidget.toDOM`), so the old cell's focus is lost. We stash the
+// grid coordinate to focus and let the NEXT rebuild of the same table (matched by its stable
+// header `sizeKey`, which a row insert doesn't change) claim it. One-shot: consumed by the first
+// matching `toDOM`. Module-level because the committing widget instance is discarded on rebuild.
+let pendingCellFocus: { key: string; r: number; c: number } | null = null;
 
 function loadSizes(path: string | null, key: string): TableSizes | null {
   try {
@@ -88,14 +102,31 @@ function srcToEditHtml(src: string): string {
  *  text nodes and <br> elements (see srcToEditHtml / insertBreakAtCaret), so each <br>
  *  maps to a `<br>` marker — including a TRAILING one, which `innerText` would silently
  *  drop (the root cause of a Shift+Enter break sometimes not saving). The inverse of
- *  `srcToEditHtml`; stray newlines in text collapse to spaces (a cell is one source line). */
+ *  `srcToEditHtml`.
+ *
+ *  A contenteditable can encode an in-cell line break THREE ways depending on browser /
+ *  edit history: a real `<br>` element, a `<div>`-wrapped continuation line, or a raw `\n`
+ *  CHARACTER inside a text node. We normalize ALL of them to the `<br>` marker so the stored
+ *  source is uniform and list detection (cellList.ts) sees the breaks. The `\n` case is the
+ *  reopened #15 bug: it USED to collapse to a SPACE, turning a typed list "- a\n- b" into
+ *  "- a - b" — which `splitCellItems` deliberately refuses to re-split (a space before the
+ *  dash reads as prose, not a marker), so the list silently vanished. Mapping `\n` → `<br>`
+ *  keeps the break, so the cell renders as the list the user typed. */
 function cellSourceFromDom(cell: HTMLElement): string {
   let out = "";
   cell.childNodes.forEach((n) => {
     out += n.nodeName === "BR" ? "<br>" : (n.textContent ?? "");
   });
-  // Drop ZWSP fillers and collapse stray newlines (a cell is one source line).
-  return out.replace(new RegExp(ZWSP, "g"), "").replace(/\r?\n/g, " ").trim();
+  // Drop ZWSP fillers, then encode any raw newline as an in-cell `<br>` break — NOT a space,
+  // which was the #15 list-loss bug (a typed "- a\n- b" collapsed to "- a - b" and stopped
+  // reading as a list, because splitCellItems refuses to split a space-before-dash as prose).
+  // `.trim()` only strips surrounding whitespace, never the `<br>` markers, so a deliberate
+  // trailing Shift+Enter break (a real `<br>` + ZWSP) — and any intentional blank line typed as
+  // two breaks — is preserved.
+  return out
+    .replace(new RegExp(ZWSP, "g"), "")
+    .replace(/\r?\n/g, "<br>")
+    .trim();
 }
 
 /** Insert a real <br> element at the caret. Deterministic, unlike
@@ -531,6 +562,17 @@ export class TableWidget extends WidgetType {
         // raw-source face and would invalidate a caret the browser had just placed.
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
+          // Right-click (#43): show ONLY the context menu, never a NEW selection. Chromium's
+          // contenteditable default selects the word under the pointer on a right mousedown — so
+          // right-clicking both highlighted the word AND opened the menu. `preventDefault` here
+          // suppresses that word-select without clearing an EXISTING selection (a right-click on a
+          // selection keeps it), and the separate `contextmenu` listener still opens the menu. We
+          // stop propagation so CM doesn't also act, and return before the caret-placement path.
+          if (me.button === 2) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
           // instead of entering edit mode. The `e.stopPropagation()` below means CM's own
           // wikilink click handler never sees this click, so we run the same open path here.
@@ -638,7 +680,7 @@ export class TableWidget extends WidgetType {
             case "next-row": {
               ev.preventDefault();
               // In-cell list continuation (#15): if the caret's line is a `- `/`N.` list
-              // item, Enter continues the list in-cell instead of jumping rows.
+              // item, Enter continues the list in-cell instead of anything else.
               const lineInfo = caretCellLine(cell);
               const cont = lineInfo ? cellListContinuation(lineInfo.line) : null;
               if (cont && cont !== "exit") {
@@ -648,11 +690,18 @@ export class TableWidget extends WidgetType {
                 return;
               }
               if (cont === "exit" && lineInfo) {
-                // Empty marker → drop it and leave the list, then fall through to next-row.
+                // Empty marker → drop it and leave the list, then apply the base Enter action.
                 deleteCurrentLine(lineInfo.beforeLen, lineInfo.afterLen);
               }
-              if (r + 1 < this.cells.length) focusCell(r + 1, c);
-              else cell.blur(); // last row → commit on focusout
+              // #42: Enter behaves like Shift+Enter (a soft in-cell line break) on EVERY row
+              // except the LAST, where it grows the table by a row and drops the caret into it.
+              if (enterAction(r, this.cells.length) === "line-break") {
+                insertBreakAtCaret();
+                return;
+              }
+              // Last row → append a blank row and focus its same column after the widget rebuilds.
+              pendingCellFocus = { key: sizeKey(this.cells), r: this.cells.length, c };
+              this.commit(view, root, (g) => insertRow(g, g.cells.length));
               return;
             }
             case "leave":
@@ -688,6 +737,46 @@ export class TableWidget extends WidgetType {
     );
     root.appendChild(
       edgeBar("cm-table-add-row", "Add row", () => this.commit(view, root, (g) => insertRow(g, g.cells.length))),
+    );
+
+    // Drop an image/media FILE onto a cell → embed it INTO that cell (#30). A rendered table is an
+    // atomic block widget whose contenteditable cells reroute the browser's native file drop before
+    // CM's own `drop` handler (Editor.tsx) can see it — so a dropped image landed in the note body,
+    // or nowhere. CAPTURE-phase listeners on the widget root intercept it FIRST: `dragover` must
+    // preventDefault to mark the cell a valid drop target (else no `drop` fires at all), and `drop`
+    // resolves the target cell and hands the File list to Editor.tsx's SAME upload+embed flow via a
+    // window event (the widget can't import that flow without a cycle). stopPropagation keeps CM's
+    // bubble-phase drop handler from ALSO firing (no double insert).
+    const dtHasFiles = (dt: DataTransfer | null): boolean =>
+      !!dt && (Array.from(dt.types ?? []).includes("Files") || (dt.items?.length ?? 0) > 0 || (dt.files?.length ?? 0) > 0);
+    root.addEventListener(
+      "dragover",
+      (e) => {
+        const de = e as DragEvent;
+        if (!dtHasFiles(de.dataTransfer)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (de.dataTransfer) de.dataTransfer.dropEffect = "copy";
+      },
+      true,
+    );
+    root.addEventListener(
+      "drop",
+      (e) => {
+        const de = e as DragEvent;
+        const files = de.dataTransfer ? Array.from(de.dataTransfer.files) : [];
+        if (files.length === 0) return; // not a file drop — let text-drop fall through
+        const target = tableCellDropTarget(view, de.target);
+        if (!target) return; // drop wasn't over a cell — leave it to the normal handler
+        e.preventDefault();
+        e.stopPropagation();
+        // Editor.tsx owns the vault upload + attachment settings; hand off (with the resolved cell +
+        // altKey for the reference-vs-copy choice). It matches this event to its own `view`.
+        window.dispatchEvent(
+          new CustomEvent("bismuth-table-drop", { detail: { view, files, target, altKey: de.altKey } }),
+        );
+      },
+      true,
     );
 
     // Right-click a cell → a table-specific menu (insert/delete row & column, edit
@@ -855,6 +944,17 @@ export class TableWidget extends WidgetType {
     if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(layout);
     else layout();
 
+    // Claim a pending caret-focus request left by an Enter-grows-a-row commit (#42): if it names
+    // THIS table (same stable header key) and a cell that now exists, focus it once CM has attached
+    // the freshly-built widget. One-shot — cleared as soon as it's claimed.
+    if (pendingCellFocus && pendingCellFocus.key === sizeKey(this.cells)) {
+      const { r, c } = pendingCellFocus;
+      pendingCellFocus = null;
+      const doFocus = (): void => { focusCell(r, c); };
+      if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(doFocus);
+      else doFocus();
+    }
+
     // Outer block carries the vertical spacing as PADDING so CodeMirror measures it (a
     // margin on `root` would be excluded from CM's block-height model, drawing the caret
     // one line too low for everything below the table — see the `.cm-table-block` CSS note).
@@ -939,3 +1039,144 @@ export class TableWidget extends WidgetType {
     return true;
   }
 }
+
+// ── Find-in-table highlighting (#31) ──────────────────────────────────────────
+// A GFM table is drawn as an atomic block-replace WIDGET that HIDES its source lines, so a
+// Cmd+F match landing on those lines is invisible behind the widget. The OLD behavior flipped
+// the whole table to RAW MARKDOWN SOURCE so the match showed — which the user rejected outright
+// ("cmd+f converts tables to source, which is stupid"). Instead we highlight matches IN PLACE,
+// inside the rendered table DOM: every match gets a `<mark class="cm-table-find-match">`, and the
+// ACTIVE match (the one the find bar's selection sits on) additionally gets `cm-table-find-active`
+// and is scrolled into view. No StateField, no re-render of the widget (which would blow away an
+// in-progress cell edit) — a post-render ViewPlugin decorates the existing display DOM, so a
+// cursor move or query keystroke never touches the source. Cleared the moment the bar closes.
+export const TABLE_FIND_MATCH_CLASS = "cm-table-find-match";
+export const TABLE_FIND_ACTIVE_CLASS = "cm-table-find-active";
+
+/** Remove every find highlight `<mark>` from a table wrap, restoring the original text nodes.
+ *  Unwraps each mark (moving its children out) then normalizes the parent so split text merges. */
+function clearTableFindHighlights(root: HTMLElement): void {
+  root.querySelectorAll(`mark.${TABLE_FIND_MATCH_CLASS}`).forEach((m) => {
+    const parent = m.parentNode;
+    if (!parent) return;
+    while (m.firstChild) parent.insertBefore(m.firstChild, m);
+    parent.removeChild(m);
+    (parent as Element & { normalize?: () => void }).normalize?.();
+  });
+}
+
+/** Wrap every literal occurrence of `query` in a display cell's TEXT NODES with a find `<mark>`
+ *  (case-insensitive unless `caseSensitive`). Returns the marks created, in document order, so the
+ *  caller can pick out the active one. Only touches text nodes, so inline elements (bold, tags,
+ *  wikilinks) inside the cell are preserved; a match that straddles an element boundary is left
+ *  alone (same limitation as a browser's own in-page find within formatted text). */
+function highlightCellFind(cell: HTMLElement, query: string, caseSensitive: boolean): HTMLElement[] {
+  if (!query) return [];
+  const needle = caseSensitive ? query : query.toLowerCase();
+  const created: HTMLElement[] = [];
+  // Snapshot the text nodes first — we mutate the tree as we go, which would invalidate a live walk.
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) textNodes.push(n as Text);
+  for (const tn of textNodes) {
+    const src = tn.nodeValue ?? "";
+    const hay = caseSensitive ? src : src.toLowerCase();
+    if (hay.indexOf(needle) === -1) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    for (let idx = hay.indexOf(needle, 0); idx !== -1; idx = hay.indexOf(needle, last)) {
+      if (idx > last) frag.appendChild(document.createTextNode(src.slice(last, idx)));
+      const mark = document.createElement("mark");
+      mark.className = TABLE_FIND_MATCH_CLASS;
+      mark.textContent = src.slice(idx, idx + query.length);
+      frag.appendChild(mark);
+      created.push(mark);
+      last = idx + query.length;
+    }
+    if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
+    tn.parentNode?.replaceChild(frag, tn);
+  }
+  return created;
+}
+
+/** Grid coordinate `(r, c)` of the cell a document offset falls inside a table block, or null when
+ *  the offset is on the separator row (no rendered cell) or outside the block. Row 0 is the header;
+ *  body rows follow the separator. Column comes from the raw line's cell spans (parseRowCellSpans),
+ *  so the find bar can mark the exact rendered cell its active match sits in (#31). */
+function cellCoordForOffset(block: TableBlock, doc: CMText, offset: number): { r: number; c: number } | null {
+  const lineNo = doc.lineAt(offset).number;
+  if (lineNo < block.startLine || lineNo > block.endLine) return null;
+  if (lineNo === block.startLine + 1) return null; // separator row — not rendered
+  const r = lineNo === block.startLine ? 0 : lineNo - block.startLine - 1;
+  const line = doc.line(lineNo);
+  const within = offset - line.from;
+  const spans = parseRowCellSpans(line.text);
+  for (let c = 0; c < spans.length; c++) {
+    if (within >= spans[c].start && within <= spans[c].end) return { r, c };
+  }
+  return null;
+}
+
+/** ViewPlugin that highlights the current find query inside every rendered table widget and marks
+ *  the active match (#31). Re-applied whenever the doc, selection, query, viewport, or panel state
+ *  changes; a full clear runs when the find bar isn't open. Purely decorates the display DOM — it
+ *  never dispatches a transaction or reveals table source. */
+export const tableFindHighlight = ViewPlugin.fromClass(
+  class {
+    constructor(view: EditorView) {
+      this.apply(view);
+    }
+    update(u: ViewUpdate): void {
+      // Effects cover the search-query set + the panel open/close toggle; selection covers the
+      // active-match move; doc + viewport cover a widget rebuild / newly scrolled-in table.
+      if (
+        u.docChanged ||
+        u.selectionSet ||
+        u.viewportChanged ||
+        u.transactions.some((t) => t.effects.length > 0)
+      ) {
+        this.apply(u.view);
+      }
+    }
+    apply(view: EditorView): void {
+      const wraps = Array.from(view.contentDOM.querySelectorAll<HTMLElement>(".cm-table-wrap"));
+      if (wraps.length === 0) return;
+      for (const w of wraps) clearTableFindHighlights(w);
+      const query = getSearchQuery(view.state);
+      if (!searchPanelOpen(view.state) || !query.valid || !query.search) return;
+      const doc = view.state.doc;
+      const { blocks } = groupTableBlocks(doc);
+      const sel = view.state.selection.main;
+      const activeBlock = blocks.find(
+        (b) => sel.from >= doc.line(b.startLine).from && sel.from <= doc.line(b.endLine).to,
+      );
+      const activeCoord = activeBlock ? cellCoordForOffset(activeBlock, doc, sel.from) : null;
+      for (const wrap of wraps) {
+        let pos: number;
+        try {
+          pos = view.posAtDOM(wrap);
+        } catch {
+          continue;
+        }
+        const block = blocks.find(
+          (b) => pos >= doc.line(b.startLine).from && pos <= doc.line(b.endLine).to,
+        );
+        for (const cell of Array.from(wrap.querySelectorAll<HTMLElement>("[data-cell]"))) {
+          if (cell.dataset.editing === "1") continue; // don't touch the edit face (corrupts read-back)
+          highlightCellFind(cell, query.search, query.caseSensitive);
+        }
+        // Mark + reveal the active match's cell (the block the find selection is genuinely inside).
+        if (block && activeBlock && block === activeBlock && activeCoord) {
+          const activeCell = wrap.querySelector<HTMLElement>(
+            `[data-cell][data-r="${activeCoord.r}"][data-c="${activeCoord.c}"]`,
+          );
+          const mark = activeCell?.querySelector<HTMLElement>(`mark.${TABLE_FIND_MATCH_CLASS}`);
+          if (mark) {
+            mark.classList.add(TABLE_FIND_ACTIVE_CLASS);
+            mark.scrollIntoView({ block: "nearest", inline: "nearest" });
+          }
+        }
+      }
+    }
+  },
+);
