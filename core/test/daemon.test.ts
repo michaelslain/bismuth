@@ -353,3 +353,31 @@ test("unknown cron/process name throws (404 AppError)", () => {
   expect(() => runCron("nope", home)).toThrow();
   expect(() => setProcessEnabled("nope", false, home)).toThrow();
 });
+
+test("registerVaultRoot keeps throwaway (temp) vaults out of a persistent registry", () => {
+  // A NON-temp home stands in for the real machine dir (the guard discriminates on the home
+  // being persistent); lives inside the test dir and is removed at the end.
+  const home = join(import.meta.dir, `.vaultroot-home-${process.pid}`);
+  mkdirSync(home, { recursive: true });
+  try {
+    const tempVault = mkdtempSync(join(tmpdir(), "vaultRoot-"));
+    created.push(tempVault);
+    registerVaultRoot(tempVault, home);
+    // A temp vault never enters a persistent registry — not even creating the file.
+    expect(existsSync(join(home, "vaults.json"))).toBe(false);
+    // Pre-existing strays (temp entries from before the guard + vanished dirs) are pruned
+    // the next time a REAL vault registers.
+    writeFileSync(join(home, "vaults.json"), JSON.stringify([tempVault, "/nope/never-existed"]));
+    const realVault = join(import.meta.dir, `.vaultroot-real-${process.pid}`);
+    mkdirSync(realVault, { recursive: true });
+    try {
+      registerVaultRoot(realVault, home);
+      const written = JSON.parse(readFileSync(join(home, "vaults.json"), "utf8"));
+      expect(written).toEqual([realVault]);
+    } finally {
+      rmSync(realVault, { recursive: true, force: true });
+    }
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

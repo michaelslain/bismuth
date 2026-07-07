@@ -47,6 +47,20 @@ export async function flushFocusedEditor(): Promise<void> {
   if (f) await f();
 }
 
+/** Flush a SPECIFIC note's editor by its buffer path, regardless of which pane was last
+ *  focused — the daemon-page action bar must persist THIS page's pending edits before the
+ *  daemon acts on the file, and in a split layout the last-focused view may be a different
+ *  note entirely (flushing the wrong buffer AND skipping this one). No-op when the path has
+ *  no live editor (nothing typed / visual mode) — the debounced autosave already covers it. */
+export async function flushEditorByPath(path: string): Promise<void> {
+  for (const [view, fn] of flushers) {
+    if (view.state.facet(notePathFacet) === path) {
+      await fn();
+      return;
+    }
+  }
+}
+
 /** Force a lint re-run on every open editor. Used after a change that affects
  *  diagnostics globally but isn't a document edit — e.g. adding/removing a custom
  *  dictionary word — since CM only re-lints on doc changes or an explicit request. */
