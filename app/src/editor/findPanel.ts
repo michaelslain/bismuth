@@ -133,6 +133,38 @@ export function nextOwnedTable(
   return prevOwned != null ? decision.target : prevOwned;
 }
 
+/** Full reveal reconcile for the find bar's ACTIVE match — or `null` when the query has no match at
+ *  all (empty / typo'd query) (#31). This is the piece the PRIOR fix missed: it scoped the REVEAL
+ *  correctly but left the REVERT implicit, relying on `activeTableField` auto-clearing once a
+ *  *dispatched selection* leaves the block. On the no-match path the find bar dispatches nothing, so
+ *  that auto-clear never fires and a table revealed by an earlier (matching) keystroke stays STUCK in
+ *  raw source (the "Cmd+F flipped my table to source" the user still saw). Making the revert explicit
+ *  here fixes it. Pure so the whole lifecycle is unit-tested without an EditorView.
+ *   - `reveal`: a table (header line) to newly flip to source, or null.
+ *   - `revert`: flip the find bar's OWN revealed table back to a widget (dispatch
+ *     `setActiveTableEffect.of(null)`). Only ever the table find owns AND that is currently active, so
+ *     a manually-opened ("Edit source") table — which find never owned — is never collapsed.
+ *   - `owned`: the next value of the find-owned-table tracker.
+ *  Transitions: a match inside a not-active table → reveal + own it; a match inside the already-active
+ *  table → keep (own it only if find was mid-navigation, never claiming a manually-opened one); a
+ *  match in prose OR no match at all → revert the find-owned table (if any) and own nothing. */
+export function reconcileTableReveal(
+  blocks: { from: number; to: number; startLine: number }[],
+  match: { from: number; to: number } | null,
+  active: number | null,
+  owned: number | null,
+): { reveal: number | null; revert: boolean; owned: number | null } {
+  if (match) {
+    const decision = tableRevealDecision(blocks, match.from, match.to, active);
+    if (decision.target != null) {
+      return { reveal: decision.reveal, revert: false, owned: nextOwnedTable(owned, decision) };
+    }
+    // match landed in prose (no table): fall through to the revert branch.
+  }
+  // No match, or a prose match: flip find's OWN table back iff it's the one currently showing source.
+  return { reveal: null, revert: owned != null && owned === active, owned: null };
+}
+
 // Lucide-style inline icons (the registry renders Solid components; the panel is raw
 // DOM, so we inline the same paths).
 const ICONS = {
@@ -218,17 +250,26 @@ export function createFindPanel(view: EditorView): Panel {
   // table, so closing the bar NEVER collapses a table the user opened manually ("Edit source").
   let findRevealed: number | null = null;
 
-  // Reconcile the table reveal with a match landing on `[from, to)`: return the effect(s) to FOLD
-  // INTO the selection's transaction (so the block's source is un-hidden before CM measures the
-  // scroll target — no stale-layout jump, #21) and update find-ownership. Only a match GENUINELY
-  // inside a table flips it to source; a prose match reveals nothing (normal Cmd+F never touches
-  // tables). The `activeTableField` auto-clears a revealed table once the selection leaves it, so
-  // moving to a prose match reverts the old table for free — this just tracks what we own.
-  const tableRevealEffects = (from: number, to: number): StateEffect<unknown>[] => {
+  // Reconcile the table reveal for the match the find bar just landed on (or `null` when the query
+  // has NO match): return the effect(s) to fold into the dispatch, plus a `park` line-offset to move
+  // the caret to when we REVERT (so it isn't stranded inside a re-widgetized atomic table). Both a
+  // reveal AND a revert are explicit here — the revert no longer relies on `activeTableField`'s
+  // implicit auto-clear (which never fires when the query stops matching, so a find-revealed table
+  // would otherwise stay stuck in source, #31). Only a match GENUINELY inside a table flips it to
+  // source; a prose match reveals nothing and reverts find's own table; a manually-opened ("Edit
+  // source") table is never touched (find only ever reverts a block it itself revealed).
+  const reconcileReveal = (match: { from: number; to: number } | null): { effects: StateEffect<unknown>[]; park: number | null } => {
     const active = view.state.field(activeTableField, false) ?? null;
-    const decision = tableRevealDecision(tableSpans(), from, to, active);
-    findRevealed = nextOwnedTable(findRevealed, decision);
-    return decision.reveal != null ? [setActiveTableEffect.of(decision.reveal) as StateEffect<unknown>] : [];
+    const prevOwned = findRevealed;
+    const r = reconcileTableReveal(tableSpans(), match, active, prevOwned);
+    findRevealed = r.owned;
+    if (r.reveal != null) return { effects: [setActiveTableEffect.of(r.reveal) as StateEffect<unknown>], park: null };
+    if (r.revert) {
+      const doc = view.state.doc;
+      const park = prevOwned != null && prevOwned >= 1 && prevOwned <= doc.lines ? doc.line(prevOwned).from : null;
+      return { effects: [setActiveTableEffect.of(null) as StateEffect<unknown>], park };
+    }
+    return { effects: [], park: null };
   };
 
   // Flip a table the find bar itself revealed BACK to its rendered widget (a manually-opened one
@@ -262,10 +303,18 @@ export function createFindPanel(view: EditorView): Panel {
   // end) means refining the query keeps you on the current match instead of skipping it.
   const revealFrom = (pos: number) => {
     const m = nextMatchFrom(view.state, getSearchQuery(view.state), pos);
-    if (!m) return;
+    // Reconcile EVEN when there's no match: an empty / non-matching query must still flip a
+    // find-revealed table back to a widget instead of leaving it stuck in source (#31).
+    const { effects, park } = reconcileReveal(m);
+    if (!m) {
+      // No match → don't move the selection to a match, but DO apply a pending revert (parking the
+      // caret at the reverted table's start so it isn't left inside the re-widgetized atomic block).
+      if (effects.length) view.dispatch(park != null ? { selection: { anchor: park }, effects } : { effects });
+      return;
+    }
     view.dispatch({
       selection: { anchor: m.from, head: m.to },
-      effects: [EditorView.scrollIntoView(m.to, { y: "center" }), ...tableRevealEffects(m.from, m.to)],
+      effects: [EditorView.scrollIntoView(m.to, { y: "center" }), ...effects],
       userEvent: "select.search",
     });
   };
@@ -277,10 +326,12 @@ export function createFindPanel(view: EditorView): Panel {
   // tracking it so it's reverted on close.
   const revealTableAtSelection = () => {
     const sel = view.state.selection.main;
-    const effects = tableRevealEffects(sel.from, sel.to);
-    if (effects.length) {
-      view.dispatch({ effects: [...effects, EditorView.scrollIntoView(sel.to, { y: "center" }) as StateEffect<unknown>] });
-    }
+    const { effects, park } = reconcileReveal({ from: sel.from, to: sel.to });
+    if (!effects.length) return;
+    view.dispatch({
+      selection: park != null ? { anchor: park } : undefined,
+      effects: [...effects, EditorView.scrollIntoView(sel.to, { y: "center" }) as StateEffect<unknown>],
+    });
   };
 
   // Push the input's text as the active query (live highlight) and reveal the nearest match.
