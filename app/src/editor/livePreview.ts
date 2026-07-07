@@ -1384,7 +1384,13 @@ export const livePreview = [
     // Property KEYS (date / tags / icon …): a dimmed neutral grey, NOT a theme-accent color, so the
     // frontmatter panel stays theme-agnostic dark grey (was `var(--accent)` — the re-flagged bug).
     // Theme-aware (dims --fg toward the background) so it reads grey on both light + dark themes.
-    ".cm-fm-key": { color: "color-mix(in srgb, var(--fg) 55%, transparent)" },
+    // The `> span` is load-bearing (mirrors `.cm-syntax-mark`/`.cm-heading-mark` above): CodeMirror
+    // nests the YAML syntax-highlighter token INSIDE this mark —
+    // `<span class="cm-fm-key"><span class="ͼ…">key</span></span>` — and that inner token is
+    // `t.propertyName → var(--accent)` (codeHighlight.ts). Coloring only `.cm-fm-key` leaves the
+    // inner accent token to win, so the key STILL renders accent; this is exactly why the earlier
+    // "change the key to grey" fix showed no visible effect. Overriding the child span forces grey through.
+    ".cm-fm-key, .cm-fm-key > span": { color: "color-mix(in srgb, var(--fg) 55%, transparent)" },
     // Raw (active) table source — monospace pipes for structural / power edits.
     ".cm-table": { "font-family": MONO_FONT, "font-size": "calc(1em * var(--mono-scale, 0.85))" },
     // Rendered editable table (the block-replace widget). Cells are contenteditable.
