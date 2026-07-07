@@ -62,6 +62,7 @@ import FolderPlus from "lucide-solid/icons/folder-plus";
 import Hash from "lucide-solid/icons/hash";
 import Highlighter from "lucide-solid/icons/highlighter";
 import Image from "lucide-solid/icons/image";
+import Inbox from "lucide-solid/icons/inbox";
 import Landmark from "lucide-solid/icons/landmark";
 import LayoutList from "lucide-solid/icons/layout-list";
 import Link from "lucide-solid/icons/link";
@@ -123,7 +124,7 @@ const SEED: Record<string, LucideIcon> = {
   Bot, Box, Brain, BrainCircuit, Calendar, CalendarX, CaseSensitive, Check, ChevronDown,
   ChevronLeft, ChevronRight,
   ChevronUp, Clock, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
-  FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image,
+  FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image, Inbox,
   Landmark, LayoutList, Link, Lock, Menu, MessageSquare, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
   Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Square,

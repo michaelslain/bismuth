@@ -18,8 +18,10 @@ const IMAGE_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
 import { EmptyPane } from "./EmptyPane";
 // Lazy: ExportView pulls in jspdf/html2canvas transitively; defer it off the entry bundle.
 const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.ExportView })));
+// Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
+const InboxView = lazy(() => import("./InboxView").then((m) => ({ default: m.InboxView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { SEARCH_TAB, GRAPH_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, isSentinel } from "./tabIds";
+import { SEARCH_TAB, GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, isSentinel } from "./tabIds";
 import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
@@ -55,6 +57,11 @@ export function PaneContent(props: {
       </Match>
       <Match when={props.path === SEARCH_TAB}>
         <SearchView onOpen={props.onOpen} />
+      </Match>
+      <Match when={props.path === INBOX_TAB}>
+        <Suspense fallback={<div class="full" />}>
+          <InboxView onOpen={props.onOpen} />
+        </Suspense>
       </Match>
       <Match when={props.path === GRAPH_TAB}>
         {/* Graph panes show a transparent placeholder. The real WebGL graph lives in

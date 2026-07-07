@@ -34,6 +34,7 @@ import type { Card } from "../../core/src/srs/types";
 import type { Row, ParsedBase, SourceSpec } from "../../core/src/bases/types";
 import type { Schema } from "../../core/src/schema/types";
 import type { DaemonStatus, DeviceList, Owner } from "../../core/src/daemon";
+import type { DaemonPage, ResolveResult } from "../../core/src/daemonPages";
 import type { InstallStatus, SetupResult } from "../../core/src/daemonInstall";
 import type { BismuthStatus, InstallResult } from "../../core/src/bismuthInstall";
 import type { UpdateStatus, UpdateProgress } from "../../core/src/selfUpdate";
@@ -306,6 +307,14 @@ export const api = {
   // (core/src/daemonInstall.ts registers the launchd/systemd service server-side).
   daemonInstall: () => getJson<InstallStatus>("/daemon/install"),
   daemonSetup: () => postJson<SetupResult>("/daemon/setup", {}),
+  // The daemon "inbox": pages the daemon authored asking the user to approve/dismiss an action
+  // (core/src/daemonPages.ts). Resolve is dual-purpose (approve when the pressed action has a
+  // prompt, else a pure dismiss) — see daemonPages.ts's resolvePage. markFailed is the
+  // client-side "stuck working" escape hatch; neither is a vault mutation (see server.ts).
+  daemonPages: () => getJson<DaemonPage[]>("/daemon/pages"),
+  resolveDaemonPage: (path: string, actionId: string) =>
+    postJson<ResolveResult>("/daemon/pages/resolve", { path, actionId }),
+  markDaemonPageFailed: (path: string) => post("/daemon/pages/mark-failed", { path }).then(() => {}),
   // Re-register the daemon service — no git pull; the binary updates WITH the app.
   daemonUpdate: () => postJson<SetupResult>("/daemon/update", {}),
   // Machine-wide bismuth CLI + MCP install: read-only status + idempotent ensure.

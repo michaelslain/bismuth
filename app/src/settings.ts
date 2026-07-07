@@ -112,6 +112,7 @@ export interface Settings {
   daemon: {
     enabled: boolean;    // master switch: per-vault daemon (background runtime + memory injection + 3rd-brain)
     // the daemon's NAME lives in .daemon/identity.md frontmatter, not in settings
+    inboxRetentionDays: number; // days a resolved daemon-inbox page stays listed before GC
   };
   update: {
     autoUpdate: boolean; // auto-apply Bismuth app updates on launch (auto-relaunch when ready)

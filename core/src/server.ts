@@ -56,6 +56,7 @@ import { fileBasename } from "./pathUtils";
 import { isInkSidecarPath } from "./drawing/ink";
 import { daemonStatus, listDevices, setOwner, setCronEnabled, setProcessEnabled, runCron, migrateDaemonState, vaultDaemonDir, daemonIdentityName, registerVaultRoot } from "./daemon";
 import { daemonGraph } from "./daemonGraph";
+import { listDaemonPages, resolvePage, markPageFailed, DAEMON_PAGE_RE } from "./daemonPages";
 import { installStatus, runSetup, installDaemonFromBundle } from "./daemonInstall";
 import { getBismuthStatus, ensureBismuthInstalled } from "./bismuthInstall";
 import { getUpdateStatus, startUpdate, getUpdateProgress } from "./selfUpdate";
@@ -273,13 +274,17 @@ export function createServer(cfg: CoreConfig) {
   // pid/session files, cron .running.json/.last-fired.json/.triggers. None of it changes the
   // sidebar or the graph, so reacting to it (cache invalidate → version bump → SSE → full
   // /tree or /graph rebuild) is pure churn — the same reason DAEMON_STATUS_FILE is dropped
-  // above. A .daemon path is "noise" UNLESS it's the 3rd brain (.daemon/memory/**) or a cron/
-  // process DEFINITION file (.daemon/{crons,processes}/<name>.md) that the sidebar/graph show.
+  // above. A .daemon path is "noise" UNLESS it's the 3rd brain (.daemon/memory/**), a cron/
+  // process DEFINITION file (.daemon/{crons,processes}/<name>.md), or a daemon INBOX page
+  // (.daemon/pages/<slug>.md) — all three the sidebar/graph show. A page's dynamic sidecar
+  // (.daemon/pages/.state/**) and trigger dir (.daemon/pages/.triggers/**) stay dot-prefixed,
+  // so they're still noise (correct — their churn shouldn't bump the tree).
   const isDaemonRuntimeNoise = (p: string) =>
     p.startsWith(".daemon/") &&
     !isDaemonMemoryPath(p) &&
     p !== ".daemon/identity.md" && // the user-editable personality file — show it in the sidebar
-    !DAEMON_DEF_RE.test(p);
+    !DAEMON_DEF_RE.test(p) &&
+    !DAEMON_PAGE_RE.test(p);
 
   // Clear only the caches a change touched, bump version, and tell subscribers
   // exactly what's dirty. We always bump version (so the editor can reconcile an
@@ -923,6 +928,38 @@ export function createServer(cfg: CoreConfig) {
       const { name, enabled } = (await req.json()) as { name?: string; enabled?: boolean };
       if (!name || typeof enabled !== "boolean") return error("missing name/enabled", 400);
       setProcessEnabled(name, enabled, vaultDaemonDir(cfg.vault));
+      return ok({ ok: true });
+    },
+
+    // The daemon "inbox": pages the daemon authored under .daemon/pages/*.md asking the user to
+    // approve/dismiss an action (see core/src/daemonPages.ts). Read-only despite the GC side
+    // effect (deleting long-resolved pages is an implementation detail of "list", not a vault
+    // mutation the frontend needs to react to specially), so it lives in the READ table like the
+    // other /daemon/* routes above — the frontend just polls it.
+    "GET /daemon/pages": async (_, __) => {
+      // appConfig.daemon.inboxRetentionDays mirrors the settings-schema default (see
+      // schema/settingsSchema.ts's daemon.inboxRetentionDays) when settings.yaml hasn't loaded yet.
+      return ok(listDaemonPages(cfg.vault, appConfig.daemon?.inboxRetentionDays ?? 7));
+    },
+
+    // Resolve a pressed action: approve (has a `prompt`) writes the sidecar to "working" and
+    // drops a trigger the daemon's processPageTriggers polls; dismiss (no `prompt`) resolves
+    // entirely here. NOT a vault mutation (the page .md itself is untouched — only its sidecar
+    // under .daemon/pages/.state/ changes), so, like /daemon/cron/toggle, it lives in the READ
+    // table — no cache-invalidate; the frontend re-polls GET /daemon/pages.
+    "POST /daemon/pages/resolve": async (req) => {
+      const { path, actionId } = (await req.json()) as { path?: string; actionId?: string };
+      if (!path || !actionId) return error("missing path/actionId", 400);
+      return ok(resolvePage(cfg.vault, path, actionId));
+    },
+
+    // Belt-and-suspenders client escape hatch (plan §5): force the sidecar to "failed" with no
+    // daemon involvement, for a page stuck "working" implausibly long (the daemon process died
+    // mid-run). Same READ-table reasoning as the route above.
+    "POST /daemon/pages/mark-failed": async (req) => {
+      const { path } = (await req.json()) as { path?: string };
+      if (!path) return error("missing path", 400);
+      markPageFailed(cfg.vault, path);
       return ok({ ok: true });
     },
 

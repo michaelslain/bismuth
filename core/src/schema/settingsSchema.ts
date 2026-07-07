@@ -179,6 +179,7 @@ export const SETTINGS_SCHEMA: Schema = {
   // device is the single source of truth in owner.json — NOT a setting here.
   daemon: object({
     enabled: { type: "boolean", default: false, doc: "Master switch for this vault's daemon — the per-vault assistant that runs crons/processes in the background, injects this vault's memory into its Claude sessions, and shows the 3rd-brain + daemon graph modes. Off = dormant: state is preserved on disk and the .daemon folder is hidden. Set automatically from the first-run intro; toggle anytime. The daemon's NAME lives in its identity file (.daemon/identity.md frontmatter), not here." },
+    inboxRetentionDays: { type: "number", default: 7, min: 1, max: 90, doc: "How long a resolved daemon-inbox page (sent/discarded/failed) stays listed before it's garbage-collected (days). GC runs opportunistically whenever the inbox is read — no separate cron or ticker." },
   }),
   // Bismuth-app self-update. The bundled app can git-pull + rebuild + swap itself
   // (see core/src/selfUpdate.ts); by default that's manual via the update banner.

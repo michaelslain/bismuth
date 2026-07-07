@@ -10,6 +10,9 @@ export const TERMINAL_PREFIX = "::term:";
 export const EXPORT_PREFIX = "::export:";
 // Chat session with Claude Code: CHAT_PREFIX + "<chat id>".
 export const CHAT_PREFIX = "::chat:";
+// The daemon inbox — pages awaiting approval/dismissal (core/src/daemonPages.ts). One tab, like
+// SEARCH_TAB/GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
+export const INBOX_TAB = "::inbox";
 
 // The app's "settings page" is the single hidden `.settings` file (YAML) opened as an ordinary
 // file tab (there is no ::settings sentinel). We treat it as a first-class app: shown as "settings"
@@ -45,6 +48,7 @@ function noteName(path: string): string {
 export function contentLabel(content: string, terminalIndex?: number): string {
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
+  if (content === INBOX_TAB) return "Inbox";
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
   if (content.startsWith(EXPORT_PREFIX)) return `Export: ${noteName(content.slice(EXPORT_PREFIX.length))}`;
   if (content.startsWith(CHAT_PREFIX)) return chatLabelProvider?.(content) ?? "Chat";
@@ -58,6 +62,7 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 export function contentIcon(content: string): string | undefined {
   if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "Share2";
+  if (content === INBOX_TAB) return "Inbox";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";
   if (content.startsWith(CHAT_PREFIX)) return "MessageSquare";
   if (content.startsWith(TERMINAL_PREFIX)) return "SquareTerminal";

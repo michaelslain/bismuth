@@ -433,7 +433,7 @@ export async function setFolderIcon(vault: string, path: string, icon: string | 
 // section is an identity match for SrsConfig (see scheduler.ts).
 export interface AppConfig {
   server: { fileWatchDebounceMs: number; sseHeartbeatMs: number };
-  daemon: { enabled: boolean };
+  daemon: { enabled: boolean; inboxRetentionDays: number };
   templates?: { folder: string };
   srs: SrsConfig;
   googleCalendar?: {

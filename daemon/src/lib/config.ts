@@ -34,6 +34,11 @@ export interface VaultContext {
   runningFile: string
   triggerDir: string
   processTriggerDir: string
+  /** <root>/.daemon/pages — daemon-authored inbox pages (core/src/daemonPages.ts writes/reads
+   *  the .md + its .state sidecar; this runtime only reads the sidecar + drops trigger files). */
+  pagesDir: string
+  pageStateDir: string
+  pageTriggerDir: string
 }
 
 /** Compute a vault's brain paths under <root>/.daemon. */
@@ -41,6 +46,7 @@ export function vaultPaths(root: string, name: string = "daemon"): VaultContext 
   const daemonDir = join(root, ".daemon")
   const cronsDir = join(daemonDir, "crons")
   const processesDir = join(daemonDir, "processes")
+  const pagesDir = join(daemonDir, "pages")
   return {
     root,
     name: name.trim() || "daemon",
@@ -55,6 +61,9 @@ export function vaultPaths(root: string, name: string = "daemon"): VaultContext 
     runningFile: join(cronsDir, ".running.json"),
     triggerDir: join(cronsDir, ".triggers"),
     processTriggerDir: join(processesDir, ".triggers"),
+    pagesDir,
+    pageStateDir: join(pagesDir, ".state"),
+    pageTriggerDir: join(pagesDir, ".triggers"),
   }
 }
 

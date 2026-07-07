@@ -141,6 +141,7 @@ On the first per-machine enable, `migrateDaemonState(vault)` (`core/src/daemon.t
 - [lifecycle.md](lifecycle.md) — the runtime: boot/shutdown, per-vault `startVault`/`stopVault`, the reconcile loop, the cron scheduler tick, the launchd/systemd service, install/update from the bundled binary.
 - [storage.md](storage.md) — the on-disk layout: the machine home (`~/.bismuth/daemon`) and a vault's `.daemon/` brain, file-by-file.
 - [crons-and-processes.md](crons-and-processes.md) — cron + background-process model: frontmatter, scheduling, `.last-fired.json`/`.running.json`, triggers, the default `dream`/`vault-review` crons, and Bismuth's enable/disable/run controls.
+- [pages.md](pages.md) — the daemon inbox: daemon-authored pages awaiting user approval/dismissal, the `.state` sidecar, delivery timing, the button-press → execution → completion lifecycle, and the `::inbox` frontend surfaces.
 - [memory.md](memory.md) — the per-vault memory graph (`@bismuth/memory`): note format, backlinks, query vs. search, the `dream` consolidation cycle.
 - [communication.md](communication.md) — memory injection + the relay recall/collect hooks + the MCP `remember`/`recall`/`forget` tools, and device ownership/heartbeat coordination.
 
