@@ -43,6 +43,7 @@ import {
   openSession as chatOpen,
   listChatSessions,
   sessionHistoryFrames,
+  searchChatSessions,
   invalidateChatVisibility,
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
@@ -505,6 +506,15 @@ export function createServer(cfg: CoreConfig) {
     "GET /chat/session-messages": async (_, url) => {
       const id = url.searchParams.get("id");
       return ok({ frames: id ? await sessionHistoryFrames(id, cfg.vault) : [] });
+    },
+
+    // Search past sessions (terminal + in-app) by CONTENT — filters the SDK's own session data
+    // (title + message text) and returns matches with a snippet (the SDK has no native session
+    // search). Read-only despite POST (the body carries the query), so it lives in routes, not
+    // mutatingRoutes — no cache-invalidate / SSE. Empty query → no hits.
+    "POST /chat/search": async (req, __) => {
+      const { query } = (await req.json()) as { query?: string };
+      return ok({ hits: await searchChatSessions(cfg.vault, query ?? "") });
     },
 
     "GET /events": (_, __) => {

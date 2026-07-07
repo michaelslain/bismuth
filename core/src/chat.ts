@@ -11,7 +11,7 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
-import { buildAutoNoteBody, extractText, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
+import { buildAutoNoteBody, extractText, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 
 /**
@@ -805,6 +805,133 @@ export async function sessionHistoryFrames(sessionId: string, cwd: string): Prom
     }
   }
   return frames;
+}
+
+// --- Session content search (the history picker's search box) -------------------------------
+//
+// The Agent SDK exposes NO native session search (only listSessions + getSessionMessages), so this
+// FILTERS the SDK's OWN session data rather than maintaining a parallel index: for each past
+// session we read its transcript, project it to searchable text (title + each human-readable
+// message), and match the query against that. On-demand, driven by the picker's search box.
+
+/** A short excerpt from `text` centered on the first case-insensitive occurrence of `query`, with
+ *  `…` markers where it's clipped and whitespace collapsed to a single line for display. Returns
+ *  null when `query` doesn't occur in `text`. Pure + unit-tested. */
+export function chatSnippet(text: string, query: string, radius = 60): string | null {
+  if (!text || !query) return null;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return null;
+  const start = Math.max(0, idx - radius);
+  const end = Math.min(text.length, idx + query.length + radius);
+  let snip = text.slice(start, end).replace(/\s+/g, " ").trim();
+  if (start > 0) snip = `…${snip}`;
+  if (end < text.length) snip = `${snip}…`;
+  return snip;
+}
+
+/** One search hit: a past session whose title or message text matched, plus a snippet of where. */
+export interface ChatSearchHit {
+  sessionId: string;
+  summary: string;
+  lastModified: number; // ms epoch
+  /** A short excerpt around the match (the title or a message) for the picker row's second line. */
+  snippet: string;
+  /** True when the match was in the session's title/summary rather than its message body. */
+  inTitle: boolean;
+}
+
+/** The searchable projection of one session: its title + every human-readable message text. */
+export interface ChatSearchDoc {
+  sessionId: string;
+  summary: string;
+  lastModified: number;
+  texts: string[];
+}
+
+/** Split a query into lowercased, non-empty whitespace tokens. */
+function queryTokens(query: string): string[] {
+  return query.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/**
+ * Pure match test: does `doc` match `query`? EVERY query token must appear (case-insensitive)
+ * somewhere in the session's title OR message text — an AND across tokens, so "auth login" finds a
+ * session that mentions both even when they're not adjacent. The returned snippet is centered on the
+ * FIRST token, preferring the title when it contains it, else the first message that does. Returns
+ * null when the session doesn't match. Unit-tested so the search rule needs no live `claude`.
+ */
+export function matchChatSession(doc: ChatSearchDoc, query: string): ChatSearchHit | null {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return null;
+  // AND across tokens over the combined title + messages. A token carries no whitespace, so it can
+  // never straddle the "\n" join boundary — a token that passes therefore lives within one field.
+  const combined = [doc.summary, ...doc.texts].join("\n").toLowerCase();
+  if (!tokens.every((t) => combined.includes(t))) return null;
+  const meta = { sessionId: doc.sessionId, summary: doc.summary, lastModified: doc.lastModified };
+  const first = tokens[0]!;
+  const titleSnip = chatSnippet(doc.summary, first);
+  if (titleSnip) return { ...meta, snippet: titleSnip, inTitle: true };
+  for (const text of doc.texts) {
+    const snip = chatSnippet(text, first);
+    if (snip) return { ...meta, snippet: snip, inTitle: false };
+  }
+  // Unreachable given the AND test guarantees `first` is in the title or a message, but fall back
+  // to the title rather than assert.
+  return { ...meta, snippet: doc.summary, inTitle: true };
+}
+
+/** Build a session's searchable doc from its SDK transcript: the title plus each user/assistant
+ *  message's plain text (tool payloads dropped by extractText; machine-injected preambles stripped
+ *  by stripInjectedBlocks, so search matches what the human actually wrote/read). Tolerant — an
+ *  unreadable session yields an empty text list (title-only search still works). */
+async function buildSearchDoc(
+  session: { sessionId: string; summary: string; lastModified: number },
+  cwd: string,
+): Promise<ChatSearchDoc> {
+  let messages: SessionMessage[] = [];
+  try {
+    messages = await getSessionMessages(session.sessionId, { dir: cwd });
+  } catch {
+    messages = [];
+  }
+  const texts: string[] = [];
+  for (const msg of messages) {
+    if (!msg || (msg.type !== "user" && msg.type !== "assistant")) continue;
+    const text = stripInjectedBlocks(extractText((msg as { message?: TranscriptEntry["message"] }).message));
+    if (text) texts.push(text);
+  }
+  return { sessionId: session.sessionId, summary: session.summary, lastModified: session.lastModified, texts };
+}
+
+/**
+ * Search the user's past Claude Code sessions (terminal + in-app, one unified store) for `cwd` by
+ * CONTENT. The SDK has no native session search, so this filters the SDK's OWN session data
+ * (listSessions + getSessionMessages) — never a parallel index. Each session's title + message text
+ * is matched (see matchChatSession); hits come back newest-first with a snippet of where they
+ * matched. Tolerant: returns [] if the store can't be read. `limit` caps how many (newest) sessions
+ * are scanned so a huge history can't make one search read unbounded transcripts.
+ */
+export async function searchChatSessions(cwd: string, query: string, limit = 100): Promise<ChatSearchHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  let sessionList: Awaited<ReturnType<typeof listSessions>>;
+  try {
+    sessionList = await listSessions({ dir: cwd, limit });
+  } catch {
+    return [];
+  }
+  const hits: ChatSearchHit[] = [];
+  // Read each session's transcript on demand and filter — the SDK's own data, no index.
+  await Promise.all(
+    sessionList.map(async (s) => {
+      const doc = await buildSearchDoc({ sessionId: s.sessionId, summary: s.summary, lastModified: s.lastModified }, cwd);
+      const hit = matchChatSession(doc, q);
+      if (hit) hits.push(hit);
+    }),
+  );
+  // listSessions is newest-first but Promise.all resolves out of order — restore newest-first.
+  hits.sort((a, b) => b.lastModified - a.lastModified);
+  return hits;
 }
 
 /**
