@@ -1407,13 +1407,12 @@ export const livePreview = [
     // Add-column: full-height bar hugging the right border. Add-row: full-width bar under it.
     ".cm-table-add-col": { top: "0", bottom: "0", right: "-0.95em", width: "0.8em", "border-radius": "0 5px 5px 0" },
     ".cm-table-add-row": { left: "0", right: "0", bottom: "-0.95em", height: "0.8em", "border-radius": "0 0 5px 5px" },
-    // Drag-to-resize: an absolutely-positioned overlay of thin grab strips centered on
-    // each column/row border. Pointer-transparent except the strips, invisible until a
-    // strip is hovered (then a faint accent fill cues the resize zone).
+    // Drag-to-resize: an absolutely-positioned overlay of thin grab strips centered on each
+    // COLUMN border (column WIDTH only — row height is auto, #52). Pointer-transparent except the
+    // strips, invisible until a strip is hovered (then a faint accent fill cues the resize zone).
     ".cm-table-overlay": { position: "absolute", top: "0", right: "0", bottom: "0", left: "0", "pointer-events": "none", "z-index": "4" },
     ".cm-col-resize": { position: "absolute", width: "7px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
-    ".cm-row-resize": { position: "absolute", height: "7px", transform: "translateY(-50%)", cursor: "row-resize", "pointer-events": "auto" },
-    ".cm-col-resize:hover, .cm-row-resize:hover": { background: "color-mix(in srgb, var(--accent) 35%, transparent)" },
+    ".cm-col-resize:hover": { background: "color-mix(in srgb, var(--accent) 35%, transparent)" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {

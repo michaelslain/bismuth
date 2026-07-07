@@ -293,11 +293,11 @@ All key events inside cells are stopped from propagating to CodeMirror's keymap.
 
 ## Drag-Resize and Size Persistence
 
-GFM markdown has no syntax for cell sizes. Sizes are stored **outside the markdown source** and applied as visual-only overrides.
+GFM markdown has no syntax for cell sizes. **Only column width is user-adjustable** — row height is always automatic from content (#52). Column widths are stored **outside the markdown source** and applied as visual-only overrides.
 
 ### Storage
 
-Sizes are persisted in `localStorage` under the key `bismuth:table-size:<notePath>`. The value is a JSON object mapping `sizeKey` (the JSON-serialized header row, e.g. `'["Name","Age"]'`) to `{ cols: (number | null)[], rows: (number | null)[] }`.
+Sizes are persisted in `localStorage` under the key `bismuth:table-size:<notePath>`. The value is a JSON object mapping `sizeKey` (the JSON-serialized header row, e.g. `'["Name","Age"]'`) to `{ cols: (number | null)[], rows: (number | null)[] }`. The `rows` array is kept in the shape for backward-compatibility but is **always written empty** (`[]`) and **ignored on load** — height is auto (#52). Any row heights in older persisted data are silently dropped.
 
 - If `notePath` is `null` (path-less buffer, not used in practice), sizes fall back to an in-memory `Map`.
 - If `localStorage` is unavailable or throws, the same in-memory fallback is used.
@@ -309,9 +309,9 @@ Each column gets a `<div class="cm-col-resize">` positioned via an absolutely-po
 
 On the first drag of a column, the table switches from `tableLayout: auto` to `tableLayout: fixed` and each `<col>` element's `width` is frozen to the current measured cell width. Subsequent drags move a `<col>`'s width directly. Minimum column width: 40px.
 
-### Row Resize
+### Row Height (auto — not resizable, #52)
 
-Each row gets a `<div class="cm-row-resize">` handle in the overlay. Dragging sets `tr.style.height`. Minimum row height: 24px.
+There is **no** row-resize handle. A row's height is always determined by its content (`min-height`/`line-height` on the cells). "Only width should be able to be changed in cells — column width, not row height; that should be automatic." The widget renders `cm-col-resize` handles only; there is no `cm-row-resize` element or drag path.
 
 ### Handle Layout
 

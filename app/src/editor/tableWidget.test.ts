@@ -490,6 +490,25 @@ describe("#30 file drop into a cell", () => {
   });
 });
 
+// ── #52: only column WIDTH is resizable — never row HEIGHT ─────────────────────
+describe("#52 row height is not resizable", () => {
+  test("the widget offers column-resize handles but NO row-resize handles", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |\n| p | q | r |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    expect(wrap.querySelectorAll(".cm-col-resize").length).toBe(3); // one per column
+    expect(wrap.querySelectorAll(".cm-row-resize").length).toBe(0); // row height is auto (#52)
+    view.destroy();
+  });
+
+  test("no row-resize handle even with many rows; column handles scale with columns", () => {
+    const view = mount("| A | B |\n| - | - |\n| 1 | 2 |\n| 3 | 4 |\n| 5 | 6 |\n| 7 | 8 |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    expect(wrap.querySelectorAll(".cm-row-resize").length).toBe(0);
+    expect(wrap.querySelectorAll(".cm-col-resize").length).toBe(2);
+    view.destroy();
+  });
+});
+
 // ── #31: Cmd+F highlights IN the table, never flips it to source ───────────────
 describe("#31 find highlights inside the rendered table", () => {
   // A prose "foo", then a table with "foo" in two cells, then more prose.

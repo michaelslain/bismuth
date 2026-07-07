@@ -908,24 +908,20 @@ export class TableWidget extends WidgetType {
       this.openCellMenu(view, root, e as MouseEvent, Number(td.getAttribute("data-r")), Number(td.getAttribute("data-c")));
     });
 
-    // ---- Drag-to-resize: column widths + row heights -------------------------
-    // GFM has no syntax for cell sizes, so these live outside the source. A thin grab
-    // strip on each column/row border lives in an overlay (kept OUT of the contenteditable
-    // cells, which rewrite their content on focus). Chosen sizes are persisted per-note in
-    // localStorage so they survive both a widget rebuild and a full reload.
+    // ---- Drag-to-resize: COLUMN WIDTHS ONLY ----------------------------------
+    // GFM has no syntax for cell sizes, so widths live outside the source. A thin grab strip on
+    // each column border lives in an overlay (kept OUT of the contenteditable cells, which rewrite
+    // their content on focus). Chosen widths are persisted per-note in localStorage so they survive
+    // both a widget rebuild and a full reload. ROW HEIGHT IS NOT RESIZABLE (#52): a row's height is
+    // always automatic from its content — only column width is user-adjustable. (Any `rows` heights
+    // in older persisted data are ignored; height stays auto.)
     const MIN_COL = 40;
-    const MIN_ROW = 24;
 
     const stored = loadSizes(this.notePath, sizeKey(this.cells));
-    if (stored) {
-      if (stored.cols.some((w) => w != null)) {
-        table.style.tableLayout = "fixed";
-        stored.cols.forEach((w, c) => {
-          if (w != null && colEls[c]) colEls[c].style.width = `${w}px`;
-        });
-      }
-      stored.rows.forEach((h, r) => {
-        if (h != null && rowEls[r]) rowEls[r].style.height = `${h}px`;
+    if (stored && stored.cols.some((w) => w != null)) {
+      table.style.tableLayout = "fixed";
+      stored.cols.forEach((w, c) => {
+        if (w != null && colEls[c]) colEls[c].style.width = `${w}px`;
       });
     }
 
@@ -933,19 +929,18 @@ export class TableWidget extends WidgetType {
     overlay.className = "cm-table-overlay";
     overlay.setAttribute("contenteditable", "false");
     const colHandles: HTMLElement[] = [];
-    const rowHandles: HTMLElement[] = [];
 
     const persist = (): void => {
+      // Only column widths are persisted; row heights are always auto (#52) → `rows: []`.
       saveSizes(this.notePath, sizeKey(this.cells), {
         cols: colEls.map((c) => (c.style.width ? parseFloat(c.style.width) : null)),
-        rows: rowEls.map((tr) => (tr.style.height ? parseFloat(tr.style.height) : null)),
+        rows: [],
       });
     };
 
-    // Re-place every handle on its border. The table sits at the wrap origin, so offsets
+    // Re-place every COLUMN handle on its border. The table sits at the wrap origin, so offsets
     // are measured against it; called after attach, on table resize, and live mid-drag.
     const layout = (): void => {
-      const tw = table.offsetWidth;
       const th = table.offsetHeight;
       const ox = table.offsetLeft;
       const oy = table.offsetTop;
@@ -960,22 +955,11 @@ export class TableWidget extends WidgetType {
           h.style.height = `${th}px`;
         }
       });
-      let y = oy;
-      rowEls.forEach((tr, r) => {
-        y += tr.offsetHeight;
-        const h = rowHandles[r];
-        if (h) {
-          h.style.top = `${y}px`;
-          h.style.left = `${ox}px`;
-          h.style.width = `${tw}px`;
-        }
-      });
     };
 
-    // Shared mousedown→drag plumbing for both axes: freeze a start value, follow the
-    // pointer along the chosen axis, then persist + restore the cursor on release.
-    const startDrag = (
-      axis: "col" | "row",
+    // Column-drag plumbing: freeze the start width, follow the pointer along X, then persist +
+    // restore the cursor on release. (Row-height drag was removed for #52 — height is auto.)
+    const startColDrag = (
       getStart: () => number,
       apply: (delta: number, start: number) => void,
       e: MouseEvent,
@@ -983,9 +967,9 @@ export class TableWidget extends WidgetType {
       e.preventDefault();
       e.stopPropagation();
       const start = getStart();
-      const origin = axis === "col" ? e.clientX : e.clientY;
+      const origin = e.clientX;
       const onMove = (me: MouseEvent): void => {
-        apply((axis === "col" ? me.clientX : me.clientY) - origin, start);
+        apply(me.clientX - origin, start);
         layout();
       };
       const onUp = (): void => {
@@ -996,7 +980,7 @@ export class TableWidget extends WidgetType {
         persist();
         layout();
       };
-      document.body.style.cursor = axis === "col" ? "col-resize" : "row-resize";
+      document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -1006,8 +990,7 @@ export class TableWidget extends WidgetType {
       const handle = document.createElement("div");
       handle.className = "cm-col-resize";
       handle.addEventListener("mousedown", (e) =>
-        startDrag(
-          "col",
+        startColDrag(
           () => {
             // First drag freezes the content-derived widths and switches to fixed layout
             // so every later drag stays stable.
@@ -1029,23 +1012,6 @@ export class TableWidget extends WidgetType {
       overlay.appendChild(handle);
       colHandles.push(handle);
     }
-
-    rowEls.forEach((tr) => {
-      const handle = document.createElement("div");
-      handle.className = "cm-row-resize";
-      handle.addEventListener("mousedown", (e) =>
-        startDrag(
-          "row",
-          () => tr.offsetHeight,
-          (delta, start) => {
-            tr.style.height = `${Math.max(MIN_ROW, start + delta)}px`;
-          },
-          e as MouseEvent,
-        ),
-      );
-      overlay.appendChild(handle);
-      rowHandles.push(handle);
-    });
 
     root.appendChild(overlay);
 
