@@ -132,6 +132,39 @@ test("parse → serialize round-trips a normalized table", () => {
   expect(serializeTable(cells, aligns)).toBe(lines.join("\n"));
 });
 
+// #25: "Edit source" must show GENUINELY column-aligned markdown. prettifyTableBlock takes the
+// user's ragged, hand-authored pipes and re-emits every row — header, SEPARATOR, and body — padded
+// to the per-column max DISPLAY width so the pipes line up in a monospace view. Exact-output
+// assertion so a regression that leaves any row unpadded (the "looks fucked" bug) fails loudly.
+test("prettifyTableBlock aligns a ragged hand-authored table (header + separator + every body row)", () => {
+  const ragged = [
+    "| Name | Description | Qty |",
+    "|--|--|--|",
+    "| Apple | A red fruit | 3 |",
+    "| Fig | tiny | 100 |",
+  ];
+  expect(prettifyTableBlock(ragged)).toBe(
+    [
+      "| Name  | Description | Qty |",
+      "| ----- | ----------- | --- |",
+      "| Apple | A red fruit | 3   |",
+      "| Fig   | tiny        | 100 |",
+    ].join("\n"),
+  );
+});
+
+test("prettifyTableBlock keeps alignment markers while padding ragged alignment columns", () => {
+  const ragged = ["|a|bee|c|", "|:-|-:|:-:|", "|1|22|333|", "|x|y|z|"];
+  expect(prettifyTableBlock(ragged)).toBe(
+    [
+      "| a   | bee |  c  |",
+      "| :-- | --: | :-: |",
+      "| 1   |  22 | 333 |",
+      "| x   |   y |  z  |",
+    ].join("\n"),
+  );
+});
+
 // ── Structural row/column ops ─────────────────────────────────────────────────
 
 test("insertRow inserts a blank body row above (at = r) and below (at = r + 1)", () => {

@@ -17,7 +17,7 @@ import { primeNoteCache } from "./noteCache";
 import { livePreview } from "./editor/livePreview";
 import { enterKeymap } from "./editor/enterKeymap";
 import { requestRelint } from "./editor/relint";
-import { notePathFacet } from "./editor/tableState";
+import { notePathFacet, noteNamesFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
 import { mathBlock } from "./editor/mathBlock";
 import { latexHighlightTheme } from "./editor/latexHighlight";
@@ -770,6 +770,9 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // the propertyRegistry): native date/time inputs + relative-date quick options.
           datePropertyPicker(propertyRegistry),
           notePathFacet.of(path),
+          // Note candidates so a wikilink clicked inside a table cell resolves to its real vault
+          // path and opens (#33). A getter, not a snapshot, so it never goes stale.
+          noteNamesFacet.of(props.noteNames),
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
           ...(ed.livePreview ? [livePreview, taskFold(), foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock(), latexHighlightTheme] : []),

@@ -7,11 +7,20 @@
 // active only while the cursor remains inside its line range.
 import { Facet, StateEffect, StateField } from "@codemirror/state";
 import { groupTableBlocks } from "./tableModel";
+import type { NoteCandidate } from "./wikilink";
 
 /** The current note's vault path, supplied by the editor host. The table widget reads it
  *  to scope its persisted (visual-only) column widths / row heights per note. */
 export const notePathFacet = Facet.define<string | null, string | null>({
   combine: (values) => values[0] ?? null,
+});
+
+/** A live getter for the vault's note candidates, supplied by the editor host. The table
+ *  widget reads it to resolve a wikilink clicked in a cell to its real vault path (#33) — a
+ *  GETTER (not a snapshot) so the list stays current as notes are added/renamed. Defaults to
+ *  an empty list when no host provides it (e.g. a card editor). */
+export const noteNamesFacet = Facet.define<() => NoteCandidate[], () => NoteCandidate[]>({
+  combine: (values) => values[0] ?? (() => []),
 });
 
 /** Request raw-source mode for the table block whose header is at this 1-based line

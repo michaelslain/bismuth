@@ -50,9 +50,30 @@ test("parseCellList keeps inline markdown in item text (rendered later)", () => 
   expect(parseCellList("- **bold**<br>- [[Note]]")).toEqual({ ordered: false, items: ["**bold**", "[[Note]]"] });
 });
 
-test("renderCellListHtml wraps items in <ul>/<ol> with the cell-list class", () => {
-  expect(renderCellListHtml("- a<br>- b", raw)).toBe('<ul class="bismuth-cell-list"><li>a</li><li>b</li></ul>');
-  expect(renderCellListHtml("1. a<br>2. b", raw)).toBe('<ol class="bismuth-cell-list"><li>a</li><li>b</li></ol>');
+test("renderCellListHtml wraps items in a <ul>/<ol> with the cell-list class", () => {
+  const ul = renderCellListHtml("- a<br>- b", raw)!;
+  expect(ul.startsWith('<ul class="bismuth-cell-list"')).toBe(true);
+  expect(ul.endsWith("</ul>")).toBe(true);
+  expect((ul.match(/<li /g) ?? []).length).toBe(2);
+  const ol = renderCellListHtml("1. a<br>2. b", raw)!;
+  expect(ol.startsWith('<ol class="bismuth-cell-list"')).toBe(true);
+  expect(ol.endsWith("</ol>")).toBe(true);
+});
+
+// #15: the marker is emitted as REAL TEXT CONTENT (a `.bismuth-cell-mk` span) and the native
+// list marker is suppressed with an INLINE `list-style:none`, so a cascade / contenteditable
+// quirk can't strip the bullet the way it did the class-based `list-style-type` rule.
+test("renderCellListHtml renders the bullet/number marker as content, native marker suppressed", () => {
+  const ul = renderCellListHtml("- a<br>- b", raw)!;
+  expect(ul).toContain('<span class="bismuth-cell-mk"'); // marker element present
+  expect((ul.match(/•<\/span>/g) ?? []).length).toBe(2); // two "•" glyphs, one per item
+  expect(ul).toContain("list-style:none"); // native marker suppressed (no doubling)
+  expect(ul).toContain('<span class="bismuth-cell-it">a</span>'); // item content wrapped
+
+  const ol = renderCellListHtml("1. x<br>2. y", raw)!;
+  expect(ol).toContain(">1.</span>"); // 1-based renumbered markers as content
+  expect(ol).toContain(">2.</span>");
+  expect(ol).toContain("list-style:none");
 });
 
 test("renderCellListHtml returns null for a non-list cell (caller falls back)", () => {
@@ -62,5 +83,7 @@ test("renderCellListHtml returns null for a non-list cell (caller falls back)", 
 
 test("renderCellListHtml runs each item through the supplied inline renderer", () => {
   const upper = (s: string): string => s.toUpperCase();
-  expect(renderCellListHtml("- a<br>- b", upper)).toBe('<ul class="bismuth-cell-list"><li>A</li><li>B</li></ul>');
+  const ul = renderCellListHtml("- a<br>- b", upper)!;
+  expect(ul).toContain('<span class="bismuth-cell-it">A</span>');
+  expect(ul).toContain('<span class="bismuth-cell-it">B</span>');
 });

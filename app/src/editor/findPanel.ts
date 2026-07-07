@@ -96,6 +96,43 @@ export function tableBlockStartForRange(doc: Text, from: number, to: number): nu
   return tableBlockAtRange(spans, from, to);
 }
 
+/** Decide how the find bar's table reveal must change when the active match lands on `[from, to)`
+ *  (#31). Pure so the reveal lifecycle is unit-tested without an EditorView.
+ *   - `target`: the table block (header line) the match is genuinely INSIDE, or null when the
+ *     match is not in any table (normal Cmd+F over prose → never touches a table).
+ *   - `reveal`: the block to newly flip to source — `target` when it isn't ALREADY the active
+ *     (revealed) block, else null (already shown → nothing to dispatch).
+ *  The find bar reveals `reveal` (if non-null); `nextOwnedTable` derives what it must revert. */
+export function tableRevealDecision(
+  blocks: { from: number; to: number; startLine: number }[],
+  from: number,
+  to: number,
+  activeTable: number | null,
+): { target: number | null; reveal: number | null } {
+  const target = tableBlockAtRange(blocks, from, to);
+  return { target, reveal: target != null && target !== activeTable ? target : null };
+}
+
+/** Next value of the "table block the find bar OWNS (and must revert on close / move)" tracker,
+ *  given the reveal decision for the match it just landed on (#31). Find only owns a block it
+ *  itself revealed:
+ *   - the match left ALL tables (`target == null`) → own nothing;
+ *   - find dispatched a reveal (`reveal != null`) → own `target`;
+ *   - the match is inside a block that was ALREADY active — keep the prior claim. If find owned
+ *     it, it stays owned; if the USER opened it manually (find never revealed it, so `prevOwned`
+ *     is null / a different block), find does NOT claim it, so closing the bar leaves a
+ *     manually-revealed table alone. When find is mid-navigation among matching tables
+ *     (`prevOwned != null`) it refreshes ownership to the current block, so an auto-switch from
+ *     one matching table to another is still reverted on close. */
+export function nextOwnedTable(
+  prevOwned: number | null,
+  decision: { target: number | null; reveal: number | null },
+): number | null {
+  if (decision.target == null) return null;
+  if (decision.reveal != null) return decision.target;
+  return prevOwned != null ? decision.target : prevOwned;
+}
+
 // Lucide-style inline icons (the registry renders Solid components; the panel is raw
 // DOM, so we inline the same paths).
 const ICONS = {
@@ -165,6 +202,59 @@ export function createFindPanel(view: EditorView): Panel {
     count.classList.toggle("bismuth-find-empty", total === 0);
   };
 
+  // The GFM table blocks in the doc as {from,to,startLine} char spans — input to the pure
+  // reveal decision. Recomputed per reveal (cheap) so edits above a table don't desync it.
+  const tableSpans = (): { from: number; to: number; startLine: number }[] => {
+    const doc = view.state.doc;
+    return groupTableBlocks(doc).blocks.map((b) => ({
+      from: doc.line(b.startLine).from,
+      to: doc.line(b.endLine).to,
+      startLine: b.startLine,
+    }));
+  };
+
+  // The table block (header line) THIS find bar has flipped to raw source and must flip back —
+  // when the active match leaves it, or the bar closes (#31). Null when find hasn't revealed a
+  // table, so closing the bar NEVER collapses a table the user opened manually ("Edit source").
+  let findRevealed: number | null = null;
+
+  // Reconcile the table reveal with a match landing on `[from, to)`: return the effect(s) to FOLD
+  // INTO the selection's transaction (so the block's source is un-hidden before CM measures the
+  // scroll target — no stale-layout jump, #21) and update find-ownership. Only a match GENUINELY
+  // inside a table flips it to source; a prose match reveals nothing (normal Cmd+F never touches
+  // tables). The `activeTableField` auto-clears a revealed table once the selection leaves it, so
+  // moving to a prose match reverts the old table for free — this just tracks what we own.
+  const tableRevealEffects = (from: number, to: number): StateEffect<unknown>[] => {
+    const active = view.state.field(activeTableField, false) ?? null;
+    const decision = tableRevealDecision(tableSpans(), from, to, active);
+    findRevealed = nextOwnedTable(findRevealed, decision);
+    return decision.reveal != null ? [setActiveTableEffect.of(decision.reveal) as StateEffect<unknown>] : [];
+  };
+
+  // Flip a table the find bar itself revealed BACK to its rendered widget (a manually-opened one
+  // is left alone) and park the caret just before it — so closing the bar returns that block to
+  // normal (#31). No-op unless find still owns the currently-active table.
+  const revertFindReveal = () => {
+    const active = view.state.field(activeTableField, false) ?? null;
+    if (findRevealed == null || findRevealed !== active) {
+      findRevealed = null;
+      return;
+    }
+    const start = findRevealed;
+    findRevealed = null;
+    const doc = view.state.doc;
+    const anchor = start >= 1 && start <= doc.lines ? doc.line(start).from : view.state.selection.main.from;
+    view.dispatch({ selection: { anchor }, effects: setActiveTableEffect.of(null) });
+  };
+
+  // Close the bar: revert a find-revealed table FIRST (its own transaction), then tear down the
+  // panel and return focus to the editor.
+  const closeBar = () => {
+    revertFindReveal();
+    closeSearchPanel(view);
+    view.focus();
+  };
+
   // Move the editor selection to the nearest match at/after `pos` (wrapping to the top),
   // WITHOUT touching the input. We reveal matches ourselves on the typing path instead of
   // calling CM's findNext, because findNext select-all's the search field on every call —
@@ -175,37 +265,22 @@ export function createFindPanel(view: EditorView): Panel {
     if (!m) return;
     view.dispatch({
       selection: { anchor: m.from, head: m.to },
-      effects: matchEffects(m.from, m.to),
+      effects: [EditorView.scrollIntoView(m.to, { y: "center" }), ...tableRevealEffects(m.from, m.to)],
       userEvent: "select.search",
     });
   };
 
-  // Effects for landing on a match `[from, to)`: always scroll it into view; and — when it
-  // sits inside a GFM table block that's currently drawn as a widget (hiding its source) —
-  // ALSO reveal that block's raw source so the highlight becomes visible (#21). Folded into
-  // one transaction with the selection so the source is already un-hidden when CM measures
-  // the scroll target (no stale-layout jump). Reusing an already-revealed table is a no-op
-  // effect-wise (guarded) so refining the query in the same table doesn't re-dispatch it.
-  const matchEffects = (from: number, to: number): StateEffect<unknown>[] => {
-    const effects: StateEffect<unknown>[] = [EditorView.scrollIntoView(to, { y: "center" })];
-    const tbl = tableBlockStartForRange(view.state.doc, from, to);
-    if (tbl != null && (view.state.field(activeTableField, false) ?? null) !== tbl) {
-      effects.push(setActiveTableEffect.of(tbl) as StateEffect<unknown>);
-    }
-    return effects;
-  };
-
   // findNext / findPrevious (Enter + the prev/next buttons) are CodeMirror's own commands:
-  // they move the selection but don't know about our table widgets, so a jumped-to match
-  // inside a table would stay hidden behind its widget. After one runs, reveal the table
-  // under the NEW selection (and re-scroll) so that match shows too.
+  // they move the selection but don't know about our table widgets, so a jumped-to match inside
+  // a table (when none was open) would stay hidden behind its widget. After one runs, reconcile
+  // the reveal under the NEW selection — flipping the match's table to source (re-scrolling) and
+  // tracking it so it's reverted on close.
   const revealTableAtSelection = () => {
     const sel = view.state.selection.main;
-    const tbl = tableBlockStartForRange(view.state.doc, sel.from, sel.to);
-    if (tbl == null || (view.state.field(activeTableField, false) ?? null) === tbl) return;
-    view.dispatch({
-      effects: [setActiveTableEffect.of(tbl), EditorView.scrollIntoView(sel.to, { y: "center" })],
-    });
+    const effects = tableRevealEffects(sel.from, sel.to);
+    if (effects.length) {
+      view.dispatch({ effects: [...effects, EditorView.scrollIntoView(sel.to, { y: "center" }) as StateEffect<unknown>] });
+    }
   };
 
   // Push the input's text as the active query (live highlight) and reveal the nearest match.
@@ -226,8 +301,7 @@ export function createFindPanel(view: EditorView): Panel {
       updateCount();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      closeSearchPanel(view);
-      view.focus();
+      closeBar();
     }
   });
   prevBtn.addEventListener("click", () => {
@@ -248,10 +322,7 @@ export function createFindPanel(view: EditorView): Panel {
     runQuery();
     input.focus();
   });
-  closeBtn.addEventListener("click", () => {
-    closeSearchPanel(view);
-    view.focus();
-  });
+  closeBtn.addEventListener("click", closeBar);
 
   return {
     dom,
