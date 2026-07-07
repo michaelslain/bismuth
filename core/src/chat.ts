@@ -426,6 +426,36 @@ function translateSdkMessage(msg: SessionMessage | SDKMessage, opts: { live: boo
 }
 
 /**
+ * The assistant text/thinking frames that must be emitted DIRECTLY from a final `assistant` message
+ * because they never arrived as `stream_event` deltas (BUG #19). A normal streamed reply produces
+ * deltas first (streamedTextLen/streamedThinkingLen > 0), so the live drain loop skips its final
+ * blocks to avoid double-emitting. But a locally-executed built-in slash command (/context, /help,
+ * /cost, …) delivers its whole output as one assistant text block with NO deltas — so when nothing
+ * streamed for a given block kind, that kind's blocks are returned here and emitted verbatim. Pure
+ * (no session/side-effects) so the de-dupe rule is unit-tested independent of a live `claude`.
+ */
+export function unstreamedAssistantFrames(
+  msg: { message?: { content?: unknown } },
+  streamedTextLen: number,
+  streamedThinkingLen: number,
+): ChatFrame[] {
+  const frames: ChatFrame[] = [];
+  if (streamedTextLen > 0 && streamedThinkingLen > 0) return frames; // everything already streamed
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return frames;
+  for (const block of content) {
+    if (!block || typeof block !== "object") continue;
+    const b = block as Record<string, unknown>;
+    if (streamedTextLen === 0 && b.type === "text" && typeof b.text === "string" && b.text.length) {
+      frames.push({ type: "assistant-text", text: b.text });
+    } else if (streamedThinkingLen === 0 && b.type === "thinking" && typeof b.thinking === "string" && b.thinking.length) {
+      frames.push({ type: "thinking", text: b.thinking });
+    }
+  }
+  return frames;
+}
+
+/**
  * Send a user turn. The FIRST call for a chatId creates the session: it builds the input queue and
  * starts a single long-lived query() (the user's `claude`, machine-login auth, partial messages on
  * for live streaming), then spawns a background drain loop. Every call (first and subsequent)
@@ -762,6 +792,15 @@ function maybeEmitTitle(session: ChatSession): void {
  */
 async function drain(session: ChatSession): Promise<void> {
   let drainError: string | null = null;
+  // Per-message streaming accounting for the assistant-block de-dupe (BUG #19). A NORMAL reply
+  // arrives as `stream_event` text/thinking deltas FOLLOWED BY a final assistant message whose
+  // text/thinking blocks we skip below (already shown live). But a LOCALLY-executed built-in slash
+  // command (/context, /help, /cost, …) delivers its output as a COMPLETE assistant text block with
+  // NO deltas at all — so if we streamed nothing for a message, its text/thinking must be emitted
+  // here or the command silently shows nothing. Reset after each assistant message so a multi-message
+  // tool-loop turn accounts per message.
+  let streamedTextLen = 0;
+  let streamedThinkingLen = 0;
   try {
     for await (const msg of session.q as AsyncIterable<SDKMessage>) {
       // Capture the session id wherever it appears.
@@ -816,8 +855,10 @@ async function drain(session: ChatSession): Promise<void> {
         const ev = msg.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string } };
         if (ev?.type === "content_block_delta" && ev.delta) {
           if (ev.delta.type === "text_delta" && typeof ev.delta.text === "string" && ev.delta.text.length) {
+            streamedTextLen += ev.delta.text.length;
             emit(session, { type: "assistant-text", text: ev.delta.text });
           } else if (ev.delta.type === "thinking_delta" && typeof ev.delta.thinking === "string" && ev.delta.thinking.length) {
+            streamedThinkingLen += ev.delta.thinking.length;
             emit(session, { type: "thinking", text: ev.delta.thinking });
           }
         }
@@ -825,9 +866,21 @@ async function drain(session: ChatSession): Promise<void> {
       }
 
       if (msg.type === "assistant" || msg.type === "user") {
-        // assistant → tool_use frames (text/thinking already streamed live via deltas — don't
-        // double-emit); user → tool_result frames (the user's own prompt came from the client).
-        // Shared with history replay via the single translateSdkMessage source of truth.
+        // BUG #19: a locally-executed built-in slash command (/context, /help, …) delivers its
+        // output as a complete assistant text block with NO preceding deltas. The live=true de-dupe
+        // below assumes text/thinking already streamed and emits ONLY tool_use, so that output would
+        // be silently dropped. When nothing streamed for THIS assistant message, emit its text /
+        // thinking blocks here so the command's result is actually shown.
+        if (msg.type === "assistant") {
+          for (const frame of unstreamedAssistantFrames(msg, streamedTextLen, streamedThinkingLen)) {
+            emit(session, frame);
+          }
+          // Reset the per-message delta accounting for the next assistant message in this turn.
+          streamedTextLen = 0;
+          streamedThinkingLen = 0;
+        }
+        // assistant → tool_use frames (text/thinking handled above); user → tool_result frames (the
+        // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
         for (const frame of translateSdkMessage(msg, { live: true })) emit(session, frame);
         continue;
       }

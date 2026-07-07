@@ -313,6 +313,10 @@ export function ChatView(props: { chatId: string }) {
   // Right-click menu on a prose bubble (user or assistant) — Reply / Copy. Same <ContextMenu>
   // surface + openContextMenu wiring FileTree/DaemonList use, owned locally (no App.tsx change).
   const [menu, setMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  // A floating "Reply" button anchored to an active text SELECTION inside a message bubble (FEATURE
+  // #18): selecting part of a message and clicking it quotes JUST that text, not the whole message.
+  // Positioned in viewport coords (fixed) above the selection; cleared on scroll / empty selection.
+  const [selReply, setSelReply] = createSignal<{ x: number; y: number; text: string } | null>(null);
 
   let ws: WebSocket | undefined;
   let list!: HTMLDivElement;
@@ -352,6 +356,9 @@ export function ChatView(props: { chatId: string }) {
   const onListScroll = () => {
     if (!list) return;
     setFollowing(list.scrollHeight - list.scrollTop - list.clientHeight < 40);
+    // The floating selection-reply button is anchored to a viewport position that scrolling
+    // invalidates — drop it (a fresh selection re-shows it).
+    if (selReply()) setSelReply(null);
   };
 
   // Keep the view pinned to the latest content, but ONLY if the user is still following the bottom.
@@ -975,16 +982,55 @@ export function ChatView(props: { chatId: string }) {
     ta?.scrollIntoView({ block: "nearest" });
   };
 
+  /** The current text selection IF it lies within `container` (a message bubble), else "". Used so
+   *  Reply can quote just the highlighted span rather than the whole message (FEATURE #18). */
+  const selectionWithin = (container: HTMLElement | null): string => {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return "";
+    const text = sel.toString().trim();
+    if (!text) return "";
+    if (container && !container.contains(sel.getRangeAt(0).commonAncestorContainer)) return "";
+    return text;
+  };
+
   /** Right-click a prose bubble (user or assistant) → Reply / Copy. Same <ContextMenu> surface +
-   *  openContextMenu wiring as everywhere else in the app (FileTree, DaemonList). */
+   *  openContextMenu wiring as everywhere else in the app (FileTree, DaemonList). When TEXT IS
+   *  SELECTED within this bubble, Reply quotes just that selection (FEATURE #18); otherwise the
+   *  whole message. */
   const onBubbleContextMenu = (e: MouseEvent, text: string) => {
     if (!text.trim()) return; // nothing to quote/copy (e.g. an image-only bubble)
     e.preventDefault();
+    const selected = selectionWithin(e.currentTarget as HTMLElement);
     const items: MenuItem[] = [
-      { label: "Reply", icon: "Reply", onSelect: () => replyToMessage(text) },
-      { label: "Copy", icon: "Copy", onSelect: () => copyMessage(text) },
+      selected
+        ? { label: "Reply to selection", icon: "Reply", onSelect: () => replyToMessage(selected) }
+        : { label: "Reply", icon: "Reply", onSelect: () => replyToMessage(text) },
+      { label: "Copy", icon: "Copy", onSelect: () => copyMessage(selected || text) },
     ];
     openContextMenu(e.clientX, e.clientY, items, setMenu);
+  };
+
+  /** On mouse-up in the transcript, if there's a non-empty text selection inside a message bubble,
+   *  float a "Reply" button just above it (FEATURE #18). Deferred a microtask so the browser has
+   *  finalized the selection. Clears when the selection is empty or outside a bubble. */
+  const onListMouseUp = () => {
+    queueMicrotask(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        setSelReply(null);
+        return;
+      }
+      const text = sel.toString().trim();
+      const range = sel.getRangeAt(0);
+      const node = range.commonAncestorContainer;
+      const el = (node.nodeType === 1 ? (node as Element) : node.parentElement)?.closest?.(".chat-bubble");
+      if (!text || !el) {
+        setSelReply(null);
+        return;
+      }
+      const rect = range.getBoundingClientRect();
+      setSelReply({ x: rect.left + rect.width / 2, y: rect.top, text });
+    });
   };
 
   onMount(() => {
@@ -1117,7 +1163,7 @@ export function ChatView(props: { chatId: string }) {
         }
       >
         <div class="chat-list-wrap">
-        <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll}>
+        <div class="chat-list" ref={list!} onClick={onListClick} onScroll={onListScroll} onMouseUp={onListMouseUp}>
           <Show when={transcript.length === 0}>
             <EmptyState class="chat-empty">
               Ask {persona()} anything about your vault. Run any <code>/command</code>, watch tool calls and thinking, and approve tool use inline.
@@ -1262,6 +1308,24 @@ export function ChatView(props: { chatId: string }) {
             </Show>
           </div>
         </div>
+      </Show>
+      {/* Floating "Reply" on an active text selection inside a bubble (FEATURE #18). onMouseDown +
+          preventDefault keeps the selection alive so replyToMessage quotes it before it collapses. */}
+      <Show when={selReply()}>
+        {(s) => (
+          <button
+            class="chat-sel-reply"
+            style={{ left: `${s().x}px`, top: `${s().y}px` }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              replyToMessage(s().text);
+              window.getSelection()?.removeAllRanges();
+              setSelReply(null);
+            }}
+          >
+            <Icon value="Reply" size={13} /> Reply
+          </button>
+        )}
       </Show>
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
