@@ -15,7 +15,36 @@ export type Split = {
 export type PaneNode = Leaf | Split;
 // `name` is an optional user-set label that overrides the content-derived tab title
 // (see contentLabel/tabBarLabel). Undefined = fall back to the automatic label.
-export type Tab = { id: string; root: PaneNode; focusId: string; name?: string };
+// `pinned` marks a tab as pinned: pinned tabs always render before unpinned ones (the
+// strip maintains that partition via sortPinned), show compact (icon + pin glyph, no
+// close X), and survive reload. Undefined/false = a normal tab.
+export type Tab = { id: string; root: PaneNode; focusId: string; name?: string; pinned?: boolean };
+
+// Stable partition so pinned tabs render before unpinned ones, preserving each group's
+// existing relative order. Every strip mutation that could break the invariant (reorder,
+// detach-to-tab, reopen, deserialize) funnels through here, so pins stay stuck to the
+// front across reorders and reloads. Returns the SAME array when already partitioned, so
+// callers don't churn the reactive signal on a no-op.
+export function sortPinned(tabs: Tab[]): Tab[] {
+  const pinned = tabs.filter((t) => t.pinned);
+  if (pinned.length === 0 || pinned.length === tabs.length) return tabs; // all one group
+  const rest = tabs.filter((t) => !t.pinned);
+  const merged = [...pinned, ...rest];
+  return merged.every((t, i) => t === tabs[i]) ? tabs : merged;
+}
+
+// Flip a tab's pinned flag by id, then re-normalize the partition. Unknown id → unchanged.
+// Setting pinned:false stores `undefined` (keeps the optional field absent rather than
+// serializing `pinned:false` noise).
+export function setTabPinned(tabs: Tab[], tabId: string, pinned: boolean): Tab[] {
+  let changed = false;
+  const next = tabs.map((t) => {
+    if (t.id !== tabId) return t;
+    changed = true;
+    return { ...t, pinned: pinned ? true : undefined };
+  });
+  return changed ? sortPinned(next) : tabs;
+}
 
 // Globally-unique ids. A counter would reset to 0 on page reload while persisted layouts
 // keep their old ids — so a fresh split could mint an id that collides with an existing
@@ -145,7 +174,9 @@ export function reorderTabs(tabs: Tab[], tabId: string, toIndex: number): Tab[] 
   const next = tabs.slice();
   const [moved] = next.splice(from, 1);
   next.splice(clamped, 0, moved);
-  return next;
+  // Keep the pinned block at the front: a drag that crosses the pin boundary clamps the
+  // moved tab back to its own group's edge rather than mixing pinned + unpinned.
+  return sortPinned(next);
 }
 
 // Split the target leaf and graft an existing subtree `node` (a leaf or a whole
@@ -223,7 +254,8 @@ export function detachLeafToTab(
   const next = tabs.map((t) => (t.id === srcTabId ? { ...t, root: afterClose, focusId } : t));
   const clamped = Math.max(0, Math.min(toIndex, next.length));
   next.splice(clamped, 0, newTab);
-  return { tabs: next, newTabId: newTab.id };
+  // The detached tab is unpinned; if it landed inside the pinned block, push it back out.
+  return { tabs: sortPinned(next), newTabId: newTab.id };
 }
 
 import type { Rect } from "./dnd/geometry";
@@ -372,8 +404,12 @@ export function deserializeTabs(
     tabIdMap.set(t.id, tabId);
     // Preserve a user-set tab name across reloads; ignore non-string/blank values.
     const name = typeof t.name === "string" && t.name.trim() ? t.name : undefined;
-    tabs.push({ id: tabId, root, focusId, name });
+    // Preserve the pinned flag across reloads (only the truthy case; absent otherwise).
+    const pinned = t.pinned === true ? true : undefined;
+    tabs.push({ id: tabId, root, focusId, name, pinned });
   }
-  const activeTabId = tabIdMap.get(parsed.activeTabId ?? "") ?? tabs[0]?.id ?? null;
-  return { tabs, activeTabId };
+  // Normalize the partition so pinned tabs lead even if the stored order was inconsistent.
+  const sorted = sortPinned(tabs);
+  const activeTabId = tabIdMap.get(parsed.activeTabId ?? "") ?? sorted[0]?.id ?? null;
+  return { tabs: sorted, activeTabId };
 }

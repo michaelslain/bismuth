@@ -384,3 +384,92 @@ test("splitLeaf without newContent still duplicates (backwards compat)", () => {
   expect((s.a as Leaf).content).toBe("a.md");
   expect((s.b as Leaf).content).toBe("a.md");
 });
+
+// --- Pinned tabs ---
+import { sortPinned, setTabPinned, reorderTabs, type Tab } from "./panes";
+
+// Build a list of single-leaf tabs by content, marking the given contents as pinned.
+function tabsFrom(contents: string[], pinned: string[] = []): Tab[] {
+  const set = new Set(pinned);
+  return contents.map((c) => {
+    const t = makeTab(c);
+    return set.has(c) ? { ...t, pinned: true } : t;
+  });
+}
+const contentsOf = (tabs: Tab[]): string[] =>
+  tabs.map((t) => (t.root as Leaf).content);
+
+test("sortPinned moves pinned tabs before unpinned, preserving each group's order", () => {
+  const tabs = tabsFrom(["a", "b", "c", "d"], ["b", "d"]);
+  const sorted = sortPinned(tabs);
+  // pinned b,d (in original relative order) then unpinned a,c (in original relative order)
+  expect(contentsOf(sorted)).toEqual(["b", "d", "a", "c"]);
+});
+
+test("sortPinned returns the SAME array when already partitioned (no signal churn)", () => {
+  const already = tabsFrom(["p", "q", "x", "y"], ["p", "q"]);
+  expect(sortPinned(already)).toBe(already);
+  // All-unpinned and all-pinned are trivially partitioned too.
+  const none = tabsFrom(["x", "y"]);
+  expect(sortPinned(none)).toBe(none);
+  const all = tabsFrom(["p", "q"], ["p", "q"]);
+  expect(sortPinned(all)).toBe(all);
+});
+
+test("setTabPinned pins a tab and floats it to the end of the pinned block", () => {
+  const tabs = tabsFrom(["a", "b", "c"]); // none pinned
+  const next = setTabPinned(tabs, tabs[2].id, true); // pin "c"
+  expect(contentsOf(next)).toEqual(["c", "a", "b"]);
+  expect(next.find((t) => (t.root as Leaf).content === "c")!.pinned).toBe(true);
+});
+
+test("setTabPinned unpinning re-sorts the tab behind the remaining pinned block", () => {
+  const tabs = tabsFrom(["a", "b", "c"], ["a", "b"]); // [a*, b*, c]
+  const next = setTabPinned(tabs, tabs[0].id, false); // unpin "a"
+  // a is now unpinned → after pinned b; original unpinned order (c) preserved
+  expect(contentsOf(next)).toEqual(["b", "a", "c"]);
+  expect(next.find((t) => (t.root as Leaf).content === "a")!.pinned).toBeUndefined();
+});
+
+test("setTabPinned on an unknown id returns the same array", () => {
+  const tabs = tabsFrom(["a", "b"]);
+  expect(setTabPinned(tabs, "nope", true)).toBe(tabs);
+});
+
+test("reorderTabs cannot drag an unpinned tab in front of a pinned one", () => {
+  const tabs = tabsFrom(["p", "a", "b"], ["p"]); // [p*, a, b]
+  // Try to drop "b" at index 0 (before the pinned p); the partition clamps it back.
+  const next = reorderTabs(tabs, tabs[2].id, 0);
+  expect(contentsOf(next)).toEqual(["p", "b", "a"]); // p stays first; b reordered among unpinned
+  expect(next[0].pinned).toBe(true);
+});
+
+test("reorderTabs still reorders freely within the unpinned group", () => {
+  const tabs = tabsFrom(["p", "a", "b", "c"], ["p"]); // [p*, a, b, c]
+  const next = reorderTabs(tabs, tabs[1].id, 4); // move "a" to the end
+  expect(contentsOf(next)).toEqual(["p", "b", "c", "a"]);
+});
+
+test("serialize/deserialize round-trips the pinned flag", () => {
+  const tabs = tabsFrom(["a", "b"], ["b"]);
+  const json = serializeTabs(tabs, tabs[0].id);
+  const { tabs: out } = deserializeTabs(json, () => true);
+  // pinned "b" leads after the round-trip; its flag survives.
+  expect(contentsOf(out)).toEqual(["b", "a"]);
+  expect(out.find((t) => (t.root as Leaf).content === "b")!.pinned).toBe(true);
+  expect(out.find((t) => (t.root as Leaf).content === "a")!.pinned).toBeUndefined();
+});
+
+test("deserialize normalizes a stored order where a pinned tab trails an unpinned one", () => {
+  // Persisted (hand-built) with the pinned tab AFTER an unpinned one — deserialize sorts it front.
+  const json = JSON.stringify({
+    tabs: [
+      { id: "u", focusId: "u", root: { kind: "leaf", id: "u", content: "a" } },
+      { id: "p", focusId: "p", pinned: true, root: { kind: "leaf", id: "p", content: "b" } },
+    ],
+    activeTabId: "u",
+  });
+  const { tabs: out } = deserializeTabs(json, () => true);
+  expect(contentsOf(out)).toEqual(["b", "a"]); // pinned "b" pulled to the front
+  expect(out[0].pinned).toBe(true);
+});

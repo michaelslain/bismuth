@@ -78,6 +78,8 @@ import PanelRight from "lucide-solid/icons/panel-right";
 import Pen from "lucide-solid/icons/pen";
 import Pencil from "lucide-solid/icons/pencil";
 import PenTool from "lucide-solid/icons/pen-tool";
+import Pin from "lucide-solid/icons/pin";
+import PinOff from "lucide-solid/icons/pin-off";
 import Plus from "lucide-solid/icons/plus";
 import Redo2 from "lucide-solid/icons/redo-2";
 import RefreshCw from "lucide-solid/icons/refresh-cw";
@@ -126,7 +128,7 @@ const SEED: Record<string, LucideIcon> = {
   ChevronUp, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image, Inbox,
   Landmark, LayoutList, Link, Lock, Menu, MessageSquare, MessagesSquare, Minus, Network, Notebook, PanelBottom, PanelLeft,
-  PanelRight, Pen, Pencil, PenTool, Plus, Redo2, RefreshCw, Regex, Repeat,
+  PanelRight, Pen, Pencil, PenTool, Pin, PinOff, Plus, Redo2, RefreshCw, Regex, Repeat,
   Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
   WholeWord, Wrench, X, Zap, ZoomIn, ZoomOut,

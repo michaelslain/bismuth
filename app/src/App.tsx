@@ -62,7 +62,7 @@ import {
   splitLeaf, closeLeaf, equalize, focusNeighbor,
   setContent, setRatio, findLeafByContent, leaves, leafCount, pruneMissing, movePane,
   reorderTabs, splitLeafWithNode, replaceLeafWithNode, replacePaneWithPane, detachLeafToTab,
-  serializeTabs, deserializeTabs, resolveFocus,
+  serializeTabs, deserializeTabs, resolveFocus, sortPinned, setTabPinned,
 } from "./panes";
 import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
@@ -299,6 +299,13 @@ export default function App() {
   // Update a tab by id (rename uses this — the renamed tab isn't necessarily active).
   const updateTab = (id: string, fn: (t: Tab) => Tab) =>
     setTabs((ts) => ts.map((t) => (t.id === id ? fn(t) : t)));
+
+  // Pin/unpin a tab: flips Tab.pinned and re-sorts so pinned tabs lead the strip. The
+  // tab keeps its id, so the active/renaming tab stays put through the re-sort.
+  const togglePinTab = (id: string) => {
+    const pinned = tabs().find((t) => t.id === id)?.pinned ?? false;
+    setTabs((ts) => setTabPinned(ts, id, !pinned));
+  };
 
   // Inline tab rename: which tab is being edited (double-click or context-menu "Rename").
   const [renamingTabId, setRenamingTabId] = createSignal<string | null>(null);
@@ -1012,7 +1019,8 @@ export default function App() {
       const { tabs: revived } = deserializeTabs(serializeTabs([last], last.id), () => true);
       const tab = revived[0];
       if (!tab) return;
-      setTabs((ts) => [...ts, tab]);
+      // A reopened tab keeps its pinned flag, so re-normalize the partition after appending.
+      setTabs((ts) => sortPinned([...ts, tab]));
       setActiveTabId(tab.id);
       // Carry the closed tab's navigation history across the id-reviving round-trip so Cmd+[ /
       // Cmd+] still walk it. The revive assigns fresh leaf ids, but closeTabById never deleted the
@@ -1034,7 +1042,7 @@ export default function App() {
     if (!blob) return;
     const { tabs: revived, activeTabId: revivedActive } = deserializeTabs(blob, () => true);
     if (!revived.length) return;
-    setTabs((ts) => [...ts, ...revived]);
+    setTabs((ts) => sortPinned([...ts, ...revived]));
     setActiveTabId(revivedActive ?? revived[revived.length - 1].id);
     for (const t of revived) for (const l of leaves(t.root)) recordNav(l.id, l.content);
   };
@@ -1811,15 +1819,25 @@ export default function App() {
                 </Show>
                 <div
                   class={`tab${activeTabId() === t().id ? " active" : ""}`}
-                  classList={{ dragging: draggingTabId() === t().id }}
+                  classList={{ dragging: draggingTabId() === t().id, pinned: !!t().pinned }}
                   data-tab-chip="true"
+                  // A pinned tab renders compact (icon + pin glyph, no label), so surface its
+                  // name on hover. Skip while renaming (the input carries the name).
+                  title={t().pinned && renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
                   style={{ transform: `translateX(${tabShift(i)}px)` }}
                   onPointerDown={(e) => {
-                    if ((e.target as HTMLElement).closest(".tab-x, .tab-rename")) return;
+                    if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
                     viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id));
                   }}
+                  // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
+                  // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
+                  onAuxClick={(e) => {
+                    if (e.button !== 1) return;
+                    e.preventDefault();
+                    closeTabById(t().id);
+                  }}
                   onDblClick={(e) => {
-                    if ((e.target as HTMLElement).closest(".tab-x")) return;
+                    if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
                     startRenameTab(t().id);
                   }}
                   onContextMenu={(e) => {
@@ -1828,6 +1846,7 @@ export default function App() {
                     const content = tab.root.kind === "leaf" ? tab.root.content : null;
                     const items: MenuItem[] = [
                       { label: "Rename…", icon: "Pencil", onSelect: () => startRenameTab(tab.id) },
+                      { label: tab.pinned ? "Unpin tab" : "Pin tab", icon: tab.pinned ? "PinOff" : "Pin", onSelect: () => togglePinTab(tab.id) },
                     ];
                     if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
                     if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
@@ -1837,7 +1856,7 @@ export default function App() {
                   <Show when={tabBarIcon(t())}>
                     {(icon) => <Icon value={icon()} size={13} />}
                   </Show>
-                  <Show when={renamingTabId() === t().id} fallback={<span>{tabBarLabel(t())}</span>}>
+                  <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
                     <input
                       class="tab-rename"
                       value={tabBarLabel(t())}
@@ -1852,7 +1871,14 @@ export default function App() {
                       }}
                     />
                   </Show>
-                  <IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />
+                  {/* Pinned tabs replace the close X with a pin glyph (click → unpin); the tab
+                      can't be closed by the X, matching Obsidian/VSCode pinned-tab behavior. */}
+                  <Show
+                    when={t().pinned}
+                    fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />}
+                  >
+                    <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={12} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
+                  </Show>
                 </div>
               </>
             )}
