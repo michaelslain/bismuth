@@ -374,6 +374,51 @@ export function prettifyTableBlock(lines: string[]): string {
   return serializeTable(cells, aligns);
 }
 
+// ── Coordinate → cell resolution (pure, #30) ──────────────────────────────────
+// Resolving which table cell a native (Tauri) file drop landed on. The widget collects
+// each cell's client rect from the DOM; THIS function makes the geometric decision, so
+// the exact coordinate→cell mapping is pinned by unit tests with fake rects. Geometry
+// (rect containment, mirroring the shared pane-routing predicate pointInDropRect in
+// nativeDrop.ts) instead of document.elementFromPoint, which is hit-test-dependent —
+// the resize-overlay strips (pointer-events:auto bands on every column border) intercept
+// it, and engines disagree about it under transforms/zoom. Rects and the point live in
+// the same CSS viewport space, so the comparison is engine-agnostic by construction.
+
+/** One cell's client rect + its grid coordinate, as collected from the widget DOM. */
+export interface CellRect {
+  r: number;
+  c: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+/** Squared distance from a point to a rect (0 when inside). */
+function rectDist2(rect: CellRect, x: number, y: number): number {
+  const dx = Math.max(rect.left - x, 0, x - rect.right);
+  const dy = Math.max(rect.top - y, 0, y - rect.bottom);
+  return dx * dx + dy * dy;
+}
+
+/** The cell at client point (x, y): the CONTAINING cell when the point is inside one, else
+ *  the NEAREST cell (the point sits on a border/gutter or the wrap's edge-button margin —
+ *  the user still dropped visually ON the table, so snap rather than lose the drop to the
+ *  note body). Returns null only for an empty list. Pure. */
+export function cellRectAtPoint(cells: CellRect[], x: number, y: number): CellRect | null {
+  let best: CellRect | null = null;
+  let bestD = Infinity;
+  for (const cell of cells) {
+    const d = rectDist2(cell, x, y);
+    if (d === 0) return cell; // containing cell wins outright
+    if (d < bestD) {
+      bestD = d;
+      best = cell;
+    }
+  }
+  return best;
+}
+
 // ── Cell keydown decision (pure) ──────────────────────────────────────────────
 // The table widget's contenteditable cell is an "editing island": it must handle the
 // keys it needs for cell navigation/editing while letting the app's GLOBAL keyboard

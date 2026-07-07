@@ -14,6 +14,8 @@ import {
   type TableBlock,
   type TableGrid,
   type CellKeyAction,
+  type CellRect,
+  cellRectAtPoint,
   groupTableBlocks,
   parseRowCellSpans,
   serializeTable,
@@ -458,19 +460,45 @@ export function tableCellDropTarget(
  *  PACKAGED Tauri app an OS file drag never fires a DOM `drop` — Tauri intercepts it and
  *  `nativeDrop.ts` re-broadcasts it as `bismuth-native-drag` with client-pixel coords, so the
  *  widget's own capture-phase DOM `drop` listeners (which only help dev-in-Chrome) never see it.
- *  Editor.tsx's native-drop consumer calls this to hit-test the drop point against the rendered
- *  table via `elementFromPoint`, then routes a hit through the SAME upload+embed-into-cell flow the
- *  DOM drop uses. `view.dom.contains` scopes the hit to this editor, so a drop over another split
- *  pane's table never lands here. Returns null when the point isn't over a cell of this view. */
+ *  Editor.tsx's native-drop consumer calls this (with COORDS ALREADY CORRECTED to page CSS px —
+ *  see nativeDropRouting.nativeDropScale) to hit-test the drop point against this view's rendered
+ *  tables and route a hit through the SAME upload+embed-into-cell flow the DOM drop uses.
+ *
+ *  Resolution is GEOMETRIC — rect containment over the wrap + its cells' client rects, the same
+ *  coordinate handling as the chat pane's working pointInDropRect hit-test — NOT
+ *  `document.elementFromPoint`. elementFromPoint is hit-test-dependent: the resize-overlay strips
+ *  (pointer-events:auto bands centered on every column border) intercept it, and WebKit's answers
+ *  under page zoom/transforms have diverged from Chromium's. Rects and the point live in the same
+ *  CSS viewport space, so containment is engine-agnostic by construction; the actual decision is
+ *  the pure, unit-tested `cellRectAtPoint` (containing cell, else nearest — a drop on a border
+ *  still lands in the visually-targeted table). Iterating this view's own wraps also scopes the
+ *  hit to this editor, so a drop over another split pane's table never lands here. Returns null
+ *  when the point isn't over any table of this view. */
 export function tableCellDropTargetAtPoint(
   view: EditorView,
   x: number,
   y: number,
 ): { from: number; to: number; r: number; c: number } | null {
-  const doc = view.dom.ownerDocument;
-  const el = doc?.elementFromPoint?.(x, y) ?? null;
-  if (!el || !view.dom.contains(el)) return null; // point isn't inside this editor's DOM
-  return tableCellDropTarget(view, el);
+  for (const wrap of Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-table-wrap"))) {
+    const wr = wrap.getBoundingClientRect();
+    if (wr.width === 0 && wr.height === 0) continue; // hidden pane / not laid out
+    if (x < wr.left || x > wr.right || y < wr.top || y > wr.bottom) continue;
+    const cells: CellRect[] = [];
+    for (const el of Array.from(wrap.querySelectorAll<HTMLElement>("[data-cell]"))) {
+      const r = Number(el.getAttribute("data-r"));
+      const c = Number(el.getAttribute("data-c"));
+      if (!Number.isInteger(r) || !Number.isInteger(c)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 && rect.height === 0) continue;
+      cells.push({ r, c, left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom });
+    }
+    const hit = cellRectAtPoint(cells, x, y);
+    if (!hit) continue;
+    const range = currentRange(view, wrap);
+    if (!range) return null;
+    return { from: range.from, to: range.to, r: hit.r, c: hit.c };
+  }
+  return null;
 }
 
 /** Insert `embeds` (`![[…]]` markers) into cell (r, c) of the table whose block currently
