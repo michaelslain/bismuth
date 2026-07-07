@@ -1,6 +1,6 @@
 // app/src/editor/cellList.test.ts
 import { test, expect } from "bun:test";
-import { parseCellList, renderCellListHtml } from "./cellList";
+import { parseCellList, renderCellListHtml, splitCellItems } from "./cellList";
 
 // An identity item-renderer so tests assert the structure, not an inline-markdown engine.
 const raw = (s: string): string => s;
@@ -26,10 +26,56 @@ test("parseCellList returns null when not every segment is a marker (mixed / pla
   expect(parseCellList("- a<br>1. b")).toBeNull(); // mixed unordered + ordered
 });
 
-test("parseCellList needs a <br> and ≥2 items (a single line is never a list)", () => {
+test("parseCellList needs ≥2 items (a single item is never a list)", () => {
   expect(parseCellList("- just one")).toBeNull();
   expect(parseCellList("plain text")).toBeNull();
   expect(parseCellList("")).toBeNull();
+});
+
+// #15 (THE root cause): the editor's editable-table widget stores a cell via
+// `cellSourceFromDom`, which maps only DIRECT-child <br> nodes to `<br>` markers. Chromium
+// wraps each contenteditable continuation line in a <div>, so the <br> is nested and its
+// textContent is empty — the break is DROPPED and items concatenate with NO separator:
+// typing "- a" ⏎ "b" ⏎ "c" stores "- a- b- c", not "- a<br>- b<br>- c". The old parser split
+// only on <br>, saw one segment, and rendered the literal text. So detection must also
+// re-break a run where a marker is glued straight onto the previous item's last non-space char.
+test("parseCellList detects a COLLAPSED unordered list (dropped <br> — the real stored shape)", () => {
+  expect(parseCellList("- a- b- c")).toEqual({ ordered: false, items: ["a", "b", "c"] });
+  expect(parseCellList("- milk- eggs- bread")).toEqual({ ordered: false, items: ["milk", "eggs", "bread"] });
+  expect(parseCellList("- cost-benefit- risk")).toEqual({ ordered: false, items: ["cost-benefit", "risk"] });
+});
+
+test("parseCellList does NOT false-split emphasis (`* ` collides with a bullet, so glued split is `-`-only)", () => {
+  // "- **bold** x" is ONE item — the `** ` before the space must NOT be read as a `* ` bullet.
+  expect(parseCellList("- **bold** here- next")).toEqual({ ordered: false, items: ["**bold** here", "next"] });
+  expect(parseCellList("*italic* only")).toBeNull(); // a lone emphasis run is never a list
+  // A `*`-bulleted list still works on the CLEAN <br> convention (only the collapsed `*` case is skipped).
+  expect(parseCellList("* one<br>* two")).toEqual({ ordered: false, items: ["one", "two"] });
+});
+
+test("parseCellList detects a COLLAPSED ordered list (dropped <br>)", () => {
+  expect(parseCellList("1. a2. b3. c")).toEqual({ ordered: true, items: ["a", "b", "c"] });
+  expect(parseCellList("1) a2) b")).toEqual({ ordered: true, items: ["a", "b"] });
+});
+
+test("parseCellList detects a newline-separated list (the surface's alt convention)", () => {
+  expect(parseCellList("- a\n- b\n- c")).toEqual({ ordered: false, items: ["a", "b", "c"] });
+  expect(parseCellList("1. a\n2. b")).toEqual({ ordered: true, items: ["a", "b"] });
+});
+
+test("parseCellList does NOT split a prose ' - ' (spaces on both sides) into a list", () => {
+  // A single bullet whose text has an em-dash-style " - " must stay one item (space before the
+  // dash → not a glued marker), so a real sentence is never chopped into a bogus list.
+  expect(parseCellList("- shopping - list")).toBeNull();
+  expect(parseCellList("just some - text - here")).toBeNull(); // doesn't even start with a marker
+  expect(parseCellList("- 3-5 items or so")).toBeNull(); // "-5"/"5 " have no glued marker
+});
+
+test("splitCellItems normalizes <br>/newline and re-breaks glued runs; leaves clean lists alone", () => {
+  expect(splitCellItems("- a<br>- b")).toEqual(["- a", "- b"]); // clean <br>: untouched
+  expect(splitCellItems("- a- b- c")).toEqual(["- a", "- b", "- c"]); // collapsed: re-broken
+  expect(splitCellItems("1. a2. b")).toEqual(["1. a", "2. b"]); // collapsed ordered: re-broken
+  expect(splitCellItems("- shopping - list")).toEqual(["- shopping - list"]); // prose dash: kept
 });
 
 test("parseCellList does not treat emphasis / negatives as bullets (marker needs a space)", () => {
@@ -86,4 +132,27 @@ test("renderCellListHtml runs each item through the supplied inline renderer", (
   const ul = renderCellListHtml("- a<br>- b", upper)!;
   expect(ul).toContain('<span class="bismuth-cell-it">A</span>');
   expect(ul).toContain('<span class="bismuth-cell-it">B</span>');
+});
+
+// The EXACT HTML end-to-end, fed the COLLAPSED source a real cell actually stores (dropped
+// <br>) — proves the whole chain (detect → real-text marker) emits a visible bulleted/numbered
+// list, not literal text. `<li>` carries an inline `display:flex` + `list-style:none` and a
+// `.bismuth-cell-mk` glyph, so no cascade/contenteditable rule can strip the marker.
+const LI = (mk: string, it: string): string =>
+  `<li class="bismuth-cell-li" style="display:flex;gap:0.4em;list-style:none;margin:0.05em 0">` +
+  `<span class="bismuth-cell-mk" style="flex:0 0 auto;opacity:0.75">${mk}</span>` +
+  `<span class="bismuth-cell-it">${it}</span></li>`;
+
+test("renderCellListHtml: exact HTML for a BULLET cell (from collapsed '- a- b')", () => {
+  expect(renderCellListHtml("- a- b", raw)).toBe(
+    `<ul class="bismuth-cell-list" style="margin:0;padding-left:0.2em;list-style:none">` +
+      LI("•", "a") + LI("•", "b") + `</ul>`,
+  );
+});
+
+test("renderCellListHtml: exact HTML for a NUMBERED cell (from collapsed '1. a2. b')", () => {
+  expect(renderCellListHtml("1. a2. b", raw)).toBe(
+    `<ol class="bismuth-cell-list" style="margin:0;padding-left:0.2em;list-style:none">` +
+      LI("1.", "a") + LI("2.", "b") + `</ol>`,
+  );
 });

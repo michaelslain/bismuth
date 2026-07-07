@@ -6,29 +6,55 @@
 // `<ul>`. The standard carrier for a line break inside a cell is a literal `<br>` (marked
 // and Obsidian both render it). So we build the "list in a cell" feature on that carrier:
 //
-//   CONVENTION — a cell renders as a bulleted / numbered list when its source is two or
-//   more `<br>`-separated segments AND every non-empty segment starts with a list marker:
+//   CONVENTION — a cell renders as a bulleted / numbered list when it holds two or more
+//   items, each starting with a list marker:
 //     • unordered: `- item` or `* item`   → <ul>
 //     • ordered:   `1. item` or `2) item` → <ol>
 //   The marker is stripped and each item's remaining text is rendered as inline markdown.
-//   A cell whose segments are NOT all markers (mixed, or plain `a<br>b`) is left as plain
-//   `<br>`-separated inline content — no list.
+//   A cell whose items are NOT all markers (mixed, or plain `a<br>b`) is left as plain
+//   inline content — no list.
 //
-// This round-trips losslessly through the pipe-table markdown: `serializeTable` keeps the
-// literal `<br>` markers (they carry no `|`), and the widget's edit face reveals each `<br>`
-// as a real line break (one item per line, Shift+Enter to add one) then re-encodes on blur.
+// ── Why we split on MORE than just `<br>` (the #15 root cause) ─────────────────────────
+// The editor's editable-table widget stores a cell as raw source via `cellSourceFromDom`
+// (tableWidget.ts), which maps only DIRECT-child `<br>` nodes to `<br>` markers. But when a
+// user types a list in a `contenteditable` <td>, Chromium routinely wraps each continuation
+// line in a `<div>` block, so the `<br>` (or the whole line) ends up NESTED and its
+// `textContent` is empty — the break is DROPPED and the items are concatenated with NO
+// separator:
+//     typed  "- a" ⏎ "b" ⏎ "c"   →  stored  "- a- b- c"   (not "- a<br>- b<br>- c")
+// The old parser split ONLY on `<br>`, so "- a- b- c" was one segment → NOT a list, and the
+// cell rendered as the literal text "- a- b- c". (That is why the two prior "real-text bullet
+// marker" fixes were rejected: the marker code was correct but NEVER ran — the source that
+// reached it was never list-shaped.) So `splitCellItems` below recognizes ALL the shapes a
+// real cell can carry: `<br>` markers, real newlines, AND a collapsed run where a marker is
+// glued straight onto the previous item's last non-space char. A prose " - " (spaces on BOTH
+// sides) is left intact, so ordinary sentences are never chopped into a list.
 //
 // LIMITATIONS (documented in docs/editor/tables.md):
 //   • single level only — no nested / indented sub-lists (a cell is one logical line);
-//   • all-or-nothing — one non-bullet segment demotes the whole cell to plain lines;
-//   • the `<br>`-bullet carrier is a Bismuth/Obsidian convention: a plain GitHub renderer
-//     shows `- a<br>- b` as literal text, not a list.
+//   • all-or-nothing — one non-bullet item demotes the whole cell to plain content;
+//   • the bullet carrier is a Bismuth/Obsidian convention: a plain GitHub renderer shows
+//     `- a<br>- b` as literal text, not a list.
 //
 // Pure (no DOM / CodeMirror / marked deps) so it can be unit-tested and shared by BOTH the
 // editor table widget (inlineMarkdown.ts) and the note renderer (bases/markdown.ts).
 
-/** Split a cell source on its literal `<br>` / `<br/>` / `<br />` line-break markers. */
-const BR_SPLIT_RE = /<br\s*\/?>/i;
+/** Every clean line-break carrier a cell source can use: a literal `<br>` / `<br/>` /
+ *  `<br />` marker (Bismuth/Obsidian convention) or a real newline (some surfaces). */
+const BR_OR_NL_RE = /<br\s*\/?>|\r?\n/gi;
+// A dropped-break boundary (see the header note): a list marker glued directly onto the
+// previous item's last NON-space char, e.g. the `- b` in "- a- b". The captured `\S` keeps a
+// prose " - " (space before the dash) from ever matching, so a real sentence isn't split; and
+// a marker that already follows a `<br>`/newline is preceded by whitespace, so a CLEAN list is
+// left untouched — only genuinely-concatenated markers get re-broken.
+//
+// The unordered form matches ONLY `-` (not `*`): a `*` bullet is indistinguishable from
+// emphasis, and `**bold** x` / `*italic* x` would false-split on the `* ` before the space.
+// A `*`-bulleted list is still detected on the CLEAN `<br>`/newline convention (UL_ITEM_RE
+// accepts `* item`); only the rarer COLLAPSED `*` case is passed over — the safe trade. The
+// ordered form is digit-led, so it never collides with markdown emphasis.
+const GLUED_UL_RE = /(\S)(-[ \t])/g;
+const GLUED_OL_RE = /(\S)(\d+[.)][ \t])/g;
 // A marker + optional whitespace-led content. Bare `-` / `1.` (an empty item) is allowed;
 // `-5` / `*bold*` (no space after the marker) is NOT a bullet — matching markdown.
 const UL_ITEM_RE = /^[-*](?:[ \t]+(.*))?$/;
@@ -40,11 +66,20 @@ export interface CellList {
   items: string[];
 }
 
+/** Split a cell source into its item candidates (trimmed). Normalizes the clean `<br>`/newline
+ *  carriers to line breaks AND re-inserts the breaks the editor's DOM read dropped (a marker
+ *  concatenated straight onto the previous item — see the header note). Pure. */
+export function splitCellItems(src: string): string[] {
+  let s = src.replace(BR_OR_NL_RE, "\n");
+  // Re-break a glued run: "- a- b- c" → "- a\n- b\n- c" (and "1. a2. b" → "1. a\n2. b").
+  s = s.replace(GLUED_UL_RE, "$1\n$2").replace(GLUED_OL_RE, "$1\n$2");
+  return s.split("\n").map((seg) => seg.trim());
+}
+
 /** Parse a cell source into a list, or null if it isn't one (see the convention above). */
 export function parseCellList(src: string): CellList | null {
-  const segments = src.split(BR_SPLIT_RE).map((s) => s.trim());
-  // A list needs at least one `<br>` (≥2 segments) and ≥2 non-empty items.
-  if (segments.length < 2) return null;
+  const segments = splitCellItems(src);
+  // A list needs ≥2 non-empty items, each starting with a marker (checked below).
   const nonEmpty = segments.filter((s) => s !== "");
   if (nonEmpty.length < 2) return null;
 

@@ -865,9 +865,12 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .bismuth-math-display { display: block; }
 .bismuth-math-display .katex-display { margin: 0.4em 0; }
 
-/* Lists inside a table cell (see editor/cellList.ts): a `<br>`-separated `- item` / `1. item`
-   run renders as a compact <ul>/<ol>. One global rule covers BOTH the editor's editable-table
-   widget cells (.cm-td) and every reading surface (note tables, cards, export). Tight margins /
-   indent so the list sits neatly within the cell rather than a full block list's spacing. */
-.bismuth-cell-list { margin: 0; padding-left: 1.25em; }
+/* Lists inside a table cell (see editor/cellList.ts): a `- item` / `1. item` run renders as a
+   compact <ul>/<ol> whose bullet/number is REAL TEXT (a `.bismuth-cell-mk` span), the native
+   marker off via inline `list-style:none`. One global rule covers BOTH the editor's editable-
+   table widget cells (.cm-td) and every reading surface (note tables, cards, export): tight
+   margins so the list sits neatly within the cell, and `list-style:none` (belt-and-suspenders
+   with the render's inline style) so the native marker never doubles the text glyph. */
+.bismuth-cell-list, .bismuth-cell-list li { list-style: none; }
+.bismuth-cell-list { margin: 0; padding-left: 0.2em; }
 .bismuth-cell-list li { margin: 0.05em 0; }
