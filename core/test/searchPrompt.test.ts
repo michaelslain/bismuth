@@ -8,10 +8,13 @@ import {
   validateResults,
   promptSearch,
   searchPromptDeps,
+  consumeModelStream,
   type ModelResult,
 } from "../src/searchPrompt";
 import { makeVault } from "./helpers";
 import { invalidateSearchIndex } from "../src/search";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { AppError } from "../src/error";
 
 // The whole AI prompt-search flow is validated WITHOUT spawning `claude`: the SDK boundary is behind
 // searchPromptDeps.runModel and the CLI lookup behind searchPromptDeps.whichClaude, both overridable.
@@ -242,6 +245,83 @@ describe("parseModelOutput (structured + tolerant fallback)", () => {
     expect(parseModelOutput({ results: [{ path: "a.md" }, { quote: "q" }, 5] }, undefined)).toEqual([]);
     expect(parseModelOutput(undefined, "not json at all")).toEqual([]);
     expect(parseModelOutput(undefined, undefined)).toEqual([]);
+  });
+});
+
+// BUG #8, 3rd bounce: the reopened "AI search literally does nothing" report. `consumeModelStream`
+// is the exact seam that used to swallow a broken `claude` process (not logged in, killed, crashed,
+// unexpected output) into a silent empty result — indistinguishable in the UI from "the AI ran and
+// found nothing". These tests exercise it directly with synthetic SDK message streams, no `claude`
+// process or module mocking required.
+describe("consumeModelStream (anomaly handling — BUG #8 3rd-bounce root cause)", () => {
+  async function* streamOf(msgs: Partial<SDKMessage>[]): AsyncGenerator<SDKMessage> {
+    for (const m of msgs) yield m as SDKMessage;
+  }
+
+  test("returns the structured payload on a success result message", async () => {
+    const out = await consumeModelStream(
+      streamOf([
+        { type: "system", subtype: "init" } as Partial<SDKMessage>,
+        { type: "result", subtype: "success", structured_output: { results: [] }, result: "ok" } as unknown as Partial<SDKMessage>,
+      ]),
+    );
+    expect(out.structured).toEqual({ results: [] });
+    expect(out.resultText).toBe("ok");
+  });
+
+  test("throws a 500 AppError for a non-success result subtype", async () => {
+    const p = consumeModelStream(streamOf([{ type: "result", subtype: "error_max_turns" } as unknown as Partial<SDKMessage>]));
+    await expect(p).rejects.toThrow();
+    try {
+      await consumeModelStream(streamOf([{ type: "result", subtype: "error_max_turns" } as unknown as Partial<SDKMessage>]));
+      throw new Error("expected to throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AppError);
+      expect((e as AppError).statusCode).toBe(500);
+      expect((e as Error).message).toContain("error_max_turns");
+    }
+  });
+
+  test("THE FIX: throws instead of silently succeeding when the stream ends with no result message at all (early `claude` exit — e.g. not logged in, killed, crashed)", async () => {
+    // Only an init message, then the stream just ends — no "result" ever arrives. Before the fix,
+    // this fell through to `{ structured: undefined, resultText: undefined }`, which promptSearch
+    // silently turned into `[]` — rendered as "Bismuth AI found nothing relevant", identical to a
+    // genuinely empty (but successful) search.
+    const p = consumeModelStream(streamOf([{ type: "system", subtype: "init" } as Partial<SDKMessage>]));
+    await expect(p).rejects.toThrow();
+    try {
+      await consumeModelStream(streamOf([{ type: "system", subtype: "init" } as Partial<SDKMessage>]));
+      throw new Error("expected to throw");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AppError);
+      expect((e as AppError).statusCode).toBe(500);
+      expect((e as Error).message).toContain("Claude Code");
+    }
+  });
+
+  test("THE FIX: throws for a completely empty stream (zero messages — immediate process exit)", async () => {
+    const p = consumeModelStream(streamOf([]));
+    await expect(p).rejects.toThrow();
+  });
+
+  test("promptSearch propagates consumeModelStream's error as a 500 the UI can render (not a silent [])", async () => {
+    const root = makeVault({ "a.md": "some content to rank as a candidate" });
+    const realWhich = searchPromptDeps.whichClaude;
+    const realRun = searchPromptDeps.runModel;
+    searchPromptDeps.whichClaude = () => "/fake/claude";
+    // Simulate runModelReal's real behavior end-to-end: the stream ends with no result message.
+    searchPromptDeps.runModel = () => consumeModelStream(streamOf([{ type: "system", subtype: "init" } as Partial<SDKMessage>]));
+    try {
+      await promptSearch(root, "where is the content");
+      throw new Error("expected promptSearch to throw, not return silently");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AppError);
+      expect((e as AppError).statusCode).toBe(500);
+    } finally {
+      searchPromptDeps.whichClaude = realWhich;
+      searchPromptDeps.runModel = realRun;
+      invalidateSearchIndex(root);
+    }
   });
 });
 

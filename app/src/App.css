@@ -109,11 +109,22 @@ body { background: var(--bg); color: var(--fg); }
    animates next to an `fr` track. Driving the grid from var(--sidebar-w) and
    transitioning that property instead gives a smooth, frame-by-frame collapse. */
 @property --sidebar-w { syntax: "<length>"; inherits: true; initial-value: 280px; }
+/* Registered (like --sidebar-w above) so its 48px<->0 collapse animates as a real <length>
+   instead of snapping instantly — see BUG #40 below. */
+@property --rail-w { syntax: "<length>"; inherits: true; initial-value: 0px; }
 /* The vertical tab rail (ui.verticalTabs) is a third grid track on the RIGHT. It stays at
    its COLLAPSED width even while hovered — the hover-expansion overflows leftward as an
    overlay (see .tab-rail-inner) so the editor never reflows. 0 unless `.has-rail`. */
-.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
+.layout { display: grid; --sidebar-w: var(--sidebar-width, 280px); --rail-w: 0px; grid-template-columns: var(--sidebar-w) 1fr var(--rail-w); height: 100vh; font: var(--ui-font-size, 13px)/1.5 "Monaspace Xenon", ui-monospace, monospace; transition: --sidebar-w 0.26s cubic-bezier(0.22, 1, 0.36, 1), --rail-w 0.26s cubic-bezier(0.22, 1, 0.36, 1); }
 .layout.has-rail { --rail-w: 48px; }
+/* BUG #40: the Cmd+O quick switcher takeover already collapses the LEFT sidebar via
+   `.sidebar-hidden` below (`!sidebarVisible() || switcherOpen()`) — the right-edge vertical tab
+   rail never followed the same rule, so it kept floating over the switcher's full-window graph
+   backdrop. Collapse its grid column to 0 in lockstep (App.tsx's `tabRailVisible()` unmounts the
+   rail's own DOM at the same condition, so this is belt-and-suspenders against any layout jump
+   even for the one frame before the `<Show>` toggles). Combined selector so it always outranks
+   `.has-rail` regardless of source order. */
+.layout.has-rail.switcher-active { --rail-w: 0px; }
 .sidebar { background: var(--rail); border-right: 1px solid var(--border-soft); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* Children are pinned to the full sidebar width so they don't reflow/squish while
    the column animates to 0 — overflow:hidden on .sidebar clips them as it collapses,
