@@ -1,6 +1,6 @@
 # Core HTTP API Reference
 
-This is the complete, exhaustive reference for the Bismuth **core backend** HTTP API, defined in [`core/src/server.ts`](../../core/src/server.ts). The server is a single `Bun.serve` instance created by `createServer({ vault, memory?, port? })`. Every route is dispatched by an exact `"<METHOD> <pathname>"` string key against one of two tables — `routes` (reads) and `mutatingRoutes` (writes) — plus a special-cased `GET /terminal` WebSocket upgrade. This page documents every entry in both tables, the WS protocol, the request/response shapes, query/body params, error codes, and which routes invalidate caches / publish SSE events.
+This is the complete, exhaustive reference for the Bismuth **core backend** HTTP API, defined in [`core/src/server.ts`](../../core/src/server.ts). The server is a single `Bun.serve` instance created by `createServer({ vault, memory?, port? })`. Every route is dispatched by an exact `"<METHOD> <pathname>"` string key against one of two tables — `routes` (reads) and `mutatingRoutes` (writes) — plus special-cased `GET /terminal`, `GET /chat`, and `GET /ui` WebSocket upgrades. This page documents every entry in both tables, the WS protocol, the request/response shapes, query/body params, error codes, and which routes invalidate caches / publish SSE events.
 
 ## Server fundamentals
 
@@ -259,6 +259,12 @@ Posted by the relay plugin's hooks loaded per-session inside app terminals. They
 - **`POST /relay/subagent/start`** — body `{ parentSessionId?, agentId?, agentType? }`. `startSubagent(...)`; `agentType` defaults to `"agent"`. `400 "missing parentSessionId/agentId"` if either is absent.
 - **`POST /relay/subagent/stop`** — body `{ agentId?, lastMessage? }`. `stopSubagent(...)`. `400 "missing agentId"` if absent.
 
+### App control (`/ui/*`, read table)
+The core→frontend command channel (`core/src/uiControl.ts`). Both live in the read table (no vault-cache invalidation): `/ui/command` relays a request over the target window's `/ui` WebSocket and returns its reply; any vault mutation the window then performs runs its own invalidation. See [../mcp/app-control.md](../mcp/app-control.md).
+
+- **`GET /ui/windows`** — none. Returns `[{ id, label, activeTabId, tabCount }]` for every connected window (`[]` when none). Fed by each window's tab heartbeat over `/ui`.
+- **`POST /ui/command`** — body `{ windowId?, action, args? }`. Resolves the target window (`windowId`, else the single open one — **0 → `404 "no Bismuth window is open"`**, **many → `409`**), sends the command over its `/ui` WS, and returns its reply `{ ok, result?, error? }` (a window that never answers → `{ok:false}` after ~8s; never hangs). `action ∈ list-tabs | open-tab | close-tab | focus-tab | run-command`. **Guards run before dispatch:** `run-command` with a `UI_CONTROL_BLOCKLIST` id → `403`; `open-tab` with `::chat:` content → `403`. `400 "missing action"` if absent.
+
 ### Daemon system actions / writes (read table)
 These mutate the daemon's shared on-disk files (NOT the vault) — either the machine-level install state or the active vault's `<vault>/.daemon/{crons,processes}` defs — so they live in the read table with **no vault-cache invalidation** (the frontend re-polls `/daemon/graph`).
 
@@ -402,6 +408,13 @@ Dual-mode SRS review.
 - **Errors:** `400 "unknown daily note: <id>"` for an unknown id.
 - **`pathOf`:** none passed → full invalidation.
 
+### `POST /daemon/pages`
+- **Body:** `CreatePageInput` = `{ slug: string, title?, body?, actions?: PageAction[], source?, deliverAt? }`.
+- **Action:** `createDaemonPage(vault, input)` (`core/src/daemonPages.ts`) — authors a validated daemon inbox page at `.daemon/pages/<slug>.md` (stamps `type: daemon-page` + `createdAt`, serializes the nested `actions[]` via the `yaml` library, atomic temp+rename). Unlike the `/daemon/pages/{resolve,mark-failed}` sidecar writes (read table), the page `.md` IS a vault file that shows in the sidebar, so this is a **mutation**.
+- **Response:** `{ path: ".daemon/pages/<slug>.md", slug }`.
+- **Errors:** `400` for an invalid slug (dots/slashes); `409 "page already exists"` — never clobbers.
+- **`pathOf`:** `.daemon/pages/<slug>.md` → `classifyVault` marks it tree-dirty (`DAEMON_PAGE_RE`) so the inbox refreshes.
+
 ### `POST /daemon/owner`
 - **Body:** `{ deviceId: string }`.
 - **Action:** `setOwner(deviceId)` — writes `owner.json` byte-compatibly with what the daemon reads. owner.json lives OUTSIDE the vault.
@@ -450,6 +463,23 @@ Frames may arrive as text or binary (decoded UTF-8); a frame that doesn't parse 
 On `close`:
 - **Clean close** (code `1000`) — intentional tab-close → tear the session down now (`closeChat(chatId)`).
 - **Abnormal close** (reload `1001`, network drop `1006`, etc.) — keep the session alive for a **30000ms** grace window (`scheduleChatClose(chatId, 30_000)`) so a reconnect with the same `chatId` resumes the same `claude` conversation instead of spawning a fresh one. The next `sendMessage` cancels the pending close.
+
+---
+
+## WebSocket: `GET /ui`
+
+A special-cased upgrade (alongside `/terminal` + `/chat`) — the per-window **app-control channel** backing `/ui/windows` + `/ui/command` (`core/src/uiControl.ts` ⇄ `app/src/uiControlClient.ts`). The app opens ONE at mount.
+
+### Upgrade request
+- **Method/path:** `GET /ui`. **Query:** `?w=<windowId>` (the stable per-window id, `windowId.ts`; absent → `"main"`).
+- **Origin policy:** the SAME allow-list as `/terminal`/`/chat`; otherwise `403 "forbidden origin"`. On `open` the window is registered (`registerWindow(windowId, send)`), keyed by `windowId`; a reconnect re-registers under the same id. The socket carries `{ kind: "ui", windowId }`.
+
+### Message protocol
+- **client → server:** `{type:"tabs", snapshot}` — the tab-layout heartbeat (`updateTabs`; powers `/ui/windows`), piggybacked on App's tab-persistence effect. `{type:"reply", reqId, ok, result?, error?}` — answers a command core pushed (`resolveReply`; an unknown/stale `reqId` is ignored).
+- **server → client:** `{type:"command", reqId, action, args?}` — sent by `sendCommand` (from `POST /ui/command`); the client dispatches to an App handler and replies. A command with no reply resolves `{ok:false}` after ~8s.
+
+### Lifecycle
+On `close`, `unregisterWindow(windowId, send)` — **identity-guarded**: a stale close after a reconnect already swapped in a new socket under the same `windowId` is a no-op, so the live window survives. No grace timer (unlike `/chat`): the client reconnects and re-heartbeats.
 
 ---
 
@@ -521,6 +551,8 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/relay/session/end` | read | no |
 | POST | `/relay/subagent/start` | read | no |
 | POST | `/relay/subagent/stop` | read | no |
+| GET | `/ui/windows` | read | no |
+| POST | `/ui/command` | read | no |
 | GET | `/tasks` | read | no |
 | POST | `/rows` | read | no |
 | POST | `/backup` | read | no |
@@ -560,6 +592,7 @@ The server also pre-warms one login shell on boot (`prewarmPool(vault, server.po
 | POST | `/tasks/archive` | mutating | yes |
 | POST | `/cards/review` | mutating | yes |
 | POST | `/daily-note` | mutating | yes (full) |
+| POST | `/daemon/pages` | mutating | yes (page path) |
 | POST | `/daemon/owner` | mutating | yes (no-op scope) |
 | POST | `/gcal/sync` | mutating | yes (base file) |
 | GET | `/terminal` | (WS upgrade) | n/a |

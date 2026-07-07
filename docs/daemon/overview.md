@@ -12,12 +12,15 @@ This page covers what the daemon **is** now, the machine-vs-vault split, the `da
 
 There is exactly **one** daemon process per machine. It does not run per-vault. Instead, on boot it loads every enabled vault and brings each vault's "brain" online; a reconcile loop then starts/pauses a vault's brain as that vault's `settings.daemon.enabled` flips, with no restart (`daemon/src/daemon/index.ts`: `main`, `startVault`, `stopVault`, `reconcileVaults`).
 
-Each per-call operation is fully vault-scoped so concurrent vault sessions never race (`daemon/src/daemon/session.ts` `sendMessage`):
+Each per-call operation is fully vault-scoped so concurrent vault sessions never race (`daemon/src/daemon/session.ts` `sendMessage` → `buildQueryOptions`):
 
 - **cwd** = the vault root,
 - **env** `BISMUTH_MEMORY_DIR` = that vault's `<vault>/.daemon/memory`,
 - **resume** = that vault's own session id (`<vault>/.daemon/session-id`),
-- **appended system prompt** = that vault's `identity.md` (name + personality).
+- **appended system prompt** = that vault's `identity.md` (name + personality),
+- **mcpServers** = the machine-wide bismuth MCP wired **explicitly** — `{ bismuth: { command: <~/.bismuth/bin/bismuth-mcp>, env: { BISMUTH_VAULT, BISMUTH_MEMORY_DIR, BISMUTH_DOCS_DIR, BISMUTH_CLI } } }` — with `settingSources: []`.
+
+The MCP wiring (last bullet) is what gives a daemon session the `bismuth` docs/CLI + `remember`/`recall`/`forget` tools. It's **explicit**, not inherited: unlike an interactive session (which gets the MCP from the machine-wide `claude mcp add -s user` registration), the daemon is a launchd/systemd process, so `buildQueryOptions` sets `mcpServers` per call and `settingSources: []` so it never picks up a human's ambient config. `BISMUTH_VAULT` in the MCP server's own env closes the vault-targeting gap for `bismuth_cli` regardless of cwd. The absolute `~/.bismuth/bin/bismuth-mcp` path (resolved by `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated so a machine without the installed tools degrades to no-MCP) works under launchd's minimal PATH. See [mcp/overview.md](../mcp/overview.md). (Note the SDK version skew — core resolves `@anthropic-ai/claude-agent-sdk` 0.3.186, the daemon 0.2.141 — both expose `mcpServers`/`settingSources`/`McpStdioServerConfig.env`.)
 
 Three entry points converge on `sendMessage()` per vault: a cron firing (`daemon/src/daemon/cron.ts`), a background process loop (`daemon/src/daemon/process.ts`), and the boot prompt that wakes the session. The default model is `haiku`, pointed at the user's own installed `claude` binary (machine-login auth, no API key).
 

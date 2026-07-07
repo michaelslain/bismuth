@@ -15,7 +15,8 @@
 // a trigger file — the daemon's `processPageTriggers` just reads the sidecar + the page body and
 // fires a session; it never parses the page's frontmatter itself.
 import { join, dirname } from "node:path";
-import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, unlinkSync, readdirSync, existsSync } from "node:fs";
+import { stringify as yamlStringify } from "yaml";
 import { parseFrontmatter } from "./frontmatter";
 import { writeTrigger } from "./daemon";
 import { AppError } from "./error";
@@ -271,6 +272,80 @@ export function resolvePage(vault: string, path: string, actionId: string): Reso
   });
   writeTrigger(vaultPagesDir(vault), slug);
   return { status: "working", alreadyResolved: false };
+}
+
+/** A single page-slug segment (no dots, no slashes) — the middle of the `DAEMON_PAGE_RE` path. */
+const PAGE_SLUG_RE = /^[^/.][^/]*$/;
+
+/** Input for {@link createDaemonPage} — the well-formed shape a page-authoring caller supplies.
+ *  Frontmatter `type`/`createdAt` are stamped by core; the caller owns the slug, title, body, and
+ *  action buttons. */
+export interface CreatePageInput {
+  /** Filename stem (no extension, no path): the page lands at `.daemon/pages/<slug>.md`. */
+  slug: string;
+  title?: string;
+  /** The editable draft — the body markdown below the frontmatter. */
+  body?: string;
+  /** Action buttons; each with a `prompt` is an "approve" (daemon acts), each without a pure dismiss. */
+  actions?: PageAction[];
+  /** Provenance string, display-only (e.g. "cron:answer-emails"). */
+  source?: string;
+  /** ISO instant; omit for deliver-ASAP/next-open. */
+  deliverAt?: string;
+}
+
+/**
+ * Create a daemon inbox page with VALIDATED, well-formed frontmatter. Exists so an MCP / CLI /
+ * daemon caller authors a page through one guarded path instead of a fragile raw file write:
+ * the nested `actions[]` YAML that `resolvePage` depends on is easy to get subtly wrong by hand.
+ * Validates the slug against the same shape `DAEMON_PAGE_RE` enforces, stamps `type: daemon-page` +
+ * `createdAt`, serializes via the `yaml` library (handles the nested actions), and writes
+ * atomically (temp+rename) so a concurrent `listDaemonPages` never observes a partial file. Refuses
+ * to clobber an existing page (409). Returns the vault-relative path so the caller can open it.
+ */
+export function createDaemonPage(vault: string, input: CreatePageInput): { path: string; slug: string } {
+  const slug = (input.slug ?? "").trim();
+  if (!PAGE_SLUG_RE.test(slug)) {
+    throw new AppError("EINVAL", `invalid page slug: ${JSON.stringify(input.slug)} (no dots or slashes)`, 400);
+  }
+  const rel = `.daemon/pages/${slug}.md`;
+  // Belt-and-suspenders: the assembled path must satisfy the same guard the watcher + resolvePage use.
+  if (!DAEMON_PAGE_RE.test(rel)) {
+    throw new AppError("EINVAL", `invalid page slug: ${JSON.stringify(input.slug)}`, 400);
+  }
+  const dir = vaultPagesDir(vault);
+  const file = join(dir, `${slug}.md`);
+  if (existsSync(file)) throw new AppError("EEXIST", `page already exists: ${rel}`, 409);
+
+  const fm: Record<string, unknown> = {
+    type: "daemon-page",
+    title: input.title?.trim() || slug,
+    createdAt: new Date().toISOString(),
+  };
+  if (input.source) fm.source = input.source;
+  if (input.deliverAt) fm.deliverAt = input.deliverAt;
+  if (Array.isArray(input.actions) && input.actions.length) {
+    // Re-project through parseActions so only well-formed {id,label,…} entries land (same tolerance
+    // as the reader), then serialize.
+    const clean = parseActions(input.actions).map((a) => ({
+      id: a.id,
+      label: a.label,
+      ...(a.kind && a.kind !== "default" ? { kind: a.kind } : {}),
+      ...(a.model ? { model: a.model } : {}),
+      ...(a.timeout != null ? { timeout: a.timeout } : {}),
+      ...(a.prompt ? { prompt: a.prompt } : {}),
+    }));
+    if (clean.length) fm.actions = clean;
+  }
+
+  const body = (input.body ?? "").replace(/\s+$/, "");
+  const md = `---\n${yamlStringify(fm)}---\n\n${body}\n`;
+
+  mkdirSync(dir, { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, md);
+  renameSync(tmp, file);
+  return { path: rel, slug };
 }
 
 /**

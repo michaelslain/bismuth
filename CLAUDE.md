@@ -69,7 +69,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 **Purpose**: manages the vault filesystem, builds knowledge graphs, watches for changes, serves the HTTP API.
 
 **Key modules**:
-- `server.ts` — HTTP server (Bun.serve): caching, file watching, mutating-route abstraction, SSE broadcast, two WS upgrades: `/terminal` (PTY) + `/chat` (visual Claude chat, `chat.ts`). Three route tables: **GET reads**, **POST mutations** (`mutatingHandler` → invalidate + SSE), **read-table POST/PUT** (no invalidate: `/rows`, `/search`, `PUT /file`, `/relay/*`, daemon writes). Also drives `/gcal/*` + a 60s auto-sync ticker. **Full reference: `docs/api/http-reference.md`.**
+- `server.ts` — HTTP server (Bun.serve): caching, file watching, mutating-route abstraction, SSE broadcast, three WS upgrades: `/terminal` (PTY) + `/chat` (visual Claude chat, `chat.ts`) + `/ui` (per-window app-control channel, `uiControl.ts`). Three route tables: **GET reads**, **POST mutations** (`mutatingHandler` → invalidate + SSE), **read-table POST/PUT** (no invalidate: `/rows`, `/search`, `PUT /file`, `/relay/*`, `/ui/windows`, `/ui/command`, daemon writes). Also drives `/gcal/*` + a 60s auto-sync ticker; writes a run-registry record (`runRegistry.ts`) on boot for out-of-app discovery. **Full reference: `docs/api/http-reference.md`.**
 - `sse.ts` — SSE registry (`formatEvent`, `createSseRegistry`): pushes `{version, paths, dirty:{graph,tree}}` on file changes — consumers use the `dirty` flag to skip refetch when no structural change occurred
 - `engine.ts` — graph composition: merges vault + memory graph + self node, creates "about" edges linking memory to vault
 - `vault.ts` — builds vault graph from markdown, two-pass: (1) create note nodes, (2) extract wikilinks + tags + frontmatter, create edges
@@ -78,6 +78,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 - `files.ts` — file I/O: list markdown, read/write notes, path-traversal rejection. `frontmatter.ts` — YAML parse, tolerates malformed. `wikilinks.ts` — extract `[[WikiLink]]`. `tags.ts` — extract `#tag` from frontmatter + body. `memory.ts` — build memory graph from memory notes (`mem:` namespace)
 - `agents.ts` — builds the "agents" graph (you → terminal-tab sessions → subagents) from the relay registry; pure over a `RelaySnapshot` + live pty-id set
 - `relay.ts` — in-process registry of terminal-tab Claude sessions + subagents, populated by relay hooks via `POST /relay/*`, pruned against the live pty set
+- `uiControl.ts` — in-process registry of OPEN app WINDOWS + a request/reply command channel to each (the `/ui` WS): powers the `app` CLI group + MCP app control (list/open/close/focus tabs, run a safe command). Pure over injectable sockets, unit-tested like `relay.test.ts`. `runRegistry.ts` — `~/.bismuth/run/<vault>.json` records so an out-of-app caller (the `bismuth app …` CLI, the daemon) discovers which port serves which vault
 - `daemon.ts` — reads/writes the daemon's shared state (device-id, devices.json, owner.json, daemon.pid); status/device/owner/cron/process accessors. Never throws. See Daemon Integration
 - `daemonGraph.ts` — builds the "daemon" graph (daemon hub → cron/process nodes, `supervises` edges) from on-disk crons/processes; `daemonSnapshot`/`buildDaemonGraph`/`daemonGraph`
 - `daemonViz.ts` — pure `nodeVisualState(state)` mapping `{enabled, running}` → visual tokens: disabled = dim; running = solid palette fill; enabled-idle = `bg` (hollow) fill + palette border ring
@@ -120,7 +121,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 The `bismuth` binary (thin wrapper over `@bismuth/core`) controls the whole vault from the shell. File-based commands run **headlessly** (no server); the app's vault watcher picks up writes live. JSON output (`--pretty`); vault via `--vault`/`BISMUTH_VAULT`.
 
 - `src/index.ts` — dispatcher: merges every group into one registry, longest-match dispatch (two-word phrase, then one-word), `--help`, error-wrap. `src/args.ts` (`flag`/`bool`/`positionals`/`requireVault`/`out`/`fail`…) + `src/types.ts` (`Command`/`CommandMap`) = the shared seam every group imports.
-- `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. Groups: `file`, `note`, `search`, `graph`, `task`, `base`(+`row*`), `card`, `prop`, `settings`(+`folder-icon`), `daemon` (no vault), `draw`, `serve`+`backup`, `export` (md|html|png; pdf+png of notes/bases browser-only, only `.draw`→png headless), `api` (`<METHOD> <path>` passthrough), `install` (machine-wide cli+mcp), `checkpoint` (git-ref bookmarks `refs/bismuth/<name>`; no vault, any `--dir`).
+- `src/commands/<group>.ts` — each exports `commands: CommandMap`, calls core directly. Groups: `file`, `note`, `search`, `graph`, `task`, `base`(+`row*`), `card`, `prop`, `settings`(+`folder-icon`), `daemon` (no vault), `draw`, `serve`+`backup`, `export` (md|html|png; pdf+png of notes/bases browser-only, only `.draw`→png headless), `api` (`<METHOD> <path>` passthrough), `app` (drives a RUNNING app's tabs via `/ui/*` — needs a server; core discovery `--api`>`BISMUTH_API`>`CLAUDE_RELAY_URL`>run-registry>`:4321`), `page` (daemon inbox: list/create/resolve — headless), `install` (machine-wide cli+mcp), `checkpoint` (git-ref bookmarks `refs/bismuth/<name>`; no vault, any `--dir`).
 
 **Adding a command**: add a `Command` to a `src/commands/<group>.ts` map (or a new group imported in `index.ts`) — resolve via `args.ts`, call core, `out(result, args)`.
 
@@ -205,7 +206,7 @@ Purposes are in **Architecture** above; this is the layout.
 ```
 core/src/
   server.ts sse.ts                    # HTTP + SSE + WS, mutating-route abstraction
-  engine.ts vault.ts memory.ts agents.ts relay.ts graphBuilder.ts   # graph composition + builders (relay = agent-graph registry)
+  engine.ts vault.ts memory.ts agents.ts relay.ts uiControl.ts runRegistry.ts graphBuilder.ts   # graph composition + builders (relay = agent-graph registry; uiControl = app-control window channel; runRegistry = port discovery)
   daemon.ts daemonGraph.ts daemonViz.ts daemonState.ts   # daemon: state reader + daemon-mode graph + node-visual encoder + shared file-read helpers
   drawing/   # .draw vector docs (model/geometry/smooth/render2d/paper/theme/export — pure, headless)
   graph.ts layout.ts layout-cache.ts community.ts          # types, layout, community detection
@@ -232,13 +233,14 @@ app/src/
   noteCache.ts windowId.ts baseViews.ts taskStatusMenu.tsx   # LRU note cache, per-window tab-storage keys, 12 base-view kinds, task-status context menu
   ui/      # shared primitives (Button/IconButton/TextButton/IconTextButton, Chip, Stars, StatusDot, ViewBar, SearchBar, SegmentedToggle, TextInput, Select, Field, EmptyState, Modal, gallery/, popover/) + buttonClass
   icons/ dnd/   # Lucide Icon+registry+picker; drag-drop geometry + viewDrag
-  api.ts serverVersion.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts
+  api.ts serverVersion.ts uiControlClient.ts settings.ts settingsCssVars.ts settingsDiff.ts keybindings.ts themes.ts appWindow.ts nativeAppMenu.ts   # uiControlClient = the /ui app-control socket, wired in App.tsx beside the tab-persistence effect
   Toast.tsx telemetry.ts App.css   # toasts, client telemetry, global styles + CSS vars
 app/src-tauri/   # Tauri shell (Rust): lib.rs spawns the core sidecar + first-run vault picker (see Desktop app & core sidecar)
 
 mcp/src/
-  docs.ts cli.ts server.ts   # stdio MCP server: docs index/search/read + CLI bridge + 5 tools (see MCP Integration)
-relay/   # Claude Code plugin: hooks/ (→ POST /relay/*) + shim/ (zsh claude wrapper); see Relay Integration
+  docs.ts cli.ts memory.ts server.ts   # stdio MCP server: docs index/search/read + CLI bridge + memory tools = 5 always-on + 3 daemon-gated (see MCP Integration). App control adds ZERO tools — it rides bismuth_cli (the `app`/`page` CLI groups)
+relay/   # Claude Code plugin: hooks/ (→ POST /relay/*) + shim/ (zsh claude wrapper) + .mcp.json (declares the bismuth MCP, dev); see Relay Integration
+daemon/src/lib/bismuthPaths.ts   # existsSync-gated ~/.bismuth/bin paths (mcp/cli/docs) — the daemon session's explicit MCP wiring (literal dup of bismuthInstall.ts, like claudeWhich.ts)
 ```
 
 ## Development Workflow
@@ -292,7 +294,7 @@ The bundled `/Applications` app **spawns its own `core` backend** (not `bun run 
 
 ### MCP Integration (`mcp/` workspace)
 
-A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` reference + `bismuth` CLI **token-frugally**: 5 tools (`bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`). **Dev**: auto-attaches per-tab via relay's `.mcp.json`. **Bundled app**: installed **machine-wide** on boot (`core/src/bismuthInstall.ts`) → copies `bismuth`+`bismuth-mcp`+docs to `~/.bismuth`, symlinks cli onto PATH, registers in `~/.claude.json`. Detail: `docs/mcp/overview.md`.
+A stdio [MCP](https://modelcontextprotocol.io) server serving the `docs/` reference + `bismuth` CLI **token-frugally**: 5 always-on tools (`bismuth_docs_{list,search,read}`, `bismuth_cli`, `bismuth_cli_help`) + 3 daemon-gated memory tools (`remember`/`recall`/`forget`, exposed only when `BISMUTH_MEMORY_DIR` is set). **Dev**: auto-attaches per-tab via relay's `.mcp.json`. **Bundled app**: installed **machine-wide** on boot (`core/src/bismuthInstall.ts`) → copies `bismuth`+`bismuth-mcp`+docs to `~/.bismuth`, symlinks cli onto PATH, registers in `~/.claude.json` (`-s user`, for interactive sessions). **App control** (drive a running window's tabs, author a daemon page) adds **ZERO new MCP tools** — it routes through the existing `bismuth_cli` via the `app`+`page` CLI groups → core's `/ui/*` routes over a per-window control WS (`core/src/uiControl.ts` ⇄ `app/src/uiControlClient.ts`); chat opening is blocklisted at two layers (`UI_CONTROL_BLOCKLIST` in `core/src/commands.ts` + open-tab rejects `::chat:`). Detail: `docs/mcp/overview.md`, `docs/mcp/app-control.md`.
 
 ### Relay Integration (`relay/` workspace + `core/src/relay.ts`)
 
@@ -304,6 +306,7 @@ The daemon was absorbed from the former standalone `claude-bot` into the **`@bis
 
 - **Lifecycle**: bundled binary (`app/scripts/build-daemon-sidecar.ts` → `resources/daemon`), copied to `~/.bismuth/bin` and run as a launchd/systemd **service** (NOT a Tauri child — must outlive the app to keep firing crons). `core/src/daemon.ts`/`daemonGraph.ts` are Bismuth's READ window for the "daemon" graph mode + sidebar (`app/src/DaemonList.tsx`). (Rust `lib.rs` install/spawn wiring is the one remaining piece.)
 - **Memory injection** is per-session + vault-scoped: `terminal.ts` injects `BISMUTH_MEMORY_DIR` into PTYs only when the daemon is enabled; the relay recall (UserPromptSubmit) + collect (SessionEnd) hooks and the MCP `remember`/`recall`/`forget` tools all gate on it. No global `~/.claude/settings.json` hook anymore.
+- **Daemon session MCP is EXPLICIT wiring, not `-s user` inheritance**: `daemon/src/daemon/session.ts` `sendMessage` → `buildQueryOptions()` sets the SDK `options.mcpServers` to the machine-wide bismuth MCP (stdio `~/.bismuth/bin/bismuth-mcp`, discovered via `daemon/src/lib/bismuthPaths.ts`, `existsSync`-gated → graceful no-MCP) with `env.BISMUTH_VAULT=ctx.root` (closes the `bismuth_cli` vault-targeting gap) + `settingSources:[]` (don't inherit a human's ambient config — chat.ts deliberately does the opposite). `buildQueryOptions` is extracted + unit-tested so this doesn't silently regress. (SDK skew: core 0.3.186, daemon 0.2.141 — both expose the shape.)
 - **Migration**: on first enable per machine, `migrateDaemonState` COPIES legacy `~/.claude-bot/{memory,crons,processes}` into `<vault>/.daemon` (copy-only, never deletes source; machine-marker-gated to one vault).
 - `settings.daemon.enabled` is the master switch for the whole 3rd-brain/assistant surface (memory injection + `.daemon` folder visibility + 3rd-brain & daemon graph modes). The daemon's **name + personality** live in **`<vault>/.daemon/identity.md`**: `name:` frontmatter drives the folder label/hub/self-identity (`daemonIdentityName()`); the body is its system prompt (`appendSystemPrompt`). **Seeding** (`reconcileSeeds(ctx)`, `daemon/src/daemon/seeds.ts`) writes any MISSING seeded default on every brain-start: `identity.md` + default crons (`dream` = hourly memory consolidation, `vault-review` = 4-hourly model-of-the-user pass, `defaultCrons.ts`). Later defaults land next boot; existing files never clobbered. Add a seedable via one `seedsFor()` entry. (`daemon.name`/`daemon.home`/`daemon.autoUpdate` removed from settings.)
 

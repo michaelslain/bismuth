@@ -24,6 +24,11 @@ test("buildPtyEnv sets relay provenance vars + TERM", () => {
   expect(env.CLAUDE_TERMINAL_ID).toBe("tab-1");
 });
 
+test("buildPtyEnv sets BISMUTH_API to this core's URL so in-tab `bismuth app` targets the right window", () => {
+  const env = buildPtyEnv({ ...ENV_BASE, relayUrl: "http://localhost:4399", realClaude: null });
+  expect(env.BISMUTH_API).toBe("http://localhost:4399");
+});
+
 test("buildPtyEnv injects BISMUTH_MEMORY_DIR only when a memoryDir is given (the daemon gate)", () => {
   // Off (daemon disabled / not passed) → no injection, so memory hooks + MCP tools no-op.
   expect(buildPtyEnv({ ...ENV_BASE, realClaude: null }).BISMUTH_MEMORY_DIR).toBeUndefined();

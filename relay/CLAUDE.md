@@ -37,6 +37,7 @@ error, and exit 0 within a budget so they never block the user's session
 ```
 relay/
   .claude-plugin/plugin.json   # plugin manifest (no `commands` — there are no slash commands)
+  .mcp.json                    # declares the bismuth MCP server (dev repo); loaded per-session with the plugin (see docs/mcp/overview.md)
   hooks/hooks.json             # SessionStart / UserPromptSubmit / SubagentStart / SubagentStop / SessionEnd
   bin/                         # the 5 hook scripts (the only live code)
   lib/report.ts                # readHookInput + postRelay (best-effort) + runHook + gating
