@@ -622,9 +622,13 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // resume an existing Claude Code session (keeps its history + session_id) when asked; a
         // brand-new session simply omits it.
         ...(resume ? { resume } : {}),
-        // permissionMode is intentionally NOT set: omitting it (like settingSources) makes the SDK
-        // resolve it from the user's OWN Claude Code config — the app doesn't determine the starting
-        // mode. The user can still switch it live in the header (set_permission_mode).
+        // permissionMode is intentionally NOT set HERE: omitting it (like settingSources) makes the
+        // SDK resolve it from the user's OWN Claude Code config, which is the right default for
+        // headless / direct callers (CLI, tests). The in-app chat's app-level default (Bypass) is
+        // applied CLIENT-SIDE instead — ChatView sends {set_permission_mode: bypassPermissions} on
+        // each session's first manifest (see BUG #14) — so the app default can't leak into non-UI
+        // callers and the live permission tests keep exercising the real canUseTool prompt flow
+        // (bypassPermissions suppresses canUseTool entirely). Still switchable live in the header.
         // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
         // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
         // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
