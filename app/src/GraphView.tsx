@@ -94,10 +94,11 @@ export function GraphView(props: {
   // Daemon mode: re-poll /daemon/graph after a supervision action (enable/disable/run)
   // so the services card reflects it immediately instead of waiting for the 4s poll.
   onDaemonChanged?: () => void;
-  // Cmd+O switcher: the graph node id (a note path WITHOUT ".md") for the switcher's
-  // currently-highlighted file, or null. Highlighted in the backdrop graph so the search
-  // and the graph read as one surface. Undefined = not driven (the FIND panel owns matches).
-  searchMatchId?: string | null;
+  // Cmd+O switcher: the graph node ids (note paths WITHOUT ".md") for EVERY current search
+  // result, or null/empty. All are highlighted in the backdrop graph so the search and the
+  // graph read as one surface — the graph lights up the set of matching notes, not just one.
+  // Undefined/null = not driven (the FIND panel owns matches).
+  searchMatchIds?: readonly string[] | null;
 }) {
   let host!: HTMLDivElement;
   let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
@@ -246,17 +247,18 @@ export function GraphView(props: {
     renderer.setActiveFile(a ? a.replace(/\.md$/, "") : null);
   });
 
-  // Cmd+O switcher highlight: reflect the switcher's active row as a search match in the
-  // graph. Only ever clears a match WE set (switcherHadMatch) so it never fights the FIND
-  // panel, which uses the same setSearchMatches for its own preview.
+  // Cmd+O switcher highlight: reflect the WHOLE current result set as search matches in the
+  // graph (every matching note lights up, not just the active row). Only ever clears a match
+  // WE set (switcherHadMatch) so it never fights the FIND panel, which uses the same
+  // setSearchMatches for its own preview.
   let switcherHadMatch = false;
   createEffect(() => {
-    const id = props.searchMatchId;
-    if (id == null) {
+    const ids = props.searchMatchIds;
+    if (ids == null || ids.length === 0) {
       if (switcherHadMatch) { renderer.setSearchMatches(new Set()); switcherHadMatch = false; }
       return;
     }
-    renderer.setSearchMatches(new Set([id]));
+    renderer.setSearchMatches(new Set(ids));
     switcherHadMatch = true;
   });
 
