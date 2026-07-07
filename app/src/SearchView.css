@@ -82,7 +82,32 @@
   border-radius: 50%;
   animation: search-spin 0.7s linear infinite;
 }
+/* The larger spinner used in the prominent results-area LOADING panel. */
+.search-spinner-lg { width: 26px; height: 26px; border-width: 3px; }
 @keyframes search-spin { to { transform: rotate(360deg); } }
+
+/* .search-state — the prominent, centered results-area panels for the three "no list yet" states
+   (LOADING / ERROR / EMPTY). Big enough that the user is never unsure what happened (BUG #8). */
+.search-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+.search-state-title { font-size: 14px; color: var(--fg); font-weight: 500; }
+.search-state-hint { font-size: 12px; color: var(--text-muted); }
+/* The error message itself — the backend's actual text, so a broken setup is diagnosable. */
+.search-state-msg {
+  font-size: 12.5px;
+  color: var(--danger);
+  max-width: 460px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+.search-state-error-icon { color: var(--danger); opacity: 0.9; }
 
 .search-results {
   flex: 1;
