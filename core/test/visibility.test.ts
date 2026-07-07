@@ -13,7 +13,7 @@ import {
   denyPathSet,
   type DenyEntry,
 } from "../src/visibility";
-import { setFolderVisibility } from "../src/settings";
+import { setFolderVisibility, readFolderVisibility } from "../src/settings";
 import { makeVault } from "./helpers";
 
 // --- resolveVisibility (files) ---
@@ -200,4 +200,54 @@ test("denyPathSet: contains BOTH forms of every entry, for either-shape lookup",
   expect(set.has("/vault/private/b.md")).toBe(true);
   expect(set.has("nope.md")).toBe(false);
   expect(set.size).toBe(4);
+});
+
+// --- review-fix regressions: non-md files, trailing-slash keys, memory-note cascade ---
+
+test("buildDenyPaths: a folder rule covers NON-markdown files too (badge vs deny must agree)", async () => {
+  const vault = makeVault({
+    "private/notes.md": "# Notes\n",
+    "private/data.yaml": "key: value\n",
+    "private/scan.png": "\x89PNG binary-ish",
+    "public.md": "# Public\n",
+  });
+  await setFolderVisibility(vault, "private", "hidden");
+  const root = await realVault(vault);
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  // The .yaml and .png in the hidden folder are denied, not just the .md — matching the tree badge.
+  expect(denied).toEqual(["private/data.yaml", "private/notes.md", "private/scan.png"]);
+  // sanity: absolute forms are canonical
+  expect((await buildDenyPaths(vault, "chat")).every((e) => e.abs.startsWith(root))).toBe(true);
+});
+
+test("buildDenyPaths: a .draw.png / .draw.pdf export sidecar is NOT treated as a deniable file", async () => {
+  const vault = makeVault({
+    "private/sketch.draw.png": "binary",
+    "private/real.md": "# Real\n",
+  });
+  await setFolderVisibility(vault, "private", "hidden");
+  const denied = (await buildDenyPaths(vault, "chat")).map((e) => e.rel).sort();
+  expect(denied).toEqual(["private/real.md"]); // export sidecar excluded
+});
+
+test("setFolderVisibility + resolveVisibility: a trailing-slash folder key still enforces", async () => {
+  const vault = makeVault({ "Private/secret.md": "# S\n" });
+  const persisted = await setFolderVisibility(vault, "Private/", "hidden"); // trailing slash (CLI/tab-complete)
+  expect(persisted).toBe(true);
+  const map = await readFolderVisibility(vault);
+  expect(resolveVisibility("Private/secret.md", undefined, map)).toBe("hidden");
+  // and the deny list actually restricts it
+  expect((await buildDenyPaths(vault, "chat")).map((e) => e.rel)).toContain("Private/secret.md");
+});
+
+test("buildDenyPaths: a memory note under .daemon/memory is gated by its OWN frontmatter, never folder cascade", async () => {
+  const vault = makeVault({
+    ".daemon/memory/fact.md": "# a plain memory note\n",
+    ".daemon/memory/hushed.md": "---\nvisibility: hidden\n---\n# secret memory\n",
+  });
+  // A folder rule on .daemon/memory must NOT cascade (recall doesn't know the folder map — see F).
+  await setFolderVisibility(vault, ".daemon/memory", "hidden");
+  const denied = (await buildDenyPaths(vault, "daemon")).map((e) => e.rel).sort();
+  // Only the note with explicit frontmatter is denied; the cascade is ignored under .daemon/memory.
+  expect(denied).toEqual([".daemon/memory/hushed.md"]);
 });

@@ -56,11 +56,19 @@ export function isVisibleToDaemon(v: Visibility): boolean {
   return v === "all"
 }
 
+/** Strip a trailing slash and collapse repeated slashes so a folder key like "Private/" (routine
+ *  from shell tab-completion / the CLI) matches the slash-free paths resolveVisibility compares
+ *  against. Must mirror core/src/settings.ts's setFolderVisibility normalization — the daemon
+ *  reads .settings independently, so without this a trailing-slash key silently never enforces. */
+function normalizeFolderKey(k: string): string {
+  return k.replace(/\/+$/, "").replace(/\/{2,}/g, "/")
+}
+
 function normalizeFolderVisibility(raw: unknown): Record<string, Visibility> {
   const out: Record<string, Visibility> = {}
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (v === "chat-only" || v === "hidden") out[k] = v
+      if (v === "chat-only" || v === "hidden") out[normalizeFolderKey(k)] = v
     }
   }
   return out
@@ -80,11 +88,21 @@ async function readFolderVisibility(root: string): Promise<Record<string, Visibi
   return {}
 }
 
-/** Walk every markdown note under `root`, INCLUDING `.daemon/**` (memory notes + inbox pages are
- *  ordinary vault files read by the same frontmatter path), skipping other dot-directories
- *  (`.git`, …) and the extensionless `.settings` file itself. */
-async function listMarkdownIncludingDaemon(root: string): Promise<string[]> {
-  const out: string[] = []
+// The tree-surfaced file set (mirrors core listTree) — the deny list must cover the SAME files
+// the badge marks, or a hidden folder of .yaml/.pdf/.sheet stays fully readable by the daemon.
+const VISIBLE_MEDIA_RE = /\.(png|jpe?g|gif|webp|svg|pdf)$/i
+function isTreeSurfacedFile(name: string): boolean {
+  if (name.endsWith(".draw.png") || name.endsWith(".draw.pdf")) return false
+  return (
+    name.endsWith(".md") || name.endsWith(".draw") || name.endsWith(".sheet") ||
+    name.endsWith(".yaml") || name.endsWith(".yml") || VISIBLE_MEDIA_RE.test(name)
+  )
+}
+
+/** Walk every tree-surfaced file under `root`, INCLUDING `.daemon/**`, skipping other
+ *  dot-directories (`.git`, …) and `.settings`. `{ rel, isMd }` — only `.md` carries frontmatter. */
+async function listVisibilityFiles(root: string): Promise<{ rel: string; isMd: boolean }[]> {
+  const out: { rel: string; isMd: boolean }[] = []
   const walk = async (absDir: string, relDir: string): Promise<void> => {
     let entries
     try {
@@ -97,8 +115,8 @@ async function listMarkdownIncludingDaemon(root: string): Promise<string[]> {
       if (d.name.startsWith(".") && d.name !== ".daemon") continue
       if (d.isDirectory()) {
         await walk(join(absDir, d.name), rel)
-      } else if (d.name.endsWith(".md")) {
-        out.push(rel)
+      } else if (isTreeSurfacedFile(d.name)) {
+        out.push({ rel, isMd: d.name.endsWith(".md") })
       }
     }
   }
@@ -123,21 +141,29 @@ export interface DenyEntry {
  */
 export async function buildDenyPaths(root: string): Promise<DenyEntry[]> {
   const folderVisibility = await readFolderVisibility(root)
-  const paths = await listMarkdownIncludingDaemon(root)
+  const files = await listVisibilityFiles(root)
   // Canonicalize the root before joining: the SDK's own tools resolve symlinks in the paths they
   // report (e.g. on macOS a vault under a tmp dir is really under /private/var or /private/tmp),
   // so a deny path built from a non-canonical root would silently never match theirs.
   const canonicalRoot = await realpath(root).catch(() => root)
   const out: DenyEntry[] = []
-  for (const rel of paths) {
+  for (const { rel, isMd } of files) {
     let fileVisibility: FileVisibility
-    try {
-      const { frontmatter } = parseFrontmatter(await readFile(join(root, rel), "utf-8"))
-      fileVisibility = isVisibilityLiteral(frontmatter.visibility) ? (frontmatter.visibility as Visibility) : undefined
-    } catch {
-      continue // unreadable — nothing to deny
+    if (isMd) {
+      try {
+        const { frontmatter } = parseFrontmatter(await readFile(join(root, rel), "utf-8"))
+        fileVisibility = isVisibilityLiteral(frontmatter.visibility) ? (frontmatter.visibility as Visibility) : undefined
+      } catch {
+        continue // unreadable — nothing to deny
+      }
+    } else {
+      fileVisibility = undefined // non-md files carry no frontmatter → folder cascade only
     }
-    const resolved = resolveVisibility(rel, fileVisibility, folderVisibility)
+    // Memory notes (.daemon/memory/**): frontmatter-only, never folder cascade — keeps the deny
+    // list in agreement with recall/searchMemory (which don't know the folder map). See the core
+    // copy + docs/vault/visibility.md.
+    const memoryNote = rel === ".daemon/memory" || rel.startsWith(".daemon/memory/")
+    const resolved = resolveVisibility(rel, fileVisibility, memoryNote ? {} : folderVisibility)
     if (!isVisibleToDaemon(resolved)) out.push({ rel, abs: join(canonicalRoot, rel) })
   }
   return out

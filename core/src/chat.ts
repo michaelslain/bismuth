@@ -12,7 +12,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
 import { buildAutoNoteBody, extractText, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
-import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet } from "./visibility";
+import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 
 /**
  * Visual Claude Code driver for the in-app chat surface. Each chat is ONE long-lived Agent-SDK
@@ -202,8 +202,19 @@ interface ChatSession {
   pending: Map<string, PermissionResolver>;
   /** Tool names the user chose to always allow this session (canUseTool short-circuits these). */
   alwaysAllow: Set<string>;
-  /** The latest Claude Code session id seen on the wire (for diagnostics). */
+  /** The latest Claude Code session id seen on the wire (for diagnostics + a visibility respawn's
+   *  `resume`, so refreshing the deny list mid-conversation keeps the history). */
   sessionId: string | null;
+  /** The resolved `claude` binary — kept so a visibility respawn can rebuild query() without
+   *  re-resolving it. */
+  bin: string;
+  /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
+   *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
+  deniedPathSet: Set<string>;
+  /** Set by invalidateChatVisibility when the vault's visibility settings change: the next
+   *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
+   *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
+  visibilityDirty?: boolean;
   /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
    *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
    *  it. Any other value means real API-key billing, where the cost is meaningful. */
@@ -433,6 +444,10 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
     existing.sink = sink;
     existing.detached = false;
     existing.cwd = cwd;
+    // Visibility settings changed since this session spawned → respawn query() with a fresh deny
+    // list BEFORE running the turn (managedSettings/sandbox are spawn-fixed; a stale session would
+    // keep reading a since-hidden file). Resumes the same conversation, so history survives.
+    if (existing.visibilityDirty) await refreshVisibility(existing);
     existing.turnActive = true;
     existing.input.push(text, images);
     return;
@@ -514,20 +529,21 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // file-level override inside a restricted folder is honored automatically (buildDenyPaths never
   // emits a deny for it).
   const denyEntries = await buildDenyPaths(cwd, "chat");
-  const deniedPathSet = denyPathSet(denyEntries);
 
   const input = makeInputQueue();
   const session: ChatSession = {
     id: chatId,
     cwd,
     input,
-    // q is assigned just below; the canUseTool closure only runs after query() returns, so the
-    // forward reference through `session` is safe.
+    // q is assigned by spawnChatQuery below; the canUseTool closure only runs after query()
+    // returns, so the forward reference through `session` is safe.
     q: undefined as unknown as Query,
     sink,
     pending: new Map(),
     alwaysAllow: new Set(),
     sessionId: null,
+    bin,
+    deniedPathSet: denyPathSet(denyEntries),
     apiKeySource: "none",
     turnActive: false,
     detached: false,
@@ -536,22 +552,36 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     turnCount: 0,
   };
 
+  if (!spawnChatQuery(session, denyEntries, resume)) return null; // spawn error already pushed
+  sessions.set(chatId, session);
+  return session;
+}
+
+/**
+ * Build query() for a session from a fresh deny list and assign `session.q`. Extracted so a
+ * mid-conversation visibility change can respawn (see refreshVisibility) — managedSettings +
+ * sandbox are fixed at spawn and cannot be updated on a running query(), so re-gating them means
+ * a new query(). Returns false (after pushing a spawn error to the sink) if query() throws.
+ */
+function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?: string): boolean {
   // canUseTool fires ONLY for tools not already allowed by the user's settings (pre-allowed tools
-  // run silently — correct Claude Code behavior). Pre-approved-this-session tools short-circuit;
-  // everything else surfaces a "permission" frame and parks until the client answers.
+  // run silently — correct Claude Code behavior). It reads session.deniedPathSet LIVE so a respawn
+  // that swapped the set takes effect immediately.
   const canUseTool = (
     toolName: string,
     toolInput: Record<string, unknown>,
     opts: { toolUseID?: string },
   ): Promise<SdkPermissionResult> => {
-    // Path-aware visibility auto-deny (same-process second layer, belt-and-suspenders with the
-    // managedSettings.deny below): denies OUTRIGHT — no prompt, no "always allow" override — when
-    // the tool targets a file whose resolved visibility is restricted for chat. Read/Edit/Write
-    // all carry the target path as `file_path`, in EITHER relative-to-cwd or absolute form (the
-    // model isn't consistent — deniedPathSet has both, see denyPathSet's doc comment).
-    const filePath = typeof toolInput.file_path === "string" ? toolInput.file_path : undefined;
-    if (filePath && deniedPathSet.has(filePath)) {
-      return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
+    // Path-aware visibility auto-deny (same-process layer, belt-and-suspenders with managedSettings):
+    // denies OUTRIGHT — no prompt, no "always allow" override — when the tool targets a restricted
+    // file. Read/Edit/Write carry it as `file_path`; NotebookEdit as `notebook_path`; Grep/Glob as
+    // `path` (but those are additionally hard-disabled below when any deny exists). Both relative
+    // and absolute forms are in deniedPathSet (the model isn't consistent — see denyPathSet).
+    for (const key of ["file_path", "notebook_path", "path"] as const) {
+      const p = toolInput[key];
+      if (typeof p === "string" && session.deniedPathSet.has(p)) {
+        return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
+      }
     }
     if (session.alwaysAllow.has(toolName)) {
       return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
@@ -570,13 +600,24 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     });
   };
 
+  // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY vault via
+  // its own --vault/--dir flags) — always. When ANY file is restricted, ALSO hard-disable Grep and
+  // Glob: their per-file managedSettings deny only matches a call whose OWN `path` argument is the
+  // denied file, but an UNSCOPED Grep(pattern, path: undefined) scans the whole vault (including a
+  // hidden file) and returns its matching lines — the per-file deny can't stop that, so the only
+  // reliable gate for a broad scan is to forbid the tools outright (an honesty boundary: no
+  // vault-wide scan can reach a hidden file). Cost: a restricted vault's chat loses grep/glob.
+  const disallowedTools = denyEntries.length > 0
+    ? ["mcp__bismuth__bismuth_cli", "Grep", "Glob"]
+    : ["mcp__bismuth__bismuth_cli"];
+
   let q: Query;
   try {
     q = query({
-      prompt: input,
+      prompt: session.input,
       options: {
-        pathToClaudeCodeExecutable: bin,
-        cwd,
+        pathToClaudeCodeExecutable: session.bin,
+        cwd: session.cwd,
         includePartialMessages: true,
         // resume an existing Claude Code session (keeps its history + session_id) when asked; a
         // brand-new session simply omits it.
@@ -585,41 +626,61 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
         // resolve it from the user's OWN Claude Code config — the app doesn't determine the starting
         // mode. The user can still switch it live in the header (set_permission_mode).
         // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
-        // behave like the TUI: the preset injects the `<env>` context (working directory, platform,
-        // today's date) + loads CLAUDE.md, skills, and the full tool guidance. Without it the SDK
-        // ships a bare prompt with NO cwd context, so the model can't know its working directory and
-        // resolves a relative path like `t.txt` against $HOME instead of `cwd` (writes land in the
-        // wrong dir). The preset makes relative paths resolve against `cwd` exactly like the CLI.
+        // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
+        // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
+        // relative paths resolve against $HOME instead of `cwd`.
         systemPrompt: { type: "preset", preset: "claude_code" },
         // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
         // closure to it.
         canUseTool: canUseTool as unknown as CanUseTool,
         // Visibility gate, continued: `managedSettings` is the SDK's restrictive-only policy tier —
-        // it layers UNDER the user's own config (deny outranks any pre-existing "always allow"), and
-        // the app can only use it to NARROW access, never widen it. Verified (Step-0 spike) to
-        // survive this session's permission mode. `sandbox` additionally blocks a Bash `cat`/`grep`
-        // of the same paths at the OS level (verified on macOS). Both are omitted entirely when
-        // there's nothing to restrict, so a vault with no visibility settings behaves exactly as
-        // before — no sandboxing surprise for the common case.
+        // it layers UNDER the user's own config (deny outranks any pre-existing "always allow") and
+        // survives this session's permission mode (Step-0 spike). `sandbox` additionally blocks a
+        // Bash `cat`/`grep` at the OS level (verified on macOS). Omitted entirely when nothing is
+        // restricted, so a vault with no visibility settings behaves exactly as before.
         ...(denyEntries.length > 0
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
               sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
             }
           : {}),
-        // Blocks the CLI-bridge MCP tool's file-read escape hatch (bismuth_cli can target ANY
-        // vault via its own --vault/--dir flags, not just this one) — unconditional, independent of
-        // whether this vault has any visibility restrictions configured.
-        disallowedTools: ["mcp__bismuth__bismuth_cli"],
+        disallowedTools,
       },
     });
   } catch (e) {
-    sink({ type: "error", code: "spawn", message: (e as Error).message });
-    return null;
+    session.sink({ type: "error", code: "spawn", message: (e as Error).message });
+    return false;
   }
   session.q = q;
-  sessions.set(chatId, session);
-  return session;
+  return true;
+}
+
+/**
+ * Flag every live chat session so its next turn respawns query() with a freshly-built deny list.
+ * Called by the server when this vault's visibility settings change (folder-visibility route, or a
+ * `visibility:` frontmatter edit). One core server serves one vault, so all sessions share it.
+ */
+export function invalidateChatVisibility(): void {
+  for (const s of sessions.values()) s.visibilityDirty = true;
+}
+
+/**
+ * Rebuild a session's deny list and respawn query() with fresh managedSettings/sandbox, resuming
+ * the SAME Claude Code session so the conversation history survives. Tears the old query() down
+ * WITHOUT firing captureToMemory (the conversation continues — capture happens only on a real
+ * close). Best-effort: on a spawn failure the old (now-closed) query is gone, so the next turn
+ * will surface the error; we clear the dirty flag regardless to avoid a respawn loop.
+ */
+async function refreshVisibility(session: ChatSession): Promise<void> {
+  session.visibilityDirty = false;
+  const denyEntries = await buildDenyPaths(session.cwd, "chat");
+  session.deniedPathSet = denyPathSet(denyEntries);
+  // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
+  // capture-to-memory and drop the session from the registry.
+  try { session.q.interrupt?.()?.catch(() => {}); } catch { /* */ }
+  try { session.q.close?.(); } catch { /* */ }
+  // Respawn against the same conversation (resume) with the fresh gate, then re-drain.
+  if (spawnChatQuery(session, denyEntries, session.sessionId ?? undefined)) void drain(session);
 }
 
 // --- Session history (the resume picker) ----------------------------------------------------
@@ -940,15 +1001,39 @@ function captureToMemory(s: ChatSession): void {
     try {
       const messages = await getSessionMessages(sessionId, { dir: cwd });
       const entries = messages as TranscriptEntry[];
-      // Editor-context paths (extractEditorContextPaths) are vault-relative, exactly the `rel`
-      // form denyPathSet carries — no join/realpath needed here (unlike the canUseTool check,
-      // which also has to match the SDK's own absolute-path reporting).
+      // denyPathSet carries BOTH the vault-relative form (matches editor-context paths + a
+      // relative tool file_path) AND the canonical-absolute form (matches the SDK's own absolute
+      // path reporting), so a check against either form is safe.
       const restricted = denyPathSet(await buildDenyPaths(cwd, "daemon"));
       const touchedRestricted = entries.some((e) => {
+        // (1) Any daemon-restricted file NAMED in the fixed <editor-context> preamble.
         const text = extractText(e.message);
-        return text && extractEditorContextPaths(text).some((p) => restricted.has(p));
+        if (text && extractEditorContextPaths(text).some((p) => restricted.has(p))) return true;
+        // (2) Any daemon-restricted file the model actually OPENED via a tool call — a chat-only
+        // file discussed by name (not in a tab) is legitimately readable by chat, but its content
+        // must never land in a daemon-recalled memory note. Scan assistant tool_use blocks for
+        // the file-path-shaped inputs, plus Bash command strings that mention a restricted path
+        // (a chat-only file has no chat-side sandbox deny, so a `cat` of it is possible). Cast
+        // past TranscriptEntry's narrow message type to reach the raw content blocks.
+        const content = (e.message as { content?: unknown } | undefined)?.content;
+        if (!Array.isArray(content)) return false;
+        return content.some((block) => {
+          if (!block || typeof block !== "object") return false;
+          const b = block as Record<string, unknown>;
+          if (b.type !== "tool_use") return false;
+          const input = (b.input ?? {}) as Record<string, unknown>;
+          for (const key of ["file_path", "notebook_path", "path"]) {
+            const v = input[key];
+            if (typeof v === "string" && restricted.has(v)) return true;
+          }
+          const cmd = input.command; // Bash: best-effort substring match on the restricted paths
+          if (typeof cmd === "string") {
+            for (const p of restricted) if (p && cmd.includes(p)) return true;
+          }
+          return false;
+        });
       });
-      if (touchedRestricted) return; // a chat-only/hidden file was discussed — never capture
+      if (touchedRestricted) return; // a chat-only/hidden file was discussed or opened — never capture
       const body = buildAutoNoteBody(entries);
       if (body === null) return; // trivial
       const now = new Date();
