@@ -6,6 +6,11 @@
 .block-editor {
   height: 100%;
   overflow: auto;
+  /* Disable browser scroll-anchoring: blocks mount lazily (short static preview → full Milkdown
+   * surface), so as blocks above the viewport grow the browser would otherwise bump scrollTop to
+   * keep an anchor element stable — drifting the reader downward toward the bottom on return to a
+   * tab. Our own scrollMemory restore owns the position instead. */
+  overflow-anchor: none;
   /* Center a comfortable reading column, matching the CodeMirror editor's 680px content. */
   display: flex;
   justify-content: center;

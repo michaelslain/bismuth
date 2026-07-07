@@ -48,6 +48,7 @@ import { createMenuNav } from "./ui/popover/createMenuNav";
 import { resolveNotePath, parseHeadings, type NoteCandidate, type HeadingItem } from "./editor/wikilink";
 import { clearPendingAnchor } from "./pendingAnchor";
 import { FormatBar, type FormatBarState, type FormatBlockKind } from "./blocks/FormatBar";
+import { saveScroll, loadScroll } from "./scrollMemory";
 import { BaseView } from "./bases/BaseView";
 import { QueryBuilder } from "./bases/QueryBuilder";
 import { looksLikeBaseConfig, parseQueryBlockBody, isBuilderRepresentable, type BuilderState } from "./bases/queryGen";
@@ -288,6 +289,11 @@ export function BlockEditor(props: {
     const path = currentPath();
     activePath = path;
     onCleanup(() => {
+      // Snapshot the reader's scroll offset before this surface is torn down (a tab switch
+      // unmounts the pane), so a fresh mount on return restores it instead of dumping them at
+      // the top. `host` is assigned by the time any cleanup runs. Same store the CodeMirror
+      // Editor uses, keyed by path, so switching editor.defaultMode also preserves position.
+      if (host && path) saveScroll(path, host.scrollTop);
       flushSave(false);
     });
     lastSavedText = undefined; // different buffer — forget the prior file's save text
@@ -329,6 +335,28 @@ export function BlockEditor(props: {
     const parsed = parseMarkdownToBlocks(text);
     setFrontmatter(parsed.frontmatter);
     replaceBlocks(parsed.blocks);
+
+    // Restore the reader's scroll position for this buffer (saved when its previous surface was
+    // torn down on the tab switch away). The block surface mounts LAZILY — offscreen blocks start
+    // as short static previews and grow as their Milkdown views mount — so a single scrollTop set
+    // right after render lands short of the target. We re-assert across a few animation frames
+    // until the content has grown tall enough to reach it. Two guards prevent the "jumps to the
+    // top/bottom" glitch: (1) if the host isn't laid out yet (clientHeight 0 — a hidden pane),
+    // wait WITHOUT consuming a cycle so a 0-height scroller can't clamp the offset to 0; (2) bail
+    // the moment the buffer switches. Deferred to rAF so it never touches `host` before it's
+    // assigned (declared below the effect). `.block-editor` sets `overflow-anchor: none` so the
+    // browser's scroll-anchoring can't drift the offset downward as blocks above grow.
+    const restore = loadScroll(path);
+    if (restore != null && restore > 0) {
+      let cycles = 0;
+      const repin = (): void => {
+        if (currentPath() !== path || !host) return; // buffer switched / not mounted
+        if (host.clientHeight === 0) { requestAnimationFrame(repin); return; } // await layout
+        if (Math.abs(host.scrollTop - restore) > 1) host.scrollTop = restore;
+        if (++cycles < 12) requestAnimationFrame(repin);
+      };
+      requestAnimationFrame(repin);
+    }
   });
 
   // --- External-change reconcile (SSE) --------------------------------------

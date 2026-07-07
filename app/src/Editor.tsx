@@ -69,7 +69,10 @@ const editorTheme = EditorView.theme({
   // Center the gutter + content TOGETHER (justify-content on the flex scroller) rather
   // than centering .cm-content alone — otherwise the line-number gutter stays pinned to
   // the far left while the text floats to the middle, leaving a huge empty indent.
-  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", justifyContent: "center", padding: "0 40px" },
+  // `overflowAnchor: none` stops the browser's scroll-anchoring from bumping scrollTop when
+  // live-preview widgets above the viewport change height (reveal/fold) — that drift is what
+  // could nudge a restored position toward the bottom on a tab return; our scroll-restore owns it.
+  ".cm-scroller": { fontFamily: "var(--editor-font)", fontSize: "var(--editor-font-size)", lineHeight: "var(--prose-line-height, 1.65)", overflow: "auto", overflowAnchor: "none", justifyContent: "center", padding: "0 40px" },
   // The horizontal reading-column inset lives on the SCROLLER (padding), NOT on
   // .cm-content. If it were content padding, CodeMirror's drawSelection would paint
   // multi-line selection across that padding too — a "phantom indent" left of the
