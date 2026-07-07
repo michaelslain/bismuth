@@ -453,6 +453,25 @@ export function tableCellDropTarget(
   return { from: range.from, to: range.to, r, c };
 }
 
+/** Resolve native-drop client COORDINATES to a table cell drop target in THIS view (#30). In the
+ *  PACKAGED Tauri app an OS file drag never fires a DOM `drop` — Tauri intercepts it and
+ *  `nativeDrop.ts` re-broadcasts it as `bismuth-native-drag` with client-pixel coords, so the
+ *  widget's own capture-phase DOM `drop` listeners (which only help dev-in-Chrome) never see it.
+ *  Editor.tsx's native-drop consumer calls this to hit-test the drop point against the rendered
+ *  table via `elementFromPoint`, then routes a hit through the SAME upload+embed-into-cell flow the
+ *  DOM drop uses. `view.dom.contains` scopes the hit to this editor, so a drop over another split
+ *  pane's table never lands here. Returns null when the point isn't over a cell of this view. */
+export function tableCellDropTargetAtPoint(
+  view: EditorView,
+  x: number,
+  y: number,
+): { from: number; to: number; r: number; c: number } | null {
+  const doc = view.dom.ownerDocument;
+  const el = doc?.elementFromPoint?.(x, y) ?? null;
+  if (!el || !view.dom.contains(el)) return null; // point isn't inside this editor's DOM
+  return tableCellDropTarget(view, el);
+}
+
 /** Insert `embeds` (`![[…]]` markers) into cell (r, c) of the table whose block currently
  *  spans `anchorFrom`, then commit the reformatted table back to source (#30). The drop's
  *  upload is async, so the block is RE-RESOLVED from the live doc here (its start position is

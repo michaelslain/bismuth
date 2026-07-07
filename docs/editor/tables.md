@@ -399,6 +399,15 @@ Dropping an image/PDF/media file onto a rendered table cell embeds it **into tha
 
 `Editor.tsx` listens for `bismuth-table-drop` (gated to its own `view`) and runs the **same** upload+embed flow as a note-body drop (`dropFilesIntoCell` → `uploadEmbed` → `insertEmbedsInTableCell` → `appendToCell`), so the file is saved into the vault and an `![[…]]` embed lands in the cell (which then renders as real media). `⌥`-drop or `attachments.onDrop: "reference"` inserts a bare `![[name]]` reference instead of copying.
 
+### Packaged app: the native-drop path (the only one that fires in Tauri)
+
+The capture-phase DOM `dragover`/`drop` listeners above **only fire in a browser** (dev-in-Chrome). In the **packaged Tauri app**, an OS file drag never reaches any DOM `drop` listener at all — Tauri's native drag-drop handler intercepts it and `app/src/nativeDrop.ts` re-broadcasts it as a `bismuth-native-drag` window event carrying the dropped **paths** + the cursor position in **client pixels**. So a real image-into-a-cell drop is served entirely by `Editor.tsx`'s native-drop consumer:
+
+1. It hit-tests the drop point against a rendered table with **`tableCellDropTargetAtPoint(view, x, y)`** — `view.dom.ownerDocument.elementFromPoint(x, y)` → `.closest("[data-cell]")` → the cell's `(r, c)` + the block's current source range. `view.dom.contains(el)` scopes the hit to this editor, so a drop over another split pane's table never lands here. A rendered table is an atomic block widget, so without this the fallback `posAtCoords` would map the drop to the block **boundary** and land the image *beside* the table.
+2. On a cell hit it routes through **`embedNativePathsIntoCell`** — the native-path analog of `dropFilesIntoCell`: read each path's bytes via the Tauri fs plugin, `uploadEmbed`, then `insertEmbedsInTableCell` (falling back to a note-body insert if the table/cell has vanished). No cell hit → the existing note-body native embed (`embedNativePaths`).
+
+A native drag carries **no modifier keys**, so reference-vs-copy comes only from `attachments.onDrop` here (there's no `⌥`-drop signal in the native event). The coordinate→cell routing is unit-tested by stubbing `elementFromPoint`.
+
 ---
 
 ## Inline Markdown in Cells (`inlineMarkdown.ts`)

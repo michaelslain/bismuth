@@ -20,7 +20,7 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { parseCellList } from "./cellList";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
@@ -487,6 +487,53 @@ describe("#30 file drop into a cell", () => {
     expect(detail!.target.r).toBe(1); // the body row it was dropped on
     expect(detail!.target.c).toBe(0);
     view.destroy();
+  });
+
+  // Packaged Tauri never fires a DOM drop — the OS drop arrives as `bismuth-native-drag` with
+  // client-pixel COORDINATES, so Editor.tsx routes it via tableCellDropTargetAtPoint(view, x, y),
+  // which hit-tests the point with elementFromPoint. happy-dom returns null from elementFromPoint,
+  // so we stub it to prove the coordinate → cell wiring (the routing decision, engine-agnostic).
+  describe("native-drop coordinate → cell routing (#30, the packaged-app path)", () => {
+    const stubEFP = (doc: Document, fn: (x: number, y: number) => Element | null): (() => void) => {
+      const d = doc as unknown as { elementFromPoint: unknown };
+      const orig = d.elementFromPoint;
+      d.elementFromPoint = fn;
+      return () => { d.elementFromPoint = orig; };
+    };
+
+    test("coordinates over a cell resolve to that cell's (r, c) + block range", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+      const inner = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="1"]')!;
+      const restore = stubEFP(view.dom.ownerDocument, (x, y) => (x === 42 && y === 99 ? inner : null));
+      const target = tableCellDropTargetAtPoint(view, 42, 99);
+      restore();
+      expect(target).not.toBeNull();
+      expect(target!.r).toBe(1);
+      expect(target!.c).toBe(1);
+      expect(Number.isInteger(target!.from)).toBe(true); // block anchor for the async insert
+      view.destroy();
+    });
+
+    test("coordinates NOT over a cell (elementFromPoint hits the body) resolve to null", () => {
+      const view = mount("| A | B |\n| - | - |\n| x | y |");
+      const restore = stubEFP(view.dom.ownerDocument, () => document.body);
+      expect(tableCellDropTargetAtPoint(view, 5, 5)).toBeNull();
+      restore();
+      view.destroy();
+    });
+
+    test("a cell belonging to ANOTHER view is rejected (split-pane scoping)", () => {
+      const a = mount("| A | B |\n| - | - |\n| x | y |");
+      const b = mount("| A | B |\n| - | - |\n| x | y |");
+      const bCell = b.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+      // elementFromPoint returns view B's cell, but we ask view A to resolve it → null.
+      const restore = stubEFP(a.dom.ownerDocument, () => bCell);
+      expect(tableCellDropTargetAtPoint(a, 10, 10)).toBeNull();
+      restore();
+      a.destroy();
+      b.destroy();
+    });
   });
 });
 
