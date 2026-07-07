@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   sendMessage,
   resumeSession,
+  openSession,
   respondPermission,
   closeChat,
   newChatId,
@@ -297,6 +298,39 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     // The resumed session never received a user turn from us — its transcript-side `result` (the
     // proxy for "a turn was processed") must never have fired for this chat id.
     expect(res.frames.some((f) => f.type === "result")).toBe(false);
+  }, 180_000);
+
+  // BUG #14 (chat-open eager spawn): opening a chat must spawn the session and stream the HEADER'S
+  // data — the `init` manifest AND the `models` frame — with NO user turn pushed. openSession is the
+  // exact path the /chat WS `{type:"open"}` handler runs on ChatView mount: it spawns query() and
+  // drains, sending no message. Before the fix the session was created lazily on the FIRST
+  // sendMessage, so the header (model picker especially) stayed empty until the user sent something.
+  test("openSession streams manifest + models with NO user turn pushed (BUG #14 eager open)", async () => {
+    const cwd = await newTempDir();
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    const { sink, frames, waitFor } = makeCollector();
+
+    // Open the chat — the twin of the WS `{type:"open"}` handler / ChatView mount. No message sent.
+    await openSession(chatId, cwd, sink);
+
+    // Both header data sources arrive purely from the open, BEFORE any turn:
+    const manifest = await waitFor((f) => f.type === "manifest");
+    expect(manifest.type).toBe("manifest");
+    if (manifest.type === "manifest") {
+      // Off the live init manifest (never hardcoded): a real model + a non-empty command list.
+      expect(typeof manifest.manifest.model).toBe("string");
+      expect(manifest.manifest.slashCommands.length).toBeGreaterThan(0);
+    }
+    const models = await waitFor((f) => f.type === "models");
+    expect(models.type).toBe("models");
+    if (models.type === "models") expect(models.models.length).toBeGreaterThan(0);
+
+    // A live session exists and NO turn was ever processed — we never pushed a user message, so
+    // neither a `result` (turn-complete) nor a replayed `user-message` frame can have fired.
+    expect(chatSessionCount()).toBeGreaterThan(0);
+    expect(frames.some((f) => f.type === "result")).toBe(false);
+    expect(frames.some((f) => f.type === "user-message")).toBe(false);
   }, 180_000);
 
   test("BUG #19: a built-in slash command (/context) produces visible assistant output", async () => {
