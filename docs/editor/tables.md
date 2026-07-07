@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation, Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu, and inline-markdown rendering in the display face. The four modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), and inline-markdown rendering for display cells (`inlineMarkdown.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation, Shift+Enter multi-line cells, drag-to-resize columns and rows (persisted in localStorage), add/delete row and column affordances, a right-click context menu, inline-markdown rendering in the display face, and `<br>`-carried bullet/number lists inside a cell. The five modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`).
 
 ---
 
@@ -10,12 +10,13 @@ This document covers everything about how Bismuth renders and edits GitHub Flavo
 2. [CodeMirror State (`tableState.ts`)](#codemirror-state-tablestatets)
 3. [The Editable Widget (`tableWidget.ts`)](#the-editable-widget-tablewidgetts)
 4. [Inline Markdown in Cells (`inlineMarkdown.ts`)](#inline-markdown-in-cells-inlinemarkdownts)
-5. [Integration with `livePreview.ts`](#integration-with-livepreviewts)
-6. [Keyboard Navigation Reference](#keyboard-navigation-reference)
-7. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
-8. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
-9. [Source / Raw-Edit Mode](#source--raw-edit-mode)
-10. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
+5. [Lists Inside Cells (`cellList.ts`)](#lists-inside-cells-celllistts)
+6. [Integration with `livePreview.ts`](#integration-with-livepreviewts)
+7. [Keyboard Navigation Reference](#keyboard-navigation-reference)
+8. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
+9. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
+10. [Source / Raw-Edit Mode](#source--raw-edit-mode)
+11. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
 
 ---
 
@@ -33,6 +34,11 @@ interface TableBlock {
   endLine: number;     // 1-based; the last body row, inclusive
   cells: string[][];   // row 0 = header; separator row NOT included
   aligns: Align[];     // per-column alignment from the separator row
+}
+
+interface TableGrid {
+  cells: string[][];   // row 0 = header
+  aligns: Align[];     // per-column alignment
 }
 ```
 
@@ -135,6 +141,17 @@ serializeTable(
 ```
 
 **Round-trip guarantee**: `parseTableBlock(serializeTable(cells, aligns).split("\n"))` returns the same cells (verified in tests).
+
+### Structural Row/Column Ops
+
+Four pure grid transforms back the widget's right-click menu. Each takes a `TableGrid` and returns a **new** `TableGrid` (never mutates its input), so they compose cleanly and are unit-tested in isolation (`tableModel.test.ts`). Every op keeps the table well-formed — the header row (index 0) is never removed and the grid never drops to zero rows or zero columns — so `serializeTable` always emits valid GFM afterward.
+
+| Op                          | Effect                                                                                     | Guard (returns an unchanged copy) |
+| --------------------------- | ------------------------------------------------------------------------------------------ | --------------------------------- |
+| `insertRow(g, at)`          | Insert a blank body row at `at`, clamped to `[1, rows]`. `at = r` inserts above row `r`; `at = r + 1` below it. | Header stays first (clamp) |
+| `deleteRow(g, at)`          | Remove body row `at`.                                                                       | `at ≤ 0` (header) or only 1 body row |
+| `insertColumn(g, at)`       | Insert a blank column at `at`, clamped to `[0, cols]`, with a `none` alignment.             | — |
+| `deleteColumn(g, at)`       | Remove column `at` from every row and its alignment.                                        | Only 1 column left |
 
 ---
 
@@ -240,7 +257,7 @@ The widget dispatches a CodeMirror change when focus leaves the entire table (`f
 2. Calls `readGrid(root)` to read all cell sources from the DOM. Cells with `data-editing="1"` (still in edit mode at commit time, e.g., when a menu action is triggered while a cell is focused) are read via `cellSourceFromDom`; all others via `data-src`.
 3. Calls `serializeTable` and dispatches the change only if the markdown has actually changed (no-op guard).
 
-The `commit` method accepts an optional `transform` callback of type `(g: { cells, aligns }) => void` that mutations (add/delete row or column) apply before serialization.
+The `commit` method accepts an optional `transform` callback of type `(g: TableGrid) => TableGrid | void`. Structural mutations (add/delete row or column) return the new grid from the pure `tableModel` ops; an in-place edit may instead mutate `g` and return `void`. Whatever is returned (or the mutated `g`) is serialized.
 
 ---
 
@@ -301,21 +318,23 @@ Right-clicking a cell dispatches a `CustomEvent("bismuth-context-menu")` with `{
 
 | Label                  | Icon      | Behavior                                              | Disabled when        |
 | :--------------------- | :-------- | :---------------------------------------------------- | :------------------- |
-| Insert row above       | ArrowUp   | `cells.splice(r, 0, blankRow)`                        | Never                |
-| Insert row below       | ArrowDown | `cells.splice(r + 1, 0, blankRow)`                   | Never                |
-| Delete row             | Trash2    | `cells.splice(r, 1)`                                  | Only 1 row left      |
-| Insert column left     | ArrowLeft | `cells[*].splice(c, 0, "")` + `aligns.splice(c, 0, "none")` | Never          |
-| Insert column right    | ArrowRight| `cells[*].splice(c + 1, 0, "")` + `aligns.splice(c + 1, 0, "none")` | Never   |
-| Delete column          | Trash2    | `cells[*].splice(c, 1)` + `aligns.splice(c, 1)`      | Only 1 column left   |
+| Insert row above       | ArrowUp   | `insertRow(g, r)`                                     | On the header row (`r === 0`) |
+| Insert row below       | ArrowDown | `insertRow(g, r + 1)`                                 | Never                |
+| Delete row             | Trash2    | `deleteRow(g, r)`                                     | Header row, or only 1 body row left |
+| Insert column left     | ArrowLeft | `insertColumn(g, c)`                                  | Never                |
+| Insert column right    | ArrowRight| `insertColumn(g, c + 1)`                              | Never                |
+| Delete column          | Trash2    | `deleteColumn(g, c)`                                  | Only 1 column left   |
 | Edit source            | Code      | Dispatches `setActiveTableEffect.of(line)` → raw mode | Never               |
 
-A separator appears before "Insert column left" and before "Edit source".
+A separator appears before "Insert column left" and before "Edit source". Every structural item calls a pure `tableModel` op (see [Structural Row/Column Ops](#structural-rowcolumn-ops)) that returns a new grid, so the serialized markdown stays valid after each edit.
+
+> **Event name.** The menu is delivered via `CustomEvent("bismuth-context-menu")`, the same event `editor/contextMenu.ts` uses and that `App.tsx` listens for. (An earlier build dispatched the pre-rename `oa-context-menu`, which nothing listened for — so right-click did nothing; fixed to `bismuth-context-menu`.)
 
 All row/column operations read the **live DOM grid** at the time `onSelect` fires (not a stale copy), so any in-flight cell edit is captured before the structural change commits. Each operation calls `this.commit(view, root, transform)`.
 
-The `+` edge buttons on the table's bottom and right edges also add rows and columns:
-- `.cm-table-add-col` (right edge): appends an empty cell to every row + a `"none"` align.
-- `.cm-table-add-row` (bottom edge): appends a new blank row.
+The `+` edge buttons on the table's bottom and right edges also add rows and columns (via the same `insertColumn` / `insertRow` ops):
+- `.cm-table-add-col` (right edge): `insertColumn(g, cols)` — appends a blank column + a `"none"` align.
+- `.cm-table-add-row` (bottom edge): `insertRow(g, rows)` — appends a blank row.
 
 Both use `mousedown` with `preventDefault()` + `stopPropagation()` to avoid losing cell focus before the grid is read.
 
@@ -405,6 +424,50 @@ tokenizeInline("see [[Note|Alias]] and $E=mc^2$")
 | `$$…$$`            | passed through literally (display math handled elsewhere) |
 
 Raw HTML inside a cell is not further processed by this module; `marked` passes it through as-is (same model as `bases/markdown.ts`). The trust model is vault-owner content; no external sanitization is applied here.
+
+---
+
+## Lists Inside Cells (`cellList.ts`)
+
+A GFM pipe-table cell is, by the spec, a **single line** of markdown: a literal newline can't live inside a `| … |` cell, and the inline lexer never promotes a `- x` to a real `<ul>`. The standard carrier for a line break inside a cell is a literal `<br>` (both `marked` and Obsidian render it), and Bismuth already stores Shift+Enter soft breaks as `<br>` (see [Keyboard Navigation](#keyboard-navigation-reference)). Lists in cells are built on that carrier.
+
+### Convention
+
+A cell renders as a real list when **both** hold:
+
+1. its source is **two or more** `<br>`-separated segments (`<br>`, `<br/>`, `<br />`, any case), and
+2. **every** non-empty segment starts with a list marker:
+   - unordered — `- item` or `* item` → `<ul>`
+   - ordered — `1. item` or `2) item` → `<ol>`
+
+The marker (and the whitespace after it) is stripped and each item's remaining text is rendered as inline markdown (so `**bold**`, `[[wikilinks]]`, `$math$` work inside items). A cell whose segments are **not all** markers — a mix of bullets and prose, or a plain `a<br>b` two-line cell — is left as plain `<br>`-separated inline content (no list). A marker needs a space after it, so `*italic*` and `-5` are **not** bullets.
+
+```
+| Task     | Notes                        |
+| -------- | ---------------------------- |
+| Shopping | - milk<br>- eggs<br>- bread  |   →  a <ul> of three items
+| Steps    | 1. mix<br>2. bake            |   →  an <ol> of two items
+| Plain    | line one<br>line two         |   →  two soft-broken lines (no list)
+```
+
+### Round-trip and editing
+
+The convention round-trips losslessly through the pipe-table markdown: `serializeTable` keeps the literal `<br>` markers (they carry no `|`), and the widget's [dual-face](#cell-dual-face-architecture) edit mode reveals each `<br>` as a real line break — so a cell edits as **one item per line**, and pressing **Shift+Enter** starts a new line where you type the next `- item`. On blur the DOM is re-encoded to `- a<br>- b` and the display face re-renders the list.
+
+### Where it renders
+
+`renderCellListHtml(src, renderItem)` (pure, in `cellList.ts`) is shared by both surfaces so they agree:
+
+- **Editor widget** — `inlineMarkdown.ts` `renderInlineMarkdown` tries the list first, else renders the cell inline as before.
+- **Note reader / cards / export** — `bases/markdown.ts` overrides `marked`'s `tablecell` renderer to emit the list, else falls back to marked's default inline cell.
+
+Both emit `<ul class="bismuth-cell-list">` / `<ol …>`; a single global rule in `App.css` gives the list compact in-cell spacing.
+
+### Limitations
+
+- **Single level only** — no nested / indented sub-lists (a cell is one logical line, so there's no indentation to encode a hierarchy).
+- **All-or-nothing** — one non-bullet segment demotes the whole cell to plain soft-broken lines.
+- **Convention, not portable GFM** — the `<br>`-bullet carrier is a Bismuth/Obsidian idiom. A plain GitHub renderer shows `- a<br>- b` as literal text (with a line break), not a list.
 
 ---
 
