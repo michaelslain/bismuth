@@ -1,5 +1,9 @@
 # Toolbar & Commands
 
+> The same item shape drives BOTH bars: `toolbar:` (the sidebar header bar) and `tabBar:`
+> (the buttons right of the tab strip — defaults: `new-tab`, `terminal`, `new-claude-chat`).
+> Everything below applies to either key.
+
 This document is the canonical reference for Bismuth's command system: the pure command catalog (`COMMAND_CATALOG`), how each command id binds to a runnable action, the `toolbar:` settings configuration that places command buttons in the sidebar header bar, and the dynamic `daily-note:<id>` commands. It covers every command id, label, default icon, the `command`/`commands`/`icon`/`tooltip` button fields, button resolution precedence, and the edge cases found in the source.
 
 ## Overview
