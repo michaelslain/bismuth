@@ -49,6 +49,7 @@ import { reconcileSettings, setSettingInFile, getVaultSchema, serializeSettingsF
 import { dailyNotePath, dailyNoteContent } from "./dailyNote";
 import { DEFAULTS as SETTINGS_DEFAULTS } from "./schema/settingsSchema";
 import { searchVault, invalidateSearchIndex, updateSearchIndex } from "./search";
+import { promptSearch } from "./searchPrompt";
 import { listFsPaths } from "./fsPaths";
 import { replaceInVault } from "./replace";
 import { spawnVaultBackend } from "./openFolder";
@@ -803,6 +804,20 @@ export function createServer(cfg: CoreConfig) {
       } catch (e) {
         // Invalid regex etc. — surface as a 400 so the UI shows it inline.
         return new Response((e as Error).message, { status: 400 });
+      }
+    },
+
+    // AI prompt-search fallback: re-rank keyword candidates with a one-shot Haiku turn when the
+    // literal /search comes up empty for a natural-language question (searchPrompt.ts). Read-only
+    // despite POST (like /search) — no cache-invalidate/SSE — so it lives in routes. Errors map to
+    // AppError.statusCode: no-claude → 400 (shown inline), model failure → 500.
+    "POST /search-prompt": async (req, __) => {
+      const { query } = (await req.json()) as { query: string };
+      try {
+        return Response.json(await promptSearch(cfg.vault, query));
+      } catch (e) {
+        const status = e instanceof AppError ? e.statusCode : 500;
+        return new Response((e as Error).message, { status });
       }
     },
 

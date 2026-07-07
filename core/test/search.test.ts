@@ -1,7 +1,7 @@
 import { test, expect, describe } from "bun:test";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { findMatches, buildMatcher, searchVault, updateSearchIndex, invalidateSearchIndex } from "../src/search";
+import { findMatches, buildMatcher, searchVault, rankCandidates, updateSearchIndex, invalidateSearchIndex } from "../src/search";
 import { makeVault } from "./helpers";
 
 describe("findMatches", () => {
@@ -70,6 +70,39 @@ describe("searchVault", () => {
   test("empty query returns nothing", async () => {
     const root = makeVault({ "a.md": "anything" });
     expect(await searchVault(root, "", { caseSensitive: false, wholeWord: false, regex: false })).toEqual([]);
+  });
+});
+
+describe("rankCandidates (AI prompt-search stage 1)", () => {
+  test("returns NL candidates that searchVault drops (the literal-snippet-filter bug)", async () => {
+    const root = makeVault({
+      "japan.md": "# Japan trip\nWe flew to Tokyo in spring and visited Kyoto's temples.",
+      "groceries.md": "# Groceries\nmilk, eggs, bread",
+    });
+    const nl = "where did I write about the Japan trip";
+    // searchVault drops every hit with no verbatim occurrence of the whole sentence → empty for NL.
+    expect(await searchVault(root, nl, { caseSensitive: false, wholeWord: false, regex: false })).toEqual([]);
+    // rankCandidates keeps the tokenized/fuzzy ranking → surfaces the topical note with its body.
+    const cands = await rankCandidates(root, nl);
+    expect(cands.length).toBeGreaterThan(0);
+    expect(cands.map((c) => c.path)).toContain("japan.md");
+    expect(cands.find((c) => c.path === "japan.md")!.body).toContain("Kyoto");
+    invalidateSearchIndex(root);
+  });
+
+  test("respects the limit", async () => {
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 10; i++) files[`n${i}.md`] = `note ${i} about project alpha and search topics`;
+    const root = makeVault(files);
+    const cands = await rankCandidates(root, "project alpha search", 3);
+    expect(cands.length).toBeLessThanOrEqual(3);
+    invalidateSearchIndex(root);
+  });
+
+  test("empty query returns nothing", async () => {
+    const root = makeVault({ "a.md": "anything" });
+    expect(await rankCandidates(root, "   ")).toEqual([]);
+    invalidateSearchIndex(root);
   });
 });
 

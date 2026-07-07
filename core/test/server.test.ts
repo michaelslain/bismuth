@@ -7,6 +7,7 @@ import { writeNote, readNote } from "../src/files";
 import { readSettings } from "../src/settings";
 import { resetRelay } from "../src/relay";
 import { createTerminalSession, killSession } from "../src/terminal";
+import { searchPromptDeps } from "../src/searchPrompt";
 import { makeSampleVault } from "./helpers";
 
 // Isolate the daemon machine dir + the legacy claude-bot source for the WHOLE file. A
@@ -1590,6 +1591,93 @@ test("POST /tasks/archive with no path sweeps the whole vault", async () => {
     expect(await readNote(vault, "one.md")).toBe("- [ ] keep");
     expect(await readNote(vault, "two.md")).toBe("- [/] doing");
   } finally {
+    server.stop(true);
+  }
+});
+
+// --- POST /search-prompt (AI prompt-search fallback) ----------------------------------------
+// The route is exercised with the model boundary stubbed via searchPromptDeps — no live `claude`
+// turn is ever spawned. The default deps are restored in finally so other tests are unaffected.
+
+test("POST /search-prompt returns 400 when Claude Code isn't installed", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const realWhich = searchPromptDeps.whichClaude;
+  searchPromptDeps.whichClaude = () => null; // simulate no `claude` on PATH
+  try {
+    const res = await fetch(`${base}/search-prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "where did I write about the essay" }),
+    });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain("Claude Code installed");
+  } finally {
+    searchPromptDeps.whichClaude = realWhich;
+    server.stop(true);
+  }
+});
+
+test("POST /search-prompt maps a stubbed model result to a byte-exact snippet", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const realWhich = searchPromptDeps.whichClaude;
+  const realRun = searchPromptDeps.runModel;
+  searchPromptDeps.whichClaude = () => "/fake/claude"; // non-null so promptSearch proceeds to the model
+  // Stub the model: pick the essay note (a real candidate for the NL query) with a verbatim quote.
+  searchPromptDeps.runModel = async () => ({
+    structured: { results: [{ path: "essay.md", quote: "Religion and historical materialism.", reason: "It is about the essay's subject." }] },
+    resultText: undefined,
+  });
+  try {
+    const res = await fetch(`${base}/search-prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "what did I write about religion and materialism" }),
+    });
+    expect(res.status).toBe(200);
+    const results = (await res.json()) as { path: string; snippets: { before: string; match: string; after: string }[]; reason?: string }[];
+    expect(results.length).toBe(1);
+    expect(results[0].path).toBe("essay.md");
+    expect(results[0].reason).toBe("It is about the essay's subject.");
+    const snip = results[0].snippets[0];
+    expect(snip.match).toBe("Religion and historical materialism.");
+    // Byte-exact: before+match+after reconstructs the real source line verbatim.
+    const body = await readNote(vault, "essay.md");
+    const line = body.split("\n")[/* 1-based line */ (results[0].snippets[0] as unknown as { line: number }).line - 1];
+    expect(snip.before + snip.match + snip.after).toBe(line);
+  } finally {
+    searchPromptDeps.whichClaude = realWhich;
+    searchPromptDeps.runModel = realRun;
+    server.stop(true);
+  }
+});
+
+test("POST /search-prompt rejects a hallucinated path (not in the candidate set)", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  const realWhich = searchPromptDeps.whichClaude;
+  const realRun = searchPromptDeps.runModel;
+  searchPromptDeps.whichClaude = () => "/fake/claude";
+  // The model invents a path that isn't a candidate; the backend must drop it.
+  searchPromptDeps.runModel = async () => ({
+    structured: { results: [{ path: "does-not-exist.md", quote: "whatever", reason: "nope" }] },
+    resultText: undefined,
+  });
+  try {
+    const res = await fetch(`${base}/search-prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query: "essay religion materialism" }),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  } finally {
+    searchPromptDeps.whichClaude = realWhich;
+    searchPromptDeps.runModel = realRun;
     server.stop(true);
   }
 });
