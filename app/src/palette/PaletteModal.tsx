@@ -1,25 +1,19 @@
 // app/src/palette/PaletteModal.tsx
 // Reusable Obsidian-style command/search overlay: an autofocused search input over
 // a fuzzy-filtered, keyboard-navigable list. Knows nothing about commands or files —
-// callers pass `items` and an `onSelect`. See CommandPalette.tsx / QuickSwitcher.tsx.
+// callers pass `items` and an `onSelect`. See CommandPalette.tsx (the in-window Cmd+O
+// switcher is SwitcherBar.tsx, which reuses the shared ranking + Highlight from here).
 import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
-import Fuse from "fuse.js";
 import { Icon } from "../icons/Icon";
 import { Modal } from "../ui/Modal";
 import { SearchBar } from "../ui/SearchBar";
 import { createMenuNav } from "../ui/popover/createMenuNav";
+import { rankItems, toSegments, type Match, type PaletteItem } from "./rankItems";
 import "./palette.css";
 
-export type PaletteItem = {
-  id: string;
-  label: string;
-  sublabel?: string; // muted secondary text (e.g. a folder path)
-  description?: string; // optional faint second-line description under the label
-  shortcut?: string; // optional right-aligned shortcut-key hint (already display-formatted)
-  icon?: string; // optional leading icon (Lucide name or emoji)
-};
-
-type Match = { item: PaletteItem; indices: number[] }; // indices = matched chars in label
+// Re-exported so existing importers (CommandPalette, and SwitcherBar) keep resolving
+// PaletteItem from here; the canonical definition now lives in rankItems.ts.
+export type { PaletteItem };
 
 type Props = {
   placeholder: string;
@@ -34,35 +28,9 @@ type Props = {
   frecency?: (id: string) => number;
 };
 
-// How much frecency may nudge a fuzzy match, on the same 0..1 scale as text "goodness"
-// (1 = perfect match). Small on purpose: a perfect/prefix match (goodness ≈ 1) always beats
-// a fuzzy-but-frecent one (goodness + ≤0.15); frecency only reorders similar-quality matches.
-const FRECENCY_WEIGHT = 0.15;
-
-// Collapse matched-char indices into contiguous runs so we render a handful of
-// segments per label instead of one DOM node per character (the latter explodes
-// on large lists). Returns alternating matched / unmatched text runs.
-function toSegments(text: string, indices: number[]): { text: string; match: boolean }[] {
-  if (indices.length === 0) return [{ text, match: false }];
-  const set = new Set(indices);
-  const segs: { text: string; match: boolean }[] = [];
-  let run = "";
-  let runMatch = set.has(0);
-  for (let i = 0; i < text.length; i++) {
-    const m = set.has(i);
-    if (m !== runMatch) {
-      if (run) segs.push({ text: run, match: runMatch });
-      run = "";
-      runMatch = m;
-    }
-    run += text[i];
-  }
-  if (run) segs.push({ text: run, match: runMatch });
-  return segs;
-}
-
-// Render a label with its fuzzy-matched characters highlighted.
-function Highlight(p: { text: string; indices: number[] }) {
+// Render a label with its fuzzy-matched characters highlighted. Exported so the in-window
+// switcher (SwitcherBar.tsx) renders identical highlighted rows.
+export function Highlight(p: { text: string; indices: number[] }) {
   const segments = createMemo(() => toSegments(p.text, p.indices));
   return (
     <For each={segments()}>
@@ -76,64 +44,8 @@ export function PaletteModal(props: Props) {
   let inputRef: HTMLInputElement | undefined;
   let listRef: HTMLDivElement | undefined;
 
-  const fuse = createMemo(() => {
-    return new Fuse(props.items, {
-      keys: ["label"],
-      includeMatches: true,
-      includeScore: true, // needed to blend frecency into the text-match rank
-      ignoreLocation: true,
-      threshold: 0.4,
-    });
-  });
-
-  // Cap rendered rows: fuzzy ranking floats the best matches to the top, so a
-  // large vault (1000s of files) doesn't render 1000s of DOM rows on open.
-  const MAX_RESULTS = 50;
-
-  const results = createMemo<Match[]>(() => {
-    const q = query().trim();
-    const frecency = props.frecency;
-    if (!q) {
-      // Empty query: with frecency, most-used-first (stable — equal/zero scores keep the
-      // caller's order); without it, the plain incoming order. Then cap the rendered rows.
-      // Decorate-sort so frecency() is called once per item, not per comparison.
-      const ordered = frecency
-        ? props.items
-            .map((item) => ({ item, f: frecency(item.id) }))
-            .sort((a, b) => b.f - a.f)
-            .map((s) => s.item)
-        : props.items;
-      return ordered.slice(0, MAX_RESULTS).map((item) => ({ item, indices: [] }));
-    }
-
-    const hits = fuse().search(q, { limit: MAX_RESULTS }).map((r) => {
-      const labelMatch = r.matches?.find((m) => m.key === "label");
-      const indices: number[] = [];
-      for (const [start, end] of labelMatch?.indices ?? []) {
-        for (let i = start; i <= end; i++) indices.push(i);
-      }
-      // Fuse score: 0 = perfect, 1 = worst. Convert to "goodness" (higher = better) so it
-      // shares a scale with the frecency boost below.
-      return { item: r.item, indices, goodness: 1 - (r.score ?? 0) };
-    });
-
-    if (!frecency) return hits.map(({ item, indices }) => ({ item, indices }));
-
-    // Blend frecency as a gentle boost: normalize each hit's frecency against the max in
-    // THIS candidate set (relative, so absolute counts don't matter), scale by
-    // FRECENCY_WEIGHT, add to goodness, and re-sort. Ties/near-ties get reordered by usage;
-    // a decisively better text match is never overtaken. Stable sort keeps Fuse's order
-    // when boosts are equal (e.g. no history yet).
-    let maxF = 0;
-    for (const h of hits) maxF = Math.max(maxF, frecency(h.item.id));
-    const ranked = hits
-      .map((h) => ({
-        h,
-        rank: h.goodness + (maxF > 0 ? FRECENCY_WEIGHT * (frecency(h.item.id) / maxF) : 0),
-      }))
-      .sort((a, b) => b.rank - a.rank);
-    return ranked.map(({ h }) => ({ item: h.item, indices: h.indices }));
-  });
+  // Fuzzy rank + frecency blend live in the shared pure helper (see rankItems.ts).
+  const results = createMemo<Match[]>(() => rankItems(props.items, query(), props.frecency));
 
   // Up/Down/Enter/Escape come from the shared menu-nav hook (same logic as the
   // context menu); the palette clamps instead of wrapping, hence wrap:false.

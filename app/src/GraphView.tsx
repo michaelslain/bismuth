@@ -94,6 +94,10 @@ export function GraphView(props: {
   // Daemon mode: re-poll /daemon/graph after a supervision action (enable/disable/run)
   // so the services card reflects it immediately instead of waiting for the 4s poll.
   onDaemonChanged?: () => void;
+  // Cmd+O switcher: the graph node id (a note path WITHOUT ".md") for the switcher's
+  // currently-highlighted file, or null. Highlighted in the backdrop graph so the search
+  // and the graph read as one surface. Undefined = not driven (the FIND panel owns matches).
+  searchMatchId?: string | null;
 }) {
   let host!: HTMLDivElement;
   let labelsEl: HTMLDivElement | undefined; // DOM overlay the renderer fills with native text labels
@@ -240,6 +244,20 @@ export function GraphView(props: {
     const a = props.active;
     // Node ids in vault.ts:32 are the file path WITHOUT the .md extension.
     renderer.setActiveFile(a ? a.replace(/\.md$/, "") : null);
+  });
+
+  // Cmd+O switcher highlight: reflect the switcher's active row as a search match in the
+  // graph. Only ever clears a match WE set (switcherHadMatch) so it never fights the FIND
+  // panel, which uses the same setSearchMatches for its own preview.
+  let switcherHadMatch = false;
+  createEffect(() => {
+    const id = props.searchMatchId;
+    if (id == null) {
+      if (switcherHadMatch) { renderer.setSearchMatches(new Set()); switcherHadMatch = false; }
+      return;
+    }
+    renderer.setSearchMatches(new Set([id]));
+    switcherHadMatch = true;
   });
 
   // Pause/resume the renderer's rAF loop. The mini-graph is paused whenever the prop
