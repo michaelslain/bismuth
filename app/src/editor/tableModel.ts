@@ -280,6 +280,20 @@ export function deleteColumn(g: TableGrid, at: number): TableGrid {
   return { cells, aligns };
 }
 
+/** Append `addition` to the cell at (r, c), on its OWN in-cell line (a `<br>` marker joins
+ *  it to any existing content) so a dropped image lands under, not merged into, the cell's
+ *  text. Used by the file-drop handler (#30) to place an `![[…]]` embed into the cell the
+ *  image was dropped on. Returns a NEW grid; out-of-range (r, c) returns an unchanged copy. */
+export function appendToCell(g: TableGrid, r: number, c: number, addition: string): TableGrid {
+  const cells = g.cells.map((row) => row.slice());
+  const row = cells[r];
+  if (!row || c < 0 || c >= row.length) return { cells, aligns: g.aligns.slice() };
+  const existing = (row[c] ?? "").trim();
+  // A GFM cell is one source line; `<br>` is the in-cell line break (see cellSourceFromDom).
+  row[c] = existing ? `${existing}<br>${addition}` : addition;
+  return { cells, aligns: g.aligns.slice() };
+}
+
 /** Serialize a cell grid + alignments back to normalized, column-padded markdown lines.
  *  Column widths are the max visible width per column so the raw source stays tidy. */
 export function serializeTable(cells: string[][], aligns: Align[]): string {

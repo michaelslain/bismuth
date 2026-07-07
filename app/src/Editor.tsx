@@ -52,6 +52,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
+import { tableCellDropTarget, insertEmbedsInTableCell } from "./editor/tableWidget";
 import "./Editor.css";
 
 // Marks a transaction as "content pulled in from disk" rather than a user edit,
@@ -246,18 +247,52 @@ function caretAfterReorder(state: EditorState, head: number, caretLine: Line, ch
   return ch.from + off + Math.min(col, newLines[newIdx].length);
 }
 
-/** Read a file's bytes, upload into the attachment folder, then insert `![[basename]]` at
- *  the cursor. The arrayBuffer() read is INSIDE the try so a failed/unreadable blob toasts
- *  instead of escaping as an unhandled rejection. */
-async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, notePath: string | null): Promise<void> {
+/** Read a file's bytes, copy them into the attachment folder, and return the `![[basename]]`
+ *  embed to insert (or null on failure — toasts instead of escaping as an unhandled
+ *  rejection). The arrayBuffer() read is INSIDE the try so an unreadable blob is handled too.
+ *  Shared by the note-body insert and the table-cell insert (#30) so both use one upload path. */
+async function uploadEmbed(file: Blob, fileName: string, notePath: string | null): Promise<string | null> {
   try {
     const bytes = await file.arrayBuffer();
     const finalPath = await api.uploadAsset(attachmentTarget(fileName, notePath), bytes);
-    // Insert on its own line with the caret BELOW so the embed renders immediately (no raw flash,
-    // B15) and stays standalone (→ resizable, B16/B18).
-    insertEmbedStandalone(view, `![[${finalPath.split("/").pop() ?? fileName}]]`);
+    return `![[${finalPath.split("/").pop() ?? fileName}]]`;
   } catch (e) {
     pushToast(`Couldn't save attachment: ${(e as Error).message}`);
+    return null;
+  }
+}
+
+/** Upload a file into the attachment folder, then insert its embed at the cursor. */
+async function uploadAndInsert(view: EditorView, file: Blob, fileName: string, notePath: string | null): Promise<void> {
+  const embed = await uploadEmbed(file, fileName, notePath);
+  // Insert on its own line with the caret BELOW so the embed renders immediately (no raw flash,
+  // B15) and stays standalone (→ resizable, B16/B18).
+  if (embed) insertEmbedStandalone(view, embed);
+}
+
+/** Embed dropped files into a table cell (#30): upload each (unless `reference`, which keeps a
+ *  bare `![[name]]`), then place all resulting embeds into the cell the drop landed on. Uploads
+ *  are batched into ONE table edit so a multi-file drop never re-shifts the block mid-insert. If
+ *  the table/cell has vanished by insert time, fall back to a note-body insert so the drop isn't
+ *  lost. `target` (cell coordinate + block anchor) is captured SYNCHRONOUSLY in the drop handler. */
+async function dropFilesIntoCell(
+  view: EditorView,
+  files: File[],
+  notePath: string | null,
+  reference: boolean,
+  target: { from: number; r: number; c: number },
+): Promise<void> {
+  const embeds: string[] = [];
+  for (const f of files) {
+    if (reference) embeds.push(`![[${f.name}]]`);
+    else {
+      const embed = await uploadEmbed(f, f.name, notePath);
+      if (embed) embeds.push(embed);
+    }
+  }
+  if (embeds.length === 0) return;
+  if (!insertEmbedsInTableCell(view, target.from, target.r, target.c, embeds)) {
+    for (const embed of embeds) insertEmbedStandalone(view, embed);
   }
 }
 
@@ -840,12 +875,21 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
               // preventDefault FIRST, before any early return, so the browser never navigates to
               // a dropped file even when we end up not embedding it.
               e.preventDefault();
-              const dt = (e as DragEvent).dataTransfer;
+              const de = e as DragEvent;
+              const dt = de.dataTransfer;
               const files = dt ? [...dt.files].filter(isEmbeddableFile) : [];
               if (files.length === 0) return false; // not a media drop — let CM handle text
-              const pos = view.posAtCoords({ x: (e as DragEvent).clientX, y: (e as DragEvent).clientY });
+              const reference = de.altKey || settings.attachments.onDrop === "reference";
+              // Dropping onto a rendered table cell → embed into THAT cell's source, not the note
+              // body (#30). The table is an atomic block widget, so posAtCoords maps a drop over it
+              // to the block boundary; tableCellDropTarget instead resolves the cell coordinate.
+              const cell = tableCellDropTarget(view, de.target);
+              if (cell) {
+                void dropFilesIntoCell(view, files, path, reference, cell);
+                return true;
+              }
+              const pos = view.posAtCoords({ x: de.clientX, y: de.clientY });
               if (pos != null) view.dispatch({ selection: { anchor: pos } });
-              const reference = (e as DragEvent).altKey || settings.attachments.onDrop === "reference";
               for (const f of files) {
                 if (reference) {
                   // Off-line standalone insert (like paste) so it renders immediately + resizable
