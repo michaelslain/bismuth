@@ -17,6 +17,7 @@ import {
   deleteRow,
   insertColumn,
   deleteColumn,
+  appendToCell,
   type TableGrid,
   type CellKeyEvent,
 } from "./tableModel";
@@ -237,6 +238,39 @@ test("row/column ops keep the serialized markdown valid (round-trips through par
     expect(back.cells).toEqual(g.cells);
     expect(back.aligns).toEqual(g.aligns);
   }
+});
+
+// ── appendToCell (#30 — drop an image into a table cell) ──────────────────────
+
+test("appendToCell puts the addition into an EMPTY cell as-is", () => {
+  const g: TableGrid = { cells: [["A", "B"], ["", "x"]], aligns: ["none", "none"] };
+  const out = appendToCell(g, 1, 0, "![[cat.png]]");
+  expect(out.cells).toEqual([["A", "B"], ["![[cat.png]]", "x"]]);
+  expect(g.cells[1][0]).toBe(""); // input not mutated
+});
+
+test("appendToCell joins onto existing cell content with a <br>", () => {
+  const g: TableGrid = { cells: [["A"], ["hello"]], aligns: ["none"] };
+  expect(appendToCell(g, 1, 0, "![[cat.png]]").cells).toEqual([["A"], ["hello<br>![[cat.png]]"]]);
+});
+
+test("appendToCell can target the header row", () => {
+  const g: TableGrid = { cells: [["A", "B"], ["1", "2"]], aligns: ["none", "none"] };
+  expect(appendToCell(g, 0, 1, "![[d.pdf]]").cells[0]).toEqual(["A", "B<br>![[d.pdf]]"]);
+});
+
+test("appendToCell returns an unchanged copy for an out-of-range coordinate", () => {
+  const g: TableGrid = { cells: [["A"], ["x"]], aligns: ["none"] };
+  expect(appendToCell(g, 5, 0, "![[a.png]]").cells).toEqual(g.cells); // row out of range
+  expect(appendToCell(g, 0, 9, "![[a.png]]").cells).toEqual(g.cells); // col out of range
+  expect(appendToCell(g, 0, -1, "![[a.png]]").cells).toEqual(g.cells);
+});
+
+test("appendToCell keeps the serialized markdown valid (round-trips through parse)", () => {
+  const g = appendToCell({ cells: [["Name", "Pic"], ["Bob", ""]], aligns: ["left", "none"] }, 1, 1, "![[bob.png]]");
+  const md = serializeTable(g.cells, g.aligns);
+  const back = parseTableBlock(md.split("\n"));
+  expect(back.cells).toEqual(g.cells);
 });
 
 // ── Prettifier (#25) ──────────────────────────────────────────────────────────
