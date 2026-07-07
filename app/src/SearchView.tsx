@@ -34,26 +34,107 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   const [results, setResults] = createSignal<SearchResult[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [status, setStatus] = createSignal("");
+  // AI prompt-search ("Bismuth AI") mode: an Enter-gated, one-shot natural-language re-rank of the
+  // keyword candidates. `promptMode` = we're in AI mode; `promptBusy` = a request is in flight.
+  const [promptMode, setPromptMode] = createSignal(false);
+  const [promptBusy, setPromptBusy] = createSignal(false);
 
   const opts = () => ({ caseSensitive: caseSensitive(), wholeWord: wholeWord(), regex: regex() });
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  // Monotonic request generation: a late AI/keyword response for a superseded query (a newer run,
+  // an exit from prompt mode, or a cleared box) is ignored so results never flicker to stale data.
+  let searchGen = 0;
   const runSearch = () => {
     const q = query();
+    searchGen++;
     if (!q) { setResults([]); setError(null); setStatus(""); return; }
     if (regex() && !isValidRegex(q)) { setError("Invalid regular expression"); return; }
     setError(null);
+    const gen = searchGen;
     api.search(q, opts())
-      .then((r) => { setResults(r); setStatus(`${r.length} file(s)`); })
-      .catch((e) => setError(e.message));
+      .then((r) => {
+        if (gen !== searchGen) return; // superseded
+        setResults(r);
+        // Zero literal hits → nudge the user toward the AI fallback (Enter escalates to prompt mode).
+        setStatus(r.length ? `${r.length} file(s)` : "No results — press Enter to ask Bismuth AI");
+      })
+      .catch((e) => { if (gen === searchGen) setError(e.message); });
   };
+
+  // Run the AI prompt search for the current query. Enter-gated (never debounced) — one Haiku turn.
+  const runPromptSearch = () => {
+    const q = query();
+    searchGen++;
+    if (!q) { setResults([]); setStatus(""); return; }
+    const gen = searchGen;
+    setError(null);
+    setPromptBusy(true);
+    setStatus("Asking Bismuth AI…");
+    api.searchPrompt(q)
+      .then((r) => {
+        if (gen !== searchGen) return; // superseded
+        setResults(r);
+        setStatus(r.length ? `${r.length} file(s) · Bismuth AI` : "Bismuth AI found nothing relevant");
+      })
+      .catch((e) => {
+        if (gen !== searchGen) return;
+        setResults([]);
+        // The backend surfaces "AI search needs Claude Code installed" (400) here for a missing CLI.
+        setError((e as Error).message || "AI search failed");
+      })
+      .finally(() => { if (gen === searchGen) setPromptBusy(false); });
+  };
+
+  // Enter behavior depends on mode: AI mode runs the prompt search; regex mode is Enter-gated;
+  // literal mode with zero hits escalates to AI, otherwise re-runs the keyword search.
+  const onEnter = () => {
+    if (promptMode()) { runPromptSearch(); return; }
+    if (regex()) { runSearch(); return; }
+    if (query() && results().length === 0) { setPromptMode(true); runPromptSearch(); return; }
+    runSearch();
+  };
+
+  // Toggle AI mode explicitly (the Sparkles chip) — usable even when keyword hits exist. Turning it
+  // on with a query in the box runs immediately; turning it off returns to live keyword search.
+  const togglePromptMode = () => {
+    if (promptMode()) {
+      setPromptMode(false);
+      setPromptBusy(false);
+      searchGen++; // drop any in-flight AI response
+      runSearch();
+    } else {
+      setPromptMode(true);
+      setError(null);
+      if (query()) runPromptSearch();
+      else setStatus("Ask about your vault, then press Enter");
+    }
+  };
+
+  // Escape leaves AI mode back to literal search (mirrors the input's own Escape). A no-op otherwise.
+  const exitPromptMode = () => {
+    if (!promptMode()) return;
+    setPromptMode(false);
+    setPromptBusy(false);
+    searchGen++;
+    runSearch();
+  };
+
   const onInput = (v: string) => {
     setQuery(v);
     clearTimeout(debounceTimer);
+    // Clearing the box exits AI mode so the next keystroke is ordinary keyword search again.
+    if (!v && promptMode()) { setPromptMode(false); setPromptBusy(false); }
+    // AI mode is Enter-gated only (one model turn per press) — never live-as-you-type.
+    if (promptMode()) { searchGen++; setStatus(v ? "Press Enter to ask Bismuth AI" : ""); return; }
     // Regex search bypasses the index and scans every note body line-by-line, so don't re-run it on
     // every keystroke — wait for Enter. Literal search stays live-as-you-type (index-backed, cheap).
     if (regex()) { setStatus(v ? "Press Enter to run regex search" : ""); return; }
     debounceTimer = setTimeout(runSearch, 150);
+  };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && promptMode()) { e.preventDefault(); exitPromptMode(); return; }
+    if (e.key === "Enter") { e.preventDefault(); onEnter(); }
   };
   onCleanup(() => clearTimeout(debounceTimer));
 
@@ -78,7 +159,12 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
   return (
     <div class="search-view">
       <div class="search-header">
-        <SearchBar class="search-row" value={query()} placeholder="Search vault…" onInput={onInput} onEnter={runSearch}>
+        <SearchBar class={`search-row${promptMode() ? " search-row-ai" : ""}`} value={query()}
+          placeholder={promptMode() ? "Ask about your vault…" : "Search vault…"}
+          onInput={onInput} onKeyDown={onKeyDown}>
+          <Chip tone="teal" selected={promptMode()} title="Ask Bismuth AI (natural-language search)"
+            icon="Sparkles" iconSize={16}
+            onClick={togglePromptMode} />
           <Chip tone="teal" selected={caseSensitive()} title="Case sensitive"
             icon="CaseSensitive" iconSize={16}
             onClick={() => { setCaseSensitive(!caseSensitive()); runSearch(); }} />
@@ -92,13 +178,24 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             icon={showReplace() ? "ChevronDown" : "ChevronRight"} iconSize={16}
             onClick={() => setShowReplace(!showReplace())} />
         </SearchBar>
+        <Show when={promptMode()}>
+          <div class="search-ai-mode">
+            <Icon value="Sparkles" size={12} />
+            <span>Bismuth AI — natural-language search. Press Esc to return to keyword search.</span>
+          </div>
+        </Show>
         <Show when={showReplace()}>
           <SearchBar class="search-row" leadingIcon="Replace" value={replacement()} placeholder="Replace with…" onInput={setReplacement}>
             <TextButton size="sm" class="search-replace-all" onClick={() => doReplace("vault")}>REPLACE ALL</TextButton>
           </SearchBar>
         </Show>
         <Show when={error()}><div class="search-error">{error()}</div></Show>
-        <Show when={!error() && status()}><div class="search-status">{status()}</div></Show>
+        <Show when={!error() && status()}>
+          <div class={`search-status${promptBusy() ? " search-status-busy" : ""}`}>
+            <Show when={promptBusy()}><span class="search-spinner" /></Show>
+            {status()}
+          </div>
+        </Show>
       </div>
 
       <div class="search-results">
@@ -118,6 +215,9 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
                     <IconButton label="Replace all in this file" icon="Replace" iconSize={15} onClick={() => doReplace(r.path)} />
                   </Show>
                 </div>
+                <Show when={r.reason}>
+                  <div class="sresult-reason">{r.reason}</div>
+                </Show>
                 <For each={r.snippets}>
                   {(s) => (
                     <div class="sresult-snip" onClick={() => props.onOpen(r.path)}>
