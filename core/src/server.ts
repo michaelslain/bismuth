@@ -109,9 +109,11 @@ function ok(data?: unknown): Response {
   return data !== undefined ? Response.json(data) : new Response("ok");
 }
 
-/** Standardized error response: message + HTTP status code. */
-function error(message: string, statusCode: number = 400): Response {
-  return new Response(message, { status: statusCode });
+/** Standardized error response: message + HTTP status code. `headers` lets a call site opt
+ *  into e.g. `Cache-Control: no-store` (see GET /asset's 404 below) without every other
+ *  error() caller having to think about caching. */
+function error(message: string, statusCode: number = 400, headers?: HeadersInit): Response {
+  return new Response(message, { status: statusCode, ...(headers && { headers }) });
 }
 
 /** A small self-contained HTML page shown in the user's browser after the Google
@@ -674,7 +676,16 @@ export function createServer(cfg: CoreConfig) {
     "GET /asset": async (_, url) => {
       const path = requireQueryParam(url, "path");
       const abs = await resolveAsset(cfg.vault, path);
-      if (!abs) return error("asset not found", 404);
+      // `no-store` on the miss (#38): a "not found" is only ever a TRANSIENT fact about a
+      // mutable vault — the file can be created/renamed into place moments later (a pasted
+      // screenshot, a race with the file watcher, a wikilink clicked before its target
+      // exists yet). 404 is heuristically cacheable by default (RFC 9110 §15.3) with no
+      // explicit Cache-Control, so a long-lived cache — a packaged desktop app's WKWebView
+      // keeps one NSURLCache for the whole session, unlike a browser tab reloaded fresh each
+      // dev test — could otherwise pin a stale 404 for this exact `?path=` forever, long
+      // after the underlying file (and any resolution bug) is fixed: every retry keeps
+      // hitting the cached miss instead of ever re-asking the (now-correct) server.
+      if (!abs) return error("asset not found", 404, { "Cache-Control": "no-store" });
       const file = Bun.file(abs);
       // Short cache so re-opening a note doesn't re-fetch (and re-walk the vault for the
       // filename-first resolution) every time; `private` keeps it out of shared proxies.
@@ -686,11 +697,11 @@ export function createServer(cfg: CoreConfig) {
     // Resolve a vault-relative path to its ABSOLUTE machine-local path (FILENAME-FIRST, like
     // /asset; traversal-guarded inside resolveAsset). Backs the preview tab's "Open in default
     // app" / "Reveal in Finder" affordances, which need a real filesystem path to hand to the OS
-    // opener. Read-only; 404 when nothing matches.
+    // opener. Read-only; 404 when nothing matches (never cached — see GET /asset above).
     "GET /abs-path": async (_, url) => {
       const path = requireQueryParam(url, "path");
       const abs = await resolveAsset(cfg.vault, path);
-      if (!abs) return error("not found", 404);
+      if (!abs) return error("not found", 404, { "Cache-Control": "no-store" });
       return ok({ path: abs });
     },
 
