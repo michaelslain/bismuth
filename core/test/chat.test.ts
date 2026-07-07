@@ -22,6 +22,8 @@ import {
   unstreamedAssistantFrames,
   isMcpCommand,
   formatMcpStatus,
+  withLocalSlashCommands,
+  LOCAL_SLASH_COMMANDS,
   type ChatFrame,
   type ChatSearchDoc,
 } from "../src/chat";
@@ -230,6 +232,45 @@ describe("formatMcpStatus (BUG #39: the /mcp reply body)", () => {
   test("a tool count of 0 is still shown (an explicit zero, not omitted)", () => {
     const text = formatMcpStatus([{ name: "empty", status: "connected", toolCount: 0 }]);
     expect(text).toContain("0 tools");
+  });
+});
+
+// The manifest injection that makes "/mcp" appear in the composer's slash autocomplete. The SDK's
+// init manifest omits TUI-only commands, but this chat answers "/mcp" locally — so withLocalSlashCommands
+// splices it into the manifest's slash_commands list that chat.ts sends the frontend (emitInitManifest
+// + the per-turn init handler both route through it).
+describe("withLocalSlashCommands (BUG #39: /mcp shows in the autocomplete)", () => {
+  test("appends 'mcp' to the SDK's command list", () => {
+    expect(withLocalSlashCommands(["context", "help", "cost"])).toEqual(["context", "help", "cost", "mcp"]);
+  });
+
+  test("injects even when the SDK reports NO commands (the eager empty-manifest case)", () => {
+    expect(withLocalSlashCommands([])).toEqual(["mcp"]);
+  });
+
+  test("does NOT duplicate 'mcp' if a future SDK already surfaces it", () => {
+    expect(withLocalSlashCommands(["mcp", "help"])).toEqual(["mcp", "help"]);
+  });
+
+  test("is order-stable: SDK commands first, synthetics appended (deterministic popover order)", () => {
+    const sdk = ["a", "b", "c"];
+    const out = withLocalSlashCommands(sdk);
+    expect(out.slice(0, 3)).toEqual(["a", "b", "c"]);
+    for (const c of LOCAL_SLASH_COMMANDS) expect(out).toContain(c);
+  });
+
+  test("does not mutate the input array", () => {
+    const sdk = ["help"];
+    withLocalSlashCommands(sdk);
+    expect(sdk).toEqual(["help"]);
+  });
+
+  test("every synthetic command is one this chat answers locally (isMcpCommand covers /mcp)", () => {
+    // Guards against a synthetic command being surfaced in the popover but not actually handled —
+    // the popover would then offer a command the SDK would just stub out.
+    for (const c of LOCAL_SLASH_COMMANDS) {
+      if (c === "mcp") expect(isMcpCommand(`/${c}`)).toBe(true);
+    }
   });
 });
 
