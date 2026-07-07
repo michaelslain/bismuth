@@ -22,6 +22,7 @@ import {
   appendToCell,
   type TableGrid,
   type CellKeyEvent,
+  surgicalTableEdit,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -473,4 +474,35 @@ test("serializeTable pads WIDE (CJK/emoji) cells so the pipes line up by display
   const lines = out.split("\n");
   const w0 = displayWidth(lines[0]);
   for (const l of lines) expect(displayWidth(l)).toBe(w0);
+});
+
+// ── #46: surgicalTableEdit — an in-place cell edit rewrites ONLY the changed row's line ──
+// (formatTable repads the whole table when a cell's width changes, which turned a one-cell
+// edit into a whole-table diff — the save-time merge then dropped concurrent external edits
+// to OTHER rows as "overlapping", and undo's inverse wiped them too.)
+test("surgicalTableEdit rewrites only the changed row, other lines byte-identical", () => {
+  const before = "| a   | b   |\n| --- | --- |\n| one | two |\n| three | four |";
+  const orig = [["a", "b"], ["one", "two"], ["three", "four"]];
+  const next = [["a", "b"], ["one MUCH WIDER NOW", "two"], ["three", "four"]];
+  const out = surgicalTableEdit(before, orig, next)!;
+  const lines = out.split("\n");
+  const beforeLines = before.split("\n");
+  expect(lines[0]).toBe(beforeLines[0]); // header untouched
+  expect(lines[1]).toBe(beforeLines[1]); // separator untouched
+  expect(lines[3]).toBe(beforeLines[3]); // unrelated row byte-identical despite width change
+  expect(lines[2]).toBe("| one MUCH WIDER NOW | two |"); // only the edited row rewritten
+});
+
+test("surgicalTableEdit returns null on a row-count change (structural op)", () => {
+  const before = "| a |\n| --- |\n| one |";
+  expect(surgicalTableEdit(before, [["a"], ["one"]], [["a"], ["one"], ["two"]])).toBeNull();
+});
+
+test("surgicalTableEdit header edits land on line 0", () => {
+  const before = "| a | b |\n| --- | --- |\n| x | y |";
+  const out = surgicalTableEdit(before, [["a", "b"], ["x", "y"]], [["A!", "b"], ["x", "y"]])!;
+  const lines = out.split("\n");
+  expect(lines[0]).toBe("| A! | b |");
+  expect(lines[1]).toBe("| --- | --- |");
+  expect(lines[2]).toBe("| x | y |");
 });

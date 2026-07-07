@@ -22,6 +22,8 @@ import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
 import { TableWidget, tableFindHighlight, hasActiveCellEdit, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { findExtension } from "./findPanel";
+import { history, undo } from "@codemirror/commands";
+import { externalReconcileSpec } from "./reconcileDispatch";
 
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "Text",
@@ -364,5 +366,35 @@ describe("#46 hasActiveCellEdit", () => {
     expect(hasActiveCellEdit(a)).toBe(false);
     a.destroy();
     b.destroy();
+  });
+});
+
+// ── #46: a cell commit dispatches a MINIMAL patch, so undo's blast radius is the edited
+// region — external edits reconciled into OTHER rows of the same table survive a cmd+z.
+// (A whole-table replace's undo inverse restored the entire pre-commit table, silently
+// wiping concurrent external rows.)
+describe("#46 minimal-patch commit + undo", () => {
+  test("undo of a cell commit keeps an external edit to another row", () => {
+    const view = mount("| a | b |\n| --- | --- |\n| one | two |\n| three | four |", [history()]);
+    // Edit cell (r1,c0) width-stably ("one" -> "uno") via the DOM + focusout commit.
+    const cell = view.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    cell.dataset.editing = "1";
+    cell.textContent = "uno";
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(view.state.doc.toString()).toContain("uno");
+
+    // An external writer edits the OTHER body row; Editor.tsx reconciles it in
+    // (history-invisible, exactly like the SSE path).
+    const cur = view.state.doc.toString();
+    view.dispatch(externalReconcileSpec(cur, cur.replace("four", "4-EXT")));
+    expect(view.state.doc.toString()).toContain("4-EXT");
+
+    // Undo reverts ONLY the cell commit; the external row edit survives.
+    undo(view);
+    const doc = view.state.doc.toString();
+    expect(doc).toContain("one");
+    expect(doc).not.toContain("uno");
+    expect(doc).toContain("4-EXT");
+    view.destroy();
   });
 });

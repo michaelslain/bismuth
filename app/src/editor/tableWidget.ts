@@ -18,6 +18,7 @@ import {
   parseRowCellSpans,
   serializeTable,
   formatTable,
+  surgicalTableEdit,
   prettifyTableBlock,
   decideCellKey,
   cellListContinuation,
@@ -33,6 +34,7 @@ import {
 import type { Text as CMText } from "@codemirror/state";
 import { noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { renderInlineMarkdown } from "./inlineMarkdown";
+import { minimalChange } from "./normalizeFrontmatter";
 import { onMathReady } from "./katexLoader";
 import { api } from "../api";
 import { parseWikilink, resolveNotePath } from "./wikilink";
@@ -402,10 +404,13 @@ export function insertEmbedsInTableCell(
   const cols = block.cells[0]?.length ?? 0;
   if (r < 0 || r >= block.cells.length || c < 0 || c >= cols) return false;
   const grid = appendToCell({ cells: block.cells, aligns: block.aligns }, r, c, embeds.join("<br>"));
-  const md = formatTable(grid);
   const from = doc.line(block.startLine).from;
   const to = doc.line(block.endLine).to;
-  if (view.state.sliceDoc(from, to) === md) return false;
+  const before = view.state.sliceDoc(from, to);
+  // One-cell change → line-surgical rewrite, same rationale as commit() (#46): keep the
+  // diff (undo inverse + save-merge hunk) confined to the dropped-on row.
+  const md = surgicalTableEdit(before, block.cells, grid.cells) ?? formatTable(grid);
+  if (before === md) return false;
   // Move CM's own selection to the block start BEFORE committing (like "Edit source" already
   // does below) — a cell's contenteditable DOM lives outside CM's own selection tracking, so
   // `state.selection` is still wherever it was before this drop (e.g. wherever the user was
@@ -461,9 +466,23 @@ export class TableWidget extends WidgetType {
     if (!range) return;
     let grid: TableGrid = { cells: readGrid(root), aligns: this.aligns.slice() };
     grid = transform?.(grid) ?? grid;
-    const md = formatTable(grid); // column-padded, LLM-readable GFM
-    if (view.state.sliceDoc(range.from, range.to) === md) return; // no-op: skip churn
-    // Move CM's own selection to the block start FIRST, matching "Edit source" (openCellMenu
+    const before = view.state.sliceDoc(range.from, range.to);
+    // In-place cell edits rewrite ONLY the changed rows' lines (no column repadding) so the
+    // diff — and with it undo's inverse and the save-merge's local hunk — stays confined to
+    // the edited row (#46, see surgicalTableEdit). Structural ops keep the full pretty-print.
+    const md = transform
+      ? formatTable(grid) // column-padded, LLM-readable GFM
+      : surgicalTableEdit(before, this.cells, grid.cells) ?? formatTable(grid);
+    if (before === md) return; // no-op: skip churn
+    // Commit the SMALLEST span that actually changed, not a whole-table replace (#46): the
+    // undo inverse of a whole-block replace restores the ENTIRE table as it was, silently
+    // discarding any EXTERNAL edits reconciled into OTHER rows since the commit — cmd+z
+    // after a cell edit wiped a concurrent writer's rows. A minimal patch confines undo's
+    // blast radius to the edited region, so external edits elsewhere in the table survive.
+    const delta = minimalChange(before, md);
+    const from = range.from + delta.from;
+    const to = range.from + delta.to;
+    // Move CM's own selection to the edit site FIRST, matching "Edit source" (openCellMenu
     // below): every cell edit here happens inside a contenteditable DOM island CM's own
     // selection never tracks, so `state.selection` is still wherever it was before this edit. A
     // changes-only dispatch's OWN `selection:` field can't fix this retroactively — CM's
@@ -472,10 +491,10 @@ export class TableWidget extends WidgetType {
     // @codemirror/commands' `HistEvent.fromTransaction`). Left unmoved, a later undo restores
     // that stale before-edit position — often the doc end — instead of back here (#44). A plain
     // selection-only dispatch doesn't scroll (no `scrollIntoView`), so this is visually inert.
-    view.dispatch({ selection: { anchor: range.from } });
+    view.dispatch({ selection: { anchor: from } });
     // Pin the scroll position: growing the table (add row/column) re-lays the block
     // widget and CM's async height re-measure would otherwise scroll the viewport away.
-    dispatchKeepScroll(view, { changes: { from: range.from, to: range.to, insert: md } });
+    dispatchKeepScroll(view, { changes: { from, to, insert: delta.insert } });
   }
 
   toDOM(view: EditorView): HTMLElement {
