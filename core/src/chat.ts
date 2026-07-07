@@ -64,8 +64,10 @@ export type ChatFrame =
   | { type: "result"; isError: boolean; numTurns: number; costUsd: number | null }
   /** The turn is fully drained (pushed after `result`). */
   | { type: "done" }
-  /** The models this login can run (Query.supportedModels), fetched once per session after the
-   *  first init — powers the header model picker (set_model was already wired end-to-end). */
+  /** The models this login can run (Query.supportedModels), fetched EAGERLY on session spawn — the
+   *  SDK's `initialize` control request resolves the moment the CLI subprocess starts (NOT gated on a
+   *  user turn), so this powers the header model picker the instant the chat opens, BEFORE the first
+   *  message (set_model is wired end-to-end). Emitted once per session (the list is static per login). */
   | { type: "models"; models: { value: string; label: string; description: string }[] }
   /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
    *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
@@ -230,9 +232,10 @@ interface ChatSession {
    *  analogue of terminal.ts's PTY detach/attach output buffering. */
   detached: boolean;
   buffer: ChatFrame[];
-  /** Once-per-session latches: the supported-models list is static per login (fetched after the
-   *  first init); the title latches only when a NON-EMPTY summary exists (a brand-new session
-   *  has none on turn 1, so the drain retries at each turn-end until one appears). */
+  /** Once-per-session latches: the supported-models list is static per login (fetched EAGERLY on
+   *  spawn, so the picker is usable before the first turn — see emitSupportedModels); the title
+   *  latches only when a NON-EMPTY summary exists (a brand-new session has none on turn 1, so the
+   *  drain retries at each turn-end until one appears). */
   modelsSent?: boolean;
   titleSent?: boolean;
   /** The vault's 3rd-brain dir when the daemon is enabled — a finished chat's conversation is
@@ -584,6 +587,12 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
 
   if (!spawnChatQuery(session, denyEntries, resume)) return null; // spawn error already pushed
   sessions.set(chatId, session);
+  // Populate the header model picker EAGERLY — Query.supportedModels() resolves off the SDK's
+  // `initialize` control request, which the SDK fires the instant the `claude` subprocess spawns
+  // (NOT gated on the first user turn), so the picker is usable + switchable the moment the chat
+  // opens, before any message is sent. The drain loop's `init` handler re-tries as a fallback if
+  // this eager fetch couldn't resolve. Fire-and-forget; latched by session.modelsSent.
+  emitSupportedModels(session);
   return session;
 }
 
@@ -765,6 +774,29 @@ export async function sessionHistoryFrames(sessionId: string, cwd: string): Prom
   return frames;
 }
 
+/**
+ * Fetch this login's supported models (Query.supportedModels) and emit them as a `models` frame for
+ * the header model picker. Called EAGERLY on session spawn (createSession): supportedModels() awaits
+ * the SDK's `initialize` control request, which the SDK fires the moment the CLI subprocess starts —
+ * NOT gated on a user turn — so the picker is populated and switchable the instant the chat opens,
+ * before the first message. The drain loop's `init` handler calls this again as a fallback in case
+ * the eager fetch couldn't resolve (e.g. a slow/failed spawn). Latched by session.modelsSent so it
+ * emits exactly once per session (the list is static per login); the post-resolve re-check makes the
+ * eager-vs-fallback race a no-op instead of a double emit. Fire-and-forget — a failure leaves the
+ * fallback to retry, never surfacing as a chat error.
+ */
+function emitSupportedModels(session: ChatSession): void {
+  if (session.modelsSent || !session.q) return;
+  session.q
+    .supportedModels()
+    .then((ms) => {
+      if (session.modelsSent) return; // eager + fallback raced — whoever resolved first already sent
+      session.modelsSent = true;
+      emit(session, { type: "models", models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description })) });
+    })
+    .catch(() => {});
+}
+
 /** Fetch the session's conversation summary once and emit it as a `title` frame. Latches ONLY on
  *  a non-empty summary (turn 1 usually has none yet), so callers retry at each turn-end until the
  *  store has one. Fire-and-forget; failures just retry later. */
@@ -823,17 +855,11 @@ async function drain(session: ChatSession): Promise<void> {
             mcpServers: (msg.mcp_servers ?? []).map((m) => ({ name: m.name, status: m.status })),
           },
         });
-        // Once per session (the list is static per login): the models this login can run, for
-        // the header model picker. Latch BEFORE the async call so it fires exactly once.
-        if (!session.modelsSent) {
-          session.modelsSent = true;
-          session.q
-            .supportedModels()
-            .then((ms) => {
-              emit(session, { type: "models", models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description })) });
-            })
-            .catch(() => {});
-        }
+        // The models this login can run, for the header model picker. Already fetched EAGERLY on
+        // session spawn (createSession → emitSupportedModels) so the picker works before the first
+        // turn; this is a FALLBACK for the case where that eager fetch couldn't resolve. No-op once
+        // session.modelsSent is latched, so it can't double-emit.
+        emitSupportedModels(session);
         // A RESUMED session already has a summary — name the tab right away rather than only
         // after the next turn completes. No-op (and retried at turn-end) for a fresh session.
         maybeEmitTitle(session);

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   sendMessage,
+  resumeSession,
   respondPermission,
   closeChat,
   newChatId,
@@ -253,6 +254,49 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
 
     await waitFor((f) => f.type === "done");
     expect(frames.some((f) => f.type === "assistant-text")).toBe(true);
+  }, 180_000);
+
+  // The header model picker must be USABLE BEFORE the first message. The backend now fetches the
+  // supported-models list EAGERLY on session spawn (Query.supportedModels resolves off the SDK's
+  // `initialize` control request, which fires the moment the CLI subprocess starts — NOT gated on a
+  // user turn) and emits it as a `models` frame. resumeSession opens a session and pushes NO user
+  // turn at all, so a `models` frame arriving through it proves the fetch isn't gated on the first
+  // turn. We seed a real persisted session first (the store needs one to resume), then resume it
+  // into a FRESH chat id and assert the `models` frame lands without sending any message.
+  test("models frame is emitted with NO user turn pushed (eager fetch on spawn)", async () => {
+    const cwd = await newTempDir();
+
+    // Seed a persisted session with one trivial turn so the store has something to resume.
+    const seedId = newChatId();
+    chatIds.push(seedId);
+    const seed = makeCollector();
+    sendMessage(seedId, "Reply with exactly: ok", cwd, seed.sink);
+    await seed.waitFor((f) => f.type === "done");
+    closeChat(seedId);
+
+    const stored = await listChatSessions(cwd);
+    expect(stored.length).toBeGreaterThan(0);
+    const sessionId = stored[0].sessionId;
+
+    // Resume into a brand-new chat id. resumeSession pushes NO user turn — it only opens the input
+    // queue and drains — so a `models` frame here came purely from the eager spawn-time fetch.
+    const resumeId = newChatId();
+    chatIds.push(resumeId);
+    const res = makeCollector();
+    await resumeSession(resumeId, sessionId, cwd, res.sink);
+
+    const models = await res.waitFor((f) => f.type === "models");
+    expect(models.type).toBe("models");
+    if (models.type === "models") {
+      expect(models.models.length).toBeGreaterThan(0);
+      for (const m of models.models) {
+        expect(typeof m.value).toBe("string");
+        expect(typeof m.label).toBe("string");
+      }
+    }
+    // The resumed session never received a user turn from us — its transcript-side `result` (the
+    // proxy for "a turn was processed") must never have fired for this chat id.
+    expect(res.frames.some((f) => f.type === "result")).toBe(false);
   }, 180_000);
 
   test("BUG #19: a built-in slash command (/context) produces visible assistant output", async () => {
