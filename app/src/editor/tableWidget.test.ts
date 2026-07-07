@@ -420,6 +420,38 @@ describe("#43 right-click does not word-select", () => {
   });
 });
 
+// ── #50: clicking a cell must not scroll the viewport to it ────────────────────
+describe("#50 clicking a cell does not scroll", () => {
+  test("a left mousedown focuses the cell with preventScroll:true", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    // Spy on focus to capture the options the click path passes (a bare focus() scrolls the
+    // element into view — the #50 "clicking a cell scrolls to it" bug; preventScroll suppresses it).
+    let opts: { preventScroll?: boolean } | undefined | "unset" = "unset";
+    const orig = cell.focus.bind(cell);
+    cell.focus = ((o?: { preventScroll?: boolean }) => { opts = o; orig(o as FocusOptions); }) as HTMLElement["focus"];
+    cell.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true }));
+    expect(opts).not.toBe("unset"); // the click focused the cell
+    expect((opts as { preventScroll?: boolean })?.preventScroll).toBe(true);
+    view.destroy();
+  });
+
+  test("Tab-navigating to a cell also focuses with preventScroll:true", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const first = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    const next = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="1"]')!;
+    let opts: { preventScroll?: boolean } | undefined | "unset" = "unset";
+    const orig = next.focus.bind(next);
+    next.focus = ((o?: { preventScroll?: boolean }) => { opts = o; orig(o as FocusOptions); }) as HTMLElement["focus"];
+    first.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    first.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+    expect((opts as { preventScroll?: boolean })?.preventScroll).toBe(true);
+    view.destroy();
+  });
+});
+
 // ── #30: a file dropped on a cell is intercepted + routed to that cell ─────────
 describe("#30 file drop into a cell", () => {
   test("dragover over a cell is prevented so the browser allows a drop", () => {

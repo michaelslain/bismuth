@@ -608,7 +608,9 @@ export class TableWidget extends WidgetType {
     const focusCell = (r: number, c: number): boolean => {
       const el = root.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`);
       if (!el) return false;
-      el.focus();
+      // `preventScroll` so Tab/Enter cell-to-cell navigation (and the Enter-grows-a-row focus)
+      // never jumps the viewport — the scroll is pinned by dispatchKeepScroll where it matters (#50).
+      el.focus({ preventScroll: true });
       // place caret at end
       const sel = window.getSelection();
       if (sel) {
@@ -702,7 +704,10 @@ export class TableWidget extends WidgetType {
           e.stopPropagation();
           if (cell.dataset.editing === "1") return; // native caret + drag-to-select
           e.preventDefault();
-          cell.focus();
+          // `preventScroll` — a plain `.focus()` scrolls the focused element into view, so clicking
+          // a cell (especially a tall table half-off-screen) yanked the viewport to it (#50). We
+          // place our own caret below and pin the viewport; focusing must never move it.
+          cell.focus({ preventScroll: true });
           const sel = window.getSelection();
           if (!sel) return;
           // caretRangeFromPoint (Chrome/Safari) / caretPositionFromPoint (Firefox).
