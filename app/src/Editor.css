@@ -201,7 +201,8 @@
    included), where `min-height` on a `display: table-cell` is silently ignored; `::after`
    generated content never affects `:empty` matching, so this is stable, and an edited cell
    (its nested editor mounted → no longer `:empty`) is untouched. */
-.cm-editor .cm-table-rendered .cm-td:empty::after {
+.cm-editor .cm-table-rendered .cm-td:empty::after,
+.cm-editor .cm-table-rendered .cm-td.cm-td-empty::after {
   content: "\00a0";
 }
 .cm-editor .cm-td p,
