@@ -49,7 +49,7 @@ export interface HoverNode {
 }
 import { nodeVisualState } from "../../../core/src/daemonViz";
 import { computeAlwaysOnSet } from "./labelSelection";
-import { hashKey, intToHex } from "../themeColors";
+import { hashKey, intToHex, paletteColorInt } from "../themeColors";
 
 const FOV_DEG = 60; // matches the old PerspectiveCamera so framing carries over
 const FIT_FRACTION = 0.42; // graph's resting on-screen radius as a fraction of min(W,H)
@@ -90,6 +90,11 @@ const EDGE_BUDGET_3D = 2200; const EDGE_FLOOR_3D = 0.45;  // gentle
 
 const DEFAULT_PALETTE = [0xf0509b, 0x9b53e8, 0x3f6bf0, 0x27c7d9, 0x43d49a, 0xf2c53d];
 
+// Vivid, saturated accents reserved for workflow lanes in agents mode — deliberately
+// distinct from the muted grey ordinary edge colour so a workflow's subagent tree reads
+// as one grouped lane. Each concurrent workflow hashes to a stable colour from this set.
+const WORKFLOW_LANE_PALETTE = [0xf2c53d, 0x27c7d9, 0xf0509b, 0x43d49a, 0x9b53e8];
+
 const DEFAULT_CONFIG: GraphConfig = {
   spin: true, spinSpeed: 0.0015, palette: DEFAULT_PALETTE, repulsion: -10, linkDistance: 5,
   centering: 0.13, nodeSize: 6, viewMode: "3d", showGraphLabels: true, graphLabelHubCount: 10,
@@ -114,7 +119,7 @@ interface NodeView {
   lastZi: number; lastDotSize: number; shown: boolean;
   labelW: number; // cached ctx.measureText(text).width for this node's label; -1 = needs (re)measuring
 }
-interface EdgeView { a: NodeView; b: NodeView; kr: number; } // kr = stable 0..1 rank for per-mode thinning
+interface EdgeView { a: NodeView; b: NodeView; kr: number; workflow?: string; } // kr = stable 0..1 rank for per-mode thinning; workflow = agents-mode workflow-lane group key
 
 // The backend layout (core/layout.ts) settles at linkDistance × smallBoost (smallBoost = 400/n clamped
 // 1..8, and ×1.8 in 2D). This renderer draws node sizes tuned for a WIDER, node-count-independent
@@ -394,7 +399,7 @@ export class CanvasGraphRenderer {
     this.edges = [];
     for (const e of g.edges) {
       const a = this.byId.get(e.from), b = this.byId.get(e.to);
-      if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000 });
+      if (a && b) this.edges.push({ a, b, kr: (hashKey(e.from + "\0" + e.to) % 1000) / 1000, workflow: e.workflow });
     }
 
     this.settled2D = false;
@@ -832,6 +837,10 @@ export class CanvasGraphRenderer {
         ctx.stroke();
       }
     }
+    // agents-mode workflow lanes: draw a distinct grouped lane (backdrop + glowing dashed
+    // accent connections) for every workflow's subagent tree, over the ordinary edges but
+    // under the node dots. No-op unless some edge carries a workflow key.
+    this.drawWorkflowLanes(zoomScale);
     // nodes (canvas state) — depth-sorted far→near so near dots paint over far ones
     if (withNodes) {
       this.drawOrder.length = 0;
@@ -893,6 +902,64 @@ export class CanvasGraphRenderer {
         ctx.fillText(text, nv.sx, by + padY);
       }
     }
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * Draw the special-looking workflow-lane connections (agents mode). A workflow's
+   * subagents — all sharing an edge `workflow` key — are drawn as ONE grouped lane: a
+   * translucent rounded backdrop hull behind the group, plus each session→subagent
+   * connection rendered as a soft glow underlay + a crisp DASHED accent line in the
+   * workflow's stable colour. This reads as a distinct grouped lane, clearly unlike the
+   * thin grey ordinary session→subagent edge (which is untouched). No-op when nothing in
+   * the graph carries a workflow key, so non-workflow graphs render exactly as before.
+   */
+  private drawWorkflowLanes(zoomScale: number) {
+    const ctx = this.edgeCtx;
+    if (!ctx) return;
+    // Group on-screen workflow edges by their workflow key.
+    const groups = new Map<string, { edges: EdgeView[]; xs: number[]; ys: number[] }>();
+    for (const e of this.edges) {
+      if (!e.workflow) continue;
+      if (!e.a.onScreen || !e.b.onScreen) continue;
+      let g = groups.get(e.workflow);
+      if (!g) { g = { edges: [], xs: [], ys: [] }; groups.set(e.workflow, g); }
+      g.edges.push(e);
+      g.xs.push(e.a.sx, e.b.sx); g.ys.push(e.a.sy, e.b.sy);
+    }
+    if (groups.size === 0) return;
+
+    ctx.save();
+    for (const [key, g] of groups) {
+      const color = intToHex(paletteColorInt(key, WORKFLOW_LANE_PALETTE));
+      // Lane backdrop: a translucent rounded band around the whole group (parent apex +
+      // its workflow subagents), so the tree reads as one visually-grouped lane.
+      const pad = Math.max(10, 14 * zoomScale);
+      const minX = Math.min(...g.xs) - pad, maxX = Math.max(...g.xs) + pad;
+      const minY = Math.min(...g.ys) - pad, maxY = Math.max(...g.ys) + pad;
+      const bw = maxX - minX, bh = maxY - minY, r = Math.min(22, bw / 2, bh / 2);
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(minX, minY, bw, bh, r); else ctx.rect(minX, minY, bw, bh);
+      ctx.globalAlpha = 0.08; ctx.fillStyle = color; ctx.fill();
+      ctx.globalAlpha = 0.28; ctx.lineWidth = 1; ctx.setLineDash([]); ctx.strokeStyle = color; ctx.stroke();
+
+      // Soft glow underlay along each connection (round caps → a continuous lane).
+      ctx.lineCap = "round"; ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.16; ctx.setLineDash([]);
+      ctx.lineWidth = Math.max(3, 6 * zoomScale);
+      ctx.beginPath();
+      for (const e of g.edges) { ctx.moveTo(e.a.sx, e.a.sy); ctx.lineTo(e.b.sx, e.b.sy); }
+      ctx.stroke();
+      // Crisp dashed accent line on top — the distinct workflow connection.
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = Math.max(1.1, 1.6 * zoomScale);
+      ctx.setLineDash([Math.max(3, 5 * zoomScale), Math.max(2, 4 * zoomScale)]);
+      ctx.beginPath();
+      for (const e of g.edges) { ctx.moveTo(e.a.sx, e.a.sy); ctx.lineTo(e.b.sx, e.b.sy); }
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 
