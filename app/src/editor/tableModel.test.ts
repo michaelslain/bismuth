@@ -23,6 +23,9 @@ import {
   type TableGrid,
   type CellKeyEvent,
   surgicalTableEdit,
+  cellRectAtPoint,
+  type CellRect,
+  remapCursorOffTable,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -505,4 +508,73 @@ test("surgicalTableEdit header edits land on line 0", () => {
   expect(lines[0]).toBe("| A! | b |");
   expect(lines[1]).toBe("| --- | --- |");
   expect(lines[2]).toBe("| x | y |");
+});
+
+// ── #30: coordinate → cell resolution (pure, pins the native-drop mapping) ─────
+// The widget collects each cell's client rect; cellRectAtPoint makes the geometric
+// decision — containing cell wins, else nearest (border/gutter drops snap onto the
+// visually-targeted table instead of falling through to the note body).
+const CR = (r: number, c: number): CellRect =>
+  ({ r, c, left: c * 100, top: r * 30, right: c * 100 + 100, bottom: r * 30 + 30 });
+const GRID_2X2: CellRect[] = [CR(0, 0), CR(0, 1), CR(1, 0), CR(1, 1)];
+
+test("cellRectAtPoint: a point inside a cell resolves to exactly that cell", () => {
+  expect(cellRectAtPoint(GRID_2X2, 50, 15)).toMatchObject({ r: 0, c: 0 });
+  expect(cellRectAtPoint(GRID_2X2, 150, 15)).toMatchObject({ r: 0, c: 1 });
+  expect(cellRectAtPoint(GRID_2X2, 50, 45)).toMatchObject({ r: 1, c: 0 });
+  expect(cellRectAtPoint(GRID_2X2, 150, 45)).toMatchObject({ r: 1, c: 1 });
+});
+
+test("cellRectAtPoint: a point on a shared border resolves deterministically (first containing)", () => {
+  // x=100 is the col0/col1 border: both rects contain it (inclusive edges); the first wins.
+  expect(cellRectAtPoint(GRID_2X2, 100, 15)).toMatchObject({ r: 0, c: 0 });
+});
+
+test("cellRectAtPoint: a point outside every cell snaps to the NEAREST cell", () => {
+  expect(cellRectAtPoint(GRID_2X2, 150, 70)).toMatchObject({ r: 1, c: 1 }); // below the grid
+  expect(cellRectAtPoint(GRID_2X2, 215, 10)).toMatchObject({ r: 0, c: 1 }); // right of the grid
+  expect(cellRectAtPoint(GRID_2X2, -5, -5)).toMatchObject({ r: 0, c: 0 }); // above-left corner
+});
+
+test("cellRectAtPoint: empty rect list resolves to null", () => {
+  expect(cellRectAtPoint([], 10, 10)).toBeNull();
+});
+
+// ── #59: cursor remap off table blocks (no widget-height "big cursor") ─────────
+// A cursor landing on a rendered table's replaced range is remapped just outside it,
+// directionally, so a click beside the table or ArrowDown from above never parks the
+// caret where CodeMirror would draw it as tall as the whole widget.
+const CURSOR_DOC = Text.of(["before", "", "| a | b |", "| - | - |", "| x | y |", "", "after"]);
+// Table block = lines 3-5. Boundaries: bFrom = line3.from, bTo = line5.to.
+const bFrom = CURSOR_DOC.line(3).from;
+const bTo = CURSOR_DOC.line(5).to;
+
+test("remapCursorOffTable: heads outside the block are untouched", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, 0, 0, null)).toBe(0);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom - 1, bFrom - 1, null)).toBe(bFrom - 1); // empty line above
+  expect(remapCursorOffTable(CURSOR_DOC, bTo + 1, bTo + 1, null)).toBe(bTo + 1); // empty line below
+});
+
+test("remapCursorOffTable: moving FORWARD onto the block skips past it", () => {
+  // ArrowDown / click while previous head was above → land on the line below the table.
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom, bFrom - 2, null)).toBe(bTo + 1);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom + 4, 0, null)).toBe(bTo + 1); // mid-block too
+  expect(remapCursorOffTable(CURSOR_DOC, bTo, 0, null)).toBe(bTo + 1); // end boundary
+});
+
+test("remapCursorOffTable: moving BACKWARD onto the block skips above it", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, bTo, CURSOR_DOC.length, null)).toBe(bFrom - 1);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom, CURSOR_DOC.length, null)).toBe(bFrom - 1);
+});
+
+test("remapCursorOffTable: the ACTIVE (raw-source) table is skipped — its lines are editable", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom + 2, 0, 3)).toBe(bFrom + 2); // startLine 3 active
+});
+
+test("remapCursorOffTable: a table at the doc EDGE keeps its outer boundary reachable", () => {
+  const only = Text.of(["| a |", "| - |", "| x |"]); // table IS the whole doc
+  // forward with no line after → the end boundary stays (Enter there makes a new line)
+  expect(remapCursorOffTable(only, 2, 0, null)).toBe(only.length);
+  // backward with no line before → the start boundary stays
+  expect(remapCursorOffTable(only, 2, only.length, null)).toBe(0);
 });

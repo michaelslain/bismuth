@@ -166,52 +166,79 @@
    cascade or contenteditable quirk can strip it. We deliberately DON'T set `list-style-type`
    here (an earlier attempt did — with inline `list-style:none` it's dead, and it would only
    risk DOUBLING the marker if the inline style were ever dropped). Keep `list-style:none` +
-   compact spacing so the class agrees with the render on every surface. */
+   compact spacing so the class agrees with the render on every surface.
+   (The reader engine — bases/markdown.ts, used by note-body tables — still emits this class;
+   the WIDGET's display face now block-renders instead, see below.) */
 .cm-editor .cm-td .bismuth-cell-list,
 .cm-editor .cm-td .bismuth-cell-list li {
   list-style: none;
 }
 
-/* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────
-   A table cell is a contenteditable island outside CodeMirror's input pipeline, so the editor's
-   own emoji completion never runs there (editor/cellEmoji.ts brings it back). The popup is
-   appended to document.body (not inside the cell — so it never becomes cell source) and positioned
-   fixed at the caret. Styled to echo the editor's completion popup: a surface card with a glyph +
-   :shortcode: per row and an accent-washed active row. */
-.cm-cell-emoji-menu {
-  z-index: 40;
-  min-width: 190px;
-  max-height: 232px;
-  overflow-y: auto;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
-  background: var(--surface-1, var(--bg, #1c1c1c));
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  font-size: 12.5px;
-  color: var(--fg, #e6e6e6);
+/* ── Block-rendered cell display face (#15, the "block thing") ─────────────────
+   The widget's DISPLAY face renders through the FULL note-reading engine
+   (editor/cellBlockRender.ts → bases/markdown.ts renderNoteBody), so a cell shows real
+   <p>/<ul>/<ol>/<li> blocks exactly like reading mode. Scope the block metrics to the cell so
+   note-sized margins don't explode row height: zero outer margins, compact list indent, and
+   tight spacing between consecutive blocks. Height stays auto (#52). */
+/* The cell inherits CodeMirror's content `white-space: pre-wrap`, which renders the block
+   engine's inter-tag newlines as visible blank lines (huge gaps between <li>s). The DISPLAY
+   face is normal HTML flow; only the EDIT face (raw source) needs pre-wrap so typed spaces
+   and line breaks show while editing. <pre>/<code> re-establish their own white-space. */
+.cm-editor .cm-td {
+  white-space: normal;
 }
-.cm-cell-emoji-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px;
-  border-radius: 5px;
+.cm-editor .cm-td[data-editing="1"] {
+  white-space: pre-wrap;
+}
+.cm-editor .cm-td p,
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol,
+.cm-editor .cm-td blockquote,
+.cm-editor .cm-td pre,
+.cm-editor .cm-td h1,
+.cm-editor .cm-td h2,
+.cm-editor .cm-td h3,
+.cm-editor .cm-td h4,
+.cm-editor .cm-td h5,
+.cm-editor .cm-td h6 {
+  margin: 0;
+}
+.cm-editor .cm-td > * + * {
+  margin-top: 0.3em;
+}
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol {
+  padding-left: 1.25em;
+}
+.cm-editor .cm-td li {
+  margin: 0.05em 0;
+}
+.cm-editor .cm-td li > p {
+  margin: 0; /* loose-list items: keep the paragraph flush inside its li */
+}
+.cm-editor .cm-td h1, .cm-editor .cm-td h2, .cm-editor .cm-td h3,
+.cm-editor .cm-td h4, .cm-editor .cm-td h5, .cm-editor .cm-td h6 {
+  font-size: 1.05em; /* a heading in a cell reads as emphasis, not a page title */
+}
+/* The reader's wikilink/tag chips (a.bismuth-wikilink / span.bismuth-tag) styled to match the
+   editor's own .cm-wikilink / .cm-tag marks (livePreview theme), so a link or tag in a cell
+   reads identically to one in the note body. */
+.cm-editor .cm-td a.bismuth-wikilink {
+  color: var(--accent);
   cursor: pointer;
-  white-space: nowrap;
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
 }
-.cm-cell-emoji-item.active {
-  background: color-mix(in srgb, var(--accent, #4a9) 26%, transparent);
-}
-.cm-cell-emoji-glyph {
-  font-size: 15px;
-  line-height: 1;
-  flex: 0 0 auto;
-}
-.cm-cell-emoji-name {
-  color: var(--text-muted, var(--faint, #999));
+.cm-editor .cm-td .bismuth-tag {
+  color: var(--teal);
   font-family: "Monaspace Xenon", ui-monospace, monospace;
-  font-size: calc(1em * var(--mono-scale, 0.9));
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: calc(1em * var(--mono-scale, 0.85));
 }
+
+/* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────
+   NO bespoke styles here, deliberately. The popup (editor/cellEmoji.ts) carries CodeMirror's
+   exact tooltip classes + DOM shape (.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]
+   > .cm-completionLabel) and mounts INSIDE the editor root, so it is styled by the SAME two
+   sources as the editor's own autocomplete popup: CM's base autocomplete theme and the app's
+   completionTheme (editor/completionDisplay.ts — the single source of completion styling).
+   Restyling either popup automatically restyles both; adding rules here would fork them again. */

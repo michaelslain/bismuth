@@ -254,3 +254,77 @@ test("renderInlineMarkdown falls back to a clickable chip for a plain note embed
   expect(html).toContain('class="cm-wikilink"');
   expect(html).toContain('data-wikilink="Some Note"');
 });
+
+// --- #58: emphasis SPANNING math/wikilinks styles correctly (the cell twin of the
+// note-body fix in inlineEmphasis.ts). tokenizeInline splits md runs at math/wikilink
+// boundaries, so `**Case 1: $hk \in H$.**` used to reach marked as two non-closing runs
+// and render literal `**`. Reference semantics: only the DELIMITER runs must avoid math
+// spans; emphasis chars INSIDE $...$ stay literal LaTeX. Same four shapes as the #58 tests.
+
+test("#58 bold containing inline math renders <strong> with the math span inside, no literal **", () => {
+  const html = renderInlineMarkdown("**Case 1: $hk \\in H$.**");
+  expect(html).toContain("<strong>");
+  expect(html).toContain("</strong>");
+  expect(html).toContain('class="cm-inline-math"');
+  expect(html).toContain('data-math="hk \\in H"');
+  expect(html).not.toContain("**"); // markers consumed, not shown
+  // The prose inside the bold survives around the math span.
+  expect(html).toContain("Case 1: ");
+});
+
+test("#58 italic containing inline math renders <em> with the math span inside", () => {
+  const html = renderInlineMarkdown("*note $x+y$ here*");
+  expect(html).toContain("<em>");
+  expect(html).toContain("</em>");
+  expect(html).toContain('data-math="x+y"');
+  expect(html).not.toMatch(/\*(?!\*)/); // no stray single asterisks in the output
+});
+
+test("#58 bold-italic containing inline math renders <em><strong> like plain ***bi***", () => {
+  const html = renderInlineMarkdown("***bi $x$ bi***");
+  expect(html).toContain("<em><strong>");
+  expect(html).toContain("</strong></em>");
+  expect(html).toContain('data-math="x"');
+  expect(html).not.toContain("*"); // all six markers consumed
+});
+
+test("#58 math CONTAINING asterisks stays one literal math span (no <em> injected)", () => {
+  const html = renderInlineMarkdown("$a * b * c$");
+  expect(html).toContain('data-math="a * b * c"'); // asterisks preserved inside the LaTeX
+  expect(html).not.toContain("<em>");
+  expect(html).not.toContain("<strong>");
+});
+
+test("#58 a token whose CLOSING delimiter sits inside math is left alone (LaTeX protected)", () => {
+  // The candidate bold's closer lands inside `$b** c$` -> skipped; the math span wins whole.
+  const html = renderInlineMarkdown("x **a $b** c$");
+  expect(html).not.toContain("<strong>");
+  expect(html).toContain('data-math="b** c"');
+});
+
+test("#58 strike + underscore-bold spanning math also style", () => {
+  const strike = renderInlineMarkdown("~~old $x$ result~~");
+  expect(strike).toContain("<del>");
+  expect(strike).toContain('data-math="x"');
+  const bold = renderInlineMarkdown("__b $x$ b__");
+  expect(bold).toContain("<strong>");
+  expect(bold).toContain('data-math="x"');
+});
+
+test("#58 bold spanning a WIKILINK styles too (same splitting class as math)", () => {
+  const html = renderInlineMarkdown("**see [[Note]] now**");
+  expect(html).toContain("<strong>");
+  expect(html).toContain('class="cm-wikilink"');
+  expect(html).toContain('data-wikilink="Note"');
+  expect(html).not.toContain("**");
+});
+
+test("#58 control: plain emphasis (no spanned segment) still renders via marked, unchanged", () => {
+  expect(renderInlineMarkdown("**bold**")).toContain("<strong>bold</strong>");
+  expect(renderInlineMarkdown("*it*")).toContain("<em>it</em>");
+  expect(renderInlineMarkdown("***bi***")).toContain("<em><strong>bi</strong></em>");
+  // And emphasis in prose AROUND (not spanning) math keeps working via the plain path.
+  const html = renderInlineMarkdown("**bold** then $x$");
+  expect(html).toContain("<strong>bold</strong>");
+  expect(html).toContain('data-math="x"');
+});

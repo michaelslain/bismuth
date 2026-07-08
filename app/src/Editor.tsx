@@ -41,7 +41,9 @@ import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
 import { propertyRegistry } from "./propertyRegistry";
 import { parseWikilink, resolveNotePath, findHeadingLineIndex, wikilinkOpenPath, type NoteCandidate } from "./editor/wikilink";
 import { takePendingAnchor, clearPendingAnchor } from "./pendingAnchor";
-import type { NativeDragDetail } from "./nativeDrop";
+import { pointInDropRect, type NativeDragDetail } from "./nativeDrop";
+import { nativeDropScale, claimNativeDrop } from "./nativeDropRouting";
+import { isTauri } from "./nativeMenu";
 import { findBareUrls } from "./editor/urls";
 import { openExternalUrl } from "./appWindow";
 import { settings } from "./settings";
@@ -52,7 +54,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, hasActiveCellEdit } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, tableSelectionGuard, hasActiveCellEdit } from "./editor/tableWidget";
 import { threeWayMerge } from "./editor/saveReconcile";
 import { ExternalReload, externalReconcileSpec } from "./editor/reconcileDispatch";
 import "./Editor.css";
@@ -649,32 +651,71 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
   // event no longer fires for external files (and a browser File only ever exposes a basename), so
   // we embed from the REAL path nativeDrop.ts forwards — handled only when the cursor is over THIS
   // editor's scroller. No-op in the browser (the event never fires; the CM `drop` handler serves it).
+  //
+  // #30 (re-bounced twice — both fixes live HERE):
+  //  • WRONG CELL — the bridge divides Tauri's PhysicalPosition by devicePixelRatio, but the
+  //    packaged app applies a persisted webview PAGE ZOOM (zoom.ts → WKWebView.pageZoom) and
+  //    WebKit — unlike Chromium — does NOT fold page zoom into devicePixelRatio. So at ≠100% zoom
+  //    the forwarded coords are window POINTS, off from page CSS px by the zoom factor: a
+  //    pane-sized rect (chat) tolerates it, a ~30px table cell resolves one-or-more cells off.
+  //    We MEASURE the true physical→CSS ratio (Tauri innerSize vs window.innerWidth — engine
+  //    sniffing not required) and multiply by the residual factor (nativeDropScale, unit-tested).
+  //  • DOUBLE INSERT — one drop event fans out to every live listener; if a duplicated
+  //    subscription ever exists (an editor rebuild / stacked panes), each inserted once.
+  //    claimNativeDrop marks the shared detail object so exactly ONE handler processes a drop.
   onMount(() => {
+    const handleNativeDrop = async (d: NativeDragDetail): Promise<void> => {
+      const v = view;
+      if (!v) return;
+      // Correct the forwarded coords to true page CSS px (factor 1 whenever bridge division was
+      // already right — no zoom, Chromium-style zoom-in-DPR, or any measurement failure).
+      let f = 1;
+      try {
+        if (isTauri()) {
+          const { getCurrentWindow } = await import("@tauri-apps/api/window");
+          const size = await getCurrentWindow().innerSize(); // PhysicalSize of the content area
+          f = nativeDropScale(window.devicePixelRatio || 1, window.innerWidth, size.width);
+        }
+      } catch {
+        f = 1; // measurement unavailable → use the bridge's coords as-is
+      }
+      const x = d.x * f;
+      const y = d.y * f;
+      // Pane routing: the SAME shared predicate the (working) chat hit-test uses — incl. its
+      // 0×0-rect guard for hidden panes.
+      if (!pointInDropRect(v.scrollDOM.getBoundingClientRect(), x, y)) return;
+      const embeddable = d.paths.filter(isEmbeddablePath);
+      if (embeddable.length === 0) return;
+      // This editor owns the drop — claim it so a duplicated listener can't insert a second copy.
+      if (!claimNativeDrop(d)) return;
+      // If the drop targets a table cell while ANOTHER edit is still uncommitted in a cell (the
+      // user deleted the previous embed and dropped without clicking away), flush it FIRST: the
+      // insert dispatches a doc change that rebuilds the widget, which would discard the
+      // in-progress edit — resurrecting the deleted embed next to the new one ("two at once").
+      if (tableCellDropTargetAtPoint(v, x, y) && hasActiveCellEdit(v)) {
+        (document.activeElement as HTMLElement | null)?.blur(); // focusout → commit
+        await new Promise((r) => setTimeout(r, 0)); // let the commit dispatch + widget rebuild settle
+      }
+      // Resolve the cell AFTER the flush (the commit may have rebuilt the widget DOM). If the
+      // drop landed ON a rendered table cell, embed INTO that cell — the packaged app never fires
+      // a DOM drop, so the widget's own capture-phase drop handler can't do this; this native path
+      // is what makes an image-drop-into-a-cell work in the real app. A rendered table is an
+      // atomic block widget, so `posAtCoords` below would otherwise map the drop to the block
+      // BOUNDARY and land the image beside the table. The native drag carries no modifier keys,
+      // so reference-vs-copy comes only from the attachment setting here.
+      const cellTarget = tableCellDropTargetAtPoint(v, x, y);
+      if (cellTarget) {
+        await embedNativePathsIntoCell(v, embeddable, activePath, settings.attachments.onDrop === "reference", cellTarget);
+        return;
+      }
+      const pos = v.posAtCoords({ x, y });
+      if (pos != null) v.dispatch({ selection: { anchor: pos } });
+      await embedNativePaths(v, embeddable, activePath);
+    };
     const onNativeDrag = (e: Event): void => {
       const d = (e as CustomEvent<NativeDragDetail>).detail;
       if (!view || !d || d.type !== "drop" || d.paths.length === 0) return;
-      const r = view.scrollDOM.getBoundingClientRect();
-      // A hidden (display:none) pane has a 0×0 rect at (0,0); without this guard a drop forwarded
-      // at the viewport corner (0,0) would hit-test true for EVERY backgrounded editor at once.
-      if (r.width === 0 && r.height === 0) return;
-      if (d.x < r.left || d.x > r.right || d.y < r.top || d.y > r.bottom) return;
-      const embeddable = d.paths.filter(isEmbeddablePath);
-      if (embeddable.length === 0) return;
-      const v = view;
-      // #30: if the native drop landed ON a rendered table cell, embed INTO that cell (the
-      // packaged app never fires a DOM drop, so the widget's own capture-phase drop handler can't
-      // do this — this native path is what makes an image-drop-into-a-cell work in the real app).
-      // A rendered table is an atomic block widget, so `posAtCoords` below would otherwise map the
-      // drop to the block BOUNDARY and land the image beside the table. The native drag carries no
-      // modifier keys, so reference-vs-copy comes only from the attachment setting here.
-      const cellTarget = tableCellDropTargetAtPoint(v, d.x, d.y);
-      if (cellTarget) {
-        void embedNativePathsIntoCell(v, embeddable, activePath, settings.attachments.onDrop === "reference", cellTarget);
-        return;
-      }
-      const pos = v.posAtCoords({ x: d.x, y: d.y });
-      if (pos != null) v.dispatch({ selection: { anchor: pos } });
-      void embedNativePaths(v, embeddable, activePath);
+      void handleNativeDrop(d);
     };
     window.addEventListener("bismuth-native-drag", onNativeDrag);
     onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
@@ -888,6 +929,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // Highlight find matches IN PLACE inside rendered table widgets (#31) — the find bar never
       // flips a table to raw source. No-op in buffers without tables (e.g. config YAML).
       tableFindHighlight,
+      // No widget-height "big cursor" beside a table (#59): user selections landing on a table
+      // block's replaced range are remapped to the nearest outside line. Whole-table deletion
+      // lives in the cell context menu instead.
+      tableSelectionGuard,
       autosave,
       undoRedoScrollGuard,
       // Right-click a spelling / grammar / property mark → the shared app menu.
