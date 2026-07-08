@@ -13,9 +13,13 @@
 // replacement are deterministic Range operations (no execCommand — engine-agnostic, like
 // insertBreakAtCaret in tableWidget.ts), unit-tested under happy-dom.
 import { matchEmojiPrefix, searchEmoji, type EmojiEntry } from "./emoji";
+import { createPopoverIcon } from "../ui/popover/rowDom";
+import { completionIcon } from "../ui/popover/iconMap";
 
 const ZWSP = "​";
-const MENU_LIMIT = 8;
+// Match the editor's own emoji popup: searchEmoji's default cap (50). The list scrolls inside
+// the shared `.cm-tooltip-autocomplete > ul` max-height, exactly like the editor's does.
+const MENU_LIMIT = 50;
 
 // ── Pure trigger + key decision (DOM-free, unit-tested) ────────────────────────
 
@@ -135,14 +139,30 @@ export function replaceTokenBeforeCaret(cell: HTMLElement, tokenLen: number, rep
 
 /** Lightweight `:emoji:` autocomplete popup driven by a cell's `input` + `keydown`. One instance
  *  per table widget (only one cell is focused at a time); `destroy()`/`close()` remove the popup.
- *  The popup is appended to `document.body` (not inside the contenteditable) so it never becomes
- *  part of the cell source or gets clobbered by the display/edit face swap. */
+ *
+ *  VISUAL PARITY with the editor's own completion popup is structural, not re-created (#49
+ *  re-bounce: "looks completely different than the other emoji list"): the popup carries
+ *  CodeMirror's exact tooltip classes + DOM shape — `.cm-tooltip.cm-tooltip-autocomplete >
+ *  ul[role=listbox] > li[role=option]([aria-selected]) > span.cm-completionLabel` — and is
+ *  appended INSIDE the editor root (`host` = view.dom), where BOTH CM's base autocomplete theme
+ *  and the app's `completionTheme` (editor/completionDisplay.ts, the single source of completion
+ *  styling) are scoped. Every rule that styles the editor's popup styles this one identically —
+ *  container, row metrics, selected wash, label typography — so future theme changes hit both.
+ *  The row content matches the editor's emoji entries exactly: one `.cm-completionLabel` with
+ *  `${char}  :${name}:` (the editor's emoji completions render no icon — completionDisplayConfig
+ *  sets `icons:false` and emoji rows have no `type`/`lucideIcon`, so no icon span here either).
+ *  Being outside the contenteditable cell, it never becomes cell source or gets clobbered by the
+ *  display/edit face swap. */
 export class CellEmojiMenu {
   private popup: HTMLElement | null = null;
+  private list: HTMLElement | null = null;
   private items: EmojiEntry[] = [];
   private active = 0;
   private tokenLen = 0;
   private cell: HTMLElement | null = null;
+  /** The editor root (view.dom) the popup mounts into so CM-scoped themes apply; a null host
+   *  (tests / detached usage) falls back to the cell's document body. */
+  constructor(private readonly host: HTMLElement | null = null) {}
 
   isOpen(): boolean {
     return this.popup != null;
@@ -194,6 +214,7 @@ export class CellEmojiMenu {
   close(): void {
     this.popup?.remove();
     this.popup = null;
+    this.list = null;
     this.items = [];
     this.cell = null;
   }
@@ -205,23 +226,34 @@ export class CellEmojiMenu {
   private render(cell: HTMLElement): void {
     const doc = cell.ownerDocument;
     if (!this.popup) {
+      // CodeMirror's exact tooltip container classes + a marker class for our own wiring/tests.
+      // Mounted inside the editor root so the CM-scoped completion theme applies (see class doc).
       this.popup = doc.createElement("div");
-      this.popup.className = "cm-cell-emoji-menu";
+      this.popup.className = "cm-tooltip cm-tooltip-autocomplete cm-cell-emoji-menu";
       this.popup.setAttribute("contenteditable", "false");
-      doc.body.appendChild(this.popup);
+      const list = doc.createElement("ul");
+      list.setAttribute("role", "listbox");
+      list.setAttribute("aria-expanded", "true");
+      this.popup.appendChild(list);
+      this.list = list;
+      (this.host ?? doc.body).appendChild(this.popup);
     }
-    this.popup.replaceChildren();
+    const list = this.list!;
+    list.replaceChildren();
     this.items.forEach((e, i) => {
-      const row = doc.createElement("div");
-      row.className = "cm-cell-emoji-item" + (i === this.active ? " active" : "");
-      const glyph = doc.createElement("span");
-      glyph.className = "cm-cell-emoji-glyph";
-      glyph.textContent = e.char;
-      const name = doc.createElement("span");
-      name.className = "cm-cell-emoji-name";
-      name.textContent = `:${e.name}:`;
-      row.appendChild(glyph);
-      row.appendChild(name);
+      const row = doc.createElement("li");
+      row.setAttribute("role", "option");
+      if (i === this.active) row.setAttribute("aria-selected", "true");
+      // The editor's completionDisplayConfig prepends a row icon via createPopoverIcon —
+      // emoji options carry no `type`, so completionIcon(undefined) yields the ChevronRight
+      // default every editor emoji row shows. Same builder, same icon → identical rows.
+      const iconName = completionIcon(undefined);
+      if (iconName) row.appendChild(createPopoverIcon(iconName));
+      const label = doc.createElement("span");
+      label.className = "cm-completionLabel";
+      // EXACTLY the editor's emoji option label (autocomplete.ts): glyph, two spaces, :shortcode:.
+      label.textContent = `${e.char}  :${e.name}:`;
+      row.appendChild(label);
       // mousedown (not click) + preventDefault so picking an item never blurs the cell first
       // (a blur would commit + tear down the edit face before the insert).
       row.addEventListener("mousedown", (ev) => {
@@ -230,16 +262,20 @@ export class CellEmojiMenu {
         this.active = i;
         if (this.cell) this.accept(this.cell);
       });
-      this.popup!.appendChild(row);
+      list.appendChild(row);
     });
     this.position(cell);
   }
 
-  /** Repaint just the active-row highlight (no rebuild) on Up/Down. */
+  /** Repaint just the active-row highlight (no rebuild) on Up/Down — the same `[aria-selected]`
+   *  attribute CM's own popup marks its selected row with (the shared theme keys off it). */
   private paint(): void {
-    if (!this.popup) return;
-    Array.from(this.popup.children).forEach((el, i) => el.classList.toggle("active", i === this.active));
-    const activeEl = this.popup.children[this.active] as HTMLElement | undefined;
+    if (!this.list) return;
+    Array.from(this.list.children).forEach((el, i) => {
+      if (i === this.active) el.setAttribute("aria-selected", "true");
+      else el.removeAttribute("aria-selected");
+    });
+    const activeEl = this.list.children[this.active] as HTMLElement | undefined;
     activeEl?.scrollIntoView?.({ block: "nearest" });
   }
 
@@ -252,7 +288,9 @@ export class CellEmojiMenu {
       if (rr && (rr.width || rr.height || rr.top || rr.left)) rect = rr;
     }
     if (!rect) rect = cell.getBoundingClientRect();
+    // Fixed positioning, like CM's own tooltip default — viewport coords straight from the caret.
     this.popup.style.position = "fixed";
+    this.popup.style.zIndex = "100"; // CM's .cm-tooltip z-index
     this.popup.style.left = `${Math.round(rect.left)}px`;
     this.popup.style.top = `${Math.round(rect.bottom + 2)}px`;
   }

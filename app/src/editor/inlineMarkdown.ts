@@ -16,6 +16,9 @@ import { escapeHtml } from "../htmlEscape";
 import { renderCellListHtml } from "./cellList";
 import { bismuthWrapSource } from "./bismuthWord";
 import { type EmbedSpec, specForMarkdownImage, specForWikiEmbed } from "./embedSpec";
+// The live preview's emphasis token shapes (#58) — ONE source of truth for what counts as
+// bold/italic/strike, so a cell agrees with the note body about e.g. `**Case 1: $x$.**`.
+import { STRONG_STAR_RE, STRONG_UNDERSCORE_RE, EM_RE, STRIKE_RE } from "./inlineEmphasis";
 
 // An isolated `marked` instance so our config never leaks into the global one that
 // bases/markdown.ts configures (and vice-versa). GFM gives ~~strikethrough~~ + autolinks.
@@ -185,7 +188,7 @@ export function iridescentBismuthCell(src: string): string {
  *  chip so it stays openable (#33) rather than broken. Sizes are inline so the media fits the
  *  cell (`max-width:100%`, a capped height) with no external CSS. Read-only: the raw `![[…]]`
  *  source is shown only in the cell's EDIT face (srcToEditHtml), never here. */
-function renderEmbedSeg(seg: InlineSeg & { type: "embed" }, assetUrl: (t: string) => string): string {
+export function renderEmbedHtml(seg: InlineSeg & { type: "embed" }, assetUrl: (t: string) => string): string {
   const spec: EmbedSpec | null = seg.wiki
     ? specForWikiEmbed(seg.target, assetUrl)
     : specForMarkdownImage(seg.target, seg.alt ?? "", assetUrl);
@@ -241,15 +244,97 @@ function renderSeg(seg: InlineSeg, assetUrl: (t: string) => string): string {
     return `<span class="cm-tag" data-tag="${escapeAttr(seg.name)}">#${escapeHtml(seg.name)}</span>`;
   }
   if (seg.type === "embed") {
-    return renderEmbedSeg(seg, assetUrl);
+    return renderEmbedHtml(seg, assetUrl);
   }
   return inlineMarked.parseInline(iridescentBismuthCell(seg.raw), { async: false }) as string;
 }
 
+// ── Emphasis SPANNING a split segment (#58, the cell twin of inlineEmphasis.pushInline) ────────
+// tokenizeInline splits a cell's source at math/wikilink/embed/tag boundaries and feeds each md
+// run to `marked` SEPARATELY — so a bold/italic/strike token whose inner text CONTAINS one of
+// those segments (e.g. `**Case 1: $hk \in H$.**`) arrives at marked as two runs (`**Case 1: ` and
+// `.**`), neither of which closes, and the cell shows literal `**` instead of bold — the exact
+// #58 bug the note body had. The reference semantics (inlineEmphasis.pushInline): only the
+// DELIMITER RUNS must avoid math spans — emphasis chars INSIDE `$…$` are LaTeX and stay literal,
+// but a token whose delimiters sit in prose is legitimate emphasis even when its inner text
+// contains math. This pre-pass finds such SPANNING tokens on the whole source, renders them as an
+// HTML wrapper around the recursively-rendered inner content, and leaves every plain (non-
+// spanning) emphasis token to `marked` exactly as before — zero change to the existing path.
+
+/** Spans of inline `$…$` math in `src` (inclusive of the `$` delimiters), mirroring
+ *  tokenizeInline's scan: `$$` fences pass through, matchMath decides validity. */
+function mathSpansIn(src: string): { from: number; to: number }[] {
+  const spans: { from: number; to: number }[] = [];
+  let i = 0;
+  while (i < src.length) {
+    if (src[i] === "$" && src[i + 1] === "$") { i += 2; continue; } // display-math fence — not inline math
+    if (src[i] === "$") {
+      const end = matchMath(src, i);
+      if (end !== -1) { spans.push({ from: i, to: end }); i = end; continue; }
+    }
+    i++;
+  }
+  return spans;
+}
+
+/** An accepted spanning-emphasis token: [start, end) in the source, `markLen` delimiter chars on
+ *  each side, and the HTML wrapper to emit around the recursively-rendered inner content. */
+interface EmphToken { start: number; end: number; markLen: number; open: string; close: string }
+
+// `***bold italic***` needs its own shape when spanning math: the strong/em regexes alone leave
+// stray outer `*`s, but marked renders the plain version as <em><strong> — match that.
+const TRIPLE_STAR_RE = /\*\*\*([^*\n]+?)\*\*\*/g;
+
+/** Find emphasis tokens whose inner content SPANS a split segment (math/wikilink/embed/tag) and
+ *  whose delimiters live in prose (#58). Collection order = priority (triple → strong → em →
+ *  strike); overlapping later matches are dropped. Pure. */
+function spanningEmphasisTokens(src: string): EmphToken[] {
+  if (!/[*_~]/.test(src)) return []; // fast path: no emphasis chars at all
+  const math = mathSpansIn(src);
+  const inMath = (a: number, b: number): boolean => math.some((s) => a < s.to && b > s.from);
+  const found: EmphToken[] = [];
+  const collect = (re: RegExp, markLen: number, open: string, close: string): void => {
+    for (const m of src.matchAll(re)) {
+      const s = m.index ?? 0;
+      const e = s + m[0].length;
+      // #58 reference semantics: skip ONLY when a DELIMITER run overlaps math (those chars are
+      // LaTeX — e.g. the `*b*` inside `$a *b* c$`, or a closer sitting mid-math).
+      if (inMath(s, s + markLen) || inMath(e - markLen, e)) continue;
+      // Intercept ONLY a token whose inner truly spans a split segment; plain emphasis keeps
+      // the existing marked path (behavior-preserving gate).
+      const inner = src.slice(s + markLen, e - markLen);
+      if (!tokenizeInline(inner).some((seg) => seg.type !== "md")) continue;
+      found.push({ start: s, end: e, markLen, open, close });
+    }
+  };
+  collect(TRIPLE_STAR_RE, 3, "<em><strong>", "</strong></em>");
+  collect(STRONG_STAR_RE, 2, "<strong>", "</strong>");
+  collect(STRONG_UNDERSCORE_RE, 2, "<strong>", "</strong>");
+  collect(EM_RE, 1, "<em>", "</em>");
+  collect(STRIKE_RE, 2, "<del>", "</del>");
+  const kept: EmphToken[] = [];
+  for (const t of found) {
+    if (!kept.some((k) => t.start < k.end && t.end > k.start)) kept.push(t);
+  }
+  return kept.sort((a, b) => a.start - b.start);
+}
+
 /** Render a run of a cell's inline markdown (wikilinks/math/embeds split out, the rest via
- *  `marked`). One list item, or a whole non-list cell, is one run. */
+ *  `marked`). One list item, or a whole non-list cell, is one run. Emphasis tokens that SPAN a
+ *  split segment are wrapped here (recursively) so `**bold $math$**` styles correctly (#58);
+ *  everything else renders exactly as before. */
 function renderInlineRun(src: string, assetUrl: (t: string) => string): string {
-  return tokenizeInline(src).map((seg) => renderSeg(seg, assetUrl)).join("");
+  const tokens = spanningEmphasisTokens(src);
+  if (tokens.length === 0) return tokenizeInline(src).map((seg) => renderSeg(seg, assetUrl)).join("");
+  let out = "";
+  let i = 0;
+  for (const t of tokens) {
+    if (t.start > i) out += renderInlineRun(src.slice(i, t.start), assetUrl);
+    out += t.open + renderInlineRun(src.slice(t.start + t.markLen, t.end - t.markLen), assetUrl) + t.close;
+    i = t.end;
+  }
+  if (i < src.length) out += renderInlineRun(src.slice(i), assetUrl);
+  return out;
 }
 
 /** Options for `renderInlineMarkdown`. `assetUrl` maps an embed target to its GET /asset URL
