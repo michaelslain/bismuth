@@ -3,7 +3,7 @@
 // plugin calls only run inside a webview; what's tested here is the part that was broken
 // in the packaged app: success was reported without ever checking a file landed.
 import { test, expect, describe } from "bun:test";
-import { deliverFile, writeToFolder, type TauriDelivery } from "./download";
+import { deliverFile, writeToFolder, splitExtension, type TauriDelivery } from "./download";
 
 const BYTES = new Uint8Array([1, 2, 3]);
 
@@ -196,6 +196,94 @@ describe("deliverFile verify-after-write (success only when the file provably ex
     await expect(deliverFile("a.pdf", BYTES, "application/pdf", seam)).rejects.toThrow(
       /couldn't write \/Users\/u\/Desktop\/picked\.pdf/,
     );
+  });
+});
+
+describe("splitExtension (Finder-style base/ext split)", () => {
+  test("splits a normal extension", () => {
+    expect(splitExtension("homework 2.pdf")).toEqual({ base: "homework 2", ext: ".pdf" });
+  });
+  test("no extension → empty ext", () => {
+    expect(splitExtension("myfile")).toEqual({ base: "myfile", ext: "" });
+  });
+  test("dotted name splits only on the LAST dot", () => {
+    expect(splitExtension("my.note.md")).toEqual({ base: "my.note", ext: ".md" });
+  });
+  test("a leading-dot hidden file is not treated as an extension", () => {
+    expect(splitExtension(".gitignore")).toEqual({ base: ".gitignore", ext: "" });
+  });
+});
+
+describe("deliverFile Downloads de-dup (Finder-style collision rename)", () => {
+  test("free target → writes the base name (no rename)", async () => {
+    const { seam, revealed } = makeSeam(); // empty disk
+    const r = await deliverFile("homework 2.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2.pdf", verified: true });
+    expect(revealed).toEqual(["/Users/u/Downloads/homework 2.pdf"]);
+  });
+
+  test("target exists → renames to '(1)' and reveals the (1) path", async () => {
+    const disk = new Set(["/Users/u/Downloads/homework 2.pdf"]);
+    const { seam, revealed } = makeSeam({ disk });
+    const r = await deliverFile("homework 2.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2 (1).pdf", verified: true });
+    expect(revealed).toEqual(["/Users/u/Downloads/homework 2 (1).pdf"]); // reveal follows the final name
+    expect(disk.has("/Users/u/Downloads/homework 2.pdf")).toBe(true); // the original was NOT overwritten
+    expect(disk.has("/Users/u/Downloads/homework 2 (1).pdf")).toBe(true); // the new file landed
+  });
+
+  test("base and '(1)' both exist → renames to '(2)'", async () => {
+    const disk = new Set([
+      "/Users/u/Downloads/homework 2.pdf",
+      "/Users/u/Downloads/homework 2 (1).pdf",
+    ]);
+    const { seam } = makeSeam({ disk });
+    const r = await deliverFile("homework 2.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2 (2).pdf", verified: true });
+  });
+
+  test("no-extension name de-dups as 'name (1)' (ext stays empty)", async () => {
+    const disk = new Set(["/Users/u/Downloads/myfile"]);
+    const { seam } = makeSeam({ disk });
+    const r = await deliverFile("myfile", BYTES, "text/plain", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/myfile (1)", verified: true });
+  });
+
+  test("dotted name de-dups on the LAST dot: 'my.note.md' → 'my.note (1).md'", async () => {
+    const disk = new Set(["/Users/u/Downloads/my.note.md"]);
+    const { seam } = makeSeam({ disk });
+    const r = await deliverFile("my.note.md", BYTES, "text/markdown", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/my.note (1).md", verified: true });
+  });
+
+  test("exists() throwing during the collision probe falls back to the base name (old binary, no dedup)", async () => {
+    // An old binary lacking fs:allow-exists can't probe collisions. We must NOT loop or crash —
+    // just write the base name (the pre-dedup behavior), which the verified write reports UNVERIFIED.
+    let saveDialogCalls = 0;
+    const { seam } = makeSeam({
+      writeFile: async () => {}, // resolves; the file really lands in the real OS
+      exists: async () => {
+        throw new Error("no fs:allow-exists");
+      },
+      saveDialog: async () => {
+        saveDialogCalls++;
+        return null;
+      },
+    });
+    const r = await deliverFile("homework 2.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2.pdf", verified: false });
+    expect(saveDialogCalls).toBe(0); // never downgraded to the Save dialog
+  });
+});
+
+describe("writeToFolder de-dup (Finder-style collision rename)", () => {
+  test("collision in the output folder renames to '(1)' and reveals the final path", async () => {
+    const disk = new Set(["/Users/u/exports/n.md"]);
+    const { seam, revealed } = makeSeam({ disk });
+    const p = await writeToFolder("/Users/u/exports", "n.md", BYTES, seam);
+    expect(p).toBe("/Users/u/exports/n (1).md");
+    expect(revealed).toEqual(["/Users/u/exports/n (1).md"]);
+    expect(disk.has("/Users/u/exports/n.md")).toBe(true); // original preserved, not overwritten
   });
 });
 

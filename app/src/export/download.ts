@@ -69,6 +69,54 @@ async function realTauriDelivery(): Promise<TauriDelivery> {
   };
 }
 
+// Split a filename into its base name and final extension (the dot included), Finder-style:
+//   "homework 2.pdf" → { base: "homework 2", ext: ".pdf" }
+//   "myfile"         → { base: "myfile",     ext: "" }        (no extension)
+//   "my.note.md"     → { base: "my.note",    ext: ".md" }     (only the LAST dot splits)
+//   ".gitignore"     → { base: ".gitignore", ext: "" }        (a leading dot is not an ext)
+// Only the single final extension is considered — multi-part suffixes like ".tar.gz" are
+// treated as one extension (".gz"), which is out of scope for the collision renamer.
+export function splitExtension(filename: string): { base: string; ext: string } {
+  const dot = filename.lastIndexOf(".");
+  if (dot <= 0) return { base: filename, ext: "" }; // no dot, or a leading-dot hidden file
+  return { base: filename.slice(0, dot), ext: filename.slice(dot) };
+}
+
+// Give up after this many numbered candidates so a pathological Downloads folder (already
+// holding "x (1)"…"x (N)") can't spin forever — we fall back to a timestamped name.
+const MAX_DEDUP = 10_000;
+
+// Resolve a non-colliding absolute path inside `dir` for `filename`, Finder-style: if
+// "<base><ext>" already exists, try "<base> (1)<ext>", then "<base> (2)<ext>", and so on —
+// so a repeat export lands as a brand-new file (with a fresh date-added that sorts to the
+// TOP of a Date-Added Downloads) instead of silently overwriting or looking "missing".
+//
+// Collision probing uses the injectable `exists` seam (unit-testable without a webview). If
+// `exists` THROWS (e.g. an old binary lacking the fs:allow-exists capability) we can't tell
+// whether anything collides — so we stop probing and return the current candidate, exactly
+// reproducing the pre-dedup behavior on that binary. The subsequent verified write still
+// handles a missing capability gracefully (reports UNVERIFIED rather than failing).
+async function pickNonCollidingTarget(t: TauriDelivery, dir: string, filename: string): Promise<string> {
+  const first = await t.join(dir, filename);
+  try {
+    if (!(await t.exists(first))) return first;
+  } catch {
+    return first; // can't probe existence — behave exactly as before dedup existed
+  }
+  const { base, ext } = splitExtension(filename);
+  for (let n = 1; n <= MAX_DEDUP; n++) {
+    const candidate = await t.join(dir, `${base} (${n})${ext}`);
+    try {
+      if (!(await t.exists(candidate))) return candidate;
+    } catch {
+      return candidate; // can't probe — take this candidate rather than looping blind
+    }
+  }
+  // Pathological fallback: every numbered name up to the cap is taken. A timestamp is
+  // effectively collision-free, so we never infinite-loop.
+  return t.join(dir, `${base} ${Date.now()}${ext}`);
+}
+
 /** Browser fallback: Blob + <a download> anchor click. */
 function anchorDownload(filename: string, bytes: Uint8Array, mime: string): void {
   const blob = new Blob([bytes as BlobPart], { type: mime });
@@ -144,11 +192,15 @@ export async function deliverFile(
     return { via: "browser" };
   }
 
-  // Primary: the OS Downloads directory.
+  // Primary: the OS Downloads directory. De-dup the name Finder-style on collision so a
+  // repeat export of "homework 2.pdf" lands as "homework 2 (1).pdf" — a brand-new file with
+  // a fresh date-added (sorts to the TOP of a Date-Added Downloads) that the reveal below
+  // then selects, instead of silently overwriting the old one (which keeps its old
+  // date-added and sinks out of view).
   let target = "";
   let primaryError: Error | null = null;
   try {
-    target = await t.join(await t.downloadDir(), filename);
+    target = await pickNonCollidingTarget(t, await t.downloadDir(), filename);
     const outcome = await writeChecked(t, target, bytes);
     await revealBestEffort(t, target, reveal);
     return { via: "tauri", path: target, verified: outcome === "verified" };
@@ -181,6 +233,8 @@ export async function deliverFile(
  * so callers fall back to {@link deliverFile} there. Returns the absolute path written,
  * VERIFIED to exist (a resolved-but-missing write throws instead of reporting success).
  * Requires the folder to be inside the app's fs capability scope (see capabilities/default.json).
+ * Like the Downloads path, the name is de-duped Finder-style on collision (a repeat export of
+ * "n.md" lands as "n (1).md") so an export never silently overwrites an earlier one.
  * `reveal` (default true) selects the written file in Finder; multi-file callers pass it only
  * for the first file so the user gets one Finder window rather than one per file.
  */
@@ -193,7 +247,7 @@ export async function writeToFolder(
 ): Promise<string> {
   const t = tauri ?? (isTauri() ? await realTauriDelivery() : null);
   if (!t) throw new Error("Writing to a chosen folder is only available in the desktop app");
-  const target = await t.join(folder, filename);
+  const target = await pickNonCollidingTarget(t, folder, filename);
   try {
     await writeChecked(t, target, bytes);
   } catch (e) {
