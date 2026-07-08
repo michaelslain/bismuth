@@ -55,7 +55,24 @@ export function SymbolGallery(props: Props) {
     setActive(defaultActiveIndex(query(), items, props.current));
   });
 
-  onMount(() => inputRef?.focus());
+  // Focus the search box on mount so typing narrows immediately and Enter commits the top hit.
+  // When the gallery is opened from a TABLE CELL (#67), the cell's nested CodeMirror editor is
+  // kept alive (the isGalleryOpen teardown guard) and still holds DOM focus at this moment; in the
+  // packaged app's WebKit/WKWebView a programmatic `.focus()` issued during the opener's blur tick
+  // does not always stick — WebKit hands focus back to the editor, so keystrokes went to the cell,
+  // not this search box, and the top-result default / Enter-commit / arrow-nav never took (works in
+  // Chromium, which is why it looked fine outside the packaged app). Blur whatever is focused, focus
+  // now, AND re-assert on the next frame so the late WebKit focus-restore loses the race. Chromium
+  // is unaffected (the input is already focused; the re-focus is a no-op). `preventScroll` keeps a
+  // cell-anchored gallery from yanking the viewport.
+  onMount(() => {
+    const grab = (): void => {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      inputRef?.focus({ preventScroll: true });
+    };
+    grab();
+    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(grab);
+  });
 
   const commit = (value: string) => { props.onPick(value); props.onClose(); };
 
