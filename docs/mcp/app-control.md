@@ -36,7 +36,7 @@ bismuth app <verb>  ──HTTP──▶  core /ui/command  ──WebSocket──
 | `focus-tab` | `{tabId}` | Activate a tab |
 | `run-command` | `{id}` | Run a command-catalog id (`core/src/commands.ts`) — allowlist-gated |
 
-`content` is a vault path (`reading/x.md`) or a sentinel: `::graph`, `::search`, `::inbox`, `.settings`, `::term:<uuid>`. **`::chat:*` is refused** — opening a live recursive Agent-SDK chat is a deliberately different trust boundary.
+`content` is a vault path (`reading/x.md`) or a sentinel: `::graph`, `::inbox`, `.settings`, `::term:<uuid>`. (There is no `::search` sentinel — search is the in-window Cmd+O switcher, not a tab.) **`::chat:*` is refused** — opening a live recursive Agent-SDK chat is a deliberately different trust boundary.
 
 ## `bismuth app` (needs a running app)
 

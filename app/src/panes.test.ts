@@ -358,6 +358,38 @@ test("deserialize re-ids nodes so a layout with duplicate ids is healed", () => 
   expect(activeTabId).toBe(tabs[0].id);
 });
 
+import { migrateLegacyContent, LEGACY_CONTENT_IDS } from "./panes";
+
+// #8 (unified search): the ::search tab was removed — search IS the Cmd+O switcher now. A layout
+// persisted by an older build may still hold a ::search leaf; restore must migrate it to a graph
+// home tab rather than crash or route it to a removed view.
+test("deserialize migrates a persisted ::search tab to ::graph (the Search tab is gone)", () => {
+  const tab = makeTab("::search");
+  const json = serializeTabs([tab], tab.id);
+  const { tabs, activeTabId } = deserializeTabs(json, () => true);
+  expect(tabs.length).toBe(1);
+  expect((tabs[0].root as Leaf).content).toBe("::graph");
+  expect(activeTabId).toBe(tabs[0].id);
+});
+
+test("deserialize migrates a ::search leaf inside a split, leaving its sibling untouched", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  const r2 = setContent(r1, (r1 as Split).b.id, "::search");
+  const tab = { ...makeTab("x"), root: r2, focusId: (r2 as Split).a.id };
+  const { tabs } = deserializeTabs(serializeTabs([tab], tab.id), () => true);
+  const restored = tabs[0].root as Split;
+  expect((restored.a as Leaf).content).toBe("a.md");
+  expect((restored.b as Leaf).content).toBe("::graph");
+});
+
+test("migrateLegacyContent returns the SAME node when nothing needs rewriting", () => {
+  const root = makeLeaf("a.md");
+  const { root: r1 } = splitLeaf(root, root.id, "row");
+  expect(migrateLegacyContent(r1)).toBe(r1); // identity — no churn on modern layouts
+  expect(Object.keys(LEGACY_CONTENT_IDS)).toContain("::search");
+});
+
 import { setRatio } from "./panes";
 
 test("setRatio updates only the targeted split", () => {

@@ -21,9 +21,8 @@ const ExportView = lazy(() => import("./ExportView").then((m) => ({ default: m.E
 // Lazy: the daemon inbox is only visited when the daemon is enabled; keep it off the entry bundle.
 const InboxView = lazy(() => import("./InboxView").then((m) => ({ default: m.InboxView })));
 import type { NoteCandidate } from "./editor/wikilink";
-import { SEARCH_TAB, GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, ANNOTATE_PREFIX, isSentinel } from "./tabIds";
+import { GRAPH_TAB, INBOX_TAB, TERMINAL_PREFIX, EXPORT_PREFIX, CHAT_PREFIX, ANNOTATE_PREFIX, isSentinel } from "./tabIds";
 import { isPreviewPath } from "./preview/previewKind";
-import { SearchView } from "./SearchView";
 
 export function PaneContent(props: {
   path: string;
@@ -56,9 +55,9 @@ export function PaneContent(props: {
           <ExportView path={props.path.slice(EXPORT_PREFIX.length)} />
         </Suspense>
       </Match>
-      <Match when={props.path === SEARCH_TAB}>
-        <SearchView onOpen={props.onOpen} />
-      </Match>
+      {/* There is NO ::search route anymore (#8: search unified into the Cmd+O switcher) —
+          persisted ::search tabs are migrated to ::graph on restore (panes.ts deserializeTabs);
+          anything that slips through lands on the unknown-sentinel EmptyPane below. */}
       <Match when={props.path === INBOX_TAB}>
         <Suspense fallback={<div class="full" />}>
           <InboxView onOpen={props.onOpen} />

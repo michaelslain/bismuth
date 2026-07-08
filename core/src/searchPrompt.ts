@@ -17,7 +17,7 @@
 //      is already validated, so we derive a snippet from the real body around the best shared keyword
 //      (from the quote, then the question), falling back to the note's first line. The user always
 //      sees the notes the model chose, with a real body snippet.
-//   4. Every snippet's before/match/after is sliced from the real body bytes — SearchView renders it
+//   4. Every snippet's before/match/after is sliced from the real body bytes — the switcher renders it
 //      identically to a literal hit (same MatchSnippet shape).
 //
 // The daemon is deliberately NOT involved (latency + it's off by default); this path is always-on in
@@ -190,7 +190,7 @@ function lineNumberAt(body: string, idx: number): number {
  * Build the clamped single-line `MatchSnippet` for the ORIGINAL byte range `[start, end)` of `body`.
  * `before`/`match`/`after` are sliced from the real body bytes and clamped to the single line
  * containing `start`, so `before + match + after === body.split("\n")[line-1]` always holds — exactly
- * the shape SearchView renders. A range spanning multiple lines shows just its first line.
+ * the shape the Cmd+O switcher renders. A range spanning multiple lines shows just its first line.
  */
 function snippetAt(body: string, start: number, end: number): MatchSnippet {
   const lineStart = body.lastIndexOf("\n", start - 1) + 1; // 0 when there's no preceding newline

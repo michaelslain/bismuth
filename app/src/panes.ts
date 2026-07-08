@@ -406,6 +406,27 @@ export function splitColdLaunch(layout: Persisted): { restore: Persisted; stash:
   return { restore: { tabs: pinned, activeTabId }, stash };
 }
 
+// Content ids that no longer exist, mapped to their modern equivalent. A layout persisted by
+// an older build may still hold them; deserializeTabs rewrites each leaf through this map so
+// a restored tab never routes to a removed view. "::search" is the former Search tab — search
+// was unified into the Cmd+O switcher takeover (#8: "the search tab and the cmd+o should be
+// the same thing"), so a persisted search tab becomes a graph home tab.
+export const LEGACY_CONTENT_IDS: Record<string, string> = {
+  "::search": "::graph",
+};
+
+/** Rewrite legacy leaf content ids (see LEGACY_CONTENT_IDS); returns the same node when
+ *  nothing changes so no-op restores don't churn. Exported for tests. */
+export function migrateLegacyContent(node: PaneNode): PaneNode {
+  if (node.kind === "leaf") {
+    const to = LEGACY_CONTENT_IDS[node.content];
+    return to ? { ...node, content: to } : node;
+  }
+  const a = migrateLegacyContent(node.a);
+  const b = migrateLegacyContent(node.b);
+  return a === node.a && b === node.b ? node : { ...node, a, b };
+}
+
 // Give every node a fresh unique id, recording old→new so references (focusId) can be
 // remapped. Heals layouts persisted with duplicate ids (the counter-reset bug) and
 // guarantees uniqueness regardless of what was stored.
@@ -435,7 +456,9 @@ export function deserializeTabs(
   const tabs: Tab[] = [];
   const tabIdMap = new Map<string, string>();
   for (const t of parsed.tabs) {
-    const pruned = pruneMissing(t.root, exists);
+    // Rewrite legacy content ids FIRST (e.g. the removed "::search" tab → "::graph") so the
+    // exists() prune and everything downstream only ever sees current ids.
+    const pruned = pruneMissing(migrateLegacyContent(t.root), exists);
     if (!pruned) continue;
     const idMap = new Map<string, string>();
     const root = reassignIds(pruned, idMap);

@@ -69,7 +69,7 @@ export const commands: CommandMap = {
     run: async (args) => out(await command(args, "list-tabs", {}), args),
   },
   "app open": {
-    summary: "Open a note path or sentinel (::graph/::search/::inbox/.settings/::term:<uuid>) in a window",
+    summary: "Open a note path or sentinel (::graph/::inbox/.settings/::term:<uuid>) in a window",
     usage: "<content> [--new-tab] [--window <id>]",
     run: async (args) => {
       const [content] = positionals(args);

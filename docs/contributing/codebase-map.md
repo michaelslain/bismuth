@@ -469,16 +469,16 @@ Root component. Owns: tab + pane tree state (via `panes.ts` model), active file 
 Key logic: `applyView(graph, view)` overwrites node positions with a brain-view's precomputed layout for 2nd/3rd modes. Storage keys: `"bismuth-tabs-v1"`, `"bismuth-sidebar-visible-v1"`, `"bismuth-graph-cache-v1"`, `"bismuth-theme-vars-v1"`.
 
 #### `panes.ts`
-Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts`.
+Pure binary-tree pane model (no DOM, no Solid). Types: `Leaf { kind, id, content }`, `Split { kind, id, dir, ratio, a, b }`, `PaneNode = Leaf | Split`, `Tab { id, root, focusId, name? }`. Operations: `makeLeaf`, `makeTab`, `splitLeaf`, `closeLeaf`, `equalize`, `focusNeighbor`, `setContent`, `setRatio`, `findLeafByContent`, `leaves`, `leafCount`, `pruneMissing`, `migrateLegacyContent` (rewrites removed content ids on restore — `LEGACY_CONTENT_IDS`, e.g. `::search` → `::graph`), `movePane`, `reorderTabs`, `splitLeafWithNode`, `replaceLeafWithNode`, `replacePaneWithPane`, `detachLeafToTab`, `serializeTabs`, `deserializeTabs`, `resolveFocus`. Fully unit-tested in `panes.test.ts`.
 
 #### `tabIds.ts`
-Sentinel content ids (all start with `::`): `SEARCH_TAB = "::search"`, `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids.
+Sentinel content ids (all start with `::`): `GRAPH_TAB = "::graph"`, `EMPTY_PANE = "::empty"`, and the prefixed ids `TERMINAL_PREFIX = "::term:"`, `EXPORT_PREFIX = "::export:"`, plus the `::flashcards:` prefix (consistent with the sentinel list in `CLAUDE.md`). `contentLabel(content, terminalIndex?)` and `contentIcon(content)` derive display strings/icons from content ids. There is **no `::search` sentinel** — search is the unified Cmd+O switcher takeover (`palette/SwitcherBar.tsx`); persisted `::search` tabs from older builds are migrated to `::graph` on restore (`LEGACY_CONTENT_IDS` in `panes.ts`).
 
 #### `PaneTree.tsx`
 Renders the binary pane tree; manages pane drag-and-drop via `dnd/viewDrag.ts`. Handles split/close/resize interactions.
 
 #### `PaneContent.tsx`
-Routes a pane content id to the correct view component. Note path → `FileView`; `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::search` → `SearchView`; `::export:*` → `ExportView`; `.settings` → `Editor`; `type: base` files → `BaseView`.
+Routes a pane content id to the correct view component. Note path → `FileView`; `*.sheet` → `SheetView`; `*.draw` → `DrawingPage`; `::graph` → (forwarded to `App`'s `renderGraph` prop); `::term:*` → `TerminalTab`; `::export:*` → `ExportView`; `.settings` → `Editor`; `type: base` files → `BaseView`. Unknown/legacy sentinels fall back to `EmptyPane` (there is no `::search` route — see `tabIds.ts`).
 
 ---
 
@@ -820,8 +820,14 @@ Modal for installing/updating the daemon service. Calls `POST /daemon/setup`.
 #### `palette/CommandPalette.tsx`
 Full command palette. Fuzzy-matches against `COMMAND_CATALOG` bound commands plus note names. Triggered by `Cmd+K` (default keybinding).
 
-#### `palette/QuickSwitcher.tsx`
-Note quick-switcher. Fuzzy-matches vault note names.
+#### `palette/SwitcherBar.tsx`
+The in-window Cmd+O switcher takeover — the app's **one search surface** (the former `::search` tab folded into it). One list: fuzzy file-name matches (`rankItems`), keyword content matches (`POST /search`, debounced, deduped/freshness-gated by `switcherModel.ts`), and the Bismuth AI escalation (`POST /search-prompt`) on zero/weak results (empty-state CTA, Cmd+Enter force-path, loading/error/result panels). Also opened by the `search` command (sidebar icon / palette / native menu).
+
+#### `palette/switcherAi.ts`
+Pure AI-escalation logic: `isNaturalLanguageQuery` (3+ words), `shouldOfferAiEscalation`, and the generation-guarded `switcherAiReducer` (idle/loading/results/error — a keystroke supersedes an in-flight turn). Tested in `switcherAi.test.ts`.
+
+#### `palette/switcherModel.ts`
+Pure unified-list model: `visibleContent` (content rows only render when computed for exactly the current query, deduped against file rows) and `planSwitcherEnter` (commit / ask-ai / none). Tested in `switcherModel.test.ts`.
 
 #### `palette/TemplatePalette.tsx`
 Template picker palette.
@@ -940,11 +946,11 @@ Editable note title bar above the editor. Handles rename (writes frontmatter `ti
 #### `noteTitleOps.ts`
 Pure helpers for note title operations (derive title from path, detect custom title, etc.). Tested.
 
-#### `SearchView.tsx`
-Full-text search pane. Calls `POST /search`, displays `SearchResult[]` with snippets.
+#### `searchResults.tsx`
+Shared `.sresult` result-card renderer (`SearchResultRows` + `splitPath`) for the switcher's keyword content matches and Bismuth AI results — file header + optional AI rationale + matched snippets, with keyboard-selection support. Styles in `searchResults.css`. (The former standalone `SearchView.tsx` Search tab was removed when search unified into the Cmd+O switcher; vault-wide find-and-replace remains via the CLI / `POST /replace`.)
 
 #### `searchOpts.ts`
-`SearchOpts` type and serialization helpers. Tested.
+`SearchOpts` flags for `POST /search` and the `SearchResult`/`MatchSnippet` shapes shared by `/search` and `/search-prompt`.
 
 #### `EmptyPane.tsx`
 Rendered for `::empty` pane content.

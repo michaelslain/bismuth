@@ -231,12 +231,12 @@ export const api = {
   backup: () => post("/backup", {}).then(() => {}),
   search: (query: string, opts: SearchOpts) =>
     postJson<SearchResult[]>("/search", { query, opts }),
-  // AI prompt-search fallback (one-shot Haiku re-rank of keyword candidates). Enter-gated in the UI;
-  // 400 when Claude Code isn't installed, 500 on a model failure — both surfaced inline by SearchView.
+  // AI prompt-search fallback (one-shot Haiku re-rank of keyword candidates). Enter-gated in the
+  // UI; 400 when Claude Code isn't installed, 500 on a model failure — both surfaced inline by
+  // the Cmd+O switcher's error panel (palette/SwitcherBar.tsx). (Vault-wide find-and-replace has
+  // no GUI since the Search tab folded into the switcher — POST /replace remains for the CLI.)
   searchPrompt: (query: string) =>
     postJson<SearchResult[]>("/search-prompt", { query }),
-  replace: (query: string, replacement: string, opts: SearchOpts, scope: string) =>
-    postJson<{ replaced: number; files: string[] }>("/replace", { query, replacement, opts, scope }),
   meta: (path: string) =>
     getJson<Record<string, unknown>>(`/meta?path=${encodeURIComponent(path)}`),
   version: () =>

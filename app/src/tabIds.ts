@@ -2,7 +2,9 @@
 // Sentinel content ids that aren't real note paths. No real path begins with "::".
 import { previewKind } from "./preview/previewKind";
 
-export const SEARCH_TAB = "::search";
+// NOTE: there is no ::search sentinel anymore — search is the Cmd+O switcher takeover (#8:
+// "the search tab and the cmd+o should be the same thing"). Persisted "::search" tabs from
+// older builds are migrated to ::graph on restore (see LEGACY_CONTENT_IDS in panes.ts).
 export const EMPTY_PANE = "::empty";
 // The Knowledge Graph as a first-class tab (the "Open graph view" / "New tab" commands open this).
 export const GRAPH_TAB = "::graph";
@@ -13,7 +15,7 @@ export const EXPORT_PREFIX = "::export:";
 // Chat session with Claude Code: CHAT_PREFIX + "<chat id>".
 export const CHAT_PREFIX = "::chat:";
 // The daemon inbox — pages awaiting approval/dismissal (core/src/daemonPages.ts). One tab, like
-// SEARCH_TAB/GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
+// GRAPH_TAB (not per-instance, unlike CHAT_PREFIX/TERMINAL_PREFIX).
 export const INBOX_TAB = "::inbox";
 // Annotate (mark up) an image/PDF on the `.draw` sidecar surface: ANNOTATE_PREFIX + "<file path>".
 // This is the SECONDARY action reached from a preview's "Annotate" button — a plain image/PDF
@@ -54,7 +56,6 @@ function noteName(path: string): string {
 // `terminalIndex` lets the caller pass the 1-based position among open terminal tabs
 // (terminals don't have intrinsic names), so the label can be "Terminal N".
 export function contentLabel(content: string, terminalIndex?: number): string {
-  if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "New tab"; // the graph IS the home/new tab; label reads as such (icon stays Share2)
   if (content === INBOX_TAB) return "Inbox";
   if (content === EMPTY_PANE) return ""; // blank header — an empty pane reads as truly empty
@@ -70,7 +71,6 @@ export function contentLabel(content: string, terminalIndex?: number): string {
 // Lucide icon NAME for a pane/tab content id, or undefined for plain notes / empty panes.
 // Rendered before the label by the tab bar and pane headers.
 export function contentIcon(content: string): string | undefined {
-  if (content === SEARCH_TAB) return "Search";
   if (content === GRAPH_TAB) return "Share2";
   if (content === INBOX_TAB) return "Inbox";
   if (content.startsWith(EXPORT_PREFIX)) return "Download";

@@ -1,15 +1,15 @@
 // app/src/frecency.ts
 // Frecency = FREQuency + reCENCY. A tiny per-machine store that lets every search
 // surface LEARN from usage: results you pick often and recently float up next time.
-// Used by the Cmd+P command palette, the Cmd+O quick switcher, and the ::search tab
-// (see PaletteModal.tsx for the ranking blend, and each surface for hit recording).
+// Used by the Cmd+P command palette and the unified Cmd+O switcher (see PaletteModal.tsx
+// for the ranking blend, and each surface for hit recording).
 //
 // KEYING — one shared store, namespaced by surface-kind so kinds never collide:
 //   files    → `file:<vault-path>`   (fileKey)
 //   commands → `cmd:<command-id>`     (commandKey)
-// Files share ONE namespace across Cmd+O and ::search on purpose: opening a file from
-// full-text search also boosts it in the quick switcher — a single "recently used
-// file" notion regardless of which surface opened it. Commands live in their own
+// Files share ONE namespace across every row kind of the switcher on purpose: opening a
+// file from a content-match or AI result also boosts it in the fuzzy file list — a single
+// "recently used file" notion regardless of which row opened it. Commands live in their own
 // namespace so a note named "terminal" and the `terminal` command never interfere.
 //
 // DECAY — each key stores a single exponentially-decayed hit count plus the time of its

@@ -1,23 +1,30 @@
 // app/src/palette/switcherAi.ts
 //
 // Pure escalation decision + request-lifecycle reducer for the Cmd+O switcher's "ask Bismuth AI"
-// affordance (BUG #8, 6th bounce). See SwitcherBar.tsx for the full story: every earlier fix
-// targeted the Search TAB (SearchView.tsx / searchEnter.ts), but the user only ever searches from
-// the switcher, which never had an AI escalation path. Extracted to its own module (no Solid, no
-// DOM, no api client) so both pieces are unit-testable in isolation — same idiom as searchEnter.ts.
-import { isNaturalLanguageQuery } from "../searchEnter";
+// affordance (BUG #8). Since the search-surface unification (7th round: "the search tab and the
+// cmd+o should be the same thing") the switcher IS the app's only search UX, so this module is
+// the one home of the AI-escalation logic — the former Search tab (SearchView.tsx/searchEnter.ts)
+// is gone. Extracted from the component (no Solid, no DOM, no api client) so every piece is
+// unit-testable in isolation; the row merge + Enter plan live next door in switcherModel.ts.
 import type { SearchResult } from "../searchOpts";
+
+// A query only "counts" as a natural-language question once it has a few words. Both the fuzzy
+// FILENAME match (rankItems.ts) and the keyword CONTENT match (/search) are lenient, so a short
+// one/two-word miss is still very plausibly a garbled attempt at a filename or keyword — not a
+// question for Bismuth AI.
+const MIN_WORDS_FOR_AI_ESCALATION = 3;
+
+/** True once `query` has more than a couple words — gates the "Press Enter to ask Bismuth AI"
+ *  affordance so a short fuzzy-filename/keyword miss doesn't immediately escalate to AI. */
+export function isNaturalLanguageQuery(query: string): boolean {
+  return query.trim().split(/\s+/).filter(Boolean).length >= MIN_WORDS_FOR_AI_ESCALATION;
+}
 
 /**
  * Whether the switcher should offer "ask Bismuth AI" for the current query — as the empty-state
- * affordance (replacing "No matching files") AND as what Enter does when the fuzzy file list is
- * empty. `matchCount` is the number of fuzzy FILENAME matches currently shown (rankItems.ts).
- *
- * Fuzzy filename matching is lenient (typo-tolerant, substring/subsequence), so zero matches is
- * already a fairly strong "this isn't a filename" signal on its own — but a short one/two-word
- * miss is still very plausibly a garbled attempt at a filename (a real note whose name doesn't
- * quite match), not a natural-language question. `isNaturalLanguageQuery` (searchEnter.ts) gates
- * on word count so the AI affordance only appears for genuinely question-shaped queries.
+ * affordance (replacing "No matching files") AND as what Enter does when the unified result list
+ * (fuzzy file matches + keyword content matches) is empty. `matchCount` is the number of rows
+ * currently shown.
  */
 export function shouldOfferAiEscalation(query: string, matchCount: number): boolean {
   return matchCount === 0 && isNaturalLanguageQuery(query);
