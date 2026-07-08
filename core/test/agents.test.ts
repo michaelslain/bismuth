@@ -104,6 +104,60 @@ test("a session past its heartbeat window stays awake while a subagent is runnin
   expect(g.nodes.find((n) => n.id === "agent:sub:a1")?.state).toBe("awake");
 });
 
+test("a workflow-spawned subagent carries the workflow marker on its node AND edge", () => {
+  const g = buildAgentGraph(
+    snap({
+      sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }],
+      subagents: [
+        { agentId: "a1", parentSessionId: "s1", agentType: "impl", startedAt: TWO_MIN_AGO, done: false, workflowId: "wf-42" },
+        { agentId: "a2", parentSessionId: "s1", agentType: "impl", startedAt: TWO_MIN_AGO, done: false, workflowId: "wf-42" },
+      ],
+    }),
+    new Set(["tab-1"]),
+    NOW,
+  );
+  // Both subagents of the same workflow share the group key on their nodes.
+  expect(g.nodes.find((n) => n.id === "agent:sub:a1")?.workflow).toBe("wf-42");
+  expect(g.nodes.find((n) => n.id === "agent:sub:a2")?.workflow).toBe("wf-42");
+  // Their session→subagent edges are marked as workflow-lane connections.
+  const e1 = g.edges.find((e) => e.to === "agent:sub:a1");
+  const e2 = g.edges.find((e) => e.to === "agent:sub:a2");
+  expect(e1).toEqual({ from: "agent:sess:s1", to: "agent:sub:a1", kind: "message", workflow: "wf-42" });
+  expect(e2).toEqual({ from: "agent:sess:s1", to: "agent:sub:a2", kind: "message", workflow: "wf-42" });
+});
+
+test("an ordinary (non-workflow) subagent carries NO workflow marker — unchanged rendering", () => {
+  const g = buildAgentGraph(
+    snap({
+      sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }],
+      subagents: [{ agentId: "a1", parentSessionId: "s1", agentType: "Explore", startedAt: TWO_MIN_AGO, done: false }],
+    }),
+    new Set(["tab-1"]),
+    NOW,
+  );
+  const node = g.nodes.find((n) => n.id === "agent:sub:a1")!;
+  const edge = g.edges.find((e) => e.to === "agent:sub:a1")!;
+  expect(node.workflow).toBeUndefined();
+  expect("workflow" in edge).toBe(false); // exactly the ordinary { from, to, kind } shape
+  expect(edge).toEqual({ from: "agent:sess:s1", to: "agent:sub:a1", kind: "message" });
+});
+
+test("workflow and ordinary subagents coexist under one session — only the workflow ones are marked", () => {
+  const g = buildAgentGraph(
+    snap({
+      sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }],
+      subagents: [
+        { agentId: "wf", parentSessionId: "s1", agentType: "impl", startedAt: TWO_MIN_AGO, done: false, workflowId: "wf-7" },
+        { agentId: "plain", parentSessionId: "s1", agentType: "Explore", startedAt: TWO_MIN_AGO, done: false },
+      ],
+    }),
+    new Set(["tab-1"]),
+    NOW,
+  );
+  expect(g.edges.find((e) => e.to === "agent:sub:wf")?.workflow).toBe("wf-7");
+  expect(g.edges.find((e) => e.to === "agent:sub:plain")?.workflow).toBeUndefined();
+});
+
 test("several subagents under one session, plus a second session whose tab is closed", () => {
   const g = buildAgentGraph(
     snap({

@@ -36,6 +36,24 @@ export function relayUrl(): string {
   return process.env.CLAUDE_RELAY_URL || "http://localhost:4321";
 }
 
+/**
+ * Workflow-group key for a subagent spawned as part of a workflow orchestration, or
+ * undefined for a plain interactive Agent-tool subagent. A workflow orchestration script
+ * sets `CLAUDE_WORKFLOW_ID` (preferred, explicit) or runs under a per-workflow job dir
+ * `CLAUDE_JOB_DIR` (whose basename is a stable per-workflow key); both are inherited by
+ * every subagent the workflow spawns, so they share one key. Undefined → ordinary
+ * (non-workflow) subagent, rendered exactly as before. */
+export function workflowId(): string | undefined {
+  const explicit = process.env.CLAUDE_WORKFLOW_ID?.trim();
+  if (explicit) return explicit;
+  const jobDir = process.env.CLAUDE_JOB_DIR?.trim();
+  if (jobDir) {
+    const base = jobDir.replace(/[/\\]+$/, "").split(/[/\\]/).pop();
+    if (base) return base;
+  }
+  return undefined;
+}
+
 /** This vault's daemon memory dir, or undefined. terminal.ts injects BISMUTH_MEMORY_DIR
  *  only when settings.daemon.enabled — so its presence is the gate for memory recall +
  *  collection (both no-op without it). */
