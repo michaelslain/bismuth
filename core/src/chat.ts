@@ -76,6 +76,11 @@ export type ChatFrame =
   /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
    *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
   | { type: "title"; title: string }
+  /** The SDK session_id this chat is bound to, emitted the moment it's first learned (and again if
+   *  it ever changes — e.g. after a resume). The client persists it keyed by the chat TAB id so a
+   *  reopened tab (Cmd+Shift+T) can RESUME the same conversation instead of spawning a blank one —
+   *  the session_id is the durable, on-disk identity of the conversation (app/src/chatSessionStore.ts). */
+  | { type: "session"; sessionId: string }
   /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
   | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
   /** A fatal problem. `no-claude` = the CLI isn't installed (surface setup, never fall back to an
@@ -1154,12 +1159,21 @@ async function drain(session: ChatSession): Promise<void> {
   // tool-loop turn accounts per message.
   let streamedTextLen = 0;
   let streamedThinkingLen = 0;
+  // The last session_id we told the client about, so we emit a `session` frame only when it's first
+  // learned or actually changes (a resume can hand us a new id), not on every message.
+  let sentSessionId = session.sessionId;
   try {
     for await (const msg of session.q as AsyncIterable<SDKMessage>) {
       // Capture the session id wherever it appears.
       const anyMsg = msg as { session_id?: string };
       if (typeof anyMsg.session_id === "string" && anyMsg.session_id) {
         session.sessionId = anyMsg.session_id;
+        // Tell the client the durable session_id the moment it's known so it can persist it keyed by
+        // the chat TAB (chatSessionStore.ts) — reopening the tab then resumes THIS conversation.
+        if (anyMsg.session_id !== sentSessionId) {
+          sentSessionId = anyMsg.session_id;
+          emit(session, { type: "session", sessionId: anyMsg.session_id });
+        }
       }
 
       if (msg.type === "system" && msg.subtype === "init") {
