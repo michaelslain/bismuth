@@ -42,6 +42,9 @@ import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMod
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from "./chatEffort";
 import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
 import { wikilinkFor } from "./dnd/noteRef";
+import { ChatComposer, type ComposerHandle } from "./ChatComposer";
+import { classifyComposerKey } from "./chatComposerKeys";
+import type { NoteCandidate } from "./editor/wikilink";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -297,7 +300,7 @@ function buildEditorContext(hiddenPaths: ReadonlySet<string>): string {
   });
 }
 
-export function ChatView(props: { chatId: string }) {
+export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   const [transcript, setTranscript] = createStore<TurnItem[]>([]);
   const [draft, setDraft] = createSignal("");
   // Base64 images staged in the composer (dropped or pasted), sent as SDK image content blocks on
@@ -426,7 +429,10 @@ export function ChatView(props: { chatId: string }) {
   let ws: WebSocket | undefined;
   let host: HTMLDivElement | undefined; // chat pane root — the drop hit-test target (BUG #54)
   let list!: HTMLDivElement;
-  let ta!: HTMLTextAreaElement;
+  // Imperative handle onto the live-preview composer (ChatComposer) — the reply/mention/slash-pick
+  // flows drive focus + scroll-into-view through it, replacing the old raw-textarea `ta` ref.
+  let composer: ComposerHandle | undefined;
+  const focusComposer = () => composer?.focus();
   // Reconnection state — exponential backoff, cleared on successful open (mirrors Terminal.tsx).
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectAttempt = 0;
@@ -883,7 +889,6 @@ export function ChatView(props: { chatId: string }) {
       setAttachments([]);
       closeSlash();
       scrollToBottom(true);
-      queueMicrotask(() => autoGrow());
       return;
     }
     const images = atts.map((a) => ({ media_type: a.mediaType, data: a.data }));
@@ -900,7 +905,6 @@ export function ChatView(props: { chatId: string }) {
     setStreaming(true);
     closeSlash();
     scrollToBottom(true); // sending always re-pins to the bottom
-    queueMicrotask(() => autoGrow());
   };
 
   const stop = () => {
@@ -1058,7 +1062,7 @@ export function ChatView(props: { chatId: string }) {
     setHistoryOpen(false);
     resetTranscript();
     reconnectOn(crypto.randomUUID());
-    ta?.focus();
+    focusComposer();
   };
 
   /** Open the history panel and (re)fetch the user's existing sessions for the vault. */
@@ -1097,7 +1101,7 @@ export function ChatView(props: { chatId: string }) {
     }
     for (const frame of frames) onFrame(frame);
     scrollToBottom(true); // jump to the latest turn of the resumed conversation
-    ta?.focus();
+    focusComposer();
   };
 
   // ── Slash-command autocomplete ────────────────────────────────────────────────────────────
@@ -1139,47 +1143,36 @@ export function ChatView(props: { chatId: string }) {
     if (!cmd) return;
     setDraft(`/${cmd} `);
     closeSlash();
-    ta?.focus();
-    queueMicrotask(() => autoGrow());
+    focusComposer();
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    // While the slash popover is open it owns the navigation keys.
-    if (slashOpen()) {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Escape") {
-        slashNav.onKeyDown(e);
-        return;
-      }
-      if (e.key === "Enter" && !e.shiftKey) {
+  // Composer keydown, delegated from ChatComposer's CodeMirror instance. Returns TRUE when it fully
+  // handled the key (CodeMirror then stops) or FALSE to let CodeMirror handle it — notably Shift+Enter,
+  // which falls through to CodeMirror's plain-newline insertion. ChatComposer never calls this for
+  // keys the vault autocomplete popup owns while it's open, so the [[wikilink]]/tag/emoji menu keeps
+  // its own Arrow/Enter/Escape/Tab navigation.
+  const onComposerKey = (e: KeyboardEvent): boolean => {
+    // Pure routing (chatComposerKeys.ts) decides WHAT the key means; this maps it to the effect.
+    switch (classifyComposerKey(e, { slashOpen: slashOpen(), streaming: streaming() })) {
+      case "slash-nav":
+        slashNav.onKeyDown(e); // preventDefaults Arrow/Enter itself
+        return true;
+      case "slash-select":
         e.preventDefault();
         chooseSlash(slashNav.active());
-        return;
-      }
-    }
-    // Escape interrupts the in-flight turn (Claude Code TUI parity). Only when the slash
-    // popover isn't open — it owns Escape above — and only while actually streaming.
-    if (e.key === "Escape" && streaming()) {
-      e.preventDefault();
-      stop();
-      return;
-    }
-    // Enter sends (or stages, mid-turn); Shift+Enter inserts a newline (default textarea behavior).
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      send();
+        return true;
+      case "stop":
+        e.preventDefault();
+        stop();
+        return true;
+      case "send":
+        e.preventDefault();
+        send();
+        return true;
+      case "pass":
+        return false; // Shift+Enter newline, plain typing → CodeMirror handles it
     }
   };
-
-  // Grow the composer textarea with its content, up to a max (then it scrolls).
-  const autoGrow = () => {
-    if (!ta) return;
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-  };
-  createEffect(() => {
-    draft(); // re-run on draft change
-    autoGrow();
-  });
 
   // A rendered prose bubble can carry `[[wikilinks]]` (as `.bismuth-wikilink` anchors with a
   // `data-href`) — open them in-app via the global `bismuth-open` event, the same navigation the
@@ -1218,9 +1211,8 @@ export function ChatView(props: { chatId: string }) {
       .map((line) => `> ${line}`)
       .join("\n");
     setDraft((d) => `${quote}\n\n${d}`);
-    queueMicrotask(() => autoGrow());
-    ta?.focus();
-    ta?.scrollIntoView({ block: "nearest" });
+    focusComposer();
+    composer?.scrollIntoView();
   };
 
   /** The current text selection IF it lies within `container` (a message bubble), else "". Used so
@@ -1285,7 +1277,7 @@ export function ChatView(props: { chatId: string }) {
     const resumeId = recallChatSession(props.chatId);
     if (resumeId) void resumeSession(resumeId);
     else connect();
-    ta?.focus();
+    focusComposer();
   });
 
   // Tauri native OS file drop onto the chat (BUG #54). Under the native drag-drop handler the webview's
@@ -1323,7 +1315,7 @@ export function ChatView(props: { chatId: string }) {
       if (!d || d.chatId !== props.chatId || !d.path) return;
       const ref = wikilinkFor(d.path);
       setDraft((cur) => (cur && !cur.endsWith(" ") && cur.length ? `${cur} ${ref} ` : `${cur}${ref} `));
-      ta?.focus();
+      focusComposer();
     };
     window.addEventListener("bismuth-chat-mention", onMention);
     onCleanup(() => window.removeEventListener("bismuth-chat-mention", onMention));
@@ -1624,15 +1616,20 @@ export function ChatView(props: { chatId: string }) {
                   </For>
                 </div>
               </Show>
-              <TextInput
-                multiline
-                ref={((el: HTMLTextAreaElement) => { ta = el; }) as unknown as HTMLInputElement}
-                class="chat-input"
-                value={draft()}
+              {/* Live-preview composer (Row 77): a single-purpose CodeMirror instance running the SAME
+                  markdown/live-preview/autocomplete stack as the note editor, so **bold**, lists,
+                  `code`, ```fences``` and [[wikilinks]] render as-you-type. Still a plain text input —
+                  Enter sends, Shift+Enter newlines (onComposerKey), paste stages images, and the value
+                  round-trips as raw markdown SOURCE through the same draft() signal. */}
+              <ChatComposer
+                value={draft}
                 onInput={setDraft}
-                onKeyDown={onKeyDown}
+                onKeyDown={onComposerKey}
                 onPaste={onComposerPaste}
-                placeholder={`Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
+                onReady={(h) => { composer = h; }}
+                getNotes={props.noteNames}
+                getTags={props.tagNames}
+                placeholder={() => `Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
               />
             </div>
             <Show

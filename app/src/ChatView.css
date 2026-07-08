@@ -890,29 +890,20 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-/* The textarea itself stays chromeless — its wrapper (.chat-composer-inner) is the visible surface
-   now. Scoped to .chat-composer only (.ui-input elsewhere is untouched; the 2-class selector
-   outranks .ui-input's 1-class rules). */
-.chat-composer .chat-input {
+/* The composer is a single-purpose CodeMirror instance (ChatComposer, Row 77) that live-previews the
+   draft the way the note editor does. Its wrapper (.chat-input-cm) stays chromeless — the visible
+   surface is .chat-composer-inner — and grows with content up to a cap (the CM theme sets font +
+   max-height + scroll; see ChatComposer.tsx composerTheme). */
+.chat-composer .chat-input-cm {
   flex: 1 1 auto;
-  resize: none;
-  min-height: 28px;
-  max-height: 200px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  padding: 5px 0;
-  box-shadow: none;
-  font-family: var(--editor-font, "Lora", serif);
-  font-size: var(--editor-font-size, 18px);
-  line-height: 1.45;
-  overflow-y: auto;
+  min-width: 0;
 }
-.chat-composer .chat-input:hover,
-.chat-composer .chat-input:focus,
-.chat-composer .chat-input:focus-within {
-  border: none;
-  box-shadow: none;
+.chat-composer .chat-input-cm .cm-editor {
+  width: 100%;
+  background: transparent;
+}
+.chat-composer .chat-input-cm .cm-editor.cm-focused {
+  outline: none;
 }
 
 /* Staged image attachments above the textarea. */
