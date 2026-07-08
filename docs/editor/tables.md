@@ -340,6 +340,7 @@ Right-clicking a cell dispatches a `CustomEvent("bismuth-context-menu")` with `{
 | Insert column left     | ArrowLeft | `insertColumn(g, c)`                                  | Never                |
 | Insert column right    | ArrowRight| `insertColumn(g, c + 1)`                              | Never                |
 | Delete column          | Trash2    | `deleteColumn(g, c)`                                  | Only 1 column left   |
+| Delete table (#59)     | Trash2    | Deletes the WHOLE block (+ one adjacent newline) in one dispatch → ONE undo step restores it | Never |
 | Edit source            | Code      | Dispatches `setActiveTableEffect.of(line)` → raw mode | Never               |
 
 A separator appears before "Insert column left" and before "Edit source". Every structural item calls a pure `tableModel` op (see [Structural Row/Column Ops](#structural-rowcolumn-ops)) that returns a new grid, so the serialized markdown stays valid after each edit.
@@ -561,6 +562,19 @@ A table cell is a plain `contenteditable` DOM island that lives **outside** Code
 - **Popup DOM — visually identical to the editor's autocomplete, by construction (#49 re-bounce).** `CellEmojiMenu` does **not** carry its own styles. It renders CodeMirror's exact tooltip structure — `.cm-tooltip.cm-tooltip-autocomplete > ul[role=listbox] > li[role=option]` (selected row marked `[aria-selected]`, like CM's) with one `.cm-completionLabel` per row whose text is the editor's exact emoji label (`${char}  :${name}:`, no icon — the editor's emoji rows render none either) — and mounts **inside the editor root** (`view.dom`), where both CM's base autocomplete theme and the app's `completionTheme` (`editor/completionDisplay.ts`, the single source of completion styling) are scoped. Every rule that styles the editor's popup therefore styles this one: container card, row metrics, selected wash, label typography, list max-height/scroll. A future theme change automatically hits both; `Editor.css` deliberately contains **zero** rules for it. Positioned `fixed` at the caret (like CM's tooltips), one instance per table widget, torn down on the cell's blur and the widget's `destroy`. Picking a row uses `mousedown` + `preventDefault` so the choice never blurs the cell (which would commit + destroy the edit face first).
 
 The trigger + key decision are unit-tested as pure functions (`cellEmoji.test.ts`); the caret read, token replacement, end-to-end widget flow (type `:fire`, Enter inserts the glyph, no new row), and the structural parity with CM's popup (classes, ul/li/label shape, `[aria-selected]` movement, editor-root mounting) are covered under happy-dom (`tableWidget.test.ts`).
+
+---
+
+## No "Big Cursor" Beside a Table (#59)
+
+A rendered table is an atomic block widget replacing its whole source range, so a cursor parked anywhere on that range — most visibly at the block's **boundary positions** when clicking beside/above/below the table — was drawn by CodeMirror as a caret the **full height of the widget** (the "big cursor"). `tableSelectionGuard` (a `transactionFilter` in `tableWidget.ts`, wired in `Editor.tsx`) forbids it: any **user** selection (`isUserEvent("select")` — clicks and arrow keys) whose *collapsed cursor* lands on a table block's line range is remapped to the nearest position outside, **directionally** (pure `remapCursorOffTable` in `tableModel.ts`) — ArrowDown from above skips *past* the table; clicking beside it lands on the neighboring line. Details:
+
+- **Programmatic selections pass through** (no `userEvent`): the widget's own `commit()`/`insertEmbedsInTableCell` undo-anchoring dispatches (#44) and "Edit source" keep working unchanged.
+- **Raw-source mode is exempt**: while a block is open via "Edit source" (`activeTableField`), its lines are ordinary editable text.
+- **Range selections are never altered** (drag / Cmd+A across a table works as before).
+- **Doc-edge tables keep their outer boundary reachable** (a table at the very start/end of the file): otherwise content could never be typed before/after it — pressing Enter there opens a fresh line. In practice files end with a newline, so this edge is rare.
+
+Deleting a table is now an explicit affordance instead of caret-plus-backspace: the cell context menu's **"Delete table"** removes the whole block (plus one adjacent newline, so no stray blank line) in a single dispatch — **one undo step** restores the entire table with the cursor at the deletion site.
 
 ---
 

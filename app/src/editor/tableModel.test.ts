@@ -25,6 +25,7 @@ import {
   surgicalTableEdit,
   cellRectAtPoint,
   type CellRect,
+  remapCursorOffTable,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -537,4 +538,43 @@ test("cellRectAtPoint: a point outside every cell snaps to the NEAREST cell", ()
 
 test("cellRectAtPoint: empty rect list resolves to null", () => {
   expect(cellRectAtPoint([], 10, 10)).toBeNull();
+});
+
+// ── #59: cursor remap off table blocks (no widget-height "big cursor") ─────────
+// A cursor landing on a rendered table's replaced range is remapped just outside it,
+// directionally, so a click beside the table or ArrowDown from above never parks the
+// caret where CodeMirror would draw it as tall as the whole widget.
+const CURSOR_DOC = Text.of(["before", "", "| a | b |", "| - | - |", "| x | y |", "", "after"]);
+// Table block = lines 3-5. Boundaries: bFrom = line3.from, bTo = line5.to.
+const bFrom = CURSOR_DOC.line(3).from;
+const bTo = CURSOR_DOC.line(5).to;
+
+test("remapCursorOffTable: heads outside the block are untouched", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, 0, 0, null)).toBe(0);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom - 1, bFrom - 1, null)).toBe(bFrom - 1); // empty line above
+  expect(remapCursorOffTable(CURSOR_DOC, bTo + 1, bTo + 1, null)).toBe(bTo + 1); // empty line below
+});
+
+test("remapCursorOffTable: moving FORWARD onto the block skips past it", () => {
+  // ArrowDown / click while previous head was above → land on the line below the table.
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom, bFrom - 2, null)).toBe(bTo + 1);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom + 4, 0, null)).toBe(bTo + 1); // mid-block too
+  expect(remapCursorOffTable(CURSOR_DOC, bTo, 0, null)).toBe(bTo + 1); // end boundary
+});
+
+test("remapCursorOffTable: moving BACKWARD onto the block skips above it", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, bTo, CURSOR_DOC.length, null)).toBe(bFrom - 1);
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom, CURSOR_DOC.length, null)).toBe(bFrom - 1);
+});
+
+test("remapCursorOffTable: the ACTIVE (raw-source) table is skipped — its lines are editable", () => {
+  expect(remapCursorOffTable(CURSOR_DOC, bFrom + 2, 0, 3)).toBe(bFrom + 2); // startLine 3 active
+});
+
+test("remapCursorOffTable: a table at the doc EDGE keeps its outer boundary reachable", () => {
+  const only = Text.of(["| a |", "| - |", "| x |"]); // table IS the whole doc
+  // forward with no line after → the end boundary stays (Enter there makes a new line)
+  expect(remapCursorOffTable(only, 2, 0, null)).toBe(only.length);
+  // backward with no line before → the start boundary stays
+  expect(remapCursorOffTable(only, 2, only.length, null)).toBe(0);
 });

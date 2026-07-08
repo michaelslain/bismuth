@@ -374,6 +374,40 @@ export function prettifyTableBlock(lines: string[]): string {
   return serializeTable(cells, aligns);
 }
 
+// ── Cursor remap off table blocks (pure, #59) ─────────────────────────────────
+// A rendered table is an atomic block widget replacing its whole source range, so a CURSOR
+// landing anywhere on that range — most visibly at the block's boundary positions when the
+// user clicks beside the table — is drawn as a caret the FULL HEIGHT of the widget (the "big
+// cursor"). Selection shouldn't be able to sit there at all: this remaps such a head to the
+// nearest position OUTSIDE the block, in the direction the selection was moving (so ArrowDown
+// from above skips past the table instead of bouncing back). The widget's own cells handle
+// their clicks before CodeMirror sees them, so only genuine boundary/margin selections reach
+// this. Table deletion has its own affordance (the cell context menu's "Delete table").
+
+/** Remap a cursor head that falls on a (non-source-mode) table block's line range to just
+ *  outside it. `prevHead` decides direction (>= means forward/down). `activeStartLine` is the
+ *  block currently open as raw source (its lines ARE editable text) — skipped. Edge blocks:
+ *  a table at the very start/end of the doc keeps its outer boundary reachable (else content
+ *  could never be typed before/after it — pressing Enter there makes a fresh line). Pure. */
+export function remapCursorOffTable(
+  doc: Text,
+  head: number,
+  prevHead: number,
+  activeStartLine: number | null,
+): number {
+  const { blocks } = groupTableBlocks(doc);
+  for (const b of blocks) {
+    if (b.startLine === activeStartLine) continue; // raw-source mode: its lines are editable
+    const from = doc.line(b.startLine).from;
+    const to = doc.line(b.endLine).to;
+    if (head < from || head > to) continue;
+    const forward = head >= prevHead;
+    if (forward) return to < doc.length ? to + 1 : to; // next line start, else the end boundary
+    return from > 0 ? from - 1 : from; // previous line end, else the start boundary
+  }
+  return head;
+}
+
 // ── Coordinate → cell resolution (pure, #30) ──────────────────────────────────
 // Resolving which table cell a native (Tauri) file drop landed on. The widget collects
 // each cell's client rect from the DOM; THIS function makes the geometric decision, so

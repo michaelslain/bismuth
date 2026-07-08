@@ -54,7 +54,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, hasActiveCellEdit } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, tableSelectionGuard, hasActiveCellEdit } from "./editor/tableWidget";
 import { threeWayMerge } from "./editor/saveReconcile";
 import { ExternalReload, externalReconcileSpec } from "./editor/reconcileDispatch";
 import "./Editor.css";
@@ -929,6 +929,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // Highlight find matches IN PLACE inside rendered table widgets (#31) — the find bar never
       // flips a table to raw source. No-op in buffers without tables (e.g. config YAML).
       tableFindHighlight,
+      // No widget-height "big cursor" beside a table (#59): user selections landing on a table
+      // block's replaced range are remapped to the nearest outside line. Whole-table deletion
+      // lives in the cell context menu instead.
+      tableSelectionGuard,
       autosave,
       undoRedoScrollGuard,
       // Right-click a spelling / grammar / property mark → the shared app menu.
