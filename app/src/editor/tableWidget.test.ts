@@ -20,7 +20,8 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, tableSelectionGuard, hasActiveCellEdit, cellSourceFromDom, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { activeTableField } from "./tableState";
 import { parseCellList } from "./cellList";
 import { CellEmojiMenu, replaceTokenBeforeCaret } from "./cellEmoji";
 import { findExtension } from "./findPanel";
@@ -115,24 +116,42 @@ function caretAtEnd(cell: HTMLElement): void {
   sel?.addRange(range);
 }
 
-// ── #15: lists inside a table cell render as a real <ul>/<ol> ──────────────────
-describe("#15 lists in table cells", () => {
-  test("a <br>-separated bullet cell renders as a <ul> with visible bullet markers", () => {
+// ── #15: the display face renders through the FULL BLOCK engine (the "block thing") ──────────
+// A cell's stored source (`<br>`-joined single line) block-renders exactly like a note body in
+// reading mode: the `<br>` markers become newlines and the reader engine (bases/markdown.ts,
+// breaks:true) emits REAL <ul>/<ol>/<li>/<p> — no marker-span convention, no inline-only lexer.
+describe("#15 lists in table cells (block-rendered display face)", () => {
+  test("a <br>-separated bullet cell renders as a real <ul><li> exactly like a note body", () => {
     const cell = renderCellDom("- milk<br>- eggs<br>- bread");
     const ul = cell.querySelector("ul");
     expect(ul).not.toBeNull();
-    expect(cell.querySelectorAll("li").length).toBe(3);
-    // The bullet glyph is REAL content (a .bismuth-cell-mk span), so no cascade can strip it.
-    expect(cell.querySelectorAll(".bismuth-cell-mk").length).toBe(3);
-    expect(cell.textContent).toContain("•");
+    const items = Array.from(cell.querySelectorAll("li"));
+    expect(items.length).toBe(3);
+    expect(items.map((li) => li.textContent?.trim())).toEqual(["milk", "eggs", "bread"]);
   });
 
-  test("a 1.<br>2. cell renders as an <ol> with numbered markers", () => {
+  test("a 1.<br>2. cell renders as a real <ol> with li items (native numbering)", () => {
     const cell = renderCellDom("1. mix<br>2. bake");
-    expect(cell.querySelector("ol")).not.toBeNull();
-    expect(cell.querySelectorAll("li").length).toBe(2);
-    expect(cell.textContent).toContain("1.");
-    expect(cell.textContent).toContain("2.");
+    const ol = cell.querySelector("ol");
+    expect(ol).not.toBeNull();
+    const items = Array.from(cell.querySelectorAll("li"));
+    expect(items.length).toBe(2);
+    expect(items.map((li) => li.textContent?.trim())).toEqual(["mix", "bake"]);
+  });
+
+  test("a plain two-line cell keeps its line break (breaks:true), not merged prose", () => {
+    const cell = renderCellDom("line one<br>line two");
+    expect(cell.querySelector("ul")).toBeNull(); // not a list
+    expect(cell.innerHTML).toContain("<br"); // the soft break survives the block render
+    expect(cell.textContent).toContain("line one");
+    expect(cell.textContent).toContain("line two");
+  });
+
+  test("bold containing inline math renders styled in the block face (#58 via the reader)", () => {
+    const cell = renderCellDom("**Case 1: $hk \\in H$.**");
+    expect(cell.querySelector("strong")).not.toBeNull();
+    expect(cell.querySelector(".bismuth-math")).not.toBeNull(); // the reader's math span
+    expect(cell.textContent).not.toContain("**"); // markers consumed
   });
 
   // THE reopened root cause: a contenteditable can encode in-cell line breaks as raw `\n`
@@ -267,14 +286,32 @@ describe("#15 WebKit read-back: cellSourceFromDom normalizes div/p/br/\\n shapes
 
 // ── #41: #tags in a table cell render as chips ────────────────────────────────
 describe("#41 tags in table cells", () => {
-  test("a #tag in a cell renders as a .cm-tag chip; false-positives stay literal", () => {
+  test("a #tag in a cell renders as the reader's tag chip; false-positives stay literal", () => {
+    // The block display face uses the reader engine, whose tag chip is span.bismuth-tag
+    // (styled in Editor.css to match the editor's .cm-tag mark).
     const cell = renderCellDom("plan #work and #123 not, C# no");
-    const tags = cell.querySelectorAll(".cm-tag");
+    const tags = cell.querySelectorAll(".bismuth-tag");
     expect(tags.length).toBe(1); // only #work
     expect(tags[0].textContent).toBe("#work");
     // #123 (digit-led) and C# (mid-word) are NOT tags → still literal text.
     expect(cell.textContent).toContain("#123");
     expect(cell.textContent).toContain("C#");
+  });
+
+  test("a [[wikilink]] in a cell renders as the reader's anchor chip (clickable, #33)", () => {
+    const cell = renderCellDom("see [[Some Note]] here");
+    const link = cell.querySelector<HTMLElement>("a.bismuth-wikilink");
+    expect(link).not.toBeNull();
+    expect(link!.dataset.href).toBe("Some Note.md");
+    expect(link!.textContent).toBe("Some Note");
+  });
+
+  test("an image embed in a cell upgrades to a real <img> with the asset URL (#30)", () => {
+    const cell = renderCellDom("![[cat.png]]");
+    const img = cell.querySelector<HTMLImageElement>("img.cm-cell-embed");
+    expect(img).not.toBeNull();
+    expect(img!.getAttribute("src") ?? "").toContain("cat.png");
+    expect(cell.querySelector(".cm-cell-embed-slot")).toBeNull(); // slot consumed
   });
 });
 
@@ -825,6 +862,67 @@ describe("#49 in-cell emoji autocomplete", () => {
       expect(ul.querySelectorAll("li[aria-selected]").length).toBe(1);
       view.destroy();
     });
+  });
+});
+
+// ── #59: no widget-height "big cursor" beside a table + Delete table menu item ─
+describe("#59 cursor guard + delete table", () => {
+  const DOC = "before\n\n| a | b |\n| - | - |\n| x | y |\n\nafter";
+  const blockRange = (view: EditorView): { from: number; to: number } => {
+    const b = groupTableBlocks(view.state.doc).blocks[0];
+    return { from: view.state.doc.line(b.startLine).from, to: view.state.doc.line(b.endLine).to };
+  };
+
+  test("a USER selection landing on the table block is remapped outside it (both directions)", () => {
+    const view = mount(DOC, [activeTableField, tableSelectionGuard]);
+    const { from, to } = blockRange(view);
+    // Click / forward motion onto the block → lands just below it.
+    view.dispatch({ selection: { anchor: from }, userEvent: "select" });
+    expect(view.state.selection.main.head).toBe(to + 1);
+    // Backward motion (previous head below) → lands just above it.
+    view.dispatch({ selection: { anchor: to }, userEvent: "select" });
+    expect(view.state.selection.main.head).toBe(from - 1);
+    view.destroy();
+  });
+
+  test("a PROGRAMMATIC selection (no userEvent) is never remapped — commit()/#44 anchoring intact", () => {
+    const view = mount(DOC, [activeTableField, tableSelectionGuard]);
+    const { from } = blockRange(view);
+    view.dispatch({ selection: { anchor: from } }); // e.g. the widget's own undo-anchor dispatch
+    expect(view.state.selection.main.head).toBe(from);
+    view.destroy();
+  });
+
+  test("a RANGE selection spanning the table is never altered", () => {
+    const view = mount(DOC, [activeTableField, tableSelectionGuard]);
+    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length }, userEvent: "select" });
+    expect(view.state.selection.main.from).toBe(0);
+    expect(view.state.selection.main.to).toBe(view.state.doc.length);
+    view.destroy();
+  });
+
+  test("the context menu offers Delete table; selecting it removes the block in ONE undo step", () => {
+    const view = mount(DOC, [history()]);
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = wrap.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    // Capture the menu items the widget dispatches on right-click.
+    let items: { label: string; onSelect: () => void }[] = [];
+    const onMenu = (e: Event): void => { items = (e as CustomEvent).detail.items; };
+    window.addEventListener("bismuth-context-menu", onMenu);
+    cell.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    window.removeEventListener("bismuth-context-menu", onMenu);
+    const del = items.find((i) => i.label === "Delete table");
+    expect(del).toBeDefined();
+    del!.onSelect();
+    const after = view.state.doc.toString();
+    expect(after).not.toContain("| a | b |"); // whole block gone
+    expect(after).not.toContain("| x | y |");
+    expect(after).toContain("before");
+    expect(after).toContain("after");
+    // ONE undo restores the entire table.
+    undo(view);
+    expect(view.state.doc.toString()).toBe(DOC);
+    view.destroy();
   });
 });
 

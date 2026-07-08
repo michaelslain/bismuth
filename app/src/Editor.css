@@ -166,10 +166,63 @@
    cascade or contenteditable quirk can strip it. We deliberately DON'T set `list-style-type`
    here (an earlier attempt did — with inline `list-style:none` it's dead, and it would only
    risk DOUBLING the marker if the inline style were ever dropped). Keep `list-style:none` +
-   compact spacing so the class agrees with the render on every surface. */
+   compact spacing so the class agrees with the render on every surface.
+   (The reader engine — bases/markdown.ts, used by note-body tables — still emits this class;
+   the WIDGET's display face now block-renders instead, see below.) */
 .cm-editor .cm-td .bismuth-cell-list,
 .cm-editor .cm-td .bismuth-cell-list li {
   list-style: none;
+}
+
+/* ── Block-rendered cell display face (#15, the "block thing") ─────────────────
+   The widget's DISPLAY face renders through the FULL note-reading engine
+   (editor/cellBlockRender.ts → bases/markdown.ts renderNoteBody), so a cell shows real
+   <p>/<ul>/<ol>/<li> blocks exactly like reading mode. Scope the block metrics to the cell so
+   note-sized margins don't explode row height: zero outer margins, compact list indent, and
+   tight spacing between consecutive blocks. Height stays auto (#52). */
+.cm-editor .cm-td p,
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol,
+.cm-editor .cm-td blockquote,
+.cm-editor .cm-td pre,
+.cm-editor .cm-td h1,
+.cm-editor .cm-td h2,
+.cm-editor .cm-td h3,
+.cm-editor .cm-td h4,
+.cm-editor .cm-td h5,
+.cm-editor .cm-td h6 {
+  margin: 0;
+}
+.cm-editor .cm-td > * + * {
+  margin-top: 0.3em;
+}
+.cm-editor .cm-td ul,
+.cm-editor .cm-td ol {
+  padding-left: 1.25em;
+}
+.cm-editor .cm-td li {
+  margin: 0.05em 0;
+}
+.cm-editor .cm-td li > p {
+  margin: 0; /* loose-list items: keep the paragraph flush inside its li */
+}
+.cm-editor .cm-td h1, .cm-editor .cm-td h2, .cm-editor .cm-td h3,
+.cm-editor .cm-td h4, .cm-editor .cm-td h5, .cm-editor .cm-td h6 {
+  font-size: 1.05em; /* a heading in a cell reads as emphasis, not a page title */
+}
+/* The reader's wikilink/tag chips (a.bismuth-wikilink / span.bismuth-tag) styled to match the
+   editor's own .cm-wikilink / .cm-tag marks (livePreview theme), so a link or tag in a cell
+   reads identically to one in the note body. */
+.cm-editor .cm-td a.bismuth-wikilink {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-soft);
+}
+.cm-editor .cm-td .bismuth-tag {
+  color: var(--teal);
+  font-family: "Monaspace Xenon", ui-monospace, monospace;
+  font-size: calc(1em * var(--mono-scale, 0.85));
 }
 
 /* ── In-cell :emoji: autocomplete popup (#49) ──────────────────────────────────

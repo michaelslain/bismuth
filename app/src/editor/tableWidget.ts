@@ -7,7 +7,7 @@
 // leaves its inner selection alone, while ignoreEvent() keeps CM from acting on
 // clicks/keys inside it.
 import { EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import type { TransactionSpec } from "@codemirror/state";
+import { EditorState, type TransactionSpec } from "@codemirror/state";
 import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
 import {
   type Align,
@@ -16,6 +16,7 @@ import {
   type CellKeyAction,
   type CellRect,
   cellRectAtPoint,
+  remapCursorOffTable,
   groupTableBlocks,
   parseRowCellSpans,
   serializeTable,
@@ -34,11 +35,10 @@ import {
 // CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
-import { noteNamesFacet, setActiveTableEffect } from "./tableState";
+import { activeTableField, noteNamesFacet, setActiveTableEffect } from "./tableState";
 import { CellEmojiMenu } from "./cellEmoji";
-import { renderInlineMarkdown } from "./inlineMarkdown";
+import { renderCellBlockHtml, upgradeCellEmbeds } from "./cellBlockRender";
 import { minimalChange } from "./normalizeFrontmatter";
-import { onMathReady } from "./katexLoader";
 import { api } from "../api";
 import { parseWikilink, resolveNotePath, wikilinkOpenPath } from "./wikilink";
 import { closerFor } from "./wrapSelection";
@@ -440,6 +440,24 @@ export function hasActiveCellEdit(view: EditorView): boolean {
   return !!el.closest?.("[data-cell]");
 }
 
+/** No "big cursor" beside a table (#59): a USER selection (click / arrow keys) whose cursor
+ *  lands on a rendered table block's replaced range — where CodeMirror draws the caret as tall
+ *  as the whole widget — is remapped to the nearest line outside the block, directionally, so
+ *  ArrowDown from above skips PAST the table. Pure decision in `remapCursorOffTable`
+ *  (tableModel.ts). Only `isUserEvent("select")` transactions are touched: programmatic
+ *  selection dispatches (the widget's own commit()/#44 undo-anchoring, "Edit source") pass
+ *  through untouched, and a block open in raw-source mode (activeTableField) is skipped so its
+ *  lines stay editable. Range selections (drag / Cmd+A) are never altered. */
+export const tableSelectionGuard = EditorState.transactionFilter.of((tr) => {
+  if (!tr.selection || !tr.isUserEvent("select")) return tr;
+  if (!tr.newSelection.main.empty) return tr; // only a collapsed cursor draws the big caret
+  const head = tr.newSelection.main.head;
+  const active = tr.startState.field(activeTableField, false) ?? null;
+  const mapped = remapCursorOffTable(tr.newDoc, head, tr.startState.selection.main.head, active);
+  if (mapped === head) return tr;
+  return [tr, { selection: { anchor: mapped } }];
+});
+
 export function tableCellDropTarget(
   view: EditorView,
   target: EventTarget | null,
@@ -634,21 +652,17 @@ export class TableWidget extends WidgetType {
     const table = document.createElement("table");
     table.className = "cm-table-rendered";
 
-    // A cell has two faces: a DISPLAY face (rendered inline markdown, shown when idle)
-    // and an EDIT face (raw markdown source as plain text, shown while focused). We swap
-    // between them on focus so the user formats prose but edits the underlying markdown.
+    // A cell has two faces: a DISPLAY face (the FULL BLOCK markdown render — the same reading
+    // engine a note body uses, so lists/paragraphs in a cell look exactly like reading mode,
+    // #15) and an EDIT face (raw markdown source as plain text, shown while focused). We swap
+    // between them on focus so the user reads formatted prose but edits the underlying source.
     const renderDisplay = (cell: HTMLElement): void => {
-      // Pass the asset-URL builder so image/pdf embeds in the cell render as real media from
-      // GET /asset (#30) — exactly like embedBlock.ts does in the note body.
-      cell.innerHTML = renderInlineMarkdown(cell.dataset.src ?? "", { assetUrl: api.assetUrl });
-      // Inline `$math$` renders empty until KaTeX lazy-loads; re-render this cell once it
-      // lands (unless the user has since started editing it).
-      const maths = cell.querySelectorAll<HTMLElement>(".cm-inline-math");
-      if (maths.length && Array.from(maths).some((m) => !m.firstChild)) {
-        onMathReady(() => {
-          if (cell.isConnected && cell.dataset.editing !== "1") renderDisplay(cell);
-        });
-      }
+      // Block render (bases/markdown.ts renderNoteBody over the <br>→newline source), then swap
+      // the sanitize-surviving embed slots for real media from GET /asset (#30) — see
+      // cellBlockRender.ts. Math placeholders self-upgrade when KaTeX lands (the reader's own
+      // scheduleMathUpgrade), so no per-cell onMathReady wiring is needed here.
+      cell.innerHTML = renderCellBlockHtml(cell.dataset.src ?? "");
+      upgradeCellEmbeds(cell, api.assetUrl);
     };
     const enterEdit = (cell: HTMLElement): void => {
       if (cell.dataset.editing === "1") return;
@@ -757,12 +771,17 @@ export class TableWidget extends WidgetType {
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
           // instead of entering edit mode. The `e.stopPropagation()` below means CM's own
           // wikilink click handler never sees this click, so we run the same open path here.
+          // Two chip shapes exist: the reader engine's `a.bismuth-wikilink[data-href]` (the block
+          // display face, #15) and the embed fallback's `span.cm-wikilink[data-wikilink]`.
           if (cell.dataset.editing !== "1" && me.button === 0) {
-            const link = (me.target as HTMLElement | null)?.closest?.(".cm-wikilink") as HTMLElement | null;
+            const link = (me.target as HTMLElement | null)?.closest?.(".cm-wikilink, .bismuth-wikilink") as HTMLElement | null;
             if (link && cell.contains(link)) {
               e.preventDefault();
               e.stopPropagation();
-              openCellWikilink(view, link.dataset.wikilink ?? "");
+              // data-href carries `Target.md` (reader anchor); strip the extension so
+              // openCellWikilink's resolve + `.md` append treats both shapes identically.
+              const raw = link.dataset.wikilink ?? (link.dataset.href ?? "").replace(/\.md$/, "");
+              openCellWikilink(view, raw);
               return;
             }
           }
@@ -1163,6 +1182,26 @@ export class TableWidget extends WidgetType {
         icon: "Trash2",
         disabled: cols <= 1,
         onSelect: () => this.commit(view, root, (g) => deleteColumn(g, c)),
+      },
+      {
+        // Delete the WHOLE table (#59) — the affordance that replaces caret-beside-the-table +
+        // backspace (the cursor can no longer sit there, see tableSelectionGuard). One dispatch,
+        // one whole-block change → ONE undo step restores the entire table.
+        label: "Delete table",
+        icon: "Trash2",
+        separatorBefore: true,
+        onSelect: () => {
+          const range = currentRange(view, root);
+          if (!range) return;
+          // Take one adjacent newline with the block so no stray blank line is left behind.
+          const from = range.from > 0 ? range.from - 1 : range.from;
+          const to = range.from > 0 ? range.to : Math.min(range.to + 1, view.state.doc.length);
+          // Move CM's selection to the deletion site FIRST (the #44 undo-anchoring pattern used
+          // by commit()): a selection-only dispatch records no history event, so the delete
+          // below stays a single undo step whose undo returns the cursor here.
+          view.dispatch({ selection: { anchor: from } });
+          dispatchKeepScroll(view, { changes: { from, to, insert: "" }, userEvent: "delete" });
+        },
       },
       {
         label: "Edit source",

@@ -188,7 +188,7 @@ export function iridescentBismuthCell(src: string): string {
  *  chip so it stays openable (#33) rather than broken. Sizes are inline so the media fits the
  *  cell (`max-width:100%`, a capped height) with no external CSS. Read-only: the raw `![[…]]`
  *  source is shown only in the cell's EDIT face (srcToEditHtml), never here. */
-function renderEmbedSeg(seg: InlineSeg & { type: "embed" }, assetUrl: (t: string) => string): string {
+export function renderEmbedHtml(seg: InlineSeg & { type: "embed" }, assetUrl: (t: string) => string): string {
   const spec: EmbedSpec | null = seg.wiki
     ? specForWikiEmbed(seg.target, assetUrl)
     : specForMarkdownImage(seg.target, seg.alt ?? "", assetUrl);
@@ -244,7 +244,7 @@ function renderSeg(seg: InlineSeg, assetUrl: (t: string) => string): string {
     return `<span class="cm-tag" data-tag="${escapeAttr(seg.name)}">#${escapeHtml(seg.name)}</span>`;
   }
   if (seg.type === "embed") {
-    return renderEmbedSeg(seg, assetUrl);
+    return renderEmbedHtml(seg, assetUrl);
   }
   return inlineMarked.parseInline(iridescentBismuthCell(seg.raw), { async: false }) as string;
 }
