@@ -13,6 +13,8 @@
 // replacement are deterministic Range operations (no execCommand — engine-agnostic, like
 // insertBreakAtCaret in tableWidget.ts), unit-tested under happy-dom.
 import { matchEmojiPrefix, searchEmoji, type EmojiEntry } from "./emoji";
+import { createPopoverIcon } from "../ui/popover/rowDom";
+import { completionIcon } from "../ui/popover/iconMap";
 
 const ZWSP = "​";
 // Match the editor's own emoji popup: searchEmoji's default cap (50). The list scrolls inside
@@ -242,6 +244,11 @@ export class CellEmojiMenu {
       const row = doc.createElement("li");
       row.setAttribute("role", "option");
       if (i === this.active) row.setAttribute("aria-selected", "true");
+      // The editor's completionDisplayConfig prepends a row icon via createPopoverIcon —
+      // emoji options carry no `type`, so completionIcon(undefined) yields the ChevronRight
+      // default every editor emoji row shows. Same builder, same icon → identical rows.
+      const iconName = completionIcon(undefined);
+      if (iconName) row.appendChild(createPopoverIcon(iconName));
       const label = doc.createElement("span");
       label.className = "cm-completionLabel";
       // EXACTLY the editor's emoji option label (autocomplete.ts): glyph, two spaces, :shortcode:.
