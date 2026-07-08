@@ -74,6 +74,14 @@
   font-size: 12px;
   margin-left: 8px;
 }
+/* The header reasoning-effort picker (FEATURE #63) — sits beside the model picker; narrower since
+   its labels are short (Low / Medium / High / Extra high / Max). */
+.chat-effort-select {
+  min-width: 92px;
+  height: 28px;
+  font-size: 12px;
+  margin-left: 8px;
+}
 
 /* ── Session history picker — reuses .bismuth-popover; this supplies POSITIONING only ── */
 .chat-history-anchor {

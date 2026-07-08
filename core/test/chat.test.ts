@@ -7,6 +7,7 @@ import {
   resumeSession,
   openSession,
   respondPermission,
+  setPermissionMode,
   closeChat,
   newChatId,
   chatSessionCount,
@@ -500,6 +501,36 @@ describeOrSkip("visual Claude Code chat driver (live)", () => {
     await waitFor((f) => f.type === "done");
     expect(sawPermission).toBe(true); // the Write was gated through canUseTool
     const body = await readFile(join(cwd, "t.txt"), "utf8");
+    expect(body).toContain("hi");
+  }, 180_000);
+
+  // BUG #60 ("bypass doesn't work in chat"): with the permission mode switched to bypassPermissions
+  // (exactly what ChatView does — pushes {set_permission_mode: bypassPermissions} on the session's
+  // first manifest), canUseTool must NEVER fire — the Write runs unprompted. This only works because
+  // createSession now spawns query() with allowDangerouslySkipPermissions:true; without that
+  // capability flag the CLI silently refused bypass and kept prompting (the bug). We open the session
+  // (so it's initialized), wait for its `models` frame to confirm the init handshake completed, then
+  // switch to bypass BEFORE sending the turn — mirroring the real client's ordering.
+  test("BUG #60: bypassPermissions suppresses the permission prompt (canUseTool never fires)", async () => {
+    const cwd = await newTempDir();
+    const chatId = newChatId();
+    chatIds.push(chatId);
+    let sawPermission = false;
+    const { sink, waitFor } = makeCollector((perm) => {
+      // A prompt here means bypass DIDN'T take — allow it so the turn still completes, but the
+      // assertion below fails, flagging the regression.
+      sawPermission = true;
+      respondPermission(chatId, perm.id, "allow");
+    });
+
+    await openSession(chatId, cwd, sink);
+    await waitFor((f) => f.type === "models"); // init handshake done → control requests will apply
+    setPermissionMode(chatId, "bypassPermissions");
+    sendMessage(chatId, "Create a file named b.txt containing the text hi. Do nothing else.", cwd, sink);
+
+    await waitFor((f) => f.type === "done");
+    expect(sawPermission).toBe(false); // bypass → no canUseTool prompt at all
+    const body = await readFile(join(cwd, "b.txt"), "utf8");
     expect(body).toContain("hi");
   }, 180_000);
 

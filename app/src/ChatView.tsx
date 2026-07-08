@@ -37,6 +37,7 @@ import { publishChatTitle } from "./chatTitles";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
+import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from "./chatEffort";
 import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
@@ -82,6 +83,19 @@ const LAST_MODEL_KEY = "bismuth.chat.lastModel";
 function readLastModel(): string {
   try {
     return localStorage.getItem(LAST_MODEL_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+// The last reasoning-effort level the user picked in ANY chat (FEATURE #63: "can't select effort in
+// chat"). Persisted like LAST_MODEL_KEY (a transient localStorage key, not a `.settings` value) so
+// the chosen level STICKS across turns AND new/resumed chats — re-pushed to each new session on its
+// first manifest. Empty ("") = never chosen, which leaves the model/CLI's own default untouched.
+const LAST_EFFORT_KEY = "bismuth.chat.lastEffort";
+function readLastEffort(): string {
+  try {
+    return localStorage.getItem(LAST_EFFORT_KEY) ?? "";
   } catch {
     return "";
   }
@@ -288,7 +302,23 @@ export function ChatView(props: { chatId: string }) {
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
   const [turnError, setTurnError] = createSignal<string | null>(null);
   // The models this login can run (`models` frame, once per session) — powers the header picker.
-  const [models, setModels] = createSignal<{ value: string; label: string; description: string }[]>([]);
+  // Each entry also carries the effort levels IT supports (FEATURE #63), so the Effort picker below
+  // tracks the SELECTED model's real levels rather than a hardcoded list.
+  const [models, setModels] = createSignal<{ value: string; label: string; description: string; effortLevels: string[] }[]>([]);
+  // The reasoning-effort level shown in the header Select (FEATURE #63). Seeded to the LAST-CHOSEN
+  // level (persisted) so the control reflects the user's preference the instant the chat opens; on a
+  // session's first manifest a non-empty value is pushed down (see onFrame "manifest"). "" = never
+  // chosen → leave the model default alone.
+  const [effort, setEffort] = createSignal<string>(readLastEffort());
+  const rememberEffort = (level: string) => {
+    if (!level) return;
+    setEffort(level);
+    try {
+      localStorage.setItem(LAST_EFFORT_KEY, level);
+    } catch {
+      /* localStorage unavailable — the in-memory signal still drives the header */
+    }
+  };
   // The last model used in ANY chat (persisted) — shown in the header as a sensible default before
   // this session's manifest/`models` frames land, so the model area is never blank (BUG #14).
   const [lastModel, setLastModel] = createSignal(readLastModel());
@@ -483,6 +513,11 @@ export function ChatView(props: { chatId: string }) {
           if (frame.manifest.permissionMode !== permMode()) {
             sendJson({ type: "set_permission_mode", mode: permMode() });
           }
+          // Re-apply the user's persisted reasoning-effort level (FEATURE #63) to this fresh session
+          // so it sticks across new/resumed chats — the wire carries no current-effort to reconcile
+          // against, so we push it once here. Only when a level was actually chosen ("" leaves the
+          // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
+          if (effort()) sendJson({ type: "set_effort", effort: effort() });
         } else {
           // Later manifests: DON'T blindly trust the reported mode (FEATURE #35). A mid-session
           // query() re-init (e.g. a visibility respawn) re-reports the SDK's SPAWN default
@@ -897,6 +932,11 @@ export function ChatView(props: { chatId: string }) {
     if (m) setManifest({ ...m, model });
   };
 
+  const switchEffort = (level: string) => {
+    rememberEffort(level); // updates the signal + persists so the next chat defaults to it
+    sendJson({ type: "set_effort", effort: level });
+  };
+
   // ── Session history / new chat ──────────────────────────────────────────────────────────────
   /** Wipe the transcript + transient turn state back to the empty state (shared by New + resume). */
   const resetTranscript = () => {
@@ -908,6 +948,9 @@ export function ChatView(props: { chatId: string }) {
     // default — so a new/resumed chat keeps the mode the user actually wants (#35). The next
     // session re-enforces it on its first manifest.
     setPermMode(readLastMode());
+    // Back to the user's LAST-CHOSEN effort (persisted) too (FEATURE #63) — re-pushed to the new
+    // session on its first manifest, so a new/resumed chat keeps the level the user wants.
+    setEffort(readLastEffort());
     setQueuedTurns([]);
     setContext(null);
     // The conversation this tab was named after is gone — revert the tab label to the persona
@@ -1214,6 +1257,28 @@ export function ChatView(props: { chatId: string }) {
   // last-used model (persisted). Empty only on a brand-new install with no prior chat — rendered as
   // a neutral "Default model" placeholder — so the model area is never blank before the first turn.
   const displayModel = () => manifest()?.model || lastModel();
+  // The effort levels the CURRENTLY-displayed model supports (from the `models` frame). The header's
+  // Effort picker offers exactly these — never a hardcoded list — and hides when the model exposes
+  // none / the frame hasn't landed. (FEATURE #63.) Before the first manifest NAMES a model,
+  // displayModel() is empty, so key off the login's default (first-listed) model instead — so the
+  // picker is usable the instant the chat opens (like the model picker), then refines once the
+  // manifest reports the real active model.
+  const effortOptions = createMemo(() => {
+    const ms = models();
+    const cur = displayModel();
+    const target = ms.some((m) => m.value === cur) ? cur : ms[0]?.value ?? "";
+    return effortOptionsForModel(target, ms);
+  });
+  // The value shown in the Effort Select: the user's chosen level if the current model supports it,
+  // else the SDK default ("high") when available, else the first supported level — so the control
+  // always reflects a REAL option rather than a stale/blank value when the model changes.
+  const effortDisplay = () => {
+    const opts = effortOptions();
+    const cur = effort();
+    if (cur && opts.some((o) => o.value === cur)) return cur;
+    if (opts.some((o) => o.value === DEFAULT_EFFORT_DISPLAY)) return DEFAULT_EFFORT_DISPLAY;
+    return opts[0]?.value ?? "";
+  };
   // The pre-first-delta waiting dots: streaming with no assistant output for the CURRENT turn
   // yet. Queued (staged, unsent) user bubbles belong to future turns — skip them, or the dots
   // would vanish/misplace the moment a follow-up is staged.
@@ -1261,6 +1326,19 @@ export function ChatView(props: { chatId: string }) {
             placeholder="Default model"
             options={models().map((m) => ({ value: m.value, label: m.label }))}
             onChange={switchModel}
+          />
+        </Show>
+        {/* Effort: a LIVE picker of the SELECTED model's reasoning-effort levels (FEATURE #63),
+            straight from the `models` frame — never a hardcoded list. Hidden when the model exposes
+            no effort levels (or the frame hasn't landed). Changes send {set_effort} and persist so
+            the chosen level sticks across turns and new/resumed chats. */}
+        <Show when={effortOptions().length > 1}>
+          <Select
+            class="chat-effort-select"
+            value={effortDisplay()}
+            placeholder="Effort"
+            options={effortOptions()}
+            onChange={switchEffort}
           />
         </Show>
         <ViewBarSpacer />

@@ -39,6 +39,7 @@ import {
   respondPermission as chatRespondPermission,
   setPermissionMode as chatSetPermissionMode,
   setModel as chatSetModel,
+  setEffort as chatSetEffort,
   resumeSession as chatResume,
   openSession as chatOpen,
   listChatSessions,
@@ -1762,6 +1763,7 @@ export function createServer(cfg: CoreConfig) {
             always?: boolean;
             mode?: string;
             model?: string;
+            effort?: string;
           };
           try {
             parsed = JSON.parse(text);
@@ -1814,6 +1816,9 @@ export function createServer(cfg: CoreConfig) {
             chatSetPermissionMode(chatId, parsed.mode);
           } else if (parsed.type === "set_model" && typeof parsed.model === "string") {
             chatSetModel(chatId, parsed.model);
+          } else if (parsed.type === "set_effort" && typeof parsed.effort === "string") {
+            // Switch the reasoning-effort level live (FEATURE #63) — mirrors set_model.
+            chatSetEffort(chatId, parsed.effort);
           } else if (parsed.type === "stop") {
             chatAbort(chatId);
           }
