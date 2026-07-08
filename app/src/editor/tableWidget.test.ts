@@ -20,7 +20,7 @@
 // cellSourceToBlockMarkdown ⇄ cmDocToCellSource) is covered in cellBlockRender.test.ts.
 
 import { GlobalWindow } from "happy-dom";
-import { test, expect, beforeAll, afterAll, describe } from "bun:test";
+import { test, expect, beforeAll, afterAll, afterEach, describe } from "bun:test";
 import { StateField, EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
@@ -31,6 +31,7 @@ import { activeTableField } from "./tableState";
 import { findExtension } from "./findPanel";
 import { history, undo } from "@codemirror/commands";
 import { externalReconcileSpec } from "./reconcileDispatch";
+import { setGalleryOpen } from "../ui/gallery/galleryState";
 
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "Text",
@@ -657,6 +658,63 @@ describe("#46 minimal-patch commit + undo", () => {
     expect(doc).toContain("one");
     expect(doc).not.toContain("uno");
     expect(doc).toContain("4-EXT");
+    view.destroy();
+  });
+});
+
+// ── #49: opening the `:` emoji GALLERY from inside a cell must not tear the cell editor down ──
+// The gallery modal's search box grabs focus, blurring the cell's nested CodeMirror. That blur's
+// `focusout` (cell-level → leaveEdit; root-level → commit) would destroy the very EditorView the
+// gallery's deferred `applyInsert` targets, so the picked emoji silently no-ops (the reported bug —
+// only cells break; a note body's main editor survives its own blur). The widget DEFERS both
+// teardowns while `isGalleryOpen()` holds, then resumes normal teardown once the gallery settles.
+describe("#49 gallery-open defers the cell blur teardown", () => {
+  // Module-level flag — always reset so a failed assertion can't leak "open" into later tests.
+  afterEach(() => setGalleryOpen(false));
+
+  type CellWithCM = HTMLElement & {
+    _cellCM?: { state: { doc: { toString(): string } }; contentDOM: HTMLElement; destroy(): void };
+  };
+
+  test("root commit is deferred while a gallery is open, then commits on the next real blur", () => {
+    const view = mount("| a | b |\n| --- | --- |\n| one | two |", [history()]);
+    const cell = view.dom.querySelector<HTMLElement>('[data-cell][data-r="1"][data-c="0"]')!;
+    // The cell's in-progress source (what a blur would commit). Not editing, so the cell focusout's
+    // leaveEdit early-returns — this isolates the ROOT commit path.
+    cell.dataset.src = "uno";
+
+    setGalleryOpen(true); // the emoji gallery modal grabbed focus, blurring the cell
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true })); // bubbles to root → commit
+    expect(view.state.doc.toString()).not.toContain("uno"); // commit DEFERRED (editor kept alive)
+
+    setGalleryOpen(false); // gallery settled (picked/dismissed) + refocused the cell
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(view.state.doc.toString()).toContain("uno"); // now it commits normally
+    view.destroy();
+  });
+
+  test("the nested cell editor is NOT destroyed on the blur caused by opening a gallery", () => {
+    const view = mount("| a | b |\n| --- | --- |\n| one | two |");
+    const cell = view.dom.querySelector<CellWithCM>('[data-cell][data-r="1"][data-c="0"]')!;
+    // Simulate an active in-cell edit whose nested CodeMirror holds the picked glyph.
+    let destroyed = false;
+    cell.dataset.editing = "1";
+    cell._cellCM = {
+      state: { doc: { toString: () => "😄" } },
+      contentDOM: document.createElement("div"),
+      destroy: () => { destroyed = true; },
+    };
+
+    setGalleryOpen(true);
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(cell.dataset.editing).toBe("1"); // still in edit mode — leaveEdit deferred
+    expect(destroyed).toBe(false); // the EditorView the gallery insert targets is kept alive
+
+    setGalleryOpen(false);
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(cell.dataset.editing).toBe(""); // committed + torn down once the gallery is gone
+    expect(destroyed).toBe(true);
+    expect(view.state.doc.toString()).toContain("😄"); // the glyph was read back + committed
     view.destroy();
   });
 });

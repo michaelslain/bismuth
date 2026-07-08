@@ -36,6 +36,12 @@ import { renderCellBlockHtml, upgradeCellEmbeds, cmDocToCellSource } from "./cel
 import { minimalChange } from "./normalizeFrontmatter";
 import { api } from "../api";
 import { parseWikilink, resolveNotePath, wikilinkOpenPath } from "./wikilink";
+// A synchronous, Solid-free read of "is a gallery modal open?" (galleryState.ts is a plain .ts, so
+// importing it never taints this module's headless tests). Opening the emoji gallery from a `:`
+// completion inside a cell grabs focus for the modal's search box, blurring the cell's nested
+// CodeMirror — we DEFER the blur teardown (both leaveEdit + the root commit) while a gallery is up so
+// the gallery's deferred applyInsert has a live editor to write into + refocus (#49).
+import { isGalleryOpen } from "../ui/gallery/galleryState";
 // The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
 // its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform
 // can't compile, so it must stay OUT of this module's static import graph (the widget's own tests
@@ -623,6 +629,10 @@ export class TableWidget extends WidgetType {
         cell.addEventListener("focusout", (e) => {
           const rt = (e as FocusEvent).relatedTarget as Node | null;
           if (rt && cell.contains(rt)) return; // focus still inside this cell
+          // A gallery modal (e.g. the `:` emoji picker) grabbed focus — this blur is NOT a real
+          // click-away. Keep the nested editor alive so the gallery's deferred insert lands + can
+          // refocus this cell; the normal teardown resumes on the next blur once the gallery closes (#49).
+          if (isGalleryOpen()) return;
           leaveEdit(cell);
         });
         cell.addEventListener("mousedown", (e) => {
@@ -687,6 +697,11 @@ export class TableWidget extends WidgetType {
     root.addEventListener("focusout", (e) => {
       const next = (e as FocusEvent).relatedTarget as Node | null;
       if (next && root.contains(next)) return;
+      // A gallery modal grabbed focus (its search box) — committing now would rewrite the doc with
+      // the in-progress `:query` still in the cell, rebuild the widget, and destroy the very
+      // EditorView the gallery's deferred insert targets. Defer the commit until the gallery closes
+      // and the insert has landed; the next real blur commits normally (#49).
+      if (isGalleryOpen()) return;
       this.commit(view, root);
     });
 
