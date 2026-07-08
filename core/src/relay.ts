@@ -31,6 +31,11 @@ export interface RelaySubagent {
   parentSessionId: string;
   /** e.g. "general-purpose", "Explore", "Plan", or a custom agent name. */
   agentType: string;
+  /** Workflow-group key, when this subagent was spawned as part of a workflow
+   *  orchestration (reported by the relay's SubagentStart hook from the workflow's
+   *  env — CLAUDE_WORKFLOW_ID / CLAUDE_JOB_DIR). Subagents of the SAME workflow share
+   *  this key; a plain Agent-tool subagent leaves it undefined (ordinary rendering). */
+  workflowId?: string;
   startedAt: number;
   /** Flipped true on SubagentStop; done subagents linger briefly then are pruned. */
   done: boolean;
@@ -79,11 +84,17 @@ function removeSessionSubtree(sessionId: string): void {
   }
 }
 
-export function startSubagent(s: { parentSessionId: string; agentId: string; agentType: string }, now = Date.now()): void {
+export function startSubagent(
+  s: { parentSessionId: string; agentId: string; agentType: string; workflowId?: string },
+  now = Date.now(),
+): void {
   subagents.set(s.agentId, {
     agentId: s.agentId,
     parentSessionId: s.parentSessionId,
     agentType: s.agentType,
+    // Only carry a workflow key when the hook reported a non-empty one, so ordinary
+    // subagents stay `workflowId: undefined` and render exactly as before.
+    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
     startedAt: now,
     done: false,
   });

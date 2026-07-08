@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { GraphData } from "../../../core/src/graph";
 import { SELF_NODE_ID } from "../../../core/src/graph";
 import { layoutAgentGraph } from "./agentLayout";
+import { agentGraphSig } from "./agentGraphSig";
 
 // raw /agent-graph: s1 → {a1, a2}, s2 → {a3}
 const raw: GraphData = {
@@ -48,5 +49,38 @@ describe("layoutAgentGraph", () => {
     const dict = layoutAgentGraph(raw, "dictatorship");
     const demo = layoutAgentGraph(raw, "democracy");
     expect(demo.edges.length).toBeGreaterThan(dict.edges.length);
+  });
+
+  it("marks a workflow subagent's ownership edge with its group key, leaves ordinary ones bare", () => {
+    // s1 → {a1 (workflow wf-1), a2 (ordinary)}
+    const wf: GraphData = {
+      nodes: [
+        { id: "s1", label: "proj", kind: "agent", state: "awake" },
+        { id: "a1", label: "impl", kind: "agent", state: "awake", parent: "s1", workflow: "wf-1" },
+        { id: "a2", label: "Explore", kind: "agent", state: "awake", parent: "s1" },
+      ],
+      edges: [],
+    };
+    const g = layoutAgentGraph(wf, "dictatorship"); // ownership edges only, no comm channels
+    const wfEdge = g.edges.find((e) => e.from === "s1" && e.to === "a1")!;
+    const plainEdge = g.edges.find((e) => e.from === "s1" && e.to === "a2")!;
+    expect(wfEdge.workflow).toBe("wf-1");            // workflow-lane connection
+    expect(plainEdge.workflow).toBeUndefined();      // ordinary connection, unchanged
+    expect(g.nodes.find((n) => n.id === "a1")?.workflow).toBe("wf-1"); // node keeps its group key
+    expect(g.nodes.find((n) => n.id === "a2")?.workflow).toBeUndefined();
+  });
+
+  it("agentGraphSig changes when a subagent's workflow key changes (drives a refresh)", () => {
+    const base: GraphData = {
+      nodes: [
+        { id: "s1", label: "proj", kind: "agent", state: "awake" },
+        { id: "a1", label: "impl", kind: "agent", state: "awake", parent: "s1" },
+      ],
+      edges: [{ from: "s1", to: "a1", kind: "message" }],
+    };
+    const before = agentGraphSig(base);
+    base.nodes[1].workflow = "wf-1";
+    base.edges[0].workflow = "wf-1";
+    expect(agentGraphSig(base)).not.toBe(before);
   });
 });

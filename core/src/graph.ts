@@ -25,6 +25,12 @@ export interface GraphNode {
    *  Roots (terminal-tab sessions) have no parent; the frontend connects the "you" hub
    *  to every parent-less agent node in agents mode. */
   parent?: string;
+  /** For subagent "agent" nodes only: the workflow-group key this subagent belongs to
+   *  (a workflow orchestration script that spawned it, reported by the relay). Subagents
+   *  spawned by the same workflow share this key; ordinary (non-workflow) subagents leave
+   *  it undefined and render exactly as before. Drives the special-looking workflow lane
+   *  in agents mode. */
+  workflow?: string;
   /** Precomputed 3D layout coordinate [x,y,z], attached by the backend (see layout-cache.ts). */
   position?: [number, number, number];
   /** Precomputed flat 2D layout coordinate [x,y] (z=0), for an instant + smooth 2D↔3D morph. */
@@ -61,6 +67,11 @@ export interface GraphEdge {
   from: string;
   to: string;
   kind: EdgeKind;
+  /** For agents-mode session→subagent edges only: the workflow-group key when this
+   *  connection belongs to a workflow (see GraphNode.workflow). Marks the edge as a
+   *  workflow-lane connection so the renderer draws it distinctly from an ordinary
+   *  session→subagent edge. Undefined on every other edge (ordinary rendering). */
+  workflow?: string;
 }
 /**
  * A self-contained precomputed layout for one brain VIEW (2nd / 3rd), keyed by node id. The "both"

@@ -7,12 +7,14 @@
 
 import type { GraphData } from "../../../core/src/graph";
 
-/** Hashes node id+label+state+parent and edge endpoints — every field that should drive a
- *  visible change. Deliberately ignores positions and subagent timing. */
+/** Hashes node id+label+state+parent+workflow and edge endpoints+workflow — every field
+ *  that should drive a visible change (the workflow key controls the special lane
+ *  connection, so a subagent joining/leaving a workflow must refresh). Deliberately
+ *  ignores positions and subagent timing. */
 export function agentGraphSig(g: GraphData): string {
   return (
-    g.nodes.map((n) => `${n.id}:${n.label}:${n.state ?? ""}:${n.parent ?? ""}`).join("|") +
+    g.nodes.map((n) => `${n.id}:${n.label}:${n.state ?? ""}:${n.parent ?? ""}:${n.workflow ?? ""}`).join("|") +
     "##" +
-    g.edges.map((e) => `${e.from}>${e.to}`).join("|")
+    g.edges.map((e) => `${e.from}>${e.to}:${e.workflow ?? ""}`).join("|")
   );
 }

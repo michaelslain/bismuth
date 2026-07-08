@@ -782,9 +782,9 @@ export function createServer(cfg: CoreConfig) {
     },
 
     "POST /relay/subagent/start": async (req) => {
-      const { parentSessionId, agentId, agentType } = (await req.json()) as { parentSessionId?: string; agentId?: string; agentType?: string };
+      const { parentSessionId, agentId, agentType, workflowId } = (await req.json()) as { parentSessionId?: string; agentId?: string; agentType?: string; workflowId?: string };
       if (!parentSessionId || !agentId) return error("missing parentSessionId/agentId", 400);
-      startSubagent({ parentSessionId, agentId, agentType: agentType ?? "agent" });
+      startSubagent({ parentSessionId, agentId, agentType: agentType ?? "agent", workflowId: workflowId || undefined });
       return ok({ ok: true });
     },
 

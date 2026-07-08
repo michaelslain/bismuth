@@ -57,14 +57,24 @@ export function buildAgentGraph(
     // Drop orphans whose parent session is gone (closed tab / re-run claude).
     if (!liveSessionIds.has(sub.parentSessionId)) continue;
     const parentId = sessionNodeId(sub.parentSessionId);
+    // Subagents spawned by a workflow orchestration carry a workflow-group key (reported
+    // by the relay). Stamp it on BOTH the node (lane grouping) and the session→subagent
+    // edge (the distinct workflow-lane connection). A plain Agent-tool subagent has no
+    // workflowId, so both stay undefined and render exactly as they do today.
     nodes.push({
       id: subagentNodeId(sub.agentId),
       label: sub.agentType,
       kind: "agent",
       state: sub.done ? "idle" : "awake",
       parent: parentId,
+      ...(sub.workflowId ? { workflow: sub.workflowId } : {}),
     });
-    edges.push({ from: parentId, to: subagentNodeId(sub.agentId), kind: "message" });
+    edges.push({
+      from: parentId,
+      to: subagentNodeId(sub.agentId),
+      kind: "message",
+      ...(sub.workflowId ? { workflow: sub.workflowId } : {}),
+    });
   }
 
   return { nodes, edges };

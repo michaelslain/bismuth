@@ -44,8 +44,11 @@ export function layoutAgentGraph(raw: GraphData, org: Org): GraphData {
       const subx = sx + (mine.length === 1 ? 0 : (j - (mine.length - 1) / 2) * SUB_STEP);
       const a = theta + (mine.length === 1 ? 0 : (j - (mine.length - 1) / 2) * SUB_FAN);
       const subPos3: V3 = [SUB_RING_R * Math.cos(a), -SUB_DY3, SUB_RING_R * Math.sin(a)];
+      // `...sub` carries the subagent's `workflow` group key (if any) onto the laid-out
+      // node. Mirror it onto the ownership edge so the renderer draws the distinct
+      // workflow-lane connection; ordinary subagents leave `workflow` undefined.
       nodes.push({ ...sub, position2d: [subx, -SUB_DY], position: subPos3, community: palIdx++ });
-      edges.push({ from: s.id, to: sub.id, kind: "message" }); // ownership: session → subagent
+      edges.push({ from: s.id, to: sub.id, kind: "message", ...(sub.workflow ? { workflow: sub.workflow } : {}) }); // ownership: session → subagent
     });
   });
 
