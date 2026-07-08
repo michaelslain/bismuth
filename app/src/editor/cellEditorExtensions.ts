@@ -31,6 +31,7 @@ import { vaultCompletion } from "./autocomplete";
 import { completionTheme } from "./completionDisplay";
 import { codeHighlightStyle } from "./codeHighlight";
 import type { NoteCandidate } from "./wikilink";
+import type { FileCandidate } from "./atMention";
 import type { Schema } from "../../../core/src/schema/types";
 
 /** The vault-aware autocomplete inputs `vaultCompletion` needs — supplied by whichever host mounts
@@ -43,6 +44,11 @@ export interface CellCompletionOptions {
   getIconNames: () => string[];
   inFrontmatter: (ctx: CompletionContext) => boolean;
   readNote: (path: string) => Promise<string>;
+  /** Composer-only (Row 79a): the full vault file list for the `@file` mention switcher, plus a
+   *  callback fired with the picked file's path so the chat wires it into its context. Absent
+   *  everywhere else (note editor, table cell) — then the at-mention source isn't added. */
+  getFiles?: () => FileCandidate[];
+  onFileMention?: (path: string) => void;
 }
 
 export interface MarkdownStackOptions {

@@ -73,4 +73,52 @@ describe("buildEditorContextText", () => {
     expect(text).toContain("Current selection (from a.md):");
     expect(text).toContain("hello world");
   });
+
+  // ── Row 79: @-mention / drag references ──────────────────────────────────────────────────────
+  test("lists referenced files, and emits a preamble even with no active file / selection", () => {
+    const text = buildEditorContextText({
+      activeFile: null,
+      openFiles: [],
+      selection: "",
+      hiddenPaths: new Set(),
+      referencedFiles: ["Projects/Gamma.md", "assets/diagram.png"],
+    });
+    expect(text).toContain("Referenced files: Projects/Gamma.md, assets/diagram.png");
+  });
+
+  test("drops a hidden referenced file (never leaked into the preamble)", () => {
+    const text = buildEditorContextText({
+      activeFile: null,
+      openFiles: [],
+      selection: "",
+      hiddenPaths: new Set(["secret.md"]),
+      referencedFiles: ["secret.md", "public.md"],
+    });
+    expect(text).toContain("Referenced files: public.md");
+    expect(text).not.toContain("secret.md");
+  });
+
+  test("dedupes a referenced file already named as the active file or an open tab", () => {
+    const text = buildEditorContextText({
+      activeFile: "a.md",
+      openFiles: [{ path: "a.md", label: "a" }, { path: "b.md", label: "b" }],
+      selection: "",
+      hiddenPaths: new Set(),
+      referencedFiles: ["a.md", "b.md", "c.md"],
+    });
+    // a.md (active) + b.md (open tab) drop out; only c.md remains as a distinct reference.
+    expect(text).toContain("Referenced files: c.md");
+    expect(text).not.toContain("Referenced files: a.md");
+  });
+
+  test("no 'Referenced files' line when the only references were deduped/hidden away", () => {
+    const text = buildEditorContextText({
+      activeFile: "a.md",
+      openFiles: [{ path: "a.md", label: "a" }],
+      selection: "",
+      hiddenPaths: new Set(),
+      referencedFiles: ["a.md"],
+    });
+    expect(text).not.toContain("Referenced files:");
+  });
 });

@@ -1604,6 +1604,8 @@ export function extractEditorContextPaths(text: string): string[] {
   if (active) out.push(active[1]!.trim());
   const tabs = block.match(/^Open tabs: (.+)$/m);
   if (tabs) out.push(...tabs[1]!.split(",").map((s) => s.trim()).filter(Boolean));
+  const refs = block.match(/^Referenced files: (.+)$/m);
+  if (refs) out.push(...refs[1]!.split(",").map((s) => s.trim()).filter(Boolean));
   const sel = block.match(/^Current selection \(from (.+)\):$/m);
   if (sel) out.push(sel[1]!.trim());
   return out;

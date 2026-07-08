@@ -71,7 +71,7 @@ import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
-import { descriptorMovePath, descriptorNotePath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
+import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
 import { insertTextAtCoords } from "./editorRegistry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
@@ -1225,21 +1225,30 @@ export default function App() {
     setActiveTabId(res.newTabId);
   };
 
-  // A NOTE dropped onto a pane can REFERENCE the note (Row 74) instead of moving/grafting:
-  //  • a chat pane → insert a mention into that chat's composer (drop-to-mention);
-  //  • another note's editor, dropped on its center → insert a [[wikilink]] at the drop point.
+  // A dragged view/file dropped onto a pane can REFERENCE it (Row 74 + Row 79b) instead of
+  // moving/grafting:
+  //  • a chat pane → insert a `[[mention]]` into that chat's composer (drop-to-mention). Accepts ANY
+  //    file or folder (descriptorChatRefPath), not just markdown — a chat mention just names the file
+  //    for the model to pull in (Row 79b broadens this beyond notes).
+  //  • another note's editor, dropped on its center → insert a `[[wikilink]]` at the drop point.
+  //    Markdown notes only (descriptorNotePath) — a wikilink resolves to a note.
   // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
-  const referenceNoteOnPane = (leafId: string, zone: DropZone, notePath: string, point: DropPoint): boolean => {
+  const referenceOnPane = (leafId: string, zone: DropZone, descriptor: DragDescriptor, point: DropPoint): boolean => {
     const at = activeTab();
     if (!at) return false;
     const content = leaves(at.root).find((l) => l.id === leafId)?.content;
     if (!content) return false;
     if (content.startsWith(CHAT_PREFIX)) {
+      const refPath = descriptorChatRefPath(descriptor);
+      if (!refPath) return false;
       const chatId = content.slice(CHAT_PREFIX.length);
-      window.dispatchEvent(new CustomEvent("bismuth-chat-mention", { detail: { chatId, path: notePath } }));
+      // ChatView's onMention handler inserts the [[wikilink]] AND wires the path into the chat
+      // context (chatContext.addChatReference) so its content reaches the model (Row 79a).
+      window.dispatchEvent(new CustomEvent("bismuth-chat-mention", { detail: { chatId, path: refPath } }));
       return true;
     }
-    if (zone === "center" && content !== notePath && isMarkdown(content)) {
+    const notePath = descriptorNotePath(descriptor);
+    if (notePath && zone === "center" && content !== notePath && isMarkdown(content)) {
       // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
       // (e.g. it's a base/block-editor pane) — then we fall through to the open/graft behavior.
       if (insertTextAtCoords(content, point.x, point.y, wikilinkFor(notePath))) return true;
@@ -1265,11 +1274,11 @@ export default function App() {
       return;
     }
     // target.kind === "pane"
-    // Row 74: a note source (sidebar note, or a note-backed tab/pane) can reference the note in a
-    // chat / link it into another editor. A note-backed pane dropped onto ITSELF stays a plain graft.
-    const notePath = descriptorNotePath(descriptor);
+    // Row 74 + Row 79b: a file source (sidebar note/file, or a path-backed tab/pane) can reference
+    // itself in a chat (any file) / link into another editor (markdown only). A pane dropped onto
+    // ITSELF stays a plain graft.
     const selfPane = descriptor.kind === "pane" && descriptor.leafId === target.leafId;
-    if (notePath && !selfPane && referenceNoteOnPane(target.leafId, target.zone, notePath, point)) return;
+    if (!selfPane && referenceOnPane(target.leafId, target.zone, descriptor, point)) return;
     // Classic behavior otherwise.
     if (descriptor.kind === "tab") {
       dropTabOnPane(descriptor.tabId, target.leafId, target.zone);
@@ -1469,13 +1478,25 @@ export default function App() {
       const { from, to } = (e as CustomEvent).detail as { from: string; to: string };
       renamePath(from, to);
     };
+    // Chat `/rename` slash command (Row 75): ChatView dispatches this so it renames its tab through
+    // the SAME Tab.name override the right-click Rename sets (updateTab) — persisted across reload/
+    // reopen with the rest of the tab state. Blank name reverts to the auto label (like commitRename).
+    const onChatRename = (e: Event) => {
+      const d = (e as CustomEvent<{ chatId?: string; name?: string }>).detail;
+      if (!d?.chatId) return;
+      const contentId = CHAT_PREFIX + d.chatId;
+      const tab = tabs().find((t) => leaves(t.root).some((l) => l.content === contentId));
+      if (tab) updateTab(tab.id, (t) => ({ ...t, name: (d.name ?? "").trim() || undefined }));
+    };
     window.addEventListener("bismuth-open", onOpen);
     window.addEventListener("bismuth-deleted", onDeleted);
     window.addEventListener("bismuth-moved", onMoved);
+    window.addEventListener("bismuth-chat-rename", onChatRename);
     onCleanup(() => {
       window.removeEventListener("bismuth-open", onOpen);
       window.removeEventListener("bismuth-deleted", onDeleted);
       window.removeEventListener("bismuth-moved", onMoved);
+      window.removeEventListener("bismuth-chat-rename", onChatRename);
     });
   };
 

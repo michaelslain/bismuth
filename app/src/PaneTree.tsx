@@ -8,6 +8,7 @@ import { Icon } from "./icons/Icon";
 import { IconButton } from "./ui/IconButton";
 import { contentLabel, contentIcon } from "./tabIds";
 import type { DragState } from "./dnd/viewDrag";
+import { isChatReferenceDrop } from "./dnd/noteRef";
 import { nearestEdge, type Zone } from "./dnd/geometry";
 import type { NoteCandidate } from "./editor/wikilink";
 import "./PaneTree.css";
@@ -48,9 +49,22 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
     return nearestEdge({ x: r.left, y: r.top, w: r.width, h: r.height }, e.clientX, e.clientY);
   };
 
+  // A chat-reference drop (Row 74): the pointer-drag payload is a referenceable file/folder and this
+  // pane shows a chat — dropping inserts a `[[mention]]` into the composer, NOT a pane split. So we
+  // suppress the four-quadrant split highlight and show a single "drop to reference" cue instead.
+  // isChatReferenceDrop is the SAME predicate App's drop handler uses, so the cue can't disagree with
+  // what the drop actually does.
+  const chatRefDrop = (): boolean => {
+    const d = props.dragState();
+    return d.active && d.target?.kind === "pane" && d.target.leafId === props.node.id
+      && isChatReferenceDrop(props.node.content, d.descriptor);
+  };
+
   // Drop-zone to highlight: a file drag (HTML5) reports an edge; a view drag
-  // (tab/pane) reports its live zone when this pane is the current target.
+  // (tab/pane) reports its live zone when this pane is the current target. Suppressed entirely for a
+  // chat-reference drop — that shows the reference cue below, never a split zone.
   const activeZone = (): Zone | null => {
+    if (chatRefDrop()) return null;
     const fd = fileDropDir();
     if (fd) return fd;
     const d = props.dragState();
@@ -126,6 +140,16 @@ function PaneLeaf(props: PaneTreeProps & { node: Leaf }) {
       </div>
       <Show when={activeZone()}>
         {(z) => <div class={`pane-dropzone ${z()}`} />}
+      </Show>
+      {/* Chat-reference drop cue (Row 74): a full-pane affordance that reads "drop to reference"
+          instead of the split-quadrant highlight, so dragging a file over a chat clearly means a
+          mention, not a pane split. */}
+      <Show when={chatRefDrop()}>
+        <div class="pane-drop-reference">
+          <span class="pane-drop-reference-cue">
+            <Icon value="AtSign" size={14} /> Drop to reference
+          </span>
+        </div>
       </Show>
     </div>
   );

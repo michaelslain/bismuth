@@ -13,6 +13,10 @@ export interface EditorContextInput {
   selectionPath?: string | null;
   /** Paths whose RESOLVED visibility is "hidden" (core/src/visibility.ts isVisibleToChat). */
   hiddenPaths: ReadonlySet<string>;
+  /** Files the user EXPLICITLY referenced in this chat (Row 79) — @-mentioned or dragged in.
+   *  Listed in the preamble so their content is available to the model, visibility-filtered
+   *  like everything else. Deduped against the active file / open tabs so nothing repeats. */
+  referencedFiles?: string[];
 }
 
 /** Build the `<editor-context>` preamble text, or "" when there's nothing visible worth
@@ -22,10 +26,17 @@ export function buildEditorContextText(input: EditorContextInput): string {
   const openFiles = input.openFiles.filter((f) => !input.hiddenPaths.has(f.path));
   const selectionHidden = !!input.selectionPath && input.hiddenPaths.has(input.selectionPath);
   const selection = selectionHidden ? "" : input.selection;
-  if (!activeFile && !selection) return "";
+  // Referenced files (Row 79): drop hidden ones, then anything already named as the active file or
+  // an open tab (no point listing it twice).
+  const openPaths = new Set(openFiles.map((f) => f.path));
+  const referencedFiles = (input.referencedFiles ?? []).filter(
+    (p) => !input.hiddenPaths.has(p) && p !== activeFile && !openPaths.has(p),
+  );
+  if (!activeFile && !selection && referencedFiles.length === 0) return "";
   const lines: string[] = ["<editor-context>"];
   if (activeFile) lines.push(`Active file: ${activeFile}`);
   if (openFiles.length) lines.push(`Open tabs: ${openFiles.map((f) => f.path).join(", ")}`);
+  if (referencedFiles.length) lines.push(`Referenced files: ${referencedFiles.join(", ")}`);
   if (selection) {
     lines.push(`Current selection${input.selectionPath ? ` (from ${input.selectionPath})` : ""}:`);
     lines.push("```", selection, "```");

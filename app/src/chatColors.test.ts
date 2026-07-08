@@ -1,9 +1,10 @@
-import { test, expect, beforeEach } from "bun:test";
+import { test, expect, beforeEach, describe } from "bun:test";
 import {
   upsertColor,
   lookupColor,
   setChatColor,
   chatColor,
+  resolveChatColorArg,
   CHAT_COLOR_SWATCHES,
   type ChatColorEntry,
 } from "./chatColors";
@@ -87,4 +88,28 @@ test("swatch palette is non-empty and every entry is a hex color", () => {
     expect(sw.name).toBeTruthy();
     expect(sw.value).toMatch(/^#[0-9a-fA-F]{6}$/);
   }
+});
+
+// Row 75: `/color <token>` argument resolution.
+describe("resolveChatColorArg", () => {
+  test("resolves a named swatch (case-insensitive) to its hex value", () => {
+    const blue = CHAT_COLOR_SWATCHES.find((s) => s.name === "Blue")!;
+    expect(resolveChatColorArg("blue")).toBe(blue.value);
+    expect(resolveChatColorArg("BLUE")).toBe(blue.value);
+  });
+  test("passes a valid #rrggbb / #rgb hex through unchanged", () => {
+    expect(resolveChatColorArg("#ffcc00")).toBe("#ffcc00");
+    expect(resolveChatColorArg("#abc")).toBe("#abc");
+  });
+  test("clear keywords resolve to null (revert to theme)", () => {
+    expect(resolveChatColorArg("none")).toBeNull();
+    expect(resolveChatColorArg("clear")).toBeNull();
+    expect(resolveChatColorArg("")).toBeNull();
+    expect(resolveChatColorArg("  ")).toBeNull();
+  });
+  test("an unrecognized token resolves to undefined (caller reports an error)", () => {
+    expect(resolveChatColorArg("chartreuse")).toBeUndefined();
+    expect(resolveChatColorArg("#gggggg")).toBeUndefined();
+    expect(resolveChatColorArg("#12")).toBeUndefined();
+  });
 });

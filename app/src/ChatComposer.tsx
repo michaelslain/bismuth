@@ -23,6 +23,7 @@ import { wrapSelection } from "./editor/wrapSelection";
 import { settings } from "./settings";
 import { api } from "./api";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { FileCandidate } from "./editor/atMention";
 
 /** Imperative handle ChatView drives the composer through — mirrors the old `ta?.focus()` /
  *  `ta?.scrollIntoView()` calls it made against the raw textarea. */
@@ -62,6 +63,10 @@ export interface ChatComposerProps {
   placeholder: () => string;
   getNotes: () => NoteCandidate[];
   getTags: () => string[];
+  /** Row 79a: every vault file, powering the `@file` mention switcher, and a callback fired with the
+   *  picked file's PATH so ChatView wires it into the chat context. Composer-only. */
+  getFiles: () => FileCandidate[];
+  onFileMention: (path: string) => void;
   /** Clipboard paste (image intake) — ChatView's `onComposerPaste`. Returns nothing; never consumes
    *  text paste, so pasting markdown lands in the doc normally. */
   onPaste: (e: ClipboardEvent) => void;
@@ -120,6 +125,9 @@ export function ChatComposer(props: ChatComposerProps) {
               getIconNames: () => [],
               inFrontmatter: () => false,
               readNote: (p) => api.read(p),
+              // Composer-only `@file` mention (Row 79a) over EVERY vault file.
+              getFiles: props.getFiles,
+              onFileMention: props.onFileMention,
             },
             livePreview: settings.editor.livePreview,
           }),

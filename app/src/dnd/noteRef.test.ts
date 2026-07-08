@@ -6,7 +6,10 @@ import {
   wikilinkFor,
   descriptorMovePath,
   descriptorNotePath,
+  descriptorChatRefPath,
+  isChatReferenceDrop,
 } from "./noteRef";
+import { CHAT_PREFIX } from "../tabIds";
 import type { DragDescriptor } from "./viewDrag";
 
 describe("isMarkdown", () => {
@@ -71,5 +74,42 @@ describe("descriptorNotePath", () => {
     expect(descriptorNotePath(note("Budget.sheet"))).toBeNull();
     expect(descriptorNotePath(tab(undefined))).toBeNull();
     expect(descriptorNotePath(null)).toBeNull();
+  });
+});
+
+// Row 79b: a chat reference accepts ANY file/folder, unlike the markdown-only editor wikilink drop.
+describe("descriptorChatRefPath", () => {
+  it("returns the path for notes, folders, non-markdown files, and path-backed tabs/panes", () => {
+    expect(descriptorChatRefPath(note("Beta.md"))).toBe("Beta.md");
+    expect(descriptorChatRefPath(note("assets/diagram.png"))).toBe("assets/diagram.png");
+    expect(descriptorChatRefPath(folder("Archive"))).toBe("Archive");
+    expect(descriptorChatRefPath(tab("Budget.sheet"))).toBe("Budget.sheet");
+    expect(descriptorChatRefPath(pane("x/Gamma.md"))).toBe("x/Gamma.md");
+  });
+  it("returns null for a pathless tab/pane and null", () => {
+    expect(descriptorChatRefPath(tab(undefined))).toBeNull();
+    expect(descriptorChatRefPath(null)).toBeNull();
+  });
+});
+
+// Row 74: the shared predicate driving BOTH the drop handler and the split-highlight suppression.
+describe("isChatReferenceDrop", () => {
+  const chat = CHAT_PREFIX + "abc";
+  it("true for a chat pane + a referenceable payload (note, non-md file, folder, path-backed tab)", () => {
+    expect(isChatReferenceDrop(chat, note("Beta.md"))).toBe(true);
+    expect(isChatReferenceDrop(chat, note("assets/pic.png"))).toBe(true);
+    expect(isChatReferenceDrop(chat, folder("Archive"))).toBe(true);
+    expect(isChatReferenceDrop(chat, tab("Beta.md"))).toBe(true);
+  });
+  it("false when the pane isn't a chat (a note/base pane still splits)", () => {
+    expect(isChatReferenceDrop("Notes.md", note("Beta.md"))).toBe(false);
+    expect(isChatReferenceDrop("::graph", note("Beta.md"))).toBe(false);
+  });
+  it("false when the payload carries no vault path (a chat/terminal tab dragged onto a chat)", () => {
+    expect(isChatReferenceDrop(chat, tab(undefined))).toBe(false);
+    expect(isChatReferenceDrop(chat, null)).toBe(false);
+  });
+  it("false for an undefined pane content", () => {
+    expect(isChatReferenceDrop(undefined, note("Beta.md"))).toBe(false);
   });
 });
