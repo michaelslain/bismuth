@@ -1,0 +1,11 @@
+<!--
+  Injected into the <head> of the Storybook preview iframe BEFORE the preview bundle
+  runs. `app/src/settingsCssVars.ts` transitively imports `app/src/settings.ts`, whose
+  module-scope has a browser-only side effect: it opens an EventSource + GET /settings
+  to live-sync settings from the core backend. There is no core backend in Storybook, so
+  that would spam failed fetches. Setting this flag makes settings.ts take its
+  "first-run / intro" branch and skip the network sync entirely (see settings.ts).
+-->
+<script>
+  window.__BISMUTH_FIRST_RUN__ = true;
+</script>
