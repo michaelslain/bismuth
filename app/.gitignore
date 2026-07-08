@@ -1,0 +1,2 @@
+# Storybook production build output (`bun run build-storybook`)
+storybook-static/
