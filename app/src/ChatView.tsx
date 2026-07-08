@@ -40,6 +40,7 @@ import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from "./chatEffort";
 import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
+import { wikilinkFor } from "./dnd/noteRef";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -1309,6 +1310,22 @@ export function ChatView(props: { chatId: string }) {
     };
     window.addEventListener("bismuth-native-drag", onNativeDrag);
     onCleanup(() => window.removeEventListener("bismuth-native-drag", onNativeDrag));
+  });
+
+  // Drop-to-mention (Row 74a): App resolves a note dragged onto THIS chat's pane (from the sidebar
+  // or a note tab) and dispatches `bismuth-chat-mention`. Append a `[[wikilink]]` reference to the
+  // composer draft so the note is named in the next message — the wire preamble (buildEditorContext)
+  // + wikilink resolution let the assistant pull it in. Scoped to this chat by id.
+  onMount(() => {
+    const onMention = (e: Event) => {
+      const d = (e as CustomEvent<{ chatId?: string; path?: string }>).detail;
+      if (!d || d.chatId !== props.chatId || !d.path) return;
+      const ref = wikilinkFor(d.path);
+      setDraft((cur) => (cur && !cur.endsWith(" ") && cur.length ? `${cur} ${ref} ` : `${cur}${ref} `));
+      ta?.focus();
+    };
+    window.addEventListener("bismuth-chat-mention", onMention);
+    onCleanup(() => window.removeEventListener("bismuth-chat-mention", onMention));
   });
 
   onCleanup(() => {
