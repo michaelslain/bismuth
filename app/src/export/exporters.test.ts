@@ -53,6 +53,21 @@ describe("renderExport", () => {
     expect(r.previewHtml).toContain("<h1>Title</h1>");
   });
 
+  test("pdf export applies the chosen body font size (pt); default is 12pt", async () => {
+    const def = await renderExport("a/note.md", "pdf", deps());
+    expect(def.previewHtml).toContain("font-size: 12pt");
+    const big = await renderExport("a/note.md", "pdf", deps(), "dark", opts({ pdfFontSize: 18 }));
+    expect(big.previewHtml).toContain("font-size: 18pt");
+    expect(big.previewHtml).not.toContain("font-size: 12pt");
+  });
+
+  test("html/png exports do NOT force a body font size (font size is PDF-only)", async () => {
+    const html = await renderExport("a/note.md", "html", deps(), "dark", opts({ pdfFontSize: 18 }));
+    expect(html.previewHtml).not.toContain("font-size:");
+    const png = await renderExport("a/note.md", "png", deps(), "dark", opts({ pdfFontSize: 18 }));
+    expect(png.previewImg).toBeDefined();
+  });
+
   test("base -> md builds a markdown table from resolved rows", async () => {
     const r = await renderExport("Reading.md", "md", deps());
     expect(r.filename).toBe("Reading.md");

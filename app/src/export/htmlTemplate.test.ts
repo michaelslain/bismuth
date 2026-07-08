@@ -15,4 +15,15 @@ describe("wrapHtmlDocument", () => {
     expect(out).toContain("<title>A &amp; B &lt;x&gt;</title>");
     expect(out).not.toContain("<title>A & B <x></title>");
   });
+
+  test("omits an explicit body font-size when none is requested (intrinsic sizing)", () => {
+    const out = wrapHtmlDocument("<p>hi</p>", "N");
+    expect(out).not.toContain("font-size:");
+    expect(out).not.toContain("font-size: ");
+  });
+
+  test("emits the requested body font-size (pt) when given", () => {
+    expect(wrapHtmlDocument("<p>hi</p>", "N", undefined, "", 12)).toContain("font-size: 12pt");
+    expect(wrapHtmlDocument("<p>hi</p>", "N", undefined, "", 18)).toContain("font-size: 18pt");
+  });
 });

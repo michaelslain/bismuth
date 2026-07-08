@@ -88,6 +88,7 @@ async function wrapBody(
   palette: ThemePalette,
   deps: ExportDeps,
   extraCss = "",
+  fontSizePt?: number,
 ): Promise<string> {
   // `class="katex` is the marker KaTeX emits around rendered math (display or inline) —
   // far more precise than a bare "katex" substring. The inline CSS comes from
@@ -95,7 +96,9 @@ async function wrapBody(
   // for headless consumers (the cli binary).
   const katex = body.includes('class="katex') ? `<style>${await deps.katexCss()}</style>` : "";
   const view = extraCss ? `<style>${extraCss}</style>` : "";
-  return wrapHtmlDocument(body, name, palette, view + katex);
+  // `fontSizePt` is passed only by the PDF path (the user's chosen body size); other formats
+  // leave it undefined so they keep their intrinsic sizing.
+  return wrapHtmlDocument(body, name, palette, view + katex, fontSizePt);
 }
 
 // Render one `<!-- pagebreak -->`-delimited section (raw markdown, from pageSections) to an
@@ -233,7 +236,7 @@ export async function renderPreview(
   // page images the downloaded PDF holds, so preview and output never disagree.
   if (format === "pdf") {
     const { html, css } = await renderedBody(path, deps, opts, palette);
-    const doc = await wrapBody(html, name, palette, deps, css);
+    const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize);
     const pages = await deps.htmlToPdfPages(doc);
     return { previewHtml: pdfPreviewDoc(pages, palette) };
   }
@@ -288,7 +291,7 @@ export async function renderExport(
         return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewImg: dataUrl };
       }
       const { html, css } = await renderedBody(path, deps, opts, palette);
-      const doc = await wrapBody(html, name, palette, deps, css);
+      const doc = await wrapBody(html, name, palette, deps, css, opts.pdfFontSize);
       const pdf = await deps.htmlToPdf(doc);
       return { bytes: pdf, mime: "application/pdf", filename: `${name}.pdf`, previewHtml: doc };
     }

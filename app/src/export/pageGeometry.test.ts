@@ -7,6 +7,7 @@ import {
   CONTENT_W_PT,
   CONTENT_H_PT,
   PAGE_W_PX,
+  CONTENT_W_PX,
   pdfSliceMetrics,
   pageSlices,
   parseRgbColor,
@@ -31,6 +32,29 @@ describe("page constants", () => {
 
   test("source raster width is 8.5in @ 96dpi", () => {
     expect(PAGE_W_PX).toBe(8.5 * 96); // 816
+  });
+
+  test("PDF content raster width is the 6.5in printable box @ 96dpi", () => {
+    expect(CONTENT_W_PX).toBe(6.5 * 96); // 624
+    // Laid out at the printable width, the raster maps 1:1 into the printable box with no
+    // horizontal squeeze — 96 source px == 72 PDF pt == 1 inch.
+    expect(CONTENT_W_PT / CONTENT_W_PX).toBeCloseTo(72 / 96, 10); // 0.75 pt per px
+  });
+
+  test("laying out at CONTENT_W_PX makes points true (1 CSS pt -> 1 PDF pt)", () => {
+    // At 1x scale the source canvas is exactly CONTENT_W_PX wide. pdfSliceMetrics maps source px
+    // to PDF pt; the density must be the pure 72/96 dpi ratio, so a 12pt CSS font (16px @96dpi)
+    // measures 12pt in the PDF.
+    const { scale } = pdfSliceMetrics(CONTENT_W_PX);
+    expect(scale).toBeCloseTo(72 / 96, 10);
+    const cssPx = (12 / 72) * 96; // 12pt in CSS px @96dpi = 16px
+    expect(cssPx * scale).toBeCloseTo(12, 10); // -> 12pt in the PDF
+  });
+
+  test("one printable page holds exactly 9in (CONTENT_H) of content at CONTENT_W_PX", () => {
+    const { pageHpx } = pdfSliceMetrics(CONTENT_W_PX);
+    // 9in @ 96dpi = 864 source px.
+    expect(pageHpx).toBe(9 * 96); // 864
   });
 });
 

@@ -13,6 +13,7 @@ import html2canvas from "html2canvas";
 import { sanitizeDocColorsForRaster, normalizeCssColor } from "./cssColor";
 import {
   PAGE_W_PX,
+  CONTENT_W_PX,
   PAGE_W_PT,
   PAGE_H_PT,
   MARGIN_PT,
@@ -40,10 +41,11 @@ const settle = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms))
 async function htmlToCanvas(
   html: string,
   bodyOverrideCss = "",
+  contentWidthPx = PAGE_W_PX,
 ): Promise<{ canvas: HTMLCanvasElement; bg: string; breaks: number[] }> {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
-  iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W_PX}px;height:200px;border:0;`;
+  iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${contentWidthPx}px;height:200px;border:0;`;
   document.body.appendChild(iframe);
   try {
     const doc = iframe.contentDocument!;
@@ -101,8 +103,8 @@ async function htmlToCanvas(
     const canvas = await html2canvas(doc.body, {
       scale,
       backgroundColor: bg,
-      width: PAGE_W_PX,
-      windowWidth: PAGE_W_PX,
+      width: contentWidthPx,
+      windowWidth: contentWidthPx,
       useCORS: true,
     });
     if (canvas.height === 0) throw new Error("htmlToCanvas: nothing to render");
@@ -152,7 +154,10 @@ const JPEG_QUALITY = 0.92;
  * 1in margin regardless of content length.
  */
 async function renderLetterPages(html: string): Promise<{ pages: HTMLCanvasElement[]; bg: string }> {
-  const { canvas, bg, breaks } = await htmlToCanvas(html, PDF_BODY_OVERRIDE);
+  // Lay the body out at the 6.5in printable width (CONTENT_W_PX), not the full 8.5in page: the
+  // raster then maps 1:1 into the printable box (96px == 72pt == 1in) with no horizontal squeeze,
+  // so a chosen font size renders at its true point size and every margin is exactly 1in.
+  const { canvas, bg, breaks } = await htmlToCanvas(html, PDF_BODY_OVERRIDE, CONTENT_W_PX);
   // Source px per printable page (inside the margins), and the px<->pt density of the raster.
   const { pageHpx } = pdfSliceMetrics(canvas.width);
   const density = canvas.width / CONTENT_W_PT; // source px per PDF point
