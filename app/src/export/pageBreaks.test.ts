@@ -88,4 +88,26 @@ describe("pageSections", () => {
     const text = `first\n${MARK}\nsecond`;
     expect(pageSections(text)).toEqual(["first\n", "\nsecond"]);
   });
+
+  test("includeFrontmatter: true re-prepends the frontmatter block onto page 1 verbatim", () => {
+    const text = `---\ntitle: Foo\n---\nPage one\n${MARK}\nPage two`;
+    expect(pageSections(text, true)).toEqual(["---\ntitle: Foo\n---\nPage one\n", "\nPage two"]);
+  });
+
+  test("includeFrontmatter: true still never yields a frontmatter-only page (marker right after the block)", () => {
+    const text = `---\ntitle: Foo\n---\n${MARK}\nReal content`;
+    // The frontmatter joins the first REAL page instead of standing alone.
+    expect(pageSections(text, true)).toEqual(["---\ntitle: Foo\n---\n\nReal content"]);
+  });
+
+  test("the toggle never changes the section COUNT (page numbering is stable)", () => {
+    const text = `---\nt: 1\n---\na\n${MARK}\nb\n${MARK}\nc`;
+    expect(pageSections(text, true)).toHaveLength(3);
+    expect(pageSections(text, false)).toHaveLength(3);
+  });
+
+  test("includeFrontmatter: true on a note WITHOUT frontmatter is a no-op", () => {
+    const text = `first\n${MARK}\nsecond`;
+    expect(pageSections(text, true)).toEqual(pageSections(text, false));
+  });
 });

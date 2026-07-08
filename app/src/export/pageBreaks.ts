@@ -1,9 +1,11 @@
 // app/src/export/pageBreaks.ts
 // Pure splitting of a note's raw markdown into page-break-delimited sections, for the PNG
-// exporter: each section is rendered + rasterized independently and written as its OWN file
-// (see exporters.ts's "png" case), since a single raster image can't represent more than one
-// page. PDF instead honors the SAME marker by slicing the rendered CANVAS at each marker's
-// div (htmlToPdf.ts) — that path needs no text-level split, since one PDF can hold many pages.
+// exporter (each section is rendered + rasterized independently and written as its OWN file
+// — see exporters.ts's "png" case, since a single raster image can't represent more than one
+// page) AND for the export preview (each section draws as its own visually distinct "sheet"
+// — see exporters.ts renderPreview). PDF instead honors the SAME marker by slicing the
+// rendered CANVAS at each marker's div (htmlToPdf.ts) — that path needs no text-level split,
+// since one PDF can hold many pages.
 import { maskCode, unmaskCode, PAGEBREAK_RE } from "../bases/markdown";
 import { stripFrontmatter } from "../bases/cardBodySplit";
 
@@ -22,19 +24,28 @@ export function splitByPageBreaks(text: string): string[] {
 }
 
 /**
- * The sections a PNG export should render as separate files. Frontmatter is stripped FIRST —
- * before splitting — so a marker placed right after the frontmatter block doesn't make "page
- * 1" just the frontmatter; the body is then split on page-break markers, and any section left
- * blank after trimming is dropped (a marker at the very start/end of the body, or two adjacent
- * markers, would otherwise produce an empty page). Always returns at least one section — a
- * blank note yields `[""]` rather than `[]`.
+ * The sections a page-break-aware render works from — the PNG export writes one file per
+ * entry and the preview draws one "sheet" per entry, sharing this one model so the two can
+ * never disagree. Frontmatter is sliced off FIRST — before splitting — so a marker placed
+ * right after the frontmatter block doesn't make "page 1" just the frontmatter; the body is
+ * then split on page-break markers, and any section left blank after trimming is dropped (a
+ * marker at the very start/end of the body, or two adjacent markers, would otherwise produce
+ * an empty page). Always returns at least one section — a blank note yields `[""]`, not `[]`.
  *
- * This ALWAYS strips frontmatter regardless of the export's `includeFrontmatter` option: that
- * toggle controls whether frontmatter shows up in a single-page render, but page-break
- * splitting is about paginating the note's CONTENT, and frontmatter (config, not content) never
- * belongs on a page of its own.
+ * `includeFrontmatter` mirrors ExportOptions.includeFrontmatter: when true, the note's
+ * frontmatter block is RE-PREPENDED to the first surviving section (so it renders as prose
+ * at the top of page 1, exactly like the single-page and PDF paths), but it never counts
+ * as — or produces — a page of its own. When false (the default) it is simply dropped.
+ * Either way the section COUNT is identical, so page numbering never shifts with the toggle.
  */
-export function pageSections(text: string): string[] {
-  const sections = splitByPageBreaks(stripFrontmatter(text)).filter((s) => s.trim() !== "");
-  return sections.length > 0 ? sections : [""];
+export function pageSections(text: string, includeFrontmatter = false): string[] {
+  const body = stripFrontmatter(text);
+  const sections = splitByPageBreaks(body).filter((s) => s.trim() !== "");
+  if (sections.length === 0) sections.push("");
+  if (includeFrontmatter && body.length < text.length) {
+    // stripFrontmatter removes a leading prefix, so the frontmatter block is exactly the
+    // slice it dropped — re-prepend it verbatim to the first real page.
+    sections[0] = text.slice(0, text.length - body.length) + sections[0];
+  }
+  return sections;
 }

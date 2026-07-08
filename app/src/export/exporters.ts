@@ -98,22 +98,57 @@ async function wrapBody(
   return wrapHtmlDocument(body, name, palette, view + katex);
 }
 
-// Render one `<!-- pagebreak -->`-delimited section (raw markdown, already frontmatter-stripped
-// by pageSections) to a self-contained HTML document — the per-page analogue of
-// renderedBody+wrapBody for a plain path, used by the PNG page-splitter below. Same math-guard
-// as renderedBody: re-render once KaTeX is ready if the first pass left an unrendered placeholder.
-async function renderSectionDoc(
-  section: string,
-  name: string,
+// Render one `<!-- pagebreak -->`-delimited section (raw markdown, from pageSections) to an
+// HTML fragment. Same math-guard as renderedBody: re-render once KaTeX is ready if the first
+// pass left an unrendered placeholder. Shared by the PNG page-splitter (each fragment gets
+// its own wrapped document) and the paged preview (fragments stack as visual "sheets").
+async function renderSectionHtml(section: string): Promise<string> {
+  const html = renderMarkdown(section);
+  if (!UNRENDERED_MATH.test(html)) return html;
+  await whenMathReady();
+  return renderMarkdown(section);
+}
+
+// The paged-preview stylesheet: each page-break-delimited section renders inside its own
+// bordered "sheet" with a small page label, so the pane VISUALIZES exactly where the export
+// splits pages (PNG: one file per sheet; PDF: a forced page boundary at each gap; HTML: a
+// forced break when the exported file is printed).
+function previewPagesCss(p: ThemePalette): string {
+  return `
+  .bismuth-preview-page { border: 1px dashed ${p.border}; border-radius: 8px;
+    padding: 1.1rem 1.4rem 1.3rem; margin: 0 0 1.6rem; }
+  .bismuth-preview-page:last-child { margin-bottom: 0; }
+  .bismuth-preview-pagelabel { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: ${p.muted}; margin: 0 0 0.75rem; }
+  .bismuth-preview-pagelabel + * { margin-top: 0; }
+`;
+}
+
+// The <body> of the paged preview: one labeled sheet per rendered section. Pure over the
+// already-rendered fragments; exercised via renderPreview in exporters.test.ts.
+function previewPagesBody(sectionHtmls: string[]): string {
+  const n = sectionHtmls.length;
+  return sectionHtmls
+    .map(
+      (html, i) =>
+        `<section class="bismuth-preview-page"><div class="bismuth-preview-pagelabel">Page ${i + 1} of ${n}</div>\n${html}</section>`,
+    )
+    .join("\n");
+}
+
+// The page-break section model for a path, or null when page-splitting doesn't apply (a
+// non-md file, a base, or a note with no real page breaks). Single source for the PNG
+// export's file-per-page split AND the preview's sheet-per-page rendering.
+async function pageBreakSections(
+  path: string,
   deps: ExportDeps,
-  palette: ThemePalette,
-): Promise<string> {
-  let html = renderMarkdown(section);
-  if (UNRENDERED_MATH.test(html)) {
-    await whenMathReady();
-    html = renderMarkdown(section);
-  }
-  return wrapBody(html, name, palette, deps);
+  opts: ExportOptions,
+): Promise<string[] | null> {
+  if (ext(path) !== "md") return null;
+  const raw = await deps.read(path);
+  if (isBaseText(raw)) return null;
+  const sections = pageSections(raw, opts.includeFrontmatter);
+  return sections.length > 1 ? sections : null;
 }
 
 // The exact markdown text a `md` export would write — also shown (in a <pre>) as the
@@ -160,6 +195,15 @@ export async function renderPreview(
   if (format === "csv") {
     const pre = `<pre>${escapeHtml(await csvText(path, deps, opts))}</pre>`;
     return { previewHtml: wrapHtmlDocument(pre, name, palette) };
+  }
+  // A page-broken note previews as one visually distinct "sheet" per section — the same
+  // pageSections model the PNG export writes files from and the PDF forces breaks at, so
+  // what the preview separates is exactly what the export separates.
+  const sections = await pageBreakSections(path, deps, opts);
+  if (sections) {
+    const htmls: string[] = [];
+    for (const s of sections) htmls.push(await renderSectionHtml(s));
+    return { previewHtml: await wrapBody(previewPagesBody(htmls), name, palette, deps, previewPagesCss(palette)) };
   }
   // html + pdf + png share the same rendered HTML body (+ view CSS).
   const { html, css } = await renderedBody(path, deps, opts, palette);
@@ -218,31 +262,28 @@ export async function renderExport(
       // in a single raster image — PDF instead slices ONE document into many pages (htmlToPdf.ts
       // reads the same marker off the rendered canvas), but a PNG has no such "many pages, one
       // file" container, so each marker-delimited section renders + rasterizes to its OWN file
-      // (`name-1.png`, `name-2.png`, …). A note with no markers takes the single-file path below
-      // exactly as before (pageSections returns one section, so `sections.length > 1` is false).
-      // Note: pageSections ALWAYS strips frontmatter when computing pages (see its doc comment),
-      // independent of `opts.includeFrontmatter` — frontmatter is never a page of its own.
-      if (kind === "md") {
-        const raw = await deps.read(path);
-        if (!isBaseText(raw)) {
-          const sections = pageSections(raw);
-          if (sections.length > 1) {
-            const files: { filename: string; bytes: Uint8Array }[] = [];
-            let firstDataUrl: string | undefined;
-            for (let i = 0; i < sections.length; i++) {
-              const doc = await renderSectionDoc(sections[i], `${name} (page ${i + 1})`, deps, palette);
-              const { bytes, dataUrl } = await deps.htmlToPng(doc);
-              if (i === 0) firstDataUrl = dataUrl;
-              files.push({ filename: `${name}-${i + 1}.png`, bytes });
-            }
-            return {
-              bytes: files[0].bytes,
-              mime: "image/png",
-              filename: files[0].filename,
-              previewImg: firstDataUrl,
-              files,
-            };
+      // (`name-1.png`, `name-2.png`, …). A note with no markers takes the single-file path
+      // below exactly as before (pageBreakSections returns null then). The section model is
+      // shared with renderPreview's sheet-per-page rendering, so preview and export agree;
+      // frontmatter rides page 1 when included but never becomes a page of its own.
+      {
+        const sections = await pageBreakSections(path, deps, opts);
+        if (sections) {
+          const files: { filename: string; bytes: Uint8Array }[] = [];
+          let firstDataUrl: string | undefined;
+          for (let i = 0; i < sections.length; i++) {
+            const doc = await wrapBody(await renderSectionHtml(sections[i]), `${name} (page ${i + 1})`, palette, deps);
+            const { bytes, dataUrl } = await deps.htmlToPng(doc);
+            if (i === 0) firstDataUrl = dataUrl;
+            files.push({ filename: `${name}-${i + 1}.png`, bytes });
           }
+          return {
+            bytes: files[0].bytes,
+            mime: "image/png",
+            filename: files[0].filename,
+            previewImg: firstDataUrl,
+            files,
+          };
         }
       }
       const { html, css } = await renderedBody(path, deps, opts, palette);
