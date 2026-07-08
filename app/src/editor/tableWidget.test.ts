@@ -26,10 +26,10 @@ import { Decoration, EditorView } from "@codemirror/view";
 import { openSearchPanel } from "@codemirror/search";
 import { setSearchQuery, SearchQuery } from "@codemirror/search";
 import { groupTableBlocks } from "./tableModel";
-import { TableWidget, tableFindHighlight, tableSelectionGuard, hasActiveCellEdit, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
+import { TableWidget, tableFindHighlight, tableSelectionGuard, tableMergeUndo, reshapeVisual, hasActiveCellEdit, suppressRightClickWordSelect, tableCellDropTargetAtPoint, TABLE_FIND_MATCH_CLASS, TABLE_FIND_ACTIVE_CLASS } from "./tableWidget";
 import { activeTableField } from "./tableState";
 import { findExtension } from "./findPanel";
-import { history, undo } from "@codemirror/commands";
+import { history, undo, redo } from "@codemirror/commands";
 import { externalReconcileSpec } from "./reconcileDispatch";
 import { setGalleryOpen } from "../ui/gallery/galleryState";
 
@@ -125,6 +125,97 @@ describe("#62 empty display cell reserves a line box", () => {
   });
   test("a cell with text does NOT get the class", () => {
     expect(renderCellDom("hello").classList.contains("cm-td-empty")).toBe(false);
+  });
+  // The reservation must hold in the BLURRED/rendered face (this is what renderCellDom produces),
+  // not only while focused — an empty cell injects a REAL non-breaking-space placeholder so the row
+  // keeps a full line box in every engine (WebKit ignores min-height + generated content on a td).
+  test("an empty cell injects a real nbsp placeholder as DOM content (WebKit-safe, blurred state)", () => {
+    const cell = renderCellDom("");
+    const ph = cell.querySelector(".cm-td-ph");
+    expect(ph).not.toBeNull();
+    expect(ph!.textContent).toBe(" "); // a genuine non-breaking space, a real line box
+  });
+  test("a whitespace-only cell also injects the placeholder", () => {
+    expect(renderCellDom("   ").querySelector(".cm-td-ph")).not.toBeNull();
+  });
+  test("a filled cell has NO placeholder (its own content reserves the line)", () => {
+    expect(renderCellDom("hello").querySelector(".cm-td-ph")).toBeNull();
+  });
+});
+
+// ── #70b: the ∞ / compact toggle survives a header-changing reshape ────────────────────────────
+// The table's out-of-source visual state (∞ / compact / widths / merges) is keyed in localStorage by
+// its HEADER row. Add/remove/move a column, or rename a header cell, mints a new key — so the widget
+// would rebuild under a fresh (empty) key and the ∞ toggle would silently reset. `reshapeVisual` is
+// the pure migration the commit runs to carry that state onto the new key.
+describe("#70b reshapeVisual carries ∞/compact across a header change", () => {
+  test("a column-count change keeps ∞ + compact but resets per-column widths/merges", () => {
+    const old = { cols: [100, 50], rows: [], infinity: true, compact: true, merges: [{ r: 1, c: 0, rowSpan: 2, colSpan: 1 }] };
+    const out = reshapeVisual(old, 2, 3, null)!;
+    expect(out.infinity).toBe(true);
+    expect(out.compact).toBe(true);
+    expect(out.cols).toEqual([]); // per-column indexing invalid after a column add → reset
+    expect(out.merges).toBeUndefined();
+  });
+  test("a same-column-count change (header rename) keeps widths + merges too", () => {
+    const old = { cols: [100, 50], rows: [], infinity: true, merges: [{ r: 1, c: 0, rowSpan: 2, colSpan: 1 }] };
+    const out = reshapeVisual(old, 2, 2, null)!;
+    expect(out.cols).toEqual([100, 50]);
+    expect(out.merges).toEqual([{ r: 1, c: 0, rowSpan: 2, colSpan: 1 }]);
+    expect(out.infinity).toBe(true);
+  });
+  test("nothing persisted under the old key → nothing to migrate (null)", () => {
+    expect(reshapeVisual(null, 2, 3, null)).toBeNull();
+  });
+  test("an existing new-key visual is preserved, with ∞/compact overlaid from the old", () => {
+    const out = reshapeVisual({ cols: [], rows: [], infinity: true }, 2, 3, { cols: [10, 20, 30], rows: [] })!;
+    expect(out.cols).toEqual([10, 20, 30]); // existing new-key widths kept
+    expect(out.infinity).toBe(true); // ∞ carried over from the old key
+  });
+});
+
+// ── #69: reorder grips use the standard grip icon + reveal only per hovered/selected column/row ─
+describe("#69 reorder grip icons + per-column/row reveal", () => {
+  const gripDom = (view: EditorView) => {
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    return {
+      wrap,
+      cols: Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-drag")),
+      rows: Array.from(wrap.querySelectorAll<HTMLElement>(".cm-row-drag")),
+      cell: (r: number, c: number) => wrap.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`)!,
+    };
+  };
+
+  test("each grip renders the 6-dot grip SVG (not an ad-hoc bare div)", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |\n| p | q |");
+    const { cols, rows } = gripDom(view);
+    expect(cols.length).toBe(2); // one per column
+    expect(rows.length).toBe(2); // one per BODY row
+    expect(cols[0].querySelector("svg")).not.toBeNull();
+    expect(cols[0].querySelectorAll("circle").length).toBe(6); // the 2×3 grip dots
+    expect(rows[0].querySelector("svg")).not.toBeNull();
+    expect(rows[0].querySelectorAll("circle").length).toBe(6);
+    view.destroy();
+  });
+
+  test("no grip is revealed by default (invisible until hover / selection)", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |\n| p | q |");
+    const { cols, rows } = gripDom(view);
+    expect(cols.some((g) => g.classList.contains("cm-col-drag--show"))).toBe(false);
+    expect(rows.some((g) => g.classList.contains("cm-row-drag--show"))).toBe(false);
+    view.destroy();
+  });
+
+  test("selecting cells reveals the grips for exactly the covered column(s) and row(s)", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |\n| p | q |");
+    const { cols, rows, cell } = gripDom(view);
+    // Shift-click to select column 0 across both body rows (rows 1..2).
+    cell(1, 0).dispatchEvent(new MouseEvent("mousedown", { button: 0, shiftKey: true, bubbles: true, cancelable: true }));
+    cell(2, 0).dispatchEvent(new MouseEvent("mousedown", { button: 0, shiftKey: true, bubbles: true, cancelable: true }));
+    expect(cols[0].classList.contains("cm-col-drag--show")).toBe(true); // col 0 covered
+    expect(cols[1].classList.contains("cm-col-drag--show")).toBe(false); // col 1 not
+    expect(rows.every((g) => g.classList.contains("cm-row-drag--show"))).toBe(true); // both body rows covered
+    view.destroy();
   });
 });
 
@@ -732,6 +823,92 @@ describe("#49 gallery-open defers the cell blur teardown", () => {
     expect(cell.dataset.editing).toBe(""); // committed + torn down once the gallery is gone
     expect(destroyed).toBe(true);
     expect(view.state.doc.toString()).toContain("😄"); // the glyph was read back + committed
+    view.destroy();
+  });
+});
+
+// ── #71: shift-click cell merge / unmerge is undoable via Cmd+Z (redo via Cmd+Shift+Z) ─────────
+// A merge lives only in the table's out-of-source visual state (GFM has no colspan), so it was
+// invisible to CodeMirror's history. `tableMergeUndo` makes each merge dispatch a no-doc-change
+// effect that history records (via invertedEffects); undo/redo re-apply the opposite region set to
+// the live table DOM (no widget rebuild). Driven here through the real shift-select + context-menu
+// path, asserting on the rendered colspan/rowspan the user sees.
+describe("#71 merge/unmerge participates in undo history", () => {
+  const shiftClick = (cell: HTMLElement): void =>
+    cell.dispatchEvent(new MouseEvent("mousedown", { button: 0, shiftKey: true, bubbles: true, cancelable: true }));
+
+  test("merge a 2×2 block, Cmd+Z unmerges to the exact prior state, Cmd+Shift+Z re-merges", () => {
+    const view = mount("| MH1 | MH2 |\n| --- | --- |\n| a | b |\n| c | d |", [history(), tableMergeUndo]);
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = (r: number, c: number): HTMLTableCellElement =>
+      wrap.querySelector<HTMLTableCellElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`)!;
+
+    // Shift-select the 2×2 body block (1,0)…(2,1) — two shift-clicks set the anchor + focus without
+    // entering a cell's edit mode.
+    shiftClick(cell(1, 0));
+    shiftClick(cell(2, 1));
+
+    // Right-click the anchor → grab the "Merge cells" menu item the widget offers for the selection.
+    let items: { label: string; onSelect: () => void }[] = [];
+    const onMenu = (e: Event): void => { items = (e as CustomEvent).detail.items; };
+    window.addEventListener("bismuth-context-menu", onMenu);
+    cell(1, 0).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    window.removeEventListener("bismuth-context-menu", onMenu);
+    const merge = items.find((i) => i.label === "Merge cells");
+    expect(merge).toBeDefined();
+
+    merge!.onSelect();
+    // The anchor now spans the block; the other three cells are hidden.
+    expect(cell(1, 0).colSpan).toBe(2);
+    expect(cell(1, 0).rowSpan).toBe(2);
+    expect(cell(1, 0).classList.contains("cm-td-merged")).toBe(true);
+    expect(cell(1, 1).style.display).toBe("none");
+    expect(cell(2, 0).style.display).toBe("none");
+    expect(cell(2, 1).style.display).toBe("none");
+
+    // Cmd+Z reverts the merge exactly — every cell back to a plain 1×1, all visible.
+    undo(view);
+    expect(cell(1, 0).colSpan).toBe(1);
+    expect(cell(1, 0).rowSpan).toBe(1);
+    expect(cell(1, 0).classList.contains("cm-td-merged")).toBe(false);
+    expect(cell(1, 1).style.display).toBe("");
+    expect(cell(2, 1).style.display).toBe("");
+
+    // Cmd+Shift+Z re-applies the merge.
+    redo(view);
+    expect(cell(1, 0).colSpan).toBe(2);
+    expect(cell(1, 0).rowSpan).toBe(2);
+    expect(cell(2, 1).style.display).toBe("none");
+    view.destroy();
+  });
+
+  test("an unmerge is itself undoable (Cmd+Z restores the merged span)", () => {
+    const view = mount("| UH1 | UH2 |\n| --- | --- |\n| a | b |\n| c | d |", [history(), tableMergeUndo]);
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const cell = (r: number, c: number): HTMLTableCellElement =>
+      wrap.querySelector<HTMLTableCellElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`)!;
+    const menuItem = (r: number, c: number, label: string): (() => void) | undefined => {
+      let items: { label: string; onSelect: () => void }[] = [];
+      const onMenu = (e: Event): void => { items = (e as CustomEvent).detail.items; };
+      window.addEventListener("bismuth-context-menu", onMenu);
+      cell(r, c).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+      window.removeEventListener("bismuth-context-menu", onMenu);
+      return items.find((i) => i.label === label)?.onSelect;
+    };
+
+    // Merge (1,0)…(1,1), then unmerge it.
+    shiftClick(cell(1, 0));
+    shiftClick(cell(1, 1));
+    menuItem(1, 0, "Merge cells")!();
+    expect(cell(1, 0).colSpan).toBe(2);
+    menuItem(1, 0, "Unmerge cells")!();
+    expect(cell(1, 0).colSpan).toBe(1);
+    expect(cell(1, 1).style.display).toBe("");
+
+    // Cmd+Z undoes the UNMERGE → the merged span comes back.
+    undo(view);
+    expect(cell(1, 0).colSpan).toBe(2);
+    expect(cell(1, 1).style.display).toBe("none");
     view.destroy();
   });
 });
