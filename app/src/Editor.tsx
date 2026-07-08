@@ -49,7 +49,7 @@ import { pushToast } from "./Toast";
 import { registerEditor, trackEditor, unregisterEditor, setEditorFlush } from "./editorRegistry";
 import { saveScroll, saveScrollSnapshot, loadScroll, loadScrollSnapshot } from "./scrollMemory";
 import { noteTitleWidget } from "./editor/noteTitleWidget";
-import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, tableSelectionGuard, tableUndoSelectionGuard, hasActiveCellEdit } from "./editor/tableWidget";
+import { insertEmbedsInTableCell, tableCellDropTargetAtPoint, tableFindHighlight, tableSelectionGuard, tableUndoSelectionGuard, tableMergeUndo, hasActiveCellEdit } from "./editor/tableWidget";
 import { threeWayMerge } from "./editor/saveReconcile";
 import { ExternalReload, externalReconcileSpec } from "./editor/reconcileDispatch";
 import "./Editor.css";
@@ -932,6 +932,10 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
       // entirely (dispatched with `filter: false`), so a Cmd+Z that restores a selection into a
       // table needs its own updateListener-based fixup — see tableUndoSelectionGuard's doc comment.
       tableUndoSelectionGuard,
+      // Make shift-click cell merge / unmerge undoable (#71): a merge dispatches a no-doc-change
+      // effect that CM's history records (via invertedEffects), so Cmd+Z reverts it + Cmd+Shift+Z
+      // redoes it, restyling the table DOM in place. No-op in buffers without tables.
+      tableMergeUndo,
       autosave,
       undoRedoScrollGuard,
       // Right-click a spelling / grammar / property mark → the shared app menu.

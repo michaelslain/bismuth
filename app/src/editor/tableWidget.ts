@@ -7,7 +7,8 @@
 // leaves its inner selection alone, while ignoreEvent() keeps CM from acting on
 // clicks/keys inside it.
 import { EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import { EditorState, type TransactionSpec } from "@codemirror/state";
+import { EditorState, StateEffect, type TransactionSpec } from "@codemirror/state";
+import { invertedEffects } from "@codemirror/commands";
 import { getSearchQuery, searchPanelOpen } from "@codemirror/search";
 import {
   type Align,
@@ -132,6 +133,33 @@ function updateVisual(path: string | null, key: string, patch: Partial<TableVisu
   saveVisual(path, key, { ...cur, ...patch });
 }
 
+/** Carry a table's out-of-source visual state across a STRUCTURAL RESHAPE that changes its
+ *  localStorage key (#70b). The key is the header row, so any op that edits the header — add /
+ *  remove / move a column, or rename a header cell — mints a fresh key and would otherwise ORPHAN
+ *  the persisted `∞`/compact/widths/merges, silently resetting the ∞ toggle (add/remove ROW keeps
+ *  the header, so it never hit this). `∞` and compact are shape-INDEPENDENT, so they always carry;
+ *  column widths + merges only carry when the column COUNT is unchanged (a header rename), since an
+ *  add/remove column invalidates their per-column indexing. Pure — the caller does the load/save.
+ *  Returns the visual to persist under the new key, or null when there was nothing to carry. */
+export function reshapeVisual(
+  old: TableVisual | null,
+  oldCols: number,
+  newCols: number,
+  existingNew: TableVisual | null,
+): TableVisual | null {
+  if (!old) return null; // nothing persisted under the old key → nothing to migrate
+  const carried: TableVisual = existingNew ? { ...existingNew } : { cols: [], rows: [] };
+  if (old.infinity !== undefined) carried.infinity = old.infinity;
+  if (old.compact !== undefined) carried.compact = old.compact;
+  if (oldCols === newCols) {
+    // Same column count (a header RENAME): per-column widths + merge regions are still valid.
+    carried.cols = old.cols;
+    carried.rows = old.rows;
+    carried.merges = old.merges;
+  }
+  return carried;
+}
+
 /** WebKit-safe suppression of the right-click word-select (#43). Chromium selects the word under
  *  the pointer as the DEFAULT ACTION of a right mousedown, cancelable with `preventDefault()` on
  *  that mousedown — which is what the prior fix did. WebKit/Safari does NOT honor that: its
@@ -171,6 +199,20 @@ export function suppressRightClickWordSelect(cell: HTMLElement): () => void {
 
 // Item shape understood by App's shared `bismuth-context-menu` handler (mirrors EditorMenuItem).
 type TableMenuItem = { label: string; onSelect: () => void; icon?: string; disabled?: boolean; separatorBefore?: boolean };
+
+// The standard 2×3-dot drag-grip glyph (Lucide `grip-horizontal` / `grip-vertical`), inlined as
+// static SVG markup rather than imported from the icon registry (#69): the registry's icon element
+// is a Solid `.tsx` module that bun's headless test transform can't compile, and this widget's own
+// unit tests import this file directly — so an inline string keeps the module test-safe. `stroke:
+// currentColor` lets the grip take its color from CSS. A COLUMN grip (a horizontal tab above the
+// header) uses the horizontal glyph; a ROW grip (a vertical tab at the row's left) the vertical one.
+const GRIP_SVG_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+const GRIP_HORIZONTAL_SVG =
+  `<svg ${GRIP_SVG_ATTRS}><circle cx="5" cy="9" r="1"/><circle cx="12" cy="9" r="1"/><circle cx="19" cy="9" r="1"/>` +
+  `<circle cx="5" cy="15" r="1"/><circle cx="12" cy="15" r="1"/><circle cx="19" cy="15" r="1"/></svg>`;
+const GRIP_VERTICAL_SVG =
+  `<svg ${GRIP_SVG_ATTRS}><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>` +
+  `<circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg>`;
 
 /** Build a `+` edge bar (add row / add column). Fires `onTrigger` on mousedown without
  *  moving the editor selection or losing cell focus. */
@@ -333,6 +375,93 @@ export const tableUndoSelectionGuard = EditorView.updateListener.of((u) => {
   u.view.dispatch({ selection: { anchor: mapped } });
 });
 
+// ── Undoable cell merge / unmerge (#71) ───────────────────────────────────────
+// GFM has no colspan/rowspan, so a merge lives ONLY in the table's out-of-source visual state
+// (localStorage) — invisible to CodeMirror's history, so shift-click merge/unmerge was not
+// undoable. We make it participate in the SAME undo stack the editor uses: a merge dispatches a
+// no-doc-change transaction carrying a `setTableMergesEffect` (prev → next regions). `invertedEffects`
+// registers the inverse (next → prev) so CM's history stores it and a Cmd+Z / Cmd+Shift+Z produces
+// the opposite effect; an `updateListener` applies whichever effect rides a transaction — the merge,
+// its undo, or its redo — to BOTH the persisted state and the live table DOM (no widget rebuild, so
+// an in-progress edit elsewhere survives). The merge state carried on the wrap (`_merges`) stays the
+// single source of truth the menu reads, kept in sync here.
+
+/** The payload of a merge-state change: the table it targets (note path + header key) and the
+ *  region sets before/after, so the change is both applyable and invertible for undo. */
+export interface TableMergeChange {
+  path: string | null;
+  key: string;
+  prev: MergeRegion[];
+  next: MergeRegion[];
+}
+
+/** A CodeMirror effect that mutates one table's merged-cell regions. Dispatched (no doc change) by
+ *  the merge/unmerge menu actions; inverted for undo by `tableMergeUndo`. */
+export const setTableMergesEffect = StateEffect.define<TableMergeChange>();
+
+type WrapWithMerges = HTMLElement & { _merges?: MergeRegion[] };
+
+/** Apply a set of merge regions to a rendered table wrap's cells: the anchor cell of each region
+ *  gets colspan/rowspan (+ the `cm-td-merged` class), every covered cell is hidden, and any cell
+ *  outside all regions is reset to a plain 1×1. Pure over the DOM (no source touch) so a merge —
+ *  and its undo/redo — restyles in place without rebuilding the widget. */
+function applyMergeRegionsToWrap(wrap: HTMLElement, regions: MergeRegion[]): void {
+  const covered = coveredCells(regions);
+  const cellAt = (r: number, c: number): HTMLElement | null =>
+    wrap.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`);
+  for (const el of Array.from(wrap.querySelectorAll<HTMLElement>("[data-cell]"))) {
+    el.style.display = "";
+    (el as HTMLTableCellElement).colSpan = 1;
+    (el as HTMLTableCellElement).rowSpan = 1;
+    el.classList.remove("cm-td-merged");
+  }
+  for (const m of regions) {
+    const anchor = cellAt(m.r, m.c);
+    if (anchor) {
+      (anchor as HTMLTableCellElement).colSpan = m.colSpan;
+      (anchor as HTMLTableCellElement).rowSpan = m.rowSpan;
+      anchor.classList.add("cm-td-merged");
+    }
+  }
+  for (const cellKey of covered) {
+    const [r, c] = cellKey.split(",").map(Number);
+    const el = cellAt(r, c);
+    if (el) el.style.display = "none";
+  }
+}
+
+/** Persist a merge change + apply it to every rendered table in the view whose header matches the
+ *  change's key (normally exactly one). Runs for the original merge, its undo, and its redo alike. */
+function applyMergeChange(view: EditorView, ch: TableMergeChange): void {
+  updateVisual(ch.path, ch.key, { merges: ch.next });
+  for (const wrap of Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-table-wrap"))) {
+    if (sizeKey(readGrid(wrap)) !== ch.key) continue;
+    (wrap as WrapWithMerges)._merges = ch.next;
+    applyMergeRegionsToWrap(wrap, ch.next);
+  }
+}
+
+/** Wire cell merge/unmerge into the editor's undo history (#71): register the inverse effect so
+ *  history records each merge, and apply whichever `setTableMergesEffect` rides a transaction
+ *  (merge / undo / redo) to storage + the live DOM. Added once to the editor extension stack. */
+export const tableMergeUndo = [
+  invertedEffects.of((tr) => {
+    const out: StateEffect<TableMergeChange>[] = [];
+    for (const e of tr.effects) {
+      if (e.is(setTableMergesEffect))
+        out.push(setTableMergesEffect.of({ path: e.value.path, key: e.value.key, prev: e.value.next, next: e.value.prev }));
+    }
+    return out;
+  }),
+  EditorView.updateListener.of((u) => {
+    for (const tr of u.transactions) {
+      for (const e of tr.effects) {
+        if (e.is(setTableMergesEffect)) applyMergeChange(u.view, e.value);
+      }
+    }
+  }),
+];
+
 export function tableCellDropTarget(
   view: EditorView,
   target: EventTarget | null,
@@ -480,6 +609,24 @@ export class TableWidget extends WidgetType {
     if (!range) return;
     let grid: TableGrid = { cells: readGrid(root), aligns: this.aligns.slice() };
     grid = transform?.(grid) ?? grid;
+    // #70b: a STRUCTURAL op can change the header row, which is this table's localStorage key for its
+    // out-of-source visual state (∞ / compact / widths / merges). Add/remove/move column + a header
+    // rename all mint a new key; without migrating, the widget rebuilds under it and the ∞ toggle
+    // (and density) silently reset — the "∞ forgotten on reshape" bug. Carry them to the new key now,
+    // BEFORE the rebuilding commit lands (add/remove ROW keeps the header, so it never needed this).
+    if (transform) {
+      const oldKey = sizeKey(this.cells);
+      const newKey = sizeKey(grid.cells);
+      if (oldKey !== newKey) {
+        const migrated = reshapeVisual(
+          loadVisual(this.notePath, oldKey),
+          this.cells[0]?.length ?? 0,
+          grid.cells[0]?.length ?? 0,
+          loadVisual(this.notePath, newKey),
+        );
+        if (migrated) saveVisual(this.notePath, newKey, migrated);
+      }
+    }
     const before = view.state.sliceDoc(range.from, range.to);
     // In-place cell edits rewrite ONLY the changed rows' lines (no column repadding) so the
     // diff — and with it undo's inverse and the save-merge's local hunk — stays confined to
@@ -541,15 +688,22 @@ export class TableWidget extends WidgetType {
       cell.innerHTML = renderCellBlockHtml(cell.dataset.src ?? "");
       upgradeCellEmbeds(cell, api.assetUrl);
       // A cell whose DISPLAY face is visually empty (a freshly-added row, or a cleared cell)
-      // renders to no line box and collapses to a sliver — much shorter than filled rows, AND it
-      // no longer persists the full-height line box a focused (edited) cell showed, so "clicking
-      // off the cell hides the empty line" (#62 report 1). Reserve one line via a class-driven
-      // `::after` nbsp. A CLASS is used (not `:empty`) because it is robust where `:empty` is
-      // fragile — a stray whitespace text node from the reader engine defeats `:empty`, and
-      // WebKit's `:empty` on a `display: table-cell` has diverged from Chromium's. Skipped when
-      // the cell holds real media (img/iframe/…) even with no text.
+      // block-renders to no line box and collapses to a sliver — much shorter than filled rows —
+      // so on BLUR the cell/row shrinks and the table jumps ("clicking off hides the empty line",
+      // #62). The reservation must hold in the rendered/blurred state (this face), not only while a
+      // cell is focused. We do it TWO ways so it holds in every engine:
+      //   1. the `cm-td-empty` class (robust where `:empty` is fragile — a stray whitespace text
+      //      node from the reader defeats `:empty`) drives a CSS `::after` nbsp; and
+      //   2. a REAL non-breaking-space placeholder injected as actual DOM content. A real text line
+      //      box reserves a full line in EVERY engine, closing the WebKit gap where both
+      //      `min-height` on a `display: table-cell` AND generated content on a `td` have diverged
+      //      from Chromium (the packaged app is Safari's WKWebView). It is display-only — `readGrid`
+      //      reads `data-src`, never the cell's DOM text, so the source stays empty and the next
+      //      `renderDisplay` overwrites it. Skipped when the cell holds real media (img/iframe/…).
       const hasMedia = !!cell.querySelector("img, iframe, video, audio, svg, .cm-embed");
-      cell.classList.toggle("cm-td-empty", !hasMedia && (cell.textContent ?? "").trim() === "");
+      const isEmpty = !hasMedia && (cell.textContent ?? "").trim() === "";
+      cell.classList.toggle("cm-td-empty", isEmpty);
+      if (isEmpty) cell.innerHTML = '<span class="cm-td-ph" aria-hidden="true"> </span>';
     };
     // Enter edit mode: clear the display face and mount a nested CodeMirror editor. The editor
     // module is loaded DYNAMICALLY (its live-preview stack pulls in Solid `.tsx` that would taint
@@ -813,41 +967,25 @@ export class TableWidget extends WidgetType {
     // from the table's grid so the anchor fills the span). Re-callable so the merge/unmerge menu
     // actions restyle live without a widget rebuild; also called once at initial render below.
     const applyMerges = (regions: MergeRegion[]): void => {
-      const covered = coveredCells(regions);
-      for (let r = 0; r < cellEls.length; r++) {
-        for (let c = 0; c < (cellEls[r]?.length ?? 0); c++) {
-          const el = cellEls[r][c];
-          if (!el) continue;
-          el.style.display = "";
-          (el as HTMLTableCellElement).colSpan = 1;
-          (el as HTMLTableCellElement).rowSpan = 1;
-          el.classList.remove("cm-td-merged");
-        }
-      }
-      for (const m of regions) {
-        const anchor = cellAt(m.r, m.c);
-        if (anchor) {
-          (anchor as HTMLTableCellElement).colSpan = m.colSpan;
-          (anchor as HTMLTableCellElement).rowSpan = m.rowSpan;
-          anchor.classList.add("cm-td-merged");
-        }
-      }
-      for (const key of covered) {
-        const [r, c] = key.split(",").map(Number);
-        const el = cellAt(r, c);
-        if (el) el.style.display = "none";
-      }
+      merges = regions;
+      (root as WrapWithMerges)._merges = regions;
+      applyMergeRegionsToWrap(root, regions);
     };
     applyMerges(merges);
 
     // Paint the current shift-selection rectangle (a `.cm-td-selected` class per selected cell).
+    // Reveal the reorder grip of any hovered OR selected column/row (#69); assigned its real body
+    // once the grips + boundary helpers exist (below), forward-declared so paintSelection can call it.
+    let refreshGrips: () => void = () => {};
     const paintSelection = (): void => {
       for (const rowArr of cellEls) for (const el of rowArr) el?.classList.remove("cm-td-selected");
-      if (!selAnchor || !selFocus) return;
-      const rect = rectFromCells(selAnchor, selFocus);
-      for (let r = rect.r; r < rect.r + rect.rowSpan; r++) {
-        for (let c = rect.c; c < rect.c + rect.colSpan; c++) cellAt(r, c)?.classList.add("cm-td-selected");
+      if (selAnchor && selFocus) {
+        const rect = rectFromCells(selAnchor, selFocus);
+        for (let r = rect.r; r < rect.r + rect.rowSpan; r++) {
+          for (let c = rect.c; c < rect.c + rect.colSpan; c++) cellAt(r, c)?.classList.add("cm-td-selected");
+        }
       }
+      refreshGrips();
     };
 
     // ── Compact / infinity toggles (#62) ───────────────────────────────────────────────────────
@@ -967,33 +1105,36 @@ export class TableWidget extends WidgetType {
     // "Unmerge cells" splits whatever merge contains the right-clicked cell.
     const mergeMenuItems = (r: number, c: number): TableMenuItem[] => {
       const out: TableMenuItem[] = [];
+      const cur = (root as WrapWithMerges)._merges ?? merges;
       const sel = selAnchor && selFocus ? rectFromCells(selAnchor, selFocus) : null;
       const canMerge = !!sel && (sel.rowSpan > 1 || sel.colSpan > 1) && sel.r >= 1;
+      // Merge / unmerge dispatch a no-doc-change transaction carrying the region delta so the
+      // change joins the editor's undo history (Cmd+Z reverts a merge, Cmd+Shift+Z redoes it, #71);
+      // the `tableMergeUndo` updateListener persists it + restyles the DOM (see setTableMergesEffect).
+      // `view.focus()` first so a Cmd+Z immediately after the menu click reaches CM's history.
+      const dispatchMerge = (next: MergeRegion[]): void => {
+        view.focus();
+        view.dispatch({ effects: setTableMergesEffect.of({ path: this.notePath, key: sizeKey(this.cells), prev: cur, next }) });
+      };
       if (canMerge && sel) {
         out.push({
           label: "Merge cells",
           icon: "Combine",
           separatorBefore: true,
           onSelect: () => {
-            merges = addMergeRegion(merges, sel, rowCount, cols);
-            updateVisual(this.notePath, sizeKey(this.cells), { merges });
-            applyMerges(merges);
+            dispatchMerge(addMergeRegion(cur, sel, rowCount, cols));
             selAnchor = null;
             selFocus = null;
             paintSelection();
           },
         });
       }
-      if (mergeContaining(merges, r, c)) {
+      if (mergeContaining(cur, r, c)) {
         out.push({
           label: "Unmerge cells",
           icon: "Ungroup",
           separatorBefore: !canMerge,
-          onSelect: () => {
-            merges = removeMergeAt(merges, r, c);
-            updateVisual(this.notePath, sizeKey(this.cells), { merges });
-            applyMerges(merges);
-          },
+          onSelect: () => dispatchMerge(removeMergeAt(cur, r, c)),
         });
       }
       return out;
@@ -1050,15 +1191,21 @@ export class TableWidget extends WidgetType {
     };
 
     // Column x-boundaries (wrap-relative, ascending, length cols+1). Header cells are never merged
-    // (#62 merges are body-only), so the header row's cell widths give the true column edges.
+    // (#62 merges are body-only), so the header row's cell widths give the true column edges. In ∞
+    // (infinity) mode the table lives in a horizontal scroller (`scroll`), and `table.offsetLeft` is
+    // measured from the wrap and does NOT include the scroller's `scrollLeft` — so we subtract it to
+    // get the VISUAL edge. Without this the resize handles + drag grips drift out of alignment the
+    // moment the table is scrolled, which is why column resize "sometimes didn't work" in ∞ mode
+    // (the handle sat over the wrong border, or off the visible table entirely) (#70a).
     const colBoundaries = (): number[] => {
       const headerCells = rowEls[0] ? (Array.from(rowEls[0].children) as HTMLElement[]) : [];
-      const b = [table.offsetLeft];
-      let x = table.offsetLeft;
+      const base = table.offsetLeft - scroll.scrollLeft;
+      const b = [base];
+      let x = base;
       for (const cell of headerCells) { x += cell.offsetWidth; b.push(x); }
       return b;
     };
-    // Row y-boundaries (wrap-relative, ascending, length rowCount+1).
+    // Row y-boundaries (wrap-relative, ascending, length rowCount+1). No vertical scroll to correct.
     const rowBoundaries = (): number[] => {
       const b = [table.offsetTop];
       let y = table.offsetTop;
@@ -1066,35 +1213,45 @@ export class TableWidget extends WidgetType {
       return b;
     };
 
-    // Re-place every COLUMN resize handle on its border + the drag grips. The table sits at the
-    // wrap origin, so offsets are measured against it; called after attach, on table resize, and
-    // live mid-drag.
+    // Re-place every COLUMN resize handle on its border + the drag grips. Called after attach, on
+    // table resize, on horizontal SCROLL (∞ mode), and live mid-drag. Handles/grips whose border
+    // has scrolled OUT of the visible scroller are hidden so a scrolled ∞ table never leaves a
+    // resize strip floating over the wrong column (#70a).
     const layout = (): void => {
       const th = table.offsetHeight;
-      const ox = table.offsetLeft;
       const oy = table.offsetTop;
       const xs = colBoundaries();
       const ys = rowBoundaries();
+      // Visible x-window of the scroller (wrap-relative); columns scrolled past its edges are hidden.
+      const viewL = scroll.offsetLeft;
+      const viewR = scroll.offsetLeft + scroll.clientWidth;
+      const inView = (px: number): boolean => px >= viewL - 0.5 && px <= viewR + 0.5;
+      const base = xs[0] ?? table.offsetLeft;
       // Resize handles sit on the RIGHT border of each column.
       for (let c = 0; c < colHandles.length; c++) {
         const h = colHandles[c];
         if (!h) continue;
-        h.style.left = `${xs[c + 1] ?? ox}px`;
+        const edge = xs[c + 1] ?? base;
+        h.style.left = `${edge}px`;
         h.style.top = `${oy}px`;
         h.style.height = `${th}px`;
+        h.style.display = inView(edge) ? "" : "none";
       }
       // Column drag grips: a tab centered over each column's header, just above the table.
       for (let c = 0; c < colGrips.length; c++) {
         const g = colGrips[c];
         if (!g || xs[c + 1] == null) continue;
-        g.style.left = `${(xs[c] + xs[c + 1]) / 2}px`;
+        const mid = (xs[c] + xs[c + 1]) / 2;
+        g.style.left = `${mid}px`;
         g.style.top = `${oy}px`;
+        g.style.display = inView(mid) ? "" : "none";
       }
-      // Row drag grips: a tab centered on each BODY row's left edge.
+      // Row drag grips: a tab at each BODY row's left edge, pinned to the visible left so a scrolled
+      // ∞ table keeps its row grips reachable instead of scrolling them off-screen.
       for (let r = 1; r < rowEls.length; r++) {
         const g = rowGrips[r];
         if (!g || ys[r + 1] == null) continue;
-        g.style.left = `${ox}px`;
+        g.style.left = `${Math.max(base, viewL)}px`;
         g.style.top = `${(ys[r] + ys[r + 1]) / 2}px`;
       }
     };
@@ -1158,6 +1315,7 @@ export class TableWidget extends WidgetType {
       const grip = document.createElement("div");
       grip.className = "cm-col-drag";
       grip.title = "Drag to reorder column";
+      grip.innerHTML = GRIP_HORIZONTAL_SVG;
       grip.addEventListener("mousedown", (e) => startReorder("col", c, e as MouseEvent));
       overlay.appendChild(grip);
       colGrips.push(grip);
@@ -1166,10 +1324,47 @@ export class TableWidget extends WidgetType {
       const grip = document.createElement("div");
       grip.className = "cm-row-drag";
       grip.title = "Drag to reorder row";
+      grip.innerHTML = GRIP_VERTICAL_SVG;
       grip.addEventListener("mousedown", (e) => startReorder("row", r, e as MouseEvent));
       overlay.appendChild(grip);
       rowGrips[r] = grip;
     }
+
+    // ── Per-column / per-row grip reveal (#69) ──────────────────────────────────────────────────
+    // Grips are invisible by default and fade in ONLY for the column/row the pointer is over (or
+    // that a shift-selection covers), instead of every grip showing on any table hover. `refreshGrips`
+    // (forward-declared above so paintSelection can reach it) recomputes which grips carry the
+    // `--show` class from the current hover + selection; a wrap-level pointermove tracks the hovered
+    // column/row from the same boundary geometry the handles use.
+    let hoverCol = -1;
+    let hoverRow = -1;
+    refreshGrips = (): void => {
+      const sel = selAnchor && selFocus ? rectFromCells(selAnchor, selFocus) : null;
+      for (let c = 0; c < colGrips.length; c++) {
+        const selHit = !!sel && c >= sel.c && c < sel.c + sel.colSpan;
+        colGrips[c]?.classList.toggle("cm-col-drag--show", c === hoverCol || selHit);
+      }
+      for (let r = 1; r < rowGrips.length; r++) {
+        const selHit = !!sel && r >= sel.r && r < sel.r + sel.rowSpan;
+        rowGrips[r]?.classList.toggle("cm-row-drag--show", r === hoverRow || selHit);
+      }
+    };
+    root.addEventListener("pointermove", (e) => {
+      const wr = root.getBoundingClientRect();
+      const px = e.clientX - wr.left;
+      const py = e.clientY - wr.top;
+      const xs = colBoundaries();
+      const ys = rowBoundaries();
+      let hc = -1;
+      for (let c = 0; c < xs.length - 1; c++) { if (px >= xs[c] && px < xs[c + 1]) { hc = c; break; } }
+      let hr = -1;
+      for (let r = 0; r < ys.length - 1; r++) { if (py >= ys[r] && py < ys[r + 1]) { hr = r; break; } }
+      if (hr === 0) hr = -1; // the header row has no reorder grip
+      if (hc !== hoverCol || hr !== hoverRow) { hoverCol = hc; hoverRow = hr; refreshGrips(); }
+    });
+    root.addEventListener("pointerleave", () => {
+      if (hoverCol !== -1 || hoverRow !== -1) { hoverCol = -1; hoverRow = -1; refreshGrips(); }
+    });
 
     // Column-drag plumbing: freeze the start width, follow the pointer along X, then persist +
     // restore the cursor on release. (Row-height drag was removed for #52 — height is auto.)
@@ -1235,6 +1430,9 @@ export class TableWidget extends WidgetType {
     // correctly sized the moment the pointer reaches the table (the first rAF can fire
     // before CodeMirror has measured the freshly-attached widget, leaving zero-size strips).
     root.addEventListener("pointerenter", () => layout());
+    // ∞ mode scrolls the table horizontally inside `scroll`; re-place the resize handles + grips on
+    // every scroll so they track the visible column borders instead of drifting off (#70a).
+    scroll.addEventListener("scroll", () => layout());
     if (typeof ResizeObserver !== "undefined") {
       const ro = new ResizeObserver(() => layout());
       ro.observe(table);

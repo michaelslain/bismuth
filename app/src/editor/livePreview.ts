@@ -1421,20 +1421,22 @@ export const livePreview = [
       "box-shadow": "inset 0 0 0 2px var(--accent)",
       background: "color-mix(in srgb, var(--accent) 12%, transparent)",
     },
-    // ── #62 drag-to-reorder grips (column tab above / row tab at left) + drop line ─────────────
-    ".cm-col-drag": {
-      position: "absolute", width: "1.6em", height: "0.5em", transform: "translate(-50%, -0.68em)",
-      "border-radius": "3px 3px 0 0", cursor: "grab", "pointer-events": "auto",
-      background: "color-mix(in srgb, var(--fg) 22%, transparent)", opacity: "0", transition: "opacity 120ms, background 120ms",
+    // ── #69 drag-to-reorder grips: the standard 2×3-dot grip icon (Lucide grip-horizontal above a
+    //    column / grip-vertical at a row's left edge), invisible by default and revealed ONLY for the
+    //    hovered or selected column/row (the `--show` class, toggled per-column/row in tableWidget.ts)
+    //    — no more every-grip-on-any-hover clutter. The inline SVG paints in `currentColor`.
+    ".cm-col-drag, .cm-row-drag": {
+      position: "absolute", display: "flex", "align-items": "center", "justify-content": "center",
+      cursor: "grab", "pointer-events": "auto",
+      color: "color-mix(in srgb, var(--fg) 45%, transparent)",
+      opacity: "0", transition: "opacity 120ms, color 120ms",
     },
-    ".cm-row-drag": {
-      position: "absolute", width: "0.5em", height: "1.6em", transform: "translate(-0.68em, -50%)",
-      "border-radius": "3px 0 0 3px", cursor: "grab", "pointer-events": "auto",
-      background: "color-mix(in srgb, var(--fg) 22%, transparent)", opacity: "0", transition: "opacity 120ms, background 120ms",
-    },
-    ".cm-table-wrap:hover .cm-col-drag, .cm-table-wrap:hover .cm-row-drag": { opacity: "0.55" },
-    ".cm-col-drag:hover, .cm-row-drag:hover": { opacity: "1", background: "var(--accent)" },
-    ".cm-table-reordering .cm-col-drag, .cm-table-reordering .cm-row-drag": { opacity: "1" },
+    ".cm-col-drag": { width: "1.7em", height: "0.95em", transform: "translate(-50%, -1em)" },
+    ".cm-row-drag": { width: "0.95em", height: "1.7em", transform: "translate(-1em, -50%)" },
+    ".cm-col-drag svg, .cm-row-drag svg": { width: "100%", height: "100%", display: "block" },
+    ".cm-col-drag--show, .cm-row-drag--show": { opacity: "0.8" },
+    ".cm-col-drag:hover, .cm-row-drag:hover": { opacity: "1", color: "var(--accent)" },
+    ".cm-table-reordering .cm-col-drag--show, .cm-table-reordering .cm-row-drag--show": { opacity: "1" },
     ".cm-table-drop-line": { position: "absolute", background: "var(--accent)", "border-radius": "2px", "z-index": "6", "pointer-events": "none" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
