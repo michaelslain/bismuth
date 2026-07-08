@@ -13,7 +13,6 @@ import {
   type Align,
   type TableBlock,
   type TableGrid,
-  type CellKeyAction,
   type CellRect,
   cellRectAtPoint,
   remapCursorOffTable,
@@ -23,9 +22,6 @@ import {
   formatTable,
   surgicalTableEdit,
   prettifyTableBlock,
-  decideCellKey,
-  cellListContinuation,
-  enterAction,
   insertRow,
   deleteRow,
   insertColumn,
@@ -35,14 +31,24 @@ import {
 // CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
-import { activeTableField, noteNamesFacet, setActiveTableEffect } from "./tableState";
-import { CellEmojiMenu } from "./cellEmoji";
-import { renderCellBlockHtml, upgradeCellEmbeds } from "./cellBlockRender";
+import { activeTableField, noteNamesFacet, tagNamesFacet, setActiveTableEffect } from "./tableState";
+import { renderCellBlockHtml, upgradeCellEmbeds, cmDocToCellSource } from "./cellBlockRender";
 import { minimalChange } from "./normalizeFrontmatter";
 import { api } from "../api";
 import { parseWikilink, resolveNotePath, wikilinkOpenPath } from "./wikilink";
-import { closerFor } from "./wrapSelection";
-import { settings } from "../settings";
+// The nested in-cell CodeMirror editor (#15/#49) is imported DYNAMICALLY (see loadCellEditor below):
+// its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform
+// can't compile, so it must stay OUT of this module's static import graph (the widget's own tests
+// import this file directly). `typeof import(...)` below is a type-only reference (no static runtime
+// import); the actual module loads on first cell edit.
+type CellEditorModule = typeof import("./cellEditor");
+let cellEditorModule: CellEditorModule | null = null;
+let cellEditorPromise: Promise<CellEditorModule> | null = null;
+function loadCellEditor(): Promise<CellEditorModule> {
+  if (cellEditorModule) return Promise.resolve(cellEditorModule);
+  if (!cellEditorPromise) cellEditorPromise = import("./cellEditor").then((m) => { cellEditorModule = m; return m; });
+  return cellEditorPromise;
+}
 
 // Visual column widths / row heights have no representation in GFM markdown, so they are
 // persisted OUT of the source: in localStorage, keyed by the note path (one entry per
@@ -88,140 +94,6 @@ function saveSizes(path: string | null, key: string, val: TableSizes): void {
   memStore.set(`${path ?? ""} ${key}`, val);
 }
 
-// A zero-width space used as a contenteditable "filler" after a trailing <br>: a <br>
-// that is the last node renders no visible empty line and the caret can't sit past it,
-// so we keep a ZWSP after it. Stripped back out by `cellSourceFromDom`.
-const ZWSP = "\u200b";
-
-/** Reveal a cell's raw markdown source for editing, but turn its `<br>` line-break
- *  markers into REAL line breaks so the edit face is genuinely multi-line (everything
- *  else stays raw markdown text). The inverse of `cellSourceFromDom`. */
-function srcToEditHtml(src: string): string {
-  const esc = src.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const html = esc.replace(/&lt;br\s*\/?&gt;/gi, "<br>");
-  // A trailing <br> needs a follower to render its empty line + host the caret.
-  return /<br>$/.test(html) ? html + ZWSP : html;
-}
-
-// Block-level element names a contenteditable can wrap a "line" of content in. WebKit/Safari's
-// contenteditable uses <div> as its DEFAULT block, so it wraps each continuation line in a <div>
-// (and some engines / paste paths use <p>); every such wrapper is a LINE BOUNDARY in the cell, not
-// glued-on text. Recognized so the DOM read-back below inserts a `<br>` between them (#15). Matched
-// by nodeName (uppercase), so it's engine-agnostic — no computed-style / display:block probe.
-const CELL_BLOCK_TAGS = new Set([
-  "DIV", "P", "LI", "UL", "OL", "BLOCKQUOTE", "SECTION", "ARTICLE", "PRE",
-  "H1", "H2", "H3", "H4", "H5", "H6", "FIGURE", "TABLE", "TR", "TBODY", "THEAD",
-]);
-
-/** Split a cell's edit-face DOM into its logical lines, normalizing EVERY line-break shape a
- *  contenteditable can produce across engines: a real `<br>` element (at ANY depth, not just a
- *  direct child), a raw `\n` CHARACTER inside a text node, AND a block-level wrapper (`<div>` /
- *  `<p>` / …) per line. A block boundary ends the current line and starts the next; a block whose
- *  content already ended with a `<br>` (already flushed) doesn't double-count, and an EMPTY block
- *  adds no spurious line. Inline elements (`<span>`/`<b>`/…) keep their text on the current line.
- *  Pure over the DOM. */
-function cellDomLines(cell: HTMLElement): string[] {
-  const lines: string[] = [];
-  let cur = "";
-  const flush = (): void => { lines.push(cur); cur = ""; };
-  const walk = (node: Node): void => {
-    node.childNodes.forEach((n) => {
-      if (n.nodeName === "BR") {
-        flush();
-      } else if (n.nodeType === Node.TEXT_NODE) {
-        // A raw newline inside a text node is a line break too (some engines / paste paths).
-        const parts = (n.textContent ?? "").split(/\r?\n/);
-        parts.forEach((p, i) => { if (i > 0) flush(); cur += p; });
-      } else if (n.nodeType === Node.ELEMENT_NODE) {
-        if (CELL_BLOCK_TAGS.has(n.nodeName)) {
-          if (cur !== "") flush(); // a block starts on a fresh line
-          walk(n);
-          if (cur !== "") flush(); // …and its residual content ends the line (a trailing <br> already flushed)
-        } else {
-          walk(n); // inline element (span/b/i/a/…): its content stays on the current line
-        }
-      }
-    });
-  };
-  walk(cell);
-  if (cur !== "") flush();
-  return lines;
-}
-
-/** Read a cell's edit-face DOM back to single-line GFM source, mapping EVERY in-cell line break —
- *  a `<br>` element (any depth), a raw `\n` character, OR a `<div>`/`<p>` block wrapper — to the
- *  uniform `<br>` marker, so list detection (cellList.ts) sees the breaks in EVERY engine (#15).
- *  The direct-child-only `<br>` walk this replaced was Chromium-shaped: in the packaged WebKit
- *  (Tauri WKWebView) app, contenteditable wraps each continuation line in a `<div>`, so a typed
- *  list "- a"⏎"- b"⏎"- c" read back as sibling `<div>`s concatenated with NO separator —
- *  "- a- b- c" at best (only re-splittable when the previous item ends in a non-space char) and,
- *  with any trailing space or a plain two-line cell, the break was LOST entirely ("line one"⏎
- *  "line two" → "line oneline two"). Emitting a `<br>` per block boundary makes the stored source
- *  uniform so the cell re-renders as the list/lines the user typed, regardless of engine.
- *  `innerText` is still wrong here (it drops a TRAILING `<br>`, breaking a Shift+Enter-at-end
- *  break); this explicit walk keeps it. ZWSP fillers are stripped; `.trim()` strips only
- *  surrounding whitespace, never the `<br>` markers (a deliberate trailing break survives). The
- *  inverse of `srcToEditHtml`. */
-export function cellSourceFromDom(cell: HTMLElement): string {
-  return cellDomLines(cell)
-    .join("<br>")
-    .replace(new RegExp(ZWSP, "g"), "")
-    .trim();
-}
-
-/** Insert a real <br> element at the caret. Deterministic, unlike
- *  execCommand("insertLineBreak"), which variously yields a <br>, a <div> wrapper, or
- *  literal `\n` text depending on engine/position — the source of the flaky behavior. */
-function insertBreakAtCaret(): void {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
-  const range = sel.getRangeAt(0);
-  range.deleteContents();
-  const br = document.createElement("br");
-  range.insertNode(br);
-  // Does any RENDERABLE content follow the <br>? A trailing <br> followed by nothing — or
-  // only empty/whitespace text nodes that range.insertNode can leave behind — renders no
-  // empty line and can't host the caret (the "must press twice" bug). Treat such nodes as
-  // absent and add a single ZWSP filler the caret lands on; `cellSourceFromDom` strips it.
-  let after: ChildNode | null = br.nextSibling;
-  let hasVisibleAfter = false;
-  while (after) {
-    if (after.nodeName === "BR" || (after.textContent ?? "").replace(new RegExp(ZWSP, "g"), "").trim() !== "") {
-      hasVisibleAfter = true;
-      break;
-    }
-    after = after.nextSibling;
-  }
-  const next = document.createRange();
-  if (hasVisibleAfter) {
-    next.setStartAfter(br); // mid-text break: caret onto the new line, after the <br>
-  } else {
-    for (let n = br.nextSibling; n; ) { const m = n.nextSibling; n.remove(); n = m; } // drop empty trailers
-    const filler = document.createTextNode(ZWSP);
-    br.after(filler);
-    next.setStart(filler, 0);
-  }
-  next.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(next);
-}
-
-/** Insert plain text at the caret and leave the caret after it. Used to drop the next
- *  list marker (`- ` / `3. `) onto a freshly-broken in-cell line. */
-function insertTextAtCaret(text: string): void {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return;
-  const range = sel.getRangeAt(0);
-  range.deleteContents();
-  const node = document.createTextNode(text);
-  range.insertNode(node);
-  const next = document.createRange();
-  next.setStartAfter(node);
-  next.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(next);
-}
-
 /** WebKit-safe suppression of the right-click word-select (#43). Chromium selects the word under
  *  the pointer as the DEFAULT ACTION of a right mousedown, cancelable with `preventDefault()` on
  *  that mousedown — which is what the prior fix did. WebKit/Safari does NOT honor that: its
@@ -259,78 +131,6 @@ export function suppressRightClickWordSelect(cell: HTMLElement): () => void {
   };
 }
 
-/** Typing a configured wrap character (`*`/`_`/`~`/backtick by default —
- *  `settings.editor.wrapSelectionChars`) over a non-empty selection surrounds it instead of
- *  replacing it, matching the main editor's `wrapSelection` extension (editor/wrapSelection.ts)
- *  — which never runs here, since a cell is a plain contenteditable DOM island CodeMirror's own
- *  input handling never sees (#45). Returns false (caller falls through to native contenteditable
- *  typing) when the setting's off, `key` isn't a single configured char, or nothing's selected. */
-export function wrapCellSelectionOnType(cell: HTMLElement, key: string): boolean {
-  if (!settings.editor.wrapSelection || key.length !== 1 || !settings.editor.wrapSelectionChars.includes(key)) {
-    return false;
-  }
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return false;
-  const range = sel.getRangeAt(0);
-  if (!cell.contains(range.commonAncestorContainer)) return false;
-  const close = closerFor(key);
-  const text = range.toString();
-  range.deleteContents();
-  const node = document.createTextNode(key + text + close);
-  range.insertNode(node);
-  // Reselect the inner text (not the markers) so a second press nests it, e.g. `word` -> ``word``.
-  const inner = document.createRange();
-  inner.setStart(node, key.length);
-  inner.setEnd(node, key.length + text.length);
-  sel.removeAllRanges();
-  sel.addRange(inner);
-  return true;
-}
-
-/** Flatten a node's cell-edit-face content to text, mapping each `<br>` to a newline so
- *  callers can reason about the cell as multi-line text (the edit face is a flat run of
- *  text nodes + `<br>`s — see srcToEditHtml / insertBreakAtCaret). */
-function fragText(node: Node): string {
-  let out = "";
-  node.childNodes.forEach((n) => {
-    if (n.nodeName === "BR") out += "\n";
-    else if (n.nodeType === Node.TEXT_NODE) out += n.textContent ?? "";
-    else out += fragText(n);
-  });
-  return out;
-}
-
-/** The text of the cell line the (collapsed) caret sits on, plus the raw character counts
- *  before/after the caret ON THAT LINE (for a precise in-line delete). Returns null unless
- *  there's a single collapsed caret inside `cell`. ZWSP fillers are stripped from `line`
- *  (marker detection) but counted in before/after (so a delete removes them too). */
-function caretCellLine(cell: HTMLElement): { line: string; beforeLen: number; afterLen: number } | null {
-  const sel = window.getSelection();
-  if (!sel || sel.rangeCount === 0) return null;
-  const caret = sel.getRangeAt(0);
-  if (!caret.collapsed || !cell.contains(caret.startContainer)) return null;
-  const beforeR = document.createRange();
-  beforeR.selectNodeContents(cell);
-  beforeR.setEnd(caret.startContainer, caret.startOffset);
-  const afterR = document.createRange();
-  afterR.selectNodeContents(cell);
-  afterR.setStart(caret.startContainer, caret.startOffset);
-  const before = fragText(beforeR.cloneContents());
-  const after = fragText(afterR.cloneContents());
-  const beforeLine = before.slice(before.lastIndexOf("\n") + 1);
-  const afterLine = after.split("\n", 1)[0];
-  const strip = (s: string): string => s.replace(new RegExp(ZWSP, "g"), "");
-  return { line: strip(beforeLine + afterLine), beforeLen: beforeLine.length, afterLen: afterLine.length };
-}
-
-/** Delete `beforeLen` characters back and `afterLen` forward from the caret (the current
- *  line's marker, when exiting an in-cell list). Uses execCommand — as the paste handler
- *  does — so the contenteditable's own undo/caret bookkeeping stays consistent. */
-function deleteCurrentLine(beforeLen: number, afterLen: number): void {
-  for (let i = 0; i < beforeLen; i++) document.execCommand("delete");
-  for (let i = 0; i < afterLen; i++) document.execCommand("forwardDelete");
-}
-
 // Item shape understood by App's shared `bismuth-context-menu` handler (mirrors EditorMenuItem).
 type TableMenuItem = { label: string; onSelect: () => void; icon?: string; disabled?: boolean; separatorBefore?: boolean };
 
@@ -351,22 +151,34 @@ function edgeBar(cls: string, label: string, onTrigger: () => void): HTMLButtonE
   return btn;
 }
 
+// A cell element carrying its live in-cell CodeMirror editor (mounted while the cell is focused).
+type CellHost = HTMLElement & { _cellCM?: CellEditorView };
+// The nested EditorView's minimal surface the widget touches — kept structural so this module never
+// statically imports @codemirror/view's EditorView beyond what it already uses.
+interface CellEditorView {
+  state: { doc: { toString(): string } };
+  contentDOM: HTMLElement;
+  destroy(): void;
+}
+
 /** Read the current cell grid (raw markdown SOURCE per cell) out of the rendered table
  *  DOM. A cell normally displays rendered markdown, so its source is kept in `data-src`;
- *  the one cell currently being edited holds its live (possibly unsaved) source as the
- *  contenteditable text, so we read that — this captures an in-flight edit when a
- *  `+`/menu action commits while a cell still has focus. */
+ *  the one cell currently being edited holds its live (possibly unsaved) source in its nested
+ *  CodeMirror editor, so we read that DOC back (`<br>`-joined) — this captures an in-flight edit
+ *  when a `+`/menu action (or an Enter-grows-row) commits while a cell still has focus. */
 function readGrid(root: HTMLElement): string[][] {
   const rows: string[][] = [];
   for (const tr of Array.from(root.querySelectorAll("tr"))) {
     const cells = Array.from(tr.querySelectorAll<HTMLElement>("[data-cell]"));
     if (cells.length)
       rows.push(
-        cells.map((c) =>
-          // The edited cell may hold live multi-line DOM; everything else holds its
-          // already-encoded (`<br>`-marked) source.
-          c.dataset.editing === "1" ? cellSourceFromDom(c) : (c.dataset.src ?? "").trim(),
-        ),
+        cells.map((c) => {
+          // The edited cell holds its live doc in a nested CM; everything else holds its
+          // already-encoded (`<br>`-marked) source in data-src.
+          const cm = (c as CellHost)._cellCM;
+          if (c.dataset.editing === "1" && cm) return cmDocToCellSource(cm.state.doc.toString());
+          return (c.dataset.src ?? "").trim();
+        }),
       );
   }
   return rows;
@@ -641,21 +453,16 @@ export class TableWidget extends WidgetType {
     root.className = "cm-table-wrap";
     root.setAttribute("contenteditable", "false");
 
-    // In-cell `:emoji:` autocomplete (#49). A cell is a contenteditable island outside CM's input
-    // pipeline, so the editor's emoji completion never runs there — this per-widget menu reuses the
-    // SAME searchEmoji data source and inserts the chosen glyph. Torn down on cell blur + destroy.
-    // Host the popup inside the editor root (view.dom) so CM's scoped completion theme styles it
-    // identically to the editor's own autocomplete popup (see CellEmojiMenu's class doc, #49).
-    const emojiMenu = new CellEmojiMenu(view.dom);
-    (root as unknown as { _emojiMenu?: CellEmojiMenu })._emojiMenu = emojiMenu;
-
     const table = document.createElement("table");
     table.className = "cm-table-rendered";
 
     // A cell has two faces: a DISPLAY face (the FULL BLOCK markdown render — the same reading
-    // engine a note body uses, so lists/paragraphs in a cell look exactly like reading mode,
-    // #15) and an EDIT face (raw markdown source as plain text, shown while focused). We swap
-    // between them on focus so the user reads formatted prose but edits the underlying source.
+    // engine a note body uses, so lists/paragraphs in a cell look exactly like reading mode, #15)
+    // and an EDIT face — a REAL nested CodeMirror editor (cellEditor.ts) running the SAME
+    // live-preview + markdown + autocomplete stack the note body uses, so editing a cell reveals raw
+    // markdown per-token exactly like the note editor (#15) and pops the same emoji/wikilink/tag
+    // autocomplete (#49). We swap between them on focus so the user reads formatted prose but edits
+    // through the identical editor code.
     const renderDisplay = (cell: HTMLElement): void => {
       // Block render (bases/markdown.ts renderNoteBody over the <br>→newline source), then swap
       // the sanitize-surviving embed slots for real media from GET /asset (#30) — see
@@ -664,34 +471,90 @@ export class TableWidget extends WidgetType {
       cell.innerHTML = renderCellBlockHtml(cell.dataset.src ?? "");
       upgradeCellEmbeds(cell, api.assetUrl);
     };
-    const enterEdit = (cell: HTMLElement): void => {
-      if (cell.dataset.editing === "1") return;
+    // Enter edit mode: clear the display face and mount a nested CodeMirror editor. The editor
+    // module is loaded DYNAMICALLY (its live-preview stack pulls in Solid `.tsx` that would taint
+    // this widget's headless tests), so the mount completes on a microtask — the guards below bail
+    // if the cell already left edit mode (a fast blur) or the user moved focus away meanwhile.
+    const enterEdit = (cell: CellHost, r: number, c: number, atCoords?: { x: number; y: number }): void => {
+      if (cell.dataset.editing === "1") {
+        cell._cellCM?.contentDOM.focus({ preventScroll: true });
+        return;
+      }
       cell.dataset.editing = "1";
-      cell.innerHTML = srcToEditHtml(cell.dataset.src ?? ""); // reveal raw markdown (with real line breaks)
+      cell.replaceChildren();
+      const getNotes = view.state.facet(noteNamesFacet);
+      const getTags = view.state.facet(tagNamesFacet);
+      void loadCellEditor().then((mod) => {
+        if (cell.dataset.editing !== "1" || !cell.isConnected || cell._cellCM) return; // left edit / torn down / already mounted
+        const ae = cell.ownerDocument.activeElement as HTMLElement | null;
+        // Don't steal focus if the user moved to something outside this table while the chunk loaded.
+        if (ae && ae !== cell.ownerDocument.body && !root.contains(ae) && !cell.contains(ae)) {
+          cell.dataset.editing = "";
+          renderDisplay(cell);
+          return;
+        }
+        cell._cellCM = mod.mountCellEditor({
+          parent: cell,
+          source: cell.dataset.src ?? "",
+          popupParent: view.dom,
+          getNotes,
+          getTags,
+          isLastRow: r === this.cells.length - 1,
+          onNav: (dir) => moveCell(r, c, dir),
+          onEscape: blurCell,
+          // Last row, non-list Enter → append a blank row + drop the caret into it (#42). Deferred
+          // to a microtask inside cellEditor so this commit never runs mid-keydispatch.
+          onGrowRow: () => {
+            pendingCellFocus = { key: sizeKey(this.cells), r: this.cells.length, c };
+            this.commit(view, root, (g) => insertRow(g, g.cells.length));
+          },
+          atCoords,
+        });
+      });
     };
-    const leaveEdit = (cell: HTMLElement): void => {
+    // Leave edit mode: read the nested editor's doc back into the cell source, destroy it, and
+    // re-render the display face. Synchronous — triggered by focusout, so the editor isn't
+    // mid-dispatch. The DOC → `<br>`-joined source round-trip is lossless (cellBlockRender.ts).
+    const leaveEdit = (cell: CellHost): void => {
       if (cell.dataset.editing !== "1") return;
       cell.dataset.editing = "";
-      cell.dataset.src = cellSourceFromDom(cell);
+      const cm = cell._cellCM;
+      if (cm) {
+        cell.dataset.src = cmDocToCellSource(cm.state.doc.toString());
+        cm.destroy();
+        cell._cellCM = undefined;
+      }
       renderDisplay(cell); // back to the formatted face
     };
 
-    const focusCell = (r: number, c: number): boolean => {
+    // Move focus to cell (r, c), entering its edit face (which mounts + focuses its editor). The
+    // previously-focused cell's editor blurs → its focusout commits it (leaveEdit) — so cell-to-cell
+    // navigation never touches the doc, only the per-cell source cache (parity with the old widget).
+    const focusCell = (r: number, c: number): void => {
       const el = root.querySelector<HTMLElement>(`[data-cell][data-r="${r}"][data-c="${c}"]`);
-      if (!el) return false;
-      // `preventScroll` so Tab/Enter cell-to-cell navigation (and the Enter-grows-a-row focus)
-      // never jumps the viewport — the scroll is pinned by dispatchKeepScroll where it matters (#50).
-      el.focus({ preventScroll: true });
-      // place caret at end
-      const sel = window.getSelection();
-      if (sel) {
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
+      if (el) enterEdit(el as CellHost, r, c);
+    };
+
+    // Tab / Shift-Tab: hop to the next / previous cell, wrapping across rows; past the last (or
+    // before the first) cell, blur out of the table so it commits.
+    const moveCell = (r: number, c: number, dir: "next" | "prev"): void => {
+      const cols = this.cells[0]?.length ?? 0;
+      if (dir === "next") {
+        if (c + 1 < cols) focusCell(r, c + 1);
+        else if (r + 1 < this.cells.length) focusCell(r + 1, 0);
+        else blurCell();
+      } else {
+        if (c - 1 >= 0) focusCell(r, c - 1);
+        else if (r - 1 >= 0) focusCell(r - 1, cols - 1);
+        else blurCell();
       }
-      return true;
+    };
+
+    // Blur whatever is focused inside the table (the active cell's editor) so focus leaves the whole
+    // widget → the root focusout commits the table.
+    const blurCell = (): void => {
+      const ae = root.ownerDocument.activeElement as HTMLElement | null;
+      if (ae && root.contains(ae)) ae.blur();
     };
 
     const cols = this.cells[0]?.length ?? 0;
@@ -711,13 +574,15 @@ export class TableWidget extends WidgetType {
       const tr = document.createElement("tr");
       for (let c = 0; c < cols; c++) {
         const isHeader = r === 0;
-        const cell = document.createElement(isHeader ? "th" : "td");
+        const cell = document.createElement(isHeader ? "th" : "td") as CellHost;
         cell.className = "cm-td";
         cell.setAttribute("data-cell", "");
         cell.setAttribute("data-r", String(r));
         cell.setAttribute("data-c", String(c));
-        cell.setAttribute("contenteditable", "true");
-        cell.setAttribute("spellcheck", "false");
+        // The cell is NOT contenteditable — its edit face is a nested CodeMirror editor (mounted on
+        // focus) whose own contentDOM owns editing. Marked non-editable so the outer editor treats it
+        // (like the wrap) as opaque.
+        cell.setAttribute("contenteditable", "false");
         // Apply only left/right alignment. Center is NOT rendered (#53): "centering in tables
         // should not be possible." A `:-:` separator still PARSES to `"center"` (source stays
         // valid + round-trips), but a center column renders left — so no cell is ever centered and
@@ -726,24 +591,15 @@ export class TableWidget extends WidgetType {
         const a = this.aligns[c] ?? "none";
         if (a === "left" || a === "right") cell.style.textAlign = a;
         cell.dataset.src = row[c] ?? ""; // raw markdown source (source of truth)
-        renderDisplay(cell); // initial face: rendered inline markdown
-        // Swap to the raw-source face on focus and back to the rendered face on blur, so
-        // the cell shows formatted markdown when idle but is edited as plain source.
-        cell.addEventListener("focusin", () => enterEdit(cell));
-        cell.addEventListener("focusout", () => { emojiMenu.close(); leaveEdit(cell); });
-        // In-cell `:emoji:` autocomplete (#49): re-evaluate the popup on every input (typing /
-        // delete / paste). Cheap — it just reads the caret line and matches a `:query`.
-        cell.addEventListener("input", () => emojiMenu.onInput(cell));
-        // Take control of the mousedown so CodeMirror's own handler doesn't move the
-        // editor selection to the (atomic) widget boundary and focus the doc instead of
-        // the cell (stopPropagation). Once the cell is already in its editable (raw-source)
-        // face, let the browser handle the rest NATIVELY so click-drag TEXT SELECTION and
-        // double-click word-select work — calling preventDefault here (as the old code did
-        // on every mousedown) collapses/kills the native selection gesture, which is why
-        // "can't highlight text inside a table cell" happened. Only for the FIRST click
-        // (entering edit mode from the rendered display face) do we preventDefault + focus
-        // + drop the caret ourselves, because focusin swaps the cell's innerHTML to the
-        // raw-source face and would invalidate a caret the browser had just placed.
+        renderDisplay(cell); // initial face: block-rendered markdown
+        // When focus leaves the cell's editor (blur, or a hop to another cell), commit its doc back
+        // into the source cache and re-render the display face. A focus move that stays inside this
+        // cell (CM internals) is ignored. The whole-table commit is the root focusout below.
+        cell.addEventListener("focusout", (e) => {
+          const rt = (e as FocusEvent).relatedTarget as Node | null;
+          if (rt && cell.contains(rt)) return; // focus still inside this cell
+          leaveEdit(cell);
+        });
         cell.addEventListener("mousedown", (e) => {
           const me = e as MouseEvent;
           // Right-click (#43): show ONLY the context menu, never a NEW selection. `preventDefault`
@@ -752,7 +608,7 @@ export class TableWidget extends WidgetType {
           // `contextmenu` listener still opens the menu. But WebKit/Safari (the packaged Tauri
           // WKWebView) word-selects REGARDLESS of the mousedown default, so we also install a
           // `selectstart`-cancel + save/restore guard for the press and tear it down when the
-          // gesture ends. stopPropagation keeps CM from also acting; we return before caret-placement.
+          // gesture ends. stopPropagation keeps CM from also acting.
           if (me.button === 2) {
             e.preventDefault();
             e.stopPropagation();
@@ -768,12 +624,13 @@ export class TableWidget extends WidgetType {
             cell.ownerDocument.addEventListener("mouseup", onEnd, true);
             return;
           }
+          // Already editing → let the nested editor handle its own clicks (drag-select, caret).
+          if (cell.dataset.editing === "1") return;
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
-          // instead of entering edit mode. The `e.stopPropagation()` below means CM's own
-          // wikilink click handler never sees this click, so we run the same open path here.
-          // Two chip shapes exist: the reader engine's `a.bismuth-wikilink[data-href]` (the block
-          // display face, #15) and the embed fallback's `span.cm-wikilink[data-wikilink]`.
-          if (cell.dataset.editing !== "1" && me.button === 0) {
+          // instead of entering edit mode. Two chip shapes exist: the reader engine's
+          // `a.bismuth-wikilink[data-href]` (the block display face, #15) and the embed fallback's
+          // `span.cm-wikilink[data-wikilink]`.
+          if (me.button === 0) {
             const link = (me.target as HTMLElement | null)?.closest?.(".cm-wikilink, .bismuth-wikilink") as HTMLElement | null;
             if (link && cell.contains(link)) {
               e.preventDefault();
@@ -785,145 +642,12 @@ export class TableWidget extends WidgetType {
               return;
             }
           }
-          e.stopPropagation();
-          if (cell.dataset.editing === "1") return; // native caret + drag-to-select
-          e.preventDefault();
-          // `preventScroll` — a plain `.focus()` scrolls the focused element into view, so clicking
-          // a cell (especially a tall table half-off-screen) yanked the viewport to it (#50). We
-          // place our own caret below and pin the viewport; focusing must never move it.
-          cell.focus({ preventScroll: true });
-          const sel = window.getSelection();
-          if (!sel) return;
-          // caretRangeFromPoint (Chrome/Safari) / caretPositionFromPoint (Firefox).
-          const docAny = document as unknown as {
-            caretRangeFromPoint?: (x: number, y: number) => Range | null;
-            caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
-          };
-          let range: Range | null = docAny.caretRangeFromPoint?.(me.clientX, me.clientY) ?? null;
-          if (!range && docAny.caretPositionFromPoint) {
-            const cp = docAny.caretPositionFromPoint(me.clientX, me.clientY);
-            if (cp) {
-              range = document.createRange();
-              range.setStart(cp.offsetNode, cp.offset);
-              range.collapse(true);
-            }
-          }
-          if (!range || !cell.contains(range.startContainer)) {
-            range = document.createRange();
-            range.selectNodeContents(cell);
-            range.collapse(false);
-          }
-          sel.removeAllRanges();
-          sel.addRange(range);
-        });
-        // Paste as plain text (collapse newlines) — a cell is one line of markdown.
-        cell.addEventListener("paste", (e) => {
+          // Enter edit mode from the display face: stop CM moving its own selection to the (atomic)
+          // widget boundary, and mount the nested editor with the caret at the click point. The
+          // editor focuses with preventScroll so this never yanks the viewport (#50).
           e.preventDefault();
           e.stopPropagation();
-          const text = (e.clipboardData?.getData("text/plain") ?? "").replace(/\r?\n/g, " ");
-          document.execCommand("insertText", false, text);
-        });
-        cell.addEventListener("keydown", (e) => {
-          const ev = e as KeyboardEvent;
-          // While the in-cell emoji menu is open (#49), it owns Up/Down (navigate), Enter/Tab
-          // (accept), Escape/Left/Right (close) — so those never fall through to the cell's own
-          // Tab/Enter/Escape handling. Only a plain, unmodified key ever drives the menu.
-          if (!ev.metaKey && !ev.ctrlKey && !ev.altKey && emojiMenu.handleKeydown(cell, ev.key)) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            return;
-          }
-          // A configured wrap char (e.g. backtick) typed over a selection surrounds it — see
-          // wrapCellSelectionOnType (#45). Checked before decideCellKey/the modifier-driven
-          // actions below since it only ever matches a plain, unmodified single character.
-          if (!ev.metaKey && !ev.ctrlKey && !ev.altKey && wrapCellSelectionOnType(cell, ev.key)) {
-            ev.preventDefault();
-            ev.stopPropagation();
-            return;
-          }
-          const action: CellKeyAction = decideCellKey(ev);
-          // A `pass-through` is a global app shortcut (Mod+O quick-switcher, Mod+P command
-          // palette, Mod+F find, Mod+` terminal, …). We deliberately do NOT stopPropagation
-          // or preventDefault, so it bubbles out of the cell to App.tsx's `window` keydown
-          // handler exactly like a normal editor keystroke would. Swallowing these (the old
-          // unconditional stopPropagation) is why "Cmd+O doesn't work inside a table". Every
-          // OTHER key is cell-local, so we stop it reaching CM's contentDOM keymap (the cell
-          // is an editing island) before acting on it.
-          if (action === "pass-through") return;
-          ev.stopPropagation();
-          switch (action) {
-            case "select-cell": {
-              // Mod+A natively selects the whole contenteditable host (the editor), not the
-              // nested cell — scope it to the cell ourselves.
-              ev.preventDefault();
-              const sel = window.getSelection();
-              if (sel) {
-                const range = document.createRange();
-                range.selectNodeContents(cell);
-                sel.removeAllRanges();
-                sel.addRange(range);
-              }
-              return;
-            }
-            case "block-format":
-              // Mod+B/I/U would inject <b>/<i>/<u> markup into a plain-markdown cell — swallow.
-              ev.preventDefault();
-              return;
-            case "tab-next":
-              ev.preventDefault();
-              if (c + 1 < cols) focusCell(r, c + 1);
-              else if (r + 1 < this.cells.length) focusCell(r + 1, 0);
-              else cell.blur();
-              return;
-            case "tab-prev":
-              ev.preventDefault();
-              if (c - 1 >= 0) focusCell(r, c - 1);
-              else if (r - 1 >= 0) focusCell(r - 1, cols - 1);
-              else cell.blur();
-              return;
-            case "newline":
-              // Soft line break WITHIN the cell: insert a real <br> so the caret moves down
-              // and the cell grows. On commit `cellSourceFromDom` encodes it as a `<br>`
-              // marker (a GFM cell is one source line), which the display face renders back.
-              ev.preventDefault();
-              insertBreakAtCaret();
-              return;
-            case "next-row": {
-              ev.preventDefault();
-              // In-cell list continuation (#15): if the caret's line is a `- `/`N.` list
-              // item, Enter continues the list in-cell instead of anything else.
-              const lineInfo = caretCellLine(cell);
-              const cont = lineInfo ? cellListContinuation(lineInfo.line) : null;
-              if (cont && cont !== "exit") {
-                // Non-empty item → open the next marker on a new in-cell line.
-                insertBreakAtCaret();
-                insertTextAtCaret(cont.marker);
-                return;
-              }
-              if (cont === "exit" && lineInfo) {
-                // Empty marker → drop it and leave the list, then apply the base Enter action.
-                deleteCurrentLine(lineInfo.beforeLen, lineInfo.afterLen);
-              }
-              // #42: Enter behaves like Shift+Enter (a soft in-cell line break) on EVERY row
-              // except the LAST, where it grows the table by a row and drops the caret into it.
-              if (enterAction(r, this.cells.length) === "line-break") {
-                insertBreakAtCaret();
-                return;
-              }
-              // Last row → append a blank row and focus its same column after the widget rebuilds.
-              pendingCellFocus = { key: sizeKey(this.cells), r: this.cells.length, c };
-              this.commit(view, root, (g) => insertRow(g, g.cells.length));
-              return;
-            }
-            case "leave":
-              ev.preventDefault();
-              cell.blur();
-              return;
-            case "edit":
-              // A plain key (typing, arrows, etc.): native contenteditable handles the input;
-              // we only shielded it from CM's keymap above. No preventDefault.
-              return;
-          }
+          enterEdit(cell, r, c, { x: me.clientX, y: me.clientY });
         });
         tr.appendChild(cell);
       }
@@ -1142,12 +866,17 @@ export class TableWidget extends WidgetType {
     return outer;
   }
 
-  // Stop the layout observer + tear down the emoji popup when CodeMirror drops this widget's DOM.
-  // CM hands us the toDOM root (the outer block); both live on the inner `.cm-table-wrap`.
+  // Stop the layout observer + tear down any mounted in-cell editor when CodeMirror drops this
+  // widget's DOM (e.g. a commit rebuild). CM hands us the toDOM root (the outer block); the
+  // observer lives on the inner `.cm-table-wrap`, the editors on each focused cell.
   destroy(dom: HTMLElement): void {
     const wrap = (dom.classList.contains("cm-table-wrap") ? dom : dom.querySelector(".cm-table-wrap")) as HTMLElement | null;
     (wrap as unknown as { _tableRO?: ResizeObserver } | null)?._tableRO?.disconnect();
-    (wrap as unknown as { _emojiMenu?: CellEmojiMenu } | null)?._emojiMenu?.destroy();
+    // Destroy any live nested cell editor so a commit-rebuild (or view teardown) leaks no EditorView.
+    for (const cell of Array.from(dom.querySelectorAll<HTMLElement>("[data-cell]"))) {
+      (cell as CellHost)._cellCM?.destroy();
+      (cell as CellHost)._cellCM = undefined;
+    }
   }
 
   // Build + dispatch the right-click menu for the cell at (r, c). Insert/delete act on
