@@ -30,21 +30,23 @@ import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
 import type { ChatFrame, ChatManifest, ChatQuestion } from "../../core/src/chat";
 import { getFocusedSelection } from "./editorRegistry";
-import { getEditorTabs } from "./chatContext";
+import { getEditorTabs, addChatReference, getChatReferences, clearChatReferences } from "./chatContext";
 import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { publishChatTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
-import { chatColor } from "./chatColors";
+import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
+import { parseChatSlashCommand } from "./chatSlashCommands";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
 import { DEFAULT_EFFORT_DISPLAY, effortOptionsForModel } from "./chatEffort";
 import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nativeDrop";
-import { wikilinkFor } from "./dnd/noteRef";
+import { wikilinkFor, noteNameFromPath } from "./dnd/noteRef";
 import { ChatComposer, type ComposerHandle } from "./ChatComposer";
 import { classifyComposerKey } from "./chatComposerKeys";
 import type { NoteCandidate } from "./editor/wikilink";
+import type { FileCandidate } from "./editor/atMention";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -288,7 +290,7 @@ function relativeTime(ms: number): string {
  *  that tier IS visible to chat) before building the preamble, so a hidden note's path/content
  *  can't reach the model through this side channel. See docs/vault/visibility.md. Filtering logic
  *  itself is pure (chatEditorContext.ts, unit-tested); this just gathers the live state. */
-function buildEditorContext(hiddenPaths: ReadonlySet<string>): string {
+function buildEditorContext(hiddenPaths: ReadonlySet<string>, referencedFiles: string[]): string {
   const sel = getFocusedSelection();
   const { openFiles, activeFile } = getEditorTabs();
   return buildEditorContextText({
@@ -297,6 +299,7 @@ function buildEditorContext(hiddenPaths: ReadonlySet<string>): string {
     selection: sel?.selection ?? "",
     selectionPath: sel?.path,
     hiddenPaths,
+    referencedFiles,
   });
 }
 
@@ -364,10 +367,21 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   // eventually-consistent, not a live round trip per keystroke: buildEditorContext filters
   // against the last-known set so a hidden file's path never reaches the model via the preamble.
   const [hiddenPaths, setHiddenPaths] = createSignal<ReadonlySet<string>>(new Set());
+  // Every vault FILE, powering the composer's `@file` mention switcher (Row 79a). Built from the SAME
+  // tree fetch as hiddenPaths (one round trip): files only (not folders), hidden ones excluded (an
+  // @-mention must never surface — or leak the content of — a chat-hidden file), mapped to the
+  // wikilink-target label the mention inserts (noteNameFromPath: notes lose `.md`, other files keep
+  // their extension so the reference resolves).
+  const [fileCandidates, setFileCandidates] = createSignal<FileCandidate[]>([]);
   const refreshHiddenPaths = async () => {
     try {
       const entries = await api.tree();
       setHiddenPaths(new Set(entries.filter((e) => e.visibility === "hidden").map((e) => e.path)));
+      setFileCandidates(
+        entries
+          .filter((e) => e.kind === "file" && e.visibility !== "hidden")
+          .map((e) => ({ label: noteNameFromPath(e.path), path: e.path, folder: e.path.includes("/") ? e.path.split("/")[0] : undefined })),
+      );
     } catch {
       // Leave the last-known set — better a stale filter than none.
     }
@@ -849,6 +863,30 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   };
   const removeAttachment = (i: number) => setAttachments((a) => a.filter((_, idx) => idx !== i));
 
+  /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`) intercepted in send()
+   *  before the turn reaches the model. Returns true when it consumed the draft (rename/color
+   *  applied) so send() clears the composer; false when it couldn't (an unknown `/color` value),
+   *  leaving the draft in place with an inline error so the user can fix it. */
+  const applyLocalCommand = (cmd: ReturnType<typeof parseChatSlashCommand>): boolean => {
+    if (!cmd) return false;
+    if (cmd.kind === "rename") {
+      // Rename THIS chat's tab via the same Tab.name override the right-click Rename sets (App owns
+      // the tab tree) — persisted across reload/reopen. Empty name reverts to the auto label.
+      window.dispatchEvent(new CustomEvent("bismuth-chat-rename", { detail: { chatId: props.chatId, name: cmd.name } }));
+      setTurnError(null);
+      return true;
+    }
+    // color: resolve the token to a swatch/hex/clear; an unknown token is reported, not applied.
+    const resolved = resolveChatColorArg(cmd.arg);
+    if (resolved === undefined) {
+      setTurnError(`Unknown color "${cmd.arg}" — use a swatch name (e.g. blue) or a hex like #ffcc00.`);
+      return false; // keep the draft so the user can correct it
+    }
+    setChatColor(props.chatId, resolved); // signal-backed → the pane re-tints live + persists
+    setTurnError(null);
+    return true;
+  };
+
   // --- Sending ---------------------------------------------------------------
   const send = () => {
     const text = draft().trim();
@@ -856,6 +894,19 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     // A message needs SOMETHING to send — text or at least one image attachment. (Streaming no
     // longer blocks: a mid-turn send STAGES the message instead — see the queued branch below.)
     if ((!text && atts.length === 0) || setupError()) return;
+    // Row 75: `/rename` / `/color` are handled CLIENT-SIDE and never sent to the model. Intercept
+    // before everything else (they take no attachments, no wire message). A consumed command clears
+    // the composer; an unrecognized `/color` value leaves the draft + shows an inline error.
+    if (text.startsWith("/")) {
+      const cmd = parseChatSlashCommand(text);
+      if (cmd) {
+        if (applyLocalCommand(cmd)) {
+          setDraft("");
+          closeSlash();
+        }
+        return;
+      }
+    }
     // A slash command can't carry images: the CLI only expands a leading "/command" for a plain
     // STRING turn, but attachments force an array-of-blocks shape, so the command would be silently
     // sent to the model as literal text. Refuse rather than degrade it.
@@ -874,7 +925,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     // never clutters what the user sees. Empty when nothing's open/selected (see buildEditorContext).
     // Skipped for slash commands: Claude Code only recognises a `/command` at the START of the
     // message, so a preamble would silently break it.
-    const preamble = text.startsWith("/") ? "" : buildEditorContext(hiddenPaths());
+    const preamble = text.startsWith("/") ? "" : buildEditorContext(hiddenPaths(), getChatReferences(props.chatId));
     const wire = preamble ? `${preamble}\n\n${text}` : text;
     // Show the sent images in the user bubble (data URLs) so an image-only turn isn't an empty bubble.
     const bubbleImages = atts.map((a) => `data:${a.mediaType};base64,${a.data}`);
@@ -887,6 +938,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined, queued: true, queueId: id })));
       setDraft("");
       setAttachments([]);
+      clearChatReferences(props.chatId); // folded into this turn's captured wire — don't ride the next
       closeSlash();
       scrollToBottom(true);
       return;
@@ -902,6 +954,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined })));
     setDraft("");
     setAttachments([]);
+    clearChatReferences(props.chatId); // conveyed in this turn's preamble — don't repeat next turn
     setStreaming(true);
     closeSlash();
     scrollToBottom(true); // sending always re-pins to the bottom
@@ -1020,6 +1073,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     setEffort(readLastEffort());
     setQueuedTurns([]);
     setContext(null);
+    // Drop any pending @-mention / drag references (Row 79) — they belonged to the conversation
+    // being cleared, and must not leak into the new/resumed one's first turn.
+    clearChatReferences(props.chatId);
     // The conversation this tab was named after is gone — revert the tab label to the persona
     // fallback until the new/resumed session publishes its own title frame.
     publishChatTitle(props.chatId, "");
@@ -1315,6 +1371,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       if (!d || d.chatId !== props.chatId || !d.path) return;
       const ref = wikilinkFor(d.path);
       setDraft((cur) => (cur && !cur.endsWith(" ") && cur.length ? `${cur} ${ref} ` : `${cur}${ref} `));
+      // Wire the dragged file into this chat's context (Row 79a) so its content reaches the model —
+      // the same registration the `@file` mention makes, just via drag instead of the picker.
+      addChatReference(props.chatId, d.path);
       focusComposer();
     };
     window.addEventListener("bismuth-chat-mention", onMention);
@@ -1629,7 +1688,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
                 onReady={(h) => { composer = h; }}
                 getNotes={props.noteNames}
                 getTags={props.tagNames}
-                placeholder={() => `Message ${persona()}…  ( / for commands · drop or paste an image · Enter to send · Shift+Enter for newline )`}
+                getFiles={fileCandidates}
+                onFileMention={(p) => addChatReference(props.chatId, p)}
+                placeholder={() => `Message ${persona()}…  ( / for commands · @ to reference a file · drop or paste an image · Enter to send · Shift+Enter for newline )`}
               />
             </div>
             <Show

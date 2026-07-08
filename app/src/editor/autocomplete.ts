@@ -5,6 +5,7 @@ import { completionDisplayConfig, completionTheme, type IconedCompletion } from 
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { matchWikilinkPrefix, matchWikilinkHeadingPrefix, parseHeadings, resolveNotePath, buildInsert, type NoteCandidate } from "./wikilink";
+import { matchAtMentionPrefix, rankFileCandidates, type FileCandidate } from "./atMention";
 import { matchTagPrefix } from "./tag";
 import { matchEmojiPrefix, searchEmoji } from "./emoji";
 import { keySuggestions, valueSuggestions } from "../../../core/src/schema/suggest";
@@ -170,6 +171,41 @@ function tagSource(getTags: () => string[]): CompletionSource {
     }),
     validFor: /^[\w/-]*$/,
   });
+}
+
+// `@file` mention completion (Row 79a) — composer-only, wired in ONLY when `getFiles` is supplied
+// (the note editor never passes it, so this source is simply absent there). Fuzzy-matches EVERY
+// vault file (not just markdown notes) and inserts a `[[wikilink]]` reference — the same mention
+// shape a drag-into-chat drops (Row 74) — replacing the whole `@query` span. `onPick` fires with the
+// chosen file's real PATH so ChatView can wire it into the chat context (chatContext.ts) and its
+// content reaches the model. We rank ourselves (rankFileCandidates) so `filter: false` + no
+// `validFor` (re-query each keystroke), like the emoji source.
+function atMentionSource(getFiles: () => FileCandidate[], onPick?: (path: string) => void): CompletionSource {
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const textBefore = line.text.slice(0, context.pos - line.from);
+    // A mention is prose — never fire inside code, where `@` is literal (decorators, npm scopes).
+    if (inCode(context) || inInlineCode(textBefore)) return null;
+    const match = matchAtMentionPrefix(textBefore);
+    if (!match) return null;
+    const from = line.from + match.from; // the `@` itself — the whole `@query` span is replaced
+    const options: Completion[] = rankFileCandidates(getFiles(), match.query)
+      .slice(0, 50)
+      .map((f) => ({
+        label: f.label,
+        detail: f.folder,
+        apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+          onPick?.(f.path);
+          // Insert `[[Name]] ` (trailing space to keep typing), caret parked just past it. Mirrors
+          // wikilinkFor(path) for the reference, but built from the display label so the popup pick
+          // and the inserted text are the same string.
+          const insert = `[[${f.label}]] `;
+          applyInsert(view, completion, applyFrom, applyTo, insert, insert.length);
+        },
+      }));
+    if (options.length === 0) return null;
+    return { from, options, filter: false };
+  };
 }
 
 // A property KEY is typed at column 0 of a frontmatter line, before any ":". We only
@@ -384,7 +420,10 @@ const wikilinkAutoTrigger = EditorView.updateListener.of((update) => {
   const pos = update.state.selection.main.head;
   const line = update.state.doc.lineAt(pos);
   const textBefore = line.text.slice(0, pos - line.from);
-  if (matchWikilinkPrefix(textBefore)) {
+  // `[[` and `@` both open with punctuation, which CM's activateOnTyping (word chars only) misses —
+  // force the popup open. startCompletion no-ops when no source returns options (e.g. `@` in a note
+  // editor, where the composer-only at-mention source isn't wired), so firing on either is safe.
+  if (matchWikilinkPrefix(textBefore) || matchAtMentionPrefix(textBefore)) {
     const view = update.view;
     queueMicrotask(() => startCompletion(view));
   }
@@ -401,6 +440,11 @@ export function vaultCompletion(opts: {
   // Async note-body reader (api.read). Powers `[[Note#heading]]` heading completion, which
   // has no client-side index and must fetch the target note's body to list its headings.
   readNote: (path: string) => Promise<string>;
+  // Composer-only (Row 79a): the FULL vault file list powering the `@file` mention switcher, and a
+  // callback fired with the picked file's PATH so the chat wires it into its context. Absent in the
+  // note editor → the at-mention source is simply not added.
+  getFiles?: () => FileCandidate[];
+  onFileMention?: (path: string) => void;
 }): Extension {
   return [autocompletion({
     ...completionDisplayConfig,
@@ -415,6 +459,8 @@ export function vaultCompletion(opts: {
       querySource(),          // inside a ```query block: keys / view / tasks-DSL / group
       taskSource(),           // on a `- [ ] …` line: due/scheduled/priority/recurrence signifiers
       templateTokenSource(),
+      // `@file` mention — composer-only, so gated on getFiles being supplied.
+      ...(opts.getFiles ? [atMentionSource(opts.getFiles, opts.onFileMention)] : []),
       // Heading source BEFORE the note source: inside `[[Note#…` the note source bails and this
       // one owns the popup (it's also async, so ordering keeps the sync note source from racing it).
       wikilinkHeadingSource(opts.getNotes, opts.readNote),
