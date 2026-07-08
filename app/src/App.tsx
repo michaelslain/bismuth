@@ -69,8 +69,10 @@ import {
 } from "./panes";
 import { IconButton } from "./ui/IconButton";
 import { PaneTree } from "./PaneTree";
-import { createViewDrag, type DragDescriptor, type DropTarget } from "./dnd/viewDrag";
+import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
+import { descriptorMovePath, descriptorNotePath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
+import { insertTextAtCoords } from "./editorRegistry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
@@ -1223,16 +1225,88 @@ export default function App() {
     setActiveTabId(res.newTabId);
   };
 
-  const viewDrag = createViewDrag((descriptor: DragDescriptor, target: DropTarget) => {
+  // A NOTE dropped onto a pane can REFERENCE the note (Row 74) instead of moving/grafting:
+  //  • a chat pane → insert a mention into that chat's composer (drop-to-mention);
+  //  • another note's editor, dropped on its center → insert a [[wikilink]] at the drop point.
+  // Returns true when the drop was consumed here; false to fall through to the classic open/graft.
+  const referenceNoteOnPane = (leafId: string, zone: DropZone, notePath: string, point: DropPoint): boolean => {
+    const at = activeTab();
+    if (!at) return false;
+    const content = leaves(at.root).find((l) => l.id === leafId)?.content;
+    if (!content) return false;
+    if (content.startsWith(CHAT_PREFIX)) {
+      const chatId = content.slice(CHAT_PREFIX.length);
+      window.dispatchEvent(new CustomEvent("bismuth-chat-mention", { detail: { chatId, path: notePath } }));
+      return true;
+    }
+    if (zone === "center" && content !== notePath && isMarkdown(content)) {
+      // insertTextAtCoords no-ops (returns false) when the note isn't in a live CodeMirror view
+      // (e.g. it's a base/block-editor pane) — then we fall through to the open/graft behavior.
+      if (insertTextAtCoords(content, point.x, point.y, wikilinkFor(notePath))) return true;
+    }
+    return false;
+  };
+
+  const viewDrag = createViewDrag((descriptor: DragDescriptor, target: DropTarget, point: DropPoint) => {
+    // Sidebar file-tree targets (Row 73): physically MOVE the dragged note/folder (or a path-backed
+    // tab/pane) into the folder / vault root. FileTree owns the optimistic move via bismuth-move-into.
+    if (target.kind === "folder" || target.kind === "root") {
+      const from = descriptorMovePath(descriptor);
+      if (from) {
+        const targetDir = target.kind === "folder" ? target.path : "";
+        window.dispatchEvent(new CustomEvent("bismuth-move-into", { detail: { from, targetDir } }));
+      }
+      return;
+    }
+    if (target.kind === "tabstrip") {
+      if (descriptor.kind === "tab") setTabs((ts) => reorderTabs(ts, descriptor.tabId, target.index));
+      else if (descriptor.kind === "pane") detachPaneToTab(descriptor.tabId, descriptor.leafId, target.index);
+      // A sidebar note/folder onto the tab strip is a no-op (it isn't a tab).
+      return;
+    }
+    // target.kind === "pane"
+    // Row 74: a note source (sidebar note, or a note-backed tab/pane) can reference the note in a
+    // chat / link it into another editor. A note-backed pane dropped onto ITSELF stays a plain graft.
+    const notePath = descriptorNotePath(descriptor);
+    const selfPane = descriptor.kind === "pane" && descriptor.leafId === target.leafId;
+    if (notePath && !selfPane && referenceNoteOnPane(target.leafId, target.zone, notePath, point)) return;
+    // Classic behavior otherwise.
     if (descriptor.kind === "tab") {
-      if (target.kind === "tabstrip") setTabs((ts) => reorderTabs(ts, descriptor.tabId, target.index));
-      else dropTabOnPane(descriptor.tabId, target.leafId, target.zone);
-    } else {
-      if (target.kind === "tabstrip") detachPaneToTab(descriptor.tabId, descriptor.leafId, target.index);
-      else dropPaneOnPane(descriptor.leafId, target.leafId, target.zone);
+      dropTabOnPane(descriptor.tabId, target.leafId, target.zone);
+    } else if (descriptor.kind === "pane") {
+      dropPaneOnPane(descriptor.leafId, target.leafId, target.zone);
+    } else if (descriptor.kind === "note") {
+      // A sidebar note onto a pane opens it there: an edge splits (file→pane split), the center or
+      // an empty pane fills in place. (Folders don't open in a pane — no-op.)
+      if (target.zone === "center") {
+        updateActiveTab((t) => ({ ...t, root: setContent(t.root, target.leafId, descriptor.path), focusId: target.leafId }));
+      } else {
+        dropFileOnPane(target.leafId, descriptor.path, target.zone);
+      }
     }
   });
   const drag = viewDrag.state;
+
+  // Sidebar file-tree rows drag through the shared controller. `startItemDrag` arms a note/folder
+  // drag; `sidebarDropHighlight` returns the folder path ("" = tree root) under the current drag so
+  // the row can light up, for any movable descriptor (a sidebar row OR a note-backed tab/pane).
+  const startItemDrag = (e: PointerEvent, kind: "note" | "folder", path: string, label: string) => {
+    if (kind === "note") viewDrag.startNote(e, path, label);
+    else viewDrag.startFolder(e, path, label);
+  };
+  const sidebarDropHighlight = (): string | null => {
+    const d = drag();
+    if (!d.active || !descriptorMovePath(d.descriptor)) return null;
+    if (d.target?.kind === "folder") return d.target.path;
+    if (d.target?.kind === "root") return "";
+    return null;
+  };
+  // The markdown-note path a tab/pane displays (so dragging it works as a Row-74 reference source),
+  // or undefined for sentinels/non-notes.
+  const tabNotePath = (t: Tab): string | undefined => {
+    const r = t.root;
+    return r.kind === "leaf" && !isSentinel(r.content) && isMarkdown(r.content) ? r.content : undefined;
+  };
 
   // While dragging a tab, neighbors slide to open a gap at the live drop slot
   // (Chrome-style). Returns the px shift for the chip at `index`; 0 otherwise.
@@ -1817,7 +1891,7 @@ export default function App() {
         <div class="sidebar-icons">
           <For each={settings.toolbar}>{(btn) => <CommandButton btn={btn} />}</For>
         </div>
-        <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} /></div>
+        <div class="sidebar-files"><FileTree onOpen={openFile} activeFile={focusedContent()} startItemDrag={startItemDrag} dropHighlight={sidebarDropHighlight} /></div>
         <div class="sidebar-graph" classList={{ collapsed: !anyTabOpen() || activeTabShowsGraph() }} ref={sidebarSlot} />
       </aside>
       <main class="editor-pane">
@@ -1847,7 +1921,7 @@ export default function App() {
                   style={{ transform: `translateX(${tabShift(i)}px)` }}
                   onPointerDown={(e) => {
                     if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                    viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id));
+                    viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
                   }}
                   // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
                   // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
@@ -1917,7 +1991,11 @@ export default function App() {
                 onClose={closePane}
                 onDropFile={dropFileOnPane}
                 dragState={drag}
-                onStartPaneDrag={(e, leafId, label) => viewDrag.startPane(e, activeTabId()!, leafId, label)}
+                onStartPaneDrag={(e, leafId, label) => {
+                  const content = leaves(activeTab()!.root).find((l) => l.id === leafId)?.content;
+                  const path = content && !isSentinel(content) && isMarkdown(content) ? content : undefined;
+                  viewDrag.startPane(e, activeTabId()!, leafId, label, path);
+                }}
                 // Graph refresh is driven entirely by the server's SSE `dirty`
                 // signal now (it knows whether a save changed any connection), so
                 // a save itself needs no client-side graph poke.
