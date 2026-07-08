@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  isNaturalLanguageQuery,
   shouldOfferAiEscalation,
   switcherAiReducer,
   initialSwitcherAiState,
@@ -8,6 +9,33 @@ import {
 import type { SearchResult } from "../searchOpts";
 
 const result = (path: string): SearchResult => ({ path, matchCount: 1, snippets: [] });
+
+// The shared "is this a real question, not a filename/keyword fragment" gate. Lives here (not in
+// a Search-tab module) since the unified Cmd+O switcher is the app's only search surface.
+describe("isNaturalLanguageQuery", () => {
+  it("is false for empty/whitespace-only queries", () => {
+    expect(isNaturalLanguageQuery("")).toBe(false);
+    expect(isNaturalLanguageQuery("   ")).toBe(false);
+  });
+
+  it("is false for a single word", () => {
+    expect(isNaturalLanguageQuery("metals")).toBe(false);
+  });
+
+  it("is false for exactly two words", () => {
+    expect(isNaturalLanguageQuery("meeting notes")).toBe(false);
+  });
+
+  it("is true once a query has three or more words", () => {
+    expect(isNaturalLanguageQuery("where did I write about metals")).toBe(true);
+    expect(isNaturalLanguageQuery("a b c")).toBe(true);
+  });
+
+  it("ignores leading/trailing/repeated whitespace when counting words", () => {
+    expect(isNaturalLanguageQuery("  a   b   c  ")).toBe(true);
+    expect(isNaturalLanguageQuery("  a   b  ")).toBe(false);
+  });
+});
 
 describe("shouldOfferAiEscalation — empty-matches x Enter x query-shape matrix", () => {
   it("never offers AI when there ARE fuzzy file matches, regardless of query shape", () => {

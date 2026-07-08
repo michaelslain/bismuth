@@ -78,11 +78,26 @@
   border-top: 1px solid var(--border-soft);
 }
 
-/* BUG #8 (6th bounce): Bismuth AI escalation reuses SearchView's .sresult/.search-state/
-   .search-empty markup verbatim (SearchResultRows, ../searchResults.tsx) so the switcher's AI
-   panel never forks a lookalike. .switcher-list isn't a flex/gap container like .search-results,
-   so give the reused result cards their own stacking margin here instead of duplicating layout. */
-.switcher-list .sresult + .sresult { margin-top: 8px; }
+/* #8 (unified search): content-match + AI result cards reuse the shared .sresult/.search-state/
+   .search-empty markup (SearchResultRows, ../searchResults.tsx + searchResults.css) so the
+   switcher never forks a lookalike. .switcher-list isn't a flex/gap container, so give the
+   reused result cards their own stacking margin here instead of duplicating layout. */
+.switcher-list .sresult { margin-top: 8px; }
+
+/* Tiny section label above the keyword content matches (under the file-name rows). */
+.switcher-section {
+  margin-top: 10px;
+  padding: 4px 11px 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The persistent "Ask Bismuth AI" footer affordance under the unified list (question-shaped
+   queries that DO have rows — Enter commits a row, so the AI keeps its own visible path). */
+.switcher-ask-ai { margin-top: 10px; }
 
 /* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
    non-interactive — and restores on Esc. Subtle, per the design. */

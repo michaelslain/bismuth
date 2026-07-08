@@ -29,7 +29,7 @@ export interface SearchResult {
   matchCount: number;
   snippets: MatchSnippet[];
   /** Optional one-line rationale — only set by the AI prompt-search path (searchPrompt.ts);
-   *  the literal /search path never populates it. Rendered as a faint caption in SearchView. */
+   *  the literal /search path never populates it. Rendered as a faint caption on the switcher's result card. */
   reason?: string;
 }
 

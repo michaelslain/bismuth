@@ -1,6 +1,7 @@
 // app/src/searchOpts.ts
-// Shared search/replace option types + a pure regex-validity check used by
-// SearchView to show an inline error before issuing a request.
+// Shared search types for the unified Cmd+O search surface: the option flags POST /search
+// accepts and the result shape both /search (keyword content matches) and /search-prompt
+// (Bismuth AI) return, rendered by searchResults.tsx.
 export interface SearchOpts {
   caseSensitive: boolean;
   wholeWord: boolean;
@@ -19,16 +20,6 @@ export interface SearchResult {
   matchCount: number;
   snippets: MatchSnippet[];
   /** Optional one-line rationale — only set by the AI prompt-search path (/search-prompt); the
-   *  literal /search path never sets it. Rendered as a faint caption in SearchView. */
+   *  literal /search path never sets it. Rendered as a faint caption on the result card. */
   reason?: string;
-}
-
-/** True if `pattern` compiles as a RegExp. Used to gate regex-mode searches. */
-export function isValidRegex(pattern: string): boolean {
-  try {
-    new RegExp(pattern);
-    return true;
-  } catch {
-    return false;
-  }
 }
