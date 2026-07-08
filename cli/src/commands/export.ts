@@ -57,6 +57,11 @@ async function run(args: string[]): Promise<void> {
         "pdf export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",
       );
     },
+    htmlToPdfPages: () => {
+      throw new Error(
+        "pdf preview of notes/bases/sheets is browser-only (html2canvas) — open the file in the app to preview/export a PDF",
+      );
+    },
     htmlToPng: () => {
       throw new Error(
         "png export of notes/bases/sheets is browser-only (html2canvas) — open the file in the app and export from there, or export --format html|md",

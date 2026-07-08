@@ -17,9 +17,8 @@ import {
   PAGE_H_PT,
   MARGIN_PT,
   CONTENT_W_PT,
-  CONTENT_H_PT,
   pdfSliceMetrics,
-  parseRgbColor,
+  pageSlices,
 } from "./pageGeometry";
 
 // US Letter portrait with a 1in margin on every side — geometry lives in pageGeometry.ts
@@ -136,48 +135,72 @@ const PDF_BODY_OVERRIDE =
   // top of the 1in page margin; zero it so content begins exactly at the 1in boundary.
   `body>:first-child{margin-top:0!important;}`;
 
-export async function htmlToPdf(html: string): Promise<Uint8Array> {
-  const { canvas, bg, breaks } = await htmlToCanvas(html, PDF_BODY_OVERRIDE);
-  {
-    const pdf = new jsPDF({ unit: "pt", format: "letter" });
-    const [r, g, b] = parseRgbColor(bg);
-    // The raster maps into the printable box (Letter minus 1in on each edge), not the whole page.
-    const { pageHpx } = pdfSliceMetrics(canvas.width); // source px per printable page (inside the margins)
-    let offset = 0;
-    let first = true;
-    let bi = 0; // cursor into the sorted page-break offsets
-    while (offset < canvas.height) {
-      // A forced page break that falls inside this page ends it early (the next slice starts AT
-      // the marker); otherwise cut at the natural full-page bottom. Skip markers at/above the
-      // current offset so a marker exactly on a page boundary never emits an empty page.
-      while (bi < breaks.length && breaks[bi] <= offset) bi++;
-      let sliceEnd = offset + pageHpx;
-      if (bi < breaks.length && breaks[bi] < sliceEnd) {
-        sliceEnd = breaks[bi];
-        bi++;
-      }
-      const sliceHpx = Math.min(sliceEnd, canvas.height) - offset;
-      // Full-page-height slice padded with the document background so partial pages stay
-      // on-theme (e.g. a dark page is fully dark, not white below the content).
-      const slice = document.createElement("canvas");
-      slice.width = canvas.width;
-      slice.height = pageHpx;
-      const ctx = slice.getContext("2d")!;
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, slice.width, slice.height);
-      ctx.drawImage(canvas, 0, offset, canvas.width, sliceHpx, 0, 0, canvas.width, sliceHpx);
+// JPEG (opaque — pages are bg-filled) keeps a multi-page doc to a few hundred KB; a full-page 2x
+// PNG raster runs to ~10MB/page. 0.92 is visually lossless at document zoom.
+const JPEG_QUALITY = 0.92;
 
-      if (!first) pdf.addPage("letter");
-      // Paint the whole page (including the 1in margin band) with the document background so the
-      // margin stays on-theme, then place the content raster inside the 1in margins.
-      pdf.setFillColor(r, g, b);
-      pdf.rect(0, 0, PAGE_W_PT, PAGE_H_PT, "F");
-      // JPEG (opaque — slices are bg-filled) keeps a multi-page doc to a few hundred KB;
-      // PNG of a full-page 2x raster runs to ~10MB/page. 0.92 is visually lossless at doc zoom.
-      pdf.addImage(slice.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN_PT, MARGIN_PT, CONTENT_W_PT, CONTENT_H_PT);
-      offset += sliceHpx;
-      first = false;
+/**
+ * Render a self-contained HTML document to a list of full US-Letter **page canvases**. This is
+ * the single pagination pipeline shared by `htmlToPdf` (packs the pages into a PDF) and
+ * `htmlToPdfPages` (data: URLs for the export PREVIEW) — so what the preview shows is exactly
+ * what the PDF contains, page for page.
+ *
+ * The content is rasterized once (full height), then `pageSlices` cuts it into page-sized bands
+ * — content taller than one page **auto-flows onto page 2, 3, …** with or without explicit
+ * `<!-- pagebreak -->` markers (markers just end a page early). Each band is drawn onto a
+ * bg-filled Letter canvas inside the 1in margin on every side, so every page is 8.5x11in with a
+ * 1in margin regardless of content length.
+ */
+async function renderLetterPages(html: string): Promise<{ pages: HTMLCanvasElement[]; bg: string }> {
+  const { canvas, bg, breaks } = await htmlToCanvas(html, PDF_BODY_OVERRIDE);
+  // Source px per printable page (inside the margins), and the px<->pt density of the raster.
+  const { pageHpx } = pdfSliceMetrics(canvas.width);
+  const density = canvas.width / CONTENT_W_PT; // source px per PDF point
+  const pageWpxFull = Math.round(PAGE_W_PT * density); // full Letter width in source px
+  const pageHpxFull = Math.round(PAGE_H_PT * density); // full Letter height in source px
+  const marginPx = Math.round(MARGIN_PT * density); // 1in margin in source px
+
+  const makePage = (start: number, height: number): HTMLCanvasElement => {
+    const page = document.createElement("canvas");
+    page.width = pageWpxFull;
+    page.height = pageHpxFull;
+    const ctx = page.getContext("2d")!;
+    // Paint the whole page (including the 1in margin band) with the document background so the
+    // margin stays on-theme (a dark page is fully dark, not white around the content).
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, page.width, page.height);
+    if (height > 0) {
+      // Place the content band inside the 1in margins at 1:1 source scale (the whole page is
+      // later scaled to 612x792pt, which reproduces the printable-box mapping exactly).
+      ctx.drawImage(canvas, 0, start, canvas.width, height, marginPx, marginPx, canvas.width, height);
     }
-    return new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer);
-  }
+    return page;
+  };
+
+  const slices = pageSlices(canvas.height, pageHpx, breaks);
+  const pages = slices.map((s) => makePage(s.start, s.height));
+  // A blank/empty document still yields one valid blank Letter page.
+  if (pages.length === 0) pages.push(makePage(0, 0));
+  return { pages, bg };
+}
+
+/** Render a self-contained HTML document to a paginated US-Letter PDF (bytes). */
+export async function htmlToPdf(html: string): Promise<Uint8Array> {
+  const { pages } = await renderLetterPages(html);
+  const pdf = new jsPDF({ unit: "pt", format: "letter" });
+  pages.forEach((page, i) => {
+    if (i > 0) pdf.addPage("letter");
+    pdf.addImage(page.toDataURL("image/jpeg", JPEG_QUALITY), "JPEG", 0, 0, PAGE_W_PT, PAGE_H_PT);
+  });
+  return new Uint8Array(pdf.output("arraybuffer") as ArrayBuffer);
+}
+
+/**
+ * The same paginated US-Letter pages `htmlToPdf` writes, as JPEG data: URLs — one per page —
+ * for the export PREVIEW. Rendering the real pages (not the raw source HTML) is what makes the
+ * preview show the exact multi-page 8.5x11in / 1in-margin layout the downloaded PDF has.
+ */
+export async function htmlToPdfPages(html: string): Promise<string[]> {
+  const { pages } = await renderLetterPages(html);
+  return pages.map((page) => page.toDataURL("image/jpeg", JPEG_QUALITY));
 }
