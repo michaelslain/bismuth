@@ -220,7 +220,7 @@ This is a **different retrieval path** from `query.ts`: ranked lexical relevance
 
 The mechanism is lexical/substring matching + stemming + weighted scoring. **No embeddings, no TF-IDF, no external index.**
 
-**Consumer:** `relay/lib/memory.ts` `recallContext(dir, prompt)` calls `searchMemory(prompt, dir)` under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission), formats matches under a `# Memories` heading, and the `UserPromptSubmit` hook (`relay/bin/recall-hook.ts`) injects them as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
+**Consumer:** `recallMemory(dir, prompt, budgetMs?)` (`memory/src/recall.ts`) calls `searchMemory(prompt, dir)` under an 800ms `RECALL_BUDGET_MS` race (a bloated graph degrades to "no recall" rather than stalling prompt submission) and formats matches under a `# Memories` heading (`formatRecall`). It is the ONE shared recall path behind **both** auto-injectors: the relay `UserPromptSubmit` hook (`relay/bin/recall-hook.ts`, terminal-tab CLI sessions — `recallContext` aliases `recallMemory`) **and** the visual chat (`core/src/chat.ts`, an SDK session that registers an in-process `hooks.UserPromptSubmit` calling the same function). Both inject the result as `additionalContext`. (See [communication.md](communication.md) for the hook plumbing.)
 
 ## The dream consolidation cycle (`daemon/src/memory/dream.ts`)
 
@@ -305,6 +305,6 @@ The three tools are **conditionally registered**: `mcp/src/server.ts` only appen
 - **Folders** are single-level, sanitized, AND-scoped in queries, hard boundaries during dreaming, and transparent to backlinks (which match by bare name across all folders).
 - **The frontmatter parser is hand-rolled and lenient** — first-colon splits, bracket-array tags, today-defaults for missing fields — not a YAML library.
 
-Source: memory/src/{index,graph,query,search}.ts, daemon/src/memory/dream.ts, daemon/src/lib/config.ts, daemon/src/daemon/{seeds,defaultCrons}.ts, mcp/src/{server,memory}.ts, relay/lib/memory.ts, relay/bin/{recall-hook,session-end-hook}.ts
+Source: memory/src/{index,graph,query,search,recall}.ts, daemon/src/memory/dream.ts, daemon/src/lib/config.ts, daemon/src/daemon/{seeds,defaultCrons}.ts, mcp/src/{server,memory}.ts, relay/lib/memory.ts, relay/bin/{recall-hook,session-end-hook}.ts, core/src/chat.ts
 </content>
 </invoke>

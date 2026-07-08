@@ -3,40 +3,16 @@
 // daemon is enabled for this vault). So memory is recalled into prompts + collected from
 // transcripts strictly for vault-scoped sessions — never globally, the way the old
 // ~/.claude/settings.json hooks did.
-import { searchMemory, writeNote, buildAutoNoteBody, type MemoryNote, type TranscriptEntry } from "@bismuth/memory";
-
-const RECALL_BUDGET_MS = 800;
-
-function formatNotes(notes: MemoryNote[]): string {
-  const lines = ["# Memories", ""];
-  for (const note of notes) {
-    const { frontmatter: fm, content, backlinks } = note;
-    lines.push(`## ${note.name} (${fm.type}) [${fm.tags.join(", ")}]`);
-    lines.push(content);
-    if (backlinks.length > 0) lines.push(`Links: ${backlinks.map((b) => `[[${b}]]`).join(", ")}`);
-    lines.push("");
-  }
-  return lines.join("\n");
-}
+import { writeNote, buildAutoNoteBody, recallMemory, type TranscriptEntry } from "@bismuth/memory";
 
 /**
  * Recall memory relevant to a prompt, formatted for injection as the UserPromptSubmit
- * hook's `additionalContext`. Returns null when nothing matches. Hard time budget — recall
- * loads + scans the whole memory graph, and it sits on the prompt-submission critical
- * path, so a bloated graph must degrade to "no recall" rather than stall the user.
+ * hook's `additionalContext`. Returns null when nothing matches. The recall logic (search +
+ * `# Memories` formatting + the hard time budget so a bloated graph degrades to "no recall"
+ * rather than stalling the prompt) lives in `@bismuth/memory`'s `recallMemory`, shared with
+ * core's visual-chat injector so both auto-injectors stay in lockstep.
  */
-export async function recallContext(dir: string, prompt: string): Promise<string | null> {
-  if (!prompt.trim()) return null;
-  try {
-    const notes = await Promise.race([
-      searchMemory(prompt, dir),
-      new Promise<MemoryNote[]>((resolve) => setTimeout(() => resolve([]), RECALL_BUDGET_MS)),
-    ]);
-    return notes.length ? formatNotes(notes) : null;
-  } catch {
-    return null;
-  }
-}
+export const recallContext = recallMemory;
 
 // ── Transcript collection (SessionEnd) ───────────────────────────────────────
 // All transcript→note logic (turn pairing, per-message caps, turn-aware truncation, the
