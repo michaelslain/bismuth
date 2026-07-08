@@ -180,6 +180,16 @@
    <p>/<ul>/<ol>/<li> blocks exactly like reading mode. Scope the block metrics to the cell so
    note-sized margins don't explode row height: zero outer margins, compact list indent, and
    tight spacing between consecutive blocks. Height stays auto (#52). */
+/* The cell inherits CodeMirror's content `white-space: pre-wrap`, which renders the block
+   engine's inter-tag newlines as visible blank lines (huge gaps between <li>s). The DISPLAY
+   face is normal HTML flow; only the EDIT face (raw source) needs pre-wrap so typed spaces
+   and line breaks show while editing. <pre>/<code> re-establish their own white-space. */
+.cm-editor .cm-td {
+  white-space: normal;
+}
+.cm-editor .cm-td[data-editing="1"] {
+  white-space: pre-wrap;
+}
 .cm-editor .cm-td p,
 .cm-editor .cm-td ul,
 .cm-editor .cm-td ol,
