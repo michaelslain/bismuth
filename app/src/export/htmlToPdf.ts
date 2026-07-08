@@ -10,6 +10,7 @@
 // exporters.ts) are what make exported math render — the iframe can't see the app's fonts.
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
+import { sanitizeDocColorsForRaster, normalizeCssColor } from "./cssColor";
 
 // US Letter. jsPDF "letter" page = 612 x 792 pt; render the source at 8.5in @ 96dpi.
 const PAGE_W_PX = 816; // 8.5in * 96
@@ -49,7 +50,15 @@ async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; 
     try { await Promise.race([doc.fonts?.ready, settle(4000)]); } catch { /* proceed */ }
     await settle();
 
-    const bg = getComputedStyle(doc.body).backgroundColor || "#ffffff";
+    // Defense-in-depth against html2canvas's color parser: it throws on any CSS Color 4
+    // function ("Attempting to parse an unsupported color function 'color'"). The palette is
+    // normalized at read time (resolvePalette), but KaTeX/view/extra CSS could still compute
+    // to color(srgb …) — inline a normalized rgb() over every unsafe computed color before
+    // snapshotting. No-op (0 rewrites) for a clean document.
+    sanitizeDocColorsForRaster(doc);
+
+    // The body background feeds html2canvas + the PDF page fill directly, so normalize it too.
+    const bg = normalizeCssColor(getComputedStyle(doc.body).backgroundColor || "#ffffff", "#ffffff");
     // Browsers cap a canvas at ~32767px per side. At the default 2x scale that's ~16k source
     // px (~17 Letter pages); a taller doc makes html2canvas silently return a blank/clamped
     // canvas. Drop the scale so the scaled height stays under the cap (lower-res but valid)

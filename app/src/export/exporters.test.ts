@@ -237,6 +237,23 @@ describe("PNG export split by page-break markers", () => {
     expect(r.files).toHaveLength(2); // not 3 — the frontmatter never counts as a page
   });
 
+  test("includeFrontmatter: true puts the frontmatter (as prose) on page 1's rendered doc; false omits it", async () => {
+    const rendered: string[] = [];
+    const d = deps({
+      read: async () => `---\ntitle: Foo\n---\nPage one\n${MARK}\nPage two`,
+      htmlToPng: async (html) => {
+        rendered.push(html);
+        return { bytes: new Uint8Array([1]), dataUrl: "data:image/png;base64,AQI=" };
+      },
+    });
+    await renderExport("note.md", "png", d, "dark", opts({ includeFrontmatter: true }));
+    expect(rendered[0]).toContain("title: Foo"); // page 1 carries the fm as prose
+    expect(rendered[1]).not.toContain("title: Foo");
+    rendered.length = 0;
+    await renderExport("note.md", "png", d, "dark", opts({ includeFrontmatter: false }));
+    expect(rendered[0]).not.toContain("title: Foo");
+  });
+
   test("a base file's rendered table is never split into pages", async () => {
     const d = deps({ read: async () => BASE_MD });
     const r = await renderExport("Reading.md", "png", d);
@@ -249,5 +266,41 @@ describe("PNG export split by page-break markers", () => {
     const r = await renderExport("note.md", "pdf", d);
     expect(r.files).toBeUndefined();
     expect(r.filename).toBe("note.pdf");
+  });
+});
+
+describe("preview shows page separation (sheet per section)", () => {
+  const MARK = "<!-- pagebreak -->";
+  const PAGED = `Page one body\n${MARK}\nPage two body\n${MARK}\nPage three body`;
+
+  for (const fmt of ["png", "pdf", "html"] as const) {
+    test(`${fmt} preview of a page-broken note renders one labeled sheet per section`, async () => {
+      const r = await renderPreview("note.md", fmt, deps({ read: async () => PAGED }));
+      const html = r.previewHtml!;
+      expect(html.match(/class="bismuth-preview-page"/g)).toHaveLength(3);
+      expect(html).toContain("Page 1 of 3");
+      expect(html).toContain("Page 3 of 3");
+      expect(html).toContain("Page two body");
+      expect(html).toContain(".bismuth-preview-page"); // the sheet CSS is inlined
+    });
+  }
+
+  test("a note with no page breaks previews WITHOUT sheet wrappers (unchanged)", async () => {
+    const r = await renderPreview("a/note.md", "png", deps());
+    expect(r.previewHtml).not.toContain("bismuth-preview-page");
+  });
+
+  test("preview sections mirror the export's frontmatter handling (fm on sheet 1 when included, absent when excluded)", async () => {
+    const d = deps({ read: async () => `---\ntitle: Foo\n---\nPage one\n${MARK}\nPage two` });
+    const on = await renderPreview("note.md", "png", d, "dark", opts({ includeFrontmatter: true }));
+    expect(on.previewHtml!.match(/class="bismuth-preview-page"/g)).toHaveLength(2); // fm is not a page
+    expect(on.previewHtml).toContain("title: Foo");
+    const off = await renderPreview("note.md", "png", d, "dark", opts({ includeFrontmatter: false }));
+    expect(off.previewHtml).not.toContain("title: Foo");
+  });
+
+  test("a base preview never gets sheet wrappers", async () => {
+    const r = await renderPreview("Reading.md", "html", deps());
+    expect(r.previewHtml).not.toContain("bismuth-preview-page");
   });
 });
