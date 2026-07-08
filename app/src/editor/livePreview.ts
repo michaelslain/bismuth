@@ -1438,6 +1438,13 @@ export const livePreview = [
     ".cm-col-drag:hover, .cm-row-drag:hover": { opacity: "1", color: "var(--accent)" },
     ".cm-table-reordering .cm-col-drag--show, .cm-table-reordering .cm-row-drag--show": { opacity: "1" },
     ".cm-table-drop-line": { position: "absolute", background: "var(--accent)", "border-radius": "2px", "z-index": "6", "pointer-events": "none" },
+    // #69 smoothness: while a column/row is being drag-reordered, tint every cell of that track so
+    // the drag reads as a real object moving into a slot (a visual swap), not just a thin line. The
+    // `--drag-col` / `--drag-row` classes are toggled on the track's cells for the drag's duration.
+    ".cm-td.cm-td-drag-col, .cm-td.cm-td-drag-row": {
+      background: "color-mix(in srgb, var(--accent) 16%, transparent)",
+      transition: "background 90ms",
+    },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {

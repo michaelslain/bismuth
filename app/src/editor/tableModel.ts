@@ -356,6 +356,22 @@ export function reorderFinalIndex(from: number, drop: number): number {
   return from < drop ? drop - 1 : drop;
 }
 
+/** Move the item at index `from` to index `to` in a COPY of `arr`, with the EXACT same splice
+ *  semantics as `moveColumn`/`moveRow` (remove first, then insert at `to` in the post-removal
+ *  array). Out-of-range / no-op requests return an unchanged copy. Pure.
+ *
+ *  Carries a moved column's persisted WIDTH with it on a drag-reorder (#69): widths live OUTSIDE
+ *  the markdown, indexed by column, so a `moveColumn` must permute them the same way — otherwise
+ *  the moved column keeps the width of whatever column now sits at its old index (the "widths
+ *  don't travel, a reorder looks like a shuffle not a swap" bug). */
+export function moveInArray<T>(arr: readonly T[], from: number, to: number): T[] {
+  const a = arr.slice();
+  if (from < 0 || from >= a.length || to < 0 || to >= a.length || from === to) return a;
+  const [x] = a.splice(from, 1);
+  a.splice(to, 0, x);
+  return a;
+}
+
 /** Append `addition` to the cell at (r, c), on its OWN in-cell line (a `<br>` marker joins
  *  it to any existing content) so a dropped image lands under, not merged into, the cell's
  *  text. Used by the file-drop handler (#30) to place an `![[…]]` embed into the cell the
