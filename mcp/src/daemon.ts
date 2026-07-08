@@ -15,7 +15,7 @@
 //
 // The pure name→argv mapper (`daemonCliArgs`) is separated from the spawn so it can be
 // unit-tested without a subprocess.
-import { memoryDir } from "./memory";
+import { memoryDir, resolveVaultRoot } from "./memory";
 import { runCli, formatCliResult } from "./cli";
 
 /** True when the daemon is enabled for this session's vault (same signal as the memory tools). */
@@ -27,8 +27,10 @@ export function daemonEnabled(): boolean {
  * The vault root the daemon tools operate on. The vault-scoped CLI commands (crons,
  * processes, pages, the daemon graph) need `--vault`, and a Bismuth terminal tab only
  * injects BISMUTH_MEMORY_DIR (= `<vault>/.daemon/memory`), not BISMUTH_VAULT — so we
- * derive the vault by stripping the `/.daemon/memory` suffix, falling back to BISMUTH_VAULT
- * (the daemon session sets that explicitly). Returns null when neither is resolvable.
+ * derive the vault by stripping the `/.daemon/memory` suffix, falling back to
+ * resolveVaultRoot() (memory.ts's shared BISMUTH_VAULT-else-cwd resolution — the exact same
+ * one memoryDir() uses, so this always agrees with daemonEnabled()). Returns null when
+ * nothing is resolvable.
  */
 export function daemonVaultRoot(): string | null {
   const mem = process.env.BISMUTH_MEMORY_DIR;
@@ -37,7 +39,7 @@ export function daemonVaultRoot(): string | null {
     const m = /^(.*)[/\\]\.daemon[/\\]memory$/.exec(norm);
     if (m && m[1]) return m[1];
   }
-  return process.env.BISMUTH_VAULT || null;
+  return resolveVaultRoot();
 }
 
 // Raw JSON-Schema tool defs. Terse on purpose — token-frugal, and only ever seen inside a
