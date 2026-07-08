@@ -28,7 +28,7 @@ import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu } from "./nativeMenu";
 import { PopoverList, type PopoverRow } from "./ui/popover/PopoverList";
 import { createMenuNav } from "./ui/popover/createMenuNav";
-import type { ChatFrame, ChatManifest } from "../../core/src/chat";
+import type { ChatFrame, ChatManifest, ChatQuestion } from "../../core/src/chat";
 import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs } from "./chatContext";
 import { buildEditorContextText } from "./chatEditorContext";
@@ -172,7 +172,18 @@ interface PermissionPart {
   answered: null | { behavior: "allow" | "deny"; always: boolean };
   cancelled?: boolean;
 }
-type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart;
+/** An interactive AskUserQuestion prompt: 1-4 multiple-choice questions rendered as option buttons.
+ *  `answered` records the submitted answers (question text → chosen answer string) once the user picks;
+ *  `cancelled` marks a prompt skipped or orphaned by Stop (rendered as a muted "Skipped", buttons
+ *  inert). Only one of answered/cancelled is ever set. */
+interface QuestionPart {
+  kind: "question";
+  id: string;
+  questions: ChatQuestion[];
+  answered: null | Record<string, string>;
+  cancelled?: boolean;
+}
+type AssistantPart = TextPart | ThinkingPart | ToolPart | PermissionPart | QuestionPart;
 
 interface UserItem {
   role: "user";
@@ -431,6 +442,10 @@ export function ChatView(props: { chatId: string }) {
   // parked canUseTool. Without this, a click during a blip shows "Allowed" while the backend
   // grace-timer silently denies it.
   let pendingPermissions: { id: string; behavior: "allow" | "deny"; always: boolean }[] = [];
+  // AskUserQuestion answers that couldn't be delivered (socket down mid-reconnect) — flushed on the
+  // next onopen, exactly like pendingPermissions. The backend's parked dialog survives the grace
+  // window, so a flushed answer still resolves it. `answers` null = the user skipped/cancelled.
+  let pendingQuestionResponses: { id: string; answers: Record<string, string> | null }[] = [];
 
   const sendJson = (msg: unknown): boolean => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
@@ -583,6 +598,15 @@ export function ChatView(props: { chatId: string }) {
           });
         });
         break;
+      case "question":
+        // AskUserQuestion: render its questions as an interactive card (QuestionCard). Parking the
+        // dialog server-side keeps the turn from ending, so no extra client-side gating is needed —
+        // a follow-up message the user sends meanwhile is STAGED (streaming() is still true) and
+        // dispatched on `done`, which only fires once the question is answered or skipped.
+        withAssistant((a) => {
+          a.parts.push({ kind: "question", id: frame.id, questions: frame.questions, answered: null });
+        });
+        break;
       case "result":
         if (frame.isError) setTurnError("The turn ended with an error.");
         withAssistant((a) => {
@@ -683,6 +707,12 @@ export function ChatView(props: { chatId: string }) {
         const queued = pendingPermissions;
         pendingPermissions = [];
         for (const p of queued) sendJson({ type: "permission_response", ...p });
+      }
+      // Flush AskUserQuestion answers clicked while the socket was down (same rationale as above).
+      if (pendingQuestionResponses.length) {
+        const queued = pendingQuestionResponses;
+        pendingQuestionResponses = [];
+        for (const q of queued) sendJson({ type: "question_response", id: q.id, ...(q.answers ? { answers: q.answers } : { cancelled: true }) });
       }
     };
     ws.onmessage = (ev) => {
@@ -882,13 +912,14 @@ export function ChatView(props: { chatId: string }) {
           const item = m[i];
           if (item.role === "user" && item.queued) m.splice(i, 1);
         }
-        // The aborted turn's unanswered permission prompts are now moot — the backend denied
-        // them when it interrupted (abortTurn). Mark them cancelled so the cards stop offering
-        // a live decision (rendered as a muted "Cancelled", not a user denial).
+        // The aborted turn's unanswered permission prompts AND AskUserQuestion prompts are now moot —
+        // the backend denied/cancelled them when it interrupted (abortTurn). Mark them cancelled so the
+        // cards stop offering a live decision (rendered as a muted "Cancelled"/"Skipped").
         for (const item of m) {
           if (item.role !== "assistant") continue;
           for (const part of item.parts) {
             if (part.kind === "permission" && !part.answered && !part.cancelled) part.cancelled = true;
+            if (part.kind === "question" && !part.answered && !part.cancelled) part.cancelled = true;
           }
         }
       }),
@@ -908,6 +939,29 @@ export function ChatView(props: { chatId: string }) {
           const part = item.parts.find((p) => p.kind === "permission" && p.id === id) as PermissionPart | undefined;
           if (part) {
             part.answered = { behavior, always };
+            return;
+          }
+        }
+      }),
+    );
+  };
+
+  /** Answer (or skip) an AskUserQuestion prompt. `answers` maps each question's TEXT to the chosen
+   *  answer string (multi-select comma-joined; free-text "Other" rides in as its own answer); null =
+   *  the user skipped. Mirrors answerPermission: optimistic transcript mark + a down-socket queue that
+   *  the next onopen flushes (the backend's parked dialog survives the grace window). */
+  const answerQuestion = (id: string, answers: Record<string, string> | null) => {
+    if (!sendJson({ type: "question_response", id, ...(answers ? { answers } : { cancelled: true }) })) {
+      pendingQuestionResponses.push({ id, answers });
+    }
+    setTranscript(
+      produce((m) => {
+        for (const item of m) {
+          if (item.role !== "assistant") continue;
+          const part = item.parts.find((p) => p.kind === "question" && p.id === id) as QuestionPart | undefined;
+          if (part) {
+            if (answers) part.answered = answers;
+            else part.cancelled = true;
             return;
           }
         }
@@ -970,6 +1024,7 @@ export function ChatView(props: { chatId: string }) {
     // just navigated away from), and queued permission answers belong to a session being closed.
     pendingResume = null;
     pendingPermissions = [];
+    pendingQuestionResponses = [];
     // Detach the OLD socket's handlers BEFORE closing it. A `close` event fires asynchronously —
     // after connect() below has already reassigned `ws` — and the onclose handler only bails on
     // `disposed`, so a deliberate switch would otherwise schedule a stray reconnect that opens a
@@ -1692,6 +1747,7 @@ export function ChatView(props: { chatId: string }) {
               if (part.kind === "text") return <TextBubble part={part} command={p.item.command} />;
               if (part.kind === "thinking") return <ThinkingBlock part={part} />;
               if (part.kind === "tool") return <ToolChip part={part} />;
+              if (part.kind === "question") return <QuestionCard part={part} />;
               return <PermissionCard part={part} />;
             }}
           </For>
@@ -1796,6 +1852,154 @@ export function ChatView(props: { chatId: string }) {
                 {clamp(p.part.result ?? "", 4000)}
               </pre>
             </Show>
+          </div>
+        </Show>
+      </div>
+    );
+  }
+
+  /** Interactive AskUserQuestion card: renders each question's options as clickable buttons.
+   *  Single-select + a single question submits on click (Claude-TUI feel); multi-select or several
+   *  questions stage selections and submit together. Every question also offers a free-text "Other"
+   *  (the tool provides that affordance automatically). Skipping sends a cancel. */
+  function QuestionCard(p: { part: QuestionPart }) {
+    const questions = p.part.questions;
+    // Per-question selected option labels + free-text "Other" input, by question index.
+    const [sel, setSel] = createStore<{ picks: string[][]; other: string[] }>({
+      picks: questions.map(() => []),
+      other: questions.map(() => ""),
+    });
+    const done = () => !!p.part.answered || !!p.part.cancelled;
+    const isPicked = (qi: number, label: string) => sel.picks[qi].includes(label);
+    const answeredFor = (qi: number) => sel.picks[qi].length > 0 || sel.other[qi].trim().length > 0;
+    const allAnswered = () => questions.every((_, qi) => answeredFor(qi));
+    // A lone single-select question submits the instant an option is clicked (no Submit needed) —
+    // but only while the user hasn't started typing an "Other" answer, which would be lost.
+    const immediate = (qi: number) => questions.length === 1 && !questions[qi].multiSelect && !sel.other[qi].trim();
+
+    const buildAnswers = (): Record<string, string> => {
+      const answers: Record<string, string> = {};
+      questions.forEach((q, qi) => {
+        const parts = [...sel.picks[qi]];
+        const o = sel.other[qi].trim();
+        if (o) parts.push(o);
+        answers[q.question] = parts.join(", "); // multi-select answers are comma-joined
+      });
+      return answers;
+    };
+    const submit = () => {
+      if (done() || !allAnswered()) return;
+      answerQuestion(p.part.id, buildAnswers());
+    };
+    const onOption = (qi: number, label: string) => {
+      if (done()) return;
+      if (immediate(qi)) {
+        answerQuestion(p.part.id, { [questions[qi].question]: label });
+        return;
+      }
+      setSel("picks", qi, (cur) => {
+        if (questions[qi].multiSelect) return cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label];
+        return cur.includes(label) ? [] : [label]; // single-select: clicking again clears it
+      });
+    };
+
+    return (
+      <div class="chat-question" classList={{ answered: done() }}>
+        <div class="chat-question-head">
+          <Icon value="ListChecks" size={14} class="chat-question-icon" />
+          <span class="chat-question-title">{questions.length > 1 ? `${questions.length} questions` : "Question"}</span>
+        </div>
+        <For each={questions}>
+          {(q, qi) => (
+            <div class="chat-question-block">
+              <div class="chat-question-prompt">
+                <Show when={q.header}>
+                  <span class="chat-question-chip">{q.header}</span>
+                </Show>
+                <span class="chat-question-text">{q.question}</span>
+                <Show when={q.multiSelect}>
+                  <span class="chat-question-multi">select all that apply</span>
+                </Show>
+              </div>
+              <div class="chat-question-options">
+                <For each={q.options}>
+                  {(opt) => (
+                    <button
+                      type="button"
+                      class="chat-question-option"
+                      classList={{ picked: isPicked(qi(), opt.label) }}
+                      disabled={done()}
+                      onClick={() => onOption(qi(), opt.label)}
+                    >
+                      <span class="chat-question-option-main">
+                        <Show when={q.multiSelect}>
+                          <Icon value={isPicked(qi(), opt.label) ? "SquareCheck" : "Square"} size={13} class="chat-question-check" />
+                        </Show>
+                        <span class="chat-question-option-label">{opt.label}</span>
+                      </span>
+                      <Show when={opt.description}>
+                        <span class="chat-question-option-desc">{opt.description}</span>
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </div>
+              <Show when={!done()}>
+                <input
+                  type="text"
+                  class="chat-question-other"
+                  placeholder="Other… (type a custom answer)"
+                  value={sel.other[qi()]}
+                  onInput={(e) => setSel("other", qi(), e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                />
+              </Show>
+            </div>
+          )}
+        </For>
+        <Show
+          when={!done()}
+          fallback={
+            <div class="chat-question-outcome" classList={{ cancelled: !p.part.answered }}>
+              <Show
+                when={p.part.answered}
+                fallback={
+                  <>
+                    <Icon value="Ban" size={13} /> Skipped
+                  </>
+                }
+              >
+                {(ans) => (
+                  <For each={questions}>
+                    {(q) => (
+                      <Show when={ans()[q.question]}>
+                        <div class="chat-question-answer">
+                          <Icon value="Check" size={13} />
+                          <Show when={q.header}>
+                            <span class="chat-question-chip">{q.header}</span>
+                          </Show>
+                          <span>{ans()[q.question]}</span>
+                        </div>
+                      </Show>
+                    )}
+                  </For>
+                )}
+              </Show>
+            </div>
+          }
+        >
+          <div class="chat-question-actions">
+            <TextButton variant="selected" size="sm" disabled={!allAnswered()} onClick={submit}>
+              SUBMIT
+            </TextButton>
+            <TextButton size="sm" onClick={() => answerQuestion(p.part.id, null)}>
+              SKIP
+            </TextButton>
           </div>
         </Show>
       </div>
