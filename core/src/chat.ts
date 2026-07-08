@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { basename } from "node:path";
+import type { ChatAgentSession } from "./agents";
 import {
   query,
   listSessions,
@@ -372,6 +374,16 @@ interface ChatSession {
   memoryDir?: string;
   /** Completed turns this session — a conversation with none isn't worth a memory note. */
   turnCount: number;
+  /** The conversation summary once known (maybeEmitTitle) — the agents-graph node label. Falls back
+   *  to the cwd basename in the snapshot until a summary exists. */
+  title?: string;
+  /** ms epoch of the last turn activity (set on spawn, bumped on each push + turn-end). Drives the
+   *  chat node's awake/idle state in the agents graph, like a relay session's lastSeen. */
+  lastActivityAt: number;
+  /** Subagents spawned via the SDK Task tool this session, keyed by the Task tool_use id. Populated
+   *  in the drain loop (tool-use → add, tool-result → mark done); done ones linger a TTL then sweep,
+   *  mirroring the relay's DONE_SUBAGENT_TTL. Surfaced as depth-1 children in the agents graph. */
+  chatSubagents: Map<string, { agentId: string; agentType: string; done: boolean; doneAt?: number }>;
   /** Latch so a grace-timeout close after an explicit close can't write the note twice. */
   captured?: boolean;
   /** Set by abortTurn() right before interrupt(), cleared when the NEXT `result` message is
@@ -686,6 +698,7 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
     existing.sink = sink;
     existing.detached = false;
     existing.cwd = cwd;
+    existing.lastActivityAt = Date.now();
     // Visibility settings changed since this session spawned → respawn query() with a fresh deny
     // list BEFORE running the turn (managedSettings/sandbox are spawn-fixed; a stale session would
     // keep reading a since-hidden file). Resumes the same conversation, so history survives.
@@ -821,6 +834,8 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     buffer: [],
     memoryDir,
     turnCount: 0,
+    lastActivityAt: Date.now(),
+    chatSubagents: new Map(),
   };
 
   if (!spawnChatQuery(session, denyEntries, resume)) return null; // spawn error already pushed
@@ -1289,9 +1304,73 @@ function maybeEmitTitle(session: ChatSession): void {
       const title = info?.summary?.trim();
       if (!title || session.titleSent) return;
       session.titleSent = true;
+      session.title = title; // also the agents-graph node label
       emit(session, { type: "title", title });
     })
     .catch(() => {});
+}
+
+/** The Claude Code tool that spawns a subagent — its tool_use starts one, its tool_result ends it. */
+const TASK_TOOL = "Task";
+/** How long a finished chat subagent lingers in the snapshot before being swept (mirrors the
+ *  relay's DONE_SUBAGENT_TTL_MS) so brief subagents stay visible for a beat after they complete. */
+const DONE_CHAT_SUBAGENT_TTL_MS = 60_000;
+
+/**
+ * Track the SDK Task-tool subagent lifecycle off the drain loop's frames so a visual chat's
+ * subagents appear as depth-1 children in the agents graph (matching the relay session→subagent
+ * shape). A `tool-use` named "Task" starts one (keyed by its tool_use id, typed from the tool's
+ * `subagent_type`); the matching `tool-result` marks it done. Non-Task frames are ignored.
+ */
+function trackChatSubagent(session: ChatSession, frame: ChatFrame): void {
+  if (frame.type === "tool-use" && frame.name === TASK_TOOL) {
+    const input = (frame.input ?? {}) as { subagent_type?: unknown; description?: unknown };
+    const agentType =
+      (typeof input.subagent_type === "string" && input.subagent_type) ||
+      (typeof input.description === "string" && input.description) ||
+      "subagent";
+    session.chatSubagents.set(frame.id, { agentId: frame.id, agentType, done: false });
+  } else if (frame.type === "tool-result") {
+    const sub = session.chatSubagents.get(frame.id);
+    if (sub && !sub.done) {
+      sub.done = true;
+      sub.doneAt = Date.now();
+    }
+  }
+}
+
+/** Drop finished chat subagents past their done-TTL (called at snapshot time). */
+function sweepDoneChatSubagents(session: ChatSession, now: number): void {
+  for (const [id, sub] of session.chatSubagents) {
+    if (sub.done && sub.doneAt !== undefined && now - sub.doneAt > DONE_CHAT_SUBAGENT_TTL_MS) {
+      session.chatSubagents.delete(id);
+    }
+  }
+}
+
+/**
+ * Snapshot the live visual-chat sessions for the agents graph (core/src/agents.ts). Each registered
+ * chat is a first-class session node hanging off "you"; a chat dropped from the registry (tab closed
+ * / session ended → closeChat) simply isn't here, so the agents graph prunes it with no extra work.
+ * Finished subagents past their TTL are swept as this runs. Pure read over the module registry.
+ */
+export function chatAgentSnapshot(now: number = Date.now()): ChatAgentSession[] {
+  const out: ChatAgentSession[] = [];
+  for (const s of sessions.values()) {
+    sweepDoneChatSubagents(s, now);
+    out.push({
+      chatId: s.id,
+      label: s.title || basename(s.cwd) || "Chat",
+      active: s.turnActive,
+      lastActivityAt: s.lastActivityAt,
+      subagents: [...s.chatSubagents.values()].map((sub) => ({
+        agentId: sub.agentId,
+        agentType: sub.agentType,
+        done: sub.done,
+      })),
+    });
+  }
+  return out;
 }
 
 /**
@@ -1401,7 +1480,10 @@ async function drain(session: ChatSession): Promise<void> {
         }
         // assistant → tool_use frames (text/thinking handled above); user → tool_result frames (the
         // user's own prompt came from the client). Shared with history replay via translateSdkMessage.
-        for (const frame of translateSdkMessage(msg, { live: true })) emit(session, frame);
+        for (const frame of translateSdkMessage(msg, { live: true })) {
+          trackChatSubagent(session, frame); // Task tool_use/result → agents-graph subagent lifecycle
+          emit(session, frame);
+        }
         continue;
       }
 
@@ -1423,6 +1505,7 @@ async function drain(session: ChatSession): Promise<void> {
         });
         emit(session, { type: "done" });
         session.turnCount++;
+        session.lastActivityAt = Date.now(); // keep the agents-graph node awake through this turn
         // The turn is fully over — a reconnect from here until the next push finds no active
         // turn and gets a synthetic `done` from rebindSink (see ChatSession.turnActive).
         session.turnActive = false;
