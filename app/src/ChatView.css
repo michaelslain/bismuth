@@ -675,6 +675,137 @@
 /* Orphaned by Stop — neither an allow nor a user denial; a muted neutral note. */
 .chat-permission-outcome.cancelled { color: var(--faint); }
 
+/* ── AskUserQuestion — an interactive multiple-choice card (Claude's question tool). Shares the
+   accent-rail look of the permission card, but each option is a clickable button. ── */
+.chat-question {
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  padding: 9px 12px 11px;
+}
+.chat-question.answered { opacity: 0.7; border-left-color: var(--border); }
+.chat-question-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--fg);
+}
+.chat-question-icon { color: var(--accent); }
+.chat-question.answered .chat-question-icon { color: var(--faint); }
+.chat-question-title { font-family: var(--ui-font-stack); font-weight: 600; }
+.chat-question-block { margin-top: 10px; }
+.chat-question-block + .chat-question-block {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-soft);
+}
+.chat-question-prompt {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.45;
+}
+.chat-question-chip {
+  flex: 0 0 auto;
+  font-family: var(--ui-font-stack);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+.chat-question-text { flex: 1 1 auto; }
+.chat-question-multi {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--faint);
+  font-style: italic;
+}
+.chat-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chat-question-option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+  font: inherit;
+  color: var(--fg);
+}
+.chat-question-option:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--hover-bg);
+}
+.chat-question-option.picked {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.chat-question-option:disabled { cursor: default; opacity: 0.7; }
+.chat-question-option-main { display: flex; align-items: center; gap: 7px; }
+.chat-question-check { flex: 0 0 auto; color: var(--accent); }
+.chat-question-option-label { font-size: 13px; font-weight: 500; }
+.chat-question-option-desc {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+.chat-question-option.picked .chat-question-option-desc { color: var(--fg); }
+.chat-question-other {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fg);
+  transition: border-color 0.12s ease;
+}
+.chat-question-other:focus { outline: none; border-color: var(--accent); }
+.chat-question-other::placeholder { color: var(--faint); }
+.chat-question-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 11px;
+  flex-wrap: wrap;
+}
+.chat-question-outcome {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--success);
+}
+.chat-question-outcome.cancelled {
+  flex-direction: row;
+  align-items: center;
+  color: var(--faint);
+}
+.chat-question-answer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 /* The turn's muted footer (turns + cost). */
 .chat-turn-footer {
   font-size: 11px;

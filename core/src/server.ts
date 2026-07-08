@@ -37,6 +37,7 @@ import {
   detachSink as chatDetachSink,
   newChatId,
   respondPermission as chatRespondPermission,
+  respondQuestion as chatRespondQuestion,
   setPermissionMode as chatSetPermissionMode,
   setModel as chatSetModel,
   setEffort as chatSetEffort,
@@ -1747,6 +1748,7 @@ export function createServer(cfg: CoreConfig) {
           //                                                     images = base64 blocks the user attached)
           //   {type:"resume",sessionId}                       → bind this chat to an existing session
           //   {type:"permission_response",id,behavior,always?} → answer a "permission" frame
+          //   {type:"question_response",id,answers?,cancelled?} → answer an AskUserQuestion "question"
           //   {type:"set_permission_mode",mode}               → switch permission mode live
           //   {type:"set_model",model}                        → switch model live
           //   {type:"stop"}                                   → interrupt the in-flight turn
@@ -1764,6 +1766,8 @@ export function createServer(cfg: CoreConfig) {
             mode?: string;
             model?: string;
             effort?: string;
+            answers?: Record<string, unknown>;
+            cancelled?: boolean;
           };
           try {
             parsed = JSON.parse(text);
@@ -1812,6 +1816,19 @@ export function createServer(cfg: CoreConfig) {
             (parsed.behavior === "allow" || parsed.behavior === "deny")
           ) {
             chatRespondPermission(chatId, parsed.id, parsed.behavior, parsed.always === true);
+          } else if (parsed.type === "question_response" && typeof parsed.id === "string") {
+            // Answer an AskUserQuestion "question" frame. `cancelled` (or no answers) skips it; an
+            // `answers` object maps each question's TEXT → the chosen answer string. A rogue client
+            // isn't the only caller, so keep ONLY string→string entries before forwarding to the SDK.
+            let answers: Record<string, string> | null = null;
+            if (!parsed.cancelled && parsed.answers && typeof parsed.answers === "object") {
+              const clean: Record<string, string> = {};
+              for (const [k, v] of Object.entries(parsed.answers)) {
+                if (typeof v === "string") clean[k] = v;
+              }
+              if (Object.keys(clean).length) answers = clean;
+            }
+            chatRespondQuestion(chatId, parsed.id, answers);
           } else if (parsed.type === "set_permission_mode" && typeof parsed.mode === "string") {
             chatSetPermissionMode(chatId, parsed.mode);
           } else if (parsed.type === "set_model" && typeof parsed.model === "string") {
