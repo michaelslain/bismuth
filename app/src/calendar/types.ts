@@ -19,7 +19,11 @@ export interface CalendarEvent {
   location?: string
   link?: string
   description?: string
+  // Single category (legacy + backward-compatible). When an event belongs to multiple
+  // categories, `categories` holds the full ordered list and `category` mirrors the first
+  // (so single-category events, Google Calendar colour mapping, etc. keep round-tripping).
   category?: string
+  categories?: string[]
   recurrence?: Recurrence
   // ISO timestamp stamped on every local create/edit (EventStore). Used by Google
   // Calendar sync as the last-write-wins tiebreaker against the remote `updated` time.

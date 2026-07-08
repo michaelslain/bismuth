@@ -2,7 +2,7 @@ import { For, Index, createMemo } from 'solid-js'
 import { CalendarEvent, Category } from '../../types'
 import { EventChip } from '../EventChip'
 import { toDateStr, formatGutterHour, formatTime } from '../../dates'
-import { resolveCategoryColor } from '../../categoryColor'
+import { eventCategoryColors, categoryFill } from '../../categoryColor'
 import { showEventModal, dragState, settings, recurrenceAction } from '../../state'
 import { EventStore } from '../../EventStore'
 import { refreshEvents } from '../../refresh'
@@ -214,7 +214,7 @@ export function TimeGrid(props: Props) {
       const { startMin: evStart, endMin: evEnd } = eventMinutes(state.event)
       const duration = evEnd - evStart
       endMin = clamp(startMin + duration)
-      color = resolveCategoryColor(props.categories.find(c => c.name === state.event.category)?.color)
+      color = categoryFill(eventCategoryColors(state.event, props.categories)) ?? 'var(--interactive-accent)'
     }
 
     if (endMin <= startMin) endMin = startMin + 15

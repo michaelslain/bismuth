@@ -65,3 +65,32 @@ test('category delete reassigns events to an explicit stable default target', as
   await s.deleteCategory('work', 'Uncategorized')
   expect(s.getEventsForRange('2026-05-01', '2026-05-31')[0].category).toBe('Uncategorized')
 })
+
+test('category rename rewrites both the legacy single field and the categories array', async () => {
+  const s = await freshStore()
+  await s.addCategory({ name: 'work', color: '#fff' })
+  await s.addCategory({ name: 'home', color: '#000' })
+  await s.addEvent({ title: 'single', date: '2026-05-10', category: 'work' })
+  await s.addEvent({ title: 'multi', date: '2026-05-11', category: 'work', categories: ['work', 'home'] })
+  await s.updateCategory('work', { name: 'office' })
+  const evs = s.getEventsForRange('2026-05-01', '2026-05-31')
+  expect(evs.find(e => e.title === 'single')!.category).toBe('office')
+  expect(evs.find(e => e.title === 'multi')!.categories).toEqual(['office', 'home'])
+})
+
+test('category delete drops the name from a multi-category event and dedupes', async () => {
+  const s = await freshStore()
+  await s.addEvent({ title: 'multi', date: '2026-05-10', category: 'work', categories: ['work', 'home'] })
+  await s.deleteCategory('work')
+  const ev = s.getEventsForRange('2026-05-01', '2026-05-31')[0]
+  expect(ev.categories).toEqual(['home'])
+})
+
+test('category delete reassigns a multi-category member without duplicating an existing one', async () => {
+  const s = await freshStore()
+  await s.addEvent({ title: 'multi', date: '2026-05-10', categories: ['work', 'home'] })
+  // Reassign 'work' → 'home', which the event already has: expect a single 'home'.
+  await s.deleteCategory('work', 'home')
+  const ev = s.getEventsForRange('2026-05-01', '2026-05-31')[0]
+  expect(ev.categories).toEqual(['home'])
+})

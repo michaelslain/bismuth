@@ -43,6 +43,20 @@ export function rowToEvent(row: Row, i: number, view?: EventFieldMap): CalendarE
       recurrence = undefined;
     }
   }
+  // Multiple categories are stored as a JSON array string (same convention as
+  // recurrence). Tolerate an already-parsed array or a bare single string too.
+  const rawCats = n.categories;
+  let categories: string[] | undefined;
+  if (Array.isArray(rawCats)) {
+    categories = rawCats.map(String);
+  } else if (typeof rawCats === "string" && rawCats) {
+    try {
+      const parsed = JSON.parse(rawCats);
+      categories = Array.isArray(parsed) ? parsed.map(String) : [rawCats];
+    } catch {
+      categories = [rawCats];
+    }
+  }
   return {
     id: str(n.id) ?? `row-${i}`,
     title: String(n.title ?? ""),
@@ -53,6 +67,7 @@ export function rowToEvent(row: Row, i: number, view?: EventFieldMap): CalendarE
     link: str(n.link),
     description: str(n.description),
     category: str(n[catKey]),
+    ...(categories && categories.length ? { categories } : {}),
     recurrence,
     localUpdated: str(n.localUpdated),
   };
@@ -71,6 +86,7 @@ function eventToRow(e: CalendarEvent): Row {
       link: e.link,
       description: e.description,
       category: e.category,
+      categories: e.categories && e.categories.length ? JSON.stringify(e.categories) : undefined,
       recurrence: e.recurrence ? JSON.stringify(e.recurrence) : undefined,
       localUpdated: e.localUpdated,
     },
