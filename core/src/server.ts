@@ -47,6 +47,7 @@ import {
   sessionHistoryFrames,
   searchChatSessions,
   invalidateChatVisibility,
+  chatAgentSnapshot,
 } from "./chat";
 import { snapshot as relaySnapshot, prune as relayPrune, registerSession, endSession, startSubagent, stopSubagent } from "./relay";
 import { registerWindow, unregisterWindow, updateTabs, listWindows, resolveTarget, sendCommand, resolveReply, type UiTabsSnapshot } from "./uiControl";
@@ -759,7 +760,9 @@ export function createServer(cfg: CoreConfig) {
     "GET /agent-graph": async (_, __) => {
       const live = new Set(listSessionIds());
       relayPrune(live);
-      return ok(buildAgentGraph(relaySnapshot(), live));
+      // Merge in the live visual-chat sessions (core/src/chat.ts) as first-class session nodes —
+      // a closed chat is already gone from chat.ts's registry, so no separate prune is needed.
+      return ok(buildAgentGraph(relaySnapshot(), live, Date.now(), chatAgentSnapshot()));
     },
 
     // Relay ingest endpoints — posted to by the relay plugin's hooks (loaded
