@@ -299,6 +299,63 @@ export function deleteColumn(g: TableGrid, at: number): TableGrid {
   return { cells, aligns };
 }
 
+/** Move a BODY row from index `from` to index `to` (both 1-based over `cells`; the header at
+ *  index 0 never moves). `to` is the destination index in the CURRENT grid — the row is removed
+ *  then re-inserted so a downward move lands after its target. Out-of-range / header / no-op
+ *  requests return an unchanged copy. Pure — the drag-to-reorder-rows op (#62 feature). */
+export function moveRow(g: TableGrid, from: number, to: number): TableGrid {
+  const cells = g.cells.map((r) => r.slice());
+  const rows = cells.length;
+  if (from <= 0 || from >= rows || to <= 0 || to >= rows || from === to) {
+    return { cells, aligns: g.aligns.slice() };
+  }
+  const [row] = cells.splice(from, 1);
+  cells.splice(to, 0, row);
+  return { cells, aligns: g.aligns.slice() };
+}
+
+/** Move a column (its header + every body cell + its alignment) from index `from` to index `to`.
+ *  Out-of-range / no-op requests return an unchanged copy. Pure — the drag-to-reorder-columns op. */
+export function moveColumn(g: TableGrid, from: number, to: number): TableGrid {
+  const cols = gridCols(g);
+  if (from < 0 || from >= cols || to < 0 || to >= cols || from === to) {
+    return { cells: g.cells.map((r) => r.slice()), aligns: g.aligns.slice() };
+  }
+  const cells = g.cells.map((r) => {
+    const row = r.slice();
+    while (row.length < cols) row.push("");
+    const [cell] = row.splice(from, 1);
+    row.splice(to, 0, cell);
+    return row;
+  });
+  const aligns = g.aligns.slice();
+  while (aligns.length < cols) aligns.push("none");
+  const [a] = aligns.splice(from, 1);
+  aligns.splice(to, 0, a);
+  return { cells, aligns };
+}
+
+/** Given the cumulative boundary coordinates of a track (columns' x-edges or rows' y-edges —
+ *  `length = count + 1`, ascending) and a pointer coordinate `pos`, the insertion SLOT index: the
+ *  number of segment CENTERS that lie before `pos`, clamped to `[0, count]`. Drives the drag-drop
+ *  indicator for reorder (#62). Pure. */
+export function reorderDropIndex(bounds: number[], pos: number): number {
+  const count = Math.max(bounds.length - 1, 0);
+  let slot = 0;
+  for (let i = 0; i < count; i++) {
+    const center = (bounds[i] + bounds[i + 1]) / 2;
+    if (pos >= center) slot = i + 1;
+  }
+  return Math.min(Math.max(slot, 0), count);
+}
+
+/** The FINAL index a dragged item lands at, given the item's original index `from` and the drop
+ *  SLOT `drop` (from `reorderDropIndex`). Removing the item first shifts every later slot down by
+ *  one, so a drop past the original position lands one slot earlier. Pure. */
+export function reorderFinalIndex(from: number, drop: number): number {
+  return from < drop ? drop - 1 : drop;
+}
+
 /** Append `addition` to the cell at (r, c), on its OWN in-cell line (a `<br>` marker joins
  *  it to any existing content) so a dropped image lands under, not merged into, the cell's
  *  text. Used by the file-drop handler (#30) to place an `![[…]]` embed into the cell the
@@ -311,6 +368,102 @@ export function appendToCell(g: TableGrid, r: number, c: number, addition: strin
   // A GFM cell is one source line; `<br>` is the in-cell line break (see cellSourceFromDom).
   row[c] = existing ? `${existing}<br>${addition}` : addition;
   return { cells, aligns: g.aligns.slice() };
+}
+
+// ── Merged cells (pure, out-of-source visual state, #62 merge feature) ────────────────────────
+// GFM pipe tables cannot express colspan/rowspan, so a merge is NOT written to the markdown — the
+// underlying cells all survive in source. A merge is a rectangular region recorded in the table's
+// out-of-source visual state (localStorage, alongside column widths). The widget renders the
+// anchor cell with `colspan`/`rowspan` and omits the covered cells. These helpers are pure so the
+// geometry (which cells a region covers, how a shift+click rectangle is formed, overlap pruning)
+// is unit-tested independent of the DOM.
+
+/** A merged rectangular region: its top-left ANCHOR cell (r, c) spanning `rowSpan` rows ×
+ *  `colSpan` columns (both ≥ 1; a 1×1 "region" is not a merge). */
+export interface MergeRegion {
+  r: number;
+  c: number;
+  rowSpan: number;
+  colSpan: number;
+}
+
+/** `"r,c"` key for a cell coordinate (stable Set/Map key). */
+export function cellKey(r: number, c: number): string {
+  return `${r},${c}`;
+}
+
+/** The bounding rectangle covering two cell coordinates (inclusive) — the region a shift+click
+ *  from cell `a` to cell `b` selects. Always well-formed (rowSpan/colSpan ≥ 1). Pure. */
+export function rectFromCells(a: { r: number; c: number }, b: { r: number; c: number }): MergeRegion {
+  const r = Math.min(a.r, b.r);
+  const c = Math.min(a.c, b.c);
+  return { r, c, rowSpan: Math.abs(a.r - b.r) + 1, colSpan: Math.abs(a.c - b.c) + 1 };
+}
+
+/** True if two regions share any cell. Pure. */
+export function regionsOverlap(a: MergeRegion, b: MergeRegion): boolean {
+  return (
+    a.c < b.c + b.colSpan &&
+    b.c < a.c + a.colSpan &&
+    a.r < b.r + b.rowSpan &&
+    b.r < a.r + a.rowSpan
+  );
+}
+
+/** Drop regions that fall outside a `rows × cols` grid, clamp spans that overrun the grid edge,
+ *  drop degenerate 1×1 regions, and drop any region overlapping an earlier kept one (first wins).
+ *  Keeps the stored merge set valid after the grid changes shape. Pure — returns a new array. */
+export function normalizeMergeRegions(regions: MergeRegion[], rows: number, cols: number): MergeRegion[] {
+  const kept: MergeRegion[] = [];
+  for (const raw of regions) {
+    if (!Number.isInteger(raw.r) || !Number.isInteger(raw.c) || raw.r < 0 || raw.c < 0) continue;
+    if (raw.r >= rows || raw.c >= cols) continue;
+    const rowSpan = Math.min(Math.max(raw.rowSpan, 1), rows - raw.r);
+    const colSpan = Math.min(Math.max(raw.colSpan, 1), cols - raw.c);
+    if (rowSpan <= 1 && colSpan <= 1) continue; // not a merge
+    const region = { r: raw.r, c: raw.c, rowSpan, colSpan };
+    if (kept.some((k) => regionsOverlap(k, region))) continue;
+    kept.push(region);
+  }
+  return kept;
+}
+
+/** The region whose ANCHOR is exactly (r, c), or null. Pure. */
+export function mergeAnchorAt(regions: MergeRegion[], r: number, c: number): MergeRegion | null {
+  return regions.find((m) => m.r === r && m.c === c) ?? null;
+}
+
+/** The region CONTAINING cell (r, c) (anchor or covered), or null. Pure. */
+export function mergeContaining(regions: MergeRegion[], r: number, c: number): MergeRegion | null {
+  return regions.find((m) => r >= m.r && r < m.r + m.rowSpan && c >= m.c && c < m.c + m.colSpan) ?? null;
+}
+
+/** Set of `"r,c"` keys COVERED (hidden) by a merge — every cell of every region except its anchor.
+ *  The widget skips rendering these; the anchor renders with colspan/rowspan. Pure. */
+export function coveredCells(regions: MergeRegion[]): Set<string> {
+  const covered = new Set<string>();
+  for (const m of regions) {
+    for (let r = m.r; r < m.r + m.rowSpan; r++) {
+      for (let c = m.c; c < m.c + m.colSpan; c++) {
+        if (r === m.r && c === m.c) continue; // the anchor stays visible
+        covered.add(cellKey(r, c));
+      }
+    }
+  }
+  return covered;
+}
+
+/** Add `region` to the set, first removing any existing regions it overlaps (the new merge wins),
+ *  then normalizing against the grid. A 1×1 region is a no-op. Pure — returns a new array. */
+export function addMergeRegion(regions: MergeRegion[], region: MergeRegion, rows: number, cols: number): MergeRegion[] {
+  if (region.rowSpan <= 1 && region.colSpan <= 1) return normalizeMergeRegions(regions, rows, cols);
+  const survivors = regions.filter((m) => !regionsOverlap(m, region));
+  return normalizeMergeRegions([region, ...survivors], rows, cols);
+}
+
+/** Remove the region containing (r, c) (so an "unmerge" of any cell of a merge splits it). Pure. */
+export function removeMergeAt(regions: MergeRegion[], r: number, c: number): MergeRegion[] {
+  return regions.filter((m) => !(r >= m.r && r < m.r + m.rowSpan && c >= m.c && c < m.c + m.colSpan));
 }
 
 /** Serialize a cell grid + alignments back to normalized, column-padded markdown lines.

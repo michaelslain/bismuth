@@ -27,6 +27,17 @@ import {
   insertColumn,
   deleteColumn,
   appendToCell,
+  moveRow,
+  moveColumn,
+  reorderDropIndex,
+  reorderFinalIndex,
+  type MergeRegion,
+  normalizeMergeRegions,
+  coveredCells,
+  mergeContaining,
+  rectFromCells,
+  addMergeRegion,
+  removeMergeAt,
 } from "./tableModel";
 // CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
 // the find-highlight text-node walk below.
@@ -61,19 +72,33 @@ function loadCellEditor(): Promise<CellEditorModule> {
 // note) and sub-keyed by the table's header row. A body-cell edit that rebuilds the
 // widget keeps the same header → same key → sizes restored; they reset only if the header
 // or column count changes. Path-less buffers (none in practice) fall back to memory.
-type TableSizes = { cols: (number | null)[]; rows: (number | null)[] };
+// The full out-of-source visual state for one table: column widths, plus the three attributes
+// GFM markdown can't express — `compact` density, `infinity` (extend-horizontally-forever instead
+// of squashing columns to page width), and merged cell `merges` (#62). All persist here (NOT in
+// the markdown, which stays plain GFM) so they survive a widget rebuild AND a full reload.
+type TableVisual = {
+  cols: (number | null)[];
+  rows: (number | null)[];
+  compact?: boolean;
+  infinity?: boolean;
+  merges?: MergeRegion[];
+};
 const STORE_PREFIX = "bismuth:table-size:";
-const memStore = new Map<string, TableSizes>();
+const memStore = new Map<string, TableVisual>();
 const sizeKey = (cells: string[][]): string => JSON.stringify(cells[0] ?? []);
 
-// When Enter on the LAST row grows the table (#42), committing the new row REBUILDS the widget
-// (a doc change → a fresh `TableWidget.toDOM`), so the old cell's focus is lost. We stash the
-// grid coordinate to focus and let the NEXT rebuild of the same table (matched by its stable
-// header `sizeKey`, which a row insert doesn't change) claim it. One-shot: consumed by the first
-// matching `toDOM`. Module-level because the committing widget instance is discarded on rebuild.
-let pendingCellFocus: { key: string; r: number; c: number } | null = null;
+// A structural op (add/delete row or column, Enter-grows-row) REBUILDS the widget (a doc change →
+// a fresh `TableWidget.toDOM`), so the committing widget's DOM — and any focused cell — is torn
+// down. We stash the grid coordinate to re-focus and let the rebuilt widget claim it. The claim is
+// matched by DOCUMENT POSITION (the commit anchors CM's selection to the table's block start, so the
+// one rebuilt widget whose source range contains that selection is the table we just changed) — NOT
+// by header content, so it survives COLUMN ops that change the header too (#62). Re-focusing a cell
+// also unfocuses the outer editor, which is what stops CodeMirror from parking its full-height
+// "big caret" on the atomic widget range after a reshape (#62 report 2). One-shot. Module-level
+// because the committing widget instance is discarded on rebuild.
+let pendingCellFocus: { r: number; c: number } | null = null;
 
-function loadSizes(path: string | null, key: string): TableSizes | null {
+function loadVisual(path: string | null, key: string): TableVisual | null {
   try {
     if (path && typeof localStorage !== "undefined") {
       const raw = localStorage.getItem(STORE_PREFIX + path);
@@ -85,7 +110,7 @@ function loadSizes(path: string | null, key: string): TableSizes | null {
   return memStore.get(`${path ?? ""} ${key}`) ?? null;
 }
 
-function saveSizes(path: string | null, key: string, val: TableSizes): void {
+function saveVisual(path: string | null, key: string, val: TableVisual): void {
   try {
     if (path && typeof localStorage !== "undefined") {
       const raw = localStorage.getItem(STORE_PREFIX + path);
@@ -98,6 +123,13 @@ function saveSizes(path: string | null, key: string, val: TableSizes): void {
     /* corrupt/blocked storage → fall through to memory */
   }
   memStore.set(`${path ?? ""} ${key}`, val);
+}
+
+/** Read-modify-write a subset of a table's visual state without clobbering the other attributes
+ *  (so toggling `compact` never drops persisted column widths, and vice-versa). */
+function updateVisual(path: string | null, key: string, patch: Partial<TableVisual>): void {
+  const cur = loadVisual(path, key) ?? { cols: [], rows: [] };
+  saveVisual(path, key, { ...cur, ...patch });
 }
 
 /** WebKit-safe suppression of the right-click word-select (#43). Chromium selects the word under
@@ -508,6 +540,16 @@ export class TableWidget extends WidgetType {
       // scheduleMathUpgrade), so no per-cell onMathReady wiring is needed here.
       cell.innerHTML = renderCellBlockHtml(cell.dataset.src ?? "");
       upgradeCellEmbeds(cell, api.assetUrl);
+      // A cell whose DISPLAY face is visually empty (a freshly-added row, or a cleared cell)
+      // renders to no line box and collapses to a sliver — much shorter than filled rows, AND it
+      // no longer persists the full-height line box a focused (edited) cell showed, so "clicking
+      // off the cell hides the empty line" (#62 report 1). Reserve one line via a class-driven
+      // `::after` nbsp. A CLASS is used (not `:empty`) because it is robust where `:empty` is
+      // fragile — a stray whitespace text node from the reader engine defeats `:empty`, and
+      // WebKit's `:empty` on a `display: table-cell` has diverged from Chromium's. Skipped when
+      // the cell holds real media (img/iframe/…) even with no text.
+      const hasMedia = !!cell.querySelector("img, iframe, video, audio, svg, .cm-embed");
+      cell.classList.toggle("cm-td-empty", !hasMedia && (cell.textContent ?? "").trim() === "");
     };
     // Enter edit mode: clear the display face and mount a nested CodeMirror editor. The editor
     // module is loaded DYNAMICALLY (its live-preview stack pulls in Solid `.tsx` that would taint
@@ -524,14 +566,23 @@ export class TableWidget extends WidgetType {
       cell.replaceChildren();
       const getNotes = view.state.facet(noteNamesFacet);
       const getTags = view.state.facet(tagNamesFacet);
-      const doMount = (mod: CellEditorModule): void => {
+      // `checkFocus` guards ONLY the async (cold-chunk) path: if the user moved focus to a genuinely
+      // different surface while the editor chunk loaded, don't steal it back. The SYNC path (module
+      // warm) never applies it — the click just happened, so we mount unconditionally. Crucially, the
+      // guard must NOT bail when `activeElement` is the OUTER editor content (an ANCESTOR of `root`):
+      // after a table reshape CodeMirror re-homes focus onto its own `.cm-content`, and the previous
+      // guard read that as "focus moved away" and refused to mount — the "can't edit a cell until I
+      // click off and back" bug (#62 report 3). `ae.contains(root)` (ancestor) is now allowed. */
+      const doMount = (mod: CellEditorModule, checkFocus: boolean): void => {
         if (cell.dataset.editing !== "1" || !cell.isConnected || cell._cellCM) return; // left edit / torn down / already mounted
-        const ae = cell.ownerDocument.activeElement as HTMLElement | null;
-        // Don't steal focus if the user moved to something outside this table while the chunk loaded.
-        if (ae && ae !== cell.ownerDocument.body && !root.contains(ae) && !cell.contains(ae)) {
-          cell.dataset.editing = "";
-          renderDisplay(cell);
-          return;
+        if (checkFocus) {
+          const ae = cell.ownerDocument.activeElement as HTMLElement | null;
+          const insideEditor = !!ae && (root.contains(ae) || cell.contains(ae) || ae.contains(root));
+          if (ae && ae !== cell.ownerDocument.body && !insideEditor) {
+            cell.dataset.editing = "";
+            renderDisplay(cell);
+            return;
+          }
         }
         cell._cellCM = mod.mountCellEditor({
           parent: cell,
@@ -545,7 +596,7 @@ export class TableWidget extends WidgetType {
           // Last row, non-list Enter → append a blank row + drop the caret into it (#42). Deferred
           // to a microtask inside cellEditor so this commit never runs mid-keydispatch.
           onGrowRow: () => {
-            pendingCellFocus = { key: sizeKey(this.cells), r: this.cells.length, c };
+            pendingCellFocus = { r: this.cells.length, c };
             this.commit(view, root, (g) => insertRow(g, g.cells.length));
           },
           atCoords,
@@ -559,8 +610,8 @@ export class TableWidget extends WidgetType {
       // A cached module lets us mount now, so focus + caret are live before the next event; only the
       // first cell edit per session waits on the import (and `toDOM` pre-warms it, so even that is
       // usually ready by the first click).
-      if (cellEditorModule) doMount(cellEditorModule);
-      else void loadCellEditor().then(doMount);
+      if (cellEditorModule) doMount(cellEditorModule, false);
+      else void loadCellEditor().then((m) => doMount(m, true));
     };
     // Leave edit mode: read the nested editor's doc back into the cell source, destroy it, and
     // re-render the display face. Synchronous — triggered by focusout, so the editor isn't
@@ -608,6 +659,28 @@ export class TableWidget extends WidgetType {
     };
 
     const cols = this.cells[0]?.length ?? 0;
+    const rowCount = this.cells.length;
+
+    // ── Out-of-source visual state (#62): density, horizontal-extend, merged cells ─────────────
+    // None of these have a GFM representation, so they live in the table's persisted visual state
+    // (localStorage, keyed by note + header) and are RE-APPLIED on every rebuild here. `merges` is
+    // normalized against the current grid so a shape change can't leave a dangling span.
+    const visual = loadVisual(this.notePath, sizeKey(this.cells));
+    let compact = visual?.compact ?? false;
+    let infinity = visual?.infinity ?? false;
+    let merges = normalizeMergeRegions(visual?.merges ?? [], rowCount, cols);
+    root.classList.toggle("cm-table-compact", compact);
+    root.classList.toggle("cm-table-infinity", infinity);
+
+    // A grid of the cell elements (by [r][c]) so merge application, drag-reorder, and selection can
+    // reach any cell without a DOM query per lookup.
+    const cellEls: HTMLElement[][] = [];
+    // Shift-click multi-select state (the rectangle a merge acts on). `selAnchor` is the last
+    // plainly-clicked cell; `selFocus` the shift-clicked corner. Transient to this widget instance.
+    let selAnchor: { r: number; c: number } | null = null;
+    let selFocus: { r: number; c: number } | null = null;
+    const cellAt = (r: number, c: number): HTMLElement | undefined => cellEls[r]?.[c];
+
     // A <col> per column carries explicit drag-resize widths without touching the
     // contenteditable cells (which rewrite their own content on focus and would drop a
     // style set directly on them). The colgroup must be the table's first child.
@@ -622,6 +695,7 @@ export class TableWidget extends WidgetType {
     const rowEls: HTMLElement[] = [];
     this.cells.forEach((row, r) => {
       const tr = document.createElement("tr");
+      cellEls[r] = [];
       for (let c = 0; c < cols; c++) {
         const isHeader = r === 0;
         const cell = document.createElement(isHeader ? "th" : "td") as CellHost;
@@ -678,6 +752,17 @@ export class TableWidget extends WidgetType {
             cell.ownerDocument.addEventListener("mouseup", onEnd, true);
             return;
           }
+          // Shift+left-click multi-select (#62 merge): extend a rectangular selection from the
+          // last plainly-clicked cell to this one instead of entering edit mode. The selection is
+          // what "Merge cells" (context menu) acts on. Doesn't touch the doc.
+          if (me.button === 0 && me.shiftKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!selAnchor) selAnchor = { r, c };
+            selFocus = { r, c };
+            paintSelection();
+            return;
+          }
           // Already editing → let the nested editor handle its own clicks (drag-select, caret).
           if (cell.dataset.editing === "1") return;
           // A left-click on a RENDERED wikilink chip in the display face OPENS the target (#33)
@@ -696,6 +781,10 @@ export class TableWidget extends WidgetType {
               return;
             }
           }
+          // A plain click clears any shift-selection and records this cell as the anchor for a
+          // subsequent shift+click.
+          if (selAnchor || selFocus) { selAnchor = null; selFocus = null; paintSelection(); }
+          selAnchor = { r, c };
           // Enter edit mode from the display face: stop CM moving its own selection to the (atomic)
           // widget boundary, and mount the nested editor with the caret at the click point. The
           // editor focuses with preventScroll so this never yanks the viewport (#50).
@@ -703,6 +792,7 @@ export class TableWidget extends WidgetType {
           e.stopPropagation();
           enterEdit(cell, r, c, { x: me.clientX, y: me.clientY });
         });
+        cellEls[r][c] = cell;
         tr.appendChild(cell);
       }
       table.appendChild(tr);
@@ -710,6 +800,91 @@ export class TableWidget extends WidgetType {
     });
 
     root.appendChild(table);
+
+    // ── Merged cells: render spans in-place (#62) ──────────────────────────────────────────────
+    // GFM can't express colspan/rowspan, so a merge is applied to the DOM without touching source:
+    // the anchor cell gets colSpan/rowSpan, every covered cell is hidden (display:none removes it
+    // from the table's grid so the anchor fills the span). Re-callable so the merge/unmerge menu
+    // actions restyle live without a widget rebuild; also called once at initial render below.
+    const applyMerges = (regions: MergeRegion[]): void => {
+      const covered = coveredCells(regions);
+      for (let r = 0; r < cellEls.length; r++) {
+        for (let c = 0; c < (cellEls[r]?.length ?? 0); c++) {
+          const el = cellEls[r][c];
+          if (!el) continue;
+          el.style.display = "";
+          (el as HTMLTableCellElement).colSpan = 1;
+          (el as HTMLTableCellElement).rowSpan = 1;
+          el.classList.remove("cm-td-merged");
+        }
+      }
+      for (const m of regions) {
+        const anchor = cellAt(m.r, m.c);
+        if (anchor) {
+          (anchor as HTMLTableCellElement).colSpan = m.colSpan;
+          (anchor as HTMLTableCellElement).rowSpan = m.rowSpan;
+          anchor.classList.add("cm-td-merged");
+        }
+      }
+      for (const key of covered) {
+        const [r, c] = key.split(",").map(Number);
+        const el = cellAt(r, c);
+        if (el) el.style.display = "none";
+      }
+    };
+    applyMerges(merges);
+
+    // Paint the current shift-selection rectangle (a `.cm-td-selected` class per selected cell).
+    const paintSelection = (): void => {
+      for (const rowArr of cellEls) for (const el of rowArr) el?.classList.remove("cm-td-selected");
+      if (!selAnchor || !selFocus) return;
+      const rect = rectFromCells(selAnchor, selFocus);
+      for (let r = rect.r; r < rect.r + rect.rowSpan; r++) {
+        for (let c = rect.c; c < rect.c + rect.colSpan; c++) cellAt(r, c)?.classList.add("cm-td-selected");
+      }
+    };
+
+    // ── Compact / infinity toggles (#62) ───────────────────────────────────────────────────────
+    // A hover toolbar at the table's top-right with two persisted toggles: `∞` extends the table
+    // horizontally forever (scroll) instead of squashing columns to page width, and the density
+    // icon switches to compact padding (Claude-chat-style tight rows). Both flip a root class +
+    // persist; no doc change, no rebuild.
+    const toolbar = document.createElement("div");
+    toolbar.className = "cm-table-toolbar";
+    toolbar.setAttribute("contenteditable", "false");
+    const toggleBtn = (cls: string, label: string, active: boolean, glyph: string, onToggle: (next: boolean) => void): HTMLButtonElement => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = `cm-table-tool ${cls}${active ? " active" : ""}`;
+      btn.title = label;
+      btn.setAttribute("aria-label", label);
+      btn.setAttribute("aria-pressed", active ? "true" : "false");
+      btn.textContent = glyph;
+      btn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const next = !btn.classList.contains("active");
+        btn.classList.toggle("active", next);
+        btn.setAttribute("aria-pressed", next ? "true" : "false");
+        onToggle(next);
+      });
+      return btn;
+    };
+    toolbar.appendChild(
+      toggleBtn("cm-table-tool-infinity", "Extend table horizontally", infinity, "∞", (next) => {
+        infinity = next;
+        root.classList.toggle("cm-table-infinity", next);
+        updateVisual(this.notePath, sizeKey(this.cells), { infinity: next });
+      }),
+    );
+    toolbar.appendChild(
+      toggleBtn("cm-table-tool-compact", "Compact rows", compact, "≡", (next) => {
+        compact = next;
+        root.classList.toggle("cm-table-compact", next);
+        updateVisual(this.notePath, sizeKey(this.cells), { compact: next });
+      }),
+    );
+    root.appendChild(toolbar);
 
     // Commit when focus leaves the whole table (moving between cells stays inside). This
     // covers Enter/Escape/Tab-out, which blur the cell without a CodeMirror view update.
@@ -727,10 +902,17 @@ export class TableWidget extends WidgetType {
     // Add-row / add-column `+` bars along the bottom and right edges (Notion-style),
     // shown on hover. `fit-content` on the wrap keeps them flush against the table.
     root.appendChild(
-      edgeBar("cm-table-add-col", "Add column", () => this.commit(view, root, (g) => insertColumn(g, g.cells[0]?.length ?? 0))),
+      edgeBar("cm-table-add-col", "Add column", () => {
+        // Focus the header of the new (right-most) column so the user can name it immediately.
+        pendingCellFocus = { r: 0, c: this.cells[0]?.length ?? 0 };
+        this.commit(view, root, (g) => insertColumn(g, g.cells[0]?.length ?? 0));
+      }),
     );
     root.appendChild(
-      edgeBar("cm-table-add-row", "Add row", () => this.commit(view, root, (g) => insertRow(g, g.cells.length))),
+      edgeBar("cm-table-add-row", "Add row", () => {
+        pendingCellFocus = { r: this.cells.length, c: 0 };
+        this.commit(view, root, (g) => insertRow(g, g.cells.length));
+      }),
     );
 
     // Drop an image/media FILE onto a cell → embed it INTO that cell (#30). A rendered table is an
@@ -773,14 +955,54 @@ export class TableWidget extends WidgetType {
       true,
     );
 
-    // Right-click a cell → a table-specific menu (insert/delete row & column, edit
+    // Merge / unmerge menu items (#62), built here in toDOM so they can reach the widget-instance
+    // merge + selection state. "Merge cells" acts on the current shift-selection (body rows only —
+    // a merged header cell would desync the column-resize layout, which measures header cells);
+    // "Unmerge cells" splits whatever merge contains the right-clicked cell.
+    const mergeMenuItems = (r: number, c: number): TableMenuItem[] => {
+      const out: TableMenuItem[] = [];
+      const sel = selAnchor && selFocus ? rectFromCells(selAnchor, selFocus) : null;
+      const canMerge = !!sel && (sel.rowSpan > 1 || sel.colSpan > 1) && sel.r >= 1;
+      if (canMerge && sel) {
+        out.push({
+          label: "Merge cells",
+          icon: "Combine",
+          separatorBefore: true,
+          onSelect: () => {
+            merges = addMergeRegion(merges, sel, rowCount, cols);
+            updateVisual(this.notePath, sizeKey(this.cells), { merges });
+            applyMerges(merges);
+            selAnchor = null;
+            selFocus = null;
+            paintSelection();
+          },
+        });
+      }
+      if (mergeContaining(merges, r, c)) {
+        out.push({
+          label: "Unmerge cells",
+          icon: "Ungroup",
+          separatorBefore: !canMerge,
+          onSelect: () => {
+            merges = removeMergeAt(merges, r, c);
+            updateVisual(this.notePath, sizeKey(this.cells), { merges });
+            applyMerges(merges);
+          },
+        });
+      }
+      return out;
+    };
+
+    // Right-click a cell → a table-specific menu (insert/delete row & column, merge/unmerge, edit
     // source), dispatched to App's shared <ContextMenu> via the `bismuth-context-menu` event.
     table.addEventListener("contextmenu", (e) => {
       const td = (e.target as HTMLElement).closest("[data-cell]");
       if (!td) return;
       e.preventDefault();
       e.stopPropagation();
-      this.openCellMenu(view, root, e as MouseEvent, Number(td.getAttribute("data-r")), Number(td.getAttribute("data-c")));
+      const r = Number(td.getAttribute("data-r"));
+      const c = Number(td.getAttribute("data-c"));
+      this.openCellMenu(view, root, e as MouseEvent, r, c, mergeMenuItems(r, c));
     });
 
     // ---- Drag-to-resize: COLUMN WIDTHS ONLY ----------------------------------
@@ -792,7 +1014,7 @@ export class TableWidget extends WidgetType {
     // in older persisted data are ignored; height stays auto.)
     const MIN_COL = 40;
 
-    const stored = loadSizes(this.notePath, sizeKey(this.cells));
+    const stored = visual;
     if (stored && stored.cols.some((w) => w != null)) {
       table.style.tableLayout = "fixed";
       stored.cols.forEach((w, c) => {
@@ -804,33 +1026,144 @@ export class TableWidget extends WidgetType {
     overlay.className = "cm-table-overlay";
     overlay.setAttribute("contenteditable", "false");
     const colHandles: HTMLElement[] = [];
+    const colGrips: HTMLElement[] = [];
+    const rowGrips: HTMLElement[] = [];
+    // A single moving line that marks the insertion slot during a reorder drag (#62).
+    const dropLine = document.createElement("div");
+    dropLine.className = "cm-table-drop-line";
+    dropLine.style.display = "none";
+    overlay.appendChild(dropLine);
 
     const persist = (): void => {
-      // Only column widths are persisted; row heights are always auto (#52) → `rows: []`.
-      saveSizes(this.notePath, sizeKey(this.cells), {
+      // Only column widths are persisted here; row heights are always auto (#52). `updateVisual`
+      // merges so this never clobbers the compact / infinity / merges attributes (#62).
+      updateVisual(this.notePath, sizeKey(this.cells), {
         cols: colEls.map((c) => (c.style.width ? parseFloat(c.style.width) : null)),
         rows: [],
       });
     };
 
-    // Re-place every COLUMN handle on its border. The table sits at the wrap origin, so offsets
-    // are measured against it; called after attach, on table resize, and live mid-drag.
+    // Column x-boundaries (wrap-relative, ascending, length cols+1). Header cells are never merged
+    // (#62 merges are body-only), so the header row's cell widths give the true column edges.
+    const colBoundaries = (): number[] => {
+      const headerCells = rowEls[0] ? (Array.from(rowEls[0].children) as HTMLElement[]) : [];
+      const b = [table.offsetLeft];
+      let x = table.offsetLeft;
+      for (const cell of headerCells) { x += cell.offsetWidth; b.push(x); }
+      return b;
+    };
+    // Row y-boundaries (wrap-relative, ascending, length rowCount+1).
+    const rowBoundaries = (): number[] => {
+      const b = [table.offsetTop];
+      let y = table.offsetTop;
+      for (const tr of rowEls) { y += tr.offsetHeight; b.push(y); }
+      return b;
+    };
+
+    // Re-place every COLUMN resize handle on its border + the drag grips. The table sits at the
+    // wrap origin, so offsets are measured against it; called after attach, on table resize, and
+    // live mid-drag.
     const layout = (): void => {
       const th = table.offsetHeight;
       const ox = table.offsetLeft;
       const oy = table.offsetTop;
-      const headerCells = rowEls[0] ? (Array.from(rowEls[0].children) as HTMLElement[]) : [];
-      let x = ox;
-      headerCells.forEach((cell, c) => {
-        x += cell.offsetWidth;
+      const xs = colBoundaries();
+      const ys = rowBoundaries();
+      // Resize handles sit on the RIGHT border of each column.
+      for (let c = 0; c < colHandles.length; c++) {
         const h = colHandles[c];
-        if (h) {
-          h.style.left = `${x}px`;
-          h.style.top = `${oy}px`;
-          h.style.height = `${th}px`;
-        }
-      });
+        if (!h) continue;
+        h.style.left = `${xs[c + 1] ?? ox}px`;
+        h.style.top = `${oy}px`;
+        h.style.height = `${th}px`;
+      }
+      // Column drag grips: a tab centered over each column's header, just above the table.
+      for (let c = 0; c < colGrips.length; c++) {
+        const g = colGrips[c];
+        if (!g || xs[c + 1] == null) continue;
+        g.style.left = `${(xs[c] + xs[c + 1]) / 2}px`;
+        g.style.top = `${oy}px`;
+      }
+      // Row drag grips: a tab centered on each BODY row's left edge.
+      for (let r = 1; r < rowEls.length; r++) {
+        const g = rowGrips[r];
+        if (!g || ys[r + 1] == null) continue;
+        g.style.left = `${ox}px`;
+        g.style.top = `${(ys[r] + ys[r + 1]) / 2}px`;
+      }
     };
+
+    // ── Drag-to-reorder a column / row (#62) ──────────────────────────────────────────────────
+    // Grab a column grip (or body-row grip) and drop it into a new slot; the drop line tracks the
+    // insertion point and the underlying markdown is rewritten via moveColumn / moveRow. Focus
+    // follows the moved column/row so the reshape rebuild never leaves a big caret (see commit).
+    const startReorder = (axis: "col" | "row", from: number, e: MouseEvent): void => {
+      e.preventDefault();
+      e.stopPropagation();
+      root.classList.add("cm-table-reordering");
+      document.body.style.cursor = "grabbing";
+      document.body.style.userSelect = "none";
+      let slot = from;
+      const onMove = (me: MouseEvent): void => {
+        const tRect = table.getBoundingClientRect();
+        if (axis === "col") {
+          const xs = colBoundaries();
+          const pos = table.offsetLeft + (me.clientX - tRect.left);
+          slot = reorderDropIndex(xs, pos);
+          dropLine.style.display = "block";
+          dropLine.style.left = `${xs[slot] ?? table.offsetLeft}px`;
+          dropLine.style.top = `${table.offsetTop}px`;
+          dropLine.style.width = "2px";
+          dropLine.style.height = `${table.offsetHeight}px`;
+        } else {
+          const ys = rowBoundaries();
+          const pos = table.offsetTop + (me.clientY - tRect.top);
+          slot = Math.max(reorderDropIndex(ys, pos), 1); // body rows only — never above the header
+          dropLine.style.display = "block";
+          dropLine.style.left = `${table.offsetLeft}px`;
+          dropLine.style.top = `${ys[slot] ?? table.offsetTop}px`;
+          dropLine.style.height = "2px";
+          dropLine.style.width = `${table.offsetWidth}px`;
+        }
+      };
+      const onUp = (): void => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        root.classList.remove("cm-table-reordering");
+        dropLine.style.display = "none";
+        const to = reorderFinalIndex(from, slot);
+        if (to !== from) {
+          if (axis === "col") {
+            pendingCellFocus = { r: 0, c: to };
+            this.commit(view, root, (g) => moveColumn(g, from, to));
+          } else {
+            pendingCellFocus = { r: to, c: 0 };
+            this.commit(view, root, (g) => moveRow(g, from, to));
+          }
+        }
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+
+    for (let c = 0; c < cols; c++) {
+      const grip = document.createElement("div");
+      grip.className = "cm-col-drag";
+      grip.title = "Drag to reorder column";
+      grip.addEventListener("mousedown", (e) => startReorder("col", c, e as MouseEvent));
+      overlay.appendChild(grip);
+      colGrips.push(grip);
+    }
+    for (let r = 1; r < rowCount; r++) {
+      const grip = document.createElement("div");
+      grip.className = "cm-row-drag";
+      grip.title = "Drag to reorder row";
+      grip.addEventListener("mousedown", (e) => startReorder("row", r, e as MouseEvent));
+      overlay.appendChild(grip);
+      rowGrips[r] = grip;
+    }
 
     // Column-drag plumbing: freeze the start width, follow the pointer along X, then persist +
     // restore the cursor on release. (Row-height drag was removed for #52 — height is auto.)
@@ -904,15 +1237,30 @@ export class TableWidget extends WidgetType {
     if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(layout);
     else layout();
 
-    // Claim a pending caret-focus request left by an Enter-grows-a-row commit (#42): if it names
-    // THIS table (same stable header key) and a cell that now exists, focus it once CM has attached
-    // the freshly-built widget. One-shot — cleared as soon as it's claimed.
-    if (pendingCellFocus && pendingCellFocus.key === sizeKey(this.cells)) {
-      const { r, c } = pendingCellFocus;
-      pendingCellFocus = null;
-      const doFocus = (): void => { focusCell(r, c); };
-      if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(doFocus);
-      else doFocus();
+    // Claim a pending cell-focus request left by a structural commit (add/delete row/column,
+    // Enter-grows-row — #42/#62). The commit anchored CM's selection to this table's block start,
+    // so THIS rebuilt widget is the right one iff its current source range contains that selection.
+    // Matching by position (not header content) means a COLUMN op — which changes the header —
+    // still re-focuses. Re-focusing a cell also unfocuses the outer editor, clearing any
+    // full-height "big caret" CM parked on the atomic widget range (#62 report 2). One-shot; a fast
+    // user click that already entered a cell wins (we skip if any cell is mid-edit).
+    if (pendingCellFocus) {
+      const want = pendingCellFocus;
+      const claim = (): void => {
+        if (!pendingCellFocus) return; // already claimed by another rebuilt widget
+        const range = currentRange(view, root);
+        if (!range) return;
+        const head = view.state.selection.main.head;
+        if (head < range.from || head > range.to) return; // not the table we just changed
+        if (root.querySelector('[data-cell][data-editing="1"]')) { pendingCellFocus = null; return; } // user already editing
+        pendingCellFocus = null;
+        const rows = this.cells.length;
+        const colCount = this.cells[0]?.length ?? 0;
+        if (rows === 0 || colCount === 0) return;
+        focusCell(Math.min(Math.max(want.r, 0), rows - 1), Math.min(Math.max(want.c, 0), colCount - 1));
+      };
+      if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(claim);
+      else claim();
     }
 
     // Outer block carries the vertical spacing as PADDING so CodeMirror measures it (a
@@ -940,7 +1288,7 @@ export class TableWidget extends WidgetType {
 
   // Build + dispatch the right-click menu for the cell at (r, c). Insert/delete act on
   // the grid read fresh from the DOM at apply time, then commit to the markdown source.
-  private openCellMenu(view: EditorView, root: HTMLElement, e: MouseEvent, r: number, c: number): void {
+  private openCellMenu(view: EditorView, root: HTMLElement, e: MouseEvent, r: number, c: number, extraItems: TableMenuItem[] = []): void {
     const cols = this.cells[0]?.length ?? 0;
     const rowCount = this.cells.length;
     // Each action re-reads the grid fresh from the DOM (in `commit`) and returns a NEW
@@ -951,35 +1299,39 @@ export class TableWidget extends WidgetType {
     // an immediate Cmd+Z right after the click (it silently no-ops until the user clicks
     // back into the note), which reads as "undo is broken" for exactly the single-step
     // undo Delete table promises. Mirrors the "Edit source" item below, which already did this.
-    const commitFocused = (transform?: (g: TableGrid) => TableGrid | void) => {
+    // A structural op that reshapes the grid: stash the cell to re-focus AFTER the rebuild (which
+    // both drops the caret into a sensible cell and unfocuses the outer editor, so no full-height
+    // "big caret" is left parked on the atomic widget, #62), then commit through the same path.
+    const commitStructural = (focus: { r: number; c: number }, transform: (g: TableGrid) => TableGrid | void) => {
+      pendingCellFocus = focus;
       view.focus();
       this.commit(view, root, transform);
     };
     const items: TableMenuItem[] = [
-      { label: "Insert row above", icon: "ArrowUp", disabled: r === 0, onSelect: () => commitFocused((g) => insertRow(g, r)) },
-      { label: "Insert row below", icon: "ArrowDown", onSelect: () => commitFocused((g) => insertRow(g, r + 1)) },
+      { label: "Insert row above", icon: "ArrowUp", disabled: r === 0, onSelect: () => commitStructural({ r, c }, (g) => insertRow(g, r)) },
+      { label: "Insert row below", icon: "ArrowDown", onSelect: () => commitStructural({ r: r + 1, c }, (g) => insertRow(g, r + 1)) },
       {
         label: "Delete row",
         icon: "Trash2",
         disabled: rowCount <= 2 || r === 0, // keep the header + ≥1 body row
-        onSelect: () => commitFocused((g) => deleteRow(g, r)),
+        onSelect: () => commitStructural({ r: Math.min(r, rowCount - 2), c }, (g) => deleteRow(g, r)),
       },
       {
         label: "Insert column left",
         icon: "ArrowLeft",
         separatorBefore: true,
-        onSelect: () => commitFocused((g) => insertColumn(g, c)),
+        onSelect: () => commitStructural({ r, c }, (g) => insertColumn(g, c)),
       },
       {
         label: "Insert column right",
         icon: "ArrowRight",
-        onSelect: () => commitFocused((g) => insertColumn(g, c + 1)),
+        onSelect: () => commitStructural({ r, c: c + 1 }, (g) => insertColumn(g, c + 1)),
       },
       {
         label: "Delete column",
         icon: "Trash2",
         disabled: cols <= 1,
-        onSelect: () => commitFocused((g) => deleteColumn(g, c)),
+        onSelect: () => commitStructural({ r, c: Math.min(c, cols - 2) }, (g) => deleteColumn(g, c)),
       },
       {
         // Delete the WHOLE table (#59) — the affordance that replaces caret-beside-the-table +
@@ -1026,6 +1378,9 @@ export class TableWidget extends WidgetType {
         },
       },
     ];
+    // Splice merge/unmerge (built in toDOM with the widget's live selection + merge state) in
+    // just before "Edit source" (#62).
+    if (extraItems.length) items.splice(items.length - 1, 0, ...extraItems);
     // App listens for `bismuth-context-menu` (editor/contextMenu.ts + App.tsx onMount) and
     // renders these items with the shared <ContextMenu>. (The old `oa-` name predated the
     // app rename and silently dropped the menu — the root cause of "can't right-click a table".)

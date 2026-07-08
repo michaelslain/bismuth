@@ -1383,6 +1383,54 @@ export const livePreview = [
     ".cm-table-overlay": { position: "absolute", top: "0", right: "0", bottom: "0", left: "0", "pointer-events": "none", "z-index": "4" },
     ".cm-col-resize": { position: "absolute", width: "7px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
     ".cm-col-resize:hover": { background: "color-mix(in srgb, var(--accent) 35%, transparent)" },
+    // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
+    ".cm-table-compact .cm-table-rendered th, .cm-table-compact .cm-table-rendered td": {
+      padding: "0.1em 0.45em",
+      "line-height": "1.3",
+    },
+    // ── #62 infinity extend: the wrap becomes a horizontal scroll container and the table takes
+    //    its natural content width (cells stop wrapping) instead of squashing columns to page width.
+    ".cm-table-infinity.cm-table-wrap": { "max-width": "100%", "overflow-x": "auto", "overflow-y": "visible" },
+    ".cm-table-infinity .cm-table-rendered": { width: "max-content", "table-layout": "auto" },
+    ".cm-table-infinity .cm-td": { "white-space": "nowrap" },
+    ".cm-table-infinity .cm-td[data-editing=\"1\"]": { "white-space": "pre-wrap" },
+    // ── #62 hover toolbar (top-right): the ∞ + compact toggles, styled like the `+` edge bars ──
+    ".cm-table-toolbar": {
+      position: "absolute", top: "-1.7em", right: "0", display: "flex", gap: "3px",
+      opacity: "0", transition: "opacity 120ms", "z-index": "5",
+    },
+    ".cm-table-wrap:hover .cm-table-toolbar": { opacity: "1" },
+    ".cm-table-tool": {
+      display: "flex", "align-items": "center", "justify-content": "center",
+      width: "1.5em", height: "1.4em", padding: "0", cursor: "pointer",
+      color: "color-mix(in srgb, var(--fg) 55%, transparent)",
+      background: "color-mix(in srgb, var(--fg) 6%, transparent)",
+      border: "1px solid color-mix(in srgb, var(--fg) 12%, transparent)",
+      "border-radius": "5px", "font-family": MONO_FONT, "font-size": "0.9em", "line-height": "1",
+      transition: "background 120ms, color 120ms",
+    },
+    ".cm-table-tool:hover": { background: "color-mix(in srgb, var(--accent) 18%, transparent)", color: "var(--accent)" },
+    ".cm-table-tool.active": { background: "color-mix(in srgb, var(--accent) 30%, transparent)", color: "var(--accent)", "border-color": "var(--accent)" },
+    // ── #62 shift-click selected cells + merged (spanned) anchor cell ──────────────────────────
+    ".cm-td.cm-td-selected": {
+      "box-shadow": "inset 0 0 0 2px var(--accent)",
+      background: "color-mix(in srgb, var(--accent) 12%, transparent)",
+    },
+    // ── #62 drag-to-reorder grips (column tab above / row tab at left) + drop line ─────────────
+    ".cm-col-drag": {
+      position: "absolute", width: "1.6em", height: "0.5em", transform: "translate(-50%, -0.68em)",
+      "border-radius": "3px 3px 0 0", cursor: "grab", "pointer-events": "auto",
+      background: "color-mix(in srgb, var(--fg) 22%, transparent)", opacity: "0", transition: "opacity 120ms, background 120ms",
+    },
+    ".cm-row-drag": {
+      position: "absolute", width: "0.5em", height: "1.6em", transform: "translate(-0.68em, -50%)",
+      "border-radius": "3px 0 0 3px", cursor: "grab", "pointer-events": "auto",
+      background: "color-mix(in srgb, var(--fg) 22%, transparent)", opacity: "0", transition: "opacity 120ms, background 120ms",
+    },
+    ".cm-table-wrap:hover .cm-col-drag, .cm-table-wrap:hover .cm-row-drag": { opacity: "0.55" },
+    ".cm-col-drag:hover, .cm-row-drag:hover": { opacity: "1", background: "var(--accent)" },
+    ".cm-table-reordering .cm-col-drag, .cm-table-reordering .cm-row-drag": { opacity: "1" },
+    ".cm-table-drop-line": { position: "absolute", background: "var(--accent)", "border-radius": "2px", "z-index": "6", "pointer-events": "none" },
     ".cm-task": { "padding-left": "2px", "line-height": "1.55" },
     // Checkbox sits in the same hanging gutter as bullets, right-aligned with a fixed gap.
     ".cm-checkbox": {
