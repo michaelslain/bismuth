@@ -110,6 +110,7 @@ The `/chat` WebSocket is a text-JSON protocol. Server → client is the `ChatFra
 | `{type:"user", text}` | Run a turn — `chatSend()`. Slash commands are just text, with one exception: `/mcp` is answered locally (see below). |
 | `{type:"resume", sessionId}` | Bind this chat to an existing session — `chatResume()`. Its `init` manifest streams back. |
 | `{type:"permission_response", id, behavior, always?}` | Answer a `permission` frame — `chatRespondPermission()`. |
+| `{type:"question_response", id, answers?, cancelled?}` | Answer an AskUserQuestion `question` frame — `chatRespondQuestion()`. `answers` maps each question's text → the chosen answer string (multi-select comma-joined); `cancelled`/no answers skips. |
 | `{type:"set_permission_mode", mode}` | Switch permission mode live — `chatSetPermissionMode()`. |
 | `{type:"set_model", model}` | Switch model live — `chatSetModel()` (the header model picker, populated by the `models` frame). |
 | `{type:"set_effort", effort}` | Switch reasoning-effort level live — `chatSetEffort()` → `Query.applyFlagSettings({ effortLevel })` (the header Effort picker; options come from the selected model's `effortLevels` in the `models` frame). |
@@ -124,6 +125,7 @@ The `ChatFrame` union (server → client):
 - `{type:"tool-use", id, name, input}` — an assistant `tool_use` block.
 - `{type:"tool-result", id, content, isError}` — the matching user `tool_result` block.
 - `{type:"permission", id, toolName, input}` — `canUseTool` asking the user to approve/deny.
+- `{type:"question", id, questions}` — Claude called **AskUserQuestion**: 1–4 multiple-choice questions the user must answer for the turn to continue (see [Interactive questions](#interactive-questions-askuserquestion)).
 - `{type:"result", isError, numTurns, costUsd}` — a turn ended.
 - `{type:"models", models}` — the models this login can run (`Query.supportedModels()`, fetched once per session after the first init) — populates the header model picker. Each entry also carries `effortLevels` (the model's `supportedEffortLevels`), which drives the header **Effort** picker (FEATURE #63) so it offers exactly the *selected* model's levels — never a hardcoded list, and hidden when the model exposes none.
 - `{type:"title", title}` — the session's conversation summary (`getSessionInfo`), emitted once a non-empty summary exists (retried at each turn-end) — names the chat tab.
@@ -168,6 +170,19 @@ return new Promise((resolve) => {
 ```
 
 The client renders an inline `PermissionCard` with three actions — **ALLOW** (`allow`, `always:false`), **ALLOW ALWAYS** (`allow`, `always:true`), and **DENY** (`deny`) — and sends `{type:"permission_response", id, behavior, always}`. `respondPermission()` resolves the parked promise; `always` is remembered per session via `alwaysAllow`. The card then shows the outcome ("Allowed", "Allowed (always)", or "Denied"). On teardown, every pending permission is auto-denied so no `canUseTool` promise dangles.
+
+## Interactive questions (AskUserQuestion)
+
+Claude Code's **AskUserQuestion** tool (interactive multiple-choice questions) works in the visual chat: the assistant asks 1–4 questions with 2–4 options each, the user picks, and the assistant continues with the answer.
+
+**The channel is `canUseTool`, not `onUserDialog`.** AskUserQuestion is a permission-shaped tool: when the model calls it, the SDK delivers a `can_use_tool` control request for it (verified live — the SDK's `onUserDialog`/`request_user_dialog` path, which the interactive TUI uses for the `permission_ask_user_question` dialog, does **not** fire for a programmatic `query()` that supplies a `canUseTool` callback). The driver therefore intercepts the tool inside `canUseTool` (branch on `toolName === ASK_USER_QUESTION_TOOL`) rather than surfacing an "Allow AskUserQuestion?" prompt:
+
+- It normalizes the tool input's `questions` (`extractAskUserQuestions`, pure + tolerant) and emits a `{type:"question", id, questions}` frame, then **parks** the `canUseTool` promise in `session.pendingDialogs` (keyed by the tool-use id).
+- The client renders an interactive `QuestionCard`: each question shows its `header` chip, the question text, its options as buttons (with descriptions), an **Other…** free-text input, and **SUBMIT** / **SKIP**. A lone single-select question submits on option click; multi-select shows checkboxes and stages selections behind SUBMIT.
+- The client answers with `{type:"question_response", id, answers}` (or `{…, cancelled:true}` to skip). `answers` maps each question's **text** → the chosen answer string; a multi-select is comma-joined, and free-text "Other" rides in as its own answer.
+- `respondQuestion()` resolves the parked promise via `buildAskUserQuestionAnswer(toolInput, answers)` (pure + unit-tested): an answer resolves to `{behavior:"allow", updatedInput:{...input, answers}}` — the AskUserQuestion tool reads `answers` off its updated input to build the result the model sees. A **skip** (null answers) resolves to `{behavior:"allow", updatedInput:input}` **unchanged**, so the tool emits its own "no answer selected" result and the turn continues gracefully rather than erroring.
+
+A pending question naturally **blocks the turn from ending** (the `canUseTool` promise is unresolved, so no `result`/`done` arrives): a follow-up message the user sends meanwhile is staged (dimmed bubble) and dispatched on `done`, exactly like the mid-turn queue. **Stop** (or teardown) cancels every parked question with a deny so no promise dangles, and the card renders a muted "Skipped". Answers clicked while the socket is down queue in `pendingQuestionResponses` and flush on reconnect (the backend's parked promise survives the grace window), mirroring `pendingPermissions`.
 
 ## The per-turn manifest
 
@@ -233,7 +248,7 @@ Both the user's messages and the assistant's replies render through `renderNoteB
 <div class="chat-bubble assistant" innerHTML={renderNoteBody(p.part.text)} />
 ```
 
-`[[wikilinks]]` in a rendered bubble (emitted as `a.bismuth-wikilink` with a `data-href`) open in-app via a delegated click that dispatches the global `bismuth-open` event. An assistant turn is an ordered list of **parts** — prose (`TextBubble`), collapsible thinking (`ThinkingBlock`, raw `<pre>`, not markdown), tool chips (`ToolChip`, with input/result detail and a pending spinner), and permission cards (`PermissionCard`) — plus an optional muted footer with the turn count and (only on API-key billing) the cost. A streaming turn with no parts yet shows a three-dot thinking indicator.
+`[[wikilinks]]` in a rendered bubble (emitted as `a.bismuth-wikilink` with a `data-href`) open in-app via a delegated click that dispatches the global `bismuth-open` event. An assistant turn is an ordered list of **parts** — prose (`TextBubble`), collapsible thinking (`ThinkingBlock`, raw `<pre>`, not markdown), tool chips (`ToolChip`, with input/result detail and a pending spinner), permission cards (`PermissionCard`), and interactive question cards (`QuestionCard`, for AskUserQuestion) — plus an optional muted footer with the turn count and (only on API-key billing) the cost. A streaming turn with no parts yet shows a three-dot thinking indicator.
 
 ## Tab routing, command, and keybinding
 

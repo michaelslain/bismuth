@@ -61,6 +61,12 @@ export type ChatFrame =
   | { type: "tool-result"; id: string; content: string; isError: boolean }
   /** canUseTool is asking the USER to approve/deny a not-pre-allowed tool. */
   | { type: "permission"; id: string; toolName: string; input: unknown }
+  /** Claude called the AskUserQuestion tool — 1-4 multiple-choice questions the USER must answer for
+   *  the turn to continue. Reaches the host through the SDK's `canUseTool` channel (verified live: the
+   *  `onUserDialog` path never fires for a programmatic query()); we intercept it there and surface it
+   *  as this frame. The client renders interactive option buttons and answers via
+   *  {type:"question_response", id, answers} (or skips), which resolves the parked canUseTool promise. */
+  | { type: "question"; id: string; questions: ChatQuestion[] }
   /** A turn ended (the `result` event). */
   | { type: "result"; isError: boolean; numTurns: number; costUsd: number | null }
   /** The turn is fully drained (pushed after `result`). */
@@ -91,6 +97,97 @@ export type ChatSink = (frame: ChatFrame) => void;
 export interface ChatImage {
   media_type: string;
   data: string;
+}
+
+// --- AskUserQuestion (interactive multiple-choice tool) -------------------------------------
+//
+// AskUserQuestion (Claude's interactive multiple-choice tool) reaches the host through the SDK's
+// `canUseTool` permission channel — NOT the `onUserDialog`/`request_user_dialog` path (that's the
+// interactive TUI's renderer; verified live that it never fires for a programmatic query() with a
+// canUseTool present). We intercept the AskUserQuestion tool call in canUseTool, surface the
+// question(s) as a `question` frame (interactive option buttons), and PARK the permission promise
+// until the client answers. The answer is delivered by returning `{ behavior: "allow", updatedInput:
+// { ...input, answers } }` where `answers` maps each question's TEXT to the chosen answer string —
+// the tool then reads `answers` off its (updated) input to build the output. Verified against CLI
+// 2.1.x: the assistant received the returned answer and continued the turn.
+
+/** The Claude Code tool name we intercept in canUseTool to render the interactive question card. */
+export const ASK_USER_QUESTION_TOOL = "AskUserQuestion";
+
+/** One selectable option in an AskUserQuestion question. */
+export interface ChatQuestionOption {
+  label: string;
+  description: string;
+}
+
+/** One question from an AskUserQuestion tool call (the client renders the options as buttons). */
+export interface ChatQuestion {
+  /** The full question text — ALSO the key the answer is returned under in the `answers` map. */
+  question: string;
+  /** Short chip/tag label (≤12 chars) — a compact header shown above the question. */
+  header: string;
+  /** True → the user may pick SEVERAL options (their labels are comma-joined into one answer). */
+  multiSelect: boolean;
+  options: ChatQuestionOption[];
+}
+
+/**
+ * Pure: normalize a `permission_ask_user_question` dialog payload's `questions` into the ChatQuestion[]
+ * the client renders. The payload crossed a subprocess/JSON boundary, so this is tolerant — it drops
+ * questions with no text or no valid options and coerces missing fields to sane defaults. Returns null
+ * when there's no usable question at all (the caller then answers the dialog as cancelled).
+ */
+export function extractAskUserQuestions(payload: unknown): ChatQuestion[] | null {
+  const raw = (payload as { questions?: unknown } | null | undefined)?.questions;
+  if (!Array.isArray(raw)) return null;
+  const out: ChatQuestion[] = [];
+  for (const q of raw) {
+    if (!q || typeof q !== "object") continue;
+    const o = q as Record<string, unknown>;
+    const question = typeof o.question === "string" ? o.question.trim() : "";
+    if (!question) continue;
+    const optsRaw = Array.isArray(o.options) ? o.options : [];
+    const options: ChatQuestionOption[] = [];
+    for (const opt of optsRaw) {
+      if (!opt || typeof opt !== "object") continue;
+      const oo = opt as Record<string, unknown>;
+      const label = typeof oo.label === "string" ? oo.label : "";
+      if (!label) continue;
+      options.push({ label, description: typeof oo.description === "string" ? oo.description : "" });
+    }
+    if (!options.length) continue;
+    out.push({
+      question,
+      header: typeof o.header === "string" ? o.header : "",
+      multiSelect: o.multiSelect === true,
+      options,
+    });
+  }
+  return out.length ? out : null;
+}
+
+/** The canUseTool result that answers (or skips) an AskUserQuestion tool call — always an `allow`
+ *  (denying would surface a tool error): the answers ride in `updatedInput`. */
+export interface AskUserQuestionAnswer {
+  behavior: "allow";
+  updatedInput: Record<string, unknown>;
+}
+
+/**
+ * Pure: build the canUseTool PermissionResult that answers an AskUserQuestion tool call. The tool's
+ * updated input is its ORIGINAL input with an `answers` map merged in — `{ [questionText]:
+ * answerString }`, multi-select answers comma-joined by the client — which the tool reads to build
+ * its output. A null `answers` (the user SKIPPED) allows the tool through UNCHANGED, so it produces
+ * its own "no answer selected" result and the turn continues gracefully (rather than a hard deny that
+ * would read as a tool error). Verified against CLI 2.1.x: `{ behavior: "allow", updatedInput: {
+ * ...input, answers } }` — the assistant received the answer and continued.
+ */
+export function buildAskUserQuestionAnswer(
+  toolInput: Record<string, unknown>,
+  answers: Record<string, string> | null,
+): AskUserQuestionAnswer {
+  if (!answers) return { behavior: "allow", updatedInput: toolInput };
+  return { behavior: "allow", updatedInput: { ...toolInput, answers } };
 }
 
 /**
@@ -134,6 +231,14 @@ type PermissionResolver = (d: PermissionDecision) => void;
 type SdkPermissionResult =
   | { behavior: "allow"; updatedInput: Record<string, unknown> }
   | { behavior: "deny"; message: string };
+
+/** A parked AskUserQuestion tool call: `resolve` settles the canUseTool promise once the client
+ *  answers/skips (or the turn tears down); `toolInput` is the tool's original input, spread into the
+ *  answer's `updatedInput` so the tool sees `{ ...input, answers }`. */
+interface PendingDialog {
+  resolve: (result: SdkPermissionResult) => void;
+  toolInput: Record<string, unknown>;
+}
 
 // --- The push-input queue ------------------------------------------------------------------
 
@@ -206,6 +311,10 @@ interface ChatSession {
   sink: ChatSink;
   /** In-flight permission prompts keyed by toolUseID — resolved by respondPermission(). */
   pending: Map<string, PermissionResolver>;
+  /** In-flight AskUserQuestion tool calls keyed by toolUseID — resolved by respondQuestion(). Kept
+   *  separate from `pending` (ordinary allow/deny permissions): these are parked canUseTool promises
+   *  whose resolution carries the user's ANSWER in `updatedInput`, not an allow/deny decision. */
+  pendingDialogs: Map<string, PendingDialog>;
   /** Tool names the user chose to always allow this session (canUseTool short-circuits these). */
   alwaysAllow: Set<string>;
   /** The latest Claude Code session id seen on the wire (for diagnostics + a visibility respawn's
@@ -695,6 +804,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     q: undefined as unknown as Query,
     sink,
     pending: new Map(),
+    pendingDialogs: new Map(),
     alwaysAllow: new Set(),
     sessionId: null,
     bin,
@@ -756,6 +866,21 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
       if (typeof p === "string" && session.deniedPathSet.has(p)) {
         return Promise.resolve({ behavior: "deny", message: "This file is marked hidden from chat (visibility)." });
       }
+    }
+    // AskUserQuestion (Claude's interactive multiple-choice tool) reaches us HERE, through canUseTool
+    // — not as a normal permission (no allow/deny), but as a question the user must ANSWER. Surface
+    // it as a `question` frame (interactive option buttons) and PARK the canUseTool promise until the
+    // client answers via respondQuestion(): a pending question naturally blocks the turn from ending.
+    // A malformed input (no usable question) is allowed straight through so the tool emits its own
+    // error rather than hanging forever on a card that can't render.
+    if (toolName === ASK_USER_QUESTION_TOOL) {
+      const questions = extractAskUserQuestions(toolInput);
+      if (!questions) return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
+      const id = opts.toolUseID ?? randomUUID();
+      return new Promise<SdkPermissionResult>((resolve) => {
+        session.pendingDialogs.set(id, { resolve, toolInput });
+        emit(session, { type: "question", id, questions });
+      });
     }
     if (session.alwaysAllow.has(toolName)) {
       return Promise.resolve({ behavior: "allow", updatedInput: toolInput });
@@ -825,7 +950,8 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // relative paths resolve against $HOME instead of `cwd`.
         systemPrompt: { type: "preset", preset: "claude_code" },
         // The SDK CanUseTool type carries many optional fields we don't read; cast our narrow
-        // closure to it.
+        // closure to it. (canUseTool ALSO carries the AskUserQuestion interactive-question flow — see
+        // the ASK_USER_QUESTION_TOOL branch above.)
         canUseTool: canUseTool as unknown as CanUseTool,
         // Visibility gate, continued: `managedSettings` is the SDK's restrictive-only policy tier —
         // it layers UNDER the user's own config (deny outranks any pre-existing "always allow") and
@@ -1289,6 +1415,7 @@ async function drain(session: ChatSession): Promise<void> {
         }
       }
       session.pending.clear();
+      cancelPendingDialogs(session); // settle any parked AskUserQuestion dialog so it can't dangle
       try {
         session.input.close();
       } catch {
@@ -1299,6 +1426,37 @@ async function drain(session: ChatSession): Promise<void> {
           ? { type: "error", code: "error", message: drainError }
           : { type: "error", code: "exit", message: "The Claude Code session ended — send another message to start a new one." },
       );
+    }
+  }
+}
+
+/**
+ * Answer a pending AskUserQuestion "question" frame. `answers` maps each question's TEXT to the
+ * user's chosen answer string (the client comma-joins a multi-select, and free-text "Other" rides in
+ * as its own answer). A null `answers` = the user closed/skipped the question → the dialog is
+ * cancelled and the CLI applies the tool's default. No-op if the id is unknown (already answered /
+ * stale / turn torn down).
+ */
+export function respondQuestion(chatId: string, id: string, answers: Record<string, string> | null): void {
+  const s = sessions.get(chatId);
+  if (!s) return;
+  const pending = s.pendingDialogs.get(id);
+  if (!pending) return;
+  s.pendingDialogs.delete(id);
+  pending.resolve(buildAskUserQuestionAnswer(pending.toolInput, answers));
+}
+
+/** Cancel every parked AskUserQuestion tool call (deny them so no canUseTool promise dangles) —
+ *  shared by teardown (drain end / closeChat) and a deliberate Stop (abortTurn), mirroring how pending
+ *  permissions are auto-denied. The turn is ending here, so a deny is right (unlike a user SKIP, which
+ *  allows the tool through to produce its own "no answer" result). */
+function cancelPendingDialogs(s: ChatSession): void {
+  for (const [id, pending] of Array.from(s.pendingDialogs.entries())) {
+    s.pendingDialogs.delete(id);
+    try {
+      pending.resolve({ behavior: "deny", message: "The question was dismissed." });
+    } catch {
+      /* */
     }
   }
 }
@@ -1377,6 +1535,9 @@ export function abortTurn(chatId: string): void {
     }
   }
   s.pending.clear();
+  // Any parked AskUserQuestion tool call is moot once we interrupt — cancel it so its canUseTool
+  // promise resolves (same belt-and-suspenders as the pending-permission deny above).
+  cancelPendingDialogs(s);
   // Mark this turn as a deliberate Stop BEFORE interrupting — the drain loop's `result` handler
   // reads this to keep the SDK's error-shaped interrupt result from surfacing as a chat error.
   s.aborting = true;
@@ -1490,6 +1651,7 @@ export function closeChat(chatId: string): void {
     }
   }
   s.pending.clear();
+  cancelPendingDialogs(s); // and settle any parked AskUserQuestion dialog
   // Close the input queue first so the multi-turn stream ends gracefully, then tear the query down.
   // Swallow the control-request rejection close()/interrupt() can raise when a turn is mid-flight
   // ("Query closed before response received") — this is teardown, the error is expected.

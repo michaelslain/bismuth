@@ -25,6 +25,9 @@ import {
   formatMcpStatus,
   withLocalSlashCommands,
   LOCAL_SLASH_COMMANDS,
+  extractAskUserQuestions,
+  buildAskUserQuestionAnswer,
+  ASK_USER_QUESTION_TOOL,
   type ChatFrame,
   type ChatSearchDoc,
 } from "../src/chat";
@@ -746,5 +749,110 @@ describe("searchChatSessions (tolerance)", () => {
     } finally {
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
+  });
+});
+
+// The AskUserQuestion tool (Claude's interactive multiple-choice question) reaches the host through
+// the SDK's canUseTool channel (verified live: onUserDialog never fires for a programmatic query()).
+// These cover the two pure pieces: normalizing the tool input's questions for the client, and
+// building the canUseTool answer (allow + answers merged into updatedInput). Verified against CLI 2.1.x.
+describe("extractAskUserQuestions (AskUserQuestion dialog payload → client questions)", () => {
+  const sample = {
+    questions: [
+      {
+        question: "Which library should we use?",
+        header: "Library",
+        multiSelect: false,
+        options: [
+          { label: "date-fns", description: "Lightweight, tree-shakeable" },
+          { label: "Luxon", description: "Rich timezone support" },
+        ],
+      },
+    ],
+  };
+
+  test("normalizes a well-formed single question", () => {
+    expect(extractAskUserQuestions(sample)).toEqual([
+      {
+        question: "Which library should we use?",
+        header: "Library",
+        multiSelect: false,
+        options: [
+          { label: "date-fns", description: "Lightweight, tree-shakeable" },
+          { label: "Luxon", description: "Rich timezone support" },
+        ],
+      },
+    ]);
+  });
+
+  test("carries multiSelect and keeps all 1-4 questions", () => {
+    const payload = {
+      questions: [
+        { question: "Q1?", header: "One", multiSelect: true, options: [{ label: "a", description: "" }, { label: "b", description: "" }] },
+        { question: "Q2?", header: "Two", multiSelect: false, options: [{ label: "c", description: "" }, { label: "d", description: "" }] },
+      ],
+    };
+    const out = extractAskUserQuestions(payload)!;
+    expect(out.length).toBe(2);
+    expect(out[0]!.multiSelect).toBe(true);
+    expect(out[1]!.multiSelect).toBe(false);
+  });
+
+  test("coerces missing header/description and defaults multiSelect to false", () => {
+    const out = extractAskUserQuestions({
+      questions: [{ question: "Q?", options: [{ label: "a" }] }],
+    })!;
+    expect(out[0]).toEqual({ question: "Q?", header: "", multiSelect: false, options: [{ label: "a", description: "" }] });
+  });
+
+  test("drops questions with no text or no valid options", () => {
+    const out = extractAskUserQuestions({
+      questions: [
+        { question: "", options: [{ label: "a" }] }, // no text
+        { question: "Q?", options: [] }, // no options
+        { question: "Q?", options: [{ description: "no label" }] }, // option lacks a label
+        { question: "Keep?", options: [{ label: "ok" }] }, // valid
+      ],
+    });
+    expect(out).toEqual([{ question: "Keep?", header: "", multiSelect: false, options: [{ label: "ok", description: "" }] }]);
+  });
+
+  test("returns null when there's no usable question (caller cancels the dialog)", () => {
+    expect(extractAskUserQuestions(null)).toBeNull();
+    expect(extractAskUserQuestions({})).toBeNull();
+    expect(extractAskUserQuestions({ questions: "nope" })).toBeNull();
+    expect(extractAskUserQuestions({ questions: [] })).toBeNull();
+    expect(extractAskUserQuestions({ questions: [{ question: "no options" }] })).toBeNull();
+  });
+});
+
+describe("buildAskUserQuestionAnswer (host answer → canUseTool PermissionResult)", () => {
+  const toolInput = { questions: [{ question: "Which library should we use?", header: "Library", options: [{ label: "date-fns", description: "" }], multiSelect: false }] };
+
+  test("answers → allow with answers merged into updatedInput (and input preserved)", () => {
+    const answers = { "Which library should we use?": "date-fns" };
+    expect(buildAskUserQuestionAnswer(toolInput, answers)).toEqual({
+      behavior: "allow",
+      updatedInput: { ...toolInput, answers },
+    });
+  });
+
+  test("keeps the tool's original input fields alongside the answers", () => {
+    const res = buildAskUserQuestionAnswer(toolInput, { q: "a" });
+    expect(res.updatedInput.questions).toBe(toolInput.questions);
+  });
+
+  test("multi-select comma-joined answer passes through verbatim", () => {
+    const answers = { "Pick features?": "Auth, Billing" };
+    const res = buildAskUserQuestionAnswer(toolInput, answers);
+    expect(res.updatedInput.answers).toEqual(answers);
+  });
+
+  test("null answers (user skipped) → allow UNCHANGED (tool emits its own 'no answer'; turn continues)", () => {
+    expect(buildAskUserQuestionAnswer(toolInput, null)).toEqual({ behavior: "allow", updatedInput: toolInput });
+  });
+
+  test("the intercepted tool name is AskUserQuestion", () => {
+    expect(ASK_USER_QUESTION_TOOL).toBe("AskUserQuestion");
   });
 });
