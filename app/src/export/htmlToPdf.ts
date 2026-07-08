@@ -11,11 +11,19 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import { sanitizeDocColorsForRaster, normalizeCssColor } from "./cssColor";
+import {
+  PAGE_W_PX,
+  PAGE_W_PT,
+  PAGE_H_PT,
+  MARGIN_PT,
+  CONTENT_W_PT,
+  CONTENT_H_PT,
+  pdfSliceMetrics,
+  parseRgbColor,
+} from "./pageGeometry";
 
-// US Letter. jsPDF "letter" page = 612 x 792 pt; render the source at 8.5in @ 96dpi.
-const PAGE_W_PX = 816; // 8.5in * 96
-const PAGE_W_PT = 612;
-const PAGE_H_PT = 792;
+// US Letter portrait with a 1in margin on every side — geometry lives in pageGeometry.ts
+// (jsPDF "letter" page = 612 x 792 pt; source rasterized at 8.5in @ 96dpi = 816px wide).
 
 // Let the off-screen iframe lay out before measuring/snapshotting. Uses setTimeout, NOT
 // requestAnimationFrame: rAF is throttled to zero in a hidden/backgrounded tab, so an
@@ -30,7 +38,10 @@ const settle = (ms = 50): Promise<void> => new Promise((r) => setTimeout(r, ms))
  * `doc.fonts.ready` here is what gates the snapshot on embedded @font-face fonts (incl.
  * the inlined KaTeX glyph fonts) so math is measured/drawn correctly.
  */
-async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; bg: string; breaks: number[] }> {
+async function htmlToCanvas(
+  html: string,
+  bodyOverrideCss = "",
+): Promise<{ canvas: HTMLCanvasElement; bg: string; breaks: number[] }> {
   const iframe = document.createElement("iframe");
   iframe.setAttribute("aria-hidden", "true");
   iframe.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W_PX}px;height:200px;border:0;`;
@@ -40,6 +51,16 @@ async function htmlToCanvas(html: string): Promise<{ canvas: HTMLCanvasElement; 
     doc.open();
     doc.write(html);
     doc.close();
+    // For the paged PDF path: neutralize the shared template's reading-column gutter (its
+    // max-width + body padding) so the content fills the raster width and maps edge-to-edge
+    // into the printable box — the 1in whitespace then comes solely from the PDF page margin,
+    // making it exactly 1in on every side rather than 1in plus the on-screen gutter. Injected
+    // last so it wins the cascade. No-op ("") for the PNG path, which keeps the reading column.
+    if (bodyOverrideCss) {
+      const style = doc.createElement("style");
+      style.textContent = bodyOverrideCss;
+      doc.head.appendChild(style);
+    }
     // Let the iframe document lay out, then grow the frame to the full content height so
     // html2canvas captures everything (not just the initial viewport).
     await settle();
@@ -107,12 +128,21 @@ export async function htmlToPng(html: string): Promise<{ bytes: Uint8Array; data
   return { bytes: dataUrlToBytes(dataUrl), dataUrl };
 }
 
+// Fill the raster edge-to-edge into the printable box: drop the shared template's reading
+// column (max-width + body padding) so the ONLY margin is the 1in page margin below.
+const PDF_BODY_OVERRIDE =
+  `html,body{margin:0!important;padding:0!important;max-width:none!important;width:100%!important;}` +
+  // The first block's intrinsic top margin (e.g. an <h1>'s margin-top) would otherwise stack on
+  // top of the 1in page margin; zero it so content begins exactly at the 1in boundary.
+  `body>:first-child{margin-top:0!important;}`;
+
 export async function htmlToPdf(html: string): Promise<Uint8Array> {
-  const { canvas, bg, breaks } = await htmlToCanvas(html);
+  const { canvas, bg, breaks } = await htmlToCanvas(html, PDF_BODY_OVERRIDE);
   {
     const pdf = new jsPDF({ unit: "pt", format: "letter" });
-    const scale = PAGE_W_PT / canvas.width; // canvas px -> pt
-    const pageHpx = Math.floor(PAGE_H_PT / scale); // source px per Letter page
+    const [r, g, b] = parseRgbColor(bg);
+    // The raster maps into the printable box (Letter minus 1in on each edge), not the whole page.
+    const { pageHpx } = pdfSliceMetrics(canvas.width); // source px per printable page (inside the margins)
     let offset = 0;
     let first = true;
     let bi = 0; // cursor into the sorted page-break offsets
@@ -127,7 +157,7 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
         bi++;
       }
       const sliceHpx = Math.min(sliceEnd, canvas.height) - offset;
-      // Full-page slice padded with the document background so partial last pages stay
+      // Full-page-height slice padded with the document background so partial pages stay
       // on-theme (e.g. a dark page is fully dark, not white below the content).
       const slice = document.createElement("canvas");
       slice.width = canvas.width;
@@ -138,9 +168,13 @@ export async function htmlToPdf(html: string): Promise<Uint8Array> {
       ctx.drawImage(canvas, 0, offset, canvas.width, sliceHpx, 0, 0, canvas.width, sliceHpx);
 
       if (!first) pdf.addPage("letter");
+      // Paint the whole page (including the 1in margin band) with the document background so the
+      // margin stays on-theme, then place the content raster inside the 1in margins.
+      pdf.setFillColor(r, g, b);
+      pdf.rect(0, 0, PAGE_W_PT, PAGE_H_PT, "F");
       // JPEG (opaque — slices are bg-filled) keeps a multi-page doc to a few hundred KB;
       // PNG of a full-page 2x raster runs to ~10MB/page. 0.92 is visually lossless at doc zoom.
-      pdf.addImage(slice.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, PAGE_W_PT, PAGE_H_PT);
+      pdf.addImage(slice.toDataURL("image/jpeg", 0.92), "JPEG", MARGIN_PT, MARGIN_PT, CONTENT_W_PT, CONTENT_H_PT);
       offset += sliceHpx;
       first = false;
     }
