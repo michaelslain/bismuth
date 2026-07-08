@@ -11,6 +11,7 @@ const BYTES = new Uint8Array([1, 2, 3]);
 function makeSeam(over: Partial<TauriDelivery> & { disk?: Set<string> } = {}) {
   const disk = over.disk ?? new Set<string>();
   const calls: string[] = [];
+  const revealed: string[] = [];
   const seam: TauriDelivery = {
     downloadDir: async () => "/Users/u/Downloads",
     join: async (dir, name) => `${dir}/${name}`,
@@ -26,9 +27,13 @@ function makeSeam(over: Partial<TauriDelivery> & { disk?: Set<string> } = {}) {
       calls.push("saveDialog");
       return null;
     },
+    reveal: async (p) => {
+      calls.push(`reveal:${p}`);
+      revealed.push(p);
+    },
     ...over,
   };
-  return { seam, disk, calls };
+  return { seam, disk, calls, revealed };
 }
 
 describe("deliverFile routing", () => {
@@ -42,15 +47,99 @@ describe("deliverFile routing", () => {
   });
 
   test("tauri path writes to the Downloads dir, verifies existence, and returns the REAL path", async () => {
-    const { seam, calls } = makeSeam();
+    const { seam, calls, revealed } = makeSeam();
     let browserCalls = 0;
     const r = await deliverFile("homework 2.pdf", BYTES, "application/pdf", seam, () => {
       browserCalls++;
     });
-    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2.pdf" });
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/homework 2.pdf", verified: true });
     expect(browserCalls).toBe(0); // never falls through to the anchor path under Tauri
     expect(calls).toContain("write:/Users/u/Downloads/homework 2.pdf");
     expect(calls).toContain("exists:/Users/u/Downloads/homework 2.pdf"); // verified, not assumed
+    expect(revealed).toEqual(["/Users/u/Downloads/homework 2.pdf"]); // taken straight to the file in Finder
+  });
+});
+
+describe("deliverFile reveal-in-Finder (best-effort, at the delivery seam)", () => {
+  test("reveals the delivered Downloads path by default", async () => {
+    const { seam, revealed } = makeSeam();
+    await deliverFile("a.pdf", BYTES, "application/pdf", seam);
+    expect(revealed).toEqual(["/Users/u/Downloads/a.pdf"]);
+  });
+
+  test("reveals the Save-dialog-chosen path when Downloads fails", async () => {
+    const disk = new Set<string>();
+    const { seam, revealed } = makeSeam({
+      writeFile: async (p) => {
+        if (p.includes("/Downloads/")) throw new Error("EPERM");
+        disk.add(p);
+      },
+      exists: async (p) => disk.has(p),
+      saveDialog: async () => "/Users/u/Desktop/picked.pdf",
+      disk,
+    });
+    await deliverFile("a.pdf", BYTES, "application/pdf", seam);
+    expect(revealed).toEqual(["/Users/u/Desktop/picked.pdf"]); // reveal follows the file to wherever it landed
+  });
+
+  test("reveal=false suppresses the Finder reveal (multi-file loop reveals only the first)", async () => {
+    const { seam, revealed } = makeSeam();
+    const r = await deliverFile("a-2.png", BYTES, "image/png", seam, undefined, false);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/a-2.png", verified: true });
+    expect(revealed).toEqual([]); // no reveal for the non-first file
+  });
+
+  test("a THROWING reveal never fails the export — the file is already written", async () => {
+    const { seam } = makeSeam({
+      reveal: async () => {
+        throw new Error("opener not available");
+      },
+    });
+    const r = await deliverFile("a.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/a.pdf", verified: true });
+  });
+});
+
+describe("deliverFile verify-edge hardening (write-threw vs exists-threw)", () => {
+  test("exists() THROWING after a resolved Downloads write reports UNVERIFIED success, not a Save dialog", async () => {
+    // The old-binary edge: fs.writeFile lands the file but fs.exists throws because the
+    // fs:allow-exists capability is missing. The write succeeded — we must NOT fall back to
+    // the Save dialog just because we couldn't confirm.
+    let saveDialogCalls = 0;
+    const { seam } = makeSeam({
+      writeFile: async () => {}, // resolves (file really landed in the real OS)
+      exists: async () => {
+        throw new Error("fs.exists not permitted (no fs:allow-exists)");
+      },
+      saveDialog: async () => {
+        saveDialogCalls++;
+        return "/Users/u/Desktop/should-not-be-used.pdf";
+      },
+    });
+    const r = await deliverFile("a.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Downloads/a.pdf", verified: false });
+    expect(saveDialogCalls).toBe(0); // a resolved write is NOT downgraded to the fallback
+  });
+
+  test("a write that RESOLVES but exists() proves absent STILL falls back (the packaged-app lie)", async () => {
+    // Distinct from the throw case: exists() RETURNS false, so the file provably isn't there.
+    let saveDialogCalls = 0;
+    const disk = new Set<string>();
+    const { seam } = makeSeam({
+      writeFile: async (p) => {
+        if (p.startsWith("/Users/u/Downloads/")) return; // resolves, writes NOTHING
+        disk.add(p);
+      },
+      exists: async (p) => disk.has(p),
+      saveDialog: async () => {
+        saveDialogCalls++;
+        return "/Users/u/Desktop/picked.pdf";
+      },
+      disk,
+    });
+    const r = await deliverFile("a.pdf", BYTES, "application/pdf", seam);
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Desktop/picked.pdf", verified: true });
+    expect(saveDialogCalls).toBe(1); // a provably-missing write DOES fall back
   });
 });
 
@@ -69,7 +158,7 @@ describe("deliverFile verify-after-write (success only when the file provably ex
       disk,
     });
     const r = await deliverFile("a.pdf", BYTES, "application/pdf", seam);
-    expect(r).toEqual({ via: "tauri", path: "/Users/u/Desktop/picked.pdf" });
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Desktop/picked.pdf", verified: true });
     expect(disk.has("/Users/u/Desktop/picked.pdf")).toBe(true);
   });
 
@@ -85,7 +174,7 @@ describe("deliverFile verify-after-write (success only when the file provably ex
       disk,
     });
     const r = await deliverFile("a.pdf", BYTES, "application/pdf", seam);
-    expect(r).toEqual({ via: "tauri", path: "/Users/u/Documents/a.pdf" });
+    expect(r).toEqual({ via: "tauri", path: "/Users/u/Documents/a.pdf", verified: true });
   });
 
   test("cancelled save dialog after a failed write THROWS (no silent success)", async () => {
@@ -111,11 +200,18 @@ describe("deliverFile verify-after-write (success only when the file provably ex
 });
 
 describe("writeToFolder verify-after-write", () => {
-  test("returns the verified path on success", async () => {
-    const { seam, disk } = makeSeam();
+  test("returns the verified path on success and reveals it", async () => {
+    const { seam, disk, revealed } = makeSeam();
     const p = await writeToFolder("/Users/u/exports", "n.md", BYTES, seam);
     expect(p).toBe("/Users/u/exports/n.md");
     expect(disk.has(p)).toBe(true);
+    expect(revealed).toEqual(["/Users/u/exports/n.md"]);
+  });
+
+  test("reveal=false suppresses the Finder reveal", async () => {
+    const { seam, revealed } = makeSeam();
+    await writeToFolder("/Users/u/exports", "n.md", BYTES, seam, false);
+    expect(revealed).toEqual([]);
   });
 
   test("a resolved-but-missing write throws instead of returning a path", async () => {
@@ -123,6 +219,17 @@ describe("writeToFolder verify-after-write", () => {
     await expect(writeToFolder("/Users/u/exports", "n.md", BYTES, seam)).rejects.toThrow(
       /write reported success but no file exists/,
     );
+  });
+
+  test("exists() THROWING (missing capability) still returns the path — write resolved", async () => {
+    const { seam } = makeSeam({
+      writeFile: async () => {},
+      exists: async () => {
+        throw new Error("fs.exists not permitted");
+      },
+    });
+    const p = await writeToFolder("/Users/u/exports", "n.md", BYTES, seam);
+    expect(p).toBe("/Users/u/exports/n.md"); // couldn't verify, but the write didn't fail
   });
 
   test("a throwing write surfaces the target path in the error", async () => {

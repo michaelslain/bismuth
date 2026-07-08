@@ -266,9 +266,12 @@ export function ExportView(props: { path: string }) {
       const dest = destFolder().trim();
       if (dest && isTauri()) {
         // writeToFolder verifies each file exists after writing — a resolved-but-missing
-        // write throws into the catch below instead of toasting a lie.
+        // write throws into the catch below instead of toasting a lie. Reveal only the FIRST
+        // file in Finder so a multi-page export opens one window, not one per page.
         const written: string[] = [];
-        for (const f of files) written.push(await writeToFolder(dest, f.filename, f.bytes));
+        for (let i = 0; i < files.length; i++) {
+          written.push(await writeToFolder(dest, files[i].filename, files[i].bytes, undefined, i === 0));
+        }
         pushToast(
           files.length > 1
             ? `Exported ${files.length} pages → ${dest}`
@@ -277,9 +280,13 @@ export function ExportView(props: { path: string }) {
       } else {
         // deliverFile: desktop = VERIFIED write into the OS Downloads dir (native Save
         // dialog as fallback; throws when nothing provably landed), resolving the real
-        // absolute path; browser = anchor download. Toast the verified path, not a guess.
+        // absolute path AND revealing it in Finder; browser = anchor download. Toast the
+        // verified path, not a guess. Reveal only the FIRST file so a multi-page export
+        // opens a single Finder window with page 1 selected.
         const results: Delivery[] = [];
-        for (const f of files) results.push(await deliverFile(f.filename, f.bytes, r.mime));
+        for (let i = 0; i < files.length; i++) {
+          results.push(await deliverFile(files[i].filename, files[i].bytes, r.mime, undefined, undefined, i === 0));
+        }
         const first = results[0];
         if (first.via === "tauri") {
           const dir = first.path.slice(0, first.path.lastIndexOf("/")) || first.path;
