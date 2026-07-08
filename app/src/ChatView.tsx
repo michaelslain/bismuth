@@ -33,7 +33,7 @@ import { getFocusedSelection } from "./editorRegistry";
 import { getEditorTabs, addChatReference, getChatReferences, clearChatReferences } from "./chatContext";
 import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
-import { publishChatTitle } from "./chatTitles";
+import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand } from "./chatSlashCommands";
@@ -393,6 +393,13 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   // OWNED here so "New" can swap to a fresh id — a brand-new Claude Code session on the next turn —
   // without touching the tab/App.tsx. The WS pins this id so a reconnect resumes the same session.
   const [activeChatId, setActiveChatId] = createSignal(props.chatId);
+
+  // The live `/rename` override for THIS tab's title (Row 75). The tab bar's label is `tab.name`
+  // (persisted in App via the bismuth-chat-rename event); ChatView can't read that App-owned state,
+  // so we mirror the override here to show the SAME title in the pane's toolbar header the instant
+  // the user renames — resolveChatHeaderTitle then layers it over the backend session title
+  // (chatTitle) exactly as the tab does. Empty override → falls through to the session title.
+  const [renameOverride, setRenameOverride] = createSignal<string | undefined>();
 
   // Paths whose RESOLVED AI visibility is "hidden" (core/src/visibility.ts) — refreshed on mount
   // and whenever the vault changes (SSE), like the rest of the app's tree state. Best-effort/
@@ -905,6 +912,10 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       // Rename THIS chat's tab via the same Tab.name override the right-click Rename sets (App owns
       // the tab tree) — persisted across reload/reopen. Empty name reverts to the auto label.
       window.dispatchEvent(new CustomEvent("bismuth-chat-rename", { detail: { chatId: props.chatId, name: cmd.name } }));
+      // Mirror the override locally so the toolbar header title updates live too (Row 75) — the tab
+      // bar reads App's persisted tab.name, which this view can't see. Empty → clear (revert to the
+      // session title), matching App's onChatRename (blank name → tab.name undefined).
+      setRenameOverride(cmd.name.trim() || undefined);
       setTurnError(null);
       return true;
     }
@@ -1501,6 +1512,11 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   // The chat presents AS the vault's daemon when one is enabled — its identity name replaces
   // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts).
   const persona = () => chatPersonaName() ?? "Claude";
+  // The title shown in the pane's toolbar header (Row 75). Same precedence the TAB uses — a live
+  // `/rename` override wins, else this session's backend title (chatTitle, published from `title`
+  // frames), else the daemon persona / "Chat". Reactive, so a rename or a new session summary
+  // updates the header in place — and it sits over the color-tinted pane like the rest of the bar.
+  const headerTitle = () => resolveChatHeaderTitle(renameOverride(), chatTitle(props.chatId), chatPersonaName() ?? "Chat");
 
   return (
     <div
@@ -1520,7 +1536,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       onDrop={onHostDrop}
     >
       <ViewBar>
-        <Crumb icon="MessageSquare">{chatPersonaName() ?? "Chat"}</Crumb>
+        <Crumb icon="MessageSquare">{headerTitle()}</Crumb>
         {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
             which the backend now emits EAGERLY on session spawn (core/src/chat.ts emitSupportedModels),
             so the picker is populated and switchable the instant the chat opens, BEFORE the first
