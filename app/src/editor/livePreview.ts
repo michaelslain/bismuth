@@ -1351,7 +1351,9 @@ export const livePreview = [
     // The cell <code> shares the `.cm-inline-code` rule above (identical styling).
     ".cm-table-rendered a": { color: "var(--accent)", "text-decoration": "none", "border-bottom": "1px solid var(--accent-soft)" },
     ".cm-table-rendered del": { opacity: "0.7" },
-    ".cm-td:focus": { outline: "none", "box-shadow": "inset 0 0 0 2px var(--accent)", "border-radius": "2px" },
+    // The cell shows its accent focus ring while its nested editor (cellEditor.ts) holds focus —
+    // `:focus-within` because focus lands on the mounted editor's contentDOM, not the <td> itself.
+    ".cm-td:focus, .cm-td:focus-within": { outline: "none", "box-shadow": "inset 0 0 0 2px var(--accent)", "border-radius": "2px" },
     // `+` edge bars: a thin add-column bar just off the right border and an add-row bar
     // just below the bottom border. Faint, fade in on hover, accent on their own hover.
     ".cm-table-edge": {
