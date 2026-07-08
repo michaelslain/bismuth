@@ -50,7 +50,7 @@ import { withYouNode } from "./graph/youNode";
 import { agentGraphSig } from "./graph/agentGraphSig";
 import type { GraphData, ViewLayout } from "../../core/src/graph";
 import type { NoteCandidate } from "./editor/wikilink";
-import { TERMINAL_PREFIX, SEARCH_TAB, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
+import { TERMINAL_PREFIX, GRAPH_TAB, INBOX_TAB, EXPORT_PREFIX, EMPTY_PANE, CHAT_PREFIX, SETTINGS_FILE, contentLabel, contentIcon, isSentinel, setChatLabelProvider } from "./tabIds";
 import { tabRailVisible } from "./tabRailVisibility";
 import { daemonName, refreshDaemonIdentity } from "./daemonIdentity";
 import { chatTitle } from "./chatTitles";
@@ -195,7 +195,7 @@ export default function App() {
 
   // Basename (no folder, no extension) of the focused note — used as {{title}} when
   // expanding a template. Empty string when the focused pane isn't a real note
-  // (a sentinel like ::graph/::search/terminal, or nothing focused). Note: settings
+  // (a sentinel like ::graph/terminal, or nothing focused). Note: settings
   // opens by file path (settings.yaml), not a sentinel — there is no ::settings.
   const activeNoteTitle = createMemo<string>(() => {
     const c = focusedContent();
@@ -628,7 +628,10 @@ export default function App() {
     updateActiveTab((t) => ({ ...t, root: setContent(t.root, leafId, content), focusId: leafId }));
     recordNav(leafId, content);
   };
-  const openSearch = () => openInNewTab(SEARCH_TAB);
+  // "Search" (sidebar icon / palette command / native menu) opens the SAME Cmd+O switcher
+  // takeover — there is no separate ::search tab anymore (#8: "the search tab and the cmd+o
+  // should be the same thing. all of it should be how cmd+o works.").
+  const openSearch = () => openSwitcher();
   const openExport = (path: string) => openInNewTab(EXPORT_PREFIX + path);
   const newNote = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "file" } }));
   const newFolder = () => window.dispatchEvent(new CustomEvent("bismuth-new", { detail: { kind: "dir" } }));

@@ -1,15 +1,14 @@
 // app/src/searchResults.tsx
-// Shared result-row rendering for every surface that shows Bismuth AI / keyword search hits:
-// the Search tab (SearchView.tsx) AND the Cmd+O switcher's AI escalation panel
-// (palette/SwitcherBar.tsx). Extracted so the switcher's AI results render IDENTICALLY to the
-// Search tab's (same markup, same SearchView.css classes) instead of forking a lookalike — see
-// SwitcherBar.tsx's header comment for why that matters (BUG #8, 6th bounce; #49 already burned a
-// row for a popup that didn't match its sibling).
+// Result-card rendering for the unified search surface (#8: "the search tab and the cmd+o
+// should be the same thing"): keyword CONTENT matches and Bismuth AI results, both rendered
+// by the Cmd+O switcher (palette/SwitcherBar.tsx) as identical `.sresult` cards — file header
+// + optional AI rationale + matched snippets. Extracted (originally out of the since-removed
+// SearchView tab) so no surface ever forks a lookalike of the result card.
 import { For, Show } from "solid-js";
 import { Icon } from "./icons/Icon";
-import { IconButton } from "./ui/IconButton";
 import { recordUse, fileKey } from "./frecency";
 import type { SearchResult } from "./searchOpts";
+import "./searchResults.css";
 
 /** Split a vault path into its filename (sans extension) and parent folder so each result card
  *  can show a bold title + a faint folder crumb. */
@@ -23,24 +22,27 @@ export function splitPath(path: string): { name: string; folder: string } {
 }
 
 /**
- * Renders a list of search/AI-prompt results (`.sresult` cards: file header + optional AI
- * rationale + matched snippets). `onOpen` is called with the bare path AFTER frecency has already
- * been recorded — callers should not double-record. `showReplace`/`onReplaceFile` are optional
- * (the switcher has no find-and-replace; only SearchView passes them).
+ * Renders a list of search/AI-prompt results (`.sresult` cards). `onOpen` is called with the
+ * bare path AFTER frecency has already been recorded — callers should not double-record.
+ *
+ * Keyboard-nav integration (the switcher walks these rows with Up/Down like palette rows):
+ * `selected` highlights the row at that index; `onRowPointerMove` lets the caller reselect on
+ * real mouse movement (same stationary-pointer guard idiom as the palette rows).
  */
 export function SearchResultRows(props: {
   results: SearchResult[];
   onOpen: (path: string) => void;
-  showReplace?: boolean;
-  onReplaceFile?: (path: string) => void;
+  selected?: number;
+  onRowPointerMove?: (index: number, e: MouseEvent) => void;
 }) {
   return (
     <For each={props.results}>
-      {(r) => {
+      {(r, i) => {
         const parts = splitPath(r.path);
         const open = () => { recordUse(fileKey(r.path)); props.onOpen(r.path); };
         return (
-          <div class="sresult">
+          <div class="sresult" classList={{ selected: props.selected === i() }}
+            onMouseMove={(e) => props.onRowPointerMove?.(i(), e)}>
             {/* The whole header opens the file too (not just the snippet rows) — AI results
                 carry one byte-exact snippet, but making the title row a hit target keeps every
                 result openable even if a row ever comes back without a snippet. */}
@@ -51,10 +53,6 @@ export function SearchResultRows(props: {
                 <span class="sresult-path">· {parts.folder}/</span>
               </Show>
               <span class="sresult-count">{r.matchCount}</span>
-              <Show when={props.showReplace}>
-                <IconButton label="Replace all in this file" icon="Replace" iconSize={15}
-                  onClick={(e) => { e.stopPropagation(); props.onReplaceFile?.(r.path); }} />
-              </Show>
             </div>
             <Show when={r.reason}>
               <div class="sresult-reason">{r.reason}</div>
