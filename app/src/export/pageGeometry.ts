@@ -40,6 +40,47 @@ export function pdfSliceMetrics(canvasWidthPx: number): { scale: number; pageHpx
   return { scale, pageHpx };
 }
 
+/** One page's slice of the source content raster: a [start, start+height) band of canvas px. */
+export interface PageSlice {
+  /** Source-canvas Y (px) where this page's content starts. */
+  start: number;
+  /** Source-canvas height (px) of this page's content (< pageHpx for the last / a forced-break page). */
+  height: number;
+}
+
+/**
+ * Slice a rasterized content canvas of total height `contentHpx` into page-sized bands, each
+ * at most `pageHpx` tall (one printable page). This is what makes a PDF **auto-paginate**:
+ * content taller than one page overflows onto page 2, 3, … even with NO explicit page-break
+ * markers. Each entry in `breaks` (source-px Y offsets of forced `.bismuth-page-break` markers,
+ * already scaled into canvas px) ends its page early — the next band starts exactly at the
+ * marker. Mirrors the natural-vs-forced cut the pager used to inline in htmlToPdf.ts.
+ *
+ * Pure (no DOM) so the pagination math is unit-tested in pageGeometry.test.ts.
+ */
+export function pageSlices(contentHpx: number, pageHpx: number, breaks: number[] = []): PageSlice[] {
+  const out: PageSlice[] = [];
+  if (contentHpx <= 0 || pageHpx <= 0) return out;
+  const sorted = [...breaks].sort((a, b) => a - b);
+  let offset = 0;
+  let bi = 0; // cursor into the sorted forced-break offsets
+  while (offset < contentHpx) {
+    // Skip markers at/above the current offset so a marker on a page boundary never emits an
+    // empty page.
+    while (bi < sorted.length && sorted[bi] <= offset) bi++;
+    let end = offset + pageHpx; // natural full-page bottom
+    if (bi < sorted.length && sorted[bi] < end) {
+      // A forced break inside this page ends it early; the next band starts AT the marker.
+      end = sorted[bi];
+      bi++;
+    }
+    end = Math.min(end, contentHpx);
+    out.push({ start: offset, height: end - offset });
+    offset = end;
+  }
+  return out;
+}
+
 /**
  * Parse an html2canvas-safe color string (`rgb()`/`rgba()`/`#rgb`/`#rrggbb`) to `[r,g,b]`
  * 0..255 for jsPDF's numeric `setFillColor`. Alpha is ignored (the PDF page fill is opaque).

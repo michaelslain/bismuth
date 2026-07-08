@@ -88,6 +88,11 @@ export interface ExportDeps {
   read: (path: string) => Promise<string>;
   resolveRows: (spec: SourceSpec) => Promise<Row[]>;
   htmlToPdf: (html: string) => Promise<Uint8Array>;
+  // The paginated US-Letter pages of `html` as image data: URLs (one per page) — the SAME
+  // pages htmlToPdf writes. Used by the PDF export PREVIEW to show the exact multi-page
+  // 8.5x11in / 1in-margin layout the downloaded PDF has (rendering the real pages, not the raw
+  // source HTML). Browser-only (html2canvas), like htmlToPdf/htmlToPng.
+  htmlToPdfPages: (html: string) => Promise<string[]>;
   htmlToPng: (html: string) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
   drawingToPng: (docText: string, theme: ExportTheme) => Promise<{ bytes: Uint8Array; dataUrl: string }>;
   // Inline KaTeX stylesheet (CSS + base64 woff2 fonts) for exports that contain rendered math.

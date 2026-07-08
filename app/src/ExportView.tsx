@@ -28,6 +28,8 @@ import "./ExportView.css";
 // same `htmlToPdf` implementation, code-split into its own chunk (see vite manualChunks).
 const htmlToPdf = (html: string): Promise<Uint8Array> =>
   import("./export/htmlToPdf").then((m) => m.htmlToPdf(html));
+const htmlToPdfPages = (html: string): Promise<string[]> =>
+  import("./export/htmlToPdf").then((m) => m.htmlToPdfPages(html));
 const htmlToPng = (html: string): Promise<{ bytes: Uint8Array; dataUrl: string }> =>
   import("./export/htmlToPdf").then((m) => m.htmlToPng(html));
 
@@ -75,6 +77,7 @@ const deps: ExportDeps = {
   read: (p) => api.read(p),
   resolveRows: (spec) => api.resolveRows(spec),
   htmlToPdf,
+  htmlToPdfPages,
   htmlToPng,
   drawingToPng,
   // The Vite `?inline`-bundled inline-CSS module (~400KB), dynamic-imported only when an
