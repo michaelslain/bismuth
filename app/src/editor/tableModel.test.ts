@@ -30,6 +30,7 @@ import {
   moveColumn,
   reorderDropIndex,
   reorderFinalIndex,
+  moveInArray,
   rectFromCells,
   regionsOverlap,
   normalizeMergeRegions,
@@ -708,4 +709,45 @@ test("reorderFinalIndex shifts a forward drop one slot earlier", () => {
   expect(reorderFinalIndex(0, 3)).toBe(2); // drag col 0 past the end of a 3-col table
   expect(reorderFinalIndex(2, 0)).toBe(0); // drag col 2 to the front
   expect(reorderFinalIndex(1, 1)).toBe(1); // no-op slot
+});
+
+// ── #69 moveInArray: a column's persisted WIDTH must travel with the column on reorder ──────────
+// The width array is permuted with the EXACT same splice as moveColumn, so a reorder reads as a
+// visual swap (the moved column keeps its own width) instead of the moved column inheriting its
+// new neighbour's width. These cases mirror the moveColumn cases above by index.
+test("moveInArray permutes with the same semantics as moveColumn (width follows the column)", () => {
+  // Widths [197, 351, 106] for columns [Name, Description, Notes]; move col 0 (Name, 197) to end.
+  expect(moveInArray([197, 351, 106], 0, 2)).toEqual([351, 106, 197]);
+  // Move the last column to the front.
+  expect(moveInArray([197, 351, 106], 2, 0)).toEqual([106, 197, 351]);
+  // A middle→front move.
+  expect(moveInArray([10, 20, 30, 40], 2, 0)).toEqual([30, 10, 20, 40]);
+});
+
+test("moveInArray carries nulls (un-sized columns) in the right slots", () => {
+  expect(moveInArray([null, 120, null], 1, 0)).toEqual([120, null, null]);
+});
+
+test("moveInArray returns an unchanged COPY for no-op / out-of-range moves", () => {
+  const orig = [1, 2, 3];
+  const same = moveInArray(orig, 1, 1);
+  expect(same).toEqual([1, 2, 3]);
+  expect(same).not.toBe(orig); // always a fresh array (never mutates the input)
+  expect(moveInArray(orig, -1, 2)).toEqual([1, 2, 3]);
+  expect(moveInArray(orig, 0, 9)).toEqual([1, 2, 3]);
+});
+
+test("moveInArray + moveColumn stay index-aligned for the same (from,to)", () => {
+  // The whole point: applying the same move to the grid columns and to the width array must keep
+  // width[i] paired with column[i] afterwards.
+  const g: TableGrid = { cells: [["Name", "Desc", "Notes"], ["a", "b", "c"]], aligns: ["none", "none", "none"] };
+  const widths = [197, 351, 106];
+  const from = 0, to = 2;
+  const movedGrid = moveColumn(g, from, to);
+  const movedWidths = moveInArray(widths, from, to);
+  expect(movedGrid.cells[0]).toEqual(["Desc", "Notes", "Name"]);
+  expect(movedWidths).toEqual([351, 106, 197]);
+  // Name is now at index 2 and still carries its own 197px width.
+  expect(movedGrid.cells[0][2]).toBe("Name");
+  expect(movedWidths[2]).toBe(197);
 });

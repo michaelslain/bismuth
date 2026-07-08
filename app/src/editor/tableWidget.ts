@@ -32,6 +32,7 @@ import {
   moveColumn,
   reorderDropIndex,
   reorderFinalIndex,
+  moveInArray,
   type MergeRegion,
   normalizeMergeRegions,
   coveredCells,
@@ -691,15 +692,17 @@ export class TableWidget extends WidgetType {
       // block-renders to no line box and collapses to a sliver — much shorter than filled rows —
       // so on BLUR the cell/row shrinks and the table jumps ("clicking off hides the empty line",
       // #62). The reservation must hold in the rendered/blurred state (this face), not only while a
-      // cell is focused. We do it TWO ways so it holds in every engine:
-      //   1. the `cm-td-empty` class (robust where `:empty` is fragile — a stray whitespace text
-      //      node from the reader defeats `:empty`) drives a CSS `::after` nbsp; and
-      //   2. a REAL non-breaking-space placeholder injected as actual DOM content. A real text line
-      //      box reserves a full line in EVERY engine, closing the WebKit gap where both
-      //      `min-height` on a `display: table-cell` AND generated content on a `td` have diverged
-      //      from Chromium (the packaged app is Safari's WKWebView). It is display-only — `readGrid`
-      //      reads `data-src`, never the cell's DOM text, so the source stays empty and the next
-      //      `renderDisplay` overwrites it. Skipped when the cell holds real media (img/iframe/…).
+      // cell is focused. We inject a REAL placeholder element — `span.cm-td-ph` holding a
+      // non-breaking space — that Editor.css styles as a BLOCK with an explicit `min-height` tied to
+      // the cell line-height. Prior attempts (min-height on the `td`, an `::after` nbsp, an *inline*
+      // nbsp span) held in Chromium but NOT in the packaged app's WebKit/WKWebView: WebKit ignores
+      // `min-height` on a `display: table-cell` and doesn't reliably give a lone inline nbsp its own
+      // line box inside a table-cell. A block box with `min-height` establishes a line box WebKit
+      // cannot collapse — engine-agnostic (see the Editor.css note). The `cm-td-empty` class is kept
+      // as a hook (robust where `:empty` is fragile — a stray reader whitespace node defeats
+      // `:empty`). Display-only — `readGrid` reads `data-src`, never the cell's DOM text, so the
+      // source stays empty and the next `renderDisplay` overwrites it. Skipped when the cell holds
+      // real media (img/iframe/…).
       const hasMedia = !!cell.querySelector("img, iframe, video, audio, svg, .cm-embed");
       const isEmpty = !hasMedia && (cell.textContent ?? "").trim() === "";
       cell.classList.toggle("cm-td-empty", isEmpty);
@@ -1190,26 +1193,29 @@ export class TableWidget extends WidgetType {
       });
     };
 
-    // Column x-boundaries (wrap-relative, ascending, length cols+1). Header cells are never merged
-    // (#62 merges are body-only), so the header row's cell widths give the true column edges. In ∞
-    // (infinity) mode the table lives in a horizontal scroller (`scroll`), and `table.offsetLeft` is
-    // measured from the wrap and does NOT include the scroller's `scrollLeft` — so we subtract it to
-    // get the VISUAL edge. Without this the resize handles + drag grips drift out of alignment the
-    // moment the table is scrolled, which is why column resize "sometimes didn't work" in ∞ mode
-    // (the handle sat over the wrong border, or off the visible table entirely) (#70a).
+    // Column x-boundaries (wrap-relative VISUAL coordinates, ascending, length cols+1). Header
+    // cells are never merged (#62 merges are body-only), so the header row's cell edges give the
+    // true column borders. Measured via `getBoundingClientRect()` relative to the wrap's own rect —
+    // NOT `offsetLeft` + a manual `scrollLeft` subtraction (the prior #70a approach, which regressed:
+    // `getBoundingClientRect` already reflects the ∞-mode horizontal scroll AND any WebKit
+    // offsetParent divergence, so handles/grips track the visible border in EVERY engine, scrolled
+    // or not — the same reason the native-drop hit-test switched off `elementFromPoint`). Reads live
+    // geometry each call so a mid-drag / mid-scroll relayout stays exact.
     const colBoundaries = (): number[] => {
+      const wrapRect = root.getBoundingClientRect();
       const headerCells = rowEls[0] ? (Array.from(rowEls[0].children) as HTMLElement[]) : [];
-      const base = table.offsetLeft - scroll.scrollLeft;
-      const b = [base];
-      let x = base;
-      for (const cell of headerCells) { x += cell.offsetWidth; b.push(x); }
+      if (headerCells.length === 0) return [table.getBoundingClientRect().left - wrapRect.left];
+      const b: number[] = [headerCells[0].getBoundingClientRect().left - wrapRect.left];
+      for (const cell of headerCells) b.push(cell.getBoundingClientRect().right - wrapRect.left);
       return b;
     };
-    // Row y-boundaries (wrap-relative, ascending, length rowCount+1). No vertical scroll to correct.
+    // Row y-boundaries (wrap-relative VISUAL coordinates, ascending, length rowCount+1). Same
+    // rect-based measurement as the columns; no vertical scroll, but rect coords keep it uniform.
     const rowBoundaries = (): number[] => {
-      const b = [table.offsetTop];
-      let y = table.offsetTop;
-      for (const tr of rowEls) { y += tr.offsetHeight; b.push(y); }
+      const wrapRect = root.getBoundingClientRect();
+      if (rowEls.length === 0) return [table.getBoundingClientRect().top - wrapRect.top];
+      const b: number[] = [rowEls[0].getBoundingClientRect().top - wrapRect.top];
+      for (const tr of rowEls) b.push(tr.getBoundingClientRect().bottom - wrapRect.top);
       return b;
     };
 
@@ -1218,15 +1224,19 @@ export class TableWidget extends WidgetType {
     // has scrolled OUT of the visible scroller are hidden so a scrolled ∞ table never leaves a
     // resize strip floating over the wrong column (#70a).
     const layout = (): void => {
-      const th = table.offsetHeight;
-      const oy = table.offsetTop;
+      const wrapRect = root.getBoundingClientRect();
+      const tableRect = table.getBoundingClientRect();
+      const scrollRect = scroll.getBoundingClientRect();
+      const th = tableRect.height;
+      const oy = tableRect.top - wrapRect.top;
       const xs = colBoundaries();
       const ys = rowBoundaries();
-      // Visible x-window of the scroller (wrap-relative); columns scrolled past its edges are hidden.
-      const viewL = scroll.offsetLeft;
-      const viewR = scroll.offsetLeft + scroll.clientWidth;
+      // Visible x-window of the scroller (wrap-relative VISUAL coords); a column border scrolled
+      // past either edge in ∞ mode is hidden so a resize strip never floats over the wrong column.
+      const viewL = scrollRect.left - wrapRect.left;
+      const viewR = viewL + scroll.clientWidth;
       const inView = (px: number): boolean => px >= viewL - 0.5 && px <= viewR + 0.5;
-      const base = xs[0] ?? table.offsetLeft;
+      const base = xs[0] ?? 0;
       // Resize handles sit on the RIGHT border of each column.
       for (let c = 0; c < colHandles.length; c++) {
         const h = colHandles[c];
@@ -1260,45 +1270,89 @@ export class TableWidget extends WidgetType {
     // Grab a column grip (or body-row grip) and drop it into a new slot; the drop line tracks the
     // insertion point and the underlying markdown is rewritten via moveColumn / moveRow. Focus
     // follows the moved column/row so the reshape rebuild never leaves a big caret (see commit).
+    // Add / remove the "this track is being dragged" tint on every cell of a column or body row, so
+    // the drag reads as a real object picking up and moving into a slot (#69 smoothness) rather than
+    // just a thin line appearing. Pure DOM class toggle, cheap.
+    const markDragged = (axis: "col" | "row", idx: number, on: boolean): void => {
+      const cls = axis === "col" ? "cm-td-drag-col" : "cm-td-drag-row";
+      for (let r = 0; r < cellEls.length; r++) {
+        for (let c = 0; c < (cellEls[r]?.length ?? 0); c++) {
+          if ((axis === "col" ? c : r) === idx) cellEls[r]?.[c]?.classList.toggle(cls, on);
+        }
+      }
+    };
     const startReorder = (axis: "col" | "row", from: number, e: MouseEvent): void => {
       e.preventDefault();
       e.stopPropagation();
       root.classList.add("cm-table-reordering");
       document.body.style.cursor = "grabbing";
       document.body.style.userSelect = "none";
+      markDragged(axis, from, true);
       let slot = from;
-      const onMove = (me: MouseEvent): void => {
-        const tRect = table.getBoundingClientRect();
+      // Coalesce pointer moves into ONE per animation frame: the raw mousemove stream fires far
+      // faster than the display refreshes, and each handler reads live layout (getBoundingClientRect)
+      // + writes the drop-line style — doing that every event thrashed layout and made the drag feel
+      // laggy/steppy. rAF-throttling gives one smooth reposition per painted frame (#69).
+      let raf = 0;
+      let pending: MouseEvent | null = null;
+      const apply = (me: MouseEvent): void => {
+        const wrapRect = root.getBoundingClientRect();
         if (axis === "col") {
           const xs = colBoundaries();
-          const pos = table.offsetLeft + (me.clientX - tRect.left);
+          const pos = me.clientX - wrapRect.left; // wrap-relative VISUAL x, same space as `xs`
           slot = reorderDropIndex(xs, pos);
           dropLine.style.display = "block";
-          dropLine.style.left = `${xs[slot] ?? table.offsetLeft}px`;
-          dropLine.style.top = `${table.offsetTop}px`;
+          dropLine.style.left = `${xs[slot] ?? xs[0] ?? 0}px`;
+          dropLine.style.top = `${(rowBoundaries()[0] ?? 0)}px`;
           dropLine.style.width = "2px";
-          dropLine.style.height = `${table.offsetHeight}px`;
+          dropLine.style.height = `${table.getBoundingClientRect().height}px`;
         } else {
           const ys = rowBoundaries();
-          const pos = table.offsetTop + (me.clientY - tRect.top);
+          const pos = me.clientY - wrapRect.top; // wrap-relative VISUAL y
           slot = Math.max(reorderDropIndex(ys, pos), 1); // body rows only — never above the header
+          const xs = colBoundaries();
           dropLine.style.display = "block";
-          dropLine.style.left = `${table.offsetLeft}px`;
-          dropLine.style.top = `${ys[slot] ?? table.offsetTop}px`;
+          dropLine.style.left = `${xs[0] ?? 0}px`;
+          dropLine.style.top = `${ys[slot] ?? ys[0] ?? 0}px`;
           dropLine.style.height = "2px";
-          dropLine.style.width = `${table.offsetWidth}px`;
+          dropLine.style.width = `${table.getBoundingClientRect().width}px`;
         }
+      };
+      const onMove = (me: MouseEvent): void => {
+        pending = me;
+        if (raf) return;
+        raf = requestAnimationFrame(() => { raf = 0; if (pending) apply(pending); });
       };
       const onUp = (): void => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
+        if (raf) { cancelAnimationFrame(raf); raf = 0; }
+        // Flush the final pointer position synchronously: a fast drag (or a background tab, where
+        // rAF is throttled) can release the button before any throttled frame ran, which would leave
+        // `slot` at its initial `from` and silently drop the reorder. Recompute from the last move.
+        if (pending) apply(pending);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
         root.classList.remove("cm-table-reordering");
+        markDragged(axis, from, false);
         dropLine.style.display = "none";
         const to = reorderFinalIndex(from, slot);
         if (to !== from) {
           if (axis === "col") {
+            // Carry this column's persisted WIDTH with it (#69): permute the stored per-column
+            // width array with the SAME move BEFORE the commit, under the CURRENT header key — so
+            // when the reshaping commit migrates the visual state onto the new header key
+            // (reshapeVisual, same column count → widths kept), the widths already sit in their new
+            // positions. Without this the moved column adopts its new neighbour's width (a reorder
+            // looked like a shuffle, not a visual swap).
+            const key = sizeKey(this.cells);
+            const cur = loadVisual(this.notePath, key);
+            if (cur && cur.cols.some((w) => w != null)) {
+              const colCount = this.cells[0]?.length ?? cur.cols.length;
+              const padded = cur.cols.slice();
+              while (padded.length < colCount) padded.push(null);
+              updateVisual(this.notePath, key, { cols: moveInArray(padded, from, to) });
+            }
             pendingCellFocus = { r: 0, c: to };
             this.commit(view, root, (g) => moveColumn(g, from, to));
           } else {
