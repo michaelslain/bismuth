@@ -71,10 +71,14 @@ export interface ChatComposerProps {
    *  text paste, so pasting markdown lands in the doc normally. */
   onPaste: (e: ClipboardEvent) => void;
   /** Delegated keydown for the composer's OWN keys (Enter=send, Shift+Enter=newline, Escape=stop,
-   *  slash-popover nav). Returns true when it fully handled the event so CodeMirror stops — false to
-   *  let CodeMirror handle it (a plain newline, ordinary typing). NOT called for keys the vault
-   *  autocomplete popup owns while it's open (those go straight to CodeMirror). */
-  onKeyDown: (e: KeyboardEvent) => boolean;
+   *  slash-popover nav, ArrowUp/Down=prompt-history recall at a boundary). Returns true when it fully
+   *  handled the event so CodeMirror stops — false to let CodeMirror handle it (a plain newline,
+   *  ordinary typing/caret movement). NOT called for keys the vault autocomplete popup owns while it's
+   *  open (those go straight to CodeMirror). `boundary` reports whether the caret sits on the
+   *  composer's first/last VISUAL line (computed here via CodeMirror's own line-wrap-aware
+   *  `moveVertically`, since ChatView has no view instance to ask) — only meaningful for the
+   *  corresponding Arrow key; see `classifyComposerKey`. */
+  onKeyDown: (e: KeyboardEvent, boundary: { atTop: boolean; atBottom: boolean }) => boolean;
   /** Receives the imperative handle once the view is mounted. */
   onReady: (handle: ComposerHandle) => void;
 }
@@ -107,7 +111,19 @@ export function ChatComposer(props: ChatComposerProps) {
               if (completionStatus(v.state) === "active" && ["Enter", "ArrowDown", "ArrowUp", "Escape", "Tab"].includes(e.key)) {
                 return false;
               }
-              return props.onKeyDown(e);
+              // Boundary check for prompt-history recall (Row 84): only meaningful for a collapsed
+              // caret on a plain ArrowUp/ArrowDown press. `moveVertically` is CodeMirror's own
+              // wrap-aware vertical-motion primitive — it returns the SAME position when there's no
+              // visual line above/below to move into, which is exactly "top"/"bottom" of the composer
+              // even inside a soft-wrapped multi-line draft.
+              let atTop = false;
+              let atBottom = false;
+              const sel = v.state.selection.main;
+              if (sel.empty && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                if (e.key === "ArrowUp") atTop = v.moveVertically(sel, false).head === sel.head;
+                else atBottom = v.moveVertically(sel, true).head === sel.head;
+              }
+              return props.onKeyDown(e, { atTop, atBottom });
             },
             paste: (e) => {
               props.onPaste(e);
