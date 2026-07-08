@@ -8,6 +8,7 @@ import {
   CONTENT_H_PT,
   PAGE_W_PX,
   pdfSliceMetrics,
+  pageSlices,
   parseRgbColor,
 } from "./pageGeometry";
 
@@ -50,6 +51,86 @@ describe("pdfSliceMetrics", () => {
     const two = pdfSliceMetrics(1632);
     expect(two.scale).toBeCloseTo(one.scale / 2, 10);
     expect(two.pageHpx).toBeGreaterThanOrEqual(one.pageHpx * 2 - 1);
+  });
+});
+
+describe("pageSlices — auto-pagination of overflow content", () => {
+  test("content shorter than one page -> a single slice covering all of it (no forced break needed)", () => {
+    expect(pageSlices(500, 1000)).toEqual([{ start: 0, height: 500 }]);
+  });
+
+  test("content exactly one page tall -> exactly one slice", () => {
+    expect(pageSlices(1000, 1000)).toEqual([{ start: 0, height: 1000 }]);
+  });
+
+  // THE regression the user reported: a long doc with NO explicit page-break markers must still
+  // split into multiple fixed-height pages, not render onto one endless page.
+  test("content 2.5x a page tall with NO breaks -> auto-flows onto 3 pages", () => {
+    const slices = pageSlices(2500, 1000);
+    expect(slices).toEqual([
+      { start: 0, height: 1000 },
+      { start: 1000, height: 1000 },
+      { start: 2000, height: 500 },
+    ]);
+  });
+
+  test("every full page is exactly pageHpx tall; only the last is shorter", () => {
+    const pageHpx = 640;
+    const slices = pageSlices(pageHpx * 4 + 123, pageHpx);
+    expect(slices).toHaveLength(5);
+    for (const s of slices.slice(0, -1)) expect(s.height).toBe(pageHpx);
+    expect(slices.at(-1)).toEqual({ start: pageHpx * 4, height: 123 });
+    // Slices tile the whole content with no gaps/overlap.
+    for (let i = 1; i < slices.length; i++) {
+      expect(slices[i].start).toBe(slices[i - 1].start + slices[i - 1].height);
+    }
+  });
+
+  test("a forced break inside a page ends it early; the next page starts AT the marker", () => {
+    // Break at 300 (< pageHpx 1000): page 1 is [0,300), page 2 resumes at 300.
+    const slices = pageSlices(1500, 1000, [300]);
+    expect(slices).toEqual([
+      { start: 0, height: 300 },
+      { start: 300, height: 1000 },
+      { start: 1300, height: 200 },
+    ]);
+  });
+
+  test("multiple forced breaks each cut a page, and overflow between them still auto-paginates", () => {
+    // Breaks at 300 and 2600; between 300 and 2600 (2300px) is >2 pages, so it auto-splits.
+    const slices = pageSlices(2800, 1000, [300, 2600]);
+    expect(slices).toEqual([
+      { start: 0, height: 300 },     // forced break at 300
+      { start: 300, height: 1000 },  // auto page
+      { start: 1300, height: 1000 }, // auto page
+      { start: 2300, height: 300 },  // forced break at 2600
+      { start: 2600, height: 200 },  // remainder
+    ]);
+  });
+
+  test("a break exactly on the natural page bottom is a no-op (never an empty page)", () => {
+    // From offset 0 the page naturally ends at 1000; a marker AT 1000 adds nothing.
+    expect(pageSlices(1500, 1000, [1000])).toEqual([
+      { start: 0, height: 1000 },
+      { start: 1000, height: 500 },
+    ]);
+  });
+
+  test("breaks are honored regardless of input order (sorted internally)", () => {
+    // Same result whether passed [1200,400] or [400,1200].
+    const expected = [
+      { start: 0, height: 400 },
+      { start: 400, height: 800 },
+      { start: 1200, height: 400 },
+    ];
+    expect(pageSlices(1600, 1000, [1200, 400])).toEqual(expected);
+    expect(pageSlices(1600, 1000, [400, 1200])).toEqual(expected);
+  });
+
+  test("empty / degenerate inputs -> no slices (never loops forever)", () => {
+    expect(pageSlices(0, 1000)).toEqual([]);
+    expect(pageSlices(1000, 0)).toEqual([]);
+    expect(pageSlices(-5, 1000)).toEqual([]);
   });
 });
 
