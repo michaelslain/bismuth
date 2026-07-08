@@ -2064,7 +2064,7 @@ export default function App() {
                   display: rect() ? "block" : "none",
                 }}>
                   <Suspense fallback={<div class="full" />}>
-                    <ChatView chatId={id.slice(CHAT_PREFIX.length)} />
+                    <ChatView chatId={id.slice(CHAT_PREFIX.length)} noteNames={noteCandidates} tagNames={tagCandidates} />
                   </Suspense>
                 </div>
               );
