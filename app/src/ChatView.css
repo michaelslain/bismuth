@@ -63,9 +63,17 @@
 .chat-context.warn svg { opacity: 1; }
 .chat-mode-select {
   min-width: 124px;
+  /* Cap it: .ui-input sets width:100%, so as a flex item its basis resolves to the whole bar and
+     it would devour the row (crushing the title crumb). A max-width keeps it content-sized. */
+  max-width: 150px;
   height: 28px;
   font-size: 12.5px;
 }
+/* Row 75: the chat's title lives in the toolbar crumb (headerTitle) — give it a real slice of the
+   bar and let a long title ellipsize, instead of the .ui-input selects (width:100%) starving it to
+   a sliver. Scoped to the chat host so other views' crumbs are untouched. */
+.chat-host .viewbar .crumb { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: 2px; }
+.chat-host .viewbar .crumb b { min-width: 0; }
 /* The header model picker (replaces the read-only .chat-model span once `models` arrive). */
 .chat-model-select {
   min-width: 132px;
@@ -78,6 +86,9 @@
    its labels are short (Low / Medium / High / Extra high / Max). */
 .chat-effort-select {
   min-width: 92px;
+  /* Cap it (see .chat-mode-select) — its labels are short (Low…Extra high), so a tight max keeps
+     the bar compact and leaves room for the title crumb. */
+  max-width: 132px;
   height: 28px;
   font-size: 12px;
   margin-left: 8px;
