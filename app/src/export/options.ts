@@ -3,6 +3,18 @@
 // default lives in one place (used by the CLI, the in-app ExportView, and tests).
 import type { ExportOptions, RenderMode } from "./types";
 
+/** Default PDF body font size, in points — a standard document body size. */
+export const DEFAULT_PDF_FONT_SIZE = 12;
+
+/** The font sizes (pt) offered in the PDF export UI. */
+export const PDF_FONT_SIZES: readonly number[] = [9, 10, 11, 12, 14, 16, 18];
+
+/** Clamp an arbitrary font-size request into the supported range (guards CLI/headless input). */
+export function clampPdfFontSize(pt: number): number {
+  if (!Number.isFinite(pt)) return DEFAULT_PDF_FONT_SIZE;
+  return Math.max(6, Math.min(48, pt));
+}
+
 export function defaultExportOptions(): ExportOptions {
   return {
     viewIndex: 0,
@@ -11,6 +23,7 @@ export function defaultExportOptions(): ExportOptions {
     calStart: "",
     weekStartsOnMonday: true,
     militaryTime: false,
+    pdfFontSize: DEFAULT_PDF_FONT_SIZE,
     includeFrontmatter: true,
   };
 }

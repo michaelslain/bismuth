@@ -48,6 +48,13 @@ export interface ExportOptions {
   weekStartsOnMonday: boolean;  // week/month grid start; default true
   militaryTime: boolean;        // 24h vs 12h event times; default false
 
+  // Body font size (in points) for the PDF export. Applied to the wrapped document's <body>
+  // for the pdf format only (html/png/md/csv keep their intrinsic sizing). Larger sizes make
+  // the rendered text bigger AND repaginate (taller content overflows onto more Letter pages).
+  // Default 12 (a standard document body size). The PDF raster is laid out at the 6.5in
+  // printable width @ 96dpi, so 1 CSS point maps to 1 PDF point — the chosen size is true.
+  pdfFontSize: number;
+
   // Whether the note's leading YAML frontmatter block is included in the exported output.
   // Applies only to a plain (non-base) `.md` file: `md` export keeps/strips the raw block;
   // `html`/`pdf`/`png` keep/strip it from the rendered body before `renderMarkdown`. Default
