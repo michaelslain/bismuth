@@ -23,3 +23,16 @@ export function publishChatTitle(chatId: string, title: string): void {
     return next;
   });
 }
+
+/** The title to show for a chat, matching the TAB's precedence exactly (see tabIds.contentLabel +
+ *  App's onChatRename): an explicit `/rename` override wins, else the backend-published session
+ *  title, else the daemon-persona / "Chat" fallback. Pure so both the header Crumb (ChatView) and
+ *  the tests share one resolution. Row 75: the chat's title is now shown in the chat pane's toolbar,
+ *  not only on the tab. */
+export function resolveChatHeaderTitle(
+  rename: string | undefined,
+  title: string | undefined,
+  fallback: string,
+): string {
+  return rename?.trim() || title?.trim() || fallback;
+}
