@@ -5,7 +5,14 @@
 // color-mix()/var() — which the export doc + html2canvas can't evaluate. So we resolve each
 // to a literal rgb()/hex by applying it to a probe element and reading the computed color.
 // Headless callers never reach this (they keep DEFAULT_PALETTE).
+//
+// The probe alone is NOT enough: Chrome serializes the computed value of a color-mix that
+// carries alpha (every `color-mix(… X%, transparent)` var — --border/--faint/--panel/…) as
+// a CSS Color 4 `color(srgb r g b / a)` function, which html2canvas can't parse either
+// ("Attempting to parse an unsupported color function 'color'"). So every probed value is
+// additionally normalized to rgb()/rgba() via cssColor.normalizeCssColor.
 import { DEFAULT_PALETTE } from "./exportTheme";
+import { normalizeCssColor } from "./cssColor";
 import type { ExportTheme, ThemePalette, PaletteToken } from "./types";
 
 const TOKENS: PaletteToken[] = ["accent", "teal", "blue", "violet", "green", "gold", "rose"];
@@ -23,26 +30,31 @@ export function readThemePalette(scheme: ExportTheme): ThemePalette {
     const probe = document.createElement("span");
     probe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none;width:0;height:0";
     document.body.appendChild(probe);
-    // Resolve a CSS color expression (var()/color-mix/hex) to a literal rgb() string.
-    const lit = (expr: string): string => {
+    const fallback = DEFAULT_PALETTE[scheme];
+    // Resolve a CSS color expression (var()/color-mix/hex) to a literal rgb()/rgba() the
+    // rasterizer can parse. The probe's computed color may still be a `color(srgb …)`
+    // serialization (see header comment) — normalizeCssColor converts it; when even that
+    // fails, the given palette default wins so an export never carries an unsafe color.
+    const lit = (expr: string, dflt: string): string => {
       probe.style.color = "";
       probe.style.color = expr;
-      return getComputedStyle(probe).color || expr;
+      return normalizeCssColor(getComputedStyle(probe).color || expr, dflt);
     };
 
-    const tokens = Object.fromEntries(TOKENS.map((t) => [t, lit(`var(--${t})`)])) as Record<PaletteToken, string>;
+    const tokens = Object.fromEntries(
+      TOKENS.map((t) => [t, lit(`var(--${t})`, fallback.tokens[t])]),
+    ) as Record<PaletteToken, string>;
     const font = getComputedStyle(document.body).fontFamily || DEFAULT_PALETTE[scheme].font;
-    const fallback = DEFAULT_PALETTE[scheme];
 
     const chrome =
       scheme === "dark"
         ? {
-            bg: lit("var(--bg)"),
-            fg: lit("var(--fg)"),
-            muted: lit("var(--faint)"),
-            border: lit("var(--border)"),
-            cell: lit("var(--panel)"),
-            head: lit("var(--surface-2)"),
+            bg: lit("var(--bg)", fallback.bg),
+            fg: lit("var(--fg)", fallback.fg),
+            muted: lit("var(--faint)", fallback.muted),
+            border: lit("var(--border)", fallback.border),
+            cell: lit("var(--panel)", fallback.cell),
+            head: lit("var(--surface-2)", fallback.head),
           }
         : { bg: fallback.bg, fg: fallback.fg, muted: fallback.muted, border: fallback.border, cell: fallback.cell, head: fallback.head };
 
