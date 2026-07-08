@@ -7,8 +7,9 @@
 // iridescent bismuth, DOMPurify sanitize). This supersedes the previous inline-tokens +
 // `<br>`-marker convention (cellList/inlineMarkdown) for the DISPLAY face only:
 //
-//   • the EDIT face (raw source with real line breaks on focus) is untouched;
-//   • the READ-BACK (cellSourceFromDom → `<br>`-joined single-line source) is untouched;
+//   • the EDIT face is now a nested CodeMirror editor (cellEditor.ts) — same live-preview stack as
+//     the note body — loaded via `cellSourceToBlockMarkdown` and committed via `cmDocToCellSource`;
+//   • that DOC ⇄ source round-trip is the `<br>` ↔ newline bridge below (lossless, tested here);
 //   • only what the idle cell SHOWS changes engine.
 //
 // The bridge between the two worlds is one line: the cell's stored `<br>` markers (a GFM cell
@@ -28,9 +29,19 @@ import { renderEmbedHtml } from "./inlineMarkdown";
 import { escapeAttr } from "../htmlEscape";
 
 /** A cell's stored single-line source → block markdown: every `<br>`/`<br/>` marker becomes a
- *  real newline for the block parser. Pure. */
+ *  real newline for the block parser. Pure. Also the doc the in-cell CodeMirror EDIT face (#15/#49,
+ *  cellEditor.ts) loads, so a `<br>`-carried multi-line cell edits as genuine lines. */
 export function cellSourceToBlockMarkdown(src: string): string {
   return src.replace(/<br\s*\/?>/gi, "\n");
+}
+
+/** The inverse of `cellSourceToBlockMarkdown`: the in-cell editor's multi-line DOC → the cell's
+ *  stored single-line GFM source, mapping each real newline back to a `<br>` marker (a GFM cell is
+ *  one source line). Surrounding whitespace is trimmed (never the `<br>` markers, so a deliberate
+ *  trailing break survives), matching the old contenteditable read-back's `.trim()`. Pure — this is
+ *  the lossless round-trip the nested CodeMirror commits through on blur / cell-nav. */
+export function cmDocToCellSource(doc: string): string {
+  return doc.split("\n").join("<br>").trim();
 }
 
 // `![[target]]` wiki embeds + `![alt](url)` markdown images (same shapes tokenizeInline split).

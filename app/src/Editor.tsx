@@ -1,30 +1,26 @@
 // app/src/Editor.tsx
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, untrack } from "solid-js";
 import { EditorView, keymap, drawSelection, lineNumbers } from "@codemirror/view";
-import { EditorState, Compartment, Prec, type Line } from "@codemirror/state";
+import { EditorState, Compartment, type Line } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess } from "@codemirror/commands";
 import { startCompletion, acceptCompletion, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
-import { markdown, markdownKeymap } from "@codemirror/lang-markdown";
-import { toggleBold, toggleItalic } from "./editor/markdownFormat";
-import { languages } from "@codemirror/language-data";
+import { markdownKeymap } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import { syntaxHighlighting, HighlightStyle, indentUnit } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { api, apiBase } from "./api";
 import { lastChange } from "./serverVersion";
 import { primeNoteCache } from "./noteCache";
-import { livePreview } from "./editor/livePreview";
-import { enterKeymap } from "./editor/enterKeymap";
+// The shared markdown reading+writing stack (live preview + markdown + autocomplete + math +
+// bold/italic), also mounted inside table cells — see cellEditorExtensions.ts.
+import { markdownEditingExtensions } from "./editor/cellEditorExtensions";
 import { requestRelint } from "./editor/relint";
-import { notePathFacet, noteNamesFacet } from "./editor/tableState";
+import { notePathFacet, noteNamesFacet, tagNamesFacet } from "./editor/tableState";
 import { foldBlocks } from "./editor/foldBlocks";
-import { mathBlock } from "./editor/mathBlock";
-import { latexHighlightTheme } from "./editor/latexHighlight";
 import { queryBlock, queryScrollPinActive } from "./editor/queryBlock";
 import { taskFold, reorderAroundLine } from "./editor/taskFold";
 import { embedBlock } from "./editor/embedBlock";
-import { vaultCompletion } from "./editor/autocomplete";
 import { completionTheme } from "./editor/completionDisplay";
 import { datePropertyPicker } from "./editor/datePicker";
 import { iconNames } from "./icons/registry";
@@ -34,7 +30,6 @@ import { harperSpellcheck } from "./editor/harper";
 import { yamlSchema, isInFrontmatter } from "./editor/yamlSchema";
 import { frontmatterBodyRange } from "./editor/frontmatterUtils";
 import { normalizeFrontmatterSpacing } from "./editor/normalizeFrontmatter";
-import { codeHighlightStyle } from "./editor/codeHighlight";
 import { isSettingsBuffer } from "./editor/settingsBuffer";
 import { InkOverlay } from "./editor/ink/InkOverlay";
 import { SETTINGS_SCHEMA } from "../../core/src/schema/settingsSchema";
@@ -1000,28 +995,26 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // the document, so it lives inside the scroller and scrolls away with the
           // content instead of staying pinned. Only real `.md` notes get a title.
           ...(path.endsWith(".md") ? [noteTitleWidget(path)] : []),
-          // Markdown emphasis shortcuts (notes only): Cmd/Ctrl-B bold, Cmd/Ctrl-I italic.
-          // Prec.high so they beat any default Mod-i/Mod-b binding.
-          Prec.high(keymap.of([
-            { key: "Mod-b", run: toggleBold },
-            { key: "Mod-i", run: toggleItalic },
-          ])),
-          markdown({ codeLanguages: languages, extensions: [{ remove: ["IndentedCode"] }] }),
-          // Enter: continue list/blockquote markup, else a PLAIN newline (no auto-indent
-          // that would leak a stray leading space / split a ``` fence). Notes only.
-          enterKeymap,
-          syntaxHighlighting(codeHighlightStyle),
+          // The markdown reading+writing stack shared with the in-cell table editor
+          // (cellEditorExtensions.ts): Cmd/Ctrl-B/I bold/italic, the markdown language + code-block
+          // syntax highlighting, Enter list/blockquote continuation, vault autocomplete (wikilinks /
+          // tags / emoji) + its themed popup, and — gated on ed.livePreview — per-token live preview
+          // + math. ONE factory, so the note body and a table cell render + complete identically —
+          // the core of #15 (per-token reveal in a cell) and #49 (identical emoji popup).
+          ...markdownEditingExtensions({
+            completion: {
+              getNotes: props.noteNames,
+              getTags: props.tagNames,
+              getSchema: propertyRegistry,
+              getIconNames: iconNames,
+              inFrontmatter: isInFrontmatter,
+              // `[[Note#heading]]` completion fetches the target note's body to list its headings.
+              readNote: (p) => api.read(p),
+            },
+            livePreview: ed.livePreview,
+          }),
           queryBlock(() => path),
           embedBlock(props.noteNames),
-          vaultCompletion({
-            getNotes: props.noteNames,
-            getTags: props.tagNames,
-            getSchema: propertyRegistry,
-            getIconNames: iconNames,
-            inFrontmatter: isInFrontmatter,
-            // `[[Note#heading]]` completion fetches the target note's body to list its headings.
-            readNote: (p) => api.read(p),
-          }),
           yamlSchema({
             getSchema: propertyRegistry,
             mode: "frontmatter",
@@ -1036,9 +1029,14 @@ export function Editor(props: { path: string | null; initialText?: string; onSav
           // Note candidates so a wikilink clicked inside a table cell resolves to its real vault
           // path and opens (#33). A getter, not a snapshot, so it never goes stale.
           noteNamesFacet.of(props.noteNames),
+          // Tag candidates so a `#tag` typed inside a table cell completes against the SAME list the
+          // note body uses (#49) — read by the in-cell editor via this facet.
+          tagNamesFacet.of(props.tagNames),
+          // livePreview + math come from markdownEditingExtensions above (gated the same way);
+          // task-fold + block-fold stay note-only (a cell has no code blocks / long tasks to fold).
           // hasGutter tracks ed.lineNumbers so depth-0 chevrons clear the gutter when it's on;
           // safe to read here since this effect rebuilds the whole view when settings.editor changes.
-          ...(ed.livePreview ? [livePreview, taskFold(), foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers }), mathBlock(), latexHighlightTheme] : []),
+          ...(ed.livePreview ? [taskFold(), foldBlocks(() => path, "markdown", { hasGutter: ed.lineNumbers })] : []),
           // Harper spell + grammar check. Runs whenever either category is enabled;
           // it filters lints by kind so editor.spellcheck and editor.grammarCheck
           // toggle independently (default: spelling on, grammar off).

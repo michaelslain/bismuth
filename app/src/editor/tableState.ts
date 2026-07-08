@@ -23,6 +23,14 @@ export const noteNamesFacet = Facet.define<() => NoteCandidate[], () => NoteCand
   combine: (values) => values[0] ?? (() => []),
 });
 
+/** A live getter for the vault's `#tag` names (bare, no leading `#`), supplied by the editor host.
+ *  The in-cell CodeMirror EDIT face (cellEditor.ts) reads it so a cell's `#tag` autocomplete offers
+ *  the exact same candidates the note body's does (#49). A GETTER (not a snapshot) so it stays
+ *  current; defaults to an empty list when no host provides it. */
+export const tagNamesFacet = Facet.define<() => string[], () => string[]>({
+  combine: (values) => values[0] ?? (() => []),
+});
+
 /** Request raw-source mode for the table block whose header is at this 1-based line
  *  (or null to clear). */
 export const setActiveTableEffect = StateEffect.define<number | null>();
