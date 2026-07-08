@@ -319,6 +319,25 @@ test("deserialize drops a tab whose entire tree is missing and resets focus", ()
   expect(tabs).toEqual([]);
 });
 
+test("reopen round-trip preserves a chat tab's ::chat: content id (BUG #66 resume anchor)", () => {
+  // Cmd+Shift+T revives a closed tab via serialize→deserialize. The chat's ::chat:<uuid> content id
+  // is what ChatView.props.chatId keys recallChatSession() on to RESUME the conversation, so it MUST
+  // survive the round-trip byte-for-byte — a re-id or migration of it would silently reopen a blank
+  // chat instead of the prior conversation. Guards the row-66 regression.
+  const chatContent = "::chat:11111111-2222-3333-4444-555555555555";
+  const tab = makeTab(chatContent);
+  const { tabs } = deserializeTabs(serializeTabs([tab], tab.id), () => true);
+  expect(tabs.length).toBe(1);
+  expect((tabs[0].root as Leaf).content).toBe(chatContent);
+});
+
+test("reopen round-trip preserves a user-set tab name (FEATURE #75 chat rename persistence)", () => {
+  const tab = { ...makeTab("::chat:abc"), name: "My Secret Chat" };
+  const { tabs } = deserializeTabs(serializeTabs([tab], tab.id), () => true);
+  expect(tabs[0].name).toBe("My Secret Chat");
+  expect((tabs[0].root as Leaf).content).toBe("::chat:abc");
+});
+
 test("deserialize re-ids nodes so a layout with duplicate ids is healed", () => {
   // Simulates the counter-reset-across-reload bug: a persisted tree whose nodes share
   // ids. Without re-iding, splitLeaf/closeLeaf (which match by id) would hit every node

@@ -34,6 +34,7 @@ import { refreshDaemonPages, anyWorking, dueCount } from "./daemonInbox";
 import { openAppWindow, pickFolder, rememberLastVault } from "./appWindow";
 import { resolveWindowId, tabsStorageKey } from "./windowId";
 import { pushClosedSession, popClosedSession } from "./closedSession";
+import { chatColor, setChatColor, CHAT_COLOR_SWATCHES } from "./chatColors";
 import { setPendingAnchor } from "./pendingAnchor";
 import { installNativeDrop, uninstallNativeDrop } from "./nativeDrop";
 import { isReloadNavigation } from "./navType";
@@ -1786,6 +1787,26 @@ export default function App() {
       { label: tab.pinned ? "Unpin tab" : "Pin tab", icon: tab.pinned ? "PinOff" : "Pin", onSelect: () => togglePinTab(tab.id) },
     ];
     if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
+    // Chat tabs (FEATURE #75): a Color submenu that tints the WHOLE chat pane. Keyed by the chat's
+    // durable content id (::chat:<uuid>), persisted per-chat (chatColors.ts) so it survives reload +
+    // Cmd+Shift+T reopen; ChatView re-tints live off the signal. A check marks the active swatch;
+    // "None" clears back to the theme background.
+    if (content && content.startsWith(CHAT_PREFIX)) {
+      const chatId = content.slice(CHAT_PREFIX.length);
+      const current = chatColor(chatId);
+      items.push({
+        label: "Color",
+        icon: "Palette",
+        submenu: [
+          ...CHAT_COLOR_SWATCHES.map((sw) => ({
+            label: sw.name,
+            icon: current === sw.value ? "Check" : "Circle",
+            onSelect: () => setChatColor(chatId, sw.value),
+          })),
+          { label: "None", icon: current ? "Circle" : "Check", separatorBefore: true, onSelect: () => setChatColor(chatId, null) },
+        ],
+      });
+    }
     if (content && isExportable(content)) items.push({ label: "Export…", icon: "Download", onSelect: () => openExport(content) });
     openContextMenu(e.clientX, e.clientY, items, setEditorMenu);
   }
