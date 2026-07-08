@@ -119,7 +119,15 @@ export function SymbolGallery(props: Props) {
               aria-label={item.label}
               aria-selected={active() === i()}
               title={item.label}
-              onMouseEnter={() => setActive(i())}
+              // Hover-to-select fires on real pointer MOVEMENT, not `mouseenter`.
+              // When you type, the grid re-renders and the top result becomes the
+              // default selection (the createEffect above). WebKit (the packaged app's
+              // WKWebView) synthesizes `mouseenter`/`mouseover` on whatever cell now sits
+              // under a STATIONARY cursor after that re-render — which would clobber the
+              // top-result default and make Enter commit the wrong icon. `mousemove` only
+              // fires on genuine cursor motion, so a stationary cursor never overrides the
+              // search's top hit; deliberate hover still highlights normally.
+              onMouseMove={() => setActive(i())}
               onClick={() => commit(item.value)}
             >
               <Icon value={item.value} size={20} />
