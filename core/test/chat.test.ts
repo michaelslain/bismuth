@@ -52,6 +52,11 @@ describe("extractEditorContextPaths (captureToMemory's visibility gate)", () => 
     expect(extractEditorContextPaths(text)).toEqual(["secret.md"]);
   });
 
+  test("extracts referenced files (Row 79 @-mention / drag)", () => {
+    const text = "<editor-context>\nReferenced files: Projects/Gamma.md, assets/pic.png\n</editor-context>\n\nsummarize";
+    expect(extractEditorContextPaths(text)).toEqual(["Projects/Gamma.md", "assets/pic.png"]);
+  });
+
   test("extracts all three when present, active file first", () => {
     const text =
       "<editor-context>\nActive file: a.md\nOpen tabs: a.md, b.md\nCurrent selection (from b.md):\n```\nx\n```\n</editor-context>\n\nq";

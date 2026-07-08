@@ -45,6 +45,20 @@ export function upsertColor(
   return next.length > cap ? next.slice(next.length - cap) : next;
 }
 
+/** Resolve a `/color <token>` argument (Row 75) to a STORED tint value: a named swatch
+ *  (case-insensitive, e.g. `blue`), a `#rgb`/`#rrggbb` hex (e.g. `#ffcc00`), or one of the clear
+ *  keywords (`none`/`clear`/`off`/`default`/`reset` → null, revert to the theme background). Returns
+ *  `undefined` for an unrecognized token so the caller can surface an error instead of silently
+ *  doing nothing. Pure + exported for unit testing. */
+export function resolveChatColorArg(token: string): string | null | undefined {
+  const t = token.trim();
+  if (!t || /^(none|clear|off|default|reset)$/i.test(t)) return null;
+  const swatch = CHAT_COLOR_SWATCHES.find((s) => s.name.toLowerCase() === t.toLowerCase());
+  if (swatch) return swatch.value;
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(t)) return t;
+  return undefined;
+}
+
 /** Pure lookup: the remembered color for `chatId`, or null. Reads newest-first so a duplicate
  *  (shouldn't happen after upsert, but be defensive) resolves to the most recent. Exported for tests. */
 export function lookupColor(list: ChatColorEntry[], chatId: string): string | null {
