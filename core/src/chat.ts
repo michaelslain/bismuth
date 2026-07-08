@@ -5,6 +5,7 @@ import {
   getSessionMessages,
   getSessionInfo,
   type CanUseTool,
+  type EffortLevel,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
@@ -67,8 +68,11 @@ export type ChatFrame =
   /** The models this login can run (Query.supportedModels), fetched EAGERLY on session spawn — the
    *  SDK's `initialize` control request resolves the moment the CLI subprocess starts (NOT gated on a
    *  user turn), so this powers the header model picker the instant the chat opens, BEFORE the first
-   *  message (set_model is wired end-to-end). Emitted once per session (the list is static per login). */
-  | { type: "models"; models: { value: string; label: string; description: string }[] }
+   *  message (set_model is wired end-to-end). Emitted once per session (the list is static per login).
+   *  Each model also carries the reasoning-effort levels IT supports (ModelInfo.supportedEffortLevels)
+   *  so the header's Effort picker (FEATURE #63) offers exactly what the SELECTED model allows —
+   *  never a hardcoded list. Empty for a model/CLI that doesn't expose effort → the picker hides. */
+  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[] }[] }
   /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
    *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
   | { type: "title"; title: string }
@@ -210,6 +214,11 @@ interface ChatSession {
   /** The resolved `claude` binary — kept so a visibility respawn can rebuild query() without
    *  re-resolving it. */
   bin: string;
+  /** The reasoning-effort level the user chose in the header (FEATURE #63), applied LIVE via
+   *  Query.applyFlagSettings. Also stashed here so a visibility respawn (spawnChatQuery rebuilds
+   *  query() from scratch) re-applies it through the spawn `effort` option — otherwise the respawn
+   *  would silently reset effort to the model default. Undefined until the user picks one. */
+  effort?: string;
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
   deniedPathSet: Set<string>;
@@ -788,12 +797,28 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // brand-new session simply omits it.
         ...(resume ? { resume } : {}),
         // permissionMode is intentionally NOT set HERE: omitting it (like settingSources) makes the
-        // SDK resolve it from the user's OWN Claude Code config, which is the right default for
-        // headless / direct callers (CLI, tests). The in-app chat's app-level default (Bypass) is
-        // applied CLIENT-SIDE instead — ChatView sends {set_permission_mode: bypassPermissions} on
-        // each session's first manifest (see BUG #14) — so the app default can't leak into non-UI
-        // callers and the live permission tests keep exercising the real canUseTool prompt flow
-        // (bypassPermissions suppresses canUseTool entirely). Still switchable live in the header.
+        // SDK resolve the STARTING mode from the user's OWN Claude Code config, which is the right
+        // default for headless / direct callers (CLI, tests). The in-app chat's app-level default
+        // (Bypass) is applied CLIENT-SIDE instead — ChatView sends {set_permission_mode:
+        // bypassPermissions} on each session's first manifest (see BUG #14) — so the app default
+        // can't leak into non-UI callers and the live permission tests keep exercising the real
+        // canUseTool prompt flow (bypassPermissions suppresses canUseTool entirely). Still switchable
+        // live in the header.
+        //
+        // BUG #60 ("bypass doesn't work in chat"): `bypassPermissions` — whether set at spawn OR via
+        // the runtime setPermissionMode control request — is GATED behind this capability flag. The
+        // SDK only passes `--allow-dangerously-skip-permissions` to the CLI when it's true; without
+        // it the CLI silently refuses to enter bypass mode, so canUseTool kept firing and every tool
+        // call still prompted even after the client selected Bypass. Enabling the capability does NOT
+        // change the starting mode (still resolved from config above) — it only lets the client's
+        // set_permission_mode actually take effect. Visibility stays enforced under bypass: the
+        // managedSettings deny + sandbox denyRead are policy-tier and survive the permission mode.
+        allowDangerouslySkipPermissions: true,
+        // Reasoning effort (FEATURE #63) is applied LIVE via applyFlagSettings, but a visibility
+        // respawn rebuilds query() from scratch — so thread the session's chosen effort through the
+        // spawn `effort` option too so the respawn preserves it (this path also covers levels the
+        // runtime flag layer rejects, e.g. 'max'). Omitted until the user picks a level.
+        ...(session.effort ? { effort: session.effort as EffortLevel } : {}),
         // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
         // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
         // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
@@ -1045,7 +1070,12 @@ function emitSupportedModels(session: ChatSession): void {
     .then((ms) => {
       if (session.modelsSent) return; // eager + fallback raced — whoever resolved first already sent
       session.modelsSent = true;
-      emit(session, { type: "models", models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description })) });
+      emit(session, {
+        type: "models",
+        // supportedEffortLevels rides along per model (FEATURE #63) so the header's Effort picker
+        // tracks the SELECTED model's real levels — the SDK reports it, we never hardcode it.
+        models: ms.map((m) => ({ value: m.value, label: m.displayName, description: m.description, effortLevels: m.supportedEffortLevels ?? [] })),
+      });
     })
     .catch(() => {});
 }
@@ -1306,6 +1336,26 @@ export function setModel(chatId: string, model: string): void {
   if (!s) return;
   try {
     s.q.setModel(model)?.catch(() => {});
+  } catch {
+    /* session not ready / already closed */
+  }
+}
+
+/** Switch the reasoning-effort level live (FEATURE #63 — "can't select effort in chat"). Mirrors
+ *  setModel: the header's Effort picker (options come from the selected model's supportedEffortLevels
+ *  in the `models` frame) sends `set_effort` → this. There's no dedicated effort control request, so
+ *  it rides Query.applyFlagSettings (the SDK's runtime flag-settings layer — `effortLevel` sits above
+ *  user/project config, below managed policy). Also stored on the session so a mid-conversation
+ *  visibility respawn re-applies it via spawnChatQuery's `effort` option. */
+export function setEffort(chatId: string, effort: string): void {
+  const s = sessions.get(chatId);
+  if (!s) return;
+  s.effort = effort;
+  try {
+    // Cast past Settings.effortLevel's narrower type ('low'|'medium'|'high'|'xhigh') — the model may
+    // advertise 'max'; the flag layer validates server-side and no-ops an unsupported level, and the
+    // stored session.effort still re-applies it through the spawn `effort` option on the next respawn.
+    s.q.applyFlagSettings({ effortLevel: effort } as Parameters<Query["applyFlagSettings"]>[0])?.catch(() => {});
   } catch {
     /* session not ready / already closed */
   }

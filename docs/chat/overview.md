@@ -65,11 +65,17 @@ q = query({
     ...(resume ? { resume } : {}),
     systemPrompt: { type: "preset", preset: "claude_code" },
     canUseTool: canUseTool as unknown as CanUseTool,
+    allowDangerouslySkipPermissions: true,
+    ...(session.effort ? { effort: session.effort } : {}),
   },
 });
 ```
 
-`permissionMode` is intentionally **not** set — omitting it makes the SDK resolve the starting mode from the user's own Claude Code config (the user can still switch it live). The `claude_code` preset is what makes this a *visual Claude Code*: it injects the `<env>` context (working directory, platform, date), loads `CLAUDE.md`, skills, and the full tool guidance, and makes relative paths resolve against `cwd` exactly like the TUI.
+`permissionMode` is intentionally **not** set — omitting it makes the SDK resolve the *starting* mode from the user's own Claude Code config (the user can still switch it live). The `claude_code` preset is what makes this a *visual Claude Code*: it injects the `<env>` context (working directory, platform, date), loads `CLAUDE.md`, skills, and the full tool guidance, and makes relative paths resolve against `cwd` exactly like the TUI.
+
+`allowDangerouslySkipPermissions: true` **enables** the bypass capability (BUG #60). `bypassPermissions` — whether set at spawn or via the runtime `setPermissionMode` control request — is gated behind this flag: the SDK only passes `--allow-dangerously-skip-permissions` to the CLI when it's true, and without it the CLI silently refuses to enter bypass mode, so `canUseTool` kept firing and every tool call still prompted even after the user selected **Bypass** in the header. Enabling the capability does **not** change the starting mode (still resolved from config) — it only lets the client's `set_permission_mode` actually take effect. Visibility stays enforced under bypass because the `managedSettings` deny + `sandbox` `denyRead` are policy-tier and survive the permission mode.
+
+`effort` (reasoning-effort level, FEATURE #63) is applied **live** via `Query.applyFlagSettings({ effortLevel })` when the user picks one in the header, and stashed on the session so a mid-conversation visibility respawn re-applies it through this spawn option. Omitted until a level is chosen.
 
 A background **drain loop** (`drain(session)`) iterates the `query()` generator and translates each SDK message into `ChatFrame`s. It runs until the generator ends (input queue closed or the CLI exited). On any throw — including `query()`'s "Reached maximum number of turns" — it surfaces a friendly `error` frame rather than crashing the server, and (if the session ended on its own) evicts the session so the next `sendMessage` re-spawns a fresh one.
 
@@ -106,6 +112,7 @@ The `/chat` WebSocket is a text-JSON protocol. Server → client is the `ChatFra
 | `{type:"permission_response", id, behavior, always?}` | Answer a `permission` frame — `chatRespondPermission()`. |
 | `{type:"set_permission_mode", mode}` | Switch permission mode live — `chatSetPermissionMode()`. |
 | `{type:"set_model", model}` | Switch model live — `chatSetModel()` (the header model picker, populated by the `models` frame). |
+| `{type:"set_effort", effort}` | Switch reasoning-effort level live — `chatSetEffort()` → `Query.applyFlagSettings({ effortLevel })` (the header Effort picker; options come from the selected model's `effortLevels` in the `models` frame). |
 | `{type:"stop"}` | Interrupt the in-flight turn — `chatAbort()` (leaves the session resumable). |
 
 The `ChatFrame` union (server → client):
@@ -118,7 +125,7 @@ The `ChatFrame` union (server → client):
 - `{type:"tool-result", id, content, isError}` — the matching user `tool_result` block.
 - `{type:"permission", id, toolName, input}` — `canUseTool` asking the user to approve/deny.
 - `{type:"result", isError, numTurns, costUsd}` — a turn ended.
-- `{type:"models", models}` — the models this login can run (`Query.supportedModels()`, fetched once per session after the first init) — populates the header model picker.
+- `{type:"models", models}` — the models this login can run (`Query.supportedModels()`, fetched once per session after the first init) — populates the header model picker. Each entry also carries `effortLevels` (the model's `supportedEffortLevels`), which drives the header **Effort** picker (FEATURE #63) so it offers exactly the *selected* model's levels — never a hardcoded list, and hidden when the model exposes none.
 - `{type:"title", title}` — the session's conversation summary (`getSessionInfo`), emitted once a non-empty summary exists (retried at each turn-end) — names the chat tab.
 - `{type:"context", percentage, totalTokens, maxTokens}` — context-window usage after each completed turn (`Query.getContextUsage()`) — the header pill (warns past ~80%).
 - `{type:"done"}` — the turn is fully drained (pushed after `result`).
@@ -179,9 +186,11 @@ session.sink({
 });
 ```
 
-In the header `ViewBar`, `ChatView` shows the model (a live picker once the `models` frame arrives, read-only before), a tools count (`Wrench N`), a connected/total MCP count (`Server X/Y`, where "connected" matches `/connect|ready|ok/i` on each server's status), a context-usage pill (`Gauge N%`, danger-tinted past 80%), and a permission-mode `Select` (Default / Plan / Accept edits / Bypass — the fixed protocol values). The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
+In the header `ViewBar`, `ChatView` shows the model (a live picker once the `models` frame arrives, read-only before), an optional reasoning-**Effort** picker (shown only when the selected model reports >1 `effortLevels`; FEATURE #63), a tools count (`Wrench N`), a connected/total MCP count (`Server X/Y`, where "connected" matches `/connect|ready|ok/i` on each server's status), a context-usage pill (`Gauge N%`, danger-tinted past 80%), and a permission-mode `Select` (Default / Plan / Accept edits / Bypass — the fixed protocol values). The manifest's `slashCommands` drives the composer's `/`-prefix autocomplete: type `/` and the popover filters `manifest().slashCommands` by prefix (single-token only; a space turns it into an argument). Picking a command inserts `"/cmd "` into the draft so the user can add arguments before pressing Enter to send.
 
 > The model is switchable live from the header: the `models` frame (from `Query.supportedModels()`) populates a `Select` that sends `{type:"set_model"}`; before the list arrives (or for a single-model login) the active model shows read-only.
+
+> Reasoning effort is switchable the same way (FEATURE #63): the Effort `Select`'s options are the selected model's `effortLevels` (carried on the `models` frame — never hardcoded), labeled Low / Medium / High / Extra high / Max. Picking a level sends `{type:"set_effort"}` → `Query.applyFlagSettings({ effortLevel })`, and the choice persists (a transient `bismuth.chat.lastEffort` localStorage key, like the last model) so it's re-pushed to each new/resumed session on its first manifest and sticks across turns. The pure option/label/guard rules live in `app/src/chatEffort.ts` (unit-tested); the picker hides for a model that exposes no effort levels.
 
 ## Session history picker
 
