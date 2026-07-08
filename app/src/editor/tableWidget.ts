@@ -458,6 +458,31 @@ export const tableSelectionGuard = EditorState.transactionFilter.of((tr) => {
   return [tr, { selection: { anchor: mapped } }];
 });
 
+/** No "big cursor" beside a table via UNDO/REDO (#59 follow-up): `tableSelectionGuard` above is
+ *  a `transactionFilter`, but @codemirror/commands' history `pop()` dispatches undo/redo with
+ *  `filter: false` (it must — a filter that alters the transaction would corrupt the undo
+ *  stack), which makes EVERY `transactionFilter` skip it outright, ours included. A
+ *  `transactionExtender` can't fill the gap either: it may only ADD effects, its own returned
+ *  `selection` field is discarded by CM's `extendTransaction` (@codemirror/state). So an undo
+ *  that restores a selection into a table's line range — completely ordinary: undo right after
+ *  any row/column op or cell edit, whose own commit() legitimately anchors mid-table pending the
+ *  widget's cell auto-focus to mask it — leaves CM's OWN selection parked inside the
+ *  widget-replaced range with no cell actually DOM-focused, drawing the exact widget-height
+ *  caret tableSelectionGuard exists to prevent. The only remaining hook is a follow-up dispatch
+ *  from an `updateListener`, the same technique `undoRedoScrollGuard` (Editor.tsx) already uses
+ *  to single out undo/redo transactions. Scoped strictly to `isUserEvent("undo"|"redo")` so it
+ *  never touches a live commit() anchor (which isn't tagged that way) or fights pendingCellFocus. */
+export const tableUndoSelectionGuard = EditorView.updateListener.of((u) => {
+  if (!u.selectionSet) return;
+  if (!u.transactions.some((tr) => tr.isUserEvent("undo") || tr.isUserEvent("redo"))) return;
+  const sel = u.state.selection.main;
+  if (!sel.empty) return; // only a collapsed cursor draws the big caret
+  const active = u.state.field(activeTableField, false) ?? null;
+  const mapped = remapCursorOffTable(u.state.doc, sel.head, u.startState.selection.main.head, active);
+  if (mapped === sel.head) return;
+  u.view.dispatch({ selection: { anchor: mapped } });
+});
+
 export function tableCellDropTarget(
   view: EditorView,
   target: EventTarget | null,
@@ -1157,31 +1182,41 @@ export class TableWidget extends WidgetType {
     const rowCount = this.cells.length;
     // Each action re-reads the grid fresh from the DOM (in `commit`) and returns a NEW
     // grid via the pure tableModel ops, keeping the markdown source valid after every op.
+    // Every handler below focuses the CM view FIRST: the menu itself is a separate DOM
+    // overlay, so clicking one of its items leaves DOM focus on the (now-removed) button —
+    // NOT on the editor. Without reclaiming focus here, CM's own history keymap never sees
+    // an immediate Cmd+Z right after the click (it silently no-ops until the user clicks
+    // back into the note), which reads as "undo is broken" for exactly the single-step
+    // undo Delete table promises. Mirrors the "Edit source" item below, which already did this.
+    const commitFocused = (transform?: (g: TableGrid) => TableGrid | void) => {
+      view.focus();
+      this.commit(view, root, transform);
+    };
     const items: TableMenuItem[] = [
-      { label: "Insert row above", icon: "ArrowUp", disabled: r === 0, onSelect: () => this.commit(view, root, (g) => insertRow(g, r)) },
-      { label: "Insert row below", icon: "ArrowDown", onSelect: () => this.commit(view, root, (g) => insertRow(g, r + 1)) },
+      { label: "Insert row above", icon: "ArrowUp", disabled: r === 0, onSelect: () => commitFocused((g) => insertRow(g, r)) },
+      { label: "Insert row below", icon: "ArrowDown", onSelect: () => commitFocused((g) => insertRow(g, r + 1)) },
       {
         label: "Delete row",
         icon: "Trash2",
         disabled: rowCount <= 2 || r === 0, // keep the header + ≥1 body row
-        onSelect: () => this.commit(view, root, (g) => deleteRow(g, r)),
+        onSelect: () => commitFocused((g) => deleteRow(g, r)),
       },
       {
         label: "Insert column left",
         icon: "ArrowLeft",
         separatorBefore: true,
-        onSelect: () => this.commit(view, root, (g) => insertColumn(g, c)),
+        onSelect: () => commitFocused((g) => insertColumn(g, c)),
       },
       {
         label: "Insert column right",
         icon: "ArrowRight",
-        onSelect: () => this.commit(view, root, (g) => insertColumn(g, c + 1)),
+        onSelect: () => commitFocused((g) => insertColumn(g, c + 1)),
       },
       {
         label: "Delete column",
         icon: "Trash2",
         disabled: cols <= 1,
-        onSelect: () => this.commit(view, root, (g) => deleteColumn(g, c)),
+        onSelect: () => commitFocused((g) => deleteColumn(g, c)),
       },
       {
         // Delete the WHOLE table (#59) — the affordance that replaces caret-beside-the-table +
@@ -1193,6 +1228,9 @@ export class TableWidget extends WidgetType {
         onSelect: () => {
           const range = currentRange(view, root);
           if (!range) return;
+          // Reclaim focus before dispatching (see commitFocused above) so a Cmd+Z right after
+          // this click reaches CM's history and restores the table in that ONE undo step.
+          view.focus();
           // Take one adjacent newline with the block so no stray blank line is left behind.
           const from = range.from > 0 ? range.from - 1 : range.from;
           const to = range.from > 0 ? range.to : Math.min(range.to + 1, view.state.doc.length);
