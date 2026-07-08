@@ -578,3 +578,40 @@ test("remapCursorOffTable: a table at the doc EDGE keeps its outer boundary reac
   // backward with no line before → the start boundary stays
   expect(remapCursorOffTable(only, 2, only.length, null)).toBe(0);
 });
+
+// #59 follow-up: CM's undo/redo dispatches with `filter: false` (@codemirror/commands' history
+// `pop()`), which skips `EditorState.transactionFilter` — tableSelectionGuard (the filter using
+// this function) never runs for them. A widget menu op (e.g. "Insert row above") legitimately
+// anchors its commit() selection DEEP INSIDE the table's line range (a cell's offset, masked live
+// by the widget's own cell auto-focus) — undoing it later restores that exact selection with no
+// cell focused, so it must ALSO be skipped past. tableUndoSelectionGuard (tableWidget.ts) reuses
+// this SAME function from an updateListener to cover that path; these cases pin the scenario a
+// pure boundary-only head wouldn't exercise — a head deep inside an INTERIOR row, not just at the
+// block's from/to edges.
+const UNDO_DOC = Text.of([
+  "Some text before.",
+  "",
+  "| A   | B   | C   |",
+  "| --- | --- | --- |",
+  "|     |     |     |", // freshly inserted blank row (commit() anchors here)
+  "| 1   | 2   | 3   |",
+  "| 4   | 5   | 6   |",
+  "",
+  "Some text after.",
+]);
+const uFrom = UNDO_DOC.line(3).from;
+const uTo = UNDO_DOC.line(7).to;
+
+test("remapCursorOffTable: a commit()-style anchor deep in an interior row is skipped past on undo (#59 follow-up)", () => {
+  // prevHead on "Some text before." (line 1) — where the selection sat before the row-insert —
+  // head at the blank row's first cell (line 5, a few cols in, mimicking commit()'s delta anchor).
+  const prevHead = UNDO_DOC.line(1).to;
+  const head = UNDO_DOC.line(5).from + 2;
+  expect(remapCursorOffTable(UNDO_DOC, head, prevHead, null)).toBe(uTo + 1);
+});
+
+test("remapCursorOffTable: the same interior anchor skips BACKWARD when prevHead was below the table", () => {
+  const prevHead = UNDO_DOC.line(9).from; // "Some text after."
+  const head = UNDO_DOC.line(6).from + 2; // interior row, deep column offset
+  expect(remapCursorOffTable(UNDO_DOC, head, prevHead, null)).toBe(uFrom - 1);
+});
