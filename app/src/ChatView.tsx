@@ -34,6 +34,7 @@ import { getEditorTabs } from "./chatContext";
 import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { publishChatTitle } from "./chatTitles";
+import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
@@ -624,6 +625,12 @@ export function ChatView(props: { chatId: string }) {
         // Names this TAB (props.chatId — the tab's identity, independent of the view-internal
         // id a "New chat" swaps to). App's chat-label provider reads it reactively.
         publishChatTitle(props.chatId, frame.title);
+        break;
+      case "session":
+        // Remember the SDK session_id this TAB is currently on, keyed by props.chatId (the durable
+        // tab id — NOT activeChatId, which "New"/resume swaps internally). Reopening the tab
+        // (Cmd+Shift+T) resumes THIS conversation from here (see onMount). Persisted across relaunch.
+        rememberChatSession(props.chatId, frame.sessionId);
         break;
       case "context":
         setContext({ percentage: frame.percentage, totalTokens: frame.totalTokens, maxTokens: frame.maxTokens });
@@ -1267,7 +1274,15 @@ export function ChatView(props: { chatId: string }) {
   };
 
   onMount(() => {
-    connect();
+    // Resume the conversation this TAB was last on, if we remember one — so a REOPENED chat tab
+    // (Cmd+Shift+T revives the same ::chat:<id>, whose backend session was torn down on close)
+    // comes back on the SAME Claude Code conversation instead of a blank new session. resumeSession
+    // fetches its history over HTTP, replays it into the transcript, and binds the socket to resume
+    // it. A brand-new chat (no remembered session_id) takes the plain eager open — a fresh session
+    // whose manifest/models populate the header before the first message (BUG #14).
+    const resumeId = recallChatSession(props.chatId);
+    if (resumeId) void resumeSession(resumeId);
+    else connect();
     ta?.focus();
   });
 
