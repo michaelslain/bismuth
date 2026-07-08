@@ -35,6 +35,7 @@ import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { publishChatTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
+import { chatColor } from "./chatColors";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
@@ -1370,6 +1371,14 @@ export function ChatView(props: { chatId: string }) {
       class="chat-host"
       ref={host}
       classList={{ "chat-drop-active": dragActive() }}
+      // Per-chat pane tint (FEATURE #75): wash the chosen color into the pane background so the WHOLE
+      // chat surface reads as that color — the header, transcript, and composer padding are all
+      // transparent, so they paint over THIS host background — while --fg text stays legible. We set
+      // `background` directly (not the --bg token) so the color-mix can reference var(--bg) without a
+      // self-reference cycle, and it resolves against whichever theme (light/dark) is active. Reactive:
+      // picking a color in the tab's Color menu re-tints live (chatColor is signal-backed). Undefined →
+      // theme default (the .chat-host CSS `background: var(--bg)` shows through).
+      style={chatColor(props.chatId) ? { background: `color-mix(in srgb, ${chatColor(props.chatId)} 20%, var(--bg))` } : undefined}
       onDragOver={onHostDragOver}
       onDragLeave={onHostDragLeave}
       onDrop={onHostDrop}
