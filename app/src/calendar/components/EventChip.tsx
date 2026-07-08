@@ -3,7 +3,7 @@ import { Portal } from 'solid-js/web'
 import { CalendarEvent, Category } from '../types'
 import { showEventModal, settings, events, recurrenceAction } from '../state'
 import { formatTime } from '../dates'
-import { resolveCategoryColor } from '../categoryColor'
+import { eventCategoryColors, categoryFill } from '../categoryColor'
 import { EventStore } from '../EventStore'
 import { ContextMenu } from '../../ContextMenu'
 import { IconButton } from '../../ui/IconButton'
@@ -12,12 +12,11 @@ interface Props { event: CalendarEvent; masterId?: string; occurrenceDate?: stri
 
 export function EventChip(props: Props) {
   // The chip is tinted by its category's colour (a theme token → var(--token), or a
-  // custom colour); events with no resolvable category render as an outline-only ghost.
-  const category = () => props.categories.find(c => c.name === props.event.category)
-  const chipBg = () => {
-    const cat = category()
-    return cat ? `color-mix(in srgb, ${resolveCategoryColor(cat.color)} 85%, transparent)` : undefined
-  }
+  // custom colour). Multiple categories blend into a linear-gradient across the chip;
+  // events with no resolvable category render as an outline-only ghost.
+  const chipColors = () => eventCategoryColors(props.event, props.categories)
+  const hasCategory = () => chipColors().length > 0
+  const chipBg = () => categoryFill(chipColors())
   const military = () => settings.value.militaryTime
 
   let chipRef: HTMLDivElement | undefined
@@ -64,7 +63,7 @@ export function EventChip(props: Props) {
   return (
     <div
       ref={chipRef}
-      class={`event-chip ev ${category() ? '' : 'ghost'}${props.compact ? ' compact' : ''}`}
+      class={`event-chip ev ${hasCategory() ? '' : 'ghost'}${props.compact ? ' compact' : ''}`}
       style={chipBg() ? { background: chipBg() } : undefined}
       onClick={e => {
         e.stopPropagation()

@@ -60,3 +60,18 @@ test("recurrence round-trips through a JSON cell", () => {
   expect(round.events[0].recurrence?.type).toBe("weekly");
   expect(round.events[0].recurrence?.daysOfWeek).toEqual([1]);
 });
+
+test("multiple categories round-trip through a JSON array cell", () => {
+  const { frontmatter, events } = parseCalendarFile(FILE);
+  events[0].categories = ["Work", "Personal", "Urgent"];
+  const round = parseCalendarFile(serializeCalendarFile(frontmatter, events));
+  expect(round.events[0].categories).toEqual(["Work", "Personal", "Urgent"]);
+})
+
+test("a single-category event does not gain a categories array on round-trip", () => {
+  const { frontmatter, events } = parseCalendarFile(FILE)
+  // FILE's event has only `category: Work` and no categories array.
+  const round = parseCalendarFile(serializeCalendarFile(frontmatter, events))
+  expect(round.events[0].category).toBe("Work")
+  expect(round.events[0].categories).toBeUndefined()
+})
