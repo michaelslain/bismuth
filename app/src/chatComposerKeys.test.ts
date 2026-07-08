@@ -30,6 +30,29 @@ describe("classifyComposerKey", () => {
     expect(classifyComposerKey({ key: "ArrowDown", shiftKey: false }, idle)).toBe("pass");
   });
 
+  describe("prompt history (arrow keys at a boundary)", () => {
+    it("ArrowUp at the top boundary recalls history", () => {
+      expect(classifyComposerKey({ key: "ArrowUp", shiftKey: false }, { ...idle, atTop: true })).toBe("history-up");
+    });
+    it("ArrowUp NOT at the top boundary passes through (ordinary multi-line movement)", () => {
+      expect(classifyComposerKey({ key: "ArrowUp", shiftKey: false }, { ...idle, atTop: false })).toBe("pass");
+    });
+    it("ArrowDown at the bottom boundary moves toward the newest / draft", () => {
+      expect(classifyComposerKey({ key: "ArrowDown", shiftKey: false }, { ...idle, atBottom: true })).toBe("history-down");
+    });
+    it("ArrowDown NOT at the bottom boundary passes through", () => {
+      expect(classifyComposerKey({ key: "ArrowDown", shiftKey: false }, { ...idle, atBottom: false })).toBe("pass");
+    });
+    it("the slash popover still wins over history recall when open", () => {
+      expect(classifyComposerKey({ key: "ArrowUp", shiftKey: false }, { slashOpen: true, streaming: false, atTop: true })).toBe(
+        "slash-nav",
+      );
+      expect(
+        classifyComposerKey({ key: "ArrowDown", shiftKey: false }, { slashOpen: true, streaming: false, atBottom: true }),
+      ).toBe("slash-nav");
+    });
+  });
+
   describe("slash popover open", () => {
     const slash = { slashOpen: true, streaming: false };
     it("Arrow keys navigate the menu", () => {
