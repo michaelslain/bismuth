@@ -96,9 +96,13 @@ const tools = [
   },
 ] as const;
 
-// Memory tools are exposed ONLY when the daemon is enabled for this vault (terminal.ts
-// injects BISMUTH_MEMORY_DIR, inherited by this MCP child). So the bot never even sees
-// remember/recall/forget outside a daemon-enabled Bismuth session.
+// Memory tools are exposed ONLY when the daemon is enabled for this vault — memoryDir()
+// (mcp/src/memory.ts) trusts an inherited BISMUTH_MEMORY_DIR (set by core/src/terminal.ts
+// for an in-app terminal tab, or the daemon's own session wiring) and otherwise resolves the
+// vault itself (BISMUTH_VAULT, else cwd walked up to a `.settings` file) and checks that
+// vault's own daemon.enabled — the path a machine-wide `-s user` session (a plain terminal/IDE)
+// actually takes. So the bot never even sees remember/recall/forget outside a daemon-enabled
+// Bismuth vault.
 const memoryTools = [
   {
     name: "remember",

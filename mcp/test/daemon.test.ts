@@ -1,4 +1,7 @@
-import { test, expect, afterEach } from "bun:test";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   daemonTools,
   daemonEnabled,
@@ -14,6 +17,21 @@ import {
 
 const MEM = process.env.BISMUTH_MEMORY_DIR;
 const VAULT = process.env.BISMUTH_VAULT;
+const CWD = process.cwd();
+
+// daemonVaultRoot()/daemonEnabled() now fall back to resolveVaultRoot() (memory.ts), which
+// consults BISMUTH_VAULT and, failing that, walks cwd up looking for a `.settings` file. Start
+// every test from a clean slate — no ambient BISMUTH_MEMORY_DIR/BISMUTH_VAULT, cwd in a fresh
+// empty temp dir — so these tests can't accidentally pass/fail depending on the developer's own
+// shell env or which directory `bun test` happens to be invoked from.
+let noVaultDir: string;
+
+beforeEach(() => {
+  delete process.env.BISMUTH_MEMORY_DIR;
+  delete process.env.BISMUTH_VAULT;
+  noVaultDir = mkdtempSync(join(tmpdir(), "bismuth-mcp-daemon-test-"));
+  process.chdir(noVaultDir);
+});
 
 afterEach(() => {
   // Restore the ambient env so tests don't leak into each other / the wider `bun test` run.
@@ -21,6 +39,8 @@ afterEach(() => {
   else process.env.BISMUTH_MEMORY_DIR = MEM;
   if (VAULT === undefined) delete process.env.BISMUTH_VAULT;
   else process.env.BISMUTH_VAULT = VAULT;
+  process.chdir(CWD);
+  rmSync(noVaultDir, { recursive: true, force: true });
 });
 
 // ── gating ────────────────────────────────────────────────────────────────────
@@ -74,11 +94,12 @@ test("daemonVaultRoot derives the vault from BISMUTH_MEMORY_DIR (strips /.daemon
   expect(daemonVaultRoot()).toBe("/Users/me/vault");
 });
 
-test("daemonVaultRoot falls back to BISMUTH_VAULT, else null", () => {
-  delete process.env.BISMUTH_MEMORY_DIR;
+test("daemonVaultRoot falls back to BISMUTH_VAULT, else cwd walk-up, else null", () => {
   process.env.BISMUTH_VAULT = "/explicit/vault";
   expect(daemonVaultRoot()).toBe("/explicit/vault");
 
+  // No BISMUTH_VAULT and cwd isn't inside any vault (beforeEach chdir'd to an empty temp dir,
+  // so there's no `.settings` walking up) → null.
   delete process.env.BISMUTH_VAULT;
   expect(daemonVaultRoot()).toBeNull();
 
