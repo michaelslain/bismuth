@@ -45,6 +45,7 @@ import { pointInDropRect, imageMimeFromPath, type NativeDragDetail } from "./nat
 import { wikilinkFor, noteNameFromPath } from "./dnd/noteRef";
 import { ChatComposer, type ComposerHandle } from "./ChatComposer";
 import { classifyComposerKey } from "./chatComposerKeys";
+import { HISTORY_BOTTOM, buildHistoryEntries, historyUp, historyDown, type HistoryCursor } from "./chatHistory";
 import type { NoteCandidate } from "./editor/wikilink";
 import type { FileCandidate } from "./editor/atMention";
 
@@ -306,6 +307,34 @@ function buildEditorContext(hiddenPaths: ReadonlySet<string>, referencedFiles: s
 export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
   const [transcript, setTranscript] = createStore<TurnItem[]>([]);
   const [draft, setDraft] = createSignal("");
+  // ── Prompt history (Row 84): ArrowUp/ArrowDown cycle through this chat's own sent messages, like a
+  // shell or Claude Code's own composer. `historyCursor` + `historyEntries` feed the pure state
+  // machine (chatHistory.ts); both live as plain mutable locals (not signals) since they're read/written
+  // only from the keydown handler, never rendered. `pendingHistoryText` distinguishes a
+  // history-recall's OWN doc update (which must NOT reset the cursor) from a genuine keystroke (which
+  // must) — both funnel through the SAME CodeMirror `onInput` callback below. It's a value (not a bare
+  // flag) so a coincidental no-op recall (recalled text same as what's already showing, so CodeMirror
+  // never actually fires a change) can't leave a stale suppression stuck forever — the very next real
+  // edit's differing value naturally clears it.
+  let historyCursor: HistoryCursor = HISTORY_BOTTOM;
+  let pendingHistoryText: string | null = null;
+  // Sent (non-queued) user turns, oldest → newest, consecutive duplicates collapsed.
+  const historyEntries = createMemo(() =>
+    buildHistoryEntries(
+      transcript.filter((it): it is UserItem => it.role === "user" && !it.queued).map((it) => it.text),
+    ),
+  );
+  /** The composer's `onInput`: genuine typing resets history browsing back to the bottom (spec: reset
+   *  "whenever the user sends or types a new edit"); a history-recall's own doc update (see
+   *  `applyHistoryMove` below) passes through untouched. */
+  const onComposerInput = (value: string) => {
+    if (pendingHistoryText !== null && value === pendingHistoryText) pendingHistoryText = null;
+    else {
+      pendingHistoryText = null;
+      historyCursor = HISTORY_BOTTOM;
+    }
+    setDraft(value);
+  };
   // Base64 images staged in the composer (dropped or pasted), sent as SDK image content blocks on
   // the next turn and cleared on send. Rendered as removable thumbnail chips above the textarea.
   const [attachments, setAttachments] = createSignal<Attachment[]>([]);
@@ -1202,14 +1231,25 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     focusComposer();
   };
 
+  /** Apply a prompt-history move: stash the new cursor, mark the recalled text as an expected FEEDBACK
+   *  doc-change (see `onComposerInput`) so it doesn't reset the cursor it was just given, then write it
+   *  into the composer. Shared by ArrowUp and ArrowDown below. */
+  const applyHistoryMove = (move: { cursor: HistoryCursor; text: string }) => {
+    historyCursor = move.cursor;
+    pendingHistoryText = move.text;
+    setDraft(move.text);
+  };
+
   // Composer keydown, delegated from ChatComposer's CodeMirror instance. Returns TRUE when it fully
   // handled the key (CodeMirror then stops) or FALSE to let CodeMirror handle it — notably Shift+Enter,
-  // which falls through to CodeMirror's plain-newline insertion. ChatComposer never calls this for
-  // keys the vault autocomplete popup owns while it's open, so the [[wikilink]]/tag/emoji menu keeps
-  // its own Arrow/Enter/Escape/Tab navigation.
-  const onComposerKey = (e: KeyboardEvent): boolean => {
+  // which falls through to CodeMirror's plain-newline insertion, and ordinary ArrowUp/Down cursor
+  // movement inside a multi-line draft. ChatComposer never calls this for keys the vault autocomplete
+  // popup owns while it's open, so the [[wikilink]]/tag/emoji menu keeps its own Arrow/Enter/Escape/Tab
+  // navigation. `boundary` reports whether the caret is on the composer's first/last visual line
+  // (computed in ChatComposer via CodeMirror's own line-wrap-aware geometry) — see chatComposerKeys.ts.
+  const onComposerKey = (e: KeyboardEvent, boundary: { atTop: boolean; atBottom: boolean }): boolean => {
     // Pure routing (chatComposerKeys.ts) decides WHAT the key means; this maps it to the effect.
-    switch (classifyComposerKey(e, { slashOpen: slashOpen(), streaming: streaming() })) {
+    switch (classifyComposerKey(e, { slashOpen: slashOpen(), streaming: streaming(), ...boundary })) {
       case "slash-nav":
         slashNav.onKeyDown(e); // preventDefaults Arrow/Enter itself
         return true;
@@ -1225,6 +1265,20 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
         e.preventDefault();
         send();
         return true;
+      case "history-up": {
+        const move = historyUp(historyCursor, historyEntries(), draft());
+        if (!move) return false; // already at the oldest entry (or none) — let the caret behave normally
+        e.preventDefault();
+        applyHistoryMove(move);
+        return true;
+      }
+      case "history-down": {
+        const move = historyDown(historyCursor, historyEntries());
+        if (!move) return false; // not currently browsing history — ordinary ArrowDown
+        e.preventDefault();
+        applyHistoryMove(move);
+        return true;
+      }
       case "pass":
         return false; // Shift+Enter newline, plain typing → CodeMirror handles it
     }
@@ -1682,7 +1736,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
                   round-trips as raw markdown SOURCE through the same draft() signal. */}
               <ChatComposer
                 value={draft}
-                onInput={setDraft}
+                onInput={onComposerInput}
                 onKeyDown={onComposerKey}
                 onPaste={onComposerPaste}
                 onReady={(h) => { composer = h; }}
