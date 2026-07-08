@@ -480,6 +480,13 @@ export class TableWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
+    // Pre-warm the nested-cell-editor chunk as soon as a table renders (#62): the dynamic import is
+    // memoized module-side, so kicking it off here means it is almost always resolved before the user
+    // clicks a cell — closing the cold-start window where the first cell edit's keystrokes were
+    // dropped (see enterEdit's sync-mount path). `.catch` swallows the load error the headless test
+    // env throws when it can't compile the chunk's Solid `.tsx`, so this never surfaces a rejection.
+    void loadCellEditor().catch(() => {});
+
     const root = document.createElement("div");
     root.className = "cm-table-wrap";
     root.setAttribute("contenteditable", "false");
@@ -504,8 +511,10 @@ export class TableWidget extends WidgetType {
     };
     // Enter edit mode: clear the display face and mount a nested CodeMirror editor. The editor
     // module is loaded DYNAMICALLY (its live-preview stack pulls in Solid `.tsx` that would taint
-    // this widget's headless tests), so the mount completes on a microtask — the guards below bail
-    // if the cell already left edit mode (a fast blur) or the user moved focus away meanwhile.
+    // this widget's headless tests). Once loaded it is cached module-side, so we mount SYNCHRONOUSLY
+    // on the warm path (see below) — only the very first cell edit per session takes the async path,
+    // where the guards bail if the cell already left edit mode (a fast blur) or the user moved focus
+    // away while the chunk loaded.
     const enterEdit = (cell: CellHost, r: number, c: number, atCoords?: { x: number; y: number }): void => {
       if (cell.dataset.editing === "1") {
         cell._cellCM?.contentDOM.focus({ preventScroll: true });
@@ -515,7 +524,7 @@ export class TableWidget extends WidgetType {
       cell.replaceChildren();
       const getNotes = view.state.facet(noteNamesFacet);
       const getTags = view.state.facet(tagNamesFacet);
-      void loadCellEditor().then((mod) => {
+      const doMount = (mod: CellEditorModule): void => {
         if (cell.dataset.editing !== "1" || !cell.isConnected || cell._cellCM) return; // left edit / torn down / already mounted
         const ae = cell.ownerDocument.activeElement as HTMLElement | null;
         // Don't steal focus if the user moved to something outside this table while the chunk loaded.
@@ -541,7 +550,17 @@ export class TableWidget extends WidgetType {
           },
           atCoords,
         });
-      });
+      };
+      // MOUNT SYNCHRONOUSLY when the editor module is already loaded (#62). Routing EVERY mount
+      // through `loadCellEditor().then()` deferred the editor to a microtask even when the chunk was
+      // long since cached — and in that gap the cell had no editor to receive input: the first
+      // keystrokes after clicking/tabbing into a cell were DROPPED, and a rapid multi-click
+      // (triple-click-to-select) fell through to the OUTER editor, escaping the widget entirely.
+      // A cached module lets us mount now, so focus + caret are live before the next event; only the
+      // first cell edit per session waits on the import (and `toDOM` pre-warms it, so even that is
+      // usually ready by the first click).
+      if (cellEditorModule) doMount(cellEditorModule);
+      else void loadCellEditor().then(doMount);
     };
     // Leave edit mode: read the nested editor's doc back into the cell source, destroy it, and
     // re-render the display face. Synchronous — triggered by focusout, so the editor isn't

@@ -190,6 +190,20 @@
 .cm-editor .cm-td[data-editing="1"] {
   white-space: pre-wrap;
 }
+/* ── Empty-cell height (#61) ────────────────────────────────────────────────────
+   The display face of an EMPTY cell (a freshly-added row, or a cell the user cleared)
+   block-renders to an empty string, so it has NO line box and collapses to just its
+   vertical padding — a ~11px sliver beside the ~35px filled rows ("new rows are really
+   short"). The old contenteditable cells reserved a line implicitly; the nested-CM
+   rearchitecture lost that. Re-reserve exactly one line with a generated non-breaking
+   space rendered in the cell's own `line-height: 1.5` (→ a full 1.5em line box, matching a
+   filled single-line row to the pixel). A real text line box is engine-agnostic (WebKit
+   included), where `min-height` on a `display: table-cell` is silently ignored; `::after`
+   generated content never affects `:empty` matching, so this is stable, and an edited cell
+   (its nested editor mounted → no longer `:empty`) is untouched. */
+.cm-editor .cm-table-rendered .cm-td:empty::after {
+  content: "\00a0";
+}
 .cm-editor .cm-td p,
 .cm-editor .cm-td ul,
 .cm-editor .cm-td ol,
