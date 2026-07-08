@@ -3,28 +3,17 @@
 // find-and-replace (per-file and vault-wide). Opened via the `search` command
 // or the default toolbar button (routed from PaneContent on the ::search id).
 // Uses the shared Button/Icon primitives so its chrome matches the rest of the app.
-import { createSignal, onCleanup, For, Show } from "solid-js";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { api } from "./api";
 import { isValidRegex, type SearchResult } from "./searchOpts";
 import { planEnter } from "./searchEnter";
+import { SearchResultRows } from "./searchResults";
 import { TextButton } from "./ui/TextButton";
 import { IconButton } from "./ui/IconButton";
 import { Chip } from "./ui/Chip";
 import { SearchBar } from "./ui/SearchBar";
 import { Icon } from "./icons/Icon";
-import { recordUse, fileKey } from "./frecency";
 import "./SearchView.css";
-
-// Split a vault path into its filename (sans extension) and parent folder
-// so each result card can show a bold title + a faint folder crumb.
-function splitPath(path: string): { name: string; folder: string } {
-  const slash = path.lastIndexOf("/");
-  const folder = slash >= 0 ? path.slice(0, slash) : "";
-  const file = slash >= 0 ? path.slice(slash + 1) : path;
-  const dot = file.lastIndexOf(".");
-  const name = dot > 0 ? file.slice(0, dot) : file;
-  return { name, folder };
-}
 
 export function SearchView(props: { onOpen: (path: string) => void }) {
   const [query, setQuery] = createSignal("");
@@ -274,7 +263,7 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
       <div class="search-results">
         {/* Three mutually-exclusive "no list yet" states, each unmistakable so the user is never
             left staring at a blank pane (BUG #8): LOADING (AI turn in flight) → ERROR (the request
-            failed) → EMPTY (ran, nothing to show). The results <For> renders only when a list exists. */}
+            failed) → EMPTY (ran, nothing to show). SearchResultRows renders only when a list exists. */}
         <Show when={promptBusy()}>
           <div class="search-state">
             <span class="search-spinner search-spinner-lg" />
@@ -319,44 +308,8 @@ export function SearchView(props: { onOpen: (path: string) => void }) {
             </div>
           </Show>
         </Show>
-        <For each={results()}>
-          {(r) => {
-            const parts = splitPath(r.path);
-            return (
-              <div class="sresult">
-                {/* The whole header opens the file too (not just the snippet rows) — AI results
-                    carry one byte-exact snippet, but making the title row a hit target keeps every
-                    result openable even if a row ever comes back without a snippet. */}
-                <div class="sresult-head sresult-head-open"
-                  onClick={() => { recordUse(fileKey(r.path)); props.onOpen(r.path); }}>
-                  <Icon value="FileText" size={15} class="sresult-icon" />
-                  <b class="sresult-title">{parts.name}</b>
-                  <Show when={parts.folder}>
-                    <span class="sresult-path">· {parts.folder}/</span>
-                  </Show>
-                  <span class="sresult-count">{r.matchCount}</span>
-                  <Show when={showReplace()}>
-                    <IconButton label="Replace all in this file" icon="Replace" iconSize={15}
-                      onClick={(e) => { e.stopPropagation(); doReplace(r.path); }} />
-                  </Show>
-                </div>
-                <Show when={r.reason}>
-                  <div class="sresult-reason">{r.reason}</div>
-                </Show>
-                <For each={r.snippets}>
-                  {(s) => (
-                    <div class="sresult-snip" onClick={() => { recordUse(fileKey(r.path)); props.onOpen(r.path); }}>
-                      <span class="sresult-line">{s.line}</span>
-                      <span class="sresult-text">
-                        {s.before}<mark>{s.match}</mark>{s.after}
-                      </span>
-                    </div>
-                  )}
-                </For>
-              </div>
-            );
-          }}
-        </For>
+        <SearchResultRows results={results()} onOpen={props.onOpen}
+          showReplace={showReplace()} onReplaceFile={doReplace} />
       </div>
     </div>
   );

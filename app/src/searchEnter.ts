@@ -86,6 +86,23 @@ export interface EnterPlan {
   cancelPendingLiveSearch: true;
 }
 
+// BUG #8 (6th bounce): every prior fix targeted the Search TAB (SearchView.tsx, above) — but the
+// user searches from the Cmd+O quick-switcher takeover instead (app/src/palette/SwitcherBar.tsx),
+// which never had an AI escalation path at all. The switcher's "no matches" signal is weaker than
+// the Search tab's zero-keyword-hits: fuzzy FILENAME matching (rankItems.ts) is lenient, so a
+// one/two-word miss is still very plausibly a garbled attempt at a filename, not a question for
+// Bismuth AI. `isNaturalLanguageQuery` is the shared "is this shaped like a real question" gate —
+// extracted here (not re-invented in palette/) so the switcher's escalation decision
+// (palette/switcherAi.ts) reuses the exact same notion of "non-trivial query" this module already
+// reasons about, rather than growing a second, subtly-different heuristic.
+const MIN_WORDS_FOR_AI_ESCALATION = 3;
+
+/** True once `query` has more than a couple words — used to gate the switcher's "Press Enter to
+ *  ask Bismuth AI" affordance so a short fuzzy-filename miss doesn't immediately escalate to AI. */
+export function isNaturalLanguageQuery(query: string): boolean {
+  return query.trim().split(/\s+/).filter(Boolean).length >= MIN_WORDS_FOR_AI_ESCALATION;
+}
+
 export function planEnter(s: EnterState): EnterPlan {
   let action: EnterAction;
   if (!s.hasQuery) {

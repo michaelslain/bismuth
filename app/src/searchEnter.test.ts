@@ -1,6 +1,6 @@
 // app/src/searchEnter.test.ts
 import { describe, expect, it } from "bun:test";
-import { planEnter, type EnterState } from "./searchEnter";
+import { planEnter, isNaturalLanguageQuery, type EnterState } from "./searchEnter";
 
 const state = (s: Partial<EnterState> = {}): EnterState => ({
   promptMode: false,
@@ -167,5 +167,35 @@ describe("generation-guard: pending debounce vs. Enter-escalation", () => {
     const aiResolve = m.startPrompt();
     aiResolve();
     expect(m.results).toEqual(["ai-hit.md"]); // AI result rendered
+  });
+});
+
+// BUG #8 (6th bounce): `isNaturalLanguageQuery` is the shared "is this a real question, not a
+// filename fragment" gate the Cmd+O switcher's escalation decision (palette/switcherAi.ts) reuses
+// instead of re-inventing — see the comment above the function for why the switcher needs this at
+// all (fuzzy filename matching is lenient, so a one/two-word miss is still plausibly a garbled
+// filename attempt).
+describe("isNaturalLanguageQuery", () => {
+  it("is false for empty/whitespace-only queries", () => {
+    expect(isNaturalLanguageQuery("")).toBe(false);
+    expect(isNaturalLanguageQuery("   ")).toBe(false);
+  });
+
+  it("is false for a single word", () => {
+    expect(isNaturalLanguageQuery("metals")).toBe(false);
+  });
+
+  it("is false for exactly two words", () => {
+    expect(isNaturalLanguageQuery("meeting notes")).toBe(false);
+  });
+
+  it("is true once a query has three or more words", () => {
+    expect(isNaturalLanguageQuery("where did I write about metals")).toBe(true);
+    expect(isNaturalLanguageQuery("a b c")).toBe(true);
+  });
+
+  it("ignores leading/trailing/repeated whitespace when counting words", () => {
+    expect(isNaturalLanguageQuery("  a   b   c  ")).toBe(true);
+    expect(isNaturalLanguageQuery("  a   b  ")).toBe(false);
   });
 });

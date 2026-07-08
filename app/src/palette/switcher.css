@@ -78,6 +78,12 @@
   border-top: 1px solid var(--border-soft);
 }
 
+/* BUG #8 (6th bounce): Bismuth AI escalation reuses SearchView's .sresult/.search-state/
+   .search-empty markup verbatim (SearchResultRows, ../searchResults.tsx) so the switcher's AI
+   panel never forks a lookalike. .switcher-list isn't a flex/gap container like .search-results,
+   so give the reused result cards their own stacking margin here instead of duplicating layout. */
+.switcher-list .sresult + .sresult { margin-top: 8px; }
+
 /* While switcher mode is active the sidebar toolbar "closes temporarily" — dimmed and
    non-interactive — and restores on Esc. Subtle, per the design. */
 .layout.switcher-active .sidebar-icons {
