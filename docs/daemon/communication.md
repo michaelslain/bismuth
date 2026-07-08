@@ -41,7 +41,11 @@ Flow (`relay/bin/recall-hook.ts` + `relay/lib/memory.ts`):
 }
 ```
 
-`formatNotes()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
+`recallContext` is a thin alias for **`recallMemory(dir, prompt, budgetMs?)`** in `@bismuth/memory` (`memory/src/recall.ts`) — the ONE shared recall implementation. Its `formatRecall()` emits a `# Memories` header, then per note a `## <name> (<type>) [<tags>]` line, the content, and a `Links: [[...]]` line when the note has backlinks.
+
+### The visual chat recalls too (SDK session, no relay plugin)
+
+The relay hooks only fire in **terminal-tab CLI** Claude sessions. The in-app **visual chat** (`core/src/chat.ts`) is an Agent-SDK session that never loads the relay plugin, so it wired recall in-process instead: when the chat session carries a `memoryDir` (daemon enabled), `spawnChatQuery` registers a programmatic `hooks.UserPromptSubmit` on the SDK `query()` that calls the same `recallMemory(memoryDir, prompt)` and returns the same `additionalContext` shape. So both the app's Claude surfaces — terminal tabs and the visual chat — auto-recall from one implementation. (The chat already **collected** transcripts into memory via `captureToMemory`; before this it collected but never recalled — the asymmetry that made memory feel "not auto-injecting" once work moved into the chat.)
 
 ### `session-end-hook.ts` — `SessionEnd` (transcript → auto note)
 

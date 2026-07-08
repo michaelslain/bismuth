@@ -6,13 +6,14 @@ import {
   getSessionInfo,
   type CanUseTool,
   type EffortLevel,
+  type HookInput,
   type Query,
   type SDKMessage,
   type SDKUserMessage,
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
-import { buildAutoNoteBody, extractText, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
+import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 
 /**
@@ -836,6 +837,35 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
           ? {
               managedSettings: { permissions: { deny: buildManagedSettingsDeny(denyEntries) } },
               sandbox: { enabled: true, failIfUnavailable: false, filesystem: { denyRead: absDenyPaths(denyEntries) } },
+            }
+          : {}),
+        // Memory auto-recall (daemon-gated). The visual chat is an SDK session with NO relay
+        // plugin, so the relay's terminal-tab UserPromptSubmit recall hook never fires here — the
+        // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
+        // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
+        // memory relevant to the prompt and inject it as `additionalContext`. Read session.memoryDir
+        // via the closure so a refreshVisibility respawn keeps recall wired. captureToMemory already
+        // strips the injected `# Memories` block (stripInjectedBlocks) before collecting, so recall
+        // never amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
+        // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
+        ...(session.memoryDir
+          ? {
+              hooks: {
+                UserPromptSubmit: [
+                  {
+                    hooks: [
+                      async (input: HookInput) => {
+                        const dir = session.memoryDir;
+                        if (!dir || input.hook_event_name !== "UserPromptSubmit") return {};
+                        const context = await recallMemory(dir, input.prompt);
+                        return context
+                          ? { hookSpecificOutput: { hookEventName: "UserPromptSubmit" as const, additionalContext: context } }
+                          : {};
+                      },
+                    ],
+                  },
+                ],
+              },
             }
           : {}),
         disallowedTools,
