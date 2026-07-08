@@ -20,6 +20,10 @@ function calloutTypeCss(): string {
 function styles(p: ThemePalette): string {
   return `
   :root { color-scheme: ${p.scheme}; }
+  /* US Letter portrait with a 1in margin on every side. Governs a browser print/"Save as PDF"
+     of the exported .html; the in-app PDF rasterizer (htmlToPdf.ts) enforces the same geometry
+     explicitly, since html2canvas ignores @page. */
+  @page { size: 8.5in 11in; margin: 1in; }
   /* The export inlines the app's own font (resolved live) so the document reads as the same
      product. The PDF/PNG path rasterizes via html2canvas, which measures text with canvas
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
