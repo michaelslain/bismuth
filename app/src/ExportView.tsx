@@ -10,7 +10,7 @@ import { pushToast } from "./Toast";
 import { isTauri } from "./nativeMenu";
 import { pickFile, pickFolder } from "./appWindow";
 import { formatsForOptions, ext } from "./export/formats";
-import { defaultModeForView } from "./export/options";
+import { defaultModeForView, PDF_FONT_SIZES, DEFAULT_PDF_FONT_SIZE } from "./export/options";
 import { readThemePalette } from "./export/resolvePalette";
 import { renderExport, renderPreview } from "./export/exporters";
 import { pageSections } from "./export/pageBreaks";
@@ -117,6 +117,10 @@ export function ExportView(props: { path: string }) {
   const [theme, setTheme] = createSignal<ExportTheme>("dark");
   const [busy, setBusy] = createSignal(false);
 
+  // PDF-only: the body font size (pt). Default 12 (a standard document body size). Bigger sizes
+  // render larger text and repaginate (taller content overflows onto more Letter pages).
+  const [pdfFontSize, setPdfFontSize] = createSignal(DEFAULT_PDF_FONT_SIZE);
+
   // Non-base `.md` only: whether the note's leading YAML frontmatter is included in the
   // export. Default true (the historical behavior — a base's own frontmatter is config, never
   // rendered as content, so the control only makes sense for a plain note).
@@ -179,6 +183,7 @@ export function ExportView(props: { path: string }) {
     calStart: calStart(),
     weekStartsOnMonday: settings.calendar.weekStartsOnMonday,
     militaryTime: settings.calendar.militaryTime,
+    pdfFontSize: pdfFontSize(),
     // Resolve the live app theme (colors + font) so the export matches the app. Keyed into
     // the preview resource below via theme()/settings so it re-resolves on theme changes.
     palette: readThemePalette(theme()),
@@ -206,6 +211,7 @@ export function ExportView(props: { path: string }) {
         calStart(),
         settings.calendar.weekStartsOnMonday,
         includeFrontmatter(),
+        pdfFontSize(),
       ] as const,
     async ([path, fmt, thm]) => renderPreview(path, fmt, deps, thm, buildOptions()),
   );
@@ -480,6 +486,22 @@ export function ExportView(props: { path: string }) {
             </span>
           </Show>
         </div>
+
+        {/* PDF only: body font size (pt). Larger sizes render bigger text and repaginate. */}
+        <Show when={format() === "pdf"}>
+          <div class="field">
+            <span class="flab">Font size</span>
+            <div class="fopts">
+              <For each={PDF_FONT_SIZES}>
+                {(sz) => (
+                  <Chip selected={pdfFontSize() === sz} onClick={() => setPdfFontSize(sz)}>
+                    {sz}pt
+                  </Chip>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
 
         <div class="field">
           <span class="flab">Theme</span>

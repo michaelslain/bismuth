@@ -17,7 +17,11 @@ function calloutTypeCss(): string {
     .join("\n  ");
 }
 
-function styles(p: ThemePalette): string {
+function styles(p: ThemePalette, fontSizePt?: number): string {
+  // A concrete body font-size (pt) is emitted only when a caller asks for one (the PDF path,
+  // via the export UI). Left off, the document keeps its intrinsic browser sizing so the html
+  // and png exports are unchanged.
+  const fontSizeRule = fontSizePt ? `font-size: ${fontSizePt}pt;` : "";
   return `
   :root { color-scheme: ${p.scheme}; }
   /* US Letter portrait with a 1in margin on every side. Governs a browser print/"Save as PDF"
@@ -29,7 +33,7 @@ function styles(p: ThemePalette): string {
      measureText() — so a concrete named font stack (not a CSS keyword) is required; the
      resolved stack carries its own fallbacks. */
   html, body { margin: 0; background: ${p.bg}; }
-  body { font-family: ${p.font};
+  body { font-family: ${p.font}; ${fontSizeRule}
          max-width: 760px; margin: 0 auto; padding: 2.5rem 1.5rem 3rem;
          line-height: 1.6; color: ${p.fg}; }
   h1,h2,h3 { line-height: 1.25; margin-top: 1.6em; }
@@ -69,13 +73,15 @@ function styles(p: ThemePalette): string {
  * pdf/png render source, and the preview iframe). `palette` carries the resolved app theme
  * (colors + font) so the doc matches the app; it defaults to the dark default palette for
  * simple/headless callers. `extraHead` is injected after the base stylesheet (KaTeX CSS +
- * view-specific CSS).
+ * view-specific CSS). `fontSizePt`, when given, sets the body font size in points (the PDF
+ * export path passes the user's chosen size; other callers leave it off for intrinsic sizing).
  */
 export function wrapHtmlDocument(
   body: string,
   title: string,
   palette: ThemePalette = DEFAULT_PALETTE.dark,
   extraHead = "",
+  fontSizePt?: number,
 ): string {
   return `<!doctype html>
 <html lang="en">
@@ -83,7 +89,7 @@ export function wrapHtmlDocument(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
-<style>${styles(palette)}</style>
+<style>${styles(palette, fontSizePt)}</style>
 ${extraHead}</head>
 <body>
 ${body}

@@ -24,8 +24,17 @@ export const MARGIN_PT = 72; // 1 * 72
 export const CONTENT_W_PT = PAGE_W_PT - 2 * MARGIN_PT; // 468
 export const CONTENT_H_PT = PAGE_H_PT - 2 * MARGIN_PT; // 648
 
-/** Source raster width: 8.5in @ 96dpi. The iframe body is laid out at this width. */
+/** Source raster width: 8.5in @ 96dpi. The iframe body is laid out at this width (PNG path). */
 export const PAGE_W_PX = 816; // 8.5 * 96
+
+/**
+ * PDF content raster width: the 6.5in PRINTABLE box @ 96dpi. The PDF path lays the body out at
+ * this width (not the full 8.5in page) so the raster maps edge-to-edge into the printable box
+ * with NO squeeze — 96 source px == 72 PDF pt == 1 inch. That 1:1 inch mapping is what makes a
+ * chosen font size (pt) render at its true point size in the PDF, and keeps every margin exactly
+ * 1in. (The PNG path still lays out at the full PAGE_W_PX with the reading column.)
+ */
+export const CONTENT_W_PX = 624; // 6.5 * 96
 
 /**
  * Map a rasterized canvas (whose width fills the printable box) onto Letter pages:
