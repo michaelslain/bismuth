@@ -37,6 +37,7 @@ import { publishChatTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand } from "./chatSlashCommands";
+import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
 import { DEFAULT_PERMISSION_MODE, sanitizePermissionMode, reconcilePermissionMode } from "./chatPermissionMode";
@@ -355,7 +356,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   const [context, setContext] = createSignal<{ percentage: number; totalTokens: number; maxTokens: number } | null>(null);
   // Turns staged while a turn is streaming (Claude Code TUI parity): dispatched one at a time
   // from the `done` frame, each with a dimmed transcript bubble the user can cancel before send.
-  const [queuedTurns, setQueuedTurns] = createSignal<{ id: string; wire: string; images: Attachment[] }[]>([]);
+  // `text` is the raw typed text (pre-preamble) — kept alongside `wire` so Stop can restore the
+  // ORIGINAL composer text (see restoreQueuedComposerState) instead of the model-bound wire message.
+  const [queuedTurns, setQueuedTurns] = createSignal<{ id: string; wire: string; text: string; images: Attachment[] }[]>([]);
 
   // The backend chat id this view's WS is bound to. Seeded from the tab's id (props.chatId), but
   // OWNED here so "New" can swap to a fresh id — a brand-new Claude Code session on the next turn —
@@ -934,7 +937,7 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     // the user was looking at when they wrote it), not at dispatch time.
     if (streaming()) {
       const id = crypto.randomUUID();
-      setQueuedTurns((q) => [...q, { id, wire, images: atts }]);
+      setQueuedTurns((q) => [...q, { id, wire, text, images: atts }]);
       setTranscript(produce((m) => m.push({ role: "user", text, images: bubbleImages.length ? bubbleImages : undefined, queued: true, queueId: id })));
       setDraft("");
       setAttachments([]);
@@ -969,8 +972,19 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       return;
     }
     setStreaming(false);
-    // Stop means the whole pipeline: cancel anything still queued (never sent — bubbles come
-    // out) so the interrupted turn's `done` doesn't immediately fire a staged follow-up.
+    // Stop means the whole pipeline: cancel anything still queued (never sent — bubbles come out)
+    // so the interrupted turn's `done` doesn't immediately fire a staged follow-up. Row 83: that
+    // used to just DELETE the queued text — instead, restore it into the composer (prepended above
+    // whatever the user was already typing, oldest queued turn first) along with any staged image
+    // attachments, so Stop never throws away what the user typed.
+    const queued = queuedTurns();
+    if (queued.length) {
+      const restored = restoreQueuedComposerState(queued, { text: draft(), images: attachments() });
+      setDraft(restored.text);
+      setAttachments(restored.images);
+      focusComposer();
+      composer?.scrollIntoView();
+    }
     setQueuedTurns([]);
     setTranscript(
       produce((m) => {
