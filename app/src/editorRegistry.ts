@@ -96,3 +96,21 @@ export function insertIntoFocusedEditor(text: string, cursorOffset: number): boo
   view.focus();
   return true;
 }
+
+/** Insert `text` into the OPEN editor for `notePath` at the document position under the viewport
+ *  point (x, y) — used when a note is dropped onto another note's editor to insert a `[[wikilink]]`
+ *  exactly where it was dropped (Row 74b). Falls back to the caret if the point isn't over text.
+ *  Returns false if `notePath` has no live CodeMirror view (e.g. it's shown in the block editor). */
+export function insertTextAtCoords(notePath: string, x: number, y: number, text: string): boolean {
+  for (const view of liveViews) {
+    if (view.state.facet(notePathFacet) !== notePath) continue;
+    const at = view.posAtCoords({ x, y }) ?? view.state.selection.main.head;
+    view.dispatch({
+      changes: { from: at, insert: text },
+      selection: { anchor: at + text.length },
+    });
+    view.focus();
+    return true;
+  }
+  return false;
+}

@@ -11,13 +11,25 @@
 import { createSignal, type Accessor } from "solid-js";
 import { dropZoneForPoint, insertionIndexForX, type Zone } from "./geometry";
 
+// A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
+// drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
+// sidebar note. `note`/`folder` are sidebar file-tree rows (Row 73/74).
 export type DragDescriptor =
-  | { kind: "tab"; tabId: string; label: string; width: number }
-  | { kind: "pane"; tabId: string; leafId: string; label: string; width: number };
+  | { kind: "tab"; tabId: string; label: string; width: number; path?: string }
+  | { kind: "pane"; tabId: string; leafId: string; label: string; width: number; path?: string }
+  | { kind: "note"; path: string; label: string; width: number }
+  | { kind: "folder"; path: string; label: string; width: number };
 
 export type DropTarget =
   | { kind: "tabstrip"; index: number }
-  | { kind: "pane"; leafId: string; zone: Zone };
+  | { kind: "pane"; leafId: string; zone: Zone }
+  // Sidebar file-tree drop targets (Row 73): a folder row, or the tree root (move to vault root).
+  | { kind: "folder"; path: string }
+  | { kind: "root" };
+
+// The pointer position at drop, handed to the drop handler so an editor can resolve the
+// exact caret to insert a wikilink at (posAtCoords), not just which pane (Row 74b).
+export type DropPoint = { x: number; y: number };
 
 export type DragState = {
   active: boolean; // past the threshold → ghost visible, neighbors react
@@ -41,12 +53,17 @@ export type ViewDrag = {
   // i.e. it was a click. Activating a tab on tap (not on press) keeps the
   // previously-active tab's panes as the drop target, so dragging a background
   // tab into the current view works instead of no-op'ing on its own panes.
-  startTab: (e: PointerEvent, tabId: string, label: string, onTap?: () => void) => void;
-  startPane: (e: PointerEvent, tabId: string, leafId: string, label: string) => void;
+  startTab: (e: PointerEvent, tabId: string, label: string, onTap?: () => void, path?: string) => void;
+  startPane: (e: PointerEvent, tabId: string, leafId: string, label: string, path?: string) => void;
+  // Sidebar file-tree rows drag through the SAME controller (Row 73/74). The native tap
+  // (open/toggle/select) is left to the row's own onClick — a real drag swallows the trailing
+  // click so it doesn't also fire (see swallowNextClick).
+  startNote: (e: PointerEvent, path: string, label: string) => void;
+  startFolder: (e: PointerEvent, path: string, label: string) => void;
 };
 
 export function createViewDrag(
-  onDrop: (descriptor: DragDescriptor, target: DropTarget) => void,
+  onDrop: (descriptor: DragDescriptor, target: DropTarget, point: DropPoint) => void,
 ): ViewDrag {
   const [state, setState] = createSignal<DragState>(IDLE);
 
@@ -60,6 +77,14 @@ export function createViewDrag(
   function resolveTarget(x: number, y: number): DropTarget | null {
     const el = document.elementFromPoint(x, y) as Element | null;
     if (!el) return null;
+
+    // Sidebar file-tree targets first (a folder row wins over the enclosing root zone).
+    const folder = el.closest("[data-drop-folder]");
+    if (folder) {
+      const path = folder.getAttribute("data-drop-folder");
+      if (path) return { kind: "folder", path };
+    }
+    if (el.closest("[data-drop-root]")) return { kind: "root" };
 
     const strip = el.closest("[data-tabstrip]");
     if (strip) {
@@ -111,10 +136,25 @@ export function createViewDrag(
     setState(IDLE);
   }
 
+  // After a real drag, the browser still fires a trailing `click` on the common ancestor of the
+  // press + release elements. The sidebar rows keep their own onClick (open/toggle/select) for taps,
+  // so without this a drag would ALSO toggle/open the row it ended on. Swallow exactly one click.
+  function swallowNextClick(): void {
+    const swallow = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      window.removeEventListener("click", swallow, true);
+    };
+    window.addEventListener("click", swallow, true);
+    // If no click follows (drag ended off any clickable element), drop the listener next tick.
+    setTimeout(() => window.removeEventListener("click", swallow, true), 0);
+  }
+
   function onUp(): void {
     const s = state();
     if (s.active) {
-      if (s.descriptor && s.target) onDrop(s.descriptor, s.target);
+      if (s.descriptor && s.target) onDrop(s.descriptor, s.target, { x: s.x, y: s.y });
+      swallowNextClick();
     } else {
       tap?.(); // never crossed the threshold → treat as a click
     }
@@ -146,13 +186,21 @@ export function createViewDrag(
 
   return {
     state,
-    startTab(e, tabId, label, onTap) {
+    startTab(e, tabId, label, onTap, path) {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      arm(e, { kind: "tab", tabId, label, width: rect.width }, rect, onTap);
+      arm(e, { kind: "tab", tabId, label, width: rect.width, path }, rect, onTap);
     },
-    startPane(e, tabId, leafId, label) {
+    startPane(e, tabId, leafId, label, path) {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      arm(e, { kind: "pane", tabId, leafId, label, width: rect.width }, rect);
+      arm(e, { kind: "pane", tabId, leafId, label, width: rect.width, path }, rect);
+    },
+    startNote(e, path, label) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      arm(e, { kind: "note", path, label, width: rect.width }, rect);
+    },
+    startFolder(e, path, label) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      arm(e, { kind: "folder", path, label, width: rect.width }, rect);
     },
   };
 }

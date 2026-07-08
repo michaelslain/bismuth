@@ -56,7 +56,15 @@ function joinPath(dir: string, name: string): string {
 import { decideTreeRefresh } from "./fileTreeRefresh";
 export { decideTreeRefresh };
 
-export function FileTree(props: { onOpen: (path: string) => void; activeFile?: string | null }) {
+export function FileTree(props: {
+  onOpen: (path: string) => void;
+  activeFile?: string | null;
+  // Sidebar rows drag through App's shared pointer-drag controller (dnd/viewDrag) — native HTML5
+  // drag doesn't fire from synthetic/WKWebView pointers, which silently no-op'd every move (Row 73).
+  startItemDrag: (e: PointerEvent, kind: "note" | "folder", path: string, label: string) => void;
+  // The folder path currently under a sidebar drag ("" = the tree root), for the drop highlight.
+  dropHighlight: () => string | null;
+}) {
   // Seed from the last good tree so the sidebar paints instantly on boot; the fetch
   // still runs and reconciles. Persist every fresh, non-error response for next launch.
   const [files, { refetch, mutate }] = createResource(() => api.tree(), {
@@ -74,8 +82,6 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     return next;
   });
   const [editing, setEditing] = createSignal<string | null>(null);
-  const [dragPath, setDragPath] = createSignal<string | null>(null);
-  const [dropTarget, setDropTarget] = createSignal<string | null>(null);
   // Count of optimistic ops (move/rename/create/delete) whose server round-trip
   // is still outstanding. While > 0, the optimistic tree is the source of truth
   // and an SSE-driven refetch could clobber it with a stale snapshot taken
@@ -114,16 +120,18 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     if (f) writeCache(TREE_CACHE_KEY, f);
   });
   // React to server changes instead of blind polling. The effect tracks
-  // editing()/dragPath()/pendingOps() so it re-runs (and applies any deferred
-  // change) once an in-flight edit/drag/optimistic op clears — see
-  // decideTreeRefresh for the gating rationale (B3).
+  // editing()/pendingOps() so it re-runs (and applies any deferred change) once an
+  // in-flight edit/optimistic op clears — see decideTreeRefresh for the gating rationale
+  // (B3). A sidebar drag no longer needs to gate a refetch: the pointer-drag controller
+  // resolves its target from the live DOM on every move (elementFromPoint), and no
+  // optimistic edit exists until the drop lands, so a mid-drag tree rebuild is harmless.
   let lastSeen = 0;
   createEffect(() => {
     const { refetch: doFetch, nextLastSeen } = decideTreeRefresh({
       change: lastChange(),
       lastSeen,
       editing: editing() !== null,
-      dragging: dragPath() !== null,
+      dragging: false,
       pendingOps: pendingOps(),
     });
     lastSeen = nextLastSeen;
@@ -505,12 +513,13 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     openContextMenu(e.clientX, e.clientY, buildMenuItems(node), setMenu);
   }
 
-  /** Move the dragged node into `targetDir` ("" = vault root). Guards no-op and into-self. */
-  async function moveInto(targetDir: string) {
-    const from = dragPath();
-    setDragPath(null);
-    setDropTarget(null);
-    if (from === null) return;
+  /** Move `from` into `targetDir` ("" = vault root). Guards no-op and into-self. Driven by the
+   *  shared drag controller: App resolves a sidebar folder/root drop and dispatches
+   *  `bismuth-move-into`, keeping all the optimistic-tree machinery (rename + retarget open tab +
+   *  revert-on-failure) here where it belongs. This is the on-disk MOVE that Row 73 was missing —
+   *  native HTML5 drag never fired the old handler under WKWebView/synthetic pointers. */
+  async function moveIntoFrom(from: string, targetDir: string) {
+    if (!from) return;
     if (parentOf(from) === targetDir) return; // already there
     if (targetDir === from || targetDir.startsWith(from + "/")) return; // into itself/descendant
     const to = joinPath(targetDir, from.split("/").pop()!);
@@ -526,34 +535,20 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
     }
   }
 
-  const endDrag = () => {
-    setDragPath(null);
-    setDropTarget(null);
+  const onMoveInto = (e: Event) => {
+    const d = (e as CustomEvent).detail as { from?: string; targetDir?: string } | undefined;
+    if (!d?.from) return;
+    void moveIntoFrom(d.from, d.targetDir ?? "");
   };
-
-  /**
-   * Shared drag-start handler for both file and folder rows.
-   * `isFile` controls whether the MIME payload for pane-drop is written:
-   *   - files:   setData is called so a pane can accept a drop-to-split (PaneTree DRAG_MIME).
-   *   - folders: setData is intentionally omitted — panes open files, not directories,
-   *              so folder drags only participate in tree re-ordering, not pane splitting.
-   */
-  function makeDragStart(path: string, isFile: boolean) {
-    return (e: DragEvent) => {
-      e.stopPropagation();
-      setDragPath(path);
-      if (isFile) {
-        e.dataTransfer?.setData("application/x-bismuth-path", path);
-      }
-    };
-  }
+  window.addEventListener("bismuth-move-into", onMoveInto);
+  onCleanup(() => window.removeEventListener("bismuth-move-into", onMoveInto));
 
   return (
     <div
       class="ft-root"
+      classList={{ "drop-target": props.dropHighlight() === "" }}
+      data-drop-root="true"
       onClick={(e) => { if (e.target === e.currentTarget && selected().size > 0) setSelected(new Set<string>()); }}
-      onDragOver={(e) => { e.preventDefault(); setDropTarget(""); }}
-      onDrop={(e) => { e.preventDefault(); moveInto(""); }}
     >
       <Level
         node={treeRoot()}
@@ -571,13 +566,8 @@ export function FileTree(props: { onOpen: (path: string) => void; activeFile?: s
         awaitCreate={awaitCreate}
         selected={selected()}
         onRowClick={onRowClick}
-        dragPath={dragPath()}
-        setDragPath={setDragPath}
-        dropTarget={dropTarget()}
-        setDropTarget={setDropTarget}
-        moveInto={moveInto}
-        endDrag={endDrag}
-        makeDragStart={makeDragStart}
+        startItemDrag={props.startItemDrag}
+        dropHighlight={props.dropHighlight}
       />
       <Show when={menu()}>
         {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setMenu(null)} />}
@@ -731,11 +721,19 @@ function Level(props: {
   trackPending: <T>(fn: () => Promise<T>) => Promise<T>;
   awaitCreate: (path: string) => Promise<void>;
   selected: Set<string>; onRowClick: (node: TreeNode, e: MouseEvent) => boolean;
-  dragPath: string | null; setDragPath: (p: string | null) => void;
-  dropTarget: string | null; setDropTarget: (p: string | null) => void;
-  moveInto: (targetDir: string) => void; endDrag: () => void;
-  makeDragStart: (path: string, isFile: boolean) => (e: DragEvent) => void;
+  startItemDrag: (e: PointerEvent, kind: "note" | "folder", path: string, label: string) => void;
+  dropHighlight: () => string | null;
 }) {
+  // Begin a pointer-drag of a row (unless it's being renamed or is a protected system node). The
+  // native tap (open/toggle/select) stays on the row's onClick; a real drag swallows that click.
+  const onRowPointerDown = (e: PointerEvent, node: TreeNode, kind: "note" | "folder", label: string) => {
+    if (e.button !== 0) return;
+    if (props.editing === node.path) return;
+    if (node.isSystemFolder || node.path === SETTINGS_FILE) return;
+    if ((e.target as HTMLElement).closest(".ft-edit-input")) return;
+    e.stopPropagation(); // don't let a nested row's press bubble to an ancestor row
+    props.startItemDrag(e, kind, node.path, label);
+  };
   return (
     <For each={sortedChildren(props.node)}>
       {(child) => {
@@ -748,13 +746,10 @@ function Level(props: {
           <div>
             <div
               class="ft-row"
-              classList={{ "drop-target": props.dropTarget === child.path, system: !!child.isSystemFolder, selected: props.selected.has(child.path) }}
+              classList={{ "drop-target": props.dropHighlight() === child.path, system: !!child.isSystemFolder, selected: props.selected.has(child.path) }}
               style={{ "padding-left": indent }}
-              draggable={props.editing !== child.path && !child.isSystemFolder}
-              onDragStart={props.makeDragStart(child.path, false)}
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); props.setDropTarget(child.path); }}
-              onDrop={(e) => { e.preventDefault(); e.stopPropagation(); props.moveInto(child.path); }}
-              onDragEnd={() => props.endDrag()}
+              data-drop-folder={child.isSystemFolder ? undefined : child.path}
+              onPointerDown={(e) => onRowPointerDown(e, child, "folder", child.label ?? child.name)}
               onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.toggle(child.path); }}
               onContextMenu={(e) => props.onMenu(child, e)}
             >
@@ -771,9 +766,7 @@ function Level(props: {
                 editing={props.editing} setEditing={props.setEditing} refresh={props.refresh}
                 optimisticRename={props.optimisticRename} trackPending={props.trackPending}
                 awaitCreate={props.awaitCreate} selected={props.selected} onRowClick={props.onRowClick}
-                dragPath={props.dragPath} setDragPath={props.setDragPath}
-                dropTarget={props.dropTarget} setDropTarget={props.setDropTarget}
-                moveInto={props.moveInto} endDrag={props.endDrag} makeDragStart={props.makeDragStart} />
+                startItemDrag={props.startItemDrag} dropHighlight={props.dropHighlight} />
             </Collapsible>
           </div>
         ) : (
@@ -781,9 +774,7 @@ function Level(props: {
             class="ft-row file"
             classList={{ active: child.path === props.activeFile, system: child.path === SETTINGS_FILE, selected: props.selected.has(child.path) }}
             style={{ "padding-left": fileIndent }}
-            draggable={props.editing !== child.path && child.path !== SETTINGS_FILE}
-            onDragStart={props.makeDragStart(child.path, true)}
-            onDragEnd={() => props.endDrag()}
+            onPointerDown={(e) => onRowPointerDown(e, child, "note", child.label ?? displayName(child.name))}
             onClick={(e) => { if (props.editing === child.path) return; if (props.onRowClick(child, e)) return; props.onOpen(child.path); }}
             onContextMenu={(e) => props.onMenu(child, e)}
           >
