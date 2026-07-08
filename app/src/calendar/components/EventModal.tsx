@@ -4,7 +4,7 @@ import { categories, showEventModal, recurrenceAction, events } from '../state'
 import { EventStore, uuid } from '../EventStore'
 import { toDateStr, prettyDate } from '../dates'
 import { refreshEvents } from '../refresh'
-import { resolveCategoryColor } from '../categoryColor'
+import { resolveCategoryColor, eventCategoryNames } from '../categoryColor'
 import { Modal } from '../../ui/Modal'
 import { Icon } from '../../icons/Icon'
 import { TextInput } from '../../ui/TextInput'
@@ -38,7 +38,11 @@ export function EventModal(props: { store: EventStore }) {
   const [location, setLocation] = createSignal(editing?.location ?? '')
   const [link, setLink] = createSignal(editing?.link ?? '')
   const [description, setDescription] = createSignal(editing?.description ?? '')
-  const [category, setCategory] = createSignal(editing?.category ?? '')
+  // An event can belong to multiple categories; the first is mirrored back into the
+  // legacy `category` field on save so single-category events round-trip unchanged.
+  const [selCats, setSelCats] = createSignal<string[]>(editing ? eventCategoryNames(editing) : [])
+  const toggleCat = (name: string) =>
+    setSelCats(prev => (prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]))
   const [recType, setRecType] = createSignal<RecurrenceType | ''>(editing?.recurrence?.type ?? '')
   const [recDays, setRecDays] = createSignal<number[]>(editing?.recurrence?.daysOfWeek ?? getDefaultDaysOfWeek())
   const [recStart] = createSignal(editing?.recurrence?.startDate ?? defaultDate)
@@ -70,7 +74,10 @@ export function EventModal(props: { store: EventStore }) {
       ...(location() ? { location: location() } : {}),
       ...(link() ? { link: link() } : {}),
       ...(description() ? { description: description() } : {}),
-      ...(category() ? { category: category() } : {}),
+      // Explicitly include both keys (even when undefined) so clearing categories on an
+      // edit actually clears them — updateEvent merges, so an omitted key would persist.
+      category: selCats()[0],
+      categories: selCats().length > 1 ? [...selCats()] : undefined,
       ...(recType() ? { recurrence: { type: recType() as RecurrenceType, ...(recType() === 'weekly' || recType() === 'biweekly' ? { daysOfWeek: recDays().length ? recDays() : undefined } : {}), startDate: recStart() || date(), endDate: recEnd() || undefined, seriesId: freshSeries ? uuid() : (editing?.recurrence?.seriesId ?? uuid()) } } : {}),
     }
   }
@@ -189,15 +196,15 @@ export function EventModal(props: { store: EventStore }) {
 
         {/* category */}
         <div class="evm-field">
-          <div class="evm-lab"><Icon value="tag" size={12} strokeWidth={2} />Category</div>
+          <div class="evm-lab"><Icon value="tag" size={12} strokeWidth={2} />Category <span class="opt">· pick one or more</span></div>
           <div class="evm-cats">
-            <div class={'evm-cat' + (category() === '' ? ' on' : '')} role="button"
-              style={{ '--cc': 'var(--faint)' }} onClick={() => setCategory('')}>
+            <div class={'evm-cat' + (selCats().length === 0 ? ' on' : '')} role="button"
+              style={{ '--cc': 'var(--faint)' }} onClick={() => setSelCats([])}>
               <span class="dot" />None
             </div>
             <For each={categories.value}>{c => (
-              <div class={'evm-cat' + (category() === c.name ? ' on' : '')} role="button"
-                style={{ '--cc': resolveCategoryColor(c.color) }} onClick={() => setCategory(c.name)}>
+              <div class={'evm-cat' + (selCats().includes(c.name) ? ' on' : '')} role="button"
+                style={{ '--cc': resolveCategoryColor(c.color) }} onClick={() => toggleCat(c.name)}>
                 <span class="dot" />{c.name}
               </div>
             )}</For>

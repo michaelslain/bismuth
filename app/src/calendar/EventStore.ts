@@ -138,7 +138,13 @@ export class EventStore {
     if (idx !== -1) {
       this.data.categories[idx] = { ...this.data.categories[idx], ...updates }
       if (updates.name && updates.name !== name) {
-        this.data.events = this.data.events.map(e => (e.category === name ? { ...e, category: updates.name } : e))
+        const renamed = updates.name
+        this.data.events = this.data.events.map(e => {
+          let ev = e
+          if (e.category === name) ev = { ...ev, category: renamed }
+          if (e.categories?.includes(name)) ev = { ...ev, categories: ev.categories!.map(c => (c === name ? renamed : c)) }
+          return ev
+        })
       }
       await this.save()
     }
@@ -146,7 +152,15 @@ export class EventStore {
 
   async deleteCategory(name: string, reassignTo?: string): Promise<void> {
     this.data.categories = this.data.categories.filter(c => c.name !== name)
-    this.data.events = this.data.events.map(e => (e.category === name ? { ...e, category: reassignTo ?? undefined } : e))
+    this.data.events = this.data.events.map(e => {
+      let ev = e
+      if (e.category === name) ev = { ...ev, category: reassignTo ?? undefined }
+      if (e.categories?.includes(name)) {
+        const next = ev.categories!.map(c => (c === name ? reassignTo : c)).filter((c): c is string => !!c)
+        ev = { ...ev, categories: [...new Set(next)] }
+      }
+      return ev
+    })
     await this.save()
   }
 }
