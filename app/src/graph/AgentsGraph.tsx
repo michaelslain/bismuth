@@ -30,7 +30,7 @@ export function AgentsGraph(props: { agents: GraphData; org: Org; setOrg: (o: Or
         <div class="agents-card-h">Agent Network</div>
         <div class="agents-status-body">
           <Show when={sessions().length > 0} fallback={<>No Claude sessions<br />in terminal tabs yet<br /><span style={{ color: "var(--faint)" }}>run <code>claude</code> in a terminal</span></>}>
-            {sessions().length} terminal session{sessions().length === 1 ? "" : "s"}<br />
+            {sessions().length} session{sessions().length === 1 ? "" : "s"}<br />
             {subs().length} subagent{subs().length === 1 ? "" : "s"}<br />
             <span style={{ color: "var(--green)" }}>● {awake()} awake</span> · <span style={{ color: "var(--faint)" }}>{sessions().length - awake()} idle</span>
           </Show>

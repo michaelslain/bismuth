@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildAgentGraph } from "../src/agents";
+import { buildAgentGraph, type ChatAgentSession } from "../src/agents";
 import type { RelaySnapshot } from "../src/relay";
 
 const NOW = 1_000_000_000_000;
@@ -156,6 +156,91 @@ test("workflow and ordinary subagents coexist under one session — only the wor
   );
   expect(g.edges.find((e) => e.to === "agent:sub:wf")?.workflow).toBe("wf-7");
   expect(g.edges.find((e) => e.to === "agent:sub:plain")?.workflow).toBeUndefined();
+});
+
+// --- Visual chat sessions -------------------------------------------------------------------
+
+function chat(partial: Partial<ChatAgentSession>): ChatAgentSession {
+  return {
+    chatId: partial.chatId ?? "c1",
+    label: partial.label ?? "Chat",
+    active: partial.active ?? false,
+    lastActivityAt: partial.lastActivityAt ?? TWO_MIN_AGO,
+    subagents: partial.subagents ?? [],
+  };
+}
+
+test("an active chat session becomes a root agent node under the self hub", () => {
+  const g = buildAgentGraph(snap({}), new Set(), NOW, [
+    chat({ chatId: "c1", label: "Refactor the parser", active: true }),
+  ]);
+  expect(g.nodes).toHaveLength(1);
+  expect(g.nodes[0]).toMatchObject({ id: "agent:chat:c1", label: "Refactor the parser", kind: "agent", state: "awake" });
+  expect(g.nodes[0].parent).toBeUndefined(); // a root — the frontend wires "you" → it
+  expect(g.edges).toHaveLength(0);
+});
+
+test("a chat idle past the awake window is idle; a mid-turn chat stays awake", () => {
+  const idle = buildAgentGraph(snap({}), new Set(), NOW, [
+    chat({ chatId: "c1", active: false, lastActivityAt: ELEVEN_MIN_AGO }),
+  ]);
+  expect(idle.nodes.find((n) => n.id === "agent:chat:c1")?.state).toBe("idle");
+  // Even long past the heartbeat window, an in-flight turn (active) keeps the node awake.
+  const busy = buildAgentGraph(snap({}), new Set(), NOW, [
+    chat({ chatId: "c1", active: true, lastActivityAt: ELEVEN_MIN_AGO }),
+  ]);
+  expect(busy.nodes.find((n) => n.id === "agent:chat:c1")?.state).toBe("awake");
+});
+
+test("a closed chat is pruned — absent from the snapshot means absent from the graph", () => {
+  // chat.ts drops a closed chat from its registry, so the snapshot no longer contains it.
+  const g = buildAgentGraph(snap({}), new Set(), NOW, []);
+  expect(g.nodes.filter((n) => n.id.startsWith("agent:chat:"))).toHaveLength(0);
+});
+
+test("a chat's SDK subagent hangs off the chat node with a message edge", () => {
+  const g = buildAgentGraph(snap({}), new Set(), NOW, [
+    chat({
+      chatId: "c1",
+      label: "Investigate flake",
+      active: true,
+      subagents: [{ agentId: "t1", agentType: "Explore", done: false }],
+    }),
+  ]);
+  const sub = g.nodes.find((n) => n.id === "agent:chatsub:t1");
+  expect(sub).toMatchObject({ label: "Explore", kind: "agent", state: "awake", parent: "agent:chat:c1" });
+  expect(g.edges).toEqual([{ from: "agent:chat:c1", to: "agent:chatsub:t1", kind: "message" }]);
+  // A finished chat subagent reads as idle.
+  const done = buildAgentGraph(snap({}), new Set(), NOW, [
+    chat({ chatId: "c1", subagents: [{ agentId: "t1", agentType: "Explore", done: true }] }),
+  ]);
+  expect(done.nodes.find((n) => n.id === "agent:chatsub:t1")?.state).toBe("idle");
+});
+
+test("chat sessions and terminal sessions coexist as sibling roots in one agents graph", () => {
+  const g = buildAgentGraph(
+    snap({ sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }] }),
+    new Set(["tab-1"]),
+    NOW,
+    [chat({ chatId: "c1", label: "My chat", active: true })],
+  );
+  const roots = g.nodes.filter((n) => !n.parent);
+  expect(roots.map((n) => n.id).sort()).toEqual(["agent:chat:c1", "agent:sess:s1"]);
+});
+
+test("omitting the chat argument entirely leaves the terminal graph unchanged (back-compat)", () => {
+  const withArg = buildAgentGraph(
+    snap({ sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }] }),
+    new Set(["tab-1"]),
+    NOW,
+    [],
+  );
+  const withoutArg = buildAgentGraph(
+    snap({ sessions: [{ sessionId: "s1", terminalId: "tab-1", cwd: "/x/proj", lastSeen: TWO_MIN_AGO }] }),
+    new Set(["tab-1"]),
+    NOW,
+  );
+  expect(withoutArg).toEqual(withArg);
 });
 
 test("several subagents under one session, plus a second session whose tab is closed", () => {
