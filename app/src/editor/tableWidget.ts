@@ -799,7 +799,13 @@ export class TableWidget extends WidgetType {
       rowEls.push(tr);
     });
 
-    root.appendChild(table);
+    // The table lives in a dedicated scroll container so INFINITY mode can scroll it horizontally
+    // (`overflow-x:auto`) WITHOUT clipping the hover toolbar / `+` edge bars, which sit on the
+    // (non-clipping) wrap outside this box (#62). In normal mode the scroll box is inert.
+    const scroll = document.createElement("div");
+    scroll.className = "cm-table-scroll";
+    scroll.appendChild(table);
+    root.appendChild(scroll);
 
     // ── Merged cells: render spans in-place (#62) ──────────────────────────────────────────────
     // GFM can't express colspan/rowspan, so a merge is applied to the DOM without touching source:

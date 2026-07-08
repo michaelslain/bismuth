@@ -1388,9 +1388,14 @@ export const livePreview = [
       padding: "0.1em 0.45em",
       "line-height": "1.3",
     },
-    // ── #62 infinity extend: the wrap becomes a horizontal scroll container and the table takes
-    //    its natural content width (cells stop wrapping) instead of squashing columns to page width.
-    ".cm-table-infinity.cm-table-wrap": { "max-width": "100%", "overflow-x": "auto", "overflow-y": "visible" },
+    // The inert-by-default scroll box that holds the <table>. INFINITY mode turns it into a
+    // horizontal scroller (below); normal mode leaves it transparent so layout is unchanged.
+    ".cm-table-scroll": { width: "fit-content", "max-width": "100%" },
+    // ── #62 infinity extend: the INNER scroll box scrolls horizontally and the table takes its
+    //    natural content width (cells stop wrapping) instead of squashing columns to page width.
+    //    Only the inner box clips — the wrap keeps the toolbar + `+` edge bars visible.
+    ".cm-table-infinity.cm-table-wrap": { width: "100%" },
+    ".cm-table-infinity .cm-table-scroll": { "max-width": "100%", "overflow-x": "auto" },
     ".cm-table-infinity .cm-table-rendered": { width: "max-content", "table-layout": "auto" },
     ".cm-table-infinity .cm-td": { "white-space": "nowrap" },
     ".cm-table-infinity .cm-td[data-editing=\"1\"]": { "white-space": "pre-wrap" },
