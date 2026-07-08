@@ -15,7 +15,7 @@ import { readThemePalette } from "./export/resolvePalette";
 import { renderExport, renderPreview } from "./export/exporters";
 import { pageSections } from "./export/pageBreaks";
 import { drawingToPng } from "./export/drawingRaster";
-import { downloadFile, writeToFolder } from "./export/download";
+import { deliverFile, writeToFolder, type Delivery } from "./export/download";
 import { readCache, writeCache } from "./viewCache";
 import type { ExportFormat, ExportTheme, ExportDeps, ExportOptions, RenderMode, CalSpan } from "./export/types";
 import { parseFrontmatter } from "../../core/src/frontmatter";
@@ -265,6 +265,8 @@ export function ExportView(props: { path: string }) {
       const files = r.files ?? [{ filename: r.filename, bytes: r.bytes }];
       const dest = destFolder().trim();
       if (dest && isTauri()) {
+        // writeToFolder verifies each file exists after writing — a resolved-but-missing
+        // write throws into the catch below instead of toasting a lie.
         const written: string[] = [];
         for (const f of files) written.push(await writeToFolder(dest, f.filename, f.bytes));
         pushToast(
@@ -273,16 +275,22 @@ export function ExportView(props: { path: string }) {
             : `Exported ${r.filename} → ${written[0]}`,
         );
       } else {
-        for (const f of files) await downloadFile(f.filename, f.bytes, r.mime);
-        pushToast(
-          files.length > 1
-            ? dest
-              ? `Exported ${files.length} pages to Downloads (folder export needs the desktop app)`
-              : `Exported ${files.length} pages to Downloads`
-            : dest
-              ? `Exported ${r.filename} to Downloads (folder export needs the desktop app)`
+        // deliverFile: desktop = VERIFIED write into the OS Downloads dir (native Save
+        // dialog as fallback; throws when nothing provably landed), resolving the real
+        // absolute path; browser = anchor download. Toast the verified path, not a guess.
+        const results: Delivery[] = [];
+        for (const f of files) results.push(await deliverFile(f.filename, f.bytes, r.mime));
+        const first = results[0];
+        if (first.via === "tauri") {
+          const dir = first.path.slice(0, first.path.lastIndexOf("/")) || first.path;
+          pushToast(files.length > 1 ? `Exported ${files.length} pages → ${dir}` : `Exported → ${first.path}`);
+        } else {
+          pushToast(
+            files.length > 1
+              ? `Exported ${files.length} pages to Downloads`
               : `Exported ${r.filename} to Downloads`,
-        );
+          );
+        }
       }
     } catch (e) {
       pushToast(`Export failed: ${(e as Error).message}`);

@@ -198,10 +198,14 @@ So `bismuth export Tasks.md --format html`, `bismuth export sketch.draw --format
 
 ## Download flow
 
-`doExport` (`ExportView.tsx`) flushes any un-blurred edit, calls `renderExport`, then dispatches on the chosen output:
+`doExport` (`ExportView.tsx`) flushes any un-blurred edit, calls `renderExport`, then dispatches on the chosen output. **The write result is authoritative**: every desktop write is verified with `fs.exists` afterwards, and success is only toasted for a file that provably landed — a resolved-but-missing write throws into the failure toast with the attempted absolute path. (The packaged app used to toast "Exported … to Downloads" purely because the write call resolved; when nothing landed, the toast lied — the exact bug this design removes.)
 
-- **A chosen folder + desktop app** → `writeToFolder(dest, filename, bytes)` (Tauri fs plugin; returns the absolute path; the folder must be inside the app's fs capability scope), toasting `Exported … → <path>`.
-- **Otherwise** → `downloadFile(filename, bytes, mime)`: in Tauri, writes to the OS `downloadDir`; in the browser, a `Blob` + `<a download>` anchor click. If a folder was set but the app isn't Tauri, it falls back to Downloads with an explanatory toast.
+- **A chosen folder + desktop app** → `writeToFolder(dest, filename, bytes)` (Tauri fs plugin; the folder must be inside the app's fs capability scope), write **verified**, returning the absolute path; toasts `Exported … → <path>`.
+- **Otherwise** → `deliverFile(filename, bytes, mime)` (`download.ts`):
+  - **Desktop**: write to `path.downloadDir()` (the REAL OS Downloads dir) → verify with `fs.exists` (capability `fs:allow-exists`). If the write throws **or** verification fails, fall back to the native **Save dialog** (`dialog.save` — a user-consented path is always allowed by the fs scope; covers e.g. a denied macOS Files-and-Folders permission on Downloads); write + verify there. A cancelled dialog or a doubly-failed write **throws** — nothing silently succeeds. Resolves `{ via: "tauri", path }`; the toast shows the verified absolute path (`Exported → /Users/…/Downloads/note.pdf`).
+  - **Browser**: `Blob` + `<a download>` anchor click, resolving `{ via: "browser" }` (the browser owns the download from there); toasts "to Downloads".
+
+The Tauri surface is injectable (`TauriDelivery`), so the routing + verify-after-write logic is unit-tested without a webview (`download.test.ts`); the real seam lazy-imports `@tauri-apps/plugin-fs` / `@tauri-apps/api/path` / `@tauri-apps/plugin-dialog`.
 
 The `ExportDeps` the pane wires up include `read`/`resolveRows` (HTTP via `api`), the deferred `htmlToPdf`/`htmlToPng` (dynamic-imported only when actually exporting a PDF/PNG, to keep `jspdf`+`html2canvas` out of the preview path), `drawingToPng` (browser raster), and `katexCss` (the Vite `?inline` module, lazy-loaded only when an export contains math).
 
