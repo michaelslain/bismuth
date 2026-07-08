@@ -111,6 +111,23 @@ function renderCellDom(src: string): HTMLElement {
   return cell;
 }
 
+// ── #62: an empty DISPLAY-face cell keeps a full-height line box (report 1) ───────────────────
+// A blank / freshly-added cell block-renders to no line box and collapses to a sliver unless a
+// placeholder line is reserved. The widget marks such a cell with `cm-td-empty` (a class, robust
+// where `:empty` is fragile) so CSS can reserve one line in the BLUR/display state — matching a
+// filled row's height. A cell with content must NOT carry the class.
+describe("#62 empty display cell reserves a line box", () => {
+  test("an empty cell gets the cm-td-empty class in the display face", () => {
+    expect(renderCellDom("").classList.contains("cm-td-empty")).toBe(true);
+  });
+  test("a whitespace-only cell still gets the class (robust vs :empty)", () => {
+    expect(renderCellDom("   ").classList.contains("cm-td-empty")).toBe(true);
+  });
+  test("a cell with text does NOT get the class", () => {
+    expect(renderCellDom("hello").classList.contains("cm-td-empty")).toBe(false);
+  });
+});
+
 // ── #15: the display face renders through the FULL BLOCK engine (the "block thing") ──────────
 // A cell's stored source (`<br>`-joined single line) block-renders exactly like a note body in
 // reading mode: the `<br>` markers become newlines and the reader engine (bases/markdown.ts,

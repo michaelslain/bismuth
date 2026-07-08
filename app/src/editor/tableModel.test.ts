@@ -26,6 +26,20 @@ import {
   cellRectAtPoint,
   type CellRect,
   remapCursorOffTable,
+  moveRow,
+  moveColumn,
+  reorderDropIndex,
+  reorderFinalIndex,
+  rectFromCells,
+  regionsOverlap,
+  normalizeMergeRegions,
+  coveredCells,
+  addMergeRegion,
+  removeMergeAt,
+  mergeAnchorAt,
+  mergeContaining,
+  cellKey,
+  type MergeRegion,
 } from "./tableModel";
 
 // A small 2-col grid: header + two body rows.
@@ -614,4 +628,84 @@ test("remapCursorOffTable: the same interior anchor skips BACKWARD when prevHead
   const prevHead = UNDO_DOC.line(9).from; // "Some text after."
   const head = UNDO_DOC.line(6).from + 2; // interior row, deep column offset
   expect(remapCursorOffTable(UNDO_DOC, head, prevHead, null)).toBe(uFrom - 1);
+});
+
+// ── #62 drag-to-reorder rows / columns (pure moveRow / moveColumn) ─────────────────────────────
+test("moveRow moves a body row and never disturbs the header", () => {
+  const g: TableGrid = { cells: [["H1", "H2"], ["a", "1"], ["b", "2"], ["c", "3"]], aligns: ["none", "none"] };
+  const out = moveRow(g, 1, 3); // move row "a" to the bottom
+  expect(out.cells).toEqual([["H1", "H2"], ["b", "2"], ["c", "3"], ["a", "1"]]);
+  expect(g.cells[1]).toEqual(["a", "1"]); // input not mutated
+});
+
+test("moveRow refuses to move the header or an out-of-range / no-op index", () => {
+  const g: TableGrid = { cells: [["H"], ["a"], ["b"]], aligns: ["none"] };
+  expect(moveRow(g, 0, 2).cells).toEqual(g.cells); // header
+  expect(moveRow(g, 1, 1).cells).toEqual(g.cells); // no-op
+  expect(moveRow(g, 1, 9).cells).toEqual(g.cells); // out of range
+});
+
+test("moveColumn moves a whole column including its header cell + alignment", () => {
+  const g: TableGrid = { cells: [["H1", "H2", "H3"], ["a", "b", "c"]], aligns: ["left", "center", "right"] };
+  const out = moveColumn(g, 0, 2); // move first column to the end
+  expect(out.cells).toEqual([["H2", "H3", "H1"], ["b", "c", "a"]]);
+  expect(out.aligns).toEqual(["center", "right", "left"]);
+});
+
+// ── #62 merged cells (pure region geometry) ────────────────────────────────────────────────────
+test("rectFromCells builds the bounding region from any two corners", () => {
+  expect(rectFromCells({ r: 2, c: 3 }, { r: 1, c: 1 })).toEqual({ r: 1, c: 1, rowSpan: 2, colSpan: 3 });
+  expect(rectFromCells({ r: 0, c: 0 }, { r: 0, c: 0 })).toEqual({ r: 0, c: 0, rowSpan: 1, colSpan: 1 });
+});
+
+test("regionsOverlap detects touching vs disjoint rectangles", () => {
+  const a: MergeRegion = { r: 0, c: 0, rowSpan: 2, colSpan: 2 };
+  expect(regionsOverlap(a, { r: 1, c: 1, rowSpan: 1, colSpan: 1 })).toBe(true);
+  expect(regionsOverlap(a, { r: 2, c: 0, rowSpan: 1, colSpan: 1 })).toBe(false); // just below
+  expect(regionsOverlap(a, { r: 0, c: 2, rowSpan: 1, colSpan: 1 })).toBe(false); // just right
+});
+
+test("coveredCells hides every cell of a region except its anchor", () => {
+  const covered = coveredCells([{ r: 0, c: 0, rowSpan: 2, colSpan: 2 }]);
+  expect(covered.has(cellKey(0, 0))).toBe(false); // anchor visible
+  expect([...covered].sort()).toEqual([cellKey(0, 1), cellKey(1, 0), cellKey(1, 1)].sort());
+});
+
+test("normalizeMergeRegions clamps overruns, drops 1x1 + out-of-bounds + overlaps", () => {
+  const regions: MergeRegion[] = [
+    { r: 0, c: 0, rowSpan: 5, colSpan: 5 }, // overruns 3x3 grid → clamped to 3x3
+    { r: 1, c: 1, rowSpan: 2, colSpan: 2 }, // overlaps the first → dropped
+    { r: 9, c: 9, rowSpan: 2, colSpan: 2 }, // out of bounds → dropped
+    { r: 2, c: 2, rowSpan: 1, colSpan: 1 }, // 1x1 → dropped
+  ];
+  const out = normalizeMergeRegions(regions, 3, 3);
+  expect(out).toEqual([{ r: 0, c: 0, rowSpan: 3, colSpan: 3 }]);
+});
+
+test("addMergeRegion replaces overlapping merges and unmerge removes by any covered cell", () => {
+  let regions: MergeRegion[] = [];
+  regions = addMergeRegion(regions, { r: 0, c: 0, rowSpan: 2, colSpan: 2 }, 4, 4);
+  expect(mergeAnchorAt(regions, 0, 0)).toEqual({ r: 0, c: 0, rowSpan: 2, colSpan: 2 });
+  // A new merge overlapping the first wins (the old one is removed).
+  regions = addMergeRegion(regions, { r: 1, c: 1, rowSpan: 2, colSpan: 2 }, 4, 4);
+  expect(mergeAnchorAt(regions, 0, 0)).toBeNull();
+  expect(mergeContaining(regions, 2, 2)).toEqual({ r: 1, c: 1, rowSpan: 2, colSpan: 2 });
+  // Unmerge via a covered (non-anchor) cell splits the region.
+  regions = removeMergeAt(regions, 2, 2);
+  expect(regions).toEqual([]);
+});
+
+// ── #62 drag reorder drop-index geometry (pure) ────────────────────────────────────────────────
+test("reorderDropIndex counts segment centers before the pointer", () => {
+  const bounds = [0, 100, 200, 300]; // 3 columns, centers at 50/150/250
+  expect(reorderDropIndex(bounds, 10)).toBe(0);
+  expect(reorderDropIndex(bounds, 60)).toBe(1);
+  expect(reorderDropIndex(bounds, 160)).toBe(2);
+  expect(reorderDropIndex(bounds, 999)).toBe(3); // clamped to count
+});
+
+test("reorderFinalIndex shifts a forward drop one slot earlier", () => {
+  expect(reorderFinalIndex(0, 3)).toBe(2); // drag col 0 past the end of a 3-col table
+  expect(reorderFinalIndex(2, 0)).toBe(0); // drag col 2 to the front
+  expect(reorderFinalIndex(1, 1)).toBe(1); // no-op slot
 });
