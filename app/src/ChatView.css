@@ -21,6 +21,23 @@
   background: var(--bg);
   color: var(--fg);
   position: relative;
+  /* Surface tokens localised so a tinted chat pane can blend them against --chat-tint instead of
+     leaving opaque rectangles floating on the tinted background. Untinted chats inherit the theme
+     tokens verbatim. */
+  --chat-surface-1: var(--surface-1);
+  --chat-surface-2: var(--surface-2);
+  --chat-border-soft: var(--border-soft);
+  --chat-border: var(--border);
+  --chat-hover-bg: var(--hover-bg);
+  --chat-fg-mix: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.chat-host[data-chat-tint] {
+  --chat-surface-1: color-mix(in oklch, var(--chat-tint) 14%, var(--bg));
+  --chat-surface-2: color-mix(in oklch, var(--chat-tint) 26%, var(--surface-1));
+  --chat-border-soft: color-mix(in oklch, var(--chat-tint) 30%, var(--border-soft));
+  --chat-border: color-mix(in oklch, var(--chat-tint) 40%, var(--border));
+  --chat-hover-bg: color-mix(in oklch, var(--chat-tint) 18%, var(--hover-bg));
+  --chat-fg-mix: color-mix(in oklch, var(--chat-tint) 10%, transparent);
 }
 
 /* Dragging an image over the chat pane (BUG #54) — inset accent ring + faint wash signalling the
@@ -114,7 +131,7 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--faint);
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--chat-border-soft);
 }
 .chat-history-state {
   padding: 16px 14px;
@@ -148,7 +165,7 @@
   align-items: center;
   gap: 7px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--chat-border-soft);
 }
 .chat-history-search-icon {
   color: var(--faint);
@@ -189,7 +206,7 @@
   font: inherit;
 }
 .chat-history-hit:hover {
-  background: var(--hover-bg);
+  background: var(--chat-hover-bg);
 }
 .chat-history-hit-head {
   display: flex;
@@ -262,7 +279,7 @@
   font-family: var(--ui-font-stack);
   font-style: normal;
   font-size: 0.85em;
-  background: var(--surface-2);
+  background: var(--chat-surface-2);
   border-radius: 4px;
   padding: 1px 5px;
 }
@@ -305,16 +322,16 @@
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 999px;
-  background: var(--surface-1);
+  background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
   font-size: 11.5px;
   cursor: pointer;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
 }
-.chat-jump-bottom:hover { color: var(--fg); background: var(--surface-2); }
+.chat-jump-bottom:hover { color: var(--fg); background: var(--chat-surface-2); }
 
 /* Floating "Reply" button anchored to a text selection inside a message bubble (FEATURE #18).
    Fixed to the viewport (positioned from the selection's client rect), nudged above it. */
@@ -325,9 +342,9 @@
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 999px;
-  background: var(--surface-1);
+  background: var(--chat-surface-1);
   color: var(--text-muted);
   font-family: var(--ui-font-stack);
   font-size: 11.5px;
@@ -335,7 +352,7 @@
   z-index: 60;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
 }
-.chat-sel-reply:hover { color: var(--fg); background: var(--surface-2); }
+.chat-sel-reply:hover { color: var(--fg); background: var(--chat-surface-2); }
 
 /* A queued (staged, not yet sent) user turn: dimmed until its dispatch un-dims it. */
 .chat-msg.user.queued { opacity: 0.55; }
@@ -439,6 +456,15 @@
   padding: 0;
   line-height: 1.5;
 }
+/* In a tinted chat pane, blend the gray code fills with the chat color so they don't read as
+   foreign opaque patches on the tinted background. The literal rgba values above are kept as the
+   shared editor baseline; these overrides mix the tint on top. */
+.chat-host[data-chat-tint] .chat-bubble code {
+  background: color-mix(in oklch, var(--chat-tint) 16%, rgba(140, 140, 140, 0.18));
+}
+.chat-host[data-chat-tint] .chat-bubble pre {
+  background: color-mix(in oklch, var(--chat-tint) 12%, rgba(140, 140, 140, 0.12));
+}
 .chat-bubble blockquote {
   margin: 0.4em 0;
   padding-left: 8px;
@@ -458,12 +484,12 @@
 }
 .chat-bubble th,
 .chat-bubble td {
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--chat-border-soft);
   padding: 0.32em 0.6em;
   text-align: left;
 }
 .chat-bubble th {
-  background: var(--surface-1);
+  background: var(--chat-surface-1);
   font-weight: 600;
 }
 .chat-bubble .bismuth-tag {
@@ -527,9 +553,9 @@
    the reading column. ─────────────────────────────────────────────────────────────────────── */
 .chat-command-output {
   margin: 2px 0;
-  border: 1px solid var(--border-soft);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 8px;
-  background: rgba(140, 140, 140, 0.08);
+  background: var(--chat-surface-1);
   overflow: hidden;
 }
 .chat-command-output-head {
@@ -537,7 +563,7 @@
   align-items: center;
   gap: 6px;
   padding: 5px 10px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--chat-border-soft);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -618,7 +644,7 @@
 .chat-tool-pre {
   margin: 0;
   padding: 5px 0 5px 10px;
-  border-left: 2px solid var(--border-soft);
+  border-left: 2px solid var(--chat-border-soft);
   border-radius: 0;
   font-family: var(--ui-font-stack);
   font-size: 11.5px;
@@ -638,7 +664,7 @@
 .chat-permission {
   border-left: 3px solid var(--accent);
   border-radius: 0 8px 8px 0;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  background: var(--chat-fg-mix);
   padding: 9px 12px 10px;
 }
 .chat-permission.answered { opacity: 0.65; border-left-color: var(--border); }
@@ -691,7 +717,7 @@
 .chat-question {
   border-left: 3px solid var(--accent);
   border-radius: 0 8px 8px 0;
-  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  background: var(--chat-fg-mix);
   padding: 9px 12px 11px;
 }
 .chat-question.answered { opacity: 0.7; border-left-color: var(--border); }
@@ -751,8 +777,8 @@
   width: 100%;
   text-align: left;
   padding: 7px 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 8px;
   cursor: pointer;
   transition: border-color 0.12s ease, background 0.12s ease;
@@ -761,7 +787,7 @@
 }
 .chat-question-option:hover:not(:disabled) {
   border-color: var(--accent);
-  background: var(--hover-bg);
+  background: var(--chat-hover-bg);
 }
 .chat-question-option.picked {
   border-color: var(--accent);
@@ -781,8 +807,8 @@
   width: 100%;
   margin-top: 6px;
   padding: 6px 10px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 8px;
   font: inherit;
   font-size: 12.5px;
@@ -882,12 +908,12 @@
   max-width: 680px;
   margin: 0 auto;
   padding: 5px 6px 5px 14px;
-  background: var(--surface-2);
-  border: 1px solid var(--border-soft);
+  background: var(--chat-surface-2);
+  border: 1px solid var(--chat-border-soft);
   border-radius: 14px;
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
-.chat-composer-inner:hover:not(:focus-within) { border-color: var(--border); }
+.chat-composer-inner:hover:not(:focus-within) { border-color: var(--chat-border); }
 /* Signature focus treatment, matching .ui-input: accent border + soft accent glow ring — the
    textarea inside carries the focus, the box shows it. */
 .chat-composer-inner:focus-within {
@@ -1003,7 +1029,20 @@
 .chat-setup code {
   font-family: var(--ui-font-stack);
   font-size: 0.9em;
-  background: var(--surface-2);
+  background: var(--chat-surface-2);
   border-radius: 4px;
   padding: 1px 5px;
+}
+
+/* Color swatch dot shown in the chat tab's Color submenu rows (Row 75). */
+.chat-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fg) 18%, transparent);
+}
+.chat-color-dot--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
 }

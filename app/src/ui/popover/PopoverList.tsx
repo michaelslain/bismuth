@@ -11,6 +11,8 @@ import { MenuRow } from "./MenuRow";
 export type PopoverRow = {
   label: string;
   icon?: string;
+  /** A small custom element rendered before the label (e.g. a color swatch dot). */
+  prefix?: JSX.Element;
   detail?: string;
   danger?: boolean;
   disabled?: boolean;

@@ -1842,6 +1842,23 @@ export default function App() {
     return fileIcons().get(content) ?? "FileText";
   }
 
+  /** The chat pane tint color for a tab's content id, or undefined if it isn't a chat or has none. */
+  function chatTabColor(content: string): string | undefined {
+    if (!content.startsWith(CHAT_PREFIX)) return undefined;
+    return chatColor(content.slice(CHAT_PREFIX.length));
+  }
+
+  /** The user-set Tab.name for the tab that currently owns `content`, preferring the active tab.
+   *  Used to keep the ChatView pane header in sync with its tab chip. */
+  function tabNameForContent(content: string): string | undefined {
+    const active = activeTab();
+    if (active && leaves(active.root).some((l) => l.content === content)) return active.name;
+    for (const t of tabs()) {
+      if (leaves(t.root).some((l) => l.content === content)) return t.name;
+    }
+    return undefined;
+  }
+
   /** One configurable toolbar button (shared by the sidebar header bar + the tab bar).
    *  Resolves to its command(s): a `commands: [...]` list wins, else the single `command`;
    *  runs the FIRST resolvable one, disabled when none resolve (see resolveButtonCommands).
@@ -1884,8 +1901,8 @@ export default function App() {
     if (tab.name) items.push({ label: "Reset name", icon: "RotateCcw", onSelect: () => updateTab(tab.id, (x) => ({ ...x, name: undefined })) });
     // Chat tabs (FEATURE #75): a Color submenu that tints the WHOLE chat pane. Keyed by the chat's
     // durable content id (::chat:<uuid>), persisted per-chat (chatColors.ts) so it survives reload +
-    // Cmd+Shift+T reopen; ChatView re-tints live off the signal. A check marks the active swatch;
-    // "None" clears back to the theme background.
+    // Cmd+Shift+T reopen; ChatView re-tints live off the signal. Each row shows a preview dot in
+    // the swatch color plus a check when selected; "Reset" clears back to the theme background.
     if (content && content.startsWith(CHAT_PREFIX)) {
       const chatId = content.slice(CHAT_PREFIX.length);
       const current = chatColor(chatId);
@@ -1895,10 +1912,17 @@ export default function App() {
         submenu: [
           ...CHAT_COLOR_SWATCHES.map((sw) => ({
             label: sw.name,
-            icon: current === sw.value ? "Check" : "Circle",
+            icon: current === sw.value ? "Check" : undefined,
+            prefix: <span class="chat-color-dot" style={{ background: sw.value }} />,
             onSelect: () => setChatColor(chatId, sw.value),
           })),
-          { label: "None", icon: current ? "Circle" : "Check", separatorBefore: true, onSelect: () => setChatColor(chatId, null) },
+          {
+            label: "Reset",
+            icon: current ? undefined : "Check",
+            prefix: <span class="chat-color-dot chat-color-dot--none" />,
+            separatorBefore: true,
+            onSelect: () => setChatColor(chatId, null),
+          },
         ],
       });
     }
@@ -1927,65 +1951,76 @@ export default function App() {
         <Show when={!settings.ui.verticalTabs}>
         <div class="tabbar" data-tabstrip="true">
           <Index each={tabs()}>
-            {(t, i) => (
-              <>
-                <Show when={stripDropIndex() === i && !draggingTabId()}>
-                  <div class="tab-caret" />
-                </Show>
-                <div
-                  class={`tab${activeTabId() === t().id ? " active" : ""}`}
-                  classList={{ dragging: draggingTabId() === t().id, pinned: !!t().pinned }}
-                  data-tab-chip="true"
-                  // A pinned tab renders compact (icon + pin glyph, no label), so surface its
-                  // name on hover. Skip while renaming (the input carries the name).
-                  title={t().pinned && renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                  style={{ transform: `translateX(${tabShift(i)}px)` }}
-                  onPointerDown={(e) => {
-                    if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                    viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
-                  }}
-                  // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
-                  // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
-                  onAuxClick={(e) => {
-                    if (e.button !== 1) return;
-                    e.preventDefault();
-                    closeTabById(t().id);
-                  }}
-                  onDblClick={(e) => {
-                    if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
-                    startRenameTab(t().id);
-                  }}
-                  onContextMenu={(e) => openTabContextMenu(e, t())}
-                >
-                  <Show when={tabBarIcon(t())}>
-                    {(icon) => <Icon value={icon()} size={13} />}
+            {(t, i) => {
+              const chipStyle = createMemo(() => {
+                const tab = t();
+                const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
+                const color = leaf ? chatTabColor(leaf.content) : undefined;
+                return {
+                  transform: `translateX(${tabShift(i)}px)`,
+                  "box-shadow": color ? `inset 0 -2.5px 0 0 ${color}` : undefined,
+                };
+              });
+              return (
+                <>
+                  <Show when={stripDropIndex() === i && !draggingTabId()}>
+                    <div class="tab-caret" />
                   </Show>
-                  <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
-                    <input
-                      class="tab-rename"
-                      value={tabBarLabel(t())}
-                      ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                      onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
-                        else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
-                        e.stopPropagation();
-                      }}
-                    />
-                  </Show>
-                  {/* Pinned tabs replace the close X with a pin glyph (click → unpin); the tab
-                      can't be closed by the X, matching Obsidian/VSCode pinned-tab behavior. */}
-                  <Show
-                    when={t().pinned}
-                    fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />}
+                  <div
+                    class={`tab${activeTabId() === t().id ? " active" : ""}`}
+                    classList={{ dragging: draggingTabId() === t().id, pinned: !!t().pinned }}
+                    data-tab-chip="true"
+                    // A pinned tab renders compact (icon + pin glyph, no label), so surface its
+                    // name on hover. Skip while renaming (the input carries the name).
+                    title={t().pinned && renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
+                    style={chipStyle()}
+                    onPointerDown={(e) => {
+                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
+                      viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
+                    }}
+                    // Middle-click closes any tab, INCLUDING a pinned one (which hides its X) —
+                    // the VSCode/Obsidian escape hatch so a pin doesn't have to be undone first.
+                    onAuxClick={(e) => {
+                      if (e.button !== 1) return;
+                      e.preventDefault();
+                      closeTabById(t().id);
+                    }}
+                    onDblClick={(e) => {
+                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return;
+                      startRenameTab(t().id);
+                    }}
+                    onContextMenu={(e) => openTabContextMenu(e, t())}
                   >
-                    <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={12} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
-                  </Show>
-                </div>
-              </>
-            )}
+                    <Show when={tabBarIcon(t())}>
+                      {(icon) => <Icon value={icon()} size={13} />}
+                    </Show>
+                    <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
+                      <input
+                        class="tab-rename"
+                        value={tabBarLabel(t())}
+                        ref={(el) => queueMicrotask(() => { el.focus(); el.select(); })}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onBlur={(e) => commitRename(t().id, e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") { e.preventDefault(); commitRename(t().id, e.currentTarget.value); }
+                          else if (e.key === "Escape") { e.preventDefault(); setRenamingTabId(null); }
+                          e.stopPropagation();
+                        }}
+                      />
+                    </Show>
+                    {/* Pinned tabs replace the close X with a pin glyph (click → unpin); the tab
+                        can't be closed by the X, matching Obsidian/VSCode pinned-tab behavior. */}
+                    <Show
+                      when={t().pinned}
+                      fallback={<IconButton class="tab-x" icon="X" label="Close tab" iconSize={12} onClick={(e) => closeTab(t().id, e)} />}
+                    >
+                      <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={12} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
+                    </Show>
+                  </div>
+                </>
+              );
+            }}
           </Index>
           <Show when={stripDropIndex() === tabs().length && !draggingTabId()}>
             <div class="tab-caret" />
@@ -2085,7 +2120,12 @@ export default function App() {
                   display: rect() ? "block" : "none",
                 }}>
                   <Suspense fallback={<div class="full" />}>
-                    <ChatView chatId={id.slice(CHAT_PREFIX.length)} noteNames={noteCandidates} tagNames={tagCandidates} />
+                    <ChatView
+                      chatId={id.slice(CHAT_PREFIX.length)}
+                      tabName={() => tabNameForContent(id)}
+                      noteNames={noteCandidates}
+                      tagNames={tagCandidates}
+                    />
                   </Suspense>
                 </div>
               );
@@ -2114,26 +2154,34 @@ export default function App() {
             </div>
             <div class="tab-rail-list" data-tabstrip="vertical">
               <Index each={tabs()}>
-                {(t) => (
-                  <div
-                    class="tab-rail-row"
-                    classList={{ active: activeTabId() === t().id, pinned: !!t().pinned, dragging: draggingTabId() === t().id }}
-                    data-tab-chip="true"
-                    // Native tooltip surfaces the name while the rail is collapsed to icons.
-                    title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
-                    onClick={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                      setActiveTabId(t().id);
-                    }}
-                    onPointerDown={(e) => {
-                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
-                      viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
-                    }}
-                    // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
-                    onAuxClick={(e) => { if (e.button !== 1) return; e.preventDefault(); closeTabById(t().id); }}
-                    onDblClick={(e) => { if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return; startRenameTab(t().id); }}
-                    onContextMenu={(e) => openTabContextMenu(e, t())}
-                  >
+                {(t) => {
+                  const railStyle = createMemo(() => {
+                    const tab = t();
+                    const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
+                    const color = leaf ? chatTabColor(leaf.content) : undefined;
+                    return { "box-shadow": color ? `inset 3px 0 0 0 ${color}` : undefined };
+                  });
+                  return (
+                    <div
+                      class="tab-rail-row"
+                      classList={{ active: activeTabId() === t().id, pinned: !!t().pinned, dragging: draggingTabId() === t().id }}
+                      data-tab-chip="true"
+                      // Native tooltip surfaces the name while the rail is collapsed to icons.
+                      title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
+                      style={railStyle()}
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
+                        setActiveTabId(t().id);
+                      }}
+                      onPointerDown={(e) => {
+                        if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
+                        viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
+                      }}
+                      // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
+                      onAuxClick={(e) => { if (e.button !== 1) return; e.preventDefault(); closeTabById(t().id); }}
+                      onDblClick={(e) => { if ((e.target as HTMLElement).closest(".tab-x, .tab-pin")) return; startRenameTab(t().id); }}
+                      onContextMenu={(e) => openTabContextMenu(e, t())}
+                    >
                     {/* Every rail row shows an icon (fall back to a generic doc) so the
                         collapsed icon-column is never empty for an unnamed note. */}
                     <Icon class="tab-rail-icon" value={tabBarIcon(t()) ?? "File"} size={16} />
@@ -2160,7 +2208,8 @@ export default function App() {
                       <IconButton class="tab-pin" icon="Pin" label="Unpin tab" iconSize={13} onClick={(e) => { e.stopPropagation(); togglePinTab(t().id); }} />
                     </Show>
                   </div>
-                )}
+                  );
+                }}
               </Index>
             </div>
           </div>
