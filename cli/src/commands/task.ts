@@ -6,6 +6,7 @@
 import type { CommandMap } from "../types";
 import { fail, flag, out, positionals, requireVault, today } from "../args";
 import { collectVaultTasks, toggleTaskLine } from "../../../core/src/tasks";
+import { reorderTaskBlocks } from "../../../core/src/taskReorder";
 import { runTaskQuery } from "../../../core/src/tasks-query";
 import { readNote, writeNote } from "../../../core/src/files";
 
@@ -41,7 +42,7 @@ export const commands: CommandMap = {
       const idx = line - 1; // 1-based → 0-based
       if (idx < 0 || idx >= lines.length) fail("line out of range");
       lines[idx] = toggleTaskLine(lines[idx], today());
-      await writeNote(vault, file, lines.join("\n"));
+      await writeNote(vault, file, reorderTaskBlocks(lines.join("\n")));
       out("ok", args);
     },
   },

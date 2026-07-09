@@ -11,6 +11,7 @@ import { commands as searchCmds } from "./commands/search";
 import { commands as graphCmds } from "./commands/graph";
 import { commands as taskCmds } from "./commands/task";
 import { commands as baseCmds } from "./commands/base";
+import { commands as calendarCmds } from "./commands/calendar";
 import { commands as cardCmds } from "./commands/card";
 import { commands as propCmds } from "./commands/prop";
 import { commands as settingsCmds } from "./commands/settings";
@@ -26,7 +27,7 @@ import { commands as checkpointCmds } from "./commands/checkpoint";
 
 const registry: CommandMap = {
   ...fileCmds, ...noteCmds, ...searchCmds, ...graphCmds, ...taskCmds, ...baseCmds,
-  ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
+  ...calendarCmds, ...cardCmds, ...propCmds, ...settingsCmds, ...daemonCmds, ...drawCmds, ...serveCmds,
   ...exportCmds, ...apiCmds, ...appCmds, ...pageCmds, ...installCmds, ...checkpointCmds,
 };
 

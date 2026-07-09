@@ -28,3 +28,11 @@ app/src-tauri/binaries/
 # Relay shim runtime: zsh history written when a terminal tab runs (churns, never commit)
 relay/shim/zdotdir/.zsh_history
 *.tsbuildinfo
+
+# Deepwork session progress files
+.slim/deepwork/
+
+# BEGIN oh-my-opencode-slim worktrees
+.slim/worktrees/
+.slim/worktrees.json
+# END oh-my-opencode-slim worktrees

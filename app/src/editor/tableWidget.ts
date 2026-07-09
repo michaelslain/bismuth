@@ -81,7 +81,6 @@ function loadCellEditor(): Promise<CellEditorModule> {
 type TableVisual = {
   cols: (number | null)[];
   rows: (number | null)[];
-  compact?: boolean;
   infinity?: boolean;
   merges?: MergeRegion[];
 };
@@ -151,7 +150,6 @@ export function reshapeVisual(
   if (!old) return null; // nothing persisted under the old key → nothing to migrate
   const carried: TableVisual = existingNew ? { ...existingNew } : { cols: [], rows: [] };
   if (old.infinity !== undefined) carried.infinity = old.infinity;
-  if (old.compact !== undefined) carried.compact = old.compact;
   if (oldCols === newCols) {
     // Same column count (a header RENAME): per-column widths + merge regions are still valid.
     carried.cols = old.cols;
@@ -823,10 +821,9 @@ export class TableWidget extends WidgetType {
     // (localStorage, keyed by note + header) and are RE-APPLIED on every rebuild here. `merges` is
     // normalized against the current grid so a shape change can't leave a dangling span.
     const visual = loadVisual(this.notePath, sizeKey(this.cells));
-    let compact = visual?.compact ?? false;
     let infinity = visual?.infinity ?? false;
     let merges = normalizeMergeRegions(visual?.merges ?? [], rowCount, cols);
-    root.classList.toggle("cm-table-compact", compact);
+    root.classList.add("cm-table-compact");
     root.classList.toggle("cm-table-infinity", infinity);
 
     // A grid of the cell elements (by [r][c]) so merge application, drag-reorder, and selection can
@@ -1022,13 +1019,6 @@ export class TableWidget extends WidgetType {
         infinity = next;
         root.classList.toggle("cm-table-infinity", next);
         updateVisual(this.notePath, sizeKey(this.cells), { infinity: next });
-      }),
-    );
-    toolbar.appendChild(
-      toggleBtn("cm-table-tool-compact", "Compact rows", compact, "≡", (next) => {
-        compact = next;
-        root.classList.toggle("cm-table-compact", next);
-        updateVisual(this.notePath, sizeKey(this.cells), { compact: next });
       }),
     );
     root.appendChild(toolbar);

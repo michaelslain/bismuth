@@ -336,6 +336,10 @@ interface ChatSession {
    *  query() from scratch) re-applies it through the spawn `effort` option — otherwise the respawn
    *  would silently reset effort to the model default. Undefined until the user picks one. */
   effort?: string;
+  /** The model the user selected (Bug #89). Stored here so a visibility respawn (spawnChatQuery
+   *  rebuilds query() from scratch) re-applies it — the SDK's query() options don't accept a base
+   *  model, so setModel() is called again after the new query is created. Undefined = default. */
+  model?: string;
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
   deniedPathSet: Set<string>;
@@ -1030,6 +1034,12 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
     return false;
   }
   session.q = q;
+  // Re-apply the user's chosen model on respawn. The SDK's query() options don't accept a base
+  // model (unlike effort which has a spawn option), so we call setModel() again after the new
+  // query is created (Bug #89).
+  if (session.model) {
+    try { q.setModel(session.model)?.catch(() => {}); } catch { /* */ }
+  }
   return true;
 }
 
@@ -1627,6 +1637,7 @@ export function setPermissionMode(chatId: string, mode: string): void {
 export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
+  s.model = model;
   try {
     s.q.setModel(model)?.catch(() => {});
   } catch {
