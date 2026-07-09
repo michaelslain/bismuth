@@ -1377,12 +1377,21 @@ export const livePreview = [
     // Add-column: full-height bar hugging the right border. Add-row: full-width bar under it.
     ".cm-table-add-col": { top: "0", bottom: "0", right: "-0.95em", width: "0.8em", "border-radius": "0 5px 5px 0" },
     ".cm-table-add-row": { left: "0", right: "0", bottom: "-0.95em", height: "0.8em", "border-radius": "0 0 5px 5px" },
-    // Drag-to-resize: an absolutely-positioned overlay of thin grab strips centered on each
-    // COLUMN border (column WIDTH only — row height is auto, #52). Pointer-transparent except the
-    // strips, invisible until a strip is hovered (then a faint accent fill cues the resize zone).
+    // Drag-to-resize: an absolutely-positioned overlay of wide hit strips centered on each
+    // COLUMN border (column WIDTH only — row height is auto, #52). Each strip contains a visible
+    // 3px grip line so users can discover and grab it; the grip brightens on hover and stays solid
+    // while dragging (#62).
     ".cm-table-overlay": { position: "absolute", top: "0", right: "0", bottom: "0", left: "0", "pointer-events": "none", "z-index": "4" },
-    ".cm-col-resize": { position: "absolute", width: "7px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
-    ".cm-col-resize:hover": { background: "color-mix(in srgb, var(--accent) 35%, transparent)" },
+    ".cm-col-resize": { position: "absolute", width: "13px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
+    ".cm-col-resize-grip": {
+      position: "absolute", top: "10%", height: "80%", left: "50%", width: "3px", transform: "translateX(-50%)",
+      "border-radius": "2px", opacity: "0.55",
+      background: "color-mix(in srgb, var(--fg) 30%, transparent)",
+      transition: "background 120ms, opacity 120ms",
+    },
+    ".cm-table-wrap:hover .cm-col-resize-grip": { opacity: "0.85" },
+    ".cm-col-resize:hover .cm-col-resize-grip": { opacity: "1", background: "color-mix(in srgb, var(--accent) 75%, transparent)" },
+    ".cm-col-resize--dragging .cm-col-resize-grip": { opacity: "1", background: "var(--accent)" },
     // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
     ".cm-table-compact .cm-table-rendered th, .cm-table-compact .cm-table-rendered td": {
       padding: "0.1em 0.45em",
