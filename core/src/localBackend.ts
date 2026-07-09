@@ -21,6 +21,7 @@ import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
 import { upsertRow, deleteRow, reorderRow } from "./bases/rowOps";
 import { collectVaultTasks, toggleTaskLine } from "./tasks";
+import { reorderTaskBlocks } from "./taskReorder";
 import { collectDecks, dueCards, collectCards, noteCards, applyReview } from "./srs/cards";
 import { applyReviewToRow } from "./srs/reviewRow";
 import { DEFAULT_SRS } from "./srs/scheduler";
@@ -196,7 +197,7 @@ export function createLocalBackend(cfg: LocalBackendConfig) {
         const lines = content.split("\n");
         if (b.line < 0 || b.line >= lines.length) throw new AppError("EINVAL", "line out of range", 400);
         lines[b.line] = toggleTaskLine(lines[b.line], todayISO());
-        await access.writeNote(vault, b.path, lines.join("\n"));
+        await access.writeNote(vault, b.path, reorderTaskBlocks(lines.join("\n")));
         emit([b.path]);
         return "ok";
       }

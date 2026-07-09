@@ -144,17 +144,16 @@ describe("#62 empty display cell reserves a line box", () => {
   });
 });
 
-// ── #70b: the ∞ / compact toggle survives a header-changing reshape ────────────────────────────
-// The table's out-of-source visual state (∞ / compact / widths / merges) is keyed in localStorage by
+// ── #70b: the ∞ toggle survives a header-changing reshape ──────────────────────────────────
+// The table's out-of-source visual state (∞ / widths / merges) is keyed in localStorage by
 // its HEADER row. Add/remove/move a column, or rename a header cell, mints a new key — so the widget
 // would rebuild under a fresh (empty) key and the ∞ toggle would silently reset. `reshapeVisual` is
-// the pure migration the commit runs to carry that state onto the new key.
-describe("#70b reshapeVisual carries ∞/compact across a header change", () => {
-  test("a column-count change keeps ∞ + compact but resets per-column widths/merges", () => {
-    const old = { cols: [100, 50], rows: [], infinity: true, compact: true, merges: [{ r: 1, c: 0, rowSpan: 2, colSpan: 1 }] };
+// the pure migration the commit runs to carry that state onto the new key. Compact is always-on.
+describe("#70b reshapeVisual carries ∞ across a header change", () => {
+  test("a column-count change keeps ∞ but resets per-column widths/merges", () => {
+    const old = { cols: [100, 50], rows: [], infinity: true, merges: [{ r: 1, c: 0, rowSpan: 2, colSpan: 1 }] };
     const out = reshapeVisual(old, 2, 3, null)!;
     expect(out.infinity).toBe(true);
-    expect(out.compact).toBe(true);
     expect(out.cols).toEqual([]); // per-column indexing invalid after a column add → reset
     expect(out.merges).toBeUndefined();
   });
@@ -168,7 +167,7 @@ describe("#70b reshapeVisual carries ∞/compact across a header change", () => 
   test("nothing persisted under the old key → nothing to migrate (null)", () => {
     expect(reshapeVisual(null, 2, 3, null)).toBeNull();
   });
-  test("an existing new-key visual is preserved, with ∞/compact overlaid from the old", () => {
+  test("an existing new-key visual is preserved, with ∞ overlaid from the old", () => {
     const out = reshapeVisual({ cols: [], rows: [], infinity: true }, 2, 3, { cols: [10, 20, 30], rows: [] })!;
     expect(out.cols).toEqual([10, 20, 30]); // existing new-key widths kept
     expect(out.infinity).toBe(true); // ∞ carried over from the old key

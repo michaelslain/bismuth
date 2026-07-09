@@ -599,6 +599,9 @@ export function ChatView(props: {
           // against, so we push it once here. Only when a level was actually chosen ("" leaves the
           // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
           if (effort()) sendJson({ type: "set_effort", effort: effort() });
+          // Re-apply the user's persisted model choice (Bug #89) to this fresh session so the
+          // picker's last selection isn't silently lost on reconnect/new chat.
+          if (lastModel()) sendJson({ type: "set_model", model: lastModel()! });
         } else {
           // Later manifests: DON'T blindly trust the reported mode (FEATURE #35). A mid-session
           // query() re-init (e.g. a visibility respawn) re-reports the SDK's SPAWN default
