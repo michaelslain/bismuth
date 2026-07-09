@@ -197,6 +197,9 @@ export const SETTINGS_SCHEMA: Schema = {
     cursorGlideMs: { type: "number", default: 70, min: 20, max: 200, doc: "Cursor glide animation duration (ms)." },
     cursorBlinkSeconds: { type: "number", default: 1.2, min: 0.6, max: 2, doc: "Cursor blink cycle duration (seconds)." },
   }),
+  chat: object({
+    computerUse: { type: "boolean", default: false, doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave)." },
+  }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },
     easyBonus: { type: "number", default: 1.3, min: 1, max: 2, doc: "Extra interval multiplier when a card is rated 'easy'." },

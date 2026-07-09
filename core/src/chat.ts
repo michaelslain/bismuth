@@ -339,6 +339,9 @@ interface ChatSession {
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
   deniedPathSet: Set<string>;
+  /** Enable Claude's --chrome (browser/computer-use) capability. Read from settings at spawn —
+   *  respawns preserve the flag via this field (like effort). */
+  computerUse?: boolean;
   /** Set by invalidateChatVisibility when the vault's visibility settings change: the next
    *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
    *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
@@ -686,7 +689,7 @@ async function answerMcpCommand(session: ChatSession): Promise<void> {
  * pushes `text` into the queue so the CLI runs it as the next turn. If `claude` isn't installed,
  * pushes {error, code:"no-claude"} and returns — NEVER calls any API.
  */
-export async function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string): Promise<void> {
+export async function sendMessage(chatId: string, text: string, cwd: string, sink: ChatSink, images?: ChatImage[], memoryDir?: string, computerUse?: boolean): Promise<void> {
   const existing = sessions.get(chatId);
   if (existing) {
     // Existing session: a turn arriving cancels any pending grace-teardown (we reconnected), keeps
@@ -714,7 +717,7 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
     return;
   }
 
-  const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
+  const session = await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir, computerUse);
   if (!session) return; // no-claude / spawn error already pushed to the sink
 
   // BUG #39: same local "/mcp" interception for a chat's very FIRST turn.
@@ -739,10 +742,11 @@ async function getOrCreateSession(
   sink: ChatSink,
   resume: string | undefined,
   memoryDir: string | undefined,
+  computerUse?: boolean,
 ): Promise<ChatSession | null> {
   let creating = inFlightCreates.get(chatId);
   if (!creating) {
-    creating = createSession(chatId, cwd, sink, resume, memoryDir);
+    creating = createSession(chatId, cwd, sink, resume, memoryDir, computerUse);
     inFlightCreates.set(chatId, creating);
   }
   try {
@@ -764,11 +768,11 @@ async function getOrCreateSession(
  * If a session already exists for this chatId, it's torn down first so we cleanly re-bind to the
  * resumed conversation.
  */
-export async function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string): Promise<void> {
+export async function resumeSession(chatId: string, sessionId: string, cwd: string, sink: ChatSink, memoryDir?: string, computerUse?: boolean): Promise<void> {
   if (sessions.has(chatId)) closeChat(chatId);
   // No initial turn — query() resumes the existing session; createSession starts the drain loop on
   // spawn, which streams its init manifest + models frame straight to the header.
-  await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir);
+  await getOrCreateSession(chatId, cwd, sink, sessionId, memoryDir, computerUse);
 }
 
 /**
@@ -783,9 +787,9 @@ export async function resumeSession(chatId: string, sessionId: string, cwd: stri
  * rebindSink) so an open can't spawn a duplicate; concurrent open/first-turn calls share the same
  * inFlightCreates promise. A null return means no-claude / spawn error — already pushed to the sink.
  */
-export async function openSession(chatId: string, cwd: string, sink: ChatSink, memoryDir?: string): Promise<void> {
+export async function openSession(chatId: string, cwd: string, sink: ChatSink, memoryDir?: string, computerUse?: boolean): Promise<void> {
   if (sessions.has(chatId)) return;
-  await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir);
+  await getOrCreateSession(chatId, cwd, sink, undefined, memoryDir, computerUse);
 }
 
 /**
@@ -800,7 +804,7 @@ export async function openSession(chatId: string, cwd: string, sink: ChatSink, m
  * against the vault's visibility settings, RECOMPUTED fresh on every new session (never cached) so
  * a visibility edit takes effect on the very next chat message — see docs/vault/visibility.md.
  */
-async function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string): Promise<ChatSession | null> {
+async function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: string, memoryDir?: string, computerUse?: boolean): Promise<ChatSession | null> {
   const bin = whichClaude();
   if (!bin) {
     sink({ type: "error", code: "no-claude", message: "The `claude` CLI was not found. Install Claude Code to use chat." });
@@ -828,6 +832,7 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
     sessionId: null,
     bin,
     deniedPathSet: denyPathSet(denyEntries),
+    computerUse,
     apiKeySource: "none",
     turnActive: false,
     detached: false,
@@ -965,6 +970,9 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // spawn `effort` option too so the respawn preserves it (this path also covers levels the
         // runtime flag layer rejects, e.g. 'max'). Omitted until the user picks a level.
         ...(session.effort ? { effort: session.effort as EffortLevel } : {}),
+        // Browser/computer-use capability (--chrome): passes `--chrome` (a boolean flag, hence
+        // `null`) so the spawned claude process can launch and control a Chromium browser.
+        ...(session.computerUse ? { extraArgs: { chrome: null } } : {}),
         // Use Claude Code's own preset system prompt — this is a VISUAL CLAUDE CODE, so it must
         // behave like the TUI: the preset injects the `<env>` context + loads CLAUDE.md, skills, and
         // the full tool guidance. Without it the SDK ships a bare prompt with NO cwd context, so
