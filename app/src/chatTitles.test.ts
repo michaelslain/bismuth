@@ -1,7 +1,7 @@
 // app/src/chatTitles.test.ts
 // Row 75: the chat's title is shown in the pane toolbar header, not just on the tab. The header's
-// title resolution (resolveChatHeaderTitle) must match the TAB's precedence exactly — a `/rename`
-// override wins, else the backend session title, else the persona / "Chat" fallback.
+// title resolution (resolveChatHeaderTitle) must match the TAB's precedence exactly — the user-set
+// tab name wins, else the backend session title, else the persona / "Chat" fallback.
 import { expect, test } from "bun:test";
 import { resolveChatHeaderTitle } from "./chatTitles";
 

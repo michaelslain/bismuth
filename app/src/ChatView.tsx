@@ -305,7 +305,13 @@ function buildEditorContext(hiddenPaths: ReadonlySet<string>, referencedFiles: s
   });
 }
 
-export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate[]; tagNames: () => string[] }) {
+export function ChatView(props: {
+  chatId: string;
+  /** The owning tab's user-set name, if any — keeps the pane header in sync with the tab chip. */
+  tabName?: () => string | undefined;
+  noteNames: () => NoteCandidate[];
+  tagNames: () => string[];
+}) {
   const [transcript, setTranscript] = createStore<TurnItem[]>([]);
   const [draft, setDraft] = createSignal("");
   // ── Prompt history (Row 84): ArrowUp/ArrowDown cycle through this chat's own sent messages, like a
@@ -394,12 +400,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   // without touching the tab/App.tsx. The WS pins this id so a reconnect resumes the same session.
   const [activeChatId, setActiveChatId] = createSignal(props.chatId);
 
-  // The live `/rename` override for THIS tab's title (Row 75). The tab bar's label is `tab.name`
-  // (persisted in App via the bismuth-chat-rename event); ChatView can't read that App-owned state,
-  // so we mirror the override here to show the SAME title in the pane's toolbar header the instant
-  // the user renames — resolveChatHeaderTitle then layers it over the backend session title
-  // (chatTitle) exactly as the tab does. Empty override → falls through to the session title.
-  const [renameOverride, setRenameOverride] = createSignal<string | undefined>();
+  // The pane header title reads the tab's user-set name directly via props.tabName (supplied by
+  // App.tsx from the owning Tab.name), so context-menu renames and `/rename` slash commands both
+  // update the in-pane title immediately and stay in sync with the tab chip.
 
   // Paths whose RESOLVED AI visibility is "hidden" (core/src/visibility.ts) — refreshed on mount
   // and whenever the vault changes (SSE), like the rest of the app's tree state. Best-effort/
@@ -910,12 +913,9 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
     if (!cmd) return false;
     if (cmd.kind === "rename") {
       // Rename THIS chat's tab via the same Tab.name override the right-click Rename sets (App owns
-      // the tab tree) — persisted across reload/reopen. Empty name reverts to the auto label.
+      // the tab tree) — persisted across reload/reopen. Empty name reverts to the auto label. The
+      // pane header reads props.tabName, so it updates automatically once App applies the rename.
       window.dispatchEvent(new CustomEvent("bismuth-chat-rename", { detail: { chatId: props.chatId, name: cmd.name } }));
-      // Mirror the override locally so the toolbar header title updates live too (Row 75) — the tab
-      // bar reads App's persisted tab.name, which this view can't see. Empty → clear (revert to the
-      // session title), matching App's onChatRename (blank name → tab.name undefined).
-      setRenameOverride(cmd.name.trim() || undefined);
       setTurnError(null);
       return true;
     }
@@ -1512,11 +1512,11 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
   // The chat presents AS the vault's daemon when one is enabled — its identity name replaces
   // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts).
   const persona = () => chatPersonaName() ?? "Claude";
-  // The title shown in the pane's toolbar header (Row 75). Same precedence the TAB uses — a live
-  // `/rename` override wins, else this session's backend title (chatTitle, published from `title`
+  // The title shown in the pane's toolbar header (Row 75). Same precedence the TAB uses — the
+  // user-set tab name wins, else this session's backend title (chatTitle, published from `title`
   // frames), else the daemon persona / "Chat". Reactive, so a rename or a new session summary
   // updates the header in place — and it sits over the color-tinted pane like the rest of the bar.
-  const headerTitle = () => resolveChatHeaderTitle(renameOverride(), chatTitle(props.chatId), chatPersonaName() ?? "Chat");
+  const headerTitle = () => resolveChatHeaderTitle(props.tabName?.(), chatTitle(props.chatId), chatPersonaName() ?? "Chat");
 
   return (
     <div
@@ -1525,12 +1525,15 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
       classList={{ "chat-drop-active": dragActive() }}
       // Per-chat pane tint (FEATURE #75): wash the chosen color into the pane background so the WHOLE
       // chat surface reads as that color — the header, transcript, and composer padding are all
-      // transparent, so they paint over THIS host background — while --fg text stays legible. We set
-      // `background` directly (not the --bg token) so the color-mix can reference var(--bg) without a
-      // self-reference cycle, and it resolves against whichever theme (light/dark) is active. Reactive:
-      // picking a color in the tab's Color menu re-tints live (chatColor is signal-backed). Undefined →
-      // theme default (the .chat-host CSS `background: var(--bg)` shows through).
-      style={chatColor(props.chatId) ? { background: `color-mix(in srgb, ${chatColor(props.chatId)} 20%, var(--bg))` } : undefined}
+      // transparent, so they paint over THIS host background — while --fg text stays legible. We use
+      // oklch mixing for a cleaner, less muddy hue in dark themes, and expose the tint as the local
+      // --chat-tint CSS variable so descendant surfaces can blend against it instead of floating as
+      // opaque rectangles. Reactive: picking a color in the tab's Color menu re-tints live.
+      data-chat-tint={chatColor(props.chatId)}
+      style={chatColor(props.chatId) ? {
+        background: `color-mix(in oklch, ${chatColor(props.chatId)} 34%, var(--bg))`,
+        "--chat-tint": chatColor(props.chatId),
+      } : undefined}
       onDragOver={onHostDragOver}
       onDragLeave={onHostDragLeave}
       onDrop={onHostDrop}

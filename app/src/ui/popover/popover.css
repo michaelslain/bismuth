@@ -53,7 +53,9 @@
 .bismuth-popover-row--danger { color: var(--danger); }
 .bismuth-popover-row--disabled { opacity: 0.55; cursor: default; }
 
-.bismuth-popover-icon { display: inline-flex; flex-shrink: 0; opacity: 0.85; }
+.bismuth-popover-icon,
+.bismuth-popover-prefix { display: inline-flex; flex-shrink: 0; }
+.bismuth-popover-icon { opacity: 0.85; }
 .bismuth-popover-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 .bismuth-popover-detail { margin-left: auto; opacity: var(--popover-detail-opacity); padding-left: 12px; }
 /* Right-side chevron on a row that opens a nested submenu (label flex pushes it right). */
