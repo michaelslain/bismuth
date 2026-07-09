@@ -9,7 +9,7 @@
 // The pure geometry (which pane zone, which insertion slot) lives in geometry.ts;
 // this module is just the stateful glue and is exercised live in the browser.
 import { createSignal, type Accessor } from "solid-js";
-import { dropZoneForPoint, insertionIndexForX, type Zone } from "./geometry";
+import { dropZoneForPoint, insertionIndexForX, insertionIndexForY, type Zone } from "./geometry";
 
 // A tab/pane can OPTIONALLY carry the vault `path` it displays (a note) so it works as a
 // drag SOURCE for the chat-reference / editor-wikilink drop targets (Row 74), same as a
@@ -88,11 +88,17 @@ export function createViewDrag(
 
     const strip = el.closest("[data-tabstrip]");
     if (strip) {
+      const vertical = strip.getAttribute("data-tabstrip") === "vertical";
       const chips = [...strip.querySelectorAll("[data-tab-chip]")].map((c) => {
         const r = c.getBoundingClientRect();
-        return { x: r.left, w: r.width };
+        return vertical
+          ? { y: r.top, h: r.height }
+          : { x: r.left, w: r.width };
       });
-      return { kind: "tabstrip", index: insertionIndexForX(chips, x) };
+      const index = vertical
+        ? insertionIndexForY(chips as { y: number; h: number }[], y)
+        : insertionIndexForX(chips as { x: number; w: number }[], x);
+      return { kind: "tabstrip", index };
     }
 
     const pane = el.closest("[data-pane-leaf]");

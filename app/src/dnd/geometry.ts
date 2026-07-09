@@ -40,3 +40,13 @@ export function insertionIndexForX(chips: { x: number; w: number }[], x: number)
   }
   return i;
 }
+
+// Vertical equivalent: insertion index for a VERTICAL tab strip (right-edge rail
+// in ui.verticalTabs mode). The chips' `y` and `h` replace `x` and `w`.
+export function insertionIndexForY(chips: { y: number; h: number }[], y: number): number {
+  let i = 0;
+  for (const c of chips) {
+    if (c.y + c.h / 2 < y) i++;
+  }
+  return i;
+}
