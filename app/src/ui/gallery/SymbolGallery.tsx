@@ -15,7 +15,7 @@
 // `.palette-search` styling — so it looks and behaves identically, not like a
 // separate, lighter overlay. Reused by the file-tree "Set icon" picker and the
 // editor's icon-field / `:`-emoji autocomplete galleries (via galleryStore).
-import { createSignal, createMemo, createEffect, For, Show, onMount } from "solid-js";
+import { createSignal, createMemo, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import { Modal } from "../Modal";
 import { Button } from "../Button";
 import { TextButton } from "../TextButton";
@@ -61,17 +61,51 @@ export function SymbolGallery(props: Props) {
   // packaged app's WebKit/WKWebView a programmatic `.focus()` issued during the opener's blur tick
   // does not always stick — WebKit hands focus back to the editor, so keystrokes went to the cell,
   // not this search box, and the top-result default / Enter-commit / arrow-nav never took (works in
-  // Chromium, which is why it looked fine outside the packaged app). Blur whatever is focused, focus
-  // now, AND re-assert on the next frame so the late WebKit focus-restore loses the race. Chromium
-  // is unaffected (the input is already focused; the re-focus is a no-op). `preventScroll` keeps a
-  // cell-anchored gallery from yanking the viewport.
+  // Chromium, which is why it looked fine outside the packaged app).
+  //
+  // Hardening (#67 follow-up): we now re-assert focus several times (rAF + setTimeout 0 + 50 + 150)
+  // AND install a short-lived capture-phase focus guard that redirects any stray focus back into the
+  // search box if WebKit restores it to the cell editor after the initial blur. The guard auto-expires
+  // after ~300 ms so it cannot permanently trap focus if the user deliberately tabs elsewhere.
   onMount(() => {
     const grab = (): void => {
       (document.activeElement as HTMLElement | null)?.blur?.();
       inputRef?.focus({ preventScroll: true });
     };
     grab();
-    if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(grab);
+    const rafs: number[] = [];
+    const timeouts: Array<ReturnType<typeof setTimeout>> = [];
+    if (typeof requestAnimationFrame !== "undefined") rafs.push(requestAnimationFrame(grab));
+    if (typeof setTimeout !== "undefined") {
+      timeouts.push(setTimeout(grab, 0));
+      timeouts.push(setTimeout(grab, 50));
+      timeouts.push(setTimeout(grab, 150));
+    }
+
+    // Capture focus events on the document for the first few hundred ms. If WebKit (or any other
+    // browser) hands focus to an element outside this modal, immediately redirect it to the search
+    // input. The guard only runs while the modal is still mounted and expires after 300 ms.
+    const modalEl = inputRef?.closest(".icon-picker-panel") as HTMLElement | null;
+    const guard = (e: FocusEvent): void => {
+      const target = e.target as Node | null;
+      if (!inputRef || !target || target === inputRef) return;
+      if (modalEl && modalEl.contains(target)) return; // focus already inside the modal
+      e.preventDefault?.();
+      e.stopImmediatePropagation?.();
+      inputRef.focus({ preventScroll: true });
+    };
+    const doc = inputRef?.ownerDocument ?? document;
+    doc.addEventListener("focusin", guard, true);
+    const guardTimeout: ReturnType<typeof setTimeout> | 0 = typeof setTimeout !== "undefined"
+      ? setTimeout(() => doc.removeEventListener("focusin", guard, true), 300)
+      : 0;
+
+    onCleanup(() => {
+      doc.removeEventListener("focusin", guard, true);
+      rafs.forEach((t) => { if (typeof cancelAnimationFrame !== "undefined") cancelAnimationFrame(t); });
+      timeouts.forEach((t) => { if (typeof clearTimeout !== "undefined") clearTimeout(t); });
+      if (guardTimeout && typeof clearTimeout !== "undefined") clearTimeout(guardTimeout);
+    });
   });
 
   const commit = (value: string) => { props.onPick(value); props.onClose(); };

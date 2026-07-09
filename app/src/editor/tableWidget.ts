@@ -1431,6 +1431,8 @@ export class TableWidget extends WidgetType {
       e.stopPropagation();
       const start = getStart();
       const origin = e.clientX;
+      const handle = e.currentTarget as HTMLElement | null;
+      handle?.classList.add("cm-col-resize--dragging");
       const onMove = (me: MouseEvent): void => {
         apply(me.clientX - origin, start);
         layout();
@@ -1440,6 +1442,7 @@ export class TableWidget extends WidgetType {
         window.removeEventListener("mouseup", onUp);
         document.body.style.cursor = "";
         document.body.style.userSelect = "";
+        handle?.classList.remove("cm-col-resize--dragging");
         persist();
         layout();
       };
@@ -1452,7 +1455,16 @@ export class TableWidget extends WidgetType {
     for (let c = 0; c < cols; c++) {
       const handle = document.createElement("div");
       handle.className = "cm-col-resize";
-      handle.addEventListener("mousedown", (e) =>
+      handle.setAttribute("role", "separator");
+      handle.setAttribute("aria-label", "Resize column");
+      handle.setAttribute("aria-orientation", "vertical");
+      // Visible grip inside the wide hit strip — the strip itself is transparent, the grip is the
+      // discoverable affordance. A separate child lets us widen the hit target without making the
+      // visual line overly heavy, and it gives WebKit a concrete box to hit-test.
+      const grip = document.createElement("div");
+      grip.className = "cm-col-resize-grip";
+      handle.appendChild(grip);
+      const startDrag = (e: MouseEvent): void => {
         startColDrag(
           () => {
             // First drag freezes the content-derived widths and switches to fixed layout
@@ -1469,9 +1481,15 @@ export class TableWidget extends WidgetType {
           (delta, start) => {
             colEls[c].style.width = `${Math.max(MIN_COL, start + delta)}px`;
           },
-          e as MouseEvent,
-        ),
-      );
+          e,
+        );
+      };
+      handle.addEventListener("mousedown", startDrag);
+      // Pointer events as a backup for WebKit/Tauri where the transparent 13px strip can still be
+      // finicky about claiming the gesture; setPointerCapture would be ideal but the window-level
+      // mousemove/mouseup listeners in startColDrag already cover the drag, so we just need the
+      // initial down event to reliably fire.
+      handle.addEventListener("pointerdown", startDrag);
       overlay.appendChild(handle);
       colHandles.push(handle);
     }

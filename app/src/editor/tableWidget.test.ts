@@ -36,10 +36,11 @@ import { setGalleryOpen } from "../ui/gallery/galleryState";
 const DOM_GLOBALS = [
   "document", "window", "navigator", "Node", "Element", "HTMLElement", "Text",
   "DocumentFragment", "InputEvent", "KeyboardEvent", "MouseEvent",
-  "DragEvent", "DataTransfer", "FocusEvent", "ClipboardEvent",
+  "DragEvent", "DataTransfer", "ClipboardEvent", "FocusEvent",
   "DOMParser", "XMLSerializer", "getComputedStyle", "MutationObserver", "Range", "NodeFilter",
   "HTMLDivElement", "HTMLSpanElement", "HTMLTableCellElement", "DOMRect", "ResizeObserver",
   "requestAnimationFrame", "cancelAnimationFrame", "getSelection", "Selection", "File", "Blob",
+  "localStorage",
 ];
 // happy-dom's dispatchEvent instanceof-checks against ITS OWN Event class, so events we (and the
 // widget) construct must be happy-dom's — not bun's built-in Event/CustomEvent. Force the whole
@@ -534,6 +535,46 @@ describe("#52 row height is not resizable", () => {
     const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
     expect(wrap.querySelectorAll(".cm-row-resize").length).toBe(0);
     expect(wrap.querySelectorAll(".cm-col-resize").length).toBe(2);
+    view.destroy();
+  });
+});
+
+// ── #62: drag-to-resize a column updates its width and persists it ─────────────
+describe("#62 column resize drag updates width + persists", () => {
+  const storeKey = "bismuth:table-size:note.md";
+  const headerKey = JSON.stringify(["A", "B", "C"]);
+
+  test("dragging a column resize handle writes a new width to localStorage", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const handles = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-resize"));
+    expect(handles.length).toBe(3);
+    const handle = handles[1]!;
+
+    // Start the drag on the middle-column handle. In this headless environment offsetWidth is 0,
+    // so the frozen start width is the 40px minimum; dragging 60px right should yield 100px.
+    handle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: 100 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 160 }));
+    window.dispatchEvent(new MouseEvent("mouseup", { clientX: 160 }));
+
+    const raw = window.localStorage.getItem(storeKey);
+    expect(raw).not.toBeNull();
+    const stored = JSON.parse(raw!);
+    expect(stored[headerKey]).toBeDefined();
+    expect(stored[headerKey].cols[1]).toBe(100);
+
+    window.localStorage.removeItem(storeKey);
+    view.destroy();
+  });
+
+  test("each resize handle contains a visible grip affordance", () => {
+    const view = mount("| A | B |\n| - | - |\n| x | y |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const handles = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-resize"));
+    expect(handles.length).toBe(2);
+    for (const h of handles) {
+      expect(h.querySelector(".cm-col-resize-grip")).not.toBeNull();
+    }
     view.destroy();
   });
 });
