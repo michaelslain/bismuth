@@ -49,6 +49,7 @@ import { classifyComposerKey } from "./chatComposerKeys";
 import { HISTORY_BOTTOM, buildHistoryEntries, historyUp, historyDown, type HistoryCursor } from "./chatHistory";
 import type { NoteCandidate } from "./editor/wikilink";
 import type { FileCandidate } from "./editor/atMention";
+import { settings, setSettings } from "./settings";
 
 // Derive the WebSocket base from the SAME runtime-resolved backend api.ts uses. apiBase()
 // honors ?api= > window.__BISMUTH_API__ > VITE_API_BASE > :4321, so the bundled app's free-port
@@ -1602,6 +1603,15 @@ export function ChatView(props: { chatId: string; noteNames: () => NoteCandidate
             </>
           )}
         </Show>
+        {/* Browser/computer-use (--chrome): toggle that writes to .settings so new sessions spawn
+            with the Chrome capability. The current session is unaffected (extraArgs is spawn-fixed). */}
+        <IconButton
+          icon="Globe"
+          label={settings.chat.computerUse ? "Browser (--chrome) on" : "Browser (--chrome) off"}
+          title={settings.chat.computerUse ? "--chrome enabled (new sessions)" : "Enable --chrome for browser/computer-use (new sessions)"}
+          variant={settings.chat.computerUse ? "selected" : "normal"}
+          onClick={() => setSettings("chat", "computerUse", !settings.chat.computerUse)}
+        />
         {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
             populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
             updated live — the user's picks and each manifest flow through permMode(). */}

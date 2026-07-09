@@ -1784,12 +1784,13 @@ export function createServer(cfg: CoreConfig) {
               /* socket closed mid-turn */
             }
           };
+          const computerUse = !!(appConfig.chat as Record<string, unknown> | undefined)?.computerUse;
           if (parsed.type === "open") {
             // Chat OPEN (the ChatView just mounted / reconnected on a fresh id): spawn the session
             // eagerly so its `init` manifest + `models` frame + permission mode stream to the header
             // BEFORE the first message (BUG #14). No-op if a session already exists for this chatId
             // (a mid-turn reconnect already rebound the sink on WS open) — never spawns a duplicate.
-            chatOpen(chatId, cfg.vault, chatSink, effectiveMemoryDir());
+            chatOpen(chatId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse);
           } else if (parsed.type === "user" && typeof parsed.text === "string") {
             // Accept optional base64 image attachments; keep only well-formed {media_type,data}
             // pairs whose media_type is an SDK-accepted image MIME (the frontend whitelist is not the
@@ -1808,11 +1809,11 @@ export function createServer(cfg: CoreConfig) {
                     (im as { data: string }).data.length > 0,
                 )
               : [];
-            chatSend(chatId, parsed.text, cfg.vault, chatSink, images.length ? images : undefined, effectiveMemoryDir());
+            chatSend(chatId, parsed.text, cfg.vault, chatSink, images.length ? images : undefined, effectiveMemoryDir(), computerUse);
           } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
             // Bind this chat socket to an existing Claude Code session — its init manifest streams
             // back, and the next {type:"user"} continues the resumed conversation.
-            chatResume(chatId, parsed.sessionId, cfg.vault, chatSink, effectiveMemoryDir());
+            chatResume(chatId, parsed.sessionId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse);
           } else if (
             parsed.type === "permission_response" &&
             typeof parsed.id === "string" &&
