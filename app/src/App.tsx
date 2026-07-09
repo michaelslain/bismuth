@@ -2112,17 +2112,22 @@ export default function App() {
               {/* Same settings-driven action set as the horizontal strip (tabBar: in .settings). */}
               <For each={settings.tabBar}>{(btn) => <CommandButton btn={btn} />}</For>
             </div>
-            <div class="tab-rail-list">
+            <div class="tab-rail-list" data-tabstrip="vertical">
               <Index each={tabs()}>
                 {(t) => (
                   <div
                     class="tab-rail-row"
-                    classList={{ active: activeTabId() === t().id, pinned: !!t().pinned }}
+                    classList={{ active: activeTabId() === t().id, pinned: !!t().pinned, dragging: draggingTabId() === t().id }}
+                    data-tab-chip="true"
                     // Native tooltip surfaces the name while the rail is collapsed to icons.
                     title={renamingTabId() !== t().id ? tabBarLabel(t()) : undefined}
                     onClick={(e) => {
                       if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
                       setActiveTabId(t().id);
+                    }}
+                    onPointerDown={(e) => {
+                      if ((e.target as HTMLElement).closest(".tab-x, .tab-pin, .tab-rename")) return;
+                      viewDrag.startTab(e, t().id, tabBarLabel(t()), () => setActiveTabId(t().id), tabNotePath(t()));
                     }}
                     // Middle-click closes any tab (incl. a pinned one) — the escape hatch.
                     onAuxClick={(e) => { if (e.button !== 1) return; e.preventDefault(); closeTabById(t().id); }}

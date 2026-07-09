@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { dropZoneForPoint, nearestEdge, insertionIndexForX, type Rect } from "./geometry";
+import { dropZoneForPoint, nearestEdge, insertionIndexForX, insertionIndexForY, type Rect } from "./geometry";
 
 const R: Rect = { x: 0, y: 0, w: 100, h: 100 };
 
@@ -69,5 +69,33 @@ describe("insertionIndexForX", () => {
 
   it("returns 0 for an empty strip", () => {
     expect(insertionIndexForX([], 50)).toBe(0);
+  });
+});
+
+describe("insertionIndexForY", () => {
+  // three chips: [0,100), [100,200), [200,300) → midpoints 50,150,250
+  const chips = [
+    { y: 0, h: 100 },
+    { y: 100, h: 100 },
+    { y: 200, h: 100 },
+  ];
+
+  it("returns 0 above the first chip's midpoint", () => {
+    expect(insertionIndexForY(chips, 10)).toBe(0);
+  });
+
+  it("returns the count of midpoints above the cursor", () => {
+    expect(insertionIndexForY(chips, 60)).toBe(1);
+    expect(insertionIndexForY(chips, 140)).toBe(1);
+    expect(insertionIndexForY(chips, 160)).toBe(2);
+  });
+
+  it("returns n past the last chip's midpoint", () => {
+    expect(insertionIndexForY(chips, 260)).toBe(3);
+    expect(insertionIndexForY(chips, 9999)).toBe(3);
+  });
+
+  it("returns 0 for an empty strip", () => {
+    expect(insertionIndexForY([], 50)).toBe(0);
   });
 });
