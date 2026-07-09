@@ -125,6 +125,9 @@ export interface Settings {
     cursorGlideMs: number;     // ms
     cursorBlinkSeconds: number; // s
   };
+  chat: {
+    computerUse: boolean; // --chrome capability for visual chat sessions
+  };
   srs: {
     baseEase: number;
     easyBonus: number;
