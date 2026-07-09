@@ -9,6 +9,7 @@ import { Icon } from "../../icons/Icon";
 export function MenuRow(props: {
   label: string;
   icon?: string;
+  prefix?: JSX.Element;
   detail?: string;
   danger?: boolean;
   disabled?: boolean;
@@ -29,6 +30,9 @@ export function MenuRow(props: {
       onMouseEnter={() => props.onMouseEnter?.()}
       onClick={(e) => !props.disabled && props.onClick?.(e)}
     >
+      <Show when={props.prefix}>
+        <span class="bismuth-popover-prefix">{props.prefix}</span>
+      </Show>
       <Show when={props.icon}>
         <span class="bismuth-popover-icon"><Icon value={props.icon!} size={14} /></span>
       </Show>
