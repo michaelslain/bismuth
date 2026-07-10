@@ -9,7 +9,7 @@ import { commitVault, scheduleBackup, snapshotMessage } from "./backup";
 import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
 import { AppError } from "./error";
 import { buildAgentGraph } from "./agents";
-import { buildVaultRows } from "./basesData";
+import { buildVaultRows, patchVaultRows } from "./basesData";
 import { buildTaskRows } from "./bases/tasksData";
 import { parseBaseFile } from "./bases/parse";
 import { resolveSource } from "./bases/source";
@@ -304,7 +304,7 @@ export function createServer(cfg: CoreConfig) {
   // exactly what's dirty. We always bump version (so the editor can reconcile an
   // externally-edited open file), but graph/tree consumers skip refetching when
   // their `dirty` flag is false.
-  function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }, vaultTouched = true) {
+  async function applyDirty(paths: string[], dirty: { graph: boolean; tree: boolean }, vaultTouched = true) {
     if (dirty.graph) graphCache.invalidate();
     if (dirty.tree) treeCache.invalidate();
     // Search index, rows, and tasks are all built purely from vault notes, so a batch that
@@ -320,8 +320,14 @@ export function createServer(cfg: CoreConfig) {
       // edit stale, which self-heals on the next search; on patch failure we fall back to a full drop.
       if (paths.length > 0) void updateSearchIndex(cfg.vault, paths).catch(() => invalidateSearchIndex(cfg.vault));
       else invalidateSearchIndex(cfg.vault);
-      // Bases rows + tasks derive from arbitrary frontmatter/body — rebuild lazily on next read.
-      rowsCache.invalidate();
+      // Bases rows feed: patch just the changed notes into the cached Row[] instead of dropping it
+      // and re-parsing the whole vault on the next base render (the ~400ms "base loads slowly right
+      // after I typed" cost). Unlike the search patch this is AWAITED before the SSE publish below,
+      // because a base render persists on screen — a client that refetches /rows on the event must
+      // see the patched feed, not a one-edit-stale one. Patching reads only the changed notes (~1ms).
+      if (paths.length > 0) await patchVaultRows(cfg.vault, paths, rowsCache).catch(() => rowsCache.invalidate());
+      else rowsCache.invalidate();
+      // Tasks derive from arbitrary body checkboxes — rebuild lazily on next read.
       tasksCache.invalidate();
     }
     version++;
@@ -392,7 +398,7 @@ export function createServer(cfg: CoreConfig) {
     // without it every stroke would force a full rows/tasks rebuild despite classifyVault
     // marking the batch dirty-to-nothing. No paths = unknown extent → treat as touched.
     const vaultTouched = paths.length === 0 || paths.some((p) => !isInkSidecarPath(p));
-    applyDirty(paths, dirty, vaultTouched);
+    await applyDirty(paths, dirty, vaultTouched);
   }
 
   /** Schedule vault changes for debounced processing. */
@@ -437,7 +443,7 @@ export function createServer(cfg: CoreConfig) {
         // ink sidecars (.ink/**) are content-neutral to search/rows/tasks — so a batch of only
         // those skips the cache drops entirely (a stroke autosave must cost nothing).
         const vaultTouched = unknown || vaultPaths.some((p) => !isInkSidecarPath(p));
-        applyDirty(unknown ? [] : vaultPaths, dirty, vaultTouched);
+        await applyDirty(unknown ? [] : vaultPaths, dirty, vaultTouched);
       })();
     }, appConfig.server.fileWatchDebounceMs);
   }

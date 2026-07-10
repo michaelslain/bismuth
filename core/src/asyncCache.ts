@@ -19,6 +19,15 @@ export interface AsyncCache<T> {
   invalidate(): void;
   /** Fire-and-forget get(), swallowing errors — for boot warming. */
   warm(): void;
+  /**
+   * Apply an in-place mutation to the cached value IF one is present, returning
+   * whether it ran. A no-op when the cache is empty or a build is in flight — the
+   * caller should fall back to invalidate() so the next get() rebuilds fresh (a
+   * half-built value can't be patched). Lets a caller splice a few changed entries
+   * into a large cached collection instead of dropping and rebuilding the whole
+   * thing (e.g. the bases rows feed after a single-note edit).
+   */
+  patch(mutate: (value: T) => void): boolean;
 }
 
 export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
@@ -51,6 +60,14 @@ export function createAsyncCache<T>(build: () => Promise<T>): AsyncCache<T> {
   return {
     get,
     peek: () => (hasValue ? (cached as T) : null),
+    patch(mutate: (value: T) => void): boolean {
+      // Only patch a fully-built value. If a build is in flight (or nothing is
+      // cached) there is nothing coherent to mutate, so report false and let the
+      // caller invalidate — the next get() then rebuilds from current state.
+      if (!hasValue) return false;
+      mutate(cached as T);
+      return true;
+    },
     invalidate() {
       cached = null;
       hasValue = false;
