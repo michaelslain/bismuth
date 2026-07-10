@@ -62,17 +62,30 @@ export interface BlockRegions {
 export const FENCE_OPEN_RE = /^\s*```(.*)$/;
 export const FENCE_RE = /^\s*```/;
 
+// A `Text` doc is immutable and shared across selection-only transactions, so this whole-document
+// callout scan is a pure function of `doc`. Memoize by doc identity: it runs once per document
+// VERSION instead of the 2-3 times a single keystroke or cursor move fans out to (computeBlockRegions
+// + activeCalloutField's calloutBlockAt + buildCalloutWidgets), and a pure cursor move (same doc
+// object) reuses the previous scan for free. WeakMap-keyed so old doc versions are GC'd. Every caller
+// only iterates the result read-only.
+const calloutBlockCache = new WeakMap<Text, CalloutLineBlock[]>();
+
 /** All callout blocks in `doc` (1-based line ranges). Shared by computeBlockRegions, the widget
- *  field, and the active-block lookup so every callout consumer agrees on the same ranges. */
+ *  field, and the active-block lookup so every callout consumer agrees on the same ranges.
+ *  Memoized by doc identity (see calloutBlockCache). */
 export function scanCalloutLineBlocks(doc: Text): CalloutLineBlock[] {
+  const cached = calloutBlockCache.get(doc);
+  if (cached) return cached;
   const lines: string[] = [];
   for (let i = 1; i <= doc.lines; i++) lines.push(doc.line(i).text);
-  return scanCallouts(lines).map((c) => ({
+  const result = scanCallouts(lines).map((c) => ({
     fromLine: c.fromLine + 1,
     toLine: c.toLine + 1,
     header: c.header,
     body: c.body,
   }));
+  calloutBlockCache.set(doc, result);
+  return result;
 }
 
 /** Scan the whole document once and return the block-region sets.
