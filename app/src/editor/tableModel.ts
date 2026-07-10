@@ -105,9 +105,29 @@ export function parseTableBlock(lines: string[]): { cells: string[][]; aligns: A
   return { cells, aligns: a };
 }
 
+// A CodeMirror `Text` doc is immutable and shared across selection-only transactions, so
+// groupTableBlocks(doc) is a pure function of `doc`. Memoize by doc identity: a full-document
+// table scan runs once per document VERSION instead of once per caller per transaction. On a
+// large note this collapses the several groupTableBlocks() calls a single keystroke or cursor
+// move fans out to (livePreview + tableWidget + tableState + blockRegions) into one scan, and
+// makes a pure cursor move (same doc object) free. WeakMap-keyed so old doc versions are GC'd.
+// SAFETY: every caller treats the result as read-only (destructure + iterate); the table-edit
+// ops build brand-new cell arrays rather than mutating a block in place — the table test suites
+// exercise this exhaustively.
+const tableBlockCache = new WeakMap<Text, { blocks: TableBlock[]; byLine: Map<number, TableBlock> }>();
+
 /** Scan the whole document and group contiguous pipe-table lines into blocks.
- *  Returns the blocks plus a line-number → block index for O(1) per-line lookup. */
+ *  Returns the blocks plus a line-number → block index for O(1) per-line lookup.
+ *  Memoized by doc identity (see tableBlockCache). */
 export function groupTableBlocks(doc: Text): { blocks: TableBlock[]; byLine: Map<number, TableBlock> } {
+  const cached = tableBlockCache.get(doc);
+  if (cached) return cached;
+  const result = groupTableBlocksUncached(doc);
+  tableBlockCache.set(doc, result);
+  return result;
+}
+
+function groupTableBlocksUncached(doc: Text): { blocks: TableBlock[]; byLine: Map<number, TableBlock> } {
   const blocks: TableBlock[] = [];
   const byLine = new Map<number, TableBlock>();
   let i = 2; // a table needs a header (≥1) + separator (≥2)
