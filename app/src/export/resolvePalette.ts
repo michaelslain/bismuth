@@ -13,9 +13,10 @@
 // additionally normalized to rgb()/rgba() via cssColor.normalizeCssColor.
 import { DEFAULT_PALETTE } from "./exportTheme";
 import { normalizeCssColor } from "./cssColor";
+import { PALETTE_TOKENS } from "../ui/palette";
 import type { ExportTheme, ThemePalette, PaletteToken } from "./types";
 
-const TOKENS: PaletteToken[] = ["accent", "teal", "blue", "violet", "green", "gold", "rose"];
+const TOKENS: PaletteToken[] = [...PALETTE_TOKENS];
 
 /**
  * Resolve the current app theme to a palette. `scheme === "dark"` mirrors the app's actual

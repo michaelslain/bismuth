@@ -7,9 +7,9 @@
 //
 // To add a new seeded artifact later, append ONE entry to seedsFor() below. That's the whole API:
 // incremental, non-clobbering seeding falls out for free, for every existing install.
-import { existsSync } from "fs"
-import { writeFile, mkdir } from "fs/promises"
-import { dirname, join } from "path"
+import { existsSync } from "node:fs"
+import { writeFile, mkdir } from "node:fs/promises"
+import { dirname, join } from "node:path"
 import type { VaultContext } from "../lib/config.ts"
 import { DEFAULT_DAEMON_IDENTITY } from "./session.ts"
 import { DEFAULT_CRONS } from "./defaultCrons.ts"

@@ -1,5 +1,5 @@
-import { join } from "path"
-import { readFile, writeFile, mkdir, rename } from "fs/promises"
+import { join } from "node:path"
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises"
 import { MACHINE_DIR } from "./config.ts"
 import { getDeviceId, getDeviceLabel } from "./device.ts"
 

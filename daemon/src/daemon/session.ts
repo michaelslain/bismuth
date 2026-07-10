@@ -1,5 +1,5 @@
 import { query as claudeQuery } from "@anthropic-ai/claude-agent-sdk"
-import { readFile, writeFile, mkdir } from "fs/promises"
+import { readFile, writeFile, mkdir } from "node:fs/promises"
 import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"

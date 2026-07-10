@@ -6,8 +6,8 @@
 // written HERE, deterministically, once the session settles — the LLM's own output is never
 // trusted as a status signal (core writes "working" before triggering; this module writes
 // "done"/"failed" after, never anything else).
-import { join } from "path"
-import { readdir, readFile, writeFile, unlink, rename, mkdir } from "fs/promises"
+import { join } from "node:path"
+import { readdir, readFile, writeFile, unlink, rename, mkdir } from "node:fs/promises"
 import { sendMessage } from "./session"
 import { parseFrontmatter } from "../lib/frontmatter"
 import { isOwner } from "../lib/owner"

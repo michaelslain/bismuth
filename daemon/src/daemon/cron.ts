@@ -1,7 +1,7 @@
-import { join } from "path"
-import { readdir, readFile, writeFile, unlink, rename, mkdir } from "fs/promises"
-import { execFile } from "child_process"
-import { promisify } from "util"
+import { join } from "node:path"
+import { readdir, readFile, writeFile, unlink, rename, mkdir } from "node:fs/promises"
+import { execFile } from "node:child_process"
+import { promisify } from "node:util"
 import { sendMessage } from "./session"
 import { processPageTriggers } from "./pages"
 

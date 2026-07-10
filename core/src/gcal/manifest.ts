@@ -22,11 +22,11 @@ export interface SyncManifest {
   links: Record<string, SyncLink>; // keyed by Google event id
 }
 
-function dir(home = homedir()): string {
+export function gcalDir(home = homedir()): string {
   return join(home, ".bismuth", "gcal");
 }
 function manifestPath(home?: string): string {
-  return join(dir(home), "sync.json");
+  return join(gcalDir(home), "sync.json");
 }
 
 /** Read the sync manifest; returns an empty one if absent or unreadable (never throws). */
@@ -42,7 +42,7 @@ export function readManifest(home?: string): SyncManifest {
 
 /** Persist the manifest (creating the dir 0700, file 0600). */
 export function writeManifest(m: SyncManifest, home?: string): void {
-  mkdirSync(dir(home), { recursive: true, mode: 0o700 });
+  mkdirSync(gcalDir(home), { recursive: true, mode: 0o700 });
   const path = manifestPath(home);
   writeFileSync(path, JSON.stringify(m, null, 2), { mode: 0o600 });
   try { chmodSync(path, 0o600); } catch { /* best effort */ }

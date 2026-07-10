@@ -1,5 +1,6 @@
 // app/src/export/types.ts
 import type { Row, SourceSpec } from "../../../core/src/bases/types";
+import type { PaletteTokenName } from "../ui/palette";
 
 export type ExportFormat = "html" | "pdf" | "md" | "png" | "csv";
 
@@ -14,7 +15,7 @@ export type RenderMode = "visual" | "data";
 // Calendar visual-export span (mirrors the live calendar's ViewType).
 export type CalSpan = "month" | "week" | "3day" | "day";
 
-export type PaletteToken = "accent" | "teal" | "blue" | "violet" | "green" | "gold" | "rose";
+export type PaletteToken = PaletteTokenName;
 
 // Concrete (already-resolved) theme values the export inlines so it matches the live app.
 // Built in the browser from the app's runtime CSS vars (which settingsCssVars projects from

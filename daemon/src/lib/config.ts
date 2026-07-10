@@ -1,5 +1,5 @@
-import { homedir } from "os"
-import { join } from "path"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 // ── One runtime, many brains ──────────────────────────────────────────────────
 // The daemon is a single machine process that multiplexes per-vault brains. Machine-

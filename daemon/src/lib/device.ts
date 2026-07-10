@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto"
-import { hostname } from "os"
-import { join } from "path"
-import { readFile, writeFile, mkdir } from "fs/promises"
+import { randomUUID } from "node:crypto"
+import { hostname } from "node:os"
+import { join } from "node:path"
+import { readFile, writeFile, mkdir } from "node:fs/promises"
 import { MACHINE_DIR } from "./config.ts"
 
 /**

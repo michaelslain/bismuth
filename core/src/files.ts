@@ -313,6 +313,7 @@ const pageStateFor = (p: string): string =>
   PAGE_MD_RE.test(p) ? `.daemon/pages/.state/${p.slice(p.lastIndexOf("/") + 1, -3)}.json` : `${p}.pagestate.json`;
 
 function carrySidecars(root: string, from: string, to: string, wasDir: boolean): void {
+  const pageSlug = (p: string) => p.slice(p.lastIndexOf("/") + 1, -3);
   const isPageMove = !wasDir && (PAGE_MD_RE.test(from) || PAGE_MD_RE.test(to));
   const pairs: Array<[string, string]> = wasDir
     ? [[`.ink/${from}`, `.ink/${to}`]]
@@ -325,8 +326,8 @@ function carrySidecars(root: string, from: string, to: string, wasDir: boolean):
         // survives — a trigger left on the old slug would fire against a missing page).
         ...(!wasDir && PAGE_MD_RE.test(from) && PAGE_MD_RE.test(to)
           ? ([[
-              `.daemon/pages/.triggers/${from.slice(from.lastIndexOf("/") + 1, -3)}`,
-              `.daemon/pages/.triggers/${to.slice(to.lastIndexOf("/") + 1, -3)}`,
+              `.daemon/pages/.triggers/${pageSlug(from)}`,
+              `.daemon/pages/.triggers/${pageSlug(to)}`,
             ]] as Array<[string, string]>)
           : []),
       ];
@@ -334,7 +335,7 @@ function carrySidecars(root: string, from: string, to: string, wasDir: boolean):
   // pending trigger for its slug so the daemon never fires an action for a page that's gone.
   if (!wasDir && PAGE_MD_RE.test(from) && !PAGE_MD_RE.test(to)) {
     try {
-      rmSync(join(root, `.daemon/pages/.triggers/${from.slice(from.lastIndexOf("/") + 1, -3)}`), { force: true });
+      rmSync(join(root, `.daemon/pages/.triggers/${pageSlug(from)}`), { force: true });
     } catch {
       /* best-effort */
     }
