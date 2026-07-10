@@ -1,6 +1,6 @@
 // app/src/editor/livePreview.ts
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import { type Range, StateField, StateEffect, type EditorState } from "@codemirror/state";
+import { type Range, StateField, StateEffect, type EditorState, type Text } from "@codemirror/state";
 import { syntaxTree } from "@codemirror/language";
 import { createSignal, type Setter } from "solid-js";
 import { render } from "solid-js/web";
@@ -822,19 +822,36 @@ function buildDecorations(view: EditorView, regions: BlockRegions): DecorationSe
 // "active" block by its opening-fence line number (or null) in editor state.
 const setActiveCodeEffect = StateEffect.define<number | null>();
 
-/** Find the fenced code block containing `lineNumber`, or null. */
-function findCodeBlock(state: EditorState, lineNumber: number): { open: number; close: number } | null {
-  const doc = state.doc;
-  let open = -1;
-  for (let i = 1; i <= doc.lines; i++) {
-    if (FENCE_RE.test(doc.line(i).text)) {
-      if (open === -1) {
-        open = i;
-      } else {
-        if (lineNumber >= open && lineNumber <= i) return { open, close: i };
-        open = -1;
+// The fenced-code-block ranges are a pure function of the (immutable) doc, so memoize them by doc
+// identity. activeCodeField.update() runs findCodeBlock on EVERY transaction — including plain
+// cursor moves, which share the same doc object as the previous state — and with everything else on
+// the editor's decoration path now viewport-scoped or docChanged-gated, this whole-document fence
+// scan was the last O(doc) cost paid on a cursor move in a large note. The cache turns that into an
+// O(1) reuse; a fresh doc (a keystroke) recomputes once. WeakMap-keyed so old doc versions are GC'd.
+const codeBlockRangesCache = new WeakMap<Text, { open: number; close: number }[]>();
+
+function codeBlockRanges(doc: Text): { open: number; close: number }[] {
+  const cached = codeBlockRangesCache.get(doc);
+  if (cached) return cached;
+  const ranges: { open: number; close: number }[] = [];
+  // Fast path (mirrors computeBlockRegions): no "```" anywhere → no fenced blocks, skip the scan.
+  if (doc.toString().indexOf("```") !== -1) {
+    let open = -1;
+    for (let i = 1; i <= doc.lines; i++) {
+      if (FENCE_RE.test(doc.line(i).text)) {
+        if (open === -1) open = i;
+        else { ranges.push({ open, close: i }); open = -1; }
       }
     }
+  }
+  codeBlockRangesCache.set(doc, ranges);
+  return ranges;
+}
+
+/** Find the fenced code block containing `lineNumber`, or null. */
+function findCodeBlock(state: EditorState, lineNumber: number): { open: number; close: number } | null {
+  for (const b of codeBlockRanges(state.doc)) {
+    if (lineNumber >= b.open && lineNumber <= b.close) return b;
   }
   return null;
 }
