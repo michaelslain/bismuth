@@ -17,6 +17,14 @@ import { querySource } from "./queryComplete";
 import { taskSource } from "./taskComplete";
 import { slashSource } from "./slashComplete";
 import { applyCompletion as applyInsert } from "./applyCompletion";
+// Set the Solid-free gallery-open flag synchronously when a gallery-opening completion is
+// accepted. The gallery's dynamic import is async — between the completion `apply` call and the
+// import resolving, CM finishes its completion lifecycle (closes the popup) which can blur the
+// cell editor. Without the flag, the table widget's `focusout` guard sees `isGalleryOpen() ===
+// false` and tears down the cell editor (leaveEdit) + commits the table — destroying the very
+// EditorView the gallery's deferred insert targets. Setting the flag here, synchronously, before
+// the import starts, closes that async gap (#67/#49).
+import { setGalleryOpen } from "../ui/gallery/galleryState";
 
 // Is the caret inside a code span / fenced block per the markdown syntax tree? `[[`,
 // `#tag` and `:emoji:` are prose features — they must NOT fire inside code, where those
@@ -373,13 +381,23 @@ function emojiSource(): CompletionSource {
       type: "gallery",
       lucideIcon: "Grip",
       apply(view: EditorView, completion: Completion, applyFrom: number, applyTo: number) {
+        // Set the gallery-open flag synchronously BEFORE the async dynamic import. CM finishes
+        // its completion lifecycle (closes the popup, may blur the cell editor) right after this
+        // function returns — if the flag isn't set yet, the table widget's focusout guard sees
+        // `isGalleryOpen() === false` and tears down the cell editor. openGallery() also sets
+        // this flag, but it only runs after the import resolves — too late.
+        setGalleryOpen(true);
         void Promise.all([import("../ui/gallery/galleryStore"), import("../ui/gallery/sources")])
           .then(([{ openGallery }, sources]) => openGallery({ source: sources.emojiSource }))
           .then((char) => {
             if (char) applyInsert(view, completion, applyFrom, applyTo, char, char.length);
             view.focus();
           })
-          .catch((err) => console.error("Failed to open emoji gallery", err));
+          .catch((err) => {
+            // Gallery failed to open — clear the flag so the next real blur commits normally.
+            setGalleryOpen(false);
+            console.error("Failed to open emoji gallery", err);
+          });
       },
     };
     const emoji: Completion[] = searchEmoji(match.query).map((e) => ({

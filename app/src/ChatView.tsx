@@ -88,19 +88,25 @@ function rememberMode(mode: string) {
 }
 
 // The header shows a model label the instant the chat opens (BUG #14) — before this session's
-// manifest / `models` frames land — by remembering the last model used in ANY chat. A transient
-// localStorage key (like the graph's 2D/3D toggle), not a user-facing `.settings` value.
-const LAST_MODEL_KEY = "bismuth.chat.lastModel";
-function readLastModel(): string {
+// manifest / `models` frames land — by remembering the last model used in THIS chat (per-chat
+// localStorage key). Falls back to a global key for brand-new chats that have never had a model
+// set. A transient localStorage key (like the graph's 2D/3D toggle), not a user-facing `.settings`
+// value.
+const GLOBAL_MODEL_KEY = "bismuth.chat.lastModel";
+function readLastModel(chatId?: string): string {
   try {
-    return localStorage.getItem(LAST_MODEL_KEY) ?? "";
+    if (chatId) {
+      const perChat = localStorage.getItem(`bismuth.chat.model.${chatId}`);
+      if (perChat) return perChat;
+    }
+    return localStorage.getItem(GLOBAL_MODEL_KEY) ?? "";
   } catch {
     return "";
   }
 }
 
 // The last reasoning-effort level the user picked in ANY chat (FEATURE #63: "can't select effort in
-// chat"). Persisted like LAST_MODEL_KEY (a transient localStorage key, not a `.settings` value) so
+// chat"). Persisted like GLOBAL_MODEL_KEY (a transient localStorage key, not a `.settings` value) so
 // the chosen level STICKS across turns AND new/resumed chats — re-pushed to each new session on its
 // first manifest. Empty ("") = never chosen, which leaves the model/CLI's own default untouched.
 const LAST_EFFORT_KEY = "bismuth.chat.lastEffort";
@@ -376,14 +382,16 @@ export function ChatView(props: {
       /* localStorage unavailable — the in-memory signal still drives the header */
     }
   };
-  // The last model used in ANY chat (persisted) — shown in the header as a sensible default before
-  // this session's manifest/`models` frames land, so the model area is never blank (BUG #14).
-  const [lastModel, setLastModel] = createSignal(readLastModel());
+  // The last model used in THIS chat (persisted per-chat) — shown in the header as a sensible
+  // default before this session's manifest/`models` frames land, so the model area is never blank
+  // (BUG #14). Falls back to the global last-model for brand-new chats.
+  const [lastModel, setLastModel] = createSignal(readLastModel(props.chatId));
   const rememberModel = (model: string) => {
     if (!model) return;
     setLastModel(model);
     try {
-      localStorage.setItem(LAST_MODEL_KEY, model);
+      localStorage.setItem(`bismuth.chat.model.${props.chatId}`, model);
+      localStorage.setItem(GLOBAL_MODEL_KEY, model); // global fallback for brand-new chats
     } catch {
       /* localStorage unavailable — the in-memory signal still updates the header */
     }
@@ -909,8 +917,8 @@ export function ChatView(props: {
   };
   const removeAttachment = (i: number) => setAttachments((a) => a.filter((_, idx) => idx !== i));
 
-  /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`) intercepted in send()
-   *  before the turn reaches the model. Returns true when it consumed the draft (rename/color
+  /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`, `/chrome`) intercepted in
+   *  send() before the turn reaches the model. Returns true when it consumed the draft (command
    *  applied) so send() clears the composer; false when it couldn't (an unknown `/color` value),
    *  leaving the draft in place with an inline error so the user can fix it. */
   const applyLocalCommand = (cmd: ReturnType<typeof parseChatSlashCommand>): boolean => {
@@ -920,6 +928,14 @@ export function ChatView(props: {
       // the tab tree) — persisted across reload/reopen. Empty name reverts to the auto label. The
       // pane header reads props.tabName, so it updates automatically once App applies the rename.
       window.dispatchEvent(new CustomEvent("bismuth-chat-rename", { detail: { chatId: props.chatId, name: cmd.name } }));
+      setTurnError(null);
+      return true;
+    }
+    if (cmd.kind === "chrome") {
+      // Toggle --chrome browser/computer-use capability for NEW sessions. The current session is
+      // unaffected (extraArgs is spawn-fixed); the toolbar Globe button reflects the new value.
+      const next = !settings.chat.computerUse;
+      setSettings("chat", "computerUse", next);
       setTurnError(null);
       return true;
     }
@@ -1530,12 +1546,13 @@ export function ChatView(props: {
       // Per-chat pane tint (FEATURE #75): wash the chosen color into the pane background so the WHOLE
       // chat surface reads as that color — the header, transcript, and composer padding are all
       // transparent, so they paint over THIS host background — while --fg text stays legible. We use
-      // oklch mixing for a cleaner, less muddy hue in dark themes, and expose the tint as the local
-      // --chat-tint CSS variable so descendant surfaces can blend against it instead of floating as
-      // opaque rectangles. Reactive: picking a color in the tab's Color menu re-tints live.
+      // srgb mixing for predictable hue fidelity (oklch shifted pinks toward orange), and expose the
+      // tint as the local --chat-tint CSS variable so descendant surfaces can blend against it
+      // instead of floating as opaque rectangles. Reactive: picking a color in the tab's Color menu
+      // re-tints live.
       data-chat-tint={chatColor(props.chatId)}
       style={chatColor(props.chatId) ? {
-        background: `color-mix(in oklch, ${chatColor(props.chatId)} 34%, var(--bg))`,
+        background: `color-mix(in srgb, ${chatColor(props.chatId)} 50%, var(--bg))`,
         "--chat-tint": chatColor(props.chatId),
       } : undefined}
       onDragOver={onHostDragOver}

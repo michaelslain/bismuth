@@ -15,6 +15,7 @@ import { commandLabel } from "../../../core/src/commands";
 import { TEMPLATE_TOKENS } from "../../../core/src/templates";
 import { matchTemplateTokenPrefix } from "./templateToken";
 import { KEYBIND_MODIFIERS, KEYBIND_KEYS, modifierFamily, eventToCombo } from "../keybindings";
+import { setGalleryOpen } from "../ui/gallery/galleryState";
 
 /**
  * Completions for a value inside the `properties:` registry — the full type vocabulary
@@ -280,6 +281,9 @@ export type VaultPath = { path: string; kind: "file" | "dir" };
  */
 function launchGallery(view: EditorView, from: number, source: "icons"): void {
   const lineEnd = view.state.doc.lineAt(from).to;
+  // Set the gallery-open flag synchronously before the async dynamic import — same rationale
+  // as the emoji gallery in autocomplete.ts (#67/#49).
+  setGalleryOpen(true);
   void Promise.all([import("../ui/gallery/galleryStore"), import("../ui/gallery/sources")])
     .then(([{ openGallery }, sources]) => openGallery({ source: sources.iconSource }))
     .then((picked) => {
@@ -291,7 +295,10 @@ function launchGallery(view: EditorView, from: number, source: "icons"): void {
       }
       view.focus();
     })
-    .catch((err) => console.error("Failed to open icon gallery", err));
+    .catch((err) => {
+      setGalleryOpen(false);
+      console.error("Failed to open icon gallery", err);
+    });
   void source; // single source today; param keeps call sites self-documenting
 }
 
