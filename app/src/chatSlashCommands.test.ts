@@ -1,6 +1,6 @@
 // app/src/chatSlashCommands.test.ts
 import { describe, it, expect } from "bun:test";
-import { parseChatSlashCommand } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
 
 describe("parseChatSlashCommand", () => {
   it("parses `/rename <name>`", () => {
@@ -45,5 +45,29 @@ describe("parseChatSlashCommand", () => {
   it("returns null for plain prose", () => {
     expect(parseChatSlashCommand("rename this chat please")).toBeNull();
     expect(parseChatSlashCommand("")).toBeNull();
+  });
+});
+
+// BUG #87 ("/chrome command missing"): the "/" autocomplete popover used to be built ONLY from the
+// backend's manifest.slashCommands, which never lists these client-side commands — so `/chrome`
+// never appeared in the picker even though parseChatSlashCommand understood it fine. These tests
+// cover the list ChatView splices in (withClientSlashCommands) rather than the DOM popover itself.
+describe("CLIENT_SLASH_COMMANDS / withClientSlashCommands (BUG #87 autocomplete fix)", () => {
+  it("lists rename, color, and chrome with a non-empty detail each", () => {
+    const names = CLIENT_SLASH_COMMANDS.map((c) => c.name);
+    expect(names).toEqual(["rename", "color", "chrome"]);
+    for (const c of CLIENT_SLASH_COMMANDS) expect(c.detail.length).toBeGreaterThan(0);
+  });
+
+  it("appends the client commands to an empty (pre-manifest) list, so /chrome shows before any session exists", () => {
+    expect(withClientSlashCommands([])).toEqual(["rename", "color", "chrome"]);
+  });
+
+  it("appends after the backend's own commands, preserving their order", () => {
+    expect(withClientSlashCommands(["compact", "mcp"])).toEqual(["compact", "mcp", "rename", "color", "chrome"]);
+  });
+
+  it("dedupes: a backend command sharing a client command's name isn't duplicated", () => {
+    expect(withClientSlashCommands(["chrome"])).toEqual(["chrome", "rename", "color"]);
   });
 });

@@ -887,6 +887,24 @@
 }
 .chat-turn-error-icon { flex: 0 0 auto; margin-top: 2px; }
 
+/* A quiet, non-error system notice (BUG #87): confirms a client-side slash command like /chrome
+   actually did something. Same layout rhythm as .chat-turn-error but muted, not danger-colored —
+   it isn't a failure, just a confirmation with nowhere else obvious to show up. */
+.chat-system-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 4px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.chat-system-note svg { flex: 0 0 auto; margin-top: 2px; opacity: 0.85; }
+
 /* ── Composer pinned at the bottom — the transcript above stays notebook-plain, but the composer
    itself reads as a REAL message box: a quiet rounded surface (the .ui-input idiom) wrapping the
    textarea + send, so the field has a visible affordance instead of floating placeholder text. ── */
