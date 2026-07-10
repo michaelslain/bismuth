@@ -1373,8 +1373,15 @@ export default function App() {
 
 
   onMount(() => {
-    refreshGraph();
-    refreshFileIcons();
+    // Dismiss the boot splash (index.html) once the home-tab graph AND the sidebar tree are in,
+    // so the UI is revealed — and only becomes interactive — when it's actually ready to use, not
+    // mid-load. allSettled (never rejects) plus the splash's own safety timeout mean a slow or
+    // backend-down fetch can't strand the overlay; the extra frame lets the graph paint first.
+    Promise.allSettled([refreshGraph(), refreshFileIcons()]).then(() => {
+      requestAnimationFrame(() =>
+        (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
+      );
+    });
     // Cold-launch check (plan §3): catch any daemon-inbox page that became due while the app
     // was closed. onOpenInbox lets the newly-due toast's "Review" action jump straight to ::inbox.
     void refreshDaemonPages(openInbox);
