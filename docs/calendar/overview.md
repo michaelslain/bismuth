@@ -2,6 +2,11 @@
 
 The calendar in Bismuth is not a standalone page or feature — it is a **Bases view kind** rendered when a `type: base` markdown file declares `views: [{ type: calendar }]`. This document covers the full calendar subsystem: the event and category data model, how events are stored and serialized, the recurrence rule engine, the category-to-color mapping, reactive global state, view components, and user-facing settings. For how to configure a calendar base file and wire up column mappings, see [bases/views/calendar.md](../bases/views/calendar.md) (to be created).
 
+There are **two write paths** to the same on-disk calendar file:
+
+1. **The app UI** — `CalendarView.tsx` → `EventStore` → `BaseBackend`, documented in the bulk of this page. This is the interactive, in-app path.
+2. **A headless CLI/API path** — `core/src/calendar.ts` (a pure module) driven by the `bismuth calendar …` CLI group, so the **daemon, agents, and scripts can edit a calendar by API instead of hand-editing raw YAML**. Hand-editing is fragile: the app rewrites the file (strips quotes, adds `localUpdated`) and can't remove a single recurring occurrence. Headless writes land on disk and the app's vault watcher picks them up live. See [Headless Write Path](#headless-write-path-coresrccalendarts) below.
+
 > **Google Calendar two-way sync.** A calendar base — the same `type: base` markdown file whose event rows this page describes — can be **two-way-synced with Google Calendar**. A single sync pass (`syncEvents` in `core/src/gcal/sync.ts`) pulls remote events into the base's rows, pushes new/changed local rows back to Google, and propagates deletions in both directions, with a configurable conflict policy (`lastWriteWins` / `googleWins` / `bismuthWins`). The base file stays clean — all sync state (per-event links, signatures, sync token) lives in an external manifest outside the vault, and a category's `categories:` frontmatter color is mapped to a Google `colorId`. The full OAuth flow, the manifest/link model, change detection, and the HTTP/CLI surface are documented in [gcal/overview.md](../gcal/overview.md) — that is the source of truth; this page does not duplicate it.
 
 ---
@@ -141,6 +146,109 @@ categories:
 - The `recurrence` column stores the full `Recurrence` object as a JSON string (`JSON.stringify`/`JSON.parse`); the parser falls back to `undefined` on malformed JSON.
 - `categories` in frontmatter is a YAML list of `{name, color}` objects, read by `categoriesOf(frontmatter)`.
 - Re-serialization uses `stringifyYaml` on the full frontmatter (original keys preserved) plus `serializeRows` on the event list; `categories` is only written if non-empty.
+
+---
+
+## Headless Write Path (`core/src/calendar.ts`)
+
+`core/src/calendar.ts` is a **pure, headless module** — the API surface the daemon/agents/CLI drive instead of hand-editing raw YAML. It is ported from the app's `calendarSerialize.ts` + `calendar/{dates,EventStore}.ts`, but has no Solid, no `EventStore` class, and no I/O: every function is a plain array/string transform, and the caller (the CLI) does the read/parse/mutate/serialize/write. A calendar is the same `type: base` + `view: calendar` markdown file — events are the base's row table, categories are a frontmatter key — and **every write preserves the WHOLE frontmatter, touching only events + categories** (matching `BaseBackend`).
+
+### Types
+
+The module re-declares the calendar model independently of the app (`app/src/calendar/types.ts`), so backend code has no frontend dependency:
+
+```typescript
+type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly"
+
+interface Recurrence {
+  type: RecurrenceType
+  daysOfWeek?: number[]   // 0–6, Sunday = 0
+  startDate: string       // "YYYY-MM-DD"
+  endDate?: string        // "YYYY-MM-DD"
+  seriesId: string
+}
+
+interface Category { name: string; color: string }
+
+interface CalendarEvent {
+  id: string
+  title: string
+  date: string            // "YYYY-MM-DD"
+  startTime?: string      // "HH:MM" — undefined = all-day
+  endTime?: string
+  location?: string
+  link?: string
+  description?: string
+  category?: string
+  categories?: string[]   // multi-category form (JSON-encoded in the row)
+  recurrence?: Recurrence
+  localUpdated?: string    // ISO timestamp stamped on every local create/edit
+}
+
+interface ParsedCalendar {
+  frontmatter: Record<string, unknown>
+  events: CalendarEvent[]
+}
+```
+
+`newId()` is exported (`crypto.randomUUID()`); `now()` (internal) stamps `localUpdated` on every create/edit via the internal `stamp()` helper.
+
+### Parse / serialize
+
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `parseCalendarFile` | `(text: string) => ParsedCalendar` | Splits frontmatter (regex `FM_RE`) from body; `parseYaml` the frontmatter (falls back to `{}` on malformed), `parseRows` the body event table, `rowToEvent` each row |
+| `serializeCalendarFile` | `(frontmatter, events) => string` | `stringifyYaml` on the FULL frontmatter (all original keys preserved) + `serializeRows` on the events; emits `---\n<fm>\n---\n\n<body>\n`, or a bare frontmatter block when there are no events |
+| `categoriesOf` | `(frontmatter) => Category[]` | Reads the `categories` frontmatter key (array of `{name, color}`), else `[]` |
+| `rowToEvent` | `(row: Row, i: number) => CalendarEvent` | Row→event mapping mirroring `calendarSerialize.ts`; `recurrence`/`categories` are JSON-decoded from their string cells (malformed → `undefined`/single-element); missing `id` → `row-<i>` |
+
+The row↔event mapping is JSON-string-based for the compound fields: `recurrence` is `JSON.stringify`d into its column, and `categories` (when non-empty) is likewise JSON-encoded; the single-valued `category` field stays a plain string.
+
+### Queries (recurrences expanded)
+
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `expandRecurrence` | `(recurrence, rangeStart, rangeEnd) => string[]` | Iterates one day at a time from `startDate` to `min(endDate ?? 2100-01-01, rangeEnd)`, `matchesRecurrence` per day. Same rule semantics as the app's `dates.ts` (see [Recurrence Engine](#recurrence-engine-datests)) |
+| `eventsForRange` | `(events, rangeStart, rangeEnd) => CalendarEvent[]` | Concrete instances in `[rangeStart, rangeEnd]`; each recurring master is expanded to one `{...event, date}` per matching date; sorted by `date` then `startTime` |
+| `eventsForDay` | `(events, date) => CalendarEvent[]` | `eventsForRange(events, date, date)` |
+| `detectOverlaps` | `(dayEvents) => OverlapPair[]` | Pairs of timed events (`startTime` + `endTime` both set) whose half-open `[start, end)` intervals intersect; all-day events don't participate; `"HH:MM"` strings compare lexicographically. `OverlapPair = { a: CalendarEvent; b: CalendarEvent }` |
+
+The date helpers (`toDateStr`, `addDays`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
+
+### Mutations (pure transforms; caller re-serializes + writes)
+
+Each mutation returns a NEW `CalendarEvent[]` (or `{events, event}`); none touch disk. `findEvent(events, id)` is the shared lookup.
+
+| Function | Signature | Behavior |
+|----------|-----------|----------|
+| `findEvent` | `(events, id) => CalendarEvent \| undefined` | Lookup by `id` |
+| `addEvent` | `(events, event) => { events, event }` | `stamp()`s the input (fills `id` via `newId()` if absent, sets `localUpdated`), appends; returns both the new array and the created event |
+| `moveEvent` | `(events, id, updates) => CalendarEvent[]` | Merges `updates` (minus `id`) into the matching event + re-stamps `localUpdated`. Throws `CALENDAR_EVENT_NOT_FOUND` if the id is absent |
+| `deleteEvent` | `(events, id) => CalendarEvent[]` | Filters out the id. Throws `CALENDAR_EVENT_NOT_FOUND` if absent |
+| `overrideOccurrence` | `(events, masterId, occurrenceDate, updates) => CalendarEvent[]` | Splits a recurring master around `occurrenceDate` (truncate the head to the day before; re-add the tail as its own segment keeping the same `seriesId`) and inserts a standalone single event for that date carrying `updates` (its `recurrence`/`id` stripped). Editing the FIRST occurrence drops the master head entirely. Throws `CALENDAR_NOT_RECURRING` if the id isn't recurring. Ported from `EventStore.editOccurrence` |
+| `deleteOccurrence` | `(events, masterId, occurrenceDate) => CalendarEvent[]` | Same series split as `overrideOccurrence`, but with NO replacement single event. Throws `CALENDAR_NOT_RECURRING`. Ported from `EventStore.deleteOccurrence` |
+
+The error codes (`CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`) go through `createError` (`core/src/error.ts`); both map to a 400/500-class `AppError` when surfaced.
+
+---
+
+## The `bismuth calendar` CLI Group (`cli/src/commands/calendar.ts`)
+
+The `bismuth calendar …` command group is the headless driver over `core/src/calendar.ts`. Every command follows the same shape: **read the vault file → `parseCalendarFile` → mutate → `serializeCalendarFile` → `writeNote`**, and the app's vault watcher picks up the write live. All commands are headless (no running server). The group is bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists these — this is how the daemon/agents author calendar edits.
+
+Two internal helpers wrap the round-trip: `readCalendar(vault, path)` → `readNote` + `parseCalendarFile`, and `writeCalendar(vault, path, frontmatter, events)` → `serializeCalendarFile` + `writeNote`. Event fields are assembled by `eventFieldsFromArgs`: `--json '{...}'` provides a base object, then convenience flags overlay it (flags win) — `--title`, `--date`, `--start` (`startTime`), `--end` (`endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (a JSON `Recurrence`; a missing `seriesId` is auto-filled with a fresh UUID). Malformed `--json`/`--recurrence` `fail`s the command.
+
+| Command | Usage | Behavior |
+|---------|-------|----------|
+| `calendar day` | `<basePath> <date>` | Prints the day's events (recurrences expanded to concrete instances) via `eventsForDay` — read-only |
+| `calendar overlaps` | `<basePath> <date>` | `detectOverlaps(eventsForDay(...))` for the day; prints `{ date, overlaps }` — read-only |
+| `calendar add` | `<basePath> --date YYYY-MM-DD --title '…' [--start HH:MM --end HH:MM]` | `addEvent` with fields from `eventFieldsFromArgs`; `--date` required; prints `{ ok, event }` |
+| `calendar move` | `<basePath> <id> [--date … --start … --end …]` | `moveEvent(events, id, updates)`; fails if nothing to update; prints `{ ok, event }` |
+| `calendar delete` | `<basePath> <id>` | `deleteEvent(events, id)`; prints `{ ok }` |
+| `calendar override` | `<basePath> <id> <date> [--title/--start/--end/--json …]` | `overrideOccurrence(events, id, date, updates)` — the occurrence `<date>` is the positional, so any `--date` flag is dropped as ambiguous; prints `{ ok }` |
+| `calendar delete-occurrence` | `<basePath> <id> <date>` | `deleteOccurrence(events, id, date)`; prints `{ ok }` |
+
+Vault is resolved by `requireVault` (`--vault` / `BISMUTH_VAULT`); output honors `--pretty` (via `out`).
 
 ---
 
@@ -495,4 +603,4 @@ Key test files:
 - **`biweekly` week-parity**: the even/odd week is counted from `startDate`, not from any calendar epoch. Two series that start on different weeks will fire on alternating weeks relative to each other even if they share the same `daysOfWeek`.
 - **Category deletion with no `reassignTo`**: calling `store.deleteCategory(name)` (without a second argument) sets `category: undefined` on affected events (verified in test). In `CategoryPanel`, the code tries to find a `"Uncategorized"` or `"Default"` category as a stable reassignment target before passing it; there is no fallback beyond that.
 
-Source: app/src/calendar/EventStore.ts, app/src/calendar/dates.ts, app/src/calendar/categoryColor.ts, app/src/calendar/components/RecurrenceDialog.tsx, app/src/calendar/types.ts, app/src/calendar/state.ts, app/src/calendar/refresh.ts, app/src/calendar/components/EventModal.tsx, app/src/calendar/components/EventChip.tsx, app/src/calendar/components/CategoryPanel.tsx, app/src/calendar/components/Toolbar.tsx, app/src/calendar/components/CalendarSettings.tsx, app/src/calendar/components/views/MonthView.tsx, app/src/calendar/components/views/TimeGrid.tsx, app/src/bases/CalendarView.tsx, app/src/bases/calendarBase.ts, app/src/bases/calendarSerialize.ts, app/src/calendar/EventStore.test.ts, app/src/calendar/dates.test.ts, core/src/schema/settingsSchema.ts, core/src/gcal/sync.ts, core/src/settings.ts
+Source: core/src/calendar.ts, cli/src/commands/calendar.ts, app/src/calendar/EventStore.ts, app/src/calendar/dates.ts, app/src/calendar/categoryColor.ts, app/src/calendar/components/RecurrenceDialog.tsx, app/src/calendar/types.ts, app/src/calendar/state.ts, app/src/calendar/refresh.ts, app/src/calendar/components/EventModal.tsx, app/src/calendar/components/EventChip.tsx, app/src/calendar/components/CategoryPanel.tsx, app/src/calendar/components/Toolbar.tsx, app/src/calendar/components/CalendarSettings.tsx, app/src/calendar/components/views/MonthView.tsx, app/src/calendar/components/views/TimeGrid.tsx, app/src/bases/CalendarView.tsx, app/src/bases/calendarBase.ts, app/src/bases/calendarSerialize.ts, app/src/calendar/EventStore.test.ts, app/src/calendar/dates.test.ts, core/src/schema/settingsSchema.ts, core/src/gcal/sync.ts, core/src/settings.ts
