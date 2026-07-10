@@ -254,11 +254,20 @@ export async function searchVault(root: string, query: string, opts: SearchOpts)
     ordered = hits.map((h) => h.id as string);
   }
 
+  // Cap the non-regex (BM25-ranked) result set. A 1-3 char prefix query — exactly what the
+  // debounced per-keystroke switcher search sends — prefix-matches a large fraction of the vault,
+  // and the loop below full-body-scans (findMatches builds a RegExp + walks every line) EVERY hit,
+  // then ships an unbounded payload the switcher renders as unbounded DOM rows. MiniSearch already
+  // returns hits BM25-ranked, so once we have the top N the remainder is lower-ranked noise the
+  // switcher never usefully shows — stop scanning there. Regex mode has no pre-ranking (it's sorted
+  // by match count below and is an explicit find-all, not per-keystroke), so it is left uncapped.
+  const RESULT_LIMIT = 50;
   const results: SearchResult[] = [];
   for (const p of ordered) {
     const snippets = findMatches(bodies.get(p) ?? "", query, opts).slice(0, 20);
     if (snippets.length === 0) continue; // a ranked hit with no literal match in body
     results.push({ path: p, matchCount: snippets.length, snippets });
+    if (!opts.regex && results.length >= RESULT_LIMIT) break;
   }
   // When regex (no BM25 order), sort by match count desc for a useful order.
   if (opts.regex) results.sort((a, b) => b.matchCount - a.matchCount);
