@@ -1552,9 +1552,15 @@ export function createServer(cfg: CoreConfig) {
   // Prefetch the 2nd/3rd-brain view layouts in the background once the graph is ready, attaching them
   // to the cached graph object in place (exactly as GET /graph/views does). Without this, the first
   // switch to a brain mode pays a cold subgraph layout on the click; with it, that switch is instant.
+  //
+  // Then warm the bases rows + tasks feeds too, so the first base render doesn't pay the ~400ms cold
+  // vault walk (the "first base loads slowly" cost). Deliberately chained AFTER the graph resolves —
+  // the graph is the home-tab, on the initial-app-load critical path, so pre-building the feeds must
+  // not compete with it for the single JS thread and delay first paint.
   void graphCache.get()
     .then((g) => computeViewLayouts(g, cfg.vault).then((views) => { g.views = views; }))
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => { rowsCache.warm(); tasksCache.warm(); });
 
   // The WS payload is discriminated by `kind`: terminal sockets pipe a PTY, chat sockets
   // drive the headless Claude Code chat driver (core/src/chat.ts).
