@@ -109,6 +109,7 @@ The in-repo background runtime — **one machine process that multiplexes per-va
 - [HTTP API reference](api/http-reference.md) — every core server route
 - [MCP server](mcp/overview.md) — auto-attaches to app-terminal Claude sessions; serves docs + CLI + (daemon-gated) memory tools
 - [App control](mcp/app-control.md) — driving a running window's tabs from a Claude session / the shell (`bismuth app …`), via the CLI (zero new MCP tools)
+- [Mobile (iPad/iOS)](mobile/overview.md) — the no-HTTP in-process backend + `FileAccess`/`Transport` seams that run the vault on-device
 
 ## Contributing
 

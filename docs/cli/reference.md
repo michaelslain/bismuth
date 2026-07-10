@@ -587,6 +587,58 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 
 ---
 
+## Calendar commands (`commands/calendar.ts`)
+
+Edit a calendar base file **by API** instead of hand-editing raw YAML — the app rewrites hand-edited YAML (strips quotes, adds `localUpdated`) and can't cleanly remove a single recurring occurrence. A calendar is a `type: base` + `view: calendar` markdown file: events live in the base's row table, categories in frontmatter. Every write preserves the WHOLE frontmatter and touches only events + categories (ported from the app's calendar backend into `core/src/calendar.ts`). All commands are **headless** (the app's vault watcher picks up writes live) and **require a vault**. Bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists them.
+
+**Event-field flags (shared).** The mutating commands (`add`, `move`, `override`) build event fields from an optional `--json '{...}'` object first, then overlay convenience flags (**flags win**): `--title`, `--date` (→ `date`), `--start` (→ `startTime`), `--end` (→ `endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (→ `recurrence`). `--json` must be a valid JSON **object** (`--json is not valid JSON` / `--json must be a JSON object`). `--recurrence` must be valid JSON (`--recurrence is not valid JSON` / `--recurrence must be a JSON object`); if its `seriesId` is absent, a `crypto.randomUUID()` is filled in.
+
+### `calendar day <basePath> <date>`
+List a day's events with recurrences expanded to concrete instances (`eventsForDay`). Both positionals required (`<basePath> required` / `<date> (YYYY-MM-DD) required`). Prints the event array (read-only).
+```bash
+bismuth calendar day "Bases/Cal.md" 2026-07-10 --vault ~/vault --pretty
+```
+
+### `calendar overlaps <basePath> <date>`
+Detect overlapping timed events on a given day (`detectOverlaps(eventsForDay(...))`). Prints `{ date, overlaps }` where `overlaps` is the array of colliding pairs (read-only). Both positionals required.
+```bash
+bismuth calendar overlaps "Bases/Cal.md" 2026-07-10 --vault ~/vault --pretty
+```
+
+### `calendar add <basePath> [--json '{...}'] [--title … --date … --start … --end … --recurrence '{...}' …]`
+Add an event; fields come from the shared `--json`/convenience flags above. `--date` (YYYY-MM-DD) is **required** (`--date (YYYY-MM-DD) required`); `<basePath>` required. Calls `addEvent`, writes the calendar back, prints `{ ok: true, event }` (the created event, with its new id).
+```bash
+bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Standup" --start 09:00 --end 09:15 --vault ~/vault
+bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Weekly" \
+  --recurrence '{"freq":"weekly","interval":1}' --vault ~/vault
+```
+
+### `calendar move <basePath> <id> [--date … --start … --end … --json '{...}' …]`
+Move/edit an event by id: overlay any of the shared event fields (`--date`/`--start`/`--end`/`--json`/…). At least one field must be provided (`nothing to update — pass --date/--start/--end/--json …`); `<basePath>` and `<id>` required. Calls `moveEvent`, writes back, prints `{ ok: true, event }` (the updated event, re-read via `findEvent`).
+```bash
+bismuth calendar move "Bases/Cal.md" evt-123 --date 2026-07-11 --start 10:00 --vault ~/vault
+```
+
+### `calendar delete <basePath> <id>`
+Delete an event by id (`deleteEvent`). `<basePath>` and `<id>` required. Prints `{ ok: true }`.
+```bash
+bismuth calendar delete "Bases/Cal.md" evt-123 --vault ~/vault
+```
+
+### `calendar override <basePath> <id> <date> [--title … --start … --end … --json '{...}' …]`
+Override **one** occurrence of a recurring event on a specific `<date>`, **splitting the series** (`overrideOccurrence`). The occurrence date is the positional `<date>` — a `--date` flag would be ambiguous, so any `date` field is stripped from the overlaid updates before applying. `<basePath>`, `<id>` (the recurring event), and `<date>` (YYYY-MM-DD occurrence) all required. Prints `{ ok: true }`.
+```bash
+bismuth calendar override "Bases/Cal.md" evt-weekly 2026-07-17 --title "Moved standup" --start 11:00 --vault ~/vault
+```
+
+### `calendar delete-occurrence <basePath> <id> <date>`
+Delete **one** occurrence of a recurring event on a specific `<date>`, splitting the series (`deleteOccurrence`). Same three required positionals as `override`. Prints `{ ok: true }`.
+```bash
+bismuth calendar delete-occurrence "Bases/Cal.md" evt-weekly 2026-07-17 --vault ~/vault
+```
+
+---
+
 ## Command index (by domain)
 
 | Command | Group file | Needs vault? | Output |
@@ -600,6 +652,7 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
+| `calendar day/overlaps/add/move/delete/override/delete-occurrence` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |
@@ -611,4 +664,4 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 | `install` `uninstall` | install.ts | **no** (machine-wide `~/.bismuth` + global MCP) | JSON |
 | `checkpoint diff/advance/ref` | checkpoint.ts | **no** (any git dir via `--dir`) | JSON |
 
-Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts, core/src/settings.ts
+Source: cli/src/index.ts, cli/src/args.ts, cli/src/types.ts, cli/src/commands/file.ts, cli/src/commands/note.ts, cli/src/commands/search.ts, cli/src/commands/graph.ts, cli/src/commands/task.ts, cli/src/commands/base.ts, cli/src/commands/calendar.ts, cli/src/commands/card.ts, cli/src/commands/prop.ts, cli/src/commands/settings.ts, cli/src/commands/daemon.ts, cli/src/commands/draw.ts, cli/src/commands/serve.ts, cli/src/commands/export.ts, cli/src/commands/api.ts, cli/src/commands/app.ts, cli/src/commands/page.ts, cli/src/commands/install.ts, cli/src/commands/checkpoint.ts, cli/package.json, cli/test/cli.test.ts, core/src/uiControl.ts, core/src/runRegistry.ts, core/src/daemonPages.ts, core/src/daemon.ts, core/src/daemonInstall.ts, core/src/daemonGraph.ts, core/src/files.ts, core/src/backup.ts, core/src/bismuthInstall.ts, core/src/settings.ts

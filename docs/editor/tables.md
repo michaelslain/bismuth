@@ -1,6 +1,6 @@
 # GFM Pipe Tables — Interactive Widget
 
-This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15), in-cell `:emoji:` autocomplete (#49), no center alignment (#53), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30). Focusing a cell never scrolls the viewport (#50). The modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`), and the in-cell emoji autocomplete (`cellEmoji.ts`).
+This document covers everything about how Bismuth renders and edits GitHub Flavored Markdown (GFM) pipe tables inside the CodeMirror editor. A GFM table in a note is replaced by a fully interactive `<table>` DOM widget with contenteditable cells, Tab/Enter navigation (Enter is row-aware — line break except a new row on the last row, #42), Shift+Enter multi-line cells, drag-to-resize **column widths only** (row height is auto, #52; persisted in localStorage), add/delete row and column affordances, a right-click context menu (that shows *only* the menu — WebKit-safe, no word-select, #43), inline-markdown rendering in the display face (including `#tag` chips, #41), `<br>`-carried bullet/number lists inside a cell that survive WebKit's contenteditable read-back (#15), in-cell `:emoji:` autocomplete (#49), no center alignment (#53), in-place Cmd+F match highlighting (never flips to source, #31), and image/media drop straight into a cell — including the packaged-Tauri native-drop path (#30). Focusing a cell never scrolls the viewport (#50). The modules involved are: the pure markdown↔grid model (`tableModel.ts`), shared CodeMirror state (`tableState.ts`), the widget itself (`tableWidget.ts`), the nested in-cell CodeMirror EDIT editor (`cellEditor.ts` + its shared stack `cellEditorExtensions.ts`), the pure column-resize-drag lifecycle (`tableResizeDrag.ts`), inline-markdown rendering for display cells (`inlineMarkdown.ts`), and the cell-list convention (`cellList.ts`, shared with the note reader `bases/markdown.ts`). The edit face is a real nested CodeMirror running the SAME live-preview + markdown + autocomplete stack the note body does — so in-cell `:emoji:` completion is no longer a separate module (the old `cellEmoji.ts`) but the shared `vaultCompletion` source, one code path.
 
 ---
 
@@ -12,13 +12,15 @@ This document covers everything about how Bismuth renders and edits GitHub Flavo
 4. [Inline Markdown in Cells (`inlineMarkdown.ts`)](#inline-markdown-in-cells-inlinemarkdownts)
 5. [Lists Inside Cells (`cellList.ts`)](#lists-inside-cells-celllistts)
 6. [Integration with `livePreview.ts`](#integration-with-livepreviewts)
-7. [Keyboard Navigation Reference](#keyboard-navigation-reference)
-8. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
-9. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
-10. [Source / Raw-Edit Mode](#source--raw-edit-mode)
-11. [Find-in-Table Highlighting (#31)](#find-in-table-highlighting-31)
-12. [File Drop Into a Cell (#30)](#file-drop-into-a-cell-30)
-13. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
+7. [The Nested In-Cell Editor (`cellEditor.ts`)](#the-nested-in-cell-editor-celleditorts)
+8. [Column-Resize Drag Lifecycle (`tableResizeDrag.ts`)](#column-resize-drag-lifecycle-tableresizedragts)
+9. [Keyboard Navigation Reference](#keyboard-navigation-reference)
+10. [Drag-Resize and Size Persistence](#drag-resize-and-size-persistence)
+11. [Context Menu and Structural Edits](#context-menu-and-structural-edits)
+12. [Source / Raw-Edit Mode](#source--raw-edit-mode)
+13. [Find-in-Table Highlighting (#31)](#find-in-table-highlighting-31)
+14. [File Drop Into a Cell (#30)](#file-drop-into-a-cell-30)
+15. [Gotchas and Edge Cases](#gotchas-and-edge-cases)
 
 ---
 
@@ -171,6 +173,15 @@ Facet.define<string | null, string | null>
 
 The current note's vault path, supplied by the editor host. The widget reads it to scope size persistence in localStorage per note. Combined with `values[0] ?? null` (first-wins).
 
+### `noteNamesFacet` / `tagNamesFacet`
+
+```ts
+Facet.define<() => NoteCandidate[], () => NoteCandidate[]>  // noteNamesFacet
+Facet.define<() => string[], () => string[]>               // tagNamesFacet
+```
+
+Two live GETTERS (not snapshots, so they track added/renamed notes and tags) supplied by the editor host. `noteNamesFacet` lets the widget resolve a wikilink clicked in a cell to its real vault path (#33); `tagNamesFacet` feeds the in-cell edit face's `#tag` autocomplete the exact candidates the note body's does (#49). Both default to `() => []` when no host provides them (e.g. a card editor). The widget reads them in `toDOM` and threads them into `mountCellEditor`'s `getNotes` / `getTags` hooks.
+
 ### `setActiveTableEffect`
 
 ```ts
@@ -227,11 +238,11 @@ Each `<th>` or `<td>` has **two faces** keyed by `data-editing`:
 | State               | `data-editing` | Content                                         |
 | :------------------ | :------------- | :---------------------------------------------- |
 | Display (idle)      | `""` / unset   | **Full block render** — `renderCellBlockHtml(data-src)` (#15) |
-| Edit (focused)      | `"1"`          | Raw markdown source, with `<br>` for line breaks |
+| Edit (focused)      | `"1"`          | A **nested CodeMirror `EditorView`** (`cellEditor.ts`, mounted on the cell as `_cellCM`) running the note editor's live-preview + markdown + autocomplete stack — see [The Nested In-Cell Editor](#the-nested-in-cell-editor-celleditorts) |
 
 **The display face renders through the note-reading BLOCK engine (#15, "the block thing").** `editor/cellBlockRender.ts` converts the cell's stored `<br>` markers to real newlines and runs `bases/markdown.ts renderNoteBody` — the exact engine reading mode / cards / transclusion use (marked with `breaks:true`, KaTeX with progressive self-upgrade, `[[wikilink]]` → `a.bismuth-wikilink[data-href]` anchors, `#tag` → `span.bismuth-tag`, code masking, DOMPurify sanitize). So `- a<br>- b<br>- c` renders a **real `<ul><li>`** exactly like a note body would, ordered/nested lists included; `line one<br>line two` keeps its soft break (`breaks:true`). This **supersedes the `<br>`-marker cellList rendering for the widget's display face** (`cellList.ts` remains the note-reader's own table-cell convention in `bases/markdown.ts`). **Embeds** (`![[img]]` / `![alt](url)`) are cut out *before* the block render into sanitize-surviving `span.cm-cell-embed-slot` placeholders and swapped for the real media DOM (`renderEmbedHtml`: img / pdf iframe / audio / video / note chip with GET /asset URLs) *after* `innerHTML` assignment (`upgradeCellEmbeds`) — DOMPurify would otherwise strip a PDF `<iframe>`. Cell-scoped CSS in `Editor.css` (`.cm-td p/ul/ol/...`) zeroes block margins so row height never explodes (still auto, #52); the reader's chips are styled there to match the editor's `.cm-wikilink`/`.cm-tag` marks, and the cell click handler opens **both** chip shapes (#33). The EDIT face and the read-back (`cellSourceFromDom`) are untouched.
 
-The canonical cell source is stored in `data-src`. On `focusin` the widget calls `enterEdit`, which sets `innerHTML = srcToEditHtml(data-src)`, converting `<br>` markers in the stored source to real `<br>` DOM nodes. On `focusout` the widget calls `leaveEdit`, which reads the live DOM back via `cellSourceFromDom`, stores it in `data-src`, and re-renders the display face.
+The canonical cell source is stored in `data-src`. On the cell's `mousedown` (or a Tab/Enter cell hop) the widget calls `enterEdit`, which clears the display face and mounts the nested `cellEditor.ts` editor seeded from `data-src` (`<br>`→`\n` via `cellSourceToBlockMarkdown`). On `focusout` the widget calls `leaveEdit`, which reads the nested editor's doc back (`cmDocToCellSource`, `<br>`-joined), stores it in `data-src`, destroys the view, and re-renders the display face. The `readGrid` commit path reads the currently-edited cell from its live `_cellCM.state.doc`, every other cell from `data-src`.
 
 #### `srcToEditHtml(src)` — internal
 
@@ -551,17 +562,56 @@ The widget's `eq` method prevents unnecessary DOM rebuilds: if the serialized ma
 
 ---
 
-## In-Cell Emoji Autocomplete (#49)
+## The Nested In-Cell Editor (`cellEditor.ts`)
 
-A table cell is a plain `contenteditable` DOM island that lives **outside** CodeMirror's input pipeline, so the editor's own `:emoji:` completion (`editor/autocomplete.ts` `emojiSource`) never runs inside it — the same class of gap as the in-cell wrap-on-type (`wrapCellSelectionOnType`, #45) and list-continuation features. `editor/cellEmoji.ts` restores it as a lightweight, self-contained popup:
+A cell's EDIT face is **not** a plain `contenteditable` island — it is a **real, nested CodeMirror `EditorView`** (#15/#49). Each `<th>`/`<td>` is rendered `contenteditable="false"`; on focus the widget (`enterEdit`) clears the display face and calls `mountCellEditor(hooks)` (from `cellEditor.ts`), stashing the returned view on the cell as `cell._cellCM`. On blur (`leaveEdit`) the widget reads the nested doc back (`cmDocToCellSource`, `<br>`-joined), destroys the view, and re-renders the display face. Because the edit face runs the **same** live-preview + markdown + autocomplete stack the note body does, editing a cell reveals raw markdown per-token exactly like the note editor and there is **no contenteditable read-back to go wrong across engines** (the old WebKit `<div>`-line-wrapping saga is gone by construction).
 
-- **Trigger (pure):** `emojiTokenBeforeCaret(beforeCaret)` reuses the editor's `matchEmojiPrefix`, so the trigger rules are identical — a `:` at the start of the cell line or after whitespace opens the popup (`key:value`, `http://x`, `12:30` never fire). It returns the bare `query` plus `tokenLen` (the character count the `:query[:]` token occupies before the caret).
-- **Data source:** the SAME `searchEmoji(query)` the editor uses (`editor/emoji.ts` — one ranked dataset, same default cap of 50), so a cell shows the identical suggestions in the identical order.
-- **Key handling (pure):** `emojiMenuKey(key)` maps Up/Down → navigate, Enter/Tab → accept, Escape / Left / Right / Home / End → close. While the menu is open, the cell's `keydown` gives it first refusal, so Enter accepts the glyph instead of growing the table or continuing a list, and Tab accepts instead of moving cells. A character key falls through to normal typing, which re-evaluates the popup on the resulting `input`.
-- **Insertion (deterministic Range op):** `replaceTokenBeforeCaret(cell, tokenLen, glyph)` deletes the `:query[:]` token and inserts the glyph via a `Range` — **not** `execCommand` — so it behaves the same in every engine (mirroring `insertBreakAtCaret`).
-- **Popup DOM — visually identical to the editor's autocomplete, by construction (#49 re-bounce).** `CellEmojiMenu` does **not** carry its own styles. It renders CodeMirror's exact tooltip structure — `.cm-tooltip.cm-tooltip-autocomplete > ul[role=listbox] > li[role=option]` (selected row marked `[aria-selected]`, like CM's) with one `.cm-completionLabel` per row whose text is the editor's exact emoji label (`${char}  :${name}:`, no icon — the editor's emoji rows render none either) — and mounts **inside the editor root** (`view.dom`), where both CM's base autocomplete theme and the app's `completionTheme` (`editor/completionDisplay.ts`, the single source of completion styling) are scoped. Every rule that styles the editor's popup therefore styles this one: container card, row metrics, selected wash, label typography, list max-height/scroll. A future theme change automatically hits both; `Editor.css` deliberately contains **zero** rules for it. Positioned `fixed` at the caret (like CM's tooltips), one instance per table widget, torn down on the cell's blur and the widget's `destroy`. Picking a row uses `mousedown` + `preventDefault` so the choice never blurs the cell (which would commit + destroy the edit face first).
+### Loading
 
-The trigger + key decision are unit-tested as pure functions (`cellEmoji.test.ts`); the caret read, token replacement, end-to-end widget flow (type `:fire`, Enter inserts the glyph, no new row), and the structural parity with CM's popup (classes, ul/li/label shape, `[aria-selected]` movement, editor-root mounting) are covered under happy-dom (`tableWidget.test.ts`).
+`cellEditor.ts` is imported **dynamically** by `tableWidget.ts` (`loadCellEditor()`), because its extension stack pulls in `livePreview`'s Solid `.tsx`, which bun's headless test transform can't compile — so it must stay out of the widget's static import graph (the widget's own unit tests import it directly). `toDOM` **pre-warms** the chunk (`void loadCellEditor().catch(() => {})`) so it is almost always resolved before the first click; once cached, the widget mounts **synchronously** (`if (cellEditorModule) doMount(...)`) so the first keystrokes after clicking/tabbing into a cell are never dropped. Only the very first cell edit per session takes the async path, whose `checkFocus` guard bails if focus genuinely moved to a different surface while the chunk loaded (but explicitly allows the OUTER editor content being focused — an ancestor of the widget root — which CM re-homes focus onto after a reshape).
+
+### Source round-trip
+
+A cell's stored source is a single GFM line with `<br>` break markers. `mountCellEditor` feeds the nested editor a **multi-line** doc (`cellSourceToBlockMarkdown`: `<br>`→`\n`) and the widget commits it back `<br>`-joined (`cmDocToCellSource`) — a lossless round-trip (`cellBlockRender.test.ts`).
+
+### Extension stack
+
+`mountCellEditor` builds an `EditorView` with:
+- `history()`, `drawSelection()`, `indentUnit.of("    ")` + `tabSize` 4 (list nesting clears a `1. ` marker uniformly, matching the note editor).
+- Auto-close brackets/quotes + `$` for inline math (`closeBrackets()`), and — gated on `settings.editor.wrapSelection` — `wrapSelection(...)` so a selection is wrapped in a formatting char (#45), the SAME extension the note body uses.
+- A **highest-precedence** cell-navigation keymap (see below).
+- `markdownEditingExtensions({ completion, livePreview })` — the shared markdown stack (`cellEditorExtensions.ts`): live preview + markdown + `vaultCompletion` (wikilinks / tags / `:emoji:` with the **full** library) + math + bold/italic. **One code path** with the note editor, so the cell reads and completes identically and a future theme/completion change hits both automatically. A cell has no frontmatter, so the frontmatter-gated completion sources (property/enum/icon/tag-list) get inert inputs (`getSchema: () => ({})`, `inFrontmatter: () => false`); the BODY sources (wikilink/tag/emoji) use the real `getNotes` / `getTags` getters from the facets.
+- `defaultKeymap` + `historyKeymap` + `closeBracketsKeymap` at default precedence, `EditorView.lineWrapping`, `cellEditorTheme`, and `tooltips({ parent: h.popupParent })` — the completion popup mounts in the OUTER editor root (`view.dom`), not the tiny cell, so it isn't clipped and the shared `completionTheme` styles it identically to the note editor's popup (#49).
+
+`cellEditorTheme` makes the editor transparent, gutterless, auto-height, and pins its `line-height` to the shared `--cm-td-lh` var — **identical to the display face** — so the cell's line box doesn't change height on focus/blur (#62). Its `&.cm-editor .cm-…` selectors carry higher specificity (0,3,0) than the note editor's leaked `.scope .cm-…` rules (0,2,0), resetting the geometry so the cell hugs its content.
+
+### Cell-navigation keymap (hooks)
+
+The widget wires the nested editor via `CellEditorHooks`. The highest-precedence keymap owns cell navigation but **defers** (returns `false`) when the completion popup is open, or (for Enter) when the caret is on a list/blockquote line — so the shared completion keymap and `enterKeymap` still run. Deferred work is queued to a **microtask** so the view is never torn down mid-keydispatch:
+
+| Key | Behavior |
+| :-- | :-- |
+| `Tab` | Popup open → `acceptCompletion`; else `onNav("next")` (next cell, wraps rows, commits past the last cell). |
+| `Shift+Tab` | `onNav("prev")` (previous cell). |
+| `Escape` | Popup open → let the completion keymap close it; else `onEscape()` (blur → commit). |
+| `Enter` | Popup open → defer to the completion keymap (accept). Non-last row → defer to `enterKeymap` (list continuation or a plain in-cell newline). Last row: on a list/blockquote line (`LIST_OR_QUOTE_LINE`) defer to `enterKeymap`; otherwise `onGrowRow()` — append a blank body row and drop the caret into it (#42). |
+| `Ctrl-Space` | `startCompletion`. |
+
+`onGrowRow` sets `pendingCellFocus = { r: cells.length, c }` then commits `insertRow(g, g.cells.length)`; the rebuilt widget claims that pending focus by document position (#42/#62). Focus lands with `preventScroll` (#50), and the caret is placed at the click coordinates (`posAtCoords(atCoords)`) when the cell was entered by click, else at the doc end.
+
+---
+
+## Column-Resize Drag Lifecycle (`tableResizeDrag.ts`)
+
+The **pure** lifecycle of a column-resize drag, extracted from `tableWidget.ts` so the "always releases" guarantee is unit-testable headlessly (the widget's own DOM drag can't be).
+
+- **`computeResizeWidth(startWidth, dx, min)`** — the clamped new width (never below `min`). Pure.
+- **`createResizeDrag({ originX, startWidth, min, onWidth, onEnd })`** returns a `ResizeDrag` controller:
+  - `move(clientX)` — recompute + apply the width for the current pointer x (no-op once ended).
+  - `end()` — run the one-shot cleanup (drop listeners / reset cursor / persist). **Idempotent**: the cleanup fires only on the FIRST call, so wiring it to several end events can't double-clean.
+  - `active` — true until `end()` has run.
+
+**The bug it hardens (the "resize gets stuck" report):** the widget used to end the drag only on a window `mouseup`. In the packaged WebKit/WKWebView app a button released OUTSIDE the window — or an alt-tab / OS focus-steal / `pointercancel` mid-drag — never delivers that `mouseup`, so the cleanup never ran and the col-resize cursor stayed stuck. The fix wires **every** plausible end event (`pointerup` / `pointercancel` / `mouseup` / window `blur`, plus pointer capture) to the controller's idempotent `end()` — whichever fires first runs the single cleanup, the rest no-op. This module owns that idempotency + the width math; the widget owns the DOM listener wiring that calls in.
 
 ---
 
@@ -620,4 +670,4 @@ Native rich-text shortcuts that would inject `<b>`, `<i>`, `<u>` HTML elements i
 
 The separator row does not exist in the DOM (it is consumed during parse). The context menu rows all count from the `cells` grid, where row 0 is the header. "Delete row" is disabled when only the header row exists (`rowCount <= 1`).
 
-Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/inlineMarkdown.ts`, `app/src/editor/tableModel.test.ts`, `app/src/editor/inlineMarkdown.test.ts`, `app/src/editor/livePreview.ts`
+Source: `app/src/editor/tableModel.ts`, `app/src/editor/tableState.ts`, `app/src/editor/tableWidget.ts`, `app/src/editor/tableResizeDrag.ts`, `app/src/editor/cellEditor.ts`, `app/src/editor/cellEditorExtensions.ts`, `app/src/editor/inlineMarkdown.ts`, `app/src/editor/tableModel.test.ts`, `app/src/editor/inlineMarkdown.test.ts`, `app/src/editor/livePreview.ts`

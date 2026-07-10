@@ -8,9 +8,9 @@ There is **no settings GUI** in Bismuth — the "settings page" is literally `.s
 
 The schema is a nested object. Top-level keys, in canonical alphabetical-set membership (the test asserts exactly this set):
 
-`appearance`, `attachments`, `calendar`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `googleCalendar`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
+`appearance`, `attachments`, `calendar`, `chat`, `daemon`, `dailyNotes`, `editor`, `folderIcons`, `googleCalendar`, `graph`, `keybindings`, `properties`, `server`, `srs`, `templates`, `terminal`, `toolbar`, `ui`, `update`, `vault`.
 
-The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
+The **declaration order** in the schema (which determines the order in a freshly written `.settings`) is: `appearance`, `graph`, `editor`, `vault`, `attachments`, `calendar`, `googleCalendar`, `ui`, `server`, `daemon`, `update`, `terminal`, `chat`, `srs`, `templates`, `properties`, `folderIcons`, `toolbar`, `dailyNotes`, `keybindings`. The `keybindings` section is deliberately **last** (a test enforces this) so it sits at the end of a fresh file.
 
 ### Property types
 
@@ -329,6 +329,23 @@ terminal:
   fontSize: 14
   lineHeight: 1.6
   cursorWidth: 3
+```
+
+---
+
+## `chat`
+
+Visual Claude chat (the `/chat` WS session, `core/src/chat.ts`) behavior.
+
+| Key | Type | Default | Doc |
+|-----|------|---------|-----|
+| `computerUse` | boolean | `false` | Enable Claude's browser/computer-use capability (`--chrome`) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). |
+
+Example:
+
+```yaml
+chat:
+  computerUse: true
 ```
 
 ---
