@@ -1229,15 +1229,22 @@ export class TableWidget extends WidgetType {
       const viewR = viewL + scroll.clientWidth;
       const inView = (px: number): boolean => px >= viewL - 0.5 && px <= viewR + 0.5;
       const base = xs[0] ?? 0;
-      // Resize handles sit on the RIGHT border of each column.
+      // Resize handles sit on the RIGHT border of each column. In ∞ mode the table can be wider than
+      // the scroller, so a column that STRADDLES the right edge (its left border is in view but its
+      // right border scrolled past) would have its handle hidden — you couldn't resize the widest /
+      // last visible column without first scrolling (#92). Keep such a handle GRABBABLE by clamping
+      // it just inside the visible right edge; dragging it auto-scrolls the table to follow
+      // (startColDrag). Handles for fully off-screen columns stay hidden.
       for (let c = 0; c < colHandles.length; c++) {
         const h = colHandles[c];
         if (!h) continue;
         const edge = xs[c + 1] ?? base;
-        h.style.left = `${edge}px`;
+        const leftEdge = xs[c] ?? base;
+        const straddlesRight = edge > viewR && leftEdge <= viewR && leftEdge >= viewL - 0.5;
+        h.style.left = `${straddlesRight ? viewR - 1 : edge}px`;
         h.style.top = `${oy}px`;
         h.style.height = `${th}px`;
-        h.style.display = inView(edge) ? "" : "none";
+        h.style.display = inView(edge) || straddlesRight ? "" : "none";
       }
       // Column drag grips: a tab centered over each column's header, just above the table.
       for (let c = 0; c < colGrips.length; c++) {
@@ -1434,7 +1441,9 @@ export class TableWidget extends WidgetType {
       if (resizeActive) return; // ignore the trailing compat event (pointerdown → mousedown, or vice-versa)
       resizeActive = true;
       const start = getStart();
-      const origin = e.clientX;
+      // CONTENT-space origin (screen x + current scroll) so an ∞ table that auto-scrolls mid-drag
+      // keeps widening under a pointer pinned at the edge, instead of stalling (#92).
+      const origin = e.clientX + scroll.scrollLeft;
       const handle = e.currentTarget as HTMLElement | null;
       handle?.classList.add("cm-col-resize--dragging");
       document.body.style.cursor = "col-resize";
@@ -1447,8 +1456,19 @@ export class TableWidget extends WidgetType {
         try { handle.setPointerCapture(pointerId); } catch { /* not capturable — window listeners cover it */ }
       }
       let drag: ResizeDrag;
-      const onMove = (me: MouseEvent): void => drag.move(me.clientX);
-      const onPointerMove = (pe: PointerEvent): void => drag.move(pe.clientX);
+      // Follow-scroll an ∞ table while resizing so the dragged border never sails off-screen and the
+      // handle stays under the cursor (#92). When the cursor nears a scroller edge, nudge scrollLeft;
+      // width is tracked in CONTENT space (clientX + scrollLeft), so each nudge keeps the column
+      // growing even while the pointer sits pinned at the edge. No-op in normal mode (scrollLeft 0).
+      const EDGE = 28;
+      const autoScroll = (clientX: number): void => {
+        if (!infinity) return;
+        const s = scroll.getBoundingClientRect();
+        if (clientX > s.right - EDGE) scroll.scrollLeft += clientX - (s.right - EDGE);
+        else if (clientX < s.left + EDGE) scroll.scrollLeft -= s.left + EDGE - clientX;
+      };
+      const onMove = (me: MouseEvent): void => { autoScroll(me.clientX); drag.move(me.clientX + scroll.scrollLeft); };
+      const onPointerMove = (pe: PointerEvent): void => { autoScroll(pe.clientX); drag.move(pe.clientX + scroll.scrollLeft); };
       const onEnd = (): void => drag.end();
       drag = createResizeDrag({
         originX: origin,

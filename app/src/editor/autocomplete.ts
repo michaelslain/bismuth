@@ -406,8 +406,13 @@ function emojiSource(): CompletionSource {
         applyInsert(view, completion, applyFrom, applyTo, e.char, e.char.length);
       },
     }));
+    // MATCHING EMOJI FIRST (#67): when the query matches emoji, the top option must be the best
+    // matching glyph — typing `:rocket`↵ should insert 🚀, not open the gallery. The gallery drops
+    // to the BOTTOM (still one keystroke away). Only when NOTHING matches is the gallery the sole
+    // (and therefore top) option, so `:` alone still opens the grid.
     // filter:false → keep our ranking + keyword matches; no validFor → re-query per keystroke.
-    return { from, to, options: [gallery, ...emoji], filter: false };
+    const options = emoji.length ? [...emoji, gallery] : [gallery];
+    return { from, to, options, filter: false };
   };
 }
 
