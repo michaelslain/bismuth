@@ -1,7 +1,7 @@
-import { homedir } from "os"
-import { join } from "path"
-import { spawnSync } from "child_process"
-import { mkdir, readFile } from "fs/promises"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { spawnSync } from "node:child_process"
+import { mkdir, readFile } from "node:fs/promises"
 import { LAUNCHD_LABEL, MACHINE_PID_FILE, SYSTEMD_SERVICE_NAME } from "./config.ts"
 
 const IS_LINUX = process.platform === "linux"

@@ -1,5 +1,5 @@
-import { readFile } from "fs/promises"
-import { join } from "path"
+import { readFile } from "node:fs/promises"
+import { join } from "node:path"
 import { parse } from "yaml"
 import { parseFrontmatter } from "./frontmatter.ts"
 import { VAULTS_FILE, vaultPaths, type VaultContext } from "./config.ts"

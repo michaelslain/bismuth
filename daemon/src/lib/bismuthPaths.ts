@@ -1,6 +1,6 @@
-import { homedir } from "os"
-import { join } from "path"
-import { existsSync } from "fs"
+import { homedir } from "node:os"
+import { join } from "node:path"
+import { existsSync } from "node:fs"
 
 // The machine-wide Bismuth tools the GUI app installs (core/src/bismuthInstall.ts): the compiled
 // bismuth-mcp + bismuth binaries under ~/.bismuth/bin and the docs tree under ~/.bismuth/docs. The

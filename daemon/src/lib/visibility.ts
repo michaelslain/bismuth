@@ -12,8 +12,8 @@
 // registry.ts already uses (`.settings`, the interim `.settings/settings.yaml`, and the legacy
 // root `settings.yaml` — first readable wins), since the daemon may see a vault before core has
 // migrated it.
-import { readdir, readFile, realpath } from "fs/promises"
-import { join } from "path"
+import { readdir, readFile, realpath } from "node:fs/promises"
+import { join } from "node:path"
 import { parse as parseYaml } from "yaml"
 import { parseFrontmatter } from "./frontmatter.ts"
 

@@ -1,5 +1,5 @@
 {
-  "name": "app",
+  "name": "@bismuth/app",
   "version": "0.1.0",
   "description": "Bismuth — a personal knowledge management desktop app",
   "type": "module",

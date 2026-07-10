@@ -5,9 +5,10 @@
 // tints the SELECTED state (e.g. teal for the search toggles); default is accent.
 import { type JSX, Show } from "solid-js";
 import { Icon } from "../icons/Icon";
+import type { PaletteTokenName } from "./palette";
 import "./ui.css";
 
-export type ChipTone = "accent" | "teal" | "blue" | "violet" | "green" | "gold" | "rose";
+export type ChipTone = PaletteTokenName;
 
 export function Chip(props: {
   tone?: ChipTone;

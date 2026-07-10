@@ -3,9 +3,11 @@
 // resolved hex — means a category recolours itself automatically when the theme
 // changes, because it renders through `var(--token)`.
 
+import { PALETTE_TOKENS, type PaletteTokenName } from "../ui/palette";
+
 /** Palette tokens a category colour may reference. Each maps to a `--<token>` CSS var. */
-export const THEME_SWATCHES = ["accent", "teal", "blue", "violet", "green", "gold", "rose"] as const;
-export type ThemeSwatch = (typeof THEME_SWATCHES)[number];
+export const THEME_SWATCHES = PALETTE_TOKENS;
+export type ThemeSwatch = PaletteTokenName;
 
 export function isThemeToken(color: string | undefined): color is ThemeSwatch {
   return !!color && (THEME_SWATCHES as readonly string[]).includes(color);
