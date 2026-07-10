@@ -28,3 +28,28 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
   if (cmd === "chrome") return { kind: "chrome" };
   return null;
 }
+
+/** BUG #87 ("/chrome command missing"): the composer's "/" autocomplete (ChatView's `slashMatches`)
+ *  used to be built ONLY from the backend session's own `manifest.slashCommands` — which never
+ *  includes these client-side commands, so `/chrome` (and, less noticeably, `/rename`/`/color`)
+ *  never showed up in the picker even though typing it out by hand worked. These are pure CLIENT
+ *  concepts (tab rename / pane tint / a settings toggle) intercepted before a turn ever reaches the
+ *  backend, so they're spliced in HERE rather than polluting core/chat.ts's LOCAL_SLASH_COMMANDS
+ *  (which is for commands the backend itself answers, like `/mcp`). `detail` powers the popover
+ *  row's description text (mirrors ChatView's SLASH_COMMAND_DETAILS for synthesized commands). */
+export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
+  { name: "rename", detail: "Rename this chat tab" },
+  { name: "color", detail: "Tint this chat's pane (swatch name, hex, or \"clear\")" },
+  { name: "chrome", detail: "Toggle browser (--chrome) for new sessions" },
+];
+
+/** Merge the client-side commands into a manifest's own slash-command names for the "/" autocomplete
+ *  (BUG #87). Client commands are APPENDED after the backend's own list, deduped by name (a same-
+ *  named backend command — unlikely — isn't shadowed). Works even before any manifest exists (an
+ *  empty `commands` in) so `/chrome` etc. are offered from the moment the chat opens, not just after
+ *  the session's first manifest lands. Pure — unit-tested without ChatView / Solid. */
+export function withClientSlashCommands(commands: string[]): string[] {
+  const out = [...commands];
+  for (const c of CLIENT_SLASH_COMMANDS) if (!out.includes(c.name)) out.push(c.name);
+  return out;
+}

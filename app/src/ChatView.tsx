@@ -36,7 +36,8 @@ import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
-import { parseChatSlashCommand } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
+import { resolveInitialModel } from "./chatModelResolution";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -131,12 +132,18 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB
 // would blow the frame; this catches that.
 const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024; // ~12 MB of base64
 
-// Descriptions for slash commands the backend SYNTHESIZES into the manifest (BUG #39). "/mcp" is a
-// TUI-only command the SDK omits from init.slash_commands; chat.ts answers it locally AND splices its
-// name into the manifest so the composer's autocomplete lists it (withLocalSlashCommands). The SDK's
-// own commands carry no description over the wire (names only), so only the synthetic ones get a
-// blurb here — shown as the popover row's `detail`. Unknown commands simply have none.
-const SLASH_COMMAND_DETAILS: Record<string, string> = { mcp: "Show MCP server status" };
+// Descriptions for slash commands with no description on the wire, so the popover row's `detail`
+// still has a blurb. Two sources: "/mcp" is a TUI-only command the SDK omits from
+// init.slash_commands — chat.ts answers it locally AND splices its name into the manifest
+// (withLocalSlashCommands, BUG #39). `/rename`/`/color`/`/chrome` are pure CLIENT-side commands
+// (chatSlashCommands.ts's CLIENT_SLASH_COMMANDS) spliced into the autocomplete list HERE, in
+// slashMatches below (BUG #87 — they parsed fine but never appeared in the "/" picker, so `/chrome`
+// read as "missing"). The SDK's own real commands carry no description over the wire (names only),
+// so only these synthesized/client ones get a blurb. Unknown commands simply have none.
+const SLASH_COMMAND_DETAILS: Record<string, string> = {
+  mcp: "Show MCP server status",
+  ...Object.fromEntries(CLIENT_SLASH_COMMANDS.map((c) => [c.name, c.detail])),
+};
 
 /** A base64 image staged in the composer, before it's sent as an SDK image content block. */
 interface Attachment { name: string; mediaType: string; data: string /* base64, no data: prefix */ }
@@ -221,7 +228,16 @@ interface AssistantItem {
    *  in a boxed monospace "command output" container — like the Claude Code TUI — not loose prose (#28). */
   command?: boolean;
 }
-type TurnItem = UserItem | AssistantItem;
+/** A transient, non-error system notice (BUG #87) — confirms a client-side slash command actually
+ *  DID something (e.g. `/chrome` toggling a setting with no other visible surface nearby), without
+ *  claiming to be part of the conversation (no "You"/persona label, not sent to the model, not
+ *  replayed from session history). Rendered as a quiet one-line notice, like .chat-turn-error but
+ *  neutral instead of danger-colored. */
+interface SystemItem {
+  role: "system";
+  text: string;
+}
+type TurnItem = UserItem | AssistantItem | SystemItem;
 
 /** One-line summary of a tool's input for the chip label (the path / command / query / url). */
 function summarizeInput(input: unknown): string {
@@ -591,9 +607,14 @@ export function ChatView(props: {
 
   const onFrame = (frame: ChatFrame) => {
     switch (frame.type) {
-      case "manifest":
+      case "manifest": {
         setManifest(frame.manifest);
-        rememberModel(frame.manifest.model); // keep the "last model" fallback fresh for next open
+        // BUG #89 ("chat not saving model per session"): the old code called
+        // `rememberModel(frame.manifest.model)` HERE, unconditionally, before checking what the user
+        // had actually picked — clobbering the very `lastModel` signal the reapply step below reads,
+        // so it always just re-sent the manifest's own default back to itself (a no-op) and the
+        // user's real choice was silently discarded on every open. Fixed by resolving BEFORE any
+        // rememberModel call — see chatModelResolution.ts for the extracted, unit-tested rule.
         if (!modeEnforced) {
           // First manifest of this session: the SDK spawned it in the user's OWN config mode, but
           // the header/app default is Bypass (permMode's seed) — or the user picked a mode before
@@ -607,9 +628,21 @@ export function ChatView(props: {
           // against, so we push it once here. Only when a level was actually chosen ("" leaves the
           // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
           if (effort()) sendJson({ type: "set_effort", effort: effort() });
-          // Re-apply the user's persisted model choice (Bug #89) to this fresh session so the
-          // picker's last selection isn't silently lost on reconnect/new chat.
-          if (lastModel()) sendJson({ type: "set_model", model: lastModel()! });
+          // Re-apply the user's persisted per-chat model choice (Bug #89): `lastModel()` read here,
+          // BEFORE anything can clobber it, and compared against the session's own spawn default.
+          const modelDecision = resolveInitialModel(lastModel(), frame.manifest.model);
+          if (modelDecision && "enforce" in modelDecision) {
+            sendJson({ type: "set_model", model: modelDecision.enforce });
+            // setModel never triggers another manifest frame from the backend (core/src/chat.ts's
+            // setModel just mutates the live session) — reflect the override optimistically, same
+            // as the header's own switchModel, so displayModel() shows the REAL active model
+            // immediately instead of the spawn default we just overrode.
+            setManifest({ ...frame.manifest, model: modelDecision.enforce });
+          } else if (modelDecision && "adopt" in modelDecision) {
+            // No persisted choice for this chat yet — adopt the session's own default as the
+            // fallback for next time.
+            rememberModel(modelDecision.adopt);
+          }
         } else {
           // Later manifests: DON'T blindly trust the reported mode (FEATURE #35). A mid-session
           // query() re-init (e.g. a visibility respawn) re-reports the SDK's SPAWN default
@@ -618,8 +651,12 @@ export function ChatView(props: {
           const decision = reconcilePermissionMode(permMode(), frame.manifest.permissionMode);
           if (decision && "adopt" in decision) setPermMode(decision.adopt);
           else if (decision && "enforce" in decision) sendJson({ type: "set_permission_mode", mode: decision.enforce });
+          // Keep the persisted per-chat model fallback in sync with any live drift after the
+          // session's first manifest (e.g. a mid-session respawn reporting a changed model).
+          rememberModel(frame.manifest.model);
         }
         break;
+      }
       case "user-message":
         // A replayed past user turn (history only — live user messages come from send(), not the
         // wire). Render it as a user bubble, identical to a freshly-sent one — including any
@@ -917,6 +954,16 @@ export function ChatView(props: {
   };
   const removeAttachment = (i: number) => setAttachments((a) => a.filter((_, idx) => idx !== i));
 
+  /** Push a quiet, non-error notice into the transcript (BUG #87 cause #2): a client-side command
+   *  like `/chrome` toggles a setting with no other visible surface nearby, so the composer just
+   *  clearing silently made it FEEL like nothing happened. Distinct from turnError (which is for
+   *  failures) — this confirms a command actually DID something. Not sent to the backend, not part
+   *  of the conversation history (a resumed/replayed session never re-shows it). */
+  const pushSystemNote = (text: string) => {
+    setTranscript(produce((m) => m.push({ role: "system", text })));
+    scrollToBottom();
+  };
+
   /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`, `/chrome`) intercepted in
    *  send() before the turn reaches the model. Returns true when it consumed the draft (command
    *  applied) so send() clears the composer; false when it couldn't (an unknown `/color` value),
@@ -933,9 +980,16 @@ export function ChatView(props: {
     }
     if (cmd.kind === "chrome") {
       // Toggle --chrome browser/computer-use capability for NEW sessions. The current session is
-      // unaffected (extraArgs is spawn-fixed); the toolbar Globe button reflects the new value.
+      // unaffected (extraArgs is spawn-fixed); the toolbar Globe button reflects the new value too,
+      // but that's easy to miss — surface it in the transcript so the command visibly DID something
+      // (BUG #87 cause #2: this used to post nothing at all, so it read as broken).
       const next = !settings.chat.computerUse;
       setSettings("chat", "computerUse", next);
+      pushSystemNote(
+        next
+          ? "Browser (--chrome) enabled for new sessions (current session unaffected)."
+          : "Browser (--chrome) disabled for new sessions (current session unaffected).",
+      );
       setTurnError(null);
       return true;
     }
@@ -1235,8 +1289,12 @@ export function ChatView(props: {
   };
 
   // ── Slash-command autocomplete ────────────────────────────────────────────────────────────
-  // When the draft starts with "/", offer the manifest's slash_commands filtered by prefix
-  // (NEVER a hardcoded list). Reuses the shared PopoverList + createMenuNav like BlockEditor.
+  // When the draft starts with "/", offer the manifest's slash_commands filtered by prefix, PLUS
+  // the client-side commands (rename/color/chrome — BUG #87: these are never in manifest.
+  // slashCommands, since they're intercepted before a turn reaches the backend, so they used to be
+  // absent from this list entirely). withClientSlashCommands appends them (deduped) even before any
+  // manifest exists, so they're offered from the moment the chat opens. Reuses the shared
+  // PopoverList + createMenuNav like BlockEditor.
   const [slashOpen, setSlashOpen] = createSignal(false);
   const slashQuery = createMemo(() => {
     const d = draft();
@@ -1248,7 +1306,7 @@ export function ChatView(props: {
   const slashMatches = createMemo<string[]>(() => {
     const q = slashQuery();
     if (q === null) return [];
-    const cmds = manifest()?.slashCommands ?? [];
+    const cmds = withClientSlashCommands(manifest()?.slashCommands ?? []);
     return cmds.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 50);
   });
   const slashRows = createMemo<PopoverRow[]>(() =>
@@ -1685,9 +1743,12 @@ export function ChatView(props: {
           <For each={transcript}>
             {(item) => (
               <Show
-                when={item.role === "assistant"}
+                when={item.role === "system"}
                 fallback={
-                  <div class="chat-msg user" classList={{ queued: !!(item as UserItem).queued }}>
+                  <Show
+                    when={item.role === "assistant"}
+                    fallback={
+                      <div class="chat-msg user" classList={{ queued: !!(item as UserItem).queued }}>
                     {/* Notebook-transcript: a quiet speaker label marks the turn (no bubble fill /
                         alignment). The message renders through the SAME note markdown pipeline
                         (renderNoteBody) so it reads exactly like a note. */}
@@ -1720,10 +1781,20 @@ export function ChatView(props: {
                         </For>
                       </div>
                     </Show>
-                  </div>
+                      </div>
+                    }
+                  >
+                    <AssistantTurn item={item as AssistantItem} />
+                  </Show>
                 }
               >
-                <AssistantTurn item={item as AssistantItem} />
+                {/* A quiet, non-error system notice (BUG #87): confirms a client-side slash command
+                    like `/chrome` actually did something, without pretending to be part of the
+                    conversation (no speaker label, never replayed from session history). */}
+                <div class="chat-system-note">
+                  <Icon value="Info" size={13} />
+                  <span>{(item as SystemItem).text}</span>
+                </div>
               </Show>
             )}
           </For>
