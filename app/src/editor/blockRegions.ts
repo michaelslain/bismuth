@@ -95,7 +95,14 @@ export function computeBlockRegions(doc: Text): BlockRegions {
   const codeLines = new Set<number>();  // lines inside a fence
   // Group fences into closed blocks so we can hide the ``` lines / show a header.
   const codeBlockByLine = new Map<number, CodeBlock>();
-  {
+  // Materialize the doc once; reused for the fence/HTML fast-path checks and the frontmatter
+  // boundary below (which previously did its own doc.toString()).
+  const full = doc.toString();
+  // Fast path: without "```" anywhere there are no fenced code blocks, so skip the per-line fence
+  // scan — the dominant cost of this per-keystroke function on a large note — leaving the three
+  // code sets empty exactly as the loop would. (Absence of the substring is a sound guarantee;
+  // its presence still runs the precise line-by-line matcher.)
+  if (full.indexOf("```") !== -1) {
     let i = 1;
     while (i <= doc.lines) {
       const m = doc.line(i).text.match(FENCE_OPEN_RE);
@@ -136,7 +143,7 @@ export function computeBlockRegions(doc: Text): BlockRegions {
   const frontmatterLines = new Set<number>();
   let frontmatterOpen: number | null = null;
   let frontmatterClose: number | null = null;
-  const fmRange = extractFrontmatterBoundary(doc.toString());
+  const fmRange = extractFrontmatterBoundary(full);
   if (fmRange) {
     const firstLine = doc.lineAt(fmRange.from).number;     // line after the opening fence
     const lastBodyLine = fmRange.to > fmRange.from ? doc.lineAt(fmRange.to).number : firstLine - 1;
@@ -151,10 +158,13 @@ export function computeBlockRegions(doc: Text): BlockRegions {
   // precompute GFM table blocks (header + separator + contiguous body rows)
   const { blocks: tableBlocks, byLine: tableBlockByLine } = groupTableBlocks(doc);
 
-  // precompute blank-line-delimited HTML blocks (rendered by htmlBlockField)
+  // precompute blank-line-delimited HTML blocks (rendered by htmlBlockField). Fast path: an HTML
+  // block needs a "<", so skip the scan entirely when the document contains none.
   const htmlBlockLines = new Set<number>();
-  for (const b of scanHtmlBlocks(doc)) {
-    for (let k = b.fromLine; k <= b.toLine; k++) htmlBlockLines.add(k);
+  if (full.indexOf("<") !== -1) {
+    for (const b of scanHtmlBlocks(doc)) {
+      for (let k = b.fromLine; k <= b.toLine; k++) htmlBlockLines.add(k);
+    }
   }
 
   // precompute callout blocks (rendered by calloutWidgetField)
