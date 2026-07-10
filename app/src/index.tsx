@@ -23,3 +23,13 @@ const firstRun =
 const Root = lazy(() => (firstRun ? import("./intro/VaultIntro") : import("./App")));
 
 render(() => <Root />, document.getElementById("root") as HTMLElement);
+
+// First run renders the intro takeover instead of App, so App's boot-ready signal (which dismisses
+// the index.html splash) never fires. The intro is its own full-screen themed takeover, so drop the
+// splash shortly after it mounts. Normal launches let App dismiss it when its initial data lands.
+if (firstRun) {
+  setTimeout(
+    () => (window as unknown as { __bismuthBootReady?: () => void }).__bismuthBootReady?.(),
+    350,
+  );
+}

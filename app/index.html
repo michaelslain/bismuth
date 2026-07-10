@@ -19,11 +19,97 @@
         }
       } catch (e) {}
     </script>
+    <style>
+      /* Boot splash: a full-screen, interaction-blocking loading overlay shown from the very
+         first paint (before the JS bundle loads) until App signals its initial data is ready.
+         Self-contained (no bundle CSS) so it renders instantly; theme vars are already applied
+         by the script above, with brand-crystal fallbacks for a cold theme cache. */
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: grid;
+        place-items: center;
+        background: var(--bg, #0b0b0f);
+        opacity: 1;
+        transition: opacity 0.5s ease;
+      }
+      /* Once ready: stop blocking clicks immediately, then fade out (removed after the transition). */
+      #boot-splash.boot-done {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #boot-splash .bs-stage {
+        position: relative;
+        display: grid;
+        place-items: center;
+        width: 128px;
+        height: 128px;
+        animation: bs-breathe 3.4s ease-in-out infinite;
+      }
+      #boot-splash .bs-glow {
+        position: absolute;
+        inset: -32%;
+        border-radius: 50%;
+        background: radial-gradient(
+          circle at 50% 48%,
+          color-mix(in srgb, var(--graph-0, #f0509b) 34%, transparent),
+          color-mix(in srgb, var(--graph-3, #27c7d9) 14%, transparent) 46%,
+          transparent 72%
+        );
+        filter: blur(9px);
+        animation: bs-pulse 3.4s ease-in-out infinite;
+      }
+      #boot-splash .bs-crystal {
+        position: relative;
+        display: block;
+        width: 72px;
+        height: 72px;
+        animation: bs-spin 3.6s linear infinite;
+        filter: drop-shadow(0 6px 22px color-mix(in srgb, var(--graph-0, #f0509b) 30%, transparent));
+      }
+      @keyframes bs-spin { to { transform: rotate(360deg); } }
+      @keyframes bs-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+      @keyframes bs-pulse { 0%, 100% { opacity: 0.68; } 50% { opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) {
+        #boot-splash .bs-stage,
+        #boot-splash .bs-glow,
+        #boot-splash .bs-crystal { animation: none; }
+      }
+    </style>
   </head>
 
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
+
+    <!-- Boot splash: covers + blocks the UI while the bundle, the lazy App chunk, and the first
+         /graph fetch load. Removed by window.__bismuthBootReady() once App's initial data is in. -->
+    <div id="boot-splash" role="progressbar" aria-label="Loading Bismuth" aria-busy="true">
+      <div class="bs-stage">
+        <div class="bs-glow"></div>
+        <img class="bs-crystal" src="/logos/hopper-crystal.svg" width="72" height="72" alt="" />
+      </div>
+    </div>
+    <script>
+      // Define the dismiss hook synchronously (before the deferred module bundle runs) so App can
+      // always find it. App calls it once its initial graph + tree resolve; a safety timeout makes
+      // sure a stuck or backend-down boot can never leave the UI permanently blocked.
+      (function () {
+        var done = false;
+        function dismiss() {
+          if (done) return;
+          done = true;
+          var el = document.getElementById("boot-splash");
+          if (!el) return;
+          el.classList.add("boot-done");
+          el.setAttribute("aria-busy", "false");
+          setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 600);
+        }
+        window.__bismuthBootReady = dismiss;
+        setTimeout(dismiss, 12000);
+      })();
+    </script>
 
     <script src="/src/index.tsx" type="module"></script>
   </body>
