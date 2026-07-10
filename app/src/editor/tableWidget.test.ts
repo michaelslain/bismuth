@@ -576,6 +576,34 @@ describe("#62 column resize drag updates width + persists", () => {
     }
     view.destroy();
   });
+
+  // The "resize gets stuck" fix: if the button is released where the window never sees a `mouseup`
+  // (released outside the window / alt-tab / OS focus-steal — WebKit), a window `blur` must still
+  // END the drag: reset the cursor, drop the drag class, and stop tracking. Without the fix the
+  // cursor stayed `col-resize` forever.
+  test("a window blur mid-drag releases the drag (cursor + class reset, tracking stops)", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const handle = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-resize"))[1]!;
+
+    handle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: 100 }));
+    expect(handle.classList.contains("cm-col-resize--dragging")).toBe(true);
+    expect(document.body.style.cursor).toBe("col-resize");
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 160 })); // width now ~100
+    const midWidth = wrap.querySelector<HTMLElement>("col:nth-child(2)")?.style.width;
+
+    // No mouseup ever arrives — only the window blur. It must run the same cleanup.
+    window.dispatchEvent(new Event("blur"));
+    expect(document.body.style.cursor).toBe(""); // cursor un-stuck
+    expect(handle.classList.contains("cm-col-resize--dragging")).toBe(false); // drag class dropped
+
+    // A stray move after release is ignored — the drag really ended (listeners gone).
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400 }));
+    expect(wrap.querySelector<HTMLElement>("col:nth-child(2)")?.style.width).toBe(midWidth);
+
+    window.localStorage.removeItem("bismuth:table-size:note.md");
+    view.destroy();
+  });
 });
 
 // ── #53: centering is not possible — a center column renders LEFT ──────────────
