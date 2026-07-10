@@ -43,11 +43,18 @@ export function GalleryHost() {
   const settle = (value: string | null) => {
     const p = pending();
     setPending(null);
-    // Clear the flag BEFORE resolving, so the resolver's deferred `applyInsert` + `view.focus()`
-    // (which runs on a microtask) sees the gallery as closed and a subsequent cell blur tears down
-    // normally again (#49).
-    setGalleryOpen(false);
+    // Resolve FIRST, and keep `isGalleryOpen()` TRUE until AFTER the resolver has run its insert
+    // (#67). The resolver (autocomplete.ts's emoji `apply`) does `applyInsert(cellView, …)` +
+    // `view.focus()` on the promise's microtask. If we cleared the flag synchronously here (the old
+    // order), the focus churn from unmounting the modal could fire the table cell's `focusout` with
+    // the guard already down → `leaveEdit` commits + DESTROYS the nested cell editor the insert
+    // targets, so the picked emoji (top result / Enter) landed nowhere. Deferring the clear to the
+    // NEXT MACROTASK keeps the teardown guard up across the whole synchronous+microtask insert;
+    // by the time the user's NEXT real blur fires (a later macrotask) the flag is false again, so
+    // the cell tears down normally then (#49).
     p?.resolve(value);
+    if (typeof setTimeout !== "undefined") setTimeout(() => setGalleryOpen(false), 0);
+    else setGalleryOpen(false);
   };
   return (
     <Show when={pending()}>

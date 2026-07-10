@@ -193,36 +193,28 @@
 /* ── Empty-cell height (#61 / #62) ──────────────────────────────────────────────
    The display face of an EMPTY cell (a freshly-added row, or a cell the user cleared)
    block-renders to an empty string, so it has NO line box and collapses to just its
-   vertical padding — a ~11px sliver beside the ~35px filled rows ("new rows are really
-   short"; on blur an empty cell/line "hides its empty line" and the row jumps, #62).
+   vertical padding — a sliver beside the filled rows ("new rows are really short"; on blur
+   an empty cell/line "hides its empty line" and the row jumps, #62).
 
-   The widget injects a REAL placeholder element (`span.cm-td-ph` holding a non-breaking
-   space) into every empty cell's display face. The earlier attempts — `min-height` on the
-   `td`, an `::after` nbsp, and an *inline* nbsp span — all reserved the line in Chromium but
-   NOT reliably in the packaged app's WebKit/WKWebView: WebKit ignores `min-height` on a
-   `display: table-cell`, and does not always give a lone inline nbsp inside a table-cell its
-   own line box, so the cell still collapsed on blur. The fix that holds in EVERY engine is to
-   make the placeholder a BLOCK box with an explicit `min-height`: `min-height` IS honoured on a
-   normal (non-table-cell) block, and a block box always establishes a line box — so WebKit
-   cannot collapse it. The height is tied to the cell's `line-height` (1.5em, 1.3em compact) so
-   an empty cell matches a filled single-line row to the pixel. An edited cell (its nested
-   editor mounted → no placeholder) is untouched. */
+   The widget injects a REAL placeholder element (`span.cm-td-ph` holding a genuine
+   NON-BREAKING SPACE) into every empty cell's display face. A block box with actual nbsp
+   content establishes a real line box WebKit cannot collapse (unlike `min-height` on a
+   `display: table-cell`, which WebKit ignores, or a lone *inline* nbsp, which it may not give
+   its own line). Crucially the placeholder's `line-height` is the SAME `--cm-td-lh` the display
+   cells AND the nested EDIT editor use (livePreview.ts / cellEditor.ts) — so an empty cell, a
+   filled single-line cell, and the edit face are all one line box tall to the pixel, and NOTHING
+   changes height on focus/blur (the root cause the prior placeholder-only fix left unsolved: the
+   edit face was 1.5 while the always-compact display face was 1.3). An edited cell (nested editor
+   mounted → no placeholder) is untouched. */
 .cm-editor .cm-td .cm-td-ph {
   display: block;
-  min-height: 1.5em;
-  line-height: 1.5;
+  line-height: var(--cm-td-lh, 1.5);
+  min-height: calc(var(--cm-td-lh, 1.5) * 1em);
 }
-.cm-table-compact .cm-td .cm-td-ph {
-  min-height: 1.3em;
-  line-height: 1.3;
-}
-/* Belt-and-suspenders: also reserve height on the td itself when empty, so even if the inner
-   block placeholder collapses in WebKit, the cell won't vanish on blur. */
+/* Belt-and-suspenders: also reserve height on the td itself when empty (ignored by WebKit on a
+   table-cell, but a safety net for other engines / the dev browser). */
 .cm-editor .cm-td.cm-td-empty {
-  min-height: 1.5em;
-}
-.cm-table-compact .cm-td.cm-td-empty {
-  min-height: 1.3em;
+  min-height: calc(var(--cm-td-lh, 1.5) * 1em);
 }
 .cm-editor .cm-td p,
 .cm-editor .cm-td ul,

@@ -1333,14 +1333,18 @@ export const livePreview = [
     ".cm-table-block": { padding: "0.6em 0 1.4em 0" },
     // `fit-content` so the wrap hugs the table — the hover toolbar then aligns to the
     // table's top-right corner instead of floating off in the full-width line box.
-    ".cm-table-wrap": { position: "relative", width: "fit-content", "max-width": "100%" },
+    // `--cm-td-lh` is the ONE cell line-height, inherited by the display cells, the empty-cell
+    // placeholder (Editor.css `.cm-td-ph`), AND the nested in-cell editor (cellEditor.ts `.cm-scroller`)
+    // — so the EDIT face and the DISPLAY face share an identical line box and nothing jumps on blur
+    // (#62). Compact (always-on) drops it to 1.3 below.
+    ".cm-table-wrap": { position: "relative", width: "fit-content", "max-width": "100%", "--cm-td-lh": "1.5" },
     ".cm-table-rendered": { "border-collapse": "collapse", "table-layout": "auto" },
     ".cm-table-rendered th, .cm-table-rendered td": {
       border: "1px solid color-mix(in srgb, var(--fg) 18%, transparent)",
       padding: "0.32em 0.6em",
       "text-align": "left",
       "vertical-align": "top",
-      "line-height": "1.5",
+      "line-height": "var(--cm-td-lh, 1.5)",
       "min-width": "2.5em",
     },
     ".cm-table-rendered th": { "font-weight": "600", background: "var(--surface-2)" },
@@ -1394,9 +1398,14 @@ export const livePreview = [
     ".cm-col-resize:hover": { background: "color-mix(in srgb, var(--accent) 8%, transparent)" },
     ".cm-col-resize--dragging .cm-col-resize-grip": { opacity: "1", background: "var(--accent)" },
     // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
+    // Set the shared line-height on the WRAP (compact class rides the wrap) so it flows to BOTH
+    // faces + the placeholder via `--cm-td-lh` — never on the display cells alone, or the edit face
+    // would keep the 1.5 default and the cell would shrink on blur (the #62 regression). The
+    // compound `.cm-table-wrap.cm-table-compact` (higher specificity) wins the var over the plain
+    // `.cm-table-wrap` default regardless of source order.
+    ".cm-table-wrap.cm-table-compact": { "--cm-td-lh": "1.3" },
     ".cm-table-compact .cm-table-rendered th, .cm-table-compact .cm-table-rendered td": {
       padding: "0.1em 0.45em",
-      "line-height": "1.3",
     },
     // The inert-by-default scroll box that holds the <table>. INFINITY mode turns it into a
     // horizontal scroller (below); normal mode leaves it transparent so layout is unchanged.

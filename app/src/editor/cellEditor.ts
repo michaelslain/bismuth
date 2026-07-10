@@ -78,7 +78,12 @@ const cellEditorTheme = EditorView.theme({
   "&": { backgroundColor: "transparent", color: "inherit" },
   "&.cm-editor.cm-focused": { outline: "none" },
   "&.cm-editor .cm-scroller": {
-    fontFamily: "inherit", fontSize: "inherit", lineHeight: "1.5",
+    // Line-height MUST equal the display face's, or the cell's line box changes height the instant
+    // focus enters/leaves and the whole row jumps (#62 "line height reduces when I click off"). Both
+    // faces read the SAME `--cm-td-lh` variable the table wrap sets (1.5, or 1.3 in compact — which
+    // is always-on) so the EDIT and DISPLAY line boxes are pixel-identical; the 1.5 fallback is the
+    // uncompacted default. See livePreview.ts `.cm-table-rendered` / `.cm-table-compact`.
+    fontFamily: "inherit", fontSize: "inherit", lineHeight: "var(--cm-td-lh, 1.5)",
     overflow: "visible", padding: "0", justifyContent: "flex-start", overflowAnchor: "auto",
   },
   "&.cm-editor .cm-content": {

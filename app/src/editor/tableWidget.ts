@@ -41,6 +41,7 @@ import {
   addMergeRegion,
   removeMergeAt,
 } from "./tableModel";
+import { createResizeDrag, type ResizeDrag } from "./tableResizeDrag";
 // CodeMirror's document `Text` — aliased so it never shadows the DOM `Text` node type used by
 // the find-highlight text-node walk below.
 import type { Text as CMText } from "@codemirror/state";
@@ -687,20 +688,18 @@ export class TableWidget extends WidgetType {
       cell.innerHTML = renderCellBlockHtml(cell.dataset.src ?? "");
       upgradeCellEmbeds(cell, api.assetUrl);
       // A cell whose DISPLAY face is visually empty (a freshly-added row, or a cleared cell)
-      // block-renders to no line box and collapses to a sliver — much shorter than filled rows —
-      // so on BLUR the cell/row shrinks and the table jumps ("clicking off hides the empty line",
-      // #62). The reservation must hold in the rendered/blurred state (this face), not only while a
-      // cell is focused. We inject a REAL placeholder element — `span.cm-td-ph` holding a
-      // non-breaking space — that Editor.css styles as a BLOCK with an explicit `min-height` tied to
-      // the cell line-height. Prior attempts (min-height on the `td`, an `::after` nbsp, an *inline*
-      // nbsp span) held in Chromium but NOT in the packaged app's WebKit/WKWebView: WebKit ignores
-      // `min-height` on a `display: table-cell` and doesn't reliably give a lone inline nbsp its own
-      // line box inside a table-cell. A block box with `min-height` establishes a line box WebKit
-      // cannot collapse — engine-agnostic (see the Editor.css note). The `cm-td-empty` class is kept
-      // as a hook (robust where `:empty` is fragile — a stray reader whitespace node defeats
-      // `:empty`). Display-only — `readGrid` reads `data-src`, never the cell's DOM text, so the
-      // source stays empty and the next `renderDisplay` overwrites it. Skipped when the cell holds
-      // real media (img/iframe/…).
+      // block-renders to no line box and collapses to a sliver, so its row would be shorter than
+      // filled rows (#62 "new rows are really short" / "empty line hides itself" on blur). We inject
+      // a REAL placeholder — `span.cm-td-ph` holding a genuine NON-BREAKING SPACE — that Editor.css
+      // styles as a BLOCK whose actual nbsp content makes a line box WebKit cannot collapse (unlike
+      // `min-height` on a `display: table-cell`, which WebKit ignores). Its line-height is the shared
+      // `--cm-td-lh`, IDENTICAL to a filled cell AND to the nested EDIT editor (cellEditor.ts) — so an
+      // empty cell, a filled single-line cell, and the edit face are all one line box tall and NOTHING
+      // jumps on focus/blur (the real #62 fix: the always-compact display face was 1.3 while the edit
+      // face was a hardcoded 1.5). The `cm-td-empty` class is kept as a hook (robust where `:empty`
+      // is fragile — a stray reader whitespace node defeats `:empty`). Display-only — `readGrid` reads
+      // `data-src`, never the cell's DOM text, so the source stays empty and the next `renderDisplay`
+      // overwrites it. Skipped when the cell holds real media (img/iframe/…).
       const hasMedia = !!cell.querySelector("img, iframe, video, audio, svg, .cm-embed");
       const isEmpty = !hasMedia && (cell.textContent ?? "").trim() === "";
       cell.classList.toggle("cm-td-empty", isEmpty);
@@ -1414,35 +1413,76 @@ export class TableWidget extends WidgetType {
     });
 
     // Column-drag plumbing: freeze the start width, follow the pointer along X, then persist +
-    // restore the cursor on release. (Row-height drag was removed for #52 — height is auto.)
+    // restore the cursor on release. Row-height drag was removed for #52 (height is auto).
+    //
+    // "Resize always releases" (the stuck-cursor fix): the drag is ended by a pure, IDEMPOTENT
+    // controller (tableResizeDrag.ts) wired to EVERY plausible end — pointerup / pointercancel /
+    // mouseup / window blur — plus POINTER CAPTURE on the handle, so a button released OUTSIDE the
+    // window (WebKit drops that window `mouseup`), an alt-tab / OS focus-steal, or a cancelled
+    // pointer still runs the one cleanup that resets `document.body.style.cursor`, drops the
+    // `cm-col-resize--dragging` class, removes the listeners, and persists. `resizeActive` blocks a
+    // re-entrant start: one physical grab fires BOTH pointerdown and its compat mousedown, and we
+    // must not begin two drags for it.
+    let resizeActive = false;
     const startColDrag = (
       getStart: () => number,
-      apply: (delta: number, start: number) => void,
-      e: MouseEvent,
+      applyWidth: (width: number) => void,
+      e: PointerEvent | MouseEvent,
     ): void => {
       e.preventDefault();
       e.stopPropagation();
+      if (resizeActive) return; // ignore the trailing compat event (pointerdown → mousedown, or vice-versa)
+      resizeActive = true;
       const start = getStart();
       const origin = e.clientX;
       const handle = e.currentTarget as HTMLElement | null;
       handle?.classList.add("cm-col-resize--dragging");
-      const onMove = (me: MouseEvent): void => {
-        apply(me.clientX - origin, start);
-        layout();
-      };
-      const onUp = (): void => {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-        handle?.classList.remove("cm-col-resize--dragging");
-        persist();
-        layout();
-      };
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
+      // Capture the pointer so a release ANYWHERE (even outside the window) still delivers
+      // pointerup/pointercancel to the handle — the primary guarantee the drag ends. Guarded: a
+      // compat MouseEvent has no pointerId, and setPointerCapture may be unavailable (headless).
+      const pointerId = typeof (e as Partial<PointerEvent>).pointerId === "number" ? (e as PointerEvent).pointerId : null;
+      if (handle && pointerId != null && typeof handle.setPointerCapture === "function") {
+        try { handle.setPointerCapture(pointerId); } catch { /* not capturable — window listeners cover it */ }
+      }
+      let drag: ResizeDrag;
+      const onMove = (me: MouseEvent): void => drag.move(me.clientX);
+      const onPointerMove = (pe: PointerEvent): void => drag.move(pe.clientX);
+      const onEnd = (): void => drag.end();
+      drag = createResizeDrag({
+        originX: origin,
+        startWidth: start,
+        min: MIN_COL,
+        onWidth: (w) => { applyWidth(w); layout(); },
+        onEnd: () => {
+          window.removeEventListener("mousemove", onMove);
+          window.removeEventListener("mouseup", onEnd);
+          window.removeEventListener("pointermove", onPointerMove);
+          window.removeEventListener("pointerup", onEnd);
+          window.removeEventListener("pointercancel", onEnd);
+          window.removeEventListener("blur", onEnd);
+          if (handle && pointerId != null && typeof handle.releasePointerCapture === "function") {
+            try { handle.releasePointerCapture(pointerId); } catch { /* already released */ }
+          }
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+          handle?.classList.remove("cm-col-resize--dragging");
+          resizeActive = false;
+          persist();
+          layout();
+        },
+      });
+      // Listen on BOTH the mouse and pointer streams so the drag tracks + releases regardless of
+      // which the engine delivers; `blur` releases if the pointer comes up while the window is
+      // inactive (alt-tab / OS focus steal), where no up event arrives at all. `end()` is
+      // idempotent, so whichever fires first wins and the rest no-op.
       window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
+      window.addEventListener("mouseup", onEnd);
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onEnd);
+      window.addEventListener("pointercancel", onEnd);
+      window.addEventListener("blur", onEnd);
     };
 
     for (let c = 0; c < cols; c++) {
@@ -1457,7 +1497,7 @@ export class TableWidget extends WidgetType {
       const grip = document.createElement("div");
       grip.className = "cm-col-resize-grip";
       handle.appendChild(grip);
-      const startDrag = (e: MouseEvent): void => {
+      const startDrag = (e: PointerEvent | MouseEvent): void => {
         startColDrag(
           () => {
             // First drag freezes the content-derived widths and switches to fixed layout
@@ -1471,8 +1511,8 @@ export class TableWidget extends WidgetType {
             }
             return parseFloat(colEls[c].style.width) || headerCells[c]?.offsetWidth || MIN_COL;
           },
-          (delta, start) => {
-            colEls[c].style.width = `${Math.max(MIN_COL, start + delta)}px`;
+          (width) => {
+            colEls[c].style.width = `${width}px`;
           },
           e,
         );
