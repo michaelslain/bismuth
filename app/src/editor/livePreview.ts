@@ -1382,15 +1382,16 @@ export const livePreview = [
     // 3px grip line so users can discover and grab it; the grip brightens on hover and stays solid
     // while dragging (#62).
     ".cm-table-overlay": { position: "absolute", top: "0", right: "0", bottom: "0", left: "0", "pointer-events": "none", "z-index": "4" },
-    ".cm-col-resize": { position: "absolute", width: "13px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
+    ".cm-col-resize": { position: "absolute", width: "18px", transform: "translateX(-50%)", cursor: "col-resize", "pointer-events": "auto" },
     ".cm-col-resize-grip": {
       position: "absolute", top: "10%", height: "80%", left: "50%", width: "3px", transform: "translateX(-50%)",
       "border-radius": "2px", opacity: "0.55",
       background: "color-mix(in srgb, var(--fg) 30%, transparent)",
       transition: "background 120ms, opacity 120ms",
     },
-    ".cm-table-wrap:hover .cm-col-resize-grip": { opacity: "0.85" },
+    ".cm-table-wrap:hover .cm-col-resize-grip": { opacity: "1" },
     ".cm-col-resize:hover .cm-col-resize-grip": { opacity: "1", background: "color-mix(in srgb, var(--accent) 75%, transparent)" },
+    ".cm-col-resize:hover": { background: "color-mix(in srgb, var(--accent) 8%, transparent)" },
     ".cm-col-resize--dragging .cm-col-resize-grip": { opacity: "1", background: "var(--accent)" },
     // ── #62 compact density: tighter padding + line-height, matching Claude-chat tables ────────
     ".cm-table-compact .cm-table-rendered th, .cm-table-compact .cm-table-rendered td": {

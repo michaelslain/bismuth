@@ -780,6 +780,9 @@ export class TableWidget extends WidgetType {
         cm.destroy();
         cell._cellCM = undefined;
       }
+      // Belt-and-suspenders: explicitly clear any leftover editor DOM before re-rendering the
+      // display face so the isEmpty check in renderDisplay sees only the source content.
+      cell.innerHTML = "";
       renderDisplay(cell); // back to the formatted face
     };
 
@@ -1475,10 +1478,6 @@ export class TableWidget extends WidgetType {
         );
       };
       handle.addEventListener("mousedown", startDrag);
-      // Pointer events as a backup for WebKit/Tauri where the transparent 13px strip can still be
-      // finicky about claiming the gesture; setPointerCapture would be ideal but the window-level
-      // mousemove/mouseup listeners in startColDrag already cover the drag, so we just need the
-      // initial down event to reliably fire.
       handle.addEventListener("pointerdown", startDrag);
       overlay.appendChild(handle);
       colHandles.push(handle);

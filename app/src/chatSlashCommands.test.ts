@@ -25,6 +25,19 @@ describe("parseChatSlashCommand", () => {
   it("trims surrounding whitespace", () => {
     expect(parseChatSlashCommand("  /rename  Foo  ")).toEqual({ kind: "rename", name: "Foo" });
   });
+  it("parses `/chrome` (no args) as a chrome toggle", () => {
+    expect(parseChatSlashCommand("/chrome")).toEqual({ kind: "chrome" });
+  });
+  it("is case-insensitive on `/chrome`", () => {
+    expect(parseChatSlashCommand("/CHROME")).toEqual({ kind: "chrome" });
+    expect(parseChatSlashCommand("/Chrome")).toEqual({ kind: "chrome" });
+  });
+  it("trims whitespace around `/chrome`", () => {
+    expect(parseChatSlashCommand("  /chrome  ")).toEqual({ kind: "chrome" });
+  });
+  it("ignores trailing args on `/chrome` (arg not captured)", () => {
+    expect(parseChatSlashCommand("/chrome foo")).toEqual({ kind: "chrome" });
+  });
   it("returns null for a non-local command (falls through to the model)", () => {
     expect(parseChatSlashCommand("/compact")).toBeNull();
     expect(parseChatSlashCommand("/mcp")).toBeNull();

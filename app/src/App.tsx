@@ -1952,15 +1952,14 @@ export default function App() {
         <div class="tabbar" data-tabstrip="true">
           <Index each={tabs()}>
             {(t, i) => {
-              const chipStyle = createMemo(() => {
+              const chipColor = createMemo(() => {
                 const tab = t();
                 const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
-                const color = leaf ? chatTabColor(leaf.content) : undefined;
-                return {
-                  transform: `translateX(${tabShift(i)}px)`,
-                  "box-shadow": color ? `inset 0 -2.5px 0 0 ${color}` : undefined,
-                };
+                return leaf ? chatTabColor(leaf.content) : undefined;
               });
+              const chipStyle = createMemo(() => ({
+                transform: `translateX(${tabShift(i)}px)`,
+              }));
               return (
                 <>
                   <Show when={stripDropIndex() === i && !draggingTabId()}>
@@ -1992,7 +1991,7 @@ export default function App() {
                     onContextMenu={(e) => openTabContextMenu(e, t())}
                   >
                     <Show when={tabBarIcon(t())}>
-                      {(icon) => <Icon value={icon()} size={13} />}
+                      {(icon) => <Icon value={icon()} size={13} style={chipColor() ? { color: chipColor() } : undefined} />}
                     </Show>
                     <Show when={renamingTabId() === t().id} fallback={<Show when={!t().pinned}><span>{tabBarLabel(t())}</span></Show>}>
                       <input
@@ -2155,12 +2154,12 @@ export default function App() {
             <div class="tab-rail-list" data-tabstrip="vertical">
               <Index each={tabs()}>
                 {(t) => {
-                  const railStyle = createMemo(() => {
+                  const railColor = createMemo(() => {
                     const tab = t();
                     const leaf = leaves(tab.root).find((l) => l.id === tab.focusId) ?? leaves(tab.root)[0];
-                    const color = leaf ? chatTabColor(leaf.content) : undefined;
-                    return { "box-shadow": color ? `inset 3px 0 0 0 ${color}` : undefined };
+                    return leaf ? chatTabColor(leaf.content) : undefined;
                   });
+                  const railStyle = createMemo(() => ({}));
                   return (
                     <div
                       class="tab-rail-row"
@@ -2184,7 +2183,7 @@ export default function App() {
                     >
                     {/* Every rail row shows an icon (fall back to a generic doc) so the
                         collapsed icon-column is never empty for an unnamed note. */}
-                    <Icon class="tab-rail-icon" value={tabBarIcon(t()) ?? "File"} size={16} />
+                    <Icon class="tab-rail-icon" value={tabBarIcon(t()) ?? "File"} size={16} style={railColor() ? { color: railColor() } : undefined} />
                     <Show when={renamingTabId() === t().id} fallback={<span class="tab-rail-label">{tabBarLabel(t())}</span>}>
                       <input
                         class="tab-rename"

@@ -16,7 +16,7 @@
 // correctly-sized placeholder while the name is still *pending* the full
 // manifest, and kick that load immediately. Emojis / arbitrary glyphs are not
 // icon names, so they render as text right away (their final state).
-import { Show, createEffect, type Component } from "solid-js";
+import { Show, createEffect, type Component, type JSX } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { resolveIcon, fullRegistryLoaded, ensureFullRegistry } from "./registry";
 import { looksLikeIconName } from "./registry-core";
@@ -30,6 +30,8 @@ export interface IconProps {
   strokeWidth?: number;
   /** Applied to both the SVG and the text-fallback span. */
   class?: string;
+  /** Inline style applied to the SVG, pending placeholder, and text-fallback span. */
+  style?: JSX.CSSProperties;
   /** Used when `value` is empty/null (resolved the same way as `value`). */
   fallback?: string;
 }
@@ -57,7 +59,7 @@ export const Icon: Component<IconProps> = (props) => {
         <Show
           when={pending()}
           fallback={
-            <span class={props.class} aria-hidden="true">
+            <span class={props.class} style={props.style} aria-hidden="true">
               {spec()}
             </span>
           }
@@ -66,6 +68,7 @@ export const Icon: Component<IconProps> = (props) => {
             class={props.class}
             aria-hidden="true"
             style={{
+              ...props.style,
               display: "inline-block",
               width: `${props.size ?? 16}px`,
               height: `${props.size ?? 16}px`,
@@ -80,6 +83,7 @@ export const Icon: Component<IconProps> = (props) => {
           size={props.size ?? 16}
           stroke-width={props.strokeWidth ?? 1.75}
           class={props.class}
+          style={props.style}
         />
       )}
     </Show>

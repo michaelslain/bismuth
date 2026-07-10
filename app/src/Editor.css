@@ -216,6 +216,14 @@
   min-height: 1.3em;
   line-height: 1.3;
 }
+/* Belt-and-suspenders: also reserve height on the td itself when empty, so even if the inner
+   block placeholder collapses in WebKit, the cell won't vanish on blur. */
+.cm-editor .cm-td.cm-td-empty {
+  min-height: 1.5em;
+}
+.cm-table-compact .cm-td.cm-td-empty {
+  min-height: 1.3em;
+}
 .cm-editor .cm-td p,
 .cm-editor .cm-td ul,
 .cm-editor .cm-td ol,
