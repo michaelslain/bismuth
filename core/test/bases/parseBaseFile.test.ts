@@ -63,3 +63,39 @@ test("top-level columns folds into the default view (explicit group order)", () 
   );
   expect(config.views[0].groupOrder).toEqual(["Overdue", "This week", "Later"]);
 });
+
+test("top-level groupColors + descriptionField fold into the default kanban view", () => {
+  const { config } = parseBaseFile(
+    [
+      "---",
+      "type: base",
+      "view: kanban",
+      "groupBy: status",
+      "columns: [Todo, Doing, Done]",
+      "descriptionField: notes",
+      "groupColors: { Todo: var(--blue), Done: '#2ecc71' }",
+      "---",
+    ].join("\n"),
+    { name: "Board", path: "Board.md" },
+  );
+  expect(config.views[0].type).toBe("kanban");
+  expect(config.views[0].descriptionField).toBe("notes");
+  expect(config.views[0].groupColors).toEqual({ Todo: "var(--blue)", Done: "#2ecc71" });
+});
+
+test("groupColors also parse inside an explicit views: entry, dropping empty values", () => {
+  const { config } = parseBaseFile(
+    [
+      "---",
+      "type: base",
+      "views:",
+      "  - type: kanban",
+      "    name: Board",
+      "    groupBy: status",
+      "    groupColors: { A: var(--teal), B: '', C: var(--rose) }",
+      "---",
+    ].join("\n"),
+    { name: "Board", path: "Board.md" },
+  );
+  expect(config.views[0].groupColors).toEqual({ A: "var(--teal)", C: "var(--rose)" });
+});

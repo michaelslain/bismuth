@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "../src/frontmatter";
+import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey, setFrontmatterViewKey, deleteFrontmatterViewKey } from "../src/frontmatter";
 
 test("parses YAML frontmatter and returns the body", () => {
   const md = `---\nstatus: in-progress\npriority: 1\ntags: [a, b]\n---\n# Title\nbody text`;
@@ -234,4 +234,64 @@ test("setFrontmatterKey preserves the existing key order on update", () => {
   expect(fmLines[0]).toContain("title:");
   expect(fmLines[1]).toContain("status:");
   expect(fmLines[2]).toContain("rating:");
+});
+
+test("setFrontmatterViewKey writes into views[idx] when a views array exists (no top-level dup)", () => {
+  const md = [
+    "---",
+    "type: base",
+    "views:",
+    "  - type: kanban",
+    "    name: Board",
+    "    columns:",
+    "      - TODO",
+    "      - Done",
+    "---",
+    "",
+  ].join("\n");
+  const out = setFrontmatterViewKey(md, 0, "columns", ["Done", "TODO"]);
+  const { data } = parseFrontmatter(out);
+  const views = data.views as Array<Record<string, unknown>>;
+  expect(views[0].columns).toEqual(["Done", "TODO"]);
+  // No duplicate top-level `columns` key was minted.
+  expect(data.columns).toBeUndefined();
+  // Only one `columns:` line in the whole frontmatter.
+  const fm = out.match(/^---\n([\s\S]*?)\n---/)![1];
+  expect(fm.match(/^\s*columns:/gm)!.length).toBe(1);
+});
+
+test("setFrontmatterViewKey adds a new nested key (groupColors) inside the view", () => {
+  const md = "---\ntype: base\nviews:\n  - type: kanban\n    groupBy: status\n---\n";
+  const out = setFrontmatterViewKey(md, 0, "groupColors", { TODO: "var(--graph-4)" });
+  const { data } = parseFrontmatter(out);
+  const views = data.views as Array<Record<string, unknown>>;
+  expect(views[0].groupColors).toEqual({ TODO: "var(--graph-4)" });
+  expect(data.groupColors).toBeUndefined();
+});
+
+test("setFrontmatterViewKey falls back to a top-level key when there is no views array (flat base)", () => {
+  const md = "---\ntype: base\nview: kanban\ngroupBy: status\n---\n";
+  const out = setFrontmatterViewKey(md, 0, "columns", ["A", "B"]);
+  const { data } = parseFrontmatter(out);
+  expect(data.columns).toEqual(["A", "B"]);
+  expect(data.views).toBeUndefined();
+});
+
+test("deleteFrontmatterViewKey removes a nested view key, leaving the rest intact", () => {
+  const md = [
+    "---",
+    "type: base",
+    "views:",
+    "  - type: kanban",
+    "    groupBy: status",
+    "    groupColors:",
+    "      TODO: var(--graph-4)",
+    "---",
+    "",
+  ].join("\n");
+  const out = deleteFrontmatterViewKey(md, 0, "groupColors");
+  const { data } = parseFrontmatter(out);
+  const views = data.views as Array<Record<string, unknown>>;
+  expect(views[0].groupColors).toBeUndefined();
+  expect(views[0].groupBy).toBe("status");
 });

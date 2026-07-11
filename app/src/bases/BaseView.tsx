@@ -328,7 +328,13 @@ export function BaseView(props: {
                         }
                       >
                         <Match when={res().view.type === "kanban"}>
-                          <KanbanView result={res()} config={data()!.config} onChange={refetch} />
+                          <KanbanView
+                            result={res()}
+                            config={data()!.config}
+                            basePath={data()!.basePath}
+                            viewIndex={Math.min(activeView(), Math.max(0, data()!.config.views.length - 1))}
+                            onChange={refetch}
+                          />
                         </Match>
                         <Match when={res().view.type === "cards"}>
                           <CardsView result={res()} config={data()!.config} />

@@ -96,3 +96,46 @@ export function deleteFrontmatterKey(md: string, key: string): string {
     return { keep: !isEmpty, result: "" };
   });
 }
+
+/**
+ * Set a key INSIDE a specific view of a `type: base` note — `views[viewIndex][key]` — preserving
+ * all other YAML formatting. Falls back to a TOP-LEVEL key when the base has no `views:` sequence
+ * (or no item at viewIndex), matching the flat single-view persistence style. This keeps kanban
+ * settings (column order, per-column colors) written where the base actually declares them instead
+ * of minting a duplicate top-level key that silently shadows the nested one.
+ */
+export function setFrontmatterViewKey(md: string, viewIndex: number, key: string, value: unknown): string {
+  const m = md.match(FRONTMATTER_REGEX);
+  if (!m) return `---\n${stringify({ views: [{ [key]: value }] })}---\n${md}`;
+  return mutateFrontmatter(md, (doc, data) => {
+    const views = doc.get?.("views");
+    const view = typeof views?.get === "function" ? views.get(viewIndex) : undefined;
+    if (view && typeof view.set === "function") {
+      view.set(key, doc.createNode ? doc.createNode(value) : value);
+      return { keep: true, result: "" };
+    }
+    if (doc.set) doc.set(key, value);
+    else data[key] = value;
+    return { keep: true, result: "" };
+  });
+}
+
+/**
+ * Remove a key from a specific view of a base note (`views[viewIndex][key]`), or the top-level key
+ * when there's no such view. Preserves the rest of the YAML + body.
+ */
+export function deleteFrontmatterViewKey(md: string, viewIndex: number, key: string): string {
+  const m = md.match(FRONTMATTER_REGEX);
+  if (!m) return md;
+  return mutateFrontmatter(md, (doc, data) => {
+    const views = doc.get?.("views");
+    const view = typeof views?.get === "function" ? views.get(viewIndex) : undefined;
+    if (view && typeof view.delete === "function") {
+      view.delete(key);
+      return { keep: true, result: "" };
+    }
+    if (doc.delete) doc.delete(key);
+    else delete data[key];
+    return { keep: true, result: "" };
+  });
+}

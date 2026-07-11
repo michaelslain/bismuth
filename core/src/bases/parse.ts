@@ -78,6 +78,17 @@ function normalizeColumnWidths(raw: unknown): Record<string, number> | undefined
   return Object.keys(out).length ? out : undefined;
 }
 
+// Coerce a `groupColors` map (kanban group key -> CSS color string) into a clean
+// string->string map. Drops empty/non-string values; keeps arbitrary keys (column names).
+function normalizeGroupColors(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string" && v.trim() !== "") out[k] = v.trim();
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 function normalizeView(raw: unknown): ViewConfig {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
@@ -93,6 +104,7 @@ function normalizeView(raw: unknown): ViewConfig {
   const cardContent = o.cardContent === "body" ? "body" : o.cardContent === "tasks" ? "tasks" : o.cardContent === "properties" ? "properties" : undefined;
   const imageFit = o.imageFit === "contain" ? "contain" : o.imageFit === "cover" ? "cover" : undefined;
   const groupOrder = strArr(o.columns);
+  const groupColors = normalizeGroupColors(o.groupColors);
   const columnWidths = normalizeColumnWidths(o.columnWidths);
   const lat = typeof o.lat === "string" ? o.lat : undefined;
   const lng = typeof o.lng === "string" ? o.lng : undefined;
@@ -117,6 +129,8 @@ function normalizeView(raw: unknown): ViewConfig {
     imageFit,
     imageAspectRatio: numOrUndef(o.imageAspectRatio),
     groupOrder,
+    groupColors,
+    descriptionField: strOrUndef(o.descriptionField),
     columnWidths,
     lat,
     lng,
@@ -156,6 +170,11 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
   // its own. This mirrors the top-level order/sort/group handling in parseBaseFile.
   const topWidths = normalizeColumnWidths(o.columnWidths);
   if (topWidths && !views[0].columnWidths) views[0].columnWidths = topWidths;
+
+  // A top-level `groupColors` (how the kanban view persists per-column colors via a flat
+  // setProperty) configures the default view — unless it already declared its own.
+  const topColors = normalizeGroupColors(o.groupColors);
+  if (topColors && !views[0].groupColors) views[0].groupColors = topColors;
 
   const properties = o.properties && typeof o.properties === "object"
     ? Object.fromEntries(
@@ -229,7 +248,7 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     const FIELD_KEYS = [
       "frontField", "backField", "dueField", "easeField", "intervalField",
       "dateField", "startTimeField", "endTimeField", "recurrenceField", "categoryField",
-      "x", "y", "image",
+      "x", "y", "image", "descriptionField",
     ] as const;
     for (const k of FIELD_KEYS) {
       if (typeof raw[k] === "string") (config.views[0] as unknown as Record<string, unknown>)[k] = raw[k];
@@ -237,6 +256,9 @@ export function parseBaseFile(text: string, meta: { name: string; path: string }
     // Top-level view shaping (visible columns / sort / group / group-order) configures the default view too.
     if (Array.isArray(raw.order)) config.views[0].order = (raw.order as unknown[]).map(String);
     if (Array.isArray(raw.columns)) config.views[0].groupOrder = (raw.columns as unknown[]).map(String);
+    // Kanban per-column colors (flat persistence via top-level `groupColors`).
+    const gc = normalizeGroupColors(raw.groupColors);
+    if (gc) config.views[0].groupColors = gc;
     const s = normalizeSort(raw.sort);
     if (s) config.views[0].sort = s;
     const g = normalizeGroupBy(raw.groupBy);
