@@ -316,6 +316,13 @@ export const api = {
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
   deleteProperty: (path: string, key: string) => post("/delete-property", { path, key }),
+  // Base-view-scoped writes: persist a key INTO `views[viewIndex]` of a `type: base` note (kanban
+  // column order/colors) so it lands where the base declares its views instead of a duplicate
+  // top-level key. Falls back to top-level server-side when the base has no `views:` array.
+  setViewProperty: (path: string, viewIndex: number, key: string, value: unknown) =>
+    post("/set-property", { path, viewIndex, key, value }),
+  deleteViewProperty: (path: string, viewIndex: number, key: string) =>
+    post("/delete-property", { path, viewIndex, key }),
   // Folders have no frontmatter — their icon override lives in .settings.
   // An empty icon clears the override (back to the default folder icon).
   setFolderIcon: (path: string, icon: string) => post("/folder-icon", { path, icon }),

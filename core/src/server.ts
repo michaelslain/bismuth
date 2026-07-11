@@ -6,7 +6,7 @@ import { buildGraph } from "./engine";
 import { attachLayout, computeViewLayouts } from "./layout-cache";
 import { listTree, listTemplates, listMarkdown, readNote, writeNote, moveEntry, deleteEntry, createEntry, resolveAsset, writeBinary, uniqueAssetPath } from "./files";
 import { commitVault, scheduleBackup, snapshotMessage } from "./backup";
-import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey } from "./frontmatter";
+import { parseFrontmatter, setFrontmatterKey, deleteFrontmatterKey, setFrontmatterViewKey, deleteFrontmatterViewKey } from "./frontmatter";
 import { AppError } from "./error";
 import { buildAgentGraph } from "./agents";
 import { buildVaultRows, patchVaultRows } from "./basesData";
@@ -1271,14 +1271,17 @@ export function createServer(cfg: CoreConfig) {
     "POST /set-property": mutatingHandler(
       async (req) => {
         // Used by the Bases kanban drag-drop: flip a single frontmatter key on a note.
-        const { path, key, value } = (await req.json()) as { path: string; key: string; value: unknown };
+        // `viewIndex` (optional) targets `views[viewIndex][key]` in a `type: base` note — how the
+        // kanban view persists per-view column order/colors without minting a duplicate top-level
+        // key. Omitted for the common case (a card note's own frontmatter, e.g. status/order).
+        const { path, key, value, viewIndex } = (await req.json()) as { path: string; key: string; value: unknown; viewIndex?: number };
         // Refuse to write to a path that doesn't exist — silently creating notes
         // (which readNoteOrEmpty + writeNote would do) hides mistakes from callers.
         const raw = await readNoteOrNull(cfg.vault, path);
         if (raw === null) {
           return error("note not found", 404);
         }
-        const next = setFrontmatterKey(raw, key, value);
+        const next = typeof viewIndex === "number" ? setFrontmatterViewKey(raw, viewIndex, key, value) : setFrontmatterKey(raw, key, value);
         await writeNote(cfg.vault, path, next);
         // A file's `visibility:` edit re-gates open chats — but ONLY that key: /set-property is
         // also the Bases kanban drag-drop path, so invalidating on every property write would
@@ -1292,12 +1295,12 @@ export function createServer(cfg: CoreConfig) {
     "POST /delete-property": mutatingHandler(
       async (req) => {
         // Remove a single frontmatter key (e.g. resetting a note's icon to default).
-        const { path, key } = (await req.json()) as { path: string; key: string };
+        const { path, key, viewIndex } = (await req.json()) as { path: string; key: string; viewIndex?: number };
         const raw = await readNoteOrNull(cfg.vault, path);
         if (raw === null) {
           return error("note not found", 404);
         }
-        const next = deleteFrontmatterKey(raw, key);
+        const next = typeof viewIndex === "number" ? deleteFrontmatterViewKey(raw, viewIndex, key) : deleteFrontmatterKey(raw, key);
         await writeNote(cfg.vault, path, next);
         if (key === "visibility") invalidateChatVisibility(); // clearing visibility re-gates open chats
         return ok();

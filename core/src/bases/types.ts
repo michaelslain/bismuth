@@ -42,6 +42,15 @@ export interface ViewConfig {
   // rows. Without this, groups are ordered by the group value (type-aware), not the
   // declared list.
   groupOrder?: string[];
+  // Kanban: per-column (group-key) color override, keyed by the group value. A CSS color
+  // string (e.g. "#e5484d" or "var(--blue)"). Columns without an entry fall back to a
+  // known-status palette, then a distinct auto-assigned palette color. Set by the column
+  // header's color picker; persisted via the top-level `groupColors` frontmatter key.
+  groupColors?: Record<string, string>;
+  // Kanban: which frontmatter property holds each card's editable multiline description
+  // (rendered + edited inline on the card face). Defaults to "description". A bare
+  // frontmatter name (no "note." prefix needed).
+  descriptionField?: string;
   // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
   columnWidths?: Record<string, number>;
   // Map view: which property ids carry geo coords. Defaults to bare "lat" / "lng"
