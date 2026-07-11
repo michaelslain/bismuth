@@ -650,6 +650,8 @@
   background: color-mix(in srgb, var(--kb-col-color, transparent) 9%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--kb-col-color, var(--border-soft)) 35%, transparent);
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 .kanbanColHeader:active { cursor: grabbing; }
 .kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
@@ -662,6 +664,11 @@
 .kanbanCards { display: flex; flex-direction: column; padding: 9px 10px 12px; gap: 9px; }
 .kanbanCards .card {
   cursor: grab;
+  /* No native text selection while dragging cards — otherwise a drag that starts on card text
+     rubber-bands a selection across neighbouring cards (the garbled-text glitch). Editable inputs
+     re-enable it below. */
+  user-select: none;
+  -webkit-user-select: none;
   border-radius: 9px;
   border: 1px solid var(--border-soft, var(--border));
   background: var(--surface-1, var(--panel));
@@ -707,6 +714,8 @@
   line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
+/* Editable inputs get a text caret + real text selection back (the card sets user-select:none). */
+.kbTitleInput, .kbDescArea, .kbComposer { cursor: text; user-select: text; -webkit-user-select: text; }
 .kbTitleInput {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: 6px; padding: 3px 5px; margin: -4px -6px;
