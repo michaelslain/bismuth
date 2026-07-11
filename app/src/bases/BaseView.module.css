@@ -652,8 +652,13 @@
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
 }
 .kanbanColHeader:active { cursor: grabbing; }
+/* While a pointer-drag is live (class set on <html>), force the grabbing cursor everywhere and kill
+   text selection — the drag runs on window listeners, so the cursor isn't over the source element. */
+:global(html.kb-dragging), :global(html.kb-dragging) * { cursor: grabbing !important; user-select: none !important; }
+:global(html.kb-dragging) [data-kbghost] { cursor: grabbing; }
 .kanbanColHeader .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; background: var(--kb-col-color, var(--accent)); }
 .kanbanColTitle { text-transform: capitalize; color: var(--fg); }
 .kbDotBtn { display: inline-flex; align-items: center; padding: 2px; margin: -2px; border: none; background: none; border-radius: 50%; cursor: pointer; }
@@ -666,9 +671,10 @@
   cursor: grab;
   /* No native text selection while dragging cards — otherwise a drag that starts on card text
      rubber-bands a selection across neighbouring cards (the garbled-text glitch). Editable inputs
-     re-enable it below. */
+     re-enable it below. `touch-action: none` lets the pointer-drag own the gesture (no scroll steal). */
   user-select: none;
   -webkit-user-select: none;
+  touch-action: none;
   border-radius: 9px;
   border: 1px solid var(--border-soft, var(--border));
   background: var(--surface-1, var(--panel));

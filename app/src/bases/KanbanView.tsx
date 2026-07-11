@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, untrack, For, Show, batch, onMount, onCleanup } from "solid-js";
+import { createSignal, createMemo, createEffect, untrack, For, Show, batch, onCleanup } from "solid-js";
 import { stringify as yamlStringify } from "yaml";
 import { Icon } from "../icons/Icon";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
@@ -252,20 +252,16 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     });
   }
 
-  // A drag can end outside any column (or the source card may unmount mid-drag),
-  // so clean up globally rather than relying on the card's own dragend.
-  const onWindowDragEnd = () => clearDrag();
-  onMount(() => window.addEventListener("dragend", onWindowDragEnd));
-  onCleanup(() => window.removeEventListener("dragend", onWindowDragEnd));
+  // Tear any in-progress drag down if the view unmounts mid-drag (removes window listeners + ghost).
+  onCleanup(() => endDrag());
 
   const dragActive = (): boolean => dragPath() !== null;
 
-  // Cards shown in column: while hovering, lift the dragged card so the
-  // placeholder represents its new home.
+  // Cards shown in column: while dragging, lift the dragged card out of EVERY column (the floating
+  // ghost represents it) so the placeholder is the only thing marking its new home.
   const visibleRows = (group: ResultGroup): Row[] => {
     const rows = sortedRows(group);
-    const draggingThisCol = dragActive() && overCol() === group.key;
-    return draggingThisCol ? rows.filter((r) => r.file.path !== dragPath()) : rows;
+    return dragActive() ? rows.filter((r) => r.file.path !== dragPath()) : rows;
   };
   // Path list per column (the <For> is keyed by these primitive strings, so a within-column
   // reorder MOVES card DOM instead of remounting it — an `order`-only change re-keys the Row via
@@ -303,95 +299,148 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     });
   });
 
-  function onColumnDragOver(e: DragEvent, group: ResultGroup): void {
-    // Column reorder in progress: this column is a reorder target, not a card drop zone.
-    if (colDrag() !== null) {
-      e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-      setColOver(group.key);
-      return;
-    }
+  // ── Pointer-based drag ──────────────────────────────────────────────────────────────────────
+  // The packaged app runs in WKWebView, which has broken HTML5 drag-and-drop — so, like the rest of
+  // Bismuth (dnd/viewDrag.ts drives the file tree), the kanban drags with POINTER events: arm on
+  // pointerdown, commit past a small threshold, follow a cloned floating ghost, and resolve the drop
+  // target under the cursor via elementFromPoint on the data-kbcol / data-kbcard attributes.
+  const DRAG_THRESHOLD = 5;
+  let armMode: "card" | "col" | null = null;
+  let armPath = "";
+  let armColKey = "";
+  let armOrigin = { x: 0, y: 0 };
+  let armGrab = { dx: 0, dy: 0 };
+  let armSourceEl: HTMLElement | null = null;
+  let ghostEl: HTMLElement | null = null;
+
+  function startCardDrag(e: PointerEvent, path: string, colKey: string): void {
+    if (e.button !== 0 || !editable()) return;
+    const t = e.target as HTMLElement;
+    if (t.closest("input, textarea, button") || t.isContentEditable) return; // let fields/buttons work
+    armMode = "card"; armPath = path; armColKey = colKey;
+    armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-kbcard]");
+    armPointer(e);
+  }
+  function startColDrag(e: PointerEvent, colKey: string): void {
+    if (e.button !== 0 || !editable()) return;
+    if ((e.target as HTMLElement).closest("button")) return; // the color-dot picker button
+    armMode = "col"; armColKey = colKey;
+    armSourceEl = (e.currentTarget as HTMLElement).closest<HTMLElement>("[data-kbcol]");
+    armPointer(e);
+  }
+  function armPointer(e: PointerEvent): void {
+    if (!armSourceEl) { armMode = null; return; }
+    const r = armSourceEl.getBoundingClientRect();
+    armOrigin = { x: e.clientX, y: e.clientY };
+    armGrab = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", endDrag);
+    window.addEventListener("keydown", onDragKey);
+  }
+  // A floating clone of the grabbed element that tracks the cursor (HTML5 DnD gave this for free).
+  function beginGhost(): void {
+    if (!armSourceEl) return;
+    const r = armSourceEl.getBoundingClientRect();
+    const g = armSourceEl.cloneNode(true) as HTMLElement;
+    // Strip the data-* so the ghost isn't matched by the FLIP / drop-resolution queries.
+    g.removeAttribute("data-kbcard"); g.removeAttribute("data-path"); g.removeAttribute("data-kbcol");
+    g.querySelectorAll("[data-kbcard],[data-path]").forEach((n) => { n.removeAttribute("data-kbcard"); n.removeAttribute("data-path"); });
+    g.setAttribute("data-kbghost", "");
+    Object.assign(g.style, {
+      position: "fixed", left: "0", top: "0", width: `${r.width}px`, height: `${r.height}px`,
+      margin: "0", pointerEvents: "none", zIndex: "10000", opacity: "0.92", boxShadow: "0 10px 28px rgba(0,0,0,0.4)",
+    } as CSSStyleDeclaration);
+    document.body.appendChild(g);
+    ghostEl = g;
+    moveGhost(armOrigin.x, armOrigin.y);
+  }
+  function moveGhost(x: number, y: number): void {
+    if (ghostEl) ghostEl.style.transform = `translate(${x - armGrab.dx}px, ${y - armGrab.dy}px) rotate(2deg)`;
+  }
+  function onPointerMove(e: PointerEvent): void {
+    const committed = dragPath() !== null || colDrag() !== null;
+    if (!committed && Math.hypot(e.clientX - armOrigin.x, e.clientY - armOrigin.y) < DRAG_THRESHOLD) return;
     e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-
-    const colEl = e.currentTarget as HTMLElement;
-    const cardEls = [...colEl.querySelectorAll<HTMLElement>("[data-kbcard]")].filter(
-      (el) => el.getAttribute("data-path") !== dragPath(),
-    );
-
-    // Find insertion point by mouse Y position.
+    if (!committed) {
+      document.documentElement.classList.add("kb-dragging");
+      beginGhost();
+      if (armMode === "card") {
+        draggedPath = armPath;
+        setDragH(armSourceEl ? armSourceEl.offsetHeight : 46);
+        setFromCol(armColKey);
+        setDragPath(armPath);
+      } else {
+        setColDrag(armColKey);
+      }
+    }
+    moveGhost(e.clientX, e.clientY);
+    if (armMode === "card") resolveCardTarget(e.clientX, e.clientY);
+    else resolveColTarget(e.clientX, e.clientY);
+  }
+  function resolveCardTarget(x: number, y: number): void {
+    const colEl = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-kbcol]");
+    if (!colEl) return; // off the board — keep the last valid slot
+    const key = colEl.dataset.kbcol ?? "";
+    const cardEls = [...colEl.querySelectorAll<HTMLElement>("[data-kbcard]")].filter((el) => el.getAttribute("data-path") !== dragPath());
     let idx = cardEls.length;
     for (let k = 0; k < cardEls.length; k++) {
       const r = cardEls[k].getBoundingClientRect();
-      if (e.clientY < r.top + r.height / 2) {
-        idx = k;
-        break;
-      }
+      if (y < r.top + r.height / 2) { idx = k; break; }
     }
-
-    // Only snapshot when the placeholder actually moves to avoid unnecessary
-    // DOM reads on every dragover tick (which fires constantly).
-    const moved = overCol() !== group.key || overIndex() !== idx;
+    const moved = overCol() !== key || overIndex() !== idx;
     if (moved) snapshotRects();
-    batch(() => {
-      setOverCol(group.key);
-      setOverIndex(idx);
-    });
+    batch(() => { setOverCol(key); setOverIndex(idx); });
     if (moved) requestAnimationFrame(playFlip);
   }
-
-  async function handleDrop(e: DragEvent, group: ResultGroup): Promise<void> {
-    // Column reorder drop.
-    if (colDrag() !== null) {
+  function resolveColTarget(x: number, y: number): void {
+    const colEl = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-kbcol]");
+    if (colEl) setColOver(colEl.dataset.kbcol ?? null);
+  }
+  function onPointerUp(e: PointerEvent): void {
+    if (armMode === "card" && dragPath() !== null) {
+      void dropCard();
+    } else if (armMode === "col" && colDrag() !== null) {
       const from = colDrag();
-      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      const after = e.clientX > rect.left + rect.width / 2;
-      clearDrag();
-      if (from !== null) void reorderColumns(from, group.key, after);
-      return;
+      const colEl = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>("[data-kbcol]");
+      const over = colEl ? colEl.dataset.kbcol ?? null : colOver();
+      const after = colEl ? e.clientX > colEl.getBoundingClientRect().left + colEl.getBoundingClientRect().width / 2 : false;
+      if (from !== null && over !== null) void reorderColumns(from, over, after);
     }
-
+    endDrag();
+  }
+  async function dropCard(): Promise<void> {
     const path = draggedPath;
     const insertAt = overIndex();
+    const targetKey = overCol();
     const from = fromCol();
-    if (!path) { clearDrag(); return; }
-
+    if (!path || targetKey === null) return;
     const gb = groupBy();
-    if (!gb) { clearDrag(); return; }
+    if (!gb) return;
     const statusKey = writableKey(gb.property);
+    const group = groupByKey(targetKey);
+    const dragged =
+      props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path) ??
+      pendingAdds().find((a) => a.row.file.path === path)?.row;
+    if (!dragged) return;
 
-    // Locate the dragged row across all groups.
-    const dragged = props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path);
-    if (!dragged) { clearDrag(); return; }
-
-    // Build the target column's new integer ordering (explicit orders for every card keep the sort
-    // stable — a fractional-only scheme drifts because siblings without an `order` fall back to a
-    // group-position index that shifts when the dragged card joins).
+    // Target column's new integer ordering — explicit orders for every card keep the sort stable
+    // (a fractional-only scheme drifts). Applied OPTIMISTICALLY (see the clear-effect above).
     const others = sortedRows(group).filter((r) => r.file.path !== path);
     const i = Math.max(0, Math.min(insertAt, others.length));
     const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
-
-    // Apply the whole new order OPTIMISTICALLY (the dragged card + every shifted sibling) and clear
-    // the drag state in one batch, so nothing snaps back to its origin while the write + refetch
-    // land. Each entry clears itself once the server row matches it exactly (see the createEffect
-    // above), handing off to real data with no jump.
     snapshotRects();
-    batch(() => {
-      setPending((prev) => {
-        const next = { ...prev };
-        newList.forEach((r, k) => { next[r.file.path] = { key: group.key, order: k }; });
-        return next;
-      });
-      clearDrag();
+    setPending((prev) => {
+      const next = { ...prev };
+      newList.forEach((r, k) => { next[r.file.path] = { key: targetKey, order: k }; });
+      return next;
     });
     requestAnimationFrame(playFlip);
 
-    // ALL writes go out in ONE batched request → ONE server invalidation → ONE view refetch. Firing
-    // them as separate /set-property calls bumped the version per write, and that burst of refetches
-    // remounted the entire card grid (the flicker). The status change + the dragged card's order +
-    // the reindex of shifted siblings are all folded in here.
+    // ONE batched request → ONE invalidation → ONE refetch (separate writes stormed the view). The
+    // status change + the dragged card's order + the reindex of shifted siblings are all folded in.
     const writes: Array<{ path: string; key: string; value: unknown }> = [];
-    if (statusKey !== null && from !== group.key) writes.push({ path, key: statusKey, value: group.key });
+    if (statusKey !== null && from !== targetKey) writes.push({ path, key: statusKey, value: targetKey });
     writes.push({ path, key: ORDER_KEY, value: i });
     for (let k = 0; k < newList.length; k++) {
       const row = newList[k];
@@ -399,8 +448,18 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
       if ((row.note as Record<string, unknown>)[ORDER_KEY] !== k) writes.push({ path: row.file.path, key: ORDER_KEY, value: k });
     }
     await api.setProperties(writes);
-    // The batch's single invalidation drives one SSE-triggered refetch, which the overlay bridges;
-    // no explicit onChange (a second refetch is unnecessary).
+  }
+  function onDragKey(e: KeyboardEvent): void { if (e.key === "Escape") endDrag(); }
+  function endDrag(): void {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    window.removeEventListener("pointercancel", endDrag);
+    window.removeEventListener("keydown", onDragKey);
+    document.documentElement.classList.remove("kb-dragging");
+    if (ghostEl) { ghostEl.remove(); ghostEl = null; }
+    armMode = null;
+    armSourceEl = null;
+    clearDrag();
   }
 
   // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──
@@ -552,23 +611,10 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                   [styles.kanbanColDragging]: colDrag() === key,
                 }}
                 style={{ "--kb-col-color": color() }}
-                onDragOver={(e) => onColumnDragOver(e, group())}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  void handleDrop(e, group());
-                }}
               >
                 <div
                   class={styles.kanbanColHeader}
-                  draggable={editable()}
-                  onDragStart={(e) => {
-                    if (!editable()) return;
-                    setColDrag(group().key);
-                    if (e.dataTransfer) {
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", group().key);
-                    }
-                  }}
+                  onPointerDown={(e) => startColDrag(e, key)}
                 >
                   <button
                     type="button"
@@ -628,17 +674,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                 class={styles.card}
                                 data-kbcard=""
                                 data-path={path}
-                                draggable={!editing()}
-                                onDragStart={(e) => {
-                                  draggedPath = path;
-                                  setDragH((e.currentTarget as HTMLElement).offsetHeight);
-                                  setDragPath(path);
-                                  setFromCol(group().key);
-                                  if (e.dataTransfer) {
-                                    e.dataTransfer.effectAllowed = "move";
-                                    e.dataTransfer.setData("text/plain", path);
-                                  }
-                                }}
+                                onPointerDown={(e) => { if (!editing()) startCardDrag(e, path, group().key); }}
                               >
                                 <div class={styles.cardBodyInner}>
                                   <KanbanCard
