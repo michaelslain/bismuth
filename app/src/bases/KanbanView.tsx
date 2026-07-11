@@ -1,5 +1,6 @@
-import { createSignal, For, Index, Show, batch, onMount, onCleanup } from "solid-js";
+import { createSignal, createMemo, createEffect, untrack, For, Index, Show, batch, onMount, onCleanup } from "solid-js";
 import { stringify as yamlStringify } from "yaml";
+import { Icon } from "../icons/Icon";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
@@ -30,16 +31,9 @@ function writableKey(property: string): string | null {
   return property; // bare property name
 }
 
-/** Effective sort order for a card: explicit `order` if numeric, else its
- * stable position in the group's engine order. */
-function effOrder(row: Row, group: ResultGroup): number {
-  const o = (row.note as Record<string, unknown>)[ORDER_KEY];
-  return typeof o === "number" ? o : group.rows.indexOf(row);
-}
-
-function sortedRows(group: ResultGroup): Row[] {
-  return [...group.rows].sort((a, b) => effOrder(a, group) - effOrder(b, group));
-}
+// An optimistic move: the column key + order a just-dropped card should render at, before the
+// backend write + refetch land. Keyed by note path.
+type PendingMove = { key: string; order: number };
 
 function dirOf(path: string): string {
   const i = path.lastIndexOf("/");
@@ -92,6 +86,66 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   const [busy, setBusy] = createSignal(false);
   // Paths minted this session, so two quick adds don't collide before a refetch lands.
   const created = new Set<string>();
+
+  // Optimistic moves: on drop we place cards immediately from this overlay so a dragged card
+  // never snaps back to its origin while the async setProperty writes + refetch are in flight
+  // (the flicker). Each entry clears itself once the server data catches up (see the effect below).
+  const [pending, setPending] = createSignal<Record<string, PendingMove>>({});
+
+  /** Effective within-column sort order: the pending (optimistic) order if this card has one for
+   * this column, else its explicit `order`, else its stable engine position. */
+  function effOrder(row: Row, group: ResultGroup): number {
+    const mv = pending()[row.file.path];
+    if (mv && mv.key === group.key) return mv.order;
+    const o = (row.note as Record<string, unknown>)[ORDER_KEY];
+    return typeof o === "number" ? o : group.rows.indexOf(row);
+  }
+  function sortedRows(group: ResultGroup): Row[] {
+    return [...group.rows].sort((a, b) => effOrder(a, group) - effOrder(b, group));
+  }
+
+  // The groups to render: the server groups with any pending optimistic moves applied (a moved
+  // card is pulled from its server column and shown in its pending target column). Column set +
+  // order are untouched, so the Index below stays stable.
+  const displayGroups = (): ResultGroup[] => {
+    const pend = pending();
+    const groups = props.result.groups;
+    if (Object.keys(pend).length === 0) return groups;
+    const byPath = new Map<string, Row>();
+    for (const g of groups) for (const r of g.rows) byPath.set(r.file.path, r);
+    return groups.map((g) => {
+      const rows = g.rows.filter((r) => { const mv = pend[r.file.path]; return !mv || mv.key === g.key; });
+      for (const [path, mv] of Object.entries(pend)) {
+        if (mv.key === g.key && !rows.some((x) => x.file.path === path)) {
+          const r = byPath.get(path);
+          if (r) rows.push(r);
+        }
+      }
+      return { key: g.key, rows };
+    });
+  };
+
+  // Clear each optimistic move once the freshly-resolved server data matches it exactly (the card
+  // is in the target column AND its `order` equals the pending order) — so the overlay hands off to
+  // real data with no visible jump. Entries that never needed a write (order already correct) match
+  // immediately and clear on the next resolve.
+  createEffect(() => {
+    const groups = props.result.groups; // re-run only when the server data changes
+    untrack(() => {
+      if (Object.keys(pending()).length === 0) return;
+      const cur = new Map<string, { key: string; order: unknown }>();
+      for (const g of groups) for (const r of g.rows) cur.set(r.file.path, { key: g.key, order: (r.note as Record<string, unknown>)[ORDER_KEY] });
+      setPending((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const [path, mv] of Object.entries(prev)) {
+          const c = cur.get(path);
+          if (c && c.key === mv.key && c.order === mv.order) { delete next[path]; changed = true; }
+        }
+        return changed ? next : prev;
+      });
+    });
+  });
 
   // FLIP (First-Last-Invert-Play): snapshot card rects, let Solid re-render, then
   // animate each card from its old position back to its new one. Without this the
@@ -152,6 +206,15 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     const draggingThisCol = dragActive() && overCol() === group.key;
     return draggingThisCol ? rows.filter((r) => r.file.path !== dragPath()) : rows;
   };
+  // Path list per column (the <For> is keyed by these primitive strings, so a within-column
+  // reorder MOVES card DOM instead of remounting it — an `order`-only change re-keys the Row via
+  // reconcileRows, which a ref-keyed <For> would remount). Row content is looked up reactively.
+  const visiblePaths = (group: ResultGroup): string[] => visibleRows(group).map((r) => r.file.path);
+  const rowByPath = createMemo(() => {
+    const m = new Map<string, Row>();
+    for (const g of displayGroups()) for (const r of g.rows) m.set(r.file.path, r);
+    return m;
+  });
 
   function onColumnDragOver(e: DragEvent, group: ResultGroup): void {
     // Column reorder in progress: this column is a reorder target, not a card drop zone.
@@ -204,21 +267,37 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     const path = draggedPath;
     const insertAt = overIndex();
     const from = fromCol();
-    clearDrag();
-    if (!path) return;
+    if (!path) { clearDrag(); return; }
 
     const gb = groupBy();
-    if (!gb) return;
+    if (!gb) { clearDrag(); return; }
     const statusKey = writableKey(gb.property);
 
     // Locate the dragged row across all groups.
     const dragged = props.result.groups.flatMap((g) => g.rows).find((r) => r.file.path === path);
-    if (!dragged) return;
+    if (!dragged) { clearDrag(); return; }
 
-    // Build target column's new ordering with the dragged card inserted at position i.
+    // Build the target column's new integer ordering (explicit orders for every card keep the sort
+    // stable — a fractional-only scheme drifts because siblings without an `order` fall back to a
+    // group-position index that shifts when the dragged card joins).
     const others = sortedRows(group).filter((r) => r.file.path !== path);
     const i = Math.max(0, Math.min(insertAt, others.length));
     const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
+
+    // Apply the whole new order OPTIMISTICALLY (the dragged card + every shifted sibling) and clear
+    // the drag state in one batch, so nothing snaps back to its origin while the writes + refetch
+    // land — that round-trip snap was the flicker. Each entry clears itself once the server row
+    // matches it exactly (see the createEffect above), handing off to real data with no jump.
+    snapshotRects();
+    batch(() => {
+      setPending((prev) => {
+        const next = { ...prev };
+        newList.forEach((r, k) => { next[r.file.path] = { key: group.key, order: k }; });
+        return next;
+      });
+      clearDrag();
+    });
+    requestAnimationFrame(playFlip);
 
     // Cross-column move: write status first, then order (same file, sequential to avoid races).
     if (statusKey !== null && from !== group.key) {
@@ -226,7 +305,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     }
     await api.setProperty(path, ORDER_KEY, i);
 
-    // Reindex remaining cards to clean integers (only those whose order changed).
+    // Reindex the rest to clean integers (only those whose order actually changed).
     const sideWrites: Promise<unknown>[] = [];
     for (let k = 0; k < newList.length; k++) {
       const row = newList[k];
@@ -361,8 +440,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
             card between columns) mints new group OBJECTS for both the source and destination
             columns; a reference-keyed <For> would remount every card in both. Index keeps the
             columns mounted and hands a reactive `group()` accessor, so only the inner card <For>
-            diffs — the moved card animates, the rest stay put. */}
-        <Index each={props.result.groups}>
+            diffs — the moved card animates, the rest stay put. `displayGroups()` folds in optimistic
+            drops so a moved card stays put instead of snapping back during the write round-trip. */}
+        <Index each={displayGroups()}>
           {(group, index) => {
             const color = () => colColor(group().key, index);
             return (
@@ -433,9 +513,10 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                 </Show>
 
                 <div class={styles.kanbanCards}>
-                  <For each={visibleRows(group())}>
-                    {(row: Row, i) => {
+                  <For each={visiblePaths(group())}>
+                    {(path, i) => {
                       const [editing, setEditing] = createSignal(false);
+                      const row = () => rowByPath().get(path);
                       return (
                         <>
                           <div
@@ -443,33 +524,37 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                               overCol() === group().key && overIndex() === i() ? styles.kanbanPlaceholderActive : ""
                             }`}
                           />
-                          <div
-                            class={styles.card}
-                            data-kbcard=""
-                            data-path={row.file.path}
-                            draggable={!editing()}
-                            onDragStart={(e) => {
-                              draggedPath = row.file.path;
-                              setDragPath(row.file.path);
-                              setFromCol(group().key);
-                              if (e.dataTransfer) {
-                                e.dataTransfer.effectAllowed = "move";
-                                e.dataTransfer.setData("text/plain", row.file.path);
-                              }
-                            }}
-                          >
-                            <div class={styles.cardBodyInner}>
-                              <KanbanCard
-                                row={row}
-                                titleCol={titleCol()}
-                                descField={descField()}
-                                editable={editable()}
-                                onEditingChange={setEditing}
-                                onRename={(t) => void renameCard(row, t)}
-                                onSetDescription={(v) => void setDescription(row, v)}
-                              />
-                            </div>
-                          </div>
+                          <Show when={row()}>
+                            {(r) => (
+                              <div
+                                class={styles.card}
+                                data-kbcard=""
+                                data-path={path}
+                                draggable={!editing()}
+                                onDragStart={(e) => {
+                                  draggedPath = path;
+                                  setDragPath(path);
+                                  setFromCol(group().key);
+                                  if (e.dataTransfer) {
+                                    e.dataTransfer.effectAllowed = "move";
+                                    e.dataTransfer.setData("text/plain", path);
+                                  }
+                                }}
+                              >
+                                <div class={styles.cardBodyInner}>
+                                  <KanbanCard
+                                    row={r()}
+                                    titleCol={titleCol()}
+                                    descField={descField()}
+                                    editable={editable()}
+                                    onEditingChange={setEditing}
+                                    onRename={(t) => void renameCard(r(), t)}
+                                    onSetDescription={(v) => void setDescription(r(), v)}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </Show>
                         </>
                       );
                     }}
@@ -490,9 +575,11 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                         <button
                           type="button"
                           class={styles.kbAddBtn}
+                          title="Add a card"
+                          aria-label="Add a card"
                           onClick={() => { setComposerCol(group().key); setDraft(""); }}
                         >
-                          + Add a card
+                          <Icon value="Plus" size={16} />
                         </button>
                       }
                     >

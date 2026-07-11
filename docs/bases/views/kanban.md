@@ -8,7 +8,7 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
 - **Edit a card in place** — tap its title to rename the note; tap its description to edit a multiline `description` frontmatter property (rendered as markdown).
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
-- **Add a card** — a Trello-style "+ Add a card" composer at the bottom of each column creates a note in the board's folder with that column's value set.
+- **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
 The card face shows only the note's **title + description** — it deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
 
@@ -193,6 +193,8 @@ Dropping a card triggers sequential writes to the note's frontmatter via `POST /
 
 After all writes complete, `props.onChange()` is called to trigger a data refetch in the parent `BaseView`.
 
+**Optimistic + flicker-free.** The drop applies the whole new order to a local overlay (`pending`) *before* the writes, so a moved card never snaps back to its origin during the round-trip. Each overlay entry clears itself once the resolved server row matches it exactly. Cards are rendered **keyed by note path** (a stable primitive) rather than by Row object, so an `order`-only change — which `reconcileRows` treats as a fresh identity — *moves* the card's DOM (FLIP-animated) instead of unmounting/remounting it. Together these remove the "whole board reloads/flickers" feel: only a genuinely column-changed card re-mounts, and it does so once, in place.
+
 The `order` key is always the bare string `"order"` — it is hardcoded in `KanbanView.tsx` as the `ORDER_KEY` constant. It is written to and read from `row.note.order` as a number.
 
 ### Writable keys
@@ -239,7 +241,7 @@ Local signal mirrors paint the committed value instantly (optimistic) and are re
 
 Each column has a Trello-style composer, shown only when the board is editable **and** the `groupBy` value is writable (a `file.`/`formula.`/`this.` groupBy hides it, since a new card can't be placed in the clicked column without writing that column's value).
 
-Clicking **"+ Add a card"** reveals a textarea; typing a title and pressing Enter creates a note:
+Clicking the **"+"** button reveals a textarea; typing a title and pressing Enter creates a note:
 
 - **Folder** — the folder of an existing card (all board cards share one), falling back to the base file's path minus `.md` when the board is empty.
 - **Filename** — the title, sanitized for the filesystem and de-collided against the board's notes.
@@ -347,7 +349,7 @@ This board will:
 ## Edge Cases and Gotchas
 
 - **Empty group key**: when a note's groupBy property is missing or empty string, the card is placed in a column labeled `(empty)`. Its key is the empty string `""`.
-- **Non-writable groupBy**: using `file.folder`, `formula.x`, or `this.x` as `groupBy.property` means cross-column drags will still reorder within the target column (via `order` writes) but will NOT update the groupBy field itself. The card will visually move, but after the next data refetch it will snap back to its original column. The **"+ Add a card" composer is hidden** for such boards (a new card couldn't be placed in the clicked column). Column reorder, colors, and card title/description editing still work.
+- **Non-writable groupBy**: using `file.folder`, `formula.x`, or `this.x` as `groupBy.property` means cross-column drags will still reorder within the target column (via `order` writes) but will NOT update the groupBy field itself. The card will visually move, but after the next data refetch it will snap back to its original column. The **"+" add-card button is hidden** for such boards (a new card couldn't be placed in the clicked column). Column reorder, colors, and card title/description editing still work.
 - **Rename mid-edit**: a title rename changes the note's path, so the refetch remounts the card (its identity genuinely changed). Editing is single-mode, so there's no open description edit to lose in the normal flow; only a description typed into the same card during the brief in-flight window of a just-committed rename would be dropped — a narrow, no-existing-data-loss race.
 - **Overwrite scope**: new-card filenames and rename targets are de-collided against the board's visible notes + this session's fresh adds, but not against a same-named note the board's *filter* hides (there's no reliable client-side disk-existence probe). For the common folder-scoped board every note is a visible row, so this doesn't arise.
 - **Concurrent edits**: kanban does sequential writes (status then order); the order write for the dragged card comes after the status write, and reindex writes for other cards run concurrently. A vault SSE event fires after each write, so the view may refetch mid-sequence. The `props.onChange()` call at the end triggers a final refetch to reconcile.
