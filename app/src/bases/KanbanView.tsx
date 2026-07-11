@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, untrack, For, Index, Show, batch, onMount, onCleanup } from "solid-js";
+import { createSignal, createMemo, createEffect, untrack, For, Show, batch, onMount, onCleanup } from "solid-js";
 import { stringify as yamlStringify } from "yaml";
 import { Icon } from "../icons/Icon";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
@@ -64,11 +64,15 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // a property first can't turn a title-edit into a rename-to-a-property-value.
   const titleCol = () => "file.name";
 
-  // Per-column color: explicit override > known-status palette > distinct auto palette.
-  function colColor(key: string, index: number): string {
+  // Per-column color: explicit override > known-status palette > a palette slot chosen by a stable
+  // hash of the column KEY (not its position) so reordering columns never recolors them.
+  function colColor(key: string): string {
     const override = groupColors()[key];
     if (override) return override;
-    return STATUS_COLOR[key.trim().toLowerCase()] ?? PALETTE[index % PALETTE.length];
+    if (STATUS_COLOR[key.trim().toLowerCase()]) return STATUS_COLOR[key.trim().toLowerCase()];
+    let h = 0;
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    return PALETTE[Math.abs(h) % PALETTE.length];
   }
 
   const [overCol, setOverCol] = createSignal<string | null>(null);
@@ -99,6 +103,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // brings the real row — so adding a card doesn't blink/hide-then-reappear. Each clears once the
   // server data contains its path.
   const [pendingAdds, setPendingAdds] = createSignal<Array<{ row: Row; col: string }>>([]);
+  // Optimistic column order after a header drag — so the columns settle instantly instead of
+  // snapping back while the `columns` write + refetch land. Cleared once the server order matches.
+  const [pendingColOrder, setPendingColOrder] = createSignal<string[] | null>(null);
 
   /** Effective within-column sort order: the pending (optimistic) order if this card has one for
    * this column, else its explicit `order`, else its stable engine position. */
@@ -207,6 +214,32 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     }
     prevRects.clear();
   }
+  // Same FLIP, for whole COLUMNS on a header reorder (they only move horizontally).
+  const prevColRects = new Map<string, DOMRect>();
+  function snapshotColRects() {
+    if (!rootEl) return;
+    prevColRects.clear();
+    for (const el of rootEl.querySelectorAll<HTMLElement>("[data-kbcol]")) {
+      const k = el.dataset.kbcol;
+      if (k != null) prevColRects.set(k, el.getBoundingClientRect());
+    }
+  }
+  function playColFlip() {
+    if (!rootEl || prevColRects.size === 0) return;
+    for (const el of rootEl.querySelectorAll<HTMLElement>("[data-kbcol]")) {
+      const k = el.dataset.kbcol;
+      const prev = k != null ? prevColRects.get(k) : undefined;
+      if (!prev) continue;
+      const dx = prev.left - el.getBoundingClientRect().left;
+      if (dx === 0) continue;
+      el.style.transition = "none";
+      el.style.transform = `translateX(${dx}px)`;
+      el.getBoundingClientRect();
+      el.style.transition = "transform 200ms cubic-bezier(.2,.7,.2,1)";
+      el.style.transform = "translateX(0)";
+    }
+    prevColRects.clear();
+  }
 
   function clearDrag(): void {
     draggedPath = null;
@@ -242,6 +275,32 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     const m = new Map<string, Row>();
     for (const g of displayGroups()) for (const r of g.rows) m.set(r.file.path, r);
     return m;
+  });
+
+  // Column KEY order to render (the outer <For> is keyed by these strings, so a reorder MOVES the
+  // column DOM instead of re-rendering every column's content). Applies the optimistic order.
+  const columnKeys = (): string[] => {
+    const keys = displayGroups().map((g) => g.key);
+    const order = pendingColOrder();
+    if (!order) return keys;
+    const present = new Set(keys);
+    const out = order.filter((k) => present.has(k));
+    for (const k of keys) if (!out.includes(k)) out.push(k);
+    return out;
+  };
+  const groupByKey = (key: string): ResultGroup => displayGroups().find((g) => g.key === key) ?? { key, rows: [] };
+
+  // Clear the optimistic column order once the server's column order matches it.
+  createEffect(() => {
+    const groups = props.result.groups;
+    untrack(() => {
+      const order = pendingColOrder();
+      if (!order) return;
+      const serverKeys = groups.map((g) => g.key);
+      const a = serverKeys.filter((k) => order.includes(k));
+      const b = order.filter((k) => serverKeys.includes(k));
+      if (a.length === b.length && a.every((k, i) => k === b[i])) setPendingColOrder(null);
+    });
   });
 
   function onColumnDragOver(e: DragEvent, group: ResultGroup): void {
@@ -347,13 +406,18 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──
   async function reorderColumns(from: string, over: string, after: boolean): Promise<void> {
     if (!props.basePath || from === over) return;
-    const keys = props.result.groups.map((g) => g.key).filter((k) => k !== from);
+    const keys = columnKeys().filter((k) => k !== from);
     let ti = keys.indexOf(over);
     if (ti < 0) ti = keys.length;
     if (after) ti += 1;
     keys.splice(ti, 0, from);
+    // Optimistic: reorder instantly (FLIP the columns) so they don't snap back during the write's
+    // refetch. The single `columns` write's SSE drives one refetch; the clear-effect then drops the
+    // overlay (no props.onChange — a second refetch is unnecessary).
+    snapshotColRects();
+    setPendingColOrder(keys);
+    requestAnimationFrame(playColFlip);
     await api.setViewProperty(props.basePath, props.viewIndex ?? 0, "columns", keys);
-    props.onChange();
   }
 
   // ── Column color — persist/clear an override in `groupColors`. ──
@@ -469,22 +533,23 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
       }
     >
       <div class={styles.kanban} ref={rootEl} style={{ "--kb-drag-h": `${dragH()}px` }}>
-        {/* Index-keyed columns (see ListView): a re-resolve (e.g. a status toggle that moves a
-            card between columns) mints new group OBJECTS for both the source and destination
-            columns; a reference-keyed <For> would remount every card in both. Index keeps the
-            columns mounted and hands a reactive `group()` accessor, so only the inner card <For>
-            diffs — the moved card animates, the rest stay put. `displayGroups()` folds in optimistic
-            drops so a moved card stays put instead of snapping back during the write round-trip. */}
-        <Index each={displayGroups()}>
-          {(group, index) => {
-            const color = () => colColor(group().key, index);
+        {/* Columns are keyed by their group KEY (a stable string), so a header reorder MOVES the
+            column DOM (FLIP-animated via data-kbcol) rather than re-rendering every column's content,
+            and a card status-toggle refetch (same keys) reuses columns. `group()` is looked up
+            reactively; the inner card <For> is path-keyed. `columnKeys()` folds in the optimistic
+            reorder so columns settle instantly instead of snapping back during the write round-trip. */}
+        <For each={columnKeys()}>
+          {(key) => {
+            const group = () => groupByKey(key);
+            const color = () => colColor(key);
             return (
               <div
                 class={styles.kanbanColumn}
+                data-kbcol={key}
                 classList={{
-                  [styles.kanbanColumnOver]: overCol() === group().key && colDrag() === null,
-                  [styles.kanbanColReorder]: colOver() === group().key && colDrag() !== null && colDrag() !== group().key,
-                  [styles.kanbanColDragging]: colDrag() === group().key,
+                  [styles.kanbanColumnOver]: overCol() === key && colDrag() === null,
+                  [styles.kanbanColReorder]: colOver() === key && colDrag() !== null && colDrag() !== key,
+                  [styles.kanbanColDragging]: colDrag() === key,
                 }}
                 style={{ "--kb-col-color": color() }}
                 onDragOver={(e) => onColumnDragOver(e, group())}
@@ -641,7 +706,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
               </div>
             );
           }}
-        </Index>
+        </For>
       </div>
     </Show>
   );
