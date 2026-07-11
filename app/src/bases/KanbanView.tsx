@@ -2,6 +2,7 @@ import { createSignal, createMemo, createEffect, untrack, For, Index, Show, batc
 import { stringify as yamlStringify } from "yaml";
 import { Icon } from "../icons/Icon";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
+import { placeholderFile } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
 import { STATUS_COLOR } from "../ui/StatusDot";
@@ -74,6 +75,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   const [overIndex, setOverIndex] = createSignal(0);
   const [dragPath, setDragPath] = createSignal<string | null>(null);
   const [fromCol, setFromCol] = createSignal<string | null>(null);
+  // Height of the card currently being dragged, so the drop placeholder is exactly its size
+  // (not a fixed 46px). Projected onto the board as the `--kb-drag-h` CSS var.
+  const [dragH, setDragH] = createSignal(46);
 
   // Column (header) drag-reorder state — distinct from card drag above.
   const [colDrag, setColDrag] = createSignal<string | null>(null);
@@ -91,6 +95,10 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // never snaps back to its origin while the async setProperty writes + refetch are in flight
   // (the flicker). Each entry clears itself once the server data catches up (see the effect below).
   const [pending, setPending] = createSignal<Record<string, PendingMove>>({});
+  // Just-created cards, shown INSTANTLY in their column before the file write's (debounced) refetch
+  // brings the real row — so adding a card doesn't blink/hide-then-reappear. Each clears once the
+  // server data contains its path.
+  const [pendingAdds, setPendingAdds] = createSignal<Array<{ row: Row; col: string }>>([]);
 
   /** Effective within-column sort order: the pending (optimistic) order if this card has one for
    * this column, else its explicit `order`, else its stable engine position. */
@@ -109,8 +117,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // order are untouched, so the Index below stays stable.
   const displayGroups = (): ResultGroup[] => {
     const pend = pending();
+    const adds = pendingAdds();
     const groups = props.result.groups;
-    if (Object.keys(pend).length === 0) return groups;
+    if (Object.keys(pend).length === 0 && adds.length === 0) return groups;
     const byPath = new Map<string, Row>();
     for (const g of groups) for (const r of g.rows) byPath.set(r.file.path, r);
     return groups.map((g) => {
@@ -120,6 +129,10 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
           const r = byPath.get(path);
           if (r) rows.push(r);
         }
+      }
+      // Optimistic new cards land at the bottom of their column until the real row resolves.
+      for (const a of adds) {
+        if (a.col === g.key && !byPath.has(a.row.file.path) && !rows.some((x) => x.file.path === a.row.file.path)) rows.push(a.row);
       }
       return { key: g.key, rows };
     });
@@ -143,6 +156,21 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
           if (c && c.key === mv.key && c.order === mv.order) { delete next[path]; changed = true; }
         }
         return changed ? next : prev;
+      });
+    });
+  });
+
+  // Drop an optimistic new card once the server data actually contains its path (the write's
+  // refetch has landed) — the path-keyed row then just re-points at the real Row, no remount.
+  createEffect(() => {
+    const groups = props.result.groups;
+    untrack(() => {
+      if (pendingAdds().length === 0) return;
+      const present = new Set<string>();
+      for (const g of groups) for (const r of g.rows) present.add(r.file.path);
+      setPendingAdds((prev) => {
+        const next = prev.filter((a) => !present.has(a.row.file.path));
+        return next.length === prev.length ? prev : next;
       });
     });
   });
@@ -413,13 +441,19 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     };
     const content = `---\n${yamlStringify(front)}---\n`;
     const path = dedupe(`${folder ? folder + "/" : ""}${safeFilename(title)}.md`, takenPaths());
+    const name = safeFilename(title);
 
     setBusy(true);
     try {
-      await api.write(path, content);
+      // Show the card OPTIMISTICALLY so it appears the instant you hit Enter — then just write the
+      // file. No props.onChange(): a PUT /file doesn't bump the version, so an eager refetch would
+      // read stale rows; the file-watcher's debounced SSE refetch brings the real row and the
+      // clear-effect drops the optimistic one (path-keyed → the card never blinks).
+      const optimistic: Row = { file: placeholderFile(name, path), note: { ...front }, formula: {} };
       created.add(path);
       setDraft("");
-      props.onChange();
+      setPendingAdds((prev) => [...prev, { row: optimistic, col: colKey }]);
+      await api.write(path, content);
     } finally {
       setBusy(false);
     }
@@ -434,7 +468,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
         </div>
       }
     >
-      <div class={styles.kanban} ref={rootEl}>
+      <div class={styles.kanban} ref={rootEl} style={{ "--kb-drag-h": `${dragH()}px` }}>
         {/* Index-keyed columns (see ListView): a re-resolve (e.g. a status toggle that moves a
             card between columns) mints new group OBJECTS for both the source and destination
             columns; a reference-keyed <For> would remount every card in both. Index keeps the
@@ -532,6 +566,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                 draggable={!editing()}
                                 onDragStart={(e) => {
                                   draggedPath = path;
+                                  setDragH((e.currentTarget as HTMLElement).offsetHeight);
                                   setDragPath(path);
                                   setFromCol(group().key);
                                   if (e.dataTransfer) {
