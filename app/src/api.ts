@@ -316,6 +316,10 @@ export const api = {
 
   setProperty: (path: string, key: string, value: unknown) => post("/set-property", { path, key, value }),
   deleteProperty: (path: string, key: string) => post("/delete-property", { path, key }),
+  // Batch many frontmatter writes (across notes) in ONE request → ONE invalidation → ONE refetch.
+  // Used by the kanban drag-drop so a multi-card reorder doesn't storm the view with refetches.
+  setProperties: (writes: Array<{ path: string; key: string; value: unknown }>) =>
+    post("/set-properties", { writes }),
   // Base-view-scoped writes: persist a key INTO `views[viewIndex]` of a `type: base` note (kanban
   // column order/colors) so it lands where the base declares its views instead of a duplicate
   // top-level key. Falls back to top-level server-side when the base has no `views:` array.

@@ -285,9 +285,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     const newList = [...others.slice(0, i), dragged, ...others.slice(i)];
 
     // Apply the whole new order OPTIMISTICALLY (the dragged card + every shifted sibling) and clear
-    // the drag state in one batch, so nothing snaps back to its origin while the writes + refetch
-    // land — that round-trip snap was the flicker. Each entry clears itself once the server row
-    // matches it exactly (see the createEffect above), handing off to real data with no jump.
+    // the drag state in one batch, so nothing snaps back to its origin while the write + refetch
+    // land. Each entry clears itself once the server row matches it exactly (see the createEffect
+    // above), handing off to real data with no jump.
     snapshotRects();
     batch(() => {
       setPending((prev) => {
@@ -299,22 +299,21 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     });
     requestAnimationFrame(playFlip);
 
-    // Cross-column move: write status first, then order (same file, sequential to avoid races).
-    if (statusKey !== null && from !== group.key) {
-      await api.setProperty(path, statusKey, group.key);
-    }
-    await api.setProperty(path, ORDER_KEY, i);
-
-    // Reindex the rest to clean integers (only those whose order actually changed).
-    const sideWrites: Promise<unknown>[] = [];
+    // ALL writes go out in ONE batched request → ONE server invalidation → ONE view refetch. Firing
+    // them as separate /set-property calls bumped the version per write, and that burst of refetches
+    // remounted the entire card grid (the flicker). The status change + the dragged card's order +
+    // the reindex of shifted siblings are all folded in here.
+    const writes: Array<{ path: string; key: string; value: unknown }> = [];
+    if (statusKey !== null && from !== group.key) writes.push({ path, key: statusKey, value: group.key });
+    writes.push({ path, key: ORDER_KEY, value: i });
     for (let k = 0; k < newList.length; k++) {
       const row = newList[k];
       if (row.file.path === path) continue;
-      const current = (row.note as Record<string, unknown>)[ORDER_KEY];
-      if (current !== k) sideWrites.push(api.setProperty(row.file.path, ORDER_KEY, k));
+      if ((row.note as Record<string, unknown>)[ORDER_KEY] !== k) writes.push({ path: row.file.path, key: ORDER_KEY, value: k });
     }
-    await Promise.all(sideWrites);
-    props.onChange();
+    await api.setProperties(writes);
+    // The batch's single invalidation drives one SSE-triggered refetch, which the overlay bridges;
+    // no explicit onChange (a second refetch is unnecessary).
   }
 
   // ── Column reorder — persist the full visible key order to `columns` (groupOrder). ──

@@ -147,6 +147,42 @@ test("relay ingest routes reject missing required fields", async () => {
   }
 });
 
+test("POST /set-properties applies batched frontmatter writes across notes in one request", async () => {
+  const { vault, memory } = await makeSampleVault();
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const res = await fetch(`${base}/set-properties`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        writes: [
+          { path: "essay.md", key: "status", value: "Done" },
+          { path: "essay.md", key: "order", value: 2 }, // same note, folded into one read-modify-write
+          { path: "housing.md", key: "order", value: 0 },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    const essay = (await (await fetch(`${base}/meta?path=essay.md`)).json()) as Record<string, unknown>;
+    expect(essay.status).toBe("Done");
+    expect(essay.order).toBe(2);
+    const housing = (await (await fetch(`${base}/meta?path=housing.md`)).json()) as Record<string, unknown>;
+    expect(housing.order).toBe(0);
+    // A vanished note in the batch is skipped, not fatal.
+    const ok2 = await fetch(`${base}/set-properties`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ writes: [{ path: "nope-does-not-exist.md", key: "x", value: 1 }, { path: "essay.md", key: "flag", value: true }] }),
+    });
+    expect(ok2.status).toBe(200);
+    const essay2 = (await (await fetch(`${base}/meta?path=essay.md`)).json()) as Record<string, unknown>;
+    expect(essay2.flag).toBe(true);
+  } finally {
+    server.stop(true);
+  }
+});
+
 test("GET /daemon/graph returns a graph with the daemon hub node (never throws)", async () => {
   const { vault, memory } = await makeSampleVault();
   const server = createServer({ vault, memory, port: 0 });

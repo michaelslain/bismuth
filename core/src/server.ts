@@ -1308,6 +1308,32 @@ export function createServer(cfg: CoreConfig) {
       (b) => b.path,
     ),
 
+    "POST /set-properties": mutatingHandler(
+      async (req) => {
+        // Batch frontmatter writes across (possibly many) notes in ONE request → ONE invalidation
+        // → ONE SSE bump → ONE view refetch. The kanban drag-drop uses this so a reorder (which
+        // reindexes several cards) doesn't fire a burst of /set-property calls, each of which would
+        // bump the version and re-resolve the base — that storm remounts the whole card grid
+        // (flicker). Writes to the same note are folded into a single read-modify-write.
+        const { writes } = (await req.json()) as { writes: Array<{ path: string; key: string; value: unknown }> };
+        const byPath = new Map<string, Array<{ key: string; value: unknown }>>();
+        for (const w of writes ?? []) {
+          const list = byPath.get(w.path) ?? [];
+          list.push({ key: w.key, value: w.value });
+          byPath.set(w.path, list);
+        }
+        for (const [path, ops] of byPath) {
+          const raw = await readNoteOrNull(cfg.vault, path);
+          if (raw === null) continue; // skip a note that vanished; don't fail the whole batch
+          let next = raw;
+          for (const op of ops) next = setFrontmatterKey(next, op.key, op.value);
+          await writeNote(cfg.vault, path, next);
+        }
+        return ok();
+      },
+      (b) => (Array.isArray(b.writes) ? ([...new Set((b.writes as Array<{ path: string }>).map((w) => w.path))] as string[]) : undefined),
+    ),
+
     "POST /row/update": mutatingHandler(
       async (req) => {
         // index === null => append a new row; otherwise replace the row at index.
