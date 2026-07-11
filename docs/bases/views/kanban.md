@@ -1,6 +1,16 @@
 # Kanban View
 
-The kanban view renders a base's rows as a board of swim-lane columns, one column per group value. It requires a `groupBy` property in the view config; without one, the view renders a hint message instead of a board. Cards are draggable between columns — dropping a card writes the new group value and a within-column sort index back to the note's frontmatter via `POST /set-property`. Column order and the set of visible columns (including empty ones) is controlled by `columns` in the view config. Column header colors follow a built-in status palette with an accent fallback.
+The kanban view renders a base's rows as a board of swim-lane columns, one column per group value. It requires a `groupBy` property in the view config; without one, the view renders a hint message instead of a board.
+
+Each card is a note. On a board backed by a real base file (`props.basePath` set — i.e. not an embedded ```query block) the board is fully editable:
+
+- **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
+- **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
+- **Edit a card in place** — tap its title to rename the note; tap its description to edit a multiline `description` frontmatter property (rendered as markdown).
+- **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
+- **Add a card** — a Trello-style "+ Add a card" composer at the bottom of each column creates a note in the board's folder with that column's value set.
+
+The card face shows only the note's **title + description** — it deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
 
 ---
 
@@ -82,27 +92,43 @@ views:
 
 With this config, "finished" and "abandoned" stay visible as columns even when no cards have those statuses.
 
-### `order` (column property visibility)
+### `groupColors` (per-column colors)
 
 ```typescript
-order?: string[]
+groupColors?: Record<string, string>   // group key -> CSS color
 ```
 
-The list of property ids to display inside each card (passed to `CardBody`). When `order` is not set or is empty, the `order` (sort key) frontmatter field is hidden from cards — it is an internal persistence detail. When `order` is explicitly provided, all listed properties including `order` / `note.order` are shown in cards.
-
-Example showing all fields including the internal sort key:
+Overrides the color of individual columns, keyed by the group value (the same strings as in `columns`). The value is any CSS color — a hex string (`"#e5484d"`) or a CSS variable (`"var(--graph-2)"`). Columns without an entry fall back to the automatic palette (see [Column Colors](#column-colors)). Set interactively by clicking a column header's dot; persisted to the view via `POST /set-property` with a `viewIndex` (so it lands nested inside `views[N]`, not as a duplicate top-level key).
 
 ```yaml
 views:
   - type: kanban
     groupBy:
       property: note.status
-    order:
-      - note.title
-      - note.author
-      - note.status
-      - note.order
+    groupColors:
+      TODO: var(--graph-0)
+      Done: "#2ecc71"
 ```
+
+### `descriptionField` (card description property)
+
+```typescript
+descriptionField?: string   // default "description"
+```
+
+Which **frontmatter property** holds each card's editable multiline description (rendered as markdown on the card face, edited in place). A bare frontmatter name — no `note.` prefix. Defaults to `description`. The description lives in frontmatter (not the note body) so it rides along in the already-resolved row — no per-card body fetch, keeping large boards cheap.
+
+```yaml
+views:
+  - type: kanban
+    groupBy:
+      property: note.status
+    descriptionField: notes   # cards edit the `notes:` frontmatter field
+```
+
+### `order`
+
+`order` still controls within-group row **sorting** as on other views, but it no longer selects which fields appear on a kanban card — the card face is fixed to title + description (see [Card Face](#card-face)). The internal `order` sort-index key remains hidden regardless.
 
 ### Other standard `ViewConfig` fields
 
@@ -118,42 +144,28 @@ The following standard fields apply to kanban as they do to other view types. Se
 
 ---
 
-## Card Body Layout
+## Card Face
 
-Each card renders its fields using the shared `CardBody` component. The layout is compact and design-opinionated:
+Each card (`app/src/bases/KanbanCard.tsx`) shows two things:
 
-1. **Title** — the first column in `order` (or `file.name` if no columns are resolved). Rendered as a wikilink-aware title via `renderTitle`.
-2. **Author line** — the first column that is not the title and is not a status, rating, or pages column. Shown faint below the title.
-3. **Meta row** — a single row with:
-   - Left side: status word, color-coded if the value matches a known status string (see [Column Colors](#column-colors))
-   - Right side: star rating if a rating column is detected, otherwise a page count if a pages column is detected
+1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
+2. **Description** — a multiline markdown field read from the `descriptionField` frontmatter property (default `description`). Rendered as markdown when idle; tap to reveal a raw textarea. Empty descriptions show a faint "Add a description…" affordance (editable boards only).
 
-Column detection is heuristic, based on the column name:
-
-- **Status column**: detected by `isStatusColumn` — names containing "status", "state", "stage", "phase", "priority", or "category" (case-insensitive).
-- **Rating column**: detected by `isRatingColumn` — names like "rating", "score", "stars", "grade", "rank" (case-insensitive).
-- **Pages column**: detected by `isPagesColumn` — bare name is exactly `pages`, `pagecount`, or `page_count`.
-
-These heuristics run over the resolved column ids after stripping the `note.` / `file.` / `formula.` prefix.
+The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, so echoing it on the card was redundant. Boards that want richer per-card metadata should put it in the description.
 
 ---
 
 ## Column Colors
 
-Column header dots are colored by `groupColor(key)` from `app/src/ui/StatusDot.tsx`. The palette is:
+Each column's color is resolved by `colColor(key, index)` in `KanbanView.tsx`, in priority order:
 
-| Key (case-insensitive, trimmed) | CSS variable |
-|---|---|
-| `reading` | `var(--teal)` |
-| `to read` or `toread` | `var(--blue)` |
-| `finished` | `var(--green)` |
-| `done` | `var(--green)` |
-| `complete` | `var(--green)` |
-| `abandoned` | `var(--rose)` |
-| `dropped` | `var(--rose)` |
-| anything else | `var(--accent)` |
+1. **Explicit override** — `groupColors[key]` from the view config (set via the header dot's color picker).
+2. **Known-status palette** — `STATUS_COLOR[key]` from `app/src/ui/StatusDot.tsx` for semantic statuses (`reading`→teal, `done`/`finished`/`complete`→green, `abandoned`/`dropped`→rose, `to read`→blue).
+3. **Theme graph palette** — otherwise the column gets a distinct color from the active theme's `accentPalette` ramp (`--graph-0` … `--graph-4`, cycled by column index). This is the theme's designed set of distinguishable-yet-cohesive colors (a rainbow on `oxide-duotone`, a green family on a forest theme), so custom columns vary out of the box instead of all sharing one accent.
 
-The dot in the column header is colored with this resolved color. The column title text is always `var(--fg)` (not the color).
+The resolved color is applied to the column header's dot, a subtle header background tint, and the header's bottom border (all via a `--kb-col-color` CSS variable on the column). The column title text stays `var(--fg)`.
+
+**Color picker**: clicking a column header's dot opens a small popover of the five theme-palette swatches plus an **Auto** button (which clears the override back to the automatic color). Picking a swatch writes `groupColors[key]` to the view; Auto deletes the entry.
 
 ---
 
@@ -202,6 +214,41 @@ Specifically:
 
 ---
 
+## Reordering Columns
+
+Column headers are draggable (on editable boards). Dragging a header and dropping it onto another column reorders the columns; the drop position (before/after the target) is decided by the pointer's x vs the target column's horizontal midpoint. Column drag is tracked separately from card drag (`colDrag` signal vs the `draggedPath`/`dragPath` card state) so the two never interfere — while a column drag is active, the column's dragover/drop act as a reorder target instead of a card drop zone.
+
+On drop, the full current column-key order (with the dragged key moved) is persisted to the view's `columns` (`groupOrder`) via `POST /set-property` with a `viewIndex`. Any previously "extra" (undeclared) columns become declared in the process, so they persist as pinned columns.
+
+---
+
+## Editable Cards
+
+On editable boards, both fields on the card face edit in place (`KanbanCard.tsx`):
+
+- **Title → rename.** Tapping the title opens an input seeded with the current filename (text pre-selected). Enter (or blur) commits: if the name changed, the note is renamed via `POST /move` to `<same-folder>/<new-title>.md` (filename-sanitized, de-collided against sibling cards). Escape reverts.
+- **Description → frontmatter write.** Tapping the description opens an auto-growing textarea. Blur commits: a non-empty value is written to the `descriptionField` property (`POST /set-property`); an emptied description **deletes** the key (`POST /delete-property`). Escape reverts.
+
+**Tap vs drag.** Because the whole card is `draggable`, a plain `click` is unreliable (the browser's drag machinery can swallow it). Editing is therefore triggered by a pointer **tap detector**: `pointerup` within ~6px of `pointerdown` counts as a tap (edit); more movement is a drag and is left to the card's native drag-and-drop. While a field is being edited, the card's `draggable` is turned off so text selection/caret placement work normally. This also makes touch editing work on iPad.
+
+Local signal mirrors paint the committed value instantly (optimistic) and are re-seeded from the row only when the row's own values change on refetch — `mode` is read untracked so committing doesn't flash the stale pre-write value.
+
+---
+
+## Adding Cards
+
+Each column has a Trello-style composer, shown only when the board is editable **and** the `groupBy` value is writable (a `file.`/`formula.`/`this.` groupBy hides it, since a new card can't be placed in the clicked column without writing that column's value).
+
+Clicking **"+ Add a card"** reveals a textarea; typing a title and pressing Enter creates a note:
+
+- **Folder** — the folder of an existing card (all board cards share one), falling back to the base file's path minus `.md` when the board is empty.
+- **Filename** — the title, sanitized for the filesystem and de-collided against the board's notes.
+- **Frontmatter** — the `groupBy` key set to the clicked column's value. The value is copied (with its original type) from an existing card in that column when there is one, so a numeric/boolean groupBy writes a number/boolean rather than a stringified key. Plus every frontmatter field that is identical across all existing cards (e.g. a `board:` tag, or a `tags:` array the base filters on) so the new card keeps matching the base's source/filter. Serialized with `yaml.stringify` (handles arrays, numbers, quoting, newlines).
+
+After the write, `props.onChange()` refetches and the card appears in the column.
+
+---
+
 ## Within-Column Sort Order
 
 Cards within a column are sorted by the `effOrder` function:
@@ -220,16 +267,17 @@ The endpoint that kanban drag-drop writes to. From `core/src/server.ts`:
 
 ```
 POST /set-property
-Body: { path: string, key: string, value: unknown }
+Body: { path: string, key: string, value: unknown, viewIndex?: number }
 ```
 
 - `path` — vault-relative path of the note to update (e.g. `reading/the-name.md`)
 - `key` — the frontmatter key to set (e.g. `status`, `order`)
 - `value` — the new value; for status this is the column key string, for order this is a number
+- `viewIndex` (optional) — when present, the key is written **inside** `views[viewIndex]` of a `type: base` note rather than at the top level. This is how kanban persists per-view settings (`columns`, `groupColors`) so they land where the base declares its views instead of a duplicate top-level key that would shadow the nested one.
 
 Returns `"ok"` (200) or `404` if the note does not exist. The note must already exist; the endpoint refuses to silently create notes.
 
-Internally this calls `setFrontmatterKey(raw, key, value)` from `core/src/frontmatter.ts` and then `writeNote`. It goes through `mutatingHandler`, which automatically:
+Internally this calls `setFrontmatterKey(raw, key, value)` — or `setFrontmatterViewKey(raw, viewIndex, key, value)` when `viewIndex` is given — from `core/src/frontmatter.ts`, then `writeNote`. The view-scoped helper writes into `views[viewIndex][key]` when the base has a `views:` sequence, and falls back to a top-level key otherwise (matching the flat single-view persistence style). `POST /delete-property` accepts the same optional `viewIndex`. It goes through `mutatingHandler`, which automatically:
 - Invalidates the graph/tree/rows/tasks caches
 - Bumps the server `version`
 - Broadcasts an SSE event to all connected clients
@@ -289,9 +337,9 @@ views:
 
 This board will:
 - Show four pinned columns in the declared order (empty columns stay visible).
-- Color column dots using the built-in status palette.
-- Show each card with a title (serif, bold), an author line below it, and a status badge in the meta row.
-- Allow dragging any card to a different column, which writes `status` and `order` to the note's frontmatter.
+- Color column dots by the known-status palette (`to read`→blue, `reading`→teal, `finished`→green, `abandoned`→rose), overridable via the header dot's color picker.
+- Show each card as its title (the note's filename) over an editable markdown description.
+- Allow dragging any card to a different column (writes `status` + `order`), dragging column headers to reorder, editing titles/descriptions in place, and adding cards via the per-column composer.
 - Sort cards within each column alphabetically by title (from the `sort` config) until any manual drag reorder overrides the `order` field.
 
 ---
@@ -299,7 +347,9 @@ This board will:
 ## Edge Cases and Gotchas
 
 - **Empty group key**: when a note's groupBy property is missing or empty string, the card is placed in a column labeled `(empty)`. Its key is the empty string `""`.
-- **Non-writable groupBy**: using `file.folder`, `formula.x`, or `this.x` as `groupBy.property` means cross-column drags will still reorder within the target column (via `order` writes) but will NOT update the groupBy field itself. The card will visually move, but after the next data refetch it will snap back to its original column.
+- **Non-writable groupBy**: using `file.folder`, `formula.x`, or `this.x` as `groupBy.property` means cross-column drags will still reorder within the target column (via `order` writes) but will NOT update the groupBy field itself. The card will visually move, but after the next data refetch it will snap back to its original column. The **"+ Add a card" composer is hidden** for such boards (a new card couldn't be placed in the clicked column). Column reorder, colors, and card title/description editing still work.
+- **Rename mid-edit**: a title rename changes the note's path, so the refetch remounts the card (its identity genuinely changed). Editing is single-mode, so there's no open description edit to lose in the normal flow; only a description typed into the same card during the brief in-flight window of a just-committed rename would be dropped — a narrow, no-existing-data-loss race.
+- **Overwrite scope**: new-card filenames and rename targets are de-collided against the board's visible notes + this session's fresh adds, but not against a same-named note the board's *filter* hides (there's no reliable client-side disk-existence probe). For the common folder-scoped board every note is a visible row, so this doesn't arise.
 - **Concurrent edits**: kanban does sequential writes (status then order); the order write for the dragged card comes after the status write, and reindex writes for other cards run concurrently. A vault SSE event fires after each write, so the view may refetch mid-sequence. The `props.onChange()` call at the end triggers a final refetch to reconcile.
 - **`order` column hidden by default**: the `order` frontmatter key is an internal persistence detail. Unless the view config explicitly lists `order` or `note.order` in `order:`, it is filtered out of the card body display.
 - **FLIP animation requires the DOM**: the FLIP rect-snapshot + playback runs synchronously in `onColumnDragOver`/`requestAnimationFrame`. If the drag moves very fast (multiple columns per frame), only the last stable state is animated.
