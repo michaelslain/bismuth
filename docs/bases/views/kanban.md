@@ -10,7 +10,7 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
 - **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
-The card face shows only the note's **title + description** — it deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
+The card face shows the note's **title + description**, followed by a **read-only meta section** rendering the view's remaining `order:` properties (tags, dates, whatever the view lists — empties are skipped). It deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
 
 ---
 
@@ -128,7 +128,19 @@ views:
 
 ### `order`
 
-`order` still controls within-group row **sorting** as on other views, but it no longer selects which fields appear on a kanban card — the card face is fixed to title + description (see [Card Face](#card-face)). The internal `order` sort-index key remains hidden regardless.
+`order` selects which extra properties appear on each card: every id in the list **except** the title column (`file.name`) and the `descriptionField` renders in a read-only meta section below the description (see [Card Face](#card-face)). Values render through the shared cell renderer (`renderCell` in `renderValue.tsx`) — tag columns show as teal `#tags` (no label), status columns as colored-dot text, ratings as stars, everything else as a small label + value. Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
+
+```yaml
+views:
+  - type: kanban
+    groupBy:
+      property: note.status
+    order:
+      - file.name
+      - file.tags
+      - description
+      - worktree   # cards show the note's #tags and its worktree value, read-only
+```
 
 ### Other standard `ViewConfig` fields
 
@@ -146,12 +158,13 @@ The following standard fields apply to kanban as they do to other view types. Se
 
 ## Card Face
 
-Each card (`app/src/bases/KanbanCard.tsx`) shows two things:
+Each card (`app/src/bases/KanbanCard.tsx`) shows three things:
 
 1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
 2. **Description** — a multiline markdown field read from the `descriptionField` frontmatter property (default `description`). Rendered as markdown when idle; tap to reveal a raw textarea. Empty descriptions show a faint "Add a description…" affordance (editable boards only).
+3. **Meta** — the view's remaining `order:` properties (everything except the title column and the `descriptionField`), rendered **read-only** below the description via the shared `renderCell`. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`). Empty values are skipped entirely, and the section has no edit affordance — it drags with the rest of the card. Embedded ```` ```query ```` kanbans render it too.
 
-The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, so echoing it on the card was redundant. Boards that want richer per-card metadata should put it in the description.
+The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's `order:` explicitly lists appear on the card.
 
 ---
 

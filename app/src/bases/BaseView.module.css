@@ -739,6 +739,21 @@
   resize: none; overflow: hidden; outline: none;
 }
 
+/* Read-only meta section: the view's remaining `order:` properties below the description. */
+.kbMeta { display: flex; flex-direction: column; gap: 4px; margin-top: 1px; }
+.kbMetaItem {
+  display: flex; align-items: baseline; gap: 7px; min-width: 0;
+  font-size: 12px; color: var(--text-muted); line-height: 1.4; overflow-wrap: anywhere;
+}
+.kbMetaLabel {
+  flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--faint);
+}
+.kbMeta .tagRow { font-size: 11.5px; gap: 8px; }
+/* Meta links stay clickable, but must not start a native link-drag (it would cancel the
+   pointer-based card drag mid-gesture). */
+.kbMeta a { -webkit-user-drag: none; }
+
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {
   display: inline-flex; align-items: center; justify-content: center;
