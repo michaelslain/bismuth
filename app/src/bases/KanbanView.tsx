@@ -70,7 +70,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // below the description (title + description keep their dedicated editable slots).
   const metaCols = () =>
     metaColumns(
-      metaSource(props.result.view.order, props.config.declaredProperties, props.result.columns),
+      metaSource(props.result.view.order, props.config.declaredProperties, props.result.columns, groupBy()?.property),
       titleCol(),
       descField(),
     );

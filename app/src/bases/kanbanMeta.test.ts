@@ -48,7 +48,7 @@ describe("metaSource", () => {
   const columns = ["file.name", "note.status", "note.effort"];
 
   test("explicit view order always wins", () => {
-    expect(metaSource(["note.effort"], ["status", "effort"], columns)).toEqual(["note.effort"]);
+    expect(metaSource(["note.effort"], ["status", "effort"], columns, "status")).toEqual(["note.effort"]);
   });
 
   test("declared properties fall back to the engine-resolved columns", () => {
@@ -56,8 +56,14 @@ describe("metaSource", () => {
     expect(metaSource([], ["status", "effort"], columns)).toEqual(columns);
   });
 
+  test("declared fallback drops the groupBy property (the column already conveys it)", () => {
+    expect(metaSource(undefined, ["status", "effort"], columns, "status")).toEqual(["file.name", "note.effort"]);
+    // Any spelling combination of groupBy vs column id lines up.
+    expect(metaSource(undefined, ["status", "effort"], columns, "note.status")).toEqual(["file.name", "note.effort"]);
+  });
+
   test("no order + no declaration → no meta (row-frontmatter union must not leak onto cards)", () => {
-    expect(metaSource(undefined, undefined, columns)).toBeUndefined();
-    expect(metaSource(undefined, [], columns)).toBeUndefined();
+    expect(metaSource(undefined, undefined, columns, "status")).toBeUndefined();
+    expect(metaSource(undefined, [], columns, "status")).toBeUndefined();
   });
 });
