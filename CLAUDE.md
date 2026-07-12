@@ -77,7 +77,7 @@ Default ports `:4321`/`:1420` serve one instance. For more, override: `PORT=4322
 - `daemon.ts`/`daemonGraph.ts`/`daemonViz.ts` — daemon shared-state reader (never throws) + "daemon" graph builder (hub → cron/process, `supervises` edges) + pure `nodeVisualState()` (enabled/running → visual tokens). See Daemon Integration
 - `backup.ts` — git snapshot of vault. `tasks.ts`/`tasks-query.ts` — Tasks extraction + query DSL (Obsidian-compatible). `dates.ts` — date math (tasks/SRS/calendar). `calendar.ts` — headless calendar-file logic (behind the `bismuth calendar` CLI). `basesData.ts` — vault feed for Bases
 - `terminal.ts` — PTY manager (`bun-pty`); injects relay provenance + a PATH shim so a bare `claude` auto-loads the relay plugin (`buildPtyEnv`, pure + tested)
-- `chat.ts` — visual Claude chat (`/chat` WS): one long-lived Agent-SDK `query()` per chat over the user's own `claude` binary. See `docs/chat/overview.md`
+- `chat.ts` — visual Claude chat (`/chat` WS): one long-lived Agent-SDK `query()` per chat over the user's own `claude` binary. See `docs/chat/overview.md`. `chatProviders/` — the provider seam: each chat can instead run on **opencode** (`opencode run --format json` per turn, same ChatFrame protocol; router + pure event translation, `settings.chat.provider` default). See `docs/chat/providers.md`
 - `gcal/` — Google Calendar two-way sync (OAuth+PKCE, pull/push/delete, RRULE, colors). See `docs/gcal/overview.md`. `bases/`/`srs/` — see sections below
 - `fileAccess.ts`/`localBackend.ts` — mobile IO seam + in-process backend (see Mobile / iPad)
 

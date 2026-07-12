@@ -126,7 +126,8 @@ export interface Settings {
     cursorBlinkSeconds: number; // s
   };
   chat: {
-    computerUse: boolean; // --chrome capability for visual chat sessions
+    computerUse: boolean; // --chrome capability for visual chat sessions (Claude provider only)
+    provider: string;     // default provider for NEW chats: "claude" | "opencode"
   };
   srs: {
     baseEase: number;

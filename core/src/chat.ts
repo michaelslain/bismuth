@@ -92,9 +92,10 @@ export type ChatFrame =
   | { type: "session"; sessionId: string }
   /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
   | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
-  /** A fatal problem. `no-claude` = the CLI isn't installed (surface setup, never fall back to an
-   *  API); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
-  | { type: "error"; code: "no-claude" | "spawn" | "exit" | "error"; message: string };
+  /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
+   *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
+   *  see chatProviders/); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */
+  | { type: "error"; code: "no-claude" | "no-opencode" | "spawn" | "exit" | "error"; message: string };
 
 export type ChatSink = (frame: ChatFrame) => void;
 
@@ -1887,6 +1888,12 @@ export function detachSink(chatId: string): void {
 
 export function chatSessionCount(): number {
   return sessions.size;
+}
+
+/** Whether a live Claude session exists for this chatId — the chat-provider router
+ *  (core/src/chatProviders/index.ts) uses it to route verbs to the backend that owns the chat. */
+export function hasSession(chatId: string): boolean {
+  return sessions.has(chatId);
 }
 
 // Tear down every chat session (kills the spawned `claude` children) so headless runs don't outlive

@@ -28,6 +28,8 @@ import { applyReviewToRow } from "./srs/reviewRow";
 import type { ReviewResponse } from "./srs/types";
 import type { Row, SourceSpec } from "./bases/types";
 import { createTerminalSession, killSession, resizeSession, getSession, getSessionByTermId, scheduleSessionKill, cancelSessionKill, listSessionIds, claimPooledSession, attachSink, detachSink, prewarmPool, setPoolMemoryDir } from "./terminal";
+// Chat verbs route through the PROVIDER router (core/src/chatProviders/) so each chat session can
+// run on Claude Code (chat.ts) or opencode (chatProviders/opencode.ts) — same ChatFrame protocol.
 import {
   sendMessage as chatSend,
   abortTurn as chatAbort,
@@ -43,8 +45,11 @@ import {
   setEffort as chatSetEffort,
   resumeSession as chatResume,
   openSession as chatOpen,
-  listChatSessions,
   sessionHistoryFrames,
+  resolveChatProvider,
+} from "./chatProviders";
+import {
+  listChatSessions,
   searchChatSessions,
   invalidateChatVisibility,
   chatAgentSnapshot,
@@ -513,10 +518,12 @@ export function createServer(cfg: CoreConfig) {
     },
 
     // Replay one past session as ChatFrames (in order) so the client can rehydrate the transcript
-    // before binding/resuming it. Empty `id` → empty replay.
+    // before binding/resuming it. Empty `id` → empty replay. `provider=opencode` replays from the
+    // opencode store (`opencode export`) instead of the Claude Code SDK store.
     "GET /chat/session-messages": async (_, url) => {
       const id = url.searchParams.get("id");
-      return ok({ frames: id ? await sessionHistoryFrames(id, cfg.vault) : [] });
+      const provider = resolveChatProvider(url.searchParams.get("provider") ?? undefined, (appConfig.chat as Record<string, unknown> | undefined)?.provider);
+      return ok({ frames: id ? await sessionHistoryFrames(id, cfg.vault, provider) : [] });
     },
 
     // Search past sessions (terminal + in-app) by CONTENT — filters the SDK's own session data
@@ -1796,7 +1803,9 @@ export function createServer(cfg: CoreConfig) {
           //   {type:"set_permission_mode",mode}               → switch permission mode live
           //   {type:"set_model",model}                        → switch model live
           //   {type:"stop"}                                   → interrupt the in-flight turn
-          // ChatFrames stream back via the sink.
+          // ChatFrames stream back via the sink. `open`/`user`/`resume` may carry `provider`
+          // ("claude" | "opencode") — resolved against the vault's chat.provider default and
+          // routed by core/src/chatProviders; a chatId with a live session stays on its backend.
           const { chatId } = ws.data;
           const text = msg instanceof ArrayBuffer || msg instanceof Uint8Array ? dec.decode(msg) : (msg as string);
           let parsed: {
@@ -1812,6 +1821,7 @@ export function createServer(cfg: CoreConfig) {
             effort?: string;
             answers?: Record<string, unknown>;
             cancelled?: boolean;
+            provider?: string;
           };
           try {
             parsed = JSON.parse(text);
@@ -1826,12 +1836,13 @@ export function createServer(cfg: CoreConfig) {
             }
           };
           const computerUse = !!(appConfig.chat as Record<string, unknown> | undefined)?.computerUse;
+          const provider = resolveChatProvider(parsed.provider, (appConfig.chat as Record<string, unknown> | undefined)?.provider);
           if (parsed.type === "open") {
             // Chat OPEN (the ChatView just mounted / reconnected on a fresh id): spawn the session
             // eagerly so its `init` manifest + `models` frame + permission mode stream to the header
             // BEFORE the first message (BUG #14). No-op if a session already exists for this chatId
             // (a mid-turn reconnect already rebound the sink on WS open) — never spawns a duplicate.
-            chatOpen(chatId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse);
+            chatOpen(chatId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse, provider);
           } else if (parsed.type === "user" && typeof parsed.text === "string") {
             // Accept optional base64 image attachments; keep only well-formed {media_type,data}
             // pairs whose media_type is an SDK-accepted image MIME (the frontend whitelist is not the
@@ -1850,11 +1861,12 @@ export function createServer(cfg: CoreConfig) {
                     (im as { data: string }).data.length > 0,
                 )
               : [];
-            chatSend(chatId, parsed.text, cfg.vault, chatSink, images.length ? images : undefined, effectiveMemoryDir(), computerUse);
+            chatSend(chatId, parsed.text, cfg.vault, chatSink, images.length ? images : undefined, effectiveMemoryDir(), computerUse, provider);
           } else if (parsed.type === "resume" && typeof parsed.sessionId === "string") {
-            // Bind this chat socket to an existing Claude Code session — its init manifest streams
-            // back, and the next {type:"user"} continues the resumed conversation.
-            chatResume(chatId, parsed.sessionId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse);
+            // Bind this chat socket to an existing session (Claude Code or opencode, per
+            // `provider`) — its init manifest streams back, and the next {type:"user"} continues
+            // the resumed conversation.
+            chatResume(chatId, parsed.sessionId, cfg.vault, chatSink, effectiveMemoryDir(), computerUse, provider);
           } else if (
             parsed.type === "permission_response" &&
             typeof parsed.id === "string" &&

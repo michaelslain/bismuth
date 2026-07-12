@@ -34,10 +34,11 @@ import { getEditorTabs, addChatReference, getChatReferences, clearChatReferences
 import { buildEditorContextText } from "./chatEditorContext";
 import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
-import { rememberChatSession, recallChatSession } from "./chatSessionStore";
+import { rememberChatSession, recallChatSession, forgetChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
 import { resolveInitialModel } from "./chatModelResolution";
+import { CHAT_PROVIDER_OPTIONS, modelStorageKeys, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -92,17 +93,29 @@ function rememberMode(mode: string) {
 // manifest / `models` frames land — by remembering the last model used in THIS chat (per-chat
 // localStorage key). Falls back to a global key for brand-new chats that have never had a model
 // set. A transient localStorage key (like the graph's 2D/3D toggle), not a user-facing `.settings`
-// value.
-const GLOBAL_MODEL_KEY = "bismuth.chat.lastModel";
-function readLastModel(chatId?: string): string {
+// value. PROVIDER-SCOPED (chatProvider.ts modelStorageKeys): claude keeps the original keys;
+// opencode has its own namespace so a Claude model id can never seed an opencode run's `-m`.
+function readLastModel(provider: ChatProviderChoice, chatId?: string): string {
   try {
+    const keys = modelStorageKeys(provider, chatId ?? "");
     if (chatId) {
-      const perChat = localStorage.getItem(`bismuth.chat.model.${chatId}`);
+      const perChat = localStorage.getItem(keys.perChat);
       if (perChat) return perChat;
     }
-    return localStorage.getItem(GLOBAL_MODEL_KEY) ?? "";
+    return localStorage.getItem(keys.global) ?? "";
   } catch {
     return "";
+  }
+}
+
+// This chat TAB's explicit provider choice (per-tab localStorage; null = never chosen → the
+// vault's `chat.provider` setting decides). Persisted like the per-chat model.
+function readProviderChoice(chatId: string): ChatProviderChoice | null {
+  try {
+    const raw = localStorage.getItem(providerStorageKey(chatId));
+    return raw === "claude" || raw === "opencode" ? raw : null;
+  } catch {
+    return null;
   }
 }
 
@@ -398,16 +411,32 @@ export function ChatView(props: {
       /* localStorage unavailable — the in-memory signal still drives the header */
     }
   };
-  // The last model used in THIS chat (persisted per-chat) — shown in the header as a sensible
-  // default before this session's manifest/`models` frames land, so the model area is never blank
-  // (BUG #14). Falls back to the global last-model for brand-new chats.
-  const [lastModel, setLastModel] = createSignal(readLastModel(props.chatId));
+  // The provider this chat runs on (card #90): this TAB's explicit choice (per-tab localStorage),
+  // else the vault's `chat.provider` setting (reactive — a tab that never chose follows the
+  // setting until its first session spawns, which latches the choice via rememberProvider so the
+  // backend session and the header can never drift apart mid-conversation).
+  const [providerChoice, setProviderChoice] = createSignal<ChatProviderChoice | null>(readProviderChoice(props.chatId));
+  const provider = createMemo<ChatProviderChoice>(() => providerChoice() ?? sanitizeChatProvider(settings.chat.provider));
+  const rememberProvider = (p: ChatProviderChoice) => {
+    setProviderChoice(p);
+    try {
+      localStorage.setItem(providerStorageKey(props.chatId), p);
+    } catch {
+      /* localStorage unavailable — the in-memory signal still drives the header */
+    }
+  };
+  // The last model used in THIS chat (persisted per-chat, PROVIDER-scoped — see chatProvider.ts) —
+  // shown in the header as a sensible default before this session's manifest/`models` frames land,
+  // so the model area is never blank (BUG #14). Falls back to the global last-model for brand-new
+  // chats.
+  const [lastModel, setLastModel] = createSignal(readLastModel(provider(), props.chatId));
   const rememberModel = (model: string) => {
     if (!model) return;
     setLastModel(model);
     try {
-      localStorage.setItem(`bismuth.chat.model.${props.chatId}`, model);
-      localStorage.setItem(GLOBAL_MODEL_KEY, model); // global fallback for brand-new chats
+      const keys = modelStorageKeys(provider(), props.chatId);
+      localStorage.setItem(keys.perChat, model);
+      localStorage.setItem(keys.global, model); // global fallback for brand-new chats
     } catch {
       /* localStorage unavailable — the in-memory signal still updates the header */
     }
@@ -619,15 +648,18 @@ export function ChatView(props: {
           // First manifest of this session: the SDK spawned it in the user's OWN config mode, but
           // the header/app default is Bypass (permMode's seed) — or the user picked a mode before
           // the first turn. Push our desired mode down so the session matches the header (BUG #14).
+          // Claude-only: opencode has no permission modes / effort levels — its sessions run
+          // `--auto` (the same effective posture) and these controls are hidden in the header.
           modeEnforced = true;
-          if (frame.manifest.permissionMode !== permMode()) {
+          const claudeControls = providerSupportsClaudeControls(provider());
+          if (claudeControls && frame.manifest.permissionMode !== permMode()) {
             sendJson({ type: "set_permission_mode", mode: permMode() });
           }
           // Re-apply the user's persisted reasoning-effort level (FEATURE #63) to this fresh session
           // so it sticks across new/resumed chats — the wire carries no current-effort to reconcile
           // against, so we push it once here. Only when a level was actually chosen ("" leaves the
           // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
-          if (effort()) sendJson({ type: "set_effort", effort: effort() });
+          if (claudeControls && effort()) sendJson({ type: "set_effort", effort: effort() });
           // Re-apply the user's persisted per-chat model choice (Bug #89): `lastModel()` read here,
           // BEFORE anything can clobber it, and compared against the session's own spawn default.
           const modelDecision = resolveInitialModel(lastModel(), frame.manifest.model);
@@ -768,7 +800,7 @@ export function ChatView(props: {
     const q = queuedTurns();
     if (!q.length) return;
     const next = q[0];
-    if (!sendJson({ type: "user", text: next.wire, ...(next.images.length ? { images: next.images.map((a) => ({ media_type: a.mediaType, data: a.data })) } : {}) })) return;
+    if (!sendJson({ type: "user", text: next.wire, provider: provider(), ...(next.images.length ? { images: next.images.map((a) => ({ media_type: a.mediaType, data: a.data })) } : {}) })) return;
     setQueuedTurns(q.slice(1));
     setTranscript(
       produce((m) => {
@@ -808,18 +840,23 @@ export function ChatView(props: {
       // (server.ts), so an in-flight turn resumes streaming here. Safe: turn-level errors are set by
       // `result`/`error` frames that only arrive AFTER this point.
       setTurnError(null);
-      // Flush a resume that was requested while the socket wasn't open yet.
+      // Flush a resume that was requested while the socket wasn't open yet. Both resume and open
+      // carry the provider (card #90) so the backend spawns the session on the right driver; the
+      // choice is latched + persisted the moment a session actually spawns, so a later
+      // `chat.provider` settings edit can't flip this tab's header away from its live backend.
       if (pendingResume) {
         const sid = pendingResume;
         pendingResume = null;
-        sendJson({ type: "resume", sessionId: sid });
+        rememberProvider(provider());
+        sendJson({ type: "resume", sessionId: sid, provider: provider() });
       } else if (!isReconnect) {
         // A FIRST open of this chat id (mount, or a "New"/resume-cleared reconnectOn) with no resume
         // pending: eagerly spawn the backend session so its `init` manifest + `models` frame +
         // permission mode land in the header BEFORE the first message (BUG #14). Skipped on a
         // reconnect — the backend rebinds the live session's sink on WS open (or reports it ended),
         // so there's nothing to spawn — and skipped when resuming (the resume spawns the session).
-        sendJson({ type: "open" });
+        rememberProvider(provider());
+        sendJson({ type: "open", provider: provider() });
       }
       // Flush permission answers clicked while the socket was down — the backend session's
       // pending map survives the grace window, so these still resolve the parked prompts.
@@ -1063,7 +1100,7 @@ export function ChatView(props: {
     const images = atts.map((a) => ({ media_type: a.mediaType, data: a.data }));
     // Socket not open (backend down / mid-reconnect): tell the user instead of silently dropping the
     // message. The draft is preserved (setDraft("") only runs on success) so they can retry.
-    if (!sendJson({ type: "user", text: wire, ...(images.length ? { images } : {}) })) {
+    if (!sendJson({ type: "user", text: wire, provider: provider(), ...(images.length ? { images } : {}) })) {
       setTurnError("Not connected to the backend — message not sent. Reconnecting…");
       return;
     }
@@ -1185,6 +1222,28 @@ export function ChatView(props: {
     sendJson({ type: "set_effort", effort: level });
   };
 
+  /** Switch this chat's PROVIDER (card #90). A conversation can't hop drivers mid-stream, so this
+   *  behaves like "New chat" on the other provider: persist the choice for this tab, drop the
+   *  provider-scoped last-model (a Claude id must never ride an opencode `-m` and vice versa),
+   *  clear the transcript, and reconnect on a fresh chat id so the backend spawns the new driver. */
+  const switchProvider = (p: string) => {
+    const next = sanitizeChatProvider(p, provider());
+    if (next === provider()) return;
+    rememberProvider(next);
+    setModels([]); // the other provider's model list is stale — the new session re-emits its own
+    setLastModel(readLastModel(next, props.chatId));
+    // The old provider's conversation can't be resumed by the new one — forget the tab's
+    // remembered session id so a close/reopen doesn't try (and error).
+    forgetChatSession(props.chatId);
+    setHistoryOpen(false);
+    // A missing `claude` blanks the transcript with the setup screen — switching to opencode must
+    // clear it (the whole point of a second provider when Claude Code isn't installed).
+    setSetupError(false);
+    resetTranscript();
+    reconnectOn(crypto.randomUUID());
+    focusComposer();
+  };
+
   // ── Session history / new chat ──────────────────────────────────────────────────────────────
   /** Wipe the transcript + transient turn state back to the empty state (shared by New + resume). */
   const resetTranscript = () => {
@@ -1279,7 +1338,7 @@ export function ChatView(props: {
     pendingResume = sessionId; // set AFTER reconnectOn — the new socket's onopen flushes it
     let frames: ChatFrame[] = [];
     try {
-      frames = await api.chatSessionMessages(sessionId);
+      frames = await api.chatSessionMessages(sessionId, provider());
     } catch {
       frames = [];
     }
@@ -1306,7 +1365,11 @@ export function ChatView(props: {
   const slashMatches = createMemo<string[]>(() => {
     const q = slashQuery();
     if (q === null) return [];
-    const cmds = withClientSlashCommands(manifest()?.slashCommands ?? []);
+    // opencode sessions have no backend slash commands (the manifest's list is empty) and no
+    // --chrome capability — only the provider-agnostic client commands (/rename, /color) remain.
+    const cmds = withClientSlashCommands(manifest()?.slashCommands ?? []).filter(
+      (c) => providerSupportsClaudeControls(provider()) || c !== "chrome",
+    );
     return cmds.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 50);
   });
   const slashRows = createMemo<PopoverRow[]>(() =>
@@ -1588,8 +1651,9 @@ export function ChatView(props: {
     return true;
   };
   // The chat presents AS the vault's daemon when one is enabled — its identity name replaces
-  // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts).
-  const persona = () => chatPersonaName() ?? "Claude";
+  // "Chat"/"Claude" in the header, empty state, and composer (see daemonIdentity.ts). An opencode
+  // session isn't Claude — name it honestly (the daemon persona still wins when enabled).
+  const persona = () => chatPersonaName() ?? (provider() === "opencode" ? "opencode" : "Claude");
   // The title shown in the pane's toolbar header (Row 75). Same precedence the TAB uses — the
   // user-set tab name wins, else this session's backend title (chatTitle, published from `title`
   // frames), else the daemon persona / "Chat". Reactive, so a rename or a new session summary
@@ -1619,6 +1683,15 @@ export function ChatView(props: {
     >
       <ViewBar>
         <Crumb icon="MessageSquare">{headerTitle()}</Crumb>
+        {/* Provider (card #90): which CLI drives this chat — Claude Code or opencode. Persisted
+            per tab (like the model); switching starts a FRESH session on the other driver (a
+            conversation can't hop providers), so it acts like "New chat" on the new provider. */}
+        <Select
+          class="chat-provider-select"
+          value={provider()}
+          options={CHAT_PROVIDER_OPTIONS}
+          onChange={switchProvider}
+        />
         {/* Model: a LIVE, interactive picker as soon as the session reports its supported models —
             which the backend now emits EAGERLY on session spawn (core/src/chat.ts emitSupportedModels),
             so the picker is populated and switchable the instant the chat opens, BEFORE the first
@@ -1684,37 +1757,43 @@ export function ChatView(props: {
             </>
           )}
         </Show>
-        {/* Browser/computer-use (--chrome): toggle that writes to .settings so new sessions spawn
-            with the Chrome capability. The current session is unaffected (extraArgs is spawn-fixed). */}
-        <IconButton
-          icon="Globe"
-          label={settings.chat.computerUse ? "Browser (--chrome) on" : "Browser (--chrome) off"}
-          title={settings.chat.computerUse ? "--chrome enabled (new sessions)" : "Enable --chrome for browser/computer-use (new sessions)"}
-          variant={settings.chat.computerUse ? "selected" : "normal"}
-          onClick={() => setSettings("chat", "computerUse", !settings.chat.computerUse)}
-        />
-        {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
-            populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
-            updated live — the user's picks and each manifest flow through permMode(). */}
-        <Select
-          class="chat-mode-select"
-          value={permMode()}
-          options={PERMISSION_MODES}
-          onChange={setPermissionMode}
-        />
-        {/* History (resume a past Claude Code session) + New (fresh session) — always available,
-            even before the first turn's manifest. The history panel anchors to this wrapper. */}
-        <div class="chat-history-anchor">
+        {/* Claude-specific controls (card #90 graceful degradation): permission modes, --chrome,
+            and the Claude Code session-history picker have no opencode counterpart (`opencode run`
+            is non-interactive + a separate session store) — hidden rather than broken. The Effort
+            picker above hides itself (opencode models carry no effortLevels). */}
+        <Show when={providerSupportsClaudeControls(provider())}>
+          {/* Browser/computer-use (--chrome): toggle that writes to .settings so new sessions spawn
+              with the Chrome capability. The current session is unaffected (extraArgs is spawn-fixed). */}
           <IconButton
-            icon="MessagesSquare"
-            label="Past conversations"
-            variant={historyOpen() ? "selected" : "normal"}
-            onClick={openHistory}
+            icon="Globe"
+            label={settings.chat.computerUse ? "Browser (--chrome) on" : "Browser (--chrome) off"}
+            title={settings.chat.computerUse ? "--chrome enabled (new sessions)" : "Enable --chrome for browser/computer-use (new sessions)"}
+            variant={settings.chat.computerUse ? "selected" : "normal"}
+            onClick={() => setSettings("chat", "computerUse", !settings.chat.computerUse)}
           />
-          <Show when={historyOpen()}>
-            <HistoryPanel />
-          </Show>
-        </div>
+          {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
+              populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and
+              updated live — the user's picks and each manifest flow through permMode(). */}
+          <Select
+            class="chat-mode-select"
+            value={permMode()}
+            options={PERMISSION_MODES}
+            onChange={setPermissionMode}
+          />
+          {/* History (resume a past Claude Code session) — always available, even before the first
+              turn's manifest. The history panel anchors to this wrapper. */}
+          <div class="chat-history-anchor">
+            <IconButton
+              icon="MessagesSquare"
+              label="Past conversations"
+              variant={historyOpen() ? "selected" : "normal"}
+              onClick={openHistory}
+            />
+            <Show when={historyOpen()}>
+              <HistoryPanel />
+            </Show>
+          </div>
+        </Show>
         <IconButton icon="Plus" label="New chat" onClick={startNewChat} />
       </ViewBar>
 

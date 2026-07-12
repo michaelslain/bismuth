@@ -91,6 +91,15 @@
    a sliver. Scoped to the chat host so other views' crumbs are untouched. */
 .chat-host .viewbar .crumb { flex: 0 1 auto; min-width: 0; max-width: 44%; margin-right: 2px; }
 .chat-host .viewbar .crumb b { min-width: 0; }
+/* The header provider picker (card #90): Claude Code vs opencode — sits before the model area. */
+.chat-provider-select {
+  min-width: 108px;
+  /* Cap it (see .chat-mode-select) — two short fixed labels, keep the bar compact. */
+  max-width: 132px;
+  height: 28px;
+  font-size: 12px;
+  margin-left: 8px;
+}
 /* The header model picker (replaces the read-only .chat-model span once `models` arrive). */
 .chat-model-select {
   min-width: 132px;
