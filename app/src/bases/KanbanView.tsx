@@ -5,6 +5,7 @@ import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src
 import { placeholderFile } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
+import { metaColumns } from "./kanbanMeta";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
@@ -63,6 +64,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // Bound to file.name — NOT the base's first display column — so an explicit `order:` that puts
   // a property first can't turn a title-edit into a rename-to-a-property-value.
   const titleCol = () => "file.name";
+  // The view's remaining `order:` properties, shown read-only on each card below the description
+  // (title + description keep their dedicated editable slots — see metaColumns).
+  const metaCols = () => metaColumns(props.result.view.order, titleCol(), descField());
 
   // Per-column color: explicit override > known-status palette > a palette slot chosen by a stable
   // hash of the column KEY (not its position) so reordering columns never recolors them.
@@ -681,6 +685,8 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                     row={r()}
                                     titleCol={titleCol()}
                                     descField={descField()}
+                                    metaCols={metaCols()}
+                                    config={props.config}
                                     editable={editable()}
                                     onEditingChange={setEditing}
                                     onRename={(t) => void renameCard(r(), t)}

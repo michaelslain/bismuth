@@ -1,7 +1,10 @@
-import { createSignal, createEffect, untrack, Show } from "solid-js";
-import type { Row } from "../../../core/src/bases/types";
+import { createSignal, createEffect, untrack, For, Show } from "solid-js";
+import type { Row, BaseConfig } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { renderMarkdown } from "./markdown";
+import { renderCell, isTagColumn } from "./renderValue";
+import { columnLabel } from "./columnLabel";
+import { hasValue } from "./kanbanMeta";
 import styles from "./BaseView.module.css";
 
 /** Plain-string title for a card (the display/first column value, falling back to the filename). */
@@ -25,11 +28,17 @@ function descOf(row: Row, descField: string): string {
  *
  * The description lives in frontmatter (default `description`), so it rides along in the
  * already-resolved Row — no per-card body fetch, keeping large boards cheap.
+ *
+ * Below the description, the view's remaining `order:` properties (`metaCols`) render as a
+ * READ-ONLY meta section — plain spans (no inputs/buttons), so the card stays draggable and
+ * the meta never competes with the tap-to-edit title/description.
  */
 export function KanbanCard(props: {
   row: Row;
   titleCol: string;
   descField: string;
+  metaCols: string[];
+  config: BaseConfig;
   editable: boolean;
   onEditingChange: (editing: boolean) => void;
   onRename: (newTitle: string) => void;
@@ -47,6 +56,9 @@ export function KanbanCard(props: {
     const d = descOf(props.row, props.descField);
     if (untrack(mode) === "none") { setTitle(t); setDesc(d); }
   });
+
+  // Meta columns that actually have a value on THIS row — empties render nothing at all.
+  const visibleMeta = () => props.metaCols.filter((id) => hasValue(resolveProperty(id, props.row)));
 
   const enter = (m: "title" | "desc") => {
     if (!props.editable) return;
@@ -142,6 +154,24 @@ export function KanbanCard(props: {
             if (e.key === "Escape") { setDesc(descOf(props.row, props.descField)); e.currentTarget.blur(); }
           }}
         />
+      </Show>
+
+      <Show when={visibleMeta().length > 0}>
+        {/* Suppress native anchor drag on meta links — it would hijack the card's pointer-drag
+            (a native link-drag fires pointercancel, tearing the card drag down mid-gesture). */}
+        <div class={styles.kbMeta} onDragStart={(e) => e.preventDefault()}>
+          <For each={visibleMeta()}>
+            {(id) => (
+              <div class={styles.kbMetaItem}>
+                {/* #tags are self-describing — skip the label for tag columns. */}
+                <Show when={!isTagColumn(id)}>
+                  <span class={styles.kbMetaLabel}>{columnLabel(id, props.config)}</span>
+                </Show>
+                {renderCell(id, props.row)}
+              </div>
+            )}
+          </For>
+        </div>
       </Show>
     </>
   );
