@@ -6,11 +6,11 @@ Each card is a note. On a board backed by a real base file (`props.basePath` set
 
 - **Drag cards** between/within columns — writes the new group value + a within-column sort index to the note's frontmatter (`POST /set-property`).
 - **Drag column headers** to reorder columns — persists the new order to the view's `columns` (`groupOrder`).
-- **Edit a card in place** — tap its title to rename the note; tap its description to edit a multiline `description` frontmatter property (rendered as markdown).
+- **Edit a card in place** — tap its title to rename the note; on boards whose config lists a description property, tap its description to edit that multiline frontmatter property (rendered as markdown).
 - **Recolor a column** — click its header dot to pick a color from the theme palette; persists to the view's `groupColors`.
 - **Add a card** — a compact "+" button (Lucide `Plus`) at the bottom of each column opens a composer that creates a note in the board's folder with that column's value set.
 
-The card face shows the note's **title + description**, followed by a **read-only meta section** rendering the view's remaining `order:` properties (tags, dates, whatever the view lists — empties are skipped). It deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
+The card face shows the note's **title**, then exactly the properties the view's `order:` lists: an **editable description slot** when the list (or an explicit `descriptionField:`) includes a description property, and a **read-only meta section** for the rest (tags, dates, whatever the view lists — empties are skipped). Description is NOT built-in — a board that never mentions one has no description slot at all. The card deliberately does NOT echo the `groupBy` value, since the column the card sits in already represents it.
 
 ---
 
@@ -113,10 +113,14 @@ views:
 ### `descriptionField` (card description property)
 
 ```typescript
-descriptionField?: string   // default "description"
+descriptionField?: string   // no default — the description slot is opt-in
 ```
 
-Which **frontmatter property** holds each card's editable multiline description (rendered as markdown on the card face, edited in place). A bare frontmatter name — no `note.` prefix. Defaults to `description`. The description lives in frontmatter (not the note body) so it rides along in the already-resolved row — no per-card body fetch, keeping large boards cheap.
+Which **frontmatter property** holds each card's editable multiline description (rendered as markdown on the card face, edited in place). A bare frontmatter name — no `note.` prefix.
+
+**The description slot is opt-in, not built-in.** It appears only when the view's config lists a description property — either an explicit `descriptionField:`, or `description` (bare or `note.description`) in the view's `order:` list. A board that never mentions one renders no slot, no "Add a description…" affordance, and its add-card composer writes no description key. Removing the id from the config removes the slot from every card.
+
+When configured, the description lives in frontmatter (not the note body) so it rides along in the already-resolved row — no per-card body fetch, keeping large boards cheap.
 
 ```yaml
 views:
@@ -128,7 +132,7 @@ views:
 
 ### `order`
 
-`order` selects which extra properties appear on each card: every id in the list **except** the title column (`file.name`) and the `descriptionField` renders in a read-only meta section below the description (see [Card Face](#card-face)). Values render through the shared cell renderer (`renderCell` in `renderValue.tsx`) — tag columns show as teal `#tags` (no label), status columns as colored-dot text, ratings as stars, everything else as a small label + value. Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
+`order` selects which extra properties appear on each card. Listing `description` (or `note.description`) gives the card its editable description slot; every other id in the list **except** the title column (`file.name`) renders in a read-only meta section (see [Card Face](#card-face)). Values render through the shared cell renderer (`renderCell` in `renderValue.tsx`) — tag columns show as teal `#tags` (no label), status columns as colored-dot text, ratings as stars, everything else as a small label + value. Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
 
 ```yaml
 views:
@@ -158,13 +162,13 @@ The following standard fields apply to kanban as they do to other view types. Se
 
 ## Card Face
 
-Each card (`app/src/bases/KanbanCard.tsx`) shows three things:
+Each card (`app/src/bases/KanbanCard.tsx`) shows:
 
 1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
-2. **Description** — a multiline markdown field read from the `descriptionField` frontmatter property (default `description`). Rendered as markdown when idle; tap to reveal a raw textarea. Empty descriptions show a faint "Add a description…" affordance (editable boards only).
-3. **Meta** — the view's remaining `order:` properties (everything except the title column and the `descriptionField`), rendered **read-only** below the description via the shared `renderCell`. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`). Empty values are skipped entirely, and the section has no edit affordance — it drags with the rest of the card. Embedded ```` ```query ```` kanbans render it too.
+2. **Description** (only when the view opts in — see [`descriptionField`](#descriptionfield-card-description-property)) — a multiline markdown field read from the configured frontmatter property. Rendered as markdown when idle; tap to reveal a raw textarea. Empty descriptions show a faint "Add a description…" affordance (editable boards only). Boards whose config lists no description property render nothing here — no slot, no affordance.
+3. **Meta** — the view's remaining `order:` properties (everything except the title column and the configured description field, when there is one), rendered **read-only** via the shared `renderCell`. Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`). Empty values are skipped entirely, and the section has no edit affordance — it drags with the rest of the card. Embedded ```` ```query ```` kanbans render it too.
 
-The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's `order:` explicitly lists appear on the card.
+The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's config explicitly lists appear on the card.
 
 ---
 
@@ -239,10 +243,10 @@ On drop, the full current column-key order (with the dragged key moved) is persi
 
 ## Editable Cards
 
-On editable boards, both fields on the card face edit in place (`KanbanCard.tsx`):
+On editable boards, the card face edits in place (`KanbanCard.tsx`):
 
 - **Title → rename.** Tapping the title opens an input seeded with the current filename (text pre-selected). Enter (or blur) commits: if the name changed, the note is renamed via `POST /move` to `<same-folder>/<new-title>.md` (filename-sanitized, de-collided against sibling cards). Escape reverts.
-- **Description → frontmatter write.** Tapping the description opens an auto-growing textarea. Blur commits: a non-empty value is written to the `descriptionField` property (`POST /set-property`); an emptied description **deletes** the key (`POST /delete-property`). Escape reverts.
+- **Description → frontmatter write** (only on boards whose config lists a description property). Tapping the description opens an auto-growing textarea. Blur commits: a non-empty value is written to the configured property (`POST /set-property`); an emptied description **deletes** the key (`POST /delete-property`). Escape reverts.
 
 **Tap vs drag.** Because the whole card is `draggable`, a plain `click` is unreliable (the browser's drag machinery can swallow it). Editing is therefore triggered by a pointer **tap detector**: `pointerup` within ~6px of `pointerdown` counts as a tap (edit); more movement is a drag and is left to the card's native drag-and-drop. While a field is being edited, the card's `draggable` is turned off so text selection/caret placement work normally. This also makes touch editing work on iPad.
 
@@ -343,7 +347,7 @@ views:
     order:
       - note.title
       - note.author
-      - note.status
+      - description
     sort:
       - property: note.title
         direction: ASC
@@ -353,7 +357,7 @@ views:
 This board will:
 - Show four pinned columns in the declared order (empty columns stay visible).
 - Color column dots by the known-status palette (`to read`→blue, `reading`→teal, `finished`→green, `abandoned`→rose), overridable via the header dot's color picker.
-- Show each card as its title (the note's filename) over an editable markdown description.
+- Show each card as its title (the note's filename) over an editable markdown description (because `description` is listed in `order:` — drop it from the list and the slot disappears), with `note.title` and `note.author` as read-only meta below.
 - Allow dragging any card to a different column (writes `status` + `order`), dragging column headers to reorder, editing titles/descriptions in place, and adding cards via the per-column composer.
 - Sort cards within each column alphabetically by title (from the `sort` config) until any manual drag reorder overrides the `order` field.
 

@@ -1,5 +1,45 @@
 import { describe, expect, test } from "bun:test";
-import { metaColumns, hasValue } from "./kanbanMeta";
+import { descriptionField, metaColumns, hasValue } from "./kanbanMeta";
+
+describe("descriptionField", () => {
+  test("no order, no explicit field → null (description is NOT built-in)", () => {
+    expect(descriptionField(undefined, undefined)).toBe(null);
+  });
+
+  test("order without a description id → null", () => {
+    expect(descriptionField(["file.name", "file.tags", "priority"], undefined)).toBe(null);
+  });
+
+  test("empty order → null", () => {
+    expect(descriptionField([], undefined)).toBe(null);
+  });
+
+  test("`description` listed in order opts in (bare spelling)", () => {
+    expect(descriptionField(["file.name", "description"], undefined)).toBe("description");
+  });
+
+  test("`note.description` listed in order opts in, resolving to the bare key", () => {
+    expect(descriptionField(["note.description"], undefined)).toBe("description");
+  });
+
+  test("an explicit descriptionField opts in even without an order", () => {
+    expect(descriptionField(undefined, "notes")).toBe("notes");
+  });
+
+  test("an explicit descriptionField wins over a literal `description` in order", () => {
+    expect(descriptionField(["description"], "notes")).toBe("notes");
+  });
+
+  test("a blank explicit descriptionField counts as unset", () => {
+    expect(descriptionField(undefined, "")).toBe(null);
+    expect(descriptionField(undefined, "  ")).toBe(null);
+    expect(descriptionField(["description"], "")).toBe("description");
+  });
+
+  test("a property merely NAMED description on another namespace does not opt in", () => {
+    expect(descriptionField(["formula.description", "file.description"], undefined)).toBe(null);
+  });
+});
 
 describe("metaColumns", () => {
   test("drops the title column and the description field", () => {
@@ -17,8 +57,14 @@ describe("metaColumns", () => {
       .toEqual(["description"]);
   });
 
+  test("null descField → nothing description-shaped is skipped (only the title)", () => {
+    expect(metaColumns(["file.name", "priority", "note.due"], "file.name", null))
+      .toEqual(["priority", "note.due"]);
+  });
+
   test("no order → no meta", () => {
     expect(metaColumns(undefined, "file.name", "description")).toEqual([]);
+    expect(metaColumns(undefined, "file.name", null)).toEqual([]);
   });
 });
 
