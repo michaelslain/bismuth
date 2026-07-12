@@ -1,6 +1,6 @@
 import { parse as parseYaml } from "yaml";
-import type { BaseConfig, ViewConfig, SortSpec, ParsedBase } from "./types";
-import { isValidType } from "./types";
+import type { BaseConfig, ViewConfig, SortSpec, ParsedBase, BasePropertyDef, PropertyType } from "./types";
+import { isValidType, PROPERTY_TYPES } from "./types";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
@@ -87,6 +87,63 @@ function normalizeGroupColors(raw: unknown): Record<string, string> | undefined 
     if (typeof v === "string" && v.trim() !== "") out[k] = v.trim();
   }
   return Object.keys(out).length ? out : undefined;
+}
+
+// One property definition's optional fields, shared by both `properties:` forms.
+// `type` must be a known PropertyType (unknowns drop to undefined, like other enums);
+// `default` keeps any non-null value (false/0/"" are real defaults).
+function normalizePropertyDef(raw: unknown): BasePropertyDef {
+  const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return {
+    displayName: typeof o.displayName === "string" ? o.displayName : undefined,
+    hidden: o.hidden === true ? true : undefined,
+    type: PROPERTY_TYPES.includes(o.type as PropertyType) ? (o.type as PropertyType) : undefined,
+    default: o.default !== undefined && o.default !== null ? o.default : undefined,
+  };
+}
+
+/**
+ * Normalize the `properties:` key. Two forms:
+ *  • MAP (classic) — `Record<name, {displayName?, hidden?, type?, default?}>`: per-property
+ *    metadata over the auto-derived property set. `declaredProperties` stays undefined.
+ *  • LIST (per-base declaration) — each entry a bare name string or `{name, type?, default?,
+ *    displayName?, hidden?}`. The list DECLARES the base's own property set:
+ *    `declaredProperties` carries the names in declaration order (deduped, first wins;
+ *    entries without a usable name are skipped).
+ */
+function normalizeProperties(raw: unknown): Pick<BaseConfig, "properties" | "declaredProperties"> {
+  if (Array.isArray(raw)) {
+    const properties: Record<string, BasePropertyDef> = {};
+    const declared: string[] = [];
+    for (const item of raw) {
+      let name: string;
+      let def: BasePropertyDef;
+      if (typeof item === "string") {
+        name = item.trim();
+        def = {};
+      } else if (item && typeof item === "object") {
+        const o = item as Record<string, unknown>;
+        if (typeof o.name !== "string" || o.name.trim() === "") continue;
+        name = o.name.trim();
+        def = normalizePropertyDef(o);
+      } else {
+        continue;
+      }
+      if (!name || name in properties) continue;
+      properties[name] = def;
+      declared.push(name);
+    }
+    if (declared.length === 0) return {};
+    return { properties, declaredProperties: declared };
+  }
+  if (raw && typeof raw === "object") {
+    return {
+      properties: Object.fromEntries(
+        Object.entries(raw as Record<string, unknown>).map(([k, v]) => [k, normalizePropertyDef(v)]),
+      ),
+    };
+  }
+  return {};
 }
 
 function normalizeView(raw: unknown): ViewConfig {
@@ -176,20 +233,7 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
   const topColors = normalizeGroupColors(o.groupColors);
   if (topColors && !views[0].groupColors) views[0].groupColors = topColors;
 
-  const properties = o.properties && typeof o.properties === "object"
-    ? Object.fromEntries(
-        Object.entries(o.properties as Record<string, unknown>).map(([k, v]) => {
-          const pv = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-          return [
-            k,
-            {
-              displayName: typeof pv.displayName === "string" ? pv.displayName : undefined,
-              hidden: pv.hidden === true ? true : undefined,
-            } as Record<string, unknown>,
-          ];
-        }),
-      )
-    : undefined;
+  const { properties, declaredProperties } = normalizeProperties(o.properties);
 
   const formulas =
     o.formulas && typeof o.formulas === "object"
@@ -200,6 +244,7 @@ function parseBaseObject(o: Record<string, unknown>): BaseConfig {
     filters: o.filters as BaseConfig["filters"],
     formulas,
     properties,
+    declaredProperties,
     views,
     source: normalizeSource(o.source, o),
     schema: o.schema as BaseConfig["schema"],

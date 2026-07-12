@@ -102,7 +102,8 @@ The frontmatter parses to `BaseConfig` (`core/src/bases/types.ts`) via `parseBas
 interface BaseConfig {
   filters?: FilterNode;                    // global, ANDed with each view's filters
   formulas?: Record<string, string>;       // name -> expression string
-  properties?: Record<string, { displayName?: string; hidden?: boolean }>;
+  properties?: Record<string, BasePropertyDef>;  // { displayName?, hidden?, type?, default? }
+  declaredProperties?: string[];           // set ONLY by the list-form `properties:` (see properties doc)
   views: ViewConfig[];                     // always present after parse (>=1)
   source?: SourceSpec;                     // base-level default source for all views
   schema?: Record<string, string>;         // column -> type
@@ -141,14 +142,17 @@ formulas:
 
 This defines a `formula.ppu` property. See [expressions doc](./query-syntax.md) for the formula language.
 
-### `properties` — per-property metadata
+### `properties` — per-property metadata / per-base declaration
 
-`Record<string, { displayName?: string; hidden?: boolean }>`. Keyed by property id.
+Two forms — full detail in the [per-base properties doc](./properties.md):
+
+**Map form** (metadata over auto-derived properties): `Record<string, BasePropertyDef>` keyed by property id.
 
 - `displayName` — a custom header label for the column (a string; otherwise undefined).
 - `hidden: true` — omits the property from **auto-derived** columns (the default columns of table/cards/list/kanban). A view's explicit `order: [...]` still wins (that's the per-view opt-in).
+- `type` / `default` — tolerated as metadata (`type` limited to the `PROPERTY_TYPES` vocabulary).
 
-Normalization (`parseBaseObject`): only `hidden === true` is kept as `true`; anything else (missing / `false` / non-bool) is normalized to `undefined`. `displayName` is kept only if it's a string.
+Normalization (`normalizePropertyDef`): only `hidden === true` is kept as `true`; anything else (missing / `false` / non-bool) is normalized to `undefined`. `displayName` is kept only if it's a string.
 
 ```yaml
 properties:
@@ -156,6 +160,16 @@ properties:
     displayName: Status
   order:
     hidden: true
+```
+
+**List form** (the base declares its OWN property set): each entry a bare name or `{name, type?, default?, displayName?, hidden?}`. Sets `BaseConfig.declaredProperties` (names in order); views without an explicit `order:` then show exactly the declared properties instead of unioning row frontmatter, and kanban's add-card seeds each declared `default`. Bases that read existing pages simply don't declare — they keep reflecting the notes' own frontmatter.
+
+```yaml
+properties:
+  - status
+  - name: priority
+    type: number
+    default: 1
 ```
 
 ### `views` — the views array
@@ -454,6 +468,7 @@ This base has two views (Table + Cards), a notes source scoped to `#book`, a glo
 - **A base with body rows but no explicit source renders its OWN rows** (`{ kind: "base" }`), not vault notes.
 - **Unquoted `[[X]]` in `from`/`ref`** parses as a YAML nested array; it's reconstructed back to a string, but quoting (`from: "[[X]]"`) is safer.
 - **`properties.<x>.hidden` only hides from auto-derived columns** — an explicit view `order` listing that property still shows it.
+- **`properties:` written as a LIST declares the base's own property set** (columns come from the declaration, not the rows — see [properties doc](./properties.md)); the MAP form stays metadata-only.
 - **Malformed YAML is tolerant**: `parseBase` returns a safe empty base (`{ views: [{ type: "table", name: "Table" }] }`) rather than throwing.
 - **Enum fields reject unknowns** (cardContent, imageFit, aggregate, bin, view type) — they fall back to undefined / `"table"`, never the raw bad value.
 - **Full-pane views (calendar/flashcards) ignore `runView`** — column/sort/summary config from the table pipeline doesn't apply to them; they use their own field bindings.

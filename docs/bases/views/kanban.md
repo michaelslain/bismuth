@@ -130,6 +130,8 @@ views:
 
 `order` selects which extra properties appear on each card: every id in the list **except** the title column (`file.name`) and the `descriptionField` renders in a read-only meta section below the description (see [Card Face](#card-face)). Values render through the shared cell renderer (`renderCell` in `renderValue.tsx`) — tag columns show as teal `#tags` (no label), status columns as colored-dot text, ratings as stars, everything else as a small label + value. Properties that are empty on a given note render nothing on that card (no `—` placeholder). The internal `order` sort-index key remains hidden unless explicitly listed.
 
+Without an `order:`, a base that **declares its own properties** (list-form `properties:` — see the [properties doc](../properties.md)) shows the declared set as the card meta instead (same title/description/empties exclusions), and its add-card composer seeds each declared `default` onto the new note. A base with neither `order:` nor a declaration shows no meta, as before.
+
 ```yaml
 views:
   - type: kanban

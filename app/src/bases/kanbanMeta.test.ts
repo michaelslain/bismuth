@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { metaColumns, hasValue } from "./kanbanMeta";
+import { metaColumns, metaSource, hasValue } from "./kanbanMeta";
 
 describe("metaColumns", () => {
   test("drops the title column and the description field", () => {
@@ -41,5 +41,23 @@ describe("hasValue", () => {
   test("0 and dates count as values", () => {
     expect(hasValue(0)).toBe(true);
     expect(hasValue(new Date(0))).toBe(true);
+  });
+});
+
+describe("metaSource", () => {
+  const columns = ["file.name", "note.status", "note.effort"];
+
+  test("explicit view order always wins", () => {
+    expect(metaSource(["note.effort"], ["status", "effort"], columns)).toEqual(["note.effort"]);
+  });
+
+  test("declared properties fall back to the engine-resolved columns", () => {
+    expect(metaSource(undefined, ["status", "effort"], columns)).toEqual(columns);
+    expect(metaSource([], ["status", "effort"], columns)).toEqual(columns);
+  });
+
+  test("no order + no declaration → no meta (row-frontmatter union must not leak onto cards)", () => {
+    expect(metaSource(undefined, undefined, columns)).toBeUndefined();
+    expect(metaSource(undefined, [], columns)).toBeUndefined();
   });
 });
