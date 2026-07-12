@@ -17,6 +17,7 @@ import {
   chatSnippet,
   matchChatSession,
   stripEditorContext,
+  sessionModelFromMessages,
   makeUserMessage,
   abortTurn,
   extractEditorContextPaths,
@@ -75,6 +76,59 @@ describe("extractEditorContextPaths (captureToMemory's visibility gate)", () => 
 // The visual chat prepends a `<editor-context>…</editor-context>` preamble to the WIRE message
 // (grounding context for Claude, never user prose). On history REPLAY the bubble is rebuilt from the
 // SDK-persisted content, so the preamble must be stripped there or it leaks into the rendered bubble.
+// Bug #89: sessionModelFromMessages recovers the model a session was last set to from the CLI's
+// OWN transcript /model records (the fixed record shape Query.setModel() writes — verified live
+// against CLI 2.1.x), so a resumed conversation that predates chatModelStore.ts still reports its
+// own model. Pure, no `claude` needed.
+describe("sessionModelFromMessages (Bug #89: recover a resumed session's model)", () => {
+  const modelRecord = (args: string) => ({
+    type: "user",
+    message: {
+      role: "user",
+      content: `<command-name>/model</command-name>\n            <command-message>model</command-message>\n            <command-args>${args}</command-args>`,
+    },
+  });
+
+  test("finds the model from a /model record (the live record shape)", () => {
+    expect(sessionModelFromMessages([modelRecord("haiku")])).toBe("haiku");
+    expect(sessionModelFromMessages([modelRecord("claude-opus-4-8[1m]")])).toBe("claude-opus-4-8[1m]");
+  });
+
+  test("the NEWEST record wins when the model changed mid-session", () => {
+    const messages = [
+      modelRecord("haiku"),
+      { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } },
+      modelRecord("opus[1m]"),
+      { type: "user", message: { role: "user", content: "a normal message" } },
+    ];
+    expect(sessionModelFromMessages(messages)).toBe("opus[1m]");
+  });
+
+  test("null when the session never had a /model record", () => {
+    expect(sessionModelFromMessages([])).toBeNull();
+    expect(
+      sessionModelFromMessages([
+        { type: "user", message: { role: "user", content: "hello" } },
+        { type: "assistant", message: { content: [{ type: "text", text: "hi" }] } },
+      ]),
+    ).toBeNull();
+  });
+
+  test("an empty-args newest record yields null (no usable info), not the older record", () => {
+    expect(sessionModelFromMessages([modelRecord("haiku"), modelRecord("  ")])).toBeNull();
+  });
+
+  test("tolerates malformed/blocky messages", () => {
+    expect(
+      sessionModelFromMessages([
+        {},
+        { type: "user" },
+        { type: "user", message: { content: [{ type: "text", text: "<command-name>/model</command-name>" }] } },
+      ]),
+    ).toBeNull();
+  });
+});
+
 describe("stripEditorContext (chat history replay)", () => {
   test("strips a leading editor-context preamble, leaving only the typed text", () => {
     const wire = "<editor-context>\nActive file: Project.md\nOpen tabs: Project.md\n</editor-context>\n\nsummarize this";

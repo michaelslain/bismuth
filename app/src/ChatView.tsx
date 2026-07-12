@@ -37,7 +37,7 @@ import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitle
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
-import { resolveInitialModel } from "./chatModelResolution";
+import { resolveInitialModel, reconcileManifestModel, modelOptionFor, modelLabelFor } from "./chatModelResolution";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -400,14 +400,21 @@ export function ChatView(props: {
   };
   // The last model used in THIS chat (persisted per-chat) — shown in the header as a sensible
   // default before this session's manifest/`models` frames land, so the model area is never blank
-  // (BUG #14). Falls back to the global last-model for brand-new chats.
+  // (BUG #14). Falls back to the global last-model for brand-new chats. NOTE this is only the
+  // display warm-up + the default applied to FRESH sessions — a RESUMED conversation's model comes
+  // from the session itself (the server's per-session store + the CLI's own restore, Bug #89) and
+  // is adopted into these keys, never overridden by them.
   const [lastModel, setLastModel] = createSignal(readLastModel(props.chatId));
-  const rememberModel = (model: string) => {
+  // `global: false` (adoptions — a resumed session's own model, live drift after a /model command)
+  // updates only THIS tab's key: what the tab currently shows. `global: true` (the user's explicit
+  // picks + a fresh session's adopted default) also updates the global fallback brand-new chats
+  // seed from.
+  const rememberModel = (model: string, opts?: { global?: boolean }) => {
     if (!model) return;
     setLastModel(model);
     try {
       localStorage.setItem(`bismuth.chat.model.${props.chatId}`, model);
-      localStorage.setItem(GLOBAL_MODEL_KEY, model); // global fallback for brand-new chats
+      if (opts?.global !== false) localStorage.setItem(GLOBAL_MODEL_KEY, model);
     } catch {
       /* localStorage unavailable — the in-memory signal still updates the header */
     }
@@ -526,6 +533,12 @@ export function ChatView(props: {
   // A resume requested before the socket was OPEN — flushed on the next onopen so a picked session
   // still binds even if the WS was momentarily connecting/reconnecting.
   let pendingResume: string | null = null;
+  // True while the CURRENT session binding is a RESUME of an existing conversation (tab reopen,
+  // history pick) rather than a fresh spawn. Read at the session's first manifest (Bug #89): a
+  // resumed conversation OWNS its model — the manifest's model is the session's own saved choice
+  // (server per-session store / the CLI's own restore) and must be ADOPTED, never overridden by
+  // the tab/global fallback the way a fresh session's spawn default is.
+  let resumedSession = false;
   // Permission answers that couldn't be delivered (socket down mid-reconnect) — flushed on the
   // next onopen. An ARRAY: parallel tool calls can raise several concurrent prompts, and the
   // backend's pending map survives the ≤30s grace window, so a flushed answer still resolves the
@@ -609,12 +622,14 @@ export function ChatView(props: {
     switch (frame.type) {
       case "manifest": {
         setManifest(frame.manifest);
-        // BUG #89 ("chat not saving model per session"): the old code called
-        // `rememberModel(frame.manifest.model)` HERE, unconditionally, before checking what the user
-        // had actually picked — clobbering the very `lastModel` signal the reapply step below reads,
-        // so it always just re-sent the manifest's own default back to itself (a no-op) and the
-        // user's real choice was silently discarded on every open. Fixed by resolving BEFORE any
-        // rememberModel call — see chatModelResolution.ts for the extracted, unit-tested rule.
+        // BUG #89 ("chat not saving model per session") — the model rules live in
+        // chatModelResolution.ts (pure, unit-tested). Two historical clobbers are guarded here:
+        //  (1) the old code persisted `frame.manifest.model` BEFORE reading the user's choice, so
+        //      the reapply step always compared the choice against itself and no-op'd;
+        //  (2) the manifest reports the FULLY-RESOLVED model id ("claude-opus-4-8[1m]") while the
+        //      picker/persisted values are ALIASES ("opus[1m]") — the old blind `rememberModel`
+        //      on later manifests overwrote the alias with the full id on the first turn of EVERY
+        //      chat, deselecting the picker and corrupting the persisted choice.
         if (!modeEnforced) {
           // First manifest of this session: the SDK spawned it in the user's OWN config mode, but
           // the header/app default is Bypass (permMode's seed) — or the user picked a mode before
@@ -628,9 +643,14 @@ export function ChatView(props: {
           // against, so we push it once here. Only when a level was actually chosen ("" leaves the
           // model default). applyFlagSettings server-side no-ops a level the model doesn't support.
           if (effort()) sendJson({ type: "set_effort", effort: effort() });
-          // Re-apply the user's persisted per-chat model choice (Bug #89): `lastModel()` read here,
-          // BEFORE anything can clobber it, and compared against the session's own spawn default.
-          const modelDecision = resolveInitialModel(lastModel(), frame.manifest.model);
+          // Model precedence (Bug #89): a RESUMED conversation owns its model — the manifest
+          // reports the session's own saved choice (server per-session store; the CLI restores it
+          // too), so ADOPT it into this tab's key. A FRESH session instead inherits the user's
+          // persisted choice: enforce it over the spawn default (namespace-tolerant comparison, so
+          // an alias choice is never "enforced" against its own resolved id).
+          const wasResume = resumedSession;
+          resumedSession = false; // consumed — later manifests reconcile instead
+          const modelDecision = resolveInitialModel(lastModel(), frame.manifest.model, wasResume);
           if (modelDecision && "enforce" in modelDecision) {
             sendJson({ type: "set_model", model: modelDecision.enforce });
             // setModel never triggers another manifest frame from the backend (core/src/chat.ts's
@@ -639,9 +659,12 @@ export function ChatView(props: {
             // immediately instead of the spawn default we just overrode.
             setManifest({ ...frame.manifest, model: modelDecision.enforce });
           } else if (modelDecision && "adopt" in modelDecision) {
-            // No persisted choice for this chat yet — adopt the session's own default as the
-            // fallback for next time.
-            rememberModel(modelDecision.adopt);
+            // The session's own model (resume), or its default (fresh chat with no persisted
+            // choice) — adopt it, mapped into picker-space when the models frame already landed.
+            // Only a FRESH adoption seeds the global fallback; a resume is this session's own
+            // business, not a new machine-wide default.
+            const adopted = modelOptionFor(modelDecision.adopt, models()) ?? modelDecision.adopt;
+            rememberModel(adopted, { global: !wasResume });
           }
         } else {
           // Later manifests: DON'T blindly trust the reported mode (FEATURE #35). A mid-session
@@ -651,9 +674,12 @@ export function ChatView(props: {
           const decision = reconcilePermissionMode(permMode(), frame.manifest.permissionMode);
           if (decision && "adopt" in decision) setPermMode(decision.adopt);
           else if (decision && "enforce" in decision) sendJson({ type: "set_permission_mode", mode: decision.enforce });
-          // Keep the persisted per-chat model fallback in sync with any live drift after the
-          // session's first manifest (e.g. a mid-session respawn reporting a changed model).
-          rememberModel(frame.manifest.model);
+          // Model reconcile (Bug #89): a manifest that reports the RESOLVED form of the model we
+          // already chose is not a change — keep the user's persisted alias. Only a genuinely
+          // different model (a composer /model command, a respawn decision) is adopted, per-tab
+          // only, mapped into picker-space so the header selection stays meaningful.
+          const modelDrift = reconcileManifestModel(lastModel(), frame.manifest.model, models());
+          if (modelDrift) rememberModel(modelDrift.adopt, { global: false });
         }
         break;
       }
@@ -1245,6 +1271,7 @@ export function ChatView(props: {
   const startNewChat = () => {
     setHistoryOpen(false);
     resetTranscript();
+    resumedSession = false; // a fresh session — its first manifest takes the fresh-spawn model rules
     reconnectOn(crypto.randomUUID());
     focusComposer();
   };
@@ -1277,6 +1304,9 @@ export function ChatView(props: {
     resetTranscript();
     reconnectOn(activeChatId()); // clears any stale pendingResume/pendingPermissions itself
     pendingResume = sessionId; // set AFTER reconnectOn — the new socket's onopen flushes it
+    // This binding RESUMES an existing conversation (Bug #89): its first manifest carries the
+    // session's OWN saved model, which is adopted — never overridden by the tab/global fallback.
+    resumedSession = true;
     let frames: ChatFrame[] = [];
     try {
       frames = await api.chatSessionMessages(sessionId);
@@ -1549,19 +1579,29 @@ export function ChatView(props: {
 
   // ── Render ──────────────────────────────────────────────────────────────────────────────
   const mcpConnected = () => (manifest()?.mcpServers ?? []).filter((s) => /connect|ready|ok/i.test(s.status)).length;
-  // The model label the header shows: this session's manifest model once it arrives, else the
+  // The model the header shows: this session's manifest model once it arrives, else the
   // last-used model (persisted). Empty only on a brand-new install with no prior chat — rendered as
   // a neutral "Default model" placeholder — so the model area is never blank before the first turn.
   const displayModel = () => manifest()?.model || lastModel();
+  // The picker-space form of displayModel() (Bug #89): a real init manifest reports the RESOLVED
+  // model id ("claude-opus-4-8[1m]") while the <Select> options are the picker ALIASES ("opus[1m]"),
+  // so the raw value would match no option and the picker would render deselected after the first
+  // turn. Reactive: maps as soon as the `models` frame lands; falls back to the raw value until then.
+  const displayModelValue = createMemo(() => {
+    const raw = displayModel();
+    return modelOptionFor(raw, models()) ?? raw;
+  });
   // The effort levels the CURRENTLY-displayed model supports (from the `models` frame). The header's
   // Effort picker offers exactly these — never a hardcoded list — and hides when the model exposes
   // none / the frame hasn't landed. (FEATURE #63.) Before the first manifest NAMES a model,
   // displayModel() is empty, so key off the login's default (first-listed) model instead — so the
   // picker is usable the instant the chat opens (like the model picker), then refines once the
-  // manifest reports the real active model.
+  // manifest reports the real active model. Keyed off the PICKER-SPACE value (Bug #89): the raw
+  // resolved id matches no models() entry, which used to silently fall back to the first-listed
+  // model's levels after the first turn.
   const effortOptions = createMemo(() => {
     const ms = models();
-    const cur = displayModel();
+    const cur = displayModelValue();
     const target = ms.some((m) => m.value === cur) ? cur : ms[0]?.value ?? "";
     return effortOptionsForModel(target, ms);
   });
@@ -1630,12 +1670,12 @@ export function ChatView(props: {
         <Show
           when={models().length > 1}
           fallback={
-            <span class="chat-model" title="Active model">{displayModel() || "Default model"}</span>
+            <span class="chat-model" title="Active model">{modelLabelFor(displayModel(), models()) || "Default model"}</span>
           }
         >
           <Select
             class="chat-model-select"
-            value={displayModel()}
+            value={displayModelValue()}
             placeholder="Default model"
             options={models().map((m) => ({ value: m.value, label: m.label }))}
             onChange={switchModel}

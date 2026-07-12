@@ -15,6 +15,7 @@ import {
   type SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { whichClaude } from "./claudeWhich";
+import { loadSessionModel, saveSessionModel } from "./chatModelStore";
 import { buildAutoNoteBody, extractText, recallMemory, stripInjectedBlocks, writeNote as writeMemoryNote, type TranscriptEntry } from "@bismuth/memory";
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, denyPathSet, type DenyEntry } from "./visibility";
 
@@ -338,7 +339,9 @@ interface ChatSession {
   effort?: string;
   /** The model the user selected (Bug #89). Stored here so a visibility respawn (spawnChatQuery
    *  rebuilds query() from scratch) re-applies it — the SDK's query() options don't accept a base
-   *  model, so setModel() is called again after the new query is created. Undefined = default. */
+   *  model, so setModel() is called again after the new query is created. Undefined = default.
+   *  ALSO persisted per SDK session_id (chatModelStore.ts) so a conversation resumed later — into
+   *  any tab, after any restart — comes back on the model it was last set to. */
   model?: string;
   /** LIVE chat-visibility deny set (both path forms), read by canUseTool at call time so a
    *  mid-session visibility change takes effect without a stale captured copy. Rebuilt on respawn. */
@@ -466,6 +469,32 @@ function stringifyToolContent(content: unknown): string {
  *  ChatView.buildEditorContext (a lone `<editor-context>` line … `</editor-context>` then a blank line). */
 export function stripEditorContext(text: string): string {
   return text.replace(/^<editor-context>\n[\s\S]*?\n<\/editor-context>\n\n/, "");
+}
+
+/**
+ * Pure: the model a session was LAST set to, recovered from the CLI's OWN transcript records.
+ * Query.setModel() (and the TUI's /model command) writes a user message of the fixed shape
+ * `<command-name>/model</command-name> … <command-args>X</command-args>` into the session file
+ * (verified live against CLI 2.1.x) — the same record the CLI itself restores the model from on
+ * resume. Scans BACKWARD for the newest record; returns its (trimmed) args, or null when the
+ * session never had a /model record (or the newest one is empty). Fallback for resumed sessions
+ * that predate chatModelStore.ts (Bug #89), so even old conversations report their own model in
+ * the spawn-time synthetic manifest.
+ */
+export function sessionModelFromMessages(
+  messages: readonly { type?: string; message?: unknown }[],
+): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg || msg.type !== "user") continue;
+    const content =
+      msg.message && typeof msg.message === "object" ? (msg.message as { content?: unknown }).content : undefined;
+    if (typeof content !== "string") continue; // /model records are plain-string user messages
+    if (!content.includes("<command-name>/model</command-name>")) continue;
+    const args = content.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1]?.trim();
+    return args || null; // the NEWEST record decides — an empty one means "no usable info"
+  }
+  return null;
 }
 
 /** Coerce a user message's `content` (string | block array) into its plain prose. Used when
@@ -821,11 +850,28 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // emits a deny for it).
   const denyEntries = await buildDenyPaths(cwd, "chat");
 
+  // Resuming an existing conversation: preload the model IT was last set to (Bug #89 — keyed by the
+  // durable SDK session_id, chatModelStore.ts). spawnChatQuery re-applies it via q.setModel() right
+  // after the query spawns (belt-and-braces with the CLI's own per-session model restore), and
+  // emitInitManifest reports it, so the header shows the session's OWN model the instant a resumed
+  // chat opens — never the global/tab fallback. Sessions predating the store fall back to the CLI's
+  // own transcript /model records (sessionModelFromMessages). Undefined (fresh session / nothing
+  // saved anywhere) keeps the CLI's own resolution.
+  let savedModel = resume ? loadSessionModel(resume) ?? undefined : undefined;
+  if (resume && !savedModel) {
+    try {
+      savedModel = sessionModelFromMessages(await getSessionMessages(resume, { dir: cwd })) ?? undefined;
+    } catch {
+      /* unreadable transcript — the CLI's own restore still applies */
+    }
+  }
+
   const input = makeInputQueue();
   const session: ChatSession = {
     id: chatId,
     cwd,
     input,
+    model: savedModel,
     // q is assigned by spawnChatQuery below; the canUseTool closure only runs after query()
     // returns, so the forward reference through `session` is safe.
     q: undefined as unknown as Query,
@@ -1285,9 +1331,10 @@ function emitSupportedModels(session: ChatSession): void {
  * seconds while it probes connections) can never clobber a REAL per-turn manifest that already
  * landed: once the drain loop's `init` handler has emitted (setting manifestSent), this no-ops.
  *
- * The active model, tool list, and permission mode aren't exposed as control requests, so they're
- * left blank here — the model picker rides its own `models` frame (emitSupportedModels) + the client's
- * persisted last-model, tools fill in from the first real per-turn manifest, and permissionMode is
+ * The active model, tool list, and permission mode aren't exposed as control requests. The model is
+ * reported from session.model — the per-session store's choice on a resume (Bug #89), "" for a fresh
+ * session (the picker rides its own `models` frame + the client's persisted last-model until the
+ * first real init). Tools fill in from the first real per-turn manifest, and permissionMode is
  * reported as the spawn default ("default"): the client's first-manifest handler then pushes the app
  * default (Bypass) because it differs, so Bypass takes effect ON OPEN, before the first turn.
  */
@@ -1302,7 +1349,11 @@ function emitInitManifest(session: ChatSession): void {
     emit(session, {
       type: "manifest",
       manifest: {
-        model: "",
+        // The session's KNOWN model when there is one (a resume preloaded it from the per-session
+        // store — Bug #89), so a resumed chat's header shows the conversation's own model before
+        // any turn. "" for a fresh session (no model info exists pre-turn; the client's persisted
+        // last-model fills the header until the first real init reports the resolved id).
+        model: session.model ?? "",
         permissionMode: "default",
         slashCommands: withLocalSlashCommands((init?.commands ?? []).map((c) => c.name)),
         tools: [],
@@ -1426,6 +1477,10 @@ async function drain(session: ChatSession): Promise<void> {
         if (anyMsg.session_id !== sentSessionId) {
           sentSessionId = anyMsg.session_id;
           emit(session, { type: "session", sessionId: anyMsg.session_id });
+          // Carry the chosen model onto the (new) durable id (Bug #89): a set_model that landed
+          // before the first id was known persists HERE, and a resume that forks a fresh id keeps
+          // the conversation's model reachable under the id the client will resume by next time.
+          if (session.model) saveSessionModel(anyMsg.session_id, session.model);
         }
       }
 
@@ -1638,6 +1693,10 @@ export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;
   s.model = model;
+  // Persist the choice under the conversation's durable id (Bug #89) so resuming it — in any tab,
+  // after any restart — comes back on this model. If the session_id isn't known yet (a pre-turn
+  // pick on a fresh session), the drain loop saves it the moment the id is learned.
+  if (s.sessionId) saveSessionModel(s.sessionId, model);
   try {
     s.q.setModel(model)?.catch(() => {});
   } catch {
