@@ -4,7 +4,7 @@ import { resolveProperty } from "../../../core/src/bases/query";
 import { renderMarkdown } from "./markdown";
 import { renderCell, isTagColumn } from "./renderValue";
 import { columnLabel } from "./columnLabel";
-import { hasValue, writableKey } from "./kanbanMeta";
+import { metaVisible, writableKey } from "./kanbanMeta";
 import { propertyEditKind } from "./propertyEdit";
 import { propertyRegistry } from "../propertyRegistry";
 import { PropertyValueEditor } from "./PropertyValueEditor";
@@ -107,8 +107,10 @@ export function KanbanCard(props: {
     return { ...props.row, note };
   };
 
-  // Meta columns that actually have a value on THIS row — empties render nothing at all.
-  const visibleMeta = () => props.metaCols.filter((id) => hasValue(resolveProperty(id, displayRow())));
+  // Meta columns that actually have a value on THIS row — empties render nothing at all,
+  // EXCEPT a declared/runtime-boolean property, which always shows (even `false`): its chip
+  // is the only UI that can ever toggle it, see `metaVisible`.
+  const visibleMeta = () => props.metaCols.filter((id) => metaVisible(id, resolveProperty(id, displayRow()), propertyRegistry()));
 
   const enter = (m: "title" | "desc") => {
     if (!props.editable) return;

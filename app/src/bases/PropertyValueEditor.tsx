@@ -78,11 +78,12 @@ export function PropertyValueEditor(props: {
       }
     >
       {(sk) => (
-        <div class={styles.kbMetaSelect} onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); props.onCancel(); } }}>
+        <div class={styles.kbMetaSelect}>
           <Select
             value={props.value == null ? "" : String(props.value)}
             options={[{ value: "", label: "(clear)" }, ...sk().options.map((v) => ({ value: v, label: v }))]}
             onChange={(v) => props.onCommit(v === "" ? null : v)}
+            onDismiss={props.onCancel}
           />
         </div>
       )}

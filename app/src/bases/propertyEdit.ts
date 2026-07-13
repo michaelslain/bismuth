@@ -15,7 +15,9 @@ import type { Schema } from "../../../core/src/schema/types";
 // Duplicated (not imported) from renderValue.tsx's `bareName`, deliberately — that file is
 // a .tsx (JSX/Icon imports), and this module must stay importable from a plain `bun test`
 // .ts test without dragging in JSX (see columnLabel.ts for the same pattern/rationale).
-function bareName(id: string): string {
+// Exported so kanbanMeta.ts (also a plain .ts) can share it rather than re-duplicating —
+// `metaVisible` needs the same registry-key lookup to detect a declared boolean property.
+export function bareName(id: string): string {
   const dot = id.indexOf(".");
   return (dot >= 0 ? id.slice(dot + 1) : id).toLowerCase();
 }
