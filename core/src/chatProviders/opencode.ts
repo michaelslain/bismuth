@@ -151,6 +151,11 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
 async function runTurn(s: OpencodeSession, text: string): Promise<void> {
   s.turnActive = true;
   s.lastActivityAt = Date.now();
+  // opencode's local sqlite rejects concurrent openers at cold start ("database is locked" —
+  // observed live when the session-open `opencode models` fetch and the first turn's run spawned
+  // together). Await the in-flight models fetch before spawning so the first turn never races it;
+  // afterwards the cache makes this a no-op.
+  if (modelsInFlight && !modelsCache) await modelsInFlight.catch(() => null);
   const state = newOpencodeTurnState();
   const args = [
     s.bin,
