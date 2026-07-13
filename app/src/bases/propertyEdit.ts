@@ -5,8 +5,12 @@
 //     read via `core/src/bases/properties.ts` `propertyType()`) — #100/#101. Wins over
 //     everything below for the kinds it has a dedicated editor for
 //     (text/markdown/number/boolean/date/datetime/select/multiselect); a declared list/
-//     link/formula has no dedicated editor YET (#102), so those fall through to the
-//     heuristics below unchanged;
+//     link has no dedicated editor yet, so those fall through to the heuristics below
+//     unchanged. A declared `formula` property never reaches this dispatch's editor path
+//     at all — its column id is the non-writable `formula.<name>` namespace (#102, see
+//     `core/src/bases/query.ts` `declaredColumns`), so the caller's own `writableKey()`
+//     check (kanbanMeta.ts) blocks opening any editor before `propertyEditKind` output
+//     would even matter;
 //  1. the vault-wide property registry (`properties:` in .settings — the same schema
 //     the note editor's autocomplete/lint reads via propertyRegistry());
 //  2. the current value's own runtime type — a frontmatter value is already typed by

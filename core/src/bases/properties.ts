@@ -160,7 +160,10 @@ function isWritable(name: string): boolean {
  * every declared writable property with an explicit `default` (false/0/"" count — only
  * a missing default is skipped), keyed by the bare frontmatter name. `exclude` drops
  * keys the caller writes itself (e.g. the kanban status/description/order keys); it is
- * matched against the bare name. Returns {} when the base declares no properties.
+ * matched against the bare name. A `{type: formula}` property is ALSO non-writable (#102)
+ * — even though its declared NAME carries no `formula.` prefix, its value is computed by
+ * the evaluator, never stored, so a stray `default` on one is never seeded. Returns {}
+ * when the base declares no properties.
  */
 export function declaredDefaults(base: BaseConfig, exclude?: ReadonlySet<string>): Record<string, unknown> {
   const names = base.declaredProperties;
@@ -168,10 +171,30 @@ export function declaredDefaults(base: BaseConfig, exclude?: ReadonlySet<string>
   const out: Record<string, unknown> = {};
   for (const name of names) {
     if (!isWritable(name)) continue;
+    const def = base.properties[name];
+    if (def?.type?.kind === "formula") continue; // computed — never seeded/written
     const key = bareName(name);
     if (exclude?.has(key)) continue;
-    const def = base.properties[name]?.default;
-    if (def !== undefined) out[key] = def;
+    if (def?.default !== undefined) out[key] = def.default;
+  }
+  return out;
+}
+
+/**
+ * Declared FORMULA-kind properties' expressions, keyed by BARE frontmatter name — the same
+ * map shape as `BaseConfig.formulas`. `runView` (query.ts) merges this into that map before
+ * calling `computeFormulas`, so a declared `{type: formula, expr}` property is evaluated by
+ * the EXACT SAME evaluator/path as a base's own `formulas:` map — no separate expression
+ * engine for declared formula properties (#102). Empty when the base declares no properties
+ * or none are formula-kind.
+ */
+export function declaredFormulas(base: BaseConfig): Record<string, string> {
+  const names = base.declaredProperties;
+  if (!names || !base.properties) return {};
+  const out: Record<string, string> = {};
+  for (const name of names) {
+    const t = base.properties[name]?.type;
+    if (t?.kind === "formula" && t.expr) out[bareName(name)] = t.expr;
   }
   return out;
 }

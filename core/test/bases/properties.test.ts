@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   declaredDefaults,
+  declaredFormulas,
   declaredPropertyKeys,
   propertyType,
   parseBasePropertyType,
@@ -46,6 +47,34 @@ test("declaredDefaults is empty for a map-form or property-less base", () => {
 test("declaredPropertyKeys returns bare names in declaration order, empty when undeclared", () => {
   expect(declaredPropertyKeys(declared)).toEqual(["status", "priority", "done", "description", "effort", "formula.ppu"]);
   expect(declaredPropertyKeys({ properties: { a: {} }, views: [] })).toEqual([]);
+});
+
+// ── Declared `{type: formula}` property (#102) ─────────────────────────────────────────
+
+const withFormula: BaseConfig = {
+  properties: {
+    price: { type: { kind: "number" } },
+    qty: { type: { kind: "number" } },
+    total: { type: { kind: "formula", expr: "price * qty" }, default: 0 }, // stray default: never seeded
+    note_only: {},
+  },
+  declaredProperties: ["price", "qty", "total", "note_only"],
+  views: [{ type: "kanban", name: "B" }],
+};
+
+test("declaredFormulas collects formula-kind declared properties' expressions, keyed bare", () => {
+  expect(declaredFormulas(withFormula)).toEqual({ total: "price * qty" });
+});
+
+test("declaredFormulas is empty when the base declares no formula-kind property", () => {
+  expect(declaredFormulas(declared)).toEqual({});
+  expect(declaredFormulas({ views: [] })).toEqual({});
+});
+
+test("declaredDefaults never seeds a formula-kind property's default (computed, not stored)", () => {
+  // total's `default: 0` would otherwise be a real (falsey) default — it must still be
+  // skipped purely because its type is "formula", not because 0 looks empty.
+  expect(declaredDefaults(withFormula)).toEqual({});
 });
 
 // ── Canonical functional property type (#99) ──────────────────────────────────────────

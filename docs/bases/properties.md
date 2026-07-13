@@ -83,7 +83,9 @@ The kanban card's inline meta-chip editor (`app/src/bases/{KanbanCard.tsx,Proper
 | `date` | `<input type=date>` | unchanged |
 | `datetime` | `<input type=datetime-local>` | unchanged |
 
-`select`/`multiselect`/`list`/`link`/`formula` have **no dedicated editor yet** (#101/#102) — a declared property of one of those kinds falls through to the pre-#100 heuristic (vault-wide `.settings` registry, then the value's runtime type, then a "known sibling values" picker), so nothing regresses. A property with **no declared type at all** (`propertyType` returns `undefined`) takes the exact same fallback path — untyped bases are byte-for-byte unaffected.
+`select`/`multiselect` got dedicated editors in #101. `list`/`link` have **no dedicated editor yet** — a declared property of one of those kinds falls through to the pre-#100 heuristic (vault-wide `.settings` registry, then the value's runtime type, then a "known sibling values" picker), so nothing regresses. A property with **no declared type at all** (`propertyType` returns `undefined`) takes the exact same fallback path — untyped bases are byte-for-byte unaffected.
+
+`formula` never reaches an editor, dedicated or heuristic, at all — it's computed, not stored, so it's **read-only by construction** (#102, see [Formula properties](#formula-properties) below).
 
 **Number format display** (`app/src/bases/numberFormat.ts`, pure + unit-tested):
 - `plain` — the raw value, as-is.
@@ -122,6 +124,29 @@ The pre-#99 informational strings map onto canonical kinds so existing bases kee
 | `link` | `link` |
 
 Parsing is tolerant: a property with no `type:` is **untyped** (`type` is `undefined`); a `type:` present but unrecognized falls back to `text`; unknown number formats are dropped (keeping a plain `number`), and empty `options` are dropped. Type strings are matched case-insensitively.
+
+### Formula properties
+
+A declared property with `type: formula` computes its value from `expr` — the SAME expression language, and the SAME evaluator (`core/src/bases/evaluate.ts` via `parseExpr`/`evaluate`), that powers a base's own top-level `formulas:` map. There is no separate expression engine for declared formula properties:
+
+```yaml
+properties:
+  - name: price
+    type: number
+  - name: qty
+    type: number
+  - name: total
+    type: formula
+    expr: price * qty
+```
+
+**How it hooks into the existing evaluator** (`core/src/bases/query.ts` `runView`): `declaredFormulas(base)` (`core/src/bases/properties.ts`) collects every formula-kind declared property's `expr`, keyed by its bare name, and MERGES that map into `base.formulas` before `computeFormulas` runs — so `total` is computed by the exact same per-row `computeFormulas` pass, landing in `row.formula.total`, as if you'd written a top-level `formulas: { total: "price * qty" }` yourself. An explicit `formulas:` entry of the same name wins (it's spread in last).
+
+**Column id — and why it's read-only.** A formula-kind declared property canonicalizes to a `formula.<name>` column id (`declaredColumns`), not `note.<name>` — the same namespace an explicit `formulas:` reference uses (`order: [formula.ppu]`). Every write path already treats a `formula.`-prefixed id as non-writable (`writableKey()` in `app/src/bases/kanbanMeta.ts`, pre-dating #102), so a formula property is read-only for free: the kanban card's meta-chip click handler (`KanbanCard.tsx` `enterMeta`) never opens an editor for it, and `commitMeta` refuses to write it even if called. No new editor-dispatch code was needed for the read-only behavior itself — only the column-id + evaluator wiring above.
+
+**Display.** The computed value renders through the same read path as any other column — `resolveProperty("formula.total", row)` → `row.formula.total`, formatted by the existing `renderValue`/`renderCell` (table columns) or the kanban card's meta section. `declaredDefaults` explicitly skips formula-kind properties (a stray `default:` on one is never seeded onto a new card's frontmatter — there's no frontmatter key to seed).
+
+**Edge cases** (matching the codebase's existing tolerance for `formulas:`): a expr referencing a missing field evaluates via normal JS coercion (e.g. `price * qty` with no `qty` → `NaN`), never throws; a malformed `expr` (fails to parse) computes `undefined` for every row, also without throwing.
 
 ### Richer object form (examples)
 
