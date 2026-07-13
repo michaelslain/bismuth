@@ -259,3 +259,59 @@ test("non-kanban omits an empty declared group; kanban keeps it", () => {
   };
   expect(runView(kanbanCfg, rows3, 0).groups.map((g) => g.key)).toEqual(["todo", "done"]); // "done" kept as drop target
 });
+
+// ── Declared properties (list-form `properties:`) as the column source ────────────────
+
+test("declaredProperties drives auto-derived columns in declaration order", () => {
+  const b: BaseConfig = {
+    properties: { status: {}, worktree: {} },
+    declaredProperties: ["status", "worktree"],
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, rows, 0);
+  // file.name seeds first (note rows), then the declared names canonicalized —
+  // note.price/note.age/note.tags exist on the rows but are NOT declared, so they don't leak in.
+  expect(res.columns).toEqual(["file.name", "note.status", "note.worktree"]);
+});
+
+test("declared columns keep namespaced ids and dedupe an explicitly declared file.name", () => {
+  const b: BaseConfig = {
+    properties: { "file.name": {}, "formula.ppu": {}, price: {} },
+    declaredProperties: ["file.name", "formula.ppu", "price"],
+    formulas: { ppu: "(price / age).toFixed(2)" },
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toEqual(["file.name", "formula.ppu", "note.price"]);
+});
+
+test("hidden still drops a declared property from the derived columns", () => {
+  const b: BaseConfig = {
+    properties: { status: {}, order: { hidden: true } },
+    declaredProperties: ["status", "order"],
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toEqual(["file.name", "note.status"]);
+});
+
+test("an explicit view.order still beats the declared property set", () => {
+  const b: BaseConfig = {
+    properties: { status: {} },
+    declaredProperties: ["status"],
+    views: [{ type: "table", name: "V", order: ["file.name", "note.price"] }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toEqual(["file.name", "note.price"]);
+});
+
+test("without declaredProperties the classic row-frontmatter derivation is unchanged", () => {
+  const b: BaseConfig = {
+    properties: { status: { displayName: "Status" } }, // map form: metadata only
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, rows, 0);
+  expect(res.columns).toContain("note.price");
+  expect(res.columns).toContain("note.age");
+  expect(res.columns).toContain("note.status");
+});

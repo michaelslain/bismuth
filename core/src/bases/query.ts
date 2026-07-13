@@ -66,6 +66,21 @@ function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
   return [...cols].filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
 }
 
+// Columns for a base that DECLARES its own property set (`properties:` in list form):
+// the declared names in declaration order (canonicalized to their note./file./formula.
+// ids), instead of unioning whatever frontmatter the rows happen to carry. file.name is
+// seeded first for note rows (same rule as deriveColumns) unless already declared;
+// `hidden` still applies (under either the bare or canonical spelling).
+function declaredColumns(declared: string[], rows: Row[], hidden: Set<string>): string[] {
+  const cols: string[] = [];
+  if (rows.some((r) => r.file?.name)) cols.push("file.name");
+  for (const name of declared) {
+    const c = canonicalId(name);
+    if (!cols.includes(c)) cols.push(c);
+  }
+  return cols.filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
+}
+
 function summarize(name: string, values: unknown[]): string {
   const nums = values.map(toNumber).filter((n) => !Number.isNaN(n));
   const sum = nums.reduce((a, b) => a + b, 0);
@@ -118,10 +133,15 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
   }
 
   // 4. Resolve columns.
-  // Explicit `view.order` always wins (per-view opt-in beats global hide); the
-  // hidden filter only narrows the auto-derived fallback.
+  // Explicit `view.order` always wins (per-view opt-in beats global hide). Without one,
+  // a base that DECLARES its own properties (list-form `properties:`) uses that declared
+  // set; only the classic fallback derives columns from the rows' own frontmatter.
   const hidden = hiddenIds(base);
-  const columns = view.order && view.order.length ? view.order : deriveColumns(filtered, hidden);
+  const columns = view.order && view.order.length
+    ? view.order
+    : base.declaredProperties && base.declaredProperties.length
+      ? declaredColumns(base.declaredProperties, filtered, hidden)
+      : deriveColumns(filtered, hidden);
 
   // 5. Group
   let groups: ResultGroup[];

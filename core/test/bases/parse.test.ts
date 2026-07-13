@@ -151,3 +151,90 @@ test("rejects invalid chart enum values", () => {
   expect(cfg.views[0].aggregate).toBeUndefined();
   expect(cfg.views[0].bin).toBeUndefined();
 });
+
+// ── Per-base declared properties (`properties:` in LIST form) ─────────────────────────
+
+test("list-form properties declares the base's own property set in order", () => {
+  const base = parseBase(`
+properties:
+  - status
+  - name: priority
+    type: number
+    default: 1
+  - name: description
+    displayName: Notes
+views:
+  - type: table
+    name: V
+`);
+  expect(base.declaredProperties).toEqual(["status", "priority", "description"]);
+  expect(base.properties?.status).toEqual({ displayName: undefined, hidden: undefined, type: undefined, default: undefined });
+  expect(base.properties?.priority?.type).toBe("number");
+  expect(base.properties?.priority?.default).toBe(1);
+  expect(base.properties?.description?.displayName).toBe("Notes");
+});
+
+test("map-form properties never sets declaredProperties (classic metadata semantics)", () => {
+  const base = parseBase(`properties:\n  status:\n    displayName: Status\n  order:\n    hidden: true\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.declaredProperties).toBeUndefined();
+  expect(base.properties?.status?.displayName).toBe("Status");
+  expect(base.properties?.order?.hidden).toBe(true);
+});
+
+test("map-form properties now also tolerates type/default as metadata", () => {
+  const base = parseBase(`properties:\n  price:\n    type: number\n    default: 0\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.declaredProperties).toBeUndefined();
+  expect(base.properties?.price?.type).toBe("number");
+  expect(base.properties?.price?.default).toBe(0);
+});
+
+test("list-form entries: unknown type drops to undefined, falsey defaults are kept, null default is not", () => {
+  const base = parseBase(`
+properties:
+  - name: done
+    type: checkbox
+    default: false
+  - name: weird
+    type: banana
+    default: null
+views:
+  - type: table
+    name: V
+`);
+  expect(base.properties?.done?.type).toBe("checkbox");
+  expect(base.properties?.done?.default).toBe(false);
+  expect(base.properties?.weird?.type).toBeUndefined();
+  expect(base.properties?.weird?.default).toBeUndefined();
+});
+
+test("list-form entries without a usable name are skipped; duplicates keep the first", () => {
+  const base = parseBase(`
+properties:
+  - ""
+  - name: ""
+  - 42
+  - name: status
+    default: Todo
+  - status
+views:
+  - type: table
+    name: V
+`);
+  expect(base.declaredProperties).toEqual(["status"]);
+  expect(base.properties?.status?.default).toBe("Todo");
+});
+
+test("an empty properties list keeps declaredProperties undefined", () => {
+  const base = parseBase(`properties: []\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.declaredProperties).toBeUndefined();
+  expect(base.properties).toBeUndefined();
+});
+
+test("list-form properties parses inside a type:base file's frontmatter", () => {
+  const { config } = parseBaseFile(
+    `---\ntype: base\nproperties:\n  - status\n  - name: worktree\n    type: text\nviews:\n  - type: kanban\n    name: Board\n    groupBy: status\n---\n`,
+    { name: "B", path: "B.md" },
+  );
+  expect(config.declaredProperties).toEqual(["status", "worktree"]);
+  expect(config.properties?.worktree?.type).toBe("text");
+});

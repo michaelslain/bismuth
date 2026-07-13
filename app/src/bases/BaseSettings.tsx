@@ -4,6 +4,7 @@ import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
 import { fileBasename as noteLabel } from "../../../core/src/pathUtils";
 import { capitalize } from "./renderValue";
 import { columnLabel } from "./columnLabel";
+import { declaredPropertyKeys } from "../../../core/src/bases/properties";
 import { Modal } from "../ui/Modal";
 import { Icon } from "../icons/Icon";
 import { Select } from "../ui/Select";
@@ -98,7 +99,9 @@ export function BaseSettings(props: {
   const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];
 
-  const allCols = createMemo(() => columnsOf(props.rows));
+  // Row-derived columns unioned with the base's own declared properties (list-form
+  // `properties:`), so a declared-but-not-yet-populated field is still offerable.
+  const allCols = createMemo(() => [...new Set([...columnsOf(props.rows), ...declaredPropertyKeys(props.config)])]);
 
   // Options for a column-binding dropdown: the available columns, always unioned
   // with the field's current value + default so an off-screen binding still shows.

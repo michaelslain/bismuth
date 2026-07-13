@@ -54,6 +54,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 ## Bases (queries & views)
 
 - [Overview](bases/overview.md) — what a `type: base` note is; the views array
+- [Per-base properties](bases/properties.md) — `properties:` map vs list form; declaring a base's own property set
 - [Sources & composition](bases/sources.md) — `SourceSpec`, `from:`, base composition
 - [Query syntax](bases/query-syntax.md) — the Bases expression grammar
 - [Filters](bases/filters.md) — `where:` expressions
