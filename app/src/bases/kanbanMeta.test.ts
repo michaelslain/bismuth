@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { descriptionField, metaColumns, metaSource, hasValue } from "./kanbanMeta";
+import { descriptionField, metaColumns, metaSource, hasValue, metaVisible, writableKey } from "./kanbanMeta";
+import type { Schema } from "../../../core/src/schema/types";
 
 describe("descriptionField", () => {
   test("no order, no explicit field → null (description is NOT built-in)", () => {
@@ -111,5 +112,47 @@ describe("metaSource", () => {
   test("no order + no declaration → no meta (row-frontmatter union must not leak onto cards)", () => {
     expect(metaSource(undefined, undefined, columns, "status")).toBeUndefined();
     expect(metaSource(undefined, [], columns, "status")).toBeUndefined();
+  });
+});
+
+describe("metaVisible", () => {
+  const boolSchema: Schema = { done: { type: "boolean" } };
+
+  test("a declared boolean property is visible even when false — the chip is its only toggle", () => {
+    expect(metaVisible("done", false, boolSchema)).toBe(true);
+    expect(metaVisible("note.done", false, boolSchema)).toBe(true);
+  });
+
+  test("a declared boolean stays visible when true too (toggling false→true→false never hides the row)", () => {
+    expect(metaVisible("done", true, boolSchema)).toBe(true);
+  });
+
+  test("an undeclared property whose runtime value is boolean is still visible when false", () => {
+    expect(metaVisible("archived", false, {})).toBe(true);
+  });
+
+  test("a genuinely empty non-boolean property stays hidden (no regression from the boolean carve-out)", () => {
+    expect(metaVisible("priority", null, {})).toBe(false);
+    expect(metaVisible("priority", "", {})).toBe(false);
+    expect(metaVisible("tags", [], {})).toBe(false);
+  });
+
+  test("a non-empty non-boolean property is visible, same as hasValue", () => {
+    expect(metaVisible("priority", "high", {})).toBe(true);
+    expect(metaVisible("count", 0, {})).toBe(true);
+  });
+});
+
+describe("writableKey", () => {
+  test("strips the note. namespace", () => {
+    expect(writableKey("note.status")).toBe("status");
+  });
+  test("bare property names pass through unchanged", () => {
+    expect(writableKey("priority")).toBe("priority");
+  });
+  test("file./formula./this. are not writable", () => {
+    expect(writableKey("file.name")).toBeNull();
+    expect(writableKey("formula.total")).toBeNull();
+    expect(writableKey("this.foo")).toBeNull();
   });
 });
