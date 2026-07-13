@@ -105,6 +105,12 @@ export function propertyEditKind(
     if (typeof t === "object" && t.kind === "enum") return { kind: "select", options: t.values };
     if (typeof t === "object" && t.kind === "list") return { kind: "tags" };
   }
+  // #103 migration default: a property NAMED `description` with no declared type (in
+  // the base's own `properties:` nor the vault-wide registry) defaults to markdown —
+  // the least-surprising choice, since every pre-#103 board treated it as a multiline
+  // markdown slot. A base that wants something else just declares an explicit `type:`,
+  // which (via `declaredType` above) always wins over this default.
+  if (bareName(id) === "description" && !entry) return { kind: "markdown" };
   if (typeof value === "boolean") return { kind: "boolean" };
   if (typeof value === "number") return { kind: "number" };
   if (Array.isArray(value)) return { kind: "tags" };

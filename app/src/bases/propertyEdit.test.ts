@@ -139,6 +139,24 @@ describe("propertyEditKind — declared type (#100)", () => {
   });
 });
 
+describe("propertyEditKind — description default (#103)", () => {
+  const noSchema: Schema = {};
+
+  test("an undeclared `description` property defaults to markdown (least-surprising migration default)", () => {
+    expect(propertyEditKind("description", "some *text*", noSchema, [])).toEqual({ kind: "markdown" });
+    expect(propertyEditKind("note.description", "some *text*", noSchema, [])).toEqual({ kind: "markdown" });
+  });
+
+  test("an explicit base-declared type on `description` still wins over the markdown default", () => {
+    expect(propertyEditKind("description", "x", noSchema, [], { kind: "text" })).toEqual({ kind: "text" });
+  });
+
+  test("a vault-wide registry entry for `description` still wins over the markdown default", () => {
+    const schema: Schema = { description: { type: "boolean" } };
+    expect(propertyEditKind("description", true, schema, [])).toEqual({ kind: "boolean" });
+  });
+});
+
 describe("multiselectValues (#101)", () => {
   test("an array of scalars stringifies each element", () => {
     expect(multiselectValues(["bug", "urgent"])).toEqual(["bug", "urgent"]);

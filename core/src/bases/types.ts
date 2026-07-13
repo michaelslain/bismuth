@@ -47,9 +47,10 @@ export interface ViewConfig {
   // known-status palette, then a distinct auto-assigned palette color. Set by the column
   // header's color picker; persisted via the top-level `groupColors` frontmatter key.
   groupColors?: Record<string, string>;
-  // Kanban: which frontmatter property holds each card's editable multiline description
-  // (rendered + edited inline on the card face). Defaults to "description". A bare
-  // frontmatter name (no "note." prefix needed).
+  // DEPRECATED (#103): kanban no longer has a dedicated description slot — `description` is
+  // just a normal (typically `type: markdown`) declared property, rendered/edited via the
+  // same generic meta-property path as any other. Still parsed (parse.ts) for backward
+  // compatibility with old base files, but it is now a no-op — nothing reads it.
   descriptionField?: string;
   // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
   columnWidths?: Record<string, number>;
