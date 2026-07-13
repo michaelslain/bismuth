@@ -88,13 +88,33 @@ export interface ViewConfig {
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
 
+/** Value types a declared base property can carry (same vocabulary as `schema`). */
+export type PropertyType = "text" | "number" | "checkbox" | "date" | "time" | "list" | "link";
+export const PROPERTY_TYPES: readonly PropertyType[] = ["text", "number", "checkbox", "date", "time", "list", "link"];
+
+/** One entry of a base's `properties:` config. In the MAP form only the metadata fields
+ *  (displayName/hidden) mattered historically; the LIST form (per-base declared properties)
+ *  additionally carries an optional value `type` and a `default` seeded onto new cards/rows. */
+export interface BasePropertyDef {
+  displayName?: string;
+  hidden?: boolean;
+  type?: PropertyType;
+  default?: unknown;
+}
+
 export interface BaseConfig {
   filters?: FilterNode;                    // global, ANDed with each view's filters
   formulas?: Record<string, string>;       // name -> expression string
-  // Per-property metadata. `hidden: true` omits the property from auto-derived
-  // columns (table/cards/list/kanban default columns). A view's explicit
-  // `order: [...]` still wins — that's the per-view opt-in.
-  properties?: Record<string, { displayName?: string; hidden?: boolean }>;
+  // Per-property metadata/definitions, keyed by property name. `hidden: true` omits the
+  // property from auto-derived columns (table/cards/list/kanban default columns). A view's
+  // explicit `order: [...]` still wins — that's the per-view opt-in.
+  properties?: Record<string, BasePropertyDef>;
+  // Set ONLY when `properties:` was written in LIST form: the declared property names in
+  // declaration order. Its presence means the base declares its OWN property set — views
+  // derive their default columns from this list instead of unioning row frontmatter, and
+  // new cards seed each declared `default`. Absent (map form / no properties) keeps the
+  // classic behavior: note-reading bases keep reflecting the notes' own frontmatter.
+  declaredProperties?: string[];
   views: ViewConfig[];
   // Unified additions:
   source?: SourceSpec;                     // base-level default source for all views

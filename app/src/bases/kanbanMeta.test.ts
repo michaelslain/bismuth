@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { metaColumns, hasValue } from "./kanbanMeta";
+import { metaColumns, metaSource, hasValue } from "./kanbanMeta";
 
 describe("metaColumns", () => {
   test("drops the title column and the description field", () => {
@@ -41,5 +41,29 @@ describe("hasValue", () => {
   test("0 and dates count as values", () => {
     expect(hasValue(0)).toBe(true);
     expect(hasValue(new Date(0))).toBe(true);
+  });
+});
+
+describe("metaSource", () => {
+  const columns = ["file.name", "note.status", "note.effort"];
+
+  test("explicit view order always wins", () => {
+    expect(metaSource(["note.effort"], ["status", "effort"], columns, "status")).toEqual(["note.effort"]);
+  });
+
+  test("declared properties fall back to the engine-resolved columns", () => {
+    expect(metaSource(undefined, ["status", "effort"], columns)).toEqual(columns);
+    expect(metaSource([], ["status", "effort"], columns)).toEqual(columns);
+  });
+
+  test("declared fallback drops the groupBy property (the column already conveys it)", () => {
+    expect(metaSource(undefined, ["status", "effort"], columns, "status")).toEqual(["file.name", "note.effort"]);
+    // Any spelling combination of groupBy vs column id lines up.
+    expect(metaSource(undefined, ["status", "effort"], columns, "note.status")).toEqual(["file.name", "note.effort"]);
+  });
+
+  test("no order + no declaration → no meta (row-frontmatter union must not leak onto cards)", () => {
+    expect(metaSource(undefined, undefined, columns, "status")).toBeUndefined();
+    expect(metaSource(undefined, [], columns, "status")).toBeUndefined();
   });
 });

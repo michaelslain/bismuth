@@ -5,7 +5,8 @@ import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src
 import { placeholderFile } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
-import { metaColumns } from "./kanbanMeta";
+import { metaColumns, metaSource } from "./kanbanMeta";
+import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
@@ -64,9 +65,15 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // Bound to file.name — NOT the base's first display column — so an explicit `order:` that puts
   // a property first can't turn a title-edit into a rename-to-a-property-value.
   const titleCol = () => "file.name";
-  // The view's remaining `order:` properties, shown read-only on each card below the description
-  // (title + description keep their dedicated editable slots — see metaColumns).
-  const metaCols = () => metaColumns(props.result.view.order, titleCol(), descField());
+  // The view's remaining `order:` properties — or, when the base declares its own property
+  // set (list-form `properties:`), the engine-resolved columns — shown read-only on each card
+  // below the description (title + description keep their dedicated editable slots).
+  const metaCols = () =>
+    metaColumns(
+      metaSource(props.result.view.order, props.config.declaredProperties, props.result.columns, groupBy()?.property),
+      titleCol(),
+      descField(),
+    );
 
   // Per-column color: explicit override > known-status palette > a palette slot chosen by a stable
   // hash of the column KEY (not its position) so reordering columns never recolors them.
@@ -562,9 +569,14 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     const sibling = props.result.groups.find((g) => g.key === colKey)?.rows[0];
     const statusValue = sibling ? (sibling.note as Record<string, unknown>)[statusKey] : colKey;
 
+    // Declared property defaults (list-form `properties:`) seed first; frontmatter shared by
+    // every existing card overrides them (a new card must keep matching the base's filter),
+    // and the clicked column's status value always wins.
+    const exclude = new Set([statusKey, descField(), ORDER_KEY]);
     const front: Record<string, unknown> = {
+      ...declaredDefaults(props.config, exclude),
+      ...constProps(exclude),
       [statusKey]: statusValue ?? colKey,
-      ...constProps(new Set([statusKey, descField(), ORDER_KEY])),
     };
     const content = `---\n${yamlStringify(front)}---\n`;
     const path = dedupe(`${folder ? folder + "/" : ""}${safeFilename(title)}.md`, takenPaths());

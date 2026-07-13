@@ -10,6 +10,31 @@ export function metaColumns(order: string[] | undefined, titleCol: string, descF
   return (order ?? []).filter((id) => !skip.has(id));
 }
 
+/** Which id list feeds metaColumns: an explicit view `order:` always wins; without one, a
+ * base that DECLARES its own properties (list-form `properties:` → config.declaredProperties)
+ * shows the engine-resolved columns (which runView derived from that declaration), minus the
+ * `groupBy` property — the column a card sits in already conveys it, and kanban deliberately
+ * never echoes it unless an explicit `order:` opts in. A base with neither keeps today's
+ * behavior — no meta (deriveColumns' row-frontmatter union would leak unrelated fields onto
+ * cards). */
+export function metaSource(
+  order: string[] | undefined,
+  declared: string[] | undefined,
+  columns: string[],
+  groupByProperty?: string,
+): string[] | undefined {
+  if (order && order.length) return order;
+  if (declared && declared.length) {
+    if (!groupByProperty) return columns;
+    // Compare in bare-frontmatter form so `status`, `note.status` and a `note.status`
+    // column id all line up regardless of which spelling the config used.
+    const bare = (id: string) => (id.startsWith("note.") ? id.slice(5) : id);
+    const gb = bare(groupByProperty);
+    return columns.filter((c) => bare(c) !== gb);
+  }
+  return undefined;
+}
+
 /** Whether a meta value is worth a row on the card — empties are dropped entirely (no "—"
  * placeholder cluttering cards). `false` counts as empty (renderValue draws a false checkbox
  * as nothing, which would leave a dangling label), as does an array with no non-empty elements. */
