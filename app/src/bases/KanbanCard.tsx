@@ -13,30 +13,33 @@ function titleOf(row: Row, titleCol: string): string {
   return v == null || typeof v === "object" ? row.file.name : String(v);
 }
 
-/** Current description text from the card's frontmatter (empty string when unset). */
-function descOf(row: Row, descField: string): string {
+/** Current description text from the card's frontmatter (empty string when unset/opted-out). */
+function descOf(row: Row, descField: string | null): string {
+  if (descField === null) return "";
   const v = (row.note as Record<string, unknown>)[descField];
   return v == null || typeof v === "object" ? "" : String(v);
 }
 
 /**
- * The editable face of a kanban card: a click-to-edit title (renames the note) over a
- * click-to-edit multiline description (a frontmatter property, rendered as markdown and
- * revealed as a raw textarea on click). Editing either field flips the card out of
- * draggable mode via `onEditingChange` so text selection/caret placement work normally;
- * blur (or Enter on the title, Escape on either) commits and restores dragging.
+ * The editable face of a kanban card: a click-to-edit title (renames the note) and, ONLY when
+ * the view's config lists a description property (`descField` non-null), a click-to-edit
+ * multiline description (a frontmatter property, rendered as markdown and revealed as a raw
+ * textarea on click). Editing either field flips the card out of draggable mode via
+ * `onEditingChange` so text selection/caret placement work normally; blur (or Enter on the
+ * title, Escape on either) commits and restores dragging.
  *
- * The description lives in frontmatter (default `description`), so it rides along in the
- * already-resolved Row — no per-card body fetch, keeping large boards cheap.
+ * The description is NOT built-in — a board that never mentions one renders no slot and no
+ * "Add a description…" affordance. When configured, it lives in frontmatter so it rides along
+ * in the already-resolved Row — no per-card body fetch, keeping large boards cheap.
  *
- * Below the description, the view's remaining `order:` properties (`metaCols`) render as a
- * READ-ONLY meta section — plain spans (no inputs/buttons), so the card stays draggable and
- * the meta never competes with the tap-to-edit title/description.
+ * Below it, the view's remaining `order:` properties (`metaCols`) render as a READ-ONLY meta
+ * section — plain spans (no inputs/buttons), so the card stays draggable and the meta never
+ * competes with the tap-to-edit title/description.
  */
 export function KanbanCard(props: {
   row: Row;
   titleCol: string;
-  descField: string;
+  descField: string | null;
   metaCols: string[];
   config: BaseConfig;
   editable: boolean;
@@ -121,39 +124,42 @@ export function KanbanCard(props: {
         />
       </Show>
 
-      <Show
-        when={mode() === "desc"}
-        fallback={
-          <Show
-            when={desc().trim() !== ""}
-            fallback={
-              <Show when={props.editable}>
-                <div class={styles.kbDescEmpty} onPointerDown={onDown} onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}>Add a description…</div>
-              </Show>
-            }
-          >
-            <div
-              class={styles.kbDesc}
-              classList={{ [styles.kbEditable]: props.editable }}
-              onPointerDown={onDown}
-              onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}
-              innerHTML={renderMarkdown(desc())}
-            />
-          </Show>
-        }
-      >
-        <textarea
-          class={styles.kbDescArea}
-          value={desc()}
-          rows={1}
-          placeholder="Description… (Markdown, ⏎ for a new line)"
-          ref={(el) => queueMicrotask(() => { el.focus(); autoGrow(el); })}
-          onInput={(e) => { setDesc(e.currentTarget.value); autoGrow(e.currentTarget); }}
-          onBlur={commitDesc}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") { setDesc(descOf(props.row, props.descField)); e.currentTarget.blur(); }
-          }}
-        />
+      {/* Description slot — only when the view's config lists a description property. */}
+      <Show when={props.descField !== null}>
+        <Show
+          when={mode() === "desc"}
+          fallback={
+            <Show
+              when={desc().trim() !== ""}
+              fallback={
+                <Show when={props.editable}>
+                  <div class={styles.kbDescEmpty} onPointerDown={onDown} onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}>Add a description…</div>
+                </Show>
+              }
+            >
+              <div
+                class={styles.kbDesc}
+                classList={{ [styles.kbEditable]: props.editable }}
+                onPointerDown={onDown}
+                onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}
+                innerHTML={renderMarkdown(desc())}
+              />
+            </Show>
+          }
+        >
+          <textarea
+            class={styles.kbDescArea}
+            value={desc()}
+            rows={1}
+            placeholder="Description… (Markdown, ⏎ for a new line)"
+            ref={(el) => queueMicrotask(() => { el.focus(); autoGrow(el); })}
+            onInput={(e) => { setDesc(e.currentTarget.value); autoGrow(e.currentTarget); }}
+            onBlur={commitDesc}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { setDesc(descOf(props.row, props.descField)); e.currentTarget.blur(); }
+            }}
+          />
+        </Show>
       </Show>
 
       <Show when={visibleMeta().length > 0}>

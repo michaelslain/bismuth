@@ -5,15 +5,13 @@ import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src
 import { placeholderFile } from "../../../core/src/bases/types";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
-import { metaColumns, metaSource } from "./kanbanMeta";
+import { descriptionField, metaColumns, metaSource } from "./kanbanMeta";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
 const ORDER_KEY = "order";
-// Default frontmatter property holding a card's editable description.
-const DEFAULT_DESC_FIELD = "description";
 
 // The active theme's graph-node ramp (`accentPalette` → --graph-0..4), a designed set of
 // distinguishable-yet-cohesive colors. Used as the per-column fallback so columns vary out of
@@ -51,7 +49,9 @@ function safeFilename(title: string): string {
 
 export function KanbanView(props: { result: ViewResult; config: BaseConfig; basePath?: string; viewIndex?: number; onChange: () => void }) {
   const groupBy = () => props.result.view.groupBy;
-  const descField = () => props.result.view.descriptionField ?? DEFAULT_DESC_FIELD;
+  // The editable description slot's frontmatter key, or null when the view's config doesn't
+  // list one (see descriptionField) — description is just another property, not a built-in.
+  const descField = () => descriptionField(props.result.view.order, props.result.view.descriptionField);
   // Editing (rename / description / reorder / colors / add) only works against a real base
   // file to persist into. Embedded ```query kanbans stay read-only.
   const editable = () => !!props.basePath;
@@ -518,10 +518,12 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     props.onChange();
   }
 
-  // ── Card description (a frontmatter property) ──
+  // ── Card description (a frontmatter property; only reachable when the view lists one) ──
   async function setDescription(row: Row, value: string): Promise<void> {
-    if (value.trim() === "") await api.deleteProperty(row.file.path, descField());
-    else await api.setProperty(row.file.path, descField(), value);
+    const field = descField();
+    if (field === null) return;
+    if (value.trim() === "") await api.deleteProperty(row.file.path, field);
+    else await api.setProperty(row.file.path, field, value);
   }
 
   // ── Add card — create a note in the board's folder with the column's status set. ──
@@ -533,7 +535,8 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
   // on) — copied onto new cards so they keep matching the base's source/filter. Compared by value
   // (JSON) so array/object fields count as equal across notes, and carried through as-is (the YAML
-  // serializer handles arrays/objects). Excludes the status/description/order keys.
+  // serializer handles arrays/objects). Excludes the status/order keys, plus the description key
+  // when the view has one (a fresh card starts with an empty description slot, not a copied one).
   function constProps(exclude: Set<string>): Record<string, unknown> {
     const rows = props.result.groups.flatMap((g) => g.rows);
     if (rows.length === 0) return {};
@@ -572,7 +575,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     // Declared property defaults (list-form `properties:`) seed first; frontmatter shared by
     // every existing card overrides them (a new card must keep matching the base's filter),
     // and the clicked column's status value always wins.
-    const exclude = new Set([statusKey, descField(), ORDER_KEY]);
+    const exclude = new Set([statusKey, ORDER_KEY]);
+    const df = descField();
+    if (df !== null) exclude.add(df);
     const front: Record<string, unknown> = {
       ...declaredDefaults(props.config, exclude),
       ...constProps(exclude),
