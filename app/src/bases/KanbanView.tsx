@@ -3,9 +3,10 @@ import { stringify as yamlStringify } from "yaml";
 import { Icon } from "../icons/Icon";
 import type { ViewResult, BaseConfig, Row, ResultGroup } from "../../../core/src/bases/types";
 import { placeholderFile } from "../../../core/src/bases/types";
+import { resolveProperty } from "../../../core/src/bases/query";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
-import { metaColumns } from "./kanbanMeta";
+import { metaColumns, writableKey } from "./kanbanMeta";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
 
@@ -22,16 +23,6 @@ const PALETTE = ["var(--graph-0)", "var(--graph-1)", "var(--graph-2)", "var(--gr
 
 // Module-level stash for the dragged row's vault-relative path.
 let draggedPath: string | null = null;
-
-/** Resolve the frontmatter key to write from a groupBy property id.
- * Returns null for non-writable namespaces (file./formula./this.). */
-function writableKey(property: string): string | null {
-  if (property.startsWith("file.") || property.startsWith("formula.") || property.startsWith("this.")) {
-    return null;
-  }
-  if (property.startsWith("note.")) return property.slice(5);
-  return property; // bare property name
-}
 
 // An optimistic move: the column key + order a just-dropped card should render at, before the
 // backend write + refetch land. Keyed by note path.
@@ -517,6 +508,24 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     else await api.setProperty(row.file.path, descField(), value);
   }
 
+  // ── Card meta property (any `order:` property besides title/description) ──
+  // Persists a value the card's type-aware chip editor produced. `null` clears the key
+  // entirely (rather than writing a literal null into frontmatter) — file./formula./this.
+  // ids have no writable key and are silently ignored (KanbanCard already gates the click).
+  async function setMetaProperty(row: Row, id: string, value: unknown): Promise<void> {
+    const key = writableKey(id);
+    if (key === null) return;
+    if (value === null || value === undefined || value === "") await api.deleteProperty(row.file.path, key);
+    else await api.setProperty(row.file.path, key, value);
+  }
+
+  // Every OTHER row's raw value for `id`, across the whole board — feeds the meta chip
+  // editor's "select from known values" fallback (propertyEdit.ts). Computed on demand (a
+  // click, not every render) so it's cheap even though it's an O(rows) scan.
+  function siblingValuesFor(id: string): unknown[] {
+    return props.result.groups.flatMap((g) => g.rows).map((r) => resolveProperty(id, r));
+  }
+
   // ── Add card — create a note in the board's folder with the column's status set. ──
   function boardFolder(): string {
     const first = props.result.groups.flatMap((g) => g.rows)[0];
@@ -691,6 +700,8 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                     onEditingChange={setEditing}
                                     onRename={(t) => void renameCard(r(), t)}
                                     onSetDescription={(v) => void setDescription(r(), v)}
+                                    onSetMeta={(id, v) => void setMetaProperty(r(), id, v)}
+                                    siblingValues={siblingValuesFor}
                                   />
                                 </div>
                               </div>

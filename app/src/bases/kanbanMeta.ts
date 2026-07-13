@@ -19,3 +19,15 @@ export function hasValue(v: unknown): boolean {
   if (Array.isArray(v)) return v.some(hasValue);
   return true;
 }
+
+/** Resolve the frontmatter key to WRITE for a property id, or null when the id names a
+ * non-writable derived namespace (`file.`/`formula.`/`this.` — a filesystem fact or a
+ * computed value, not a stored property). Shared by KanbanView (groupBy writes on drop)
+ * and KanbanCard (the meta chip editor) so both agree on what's editable. */
+export function writableKey(property: string): string | null {
+  if (property.startsWith("file.") || property.startsWith("formula.") || property.startsWith("this.")) {
+    return null;
+  }
+  if (property.startsWith("note.")) return property.slice(5);
+  return property; // bare property name
+}

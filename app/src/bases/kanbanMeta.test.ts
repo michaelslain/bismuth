@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { metaColumns, hasValue } from "./kanbanMeta";
+import { metaColumns, hasValue, writableKey } from "./kanbanMeta";
 
 describe("metaColumns", () => {
   test("drops the title column and the description field", () => {
@@ -41,5 +41,19 @@ describe("hasValue", () => {
   test("0 and dates count as values", () => {
     expect(hasValue(0)).toBe(true);
     expect(hasValue(new Date(0))).toBe(true);
+  });
+});
+
+describe("writableKey", () => {
+  test("strips the note. namespace", () => {
+    expect(writableKey("note.status")).toBe("status");
+  });
+  test("bare property names pass through unchanged", () => {
+    expect(writableKey("priority")).toBe("priority");
+  });
+  test("file./formula./this. are not writable", () => {
+    expect(writableKey("file.name")).toBeNull();
+    expect(writableKey("formula.total")).toBeNull();
+    expect(writableKey("this.foo")).toBeNull();
   });
 });
