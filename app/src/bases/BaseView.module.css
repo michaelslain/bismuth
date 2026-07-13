@@ -739,7 +739,9 @@
   resize: none; overflow: hidden; outline: none;
 }
 
-/* Read-only meta section: the view's remaining `order:` properties below the description. */
+/* Editable meta section: the view's remaining `order:` properties below the description —
+   each value is a click-to-edit chip (text/number/date/select/tags; booleans toggle a Chip
+   instantly). See KanbanCard.tsx + PropertyValueEditor.tsx. */
 .kbMeta { display: flex; flex-direction: column; gap: 4px; margin-top: 1px; }
 .kbMetaItem {
   display: flex; align-items: baseline; gap: 7px; min-width: 0;
@@ -753,6 +755,25 @@
 /* Meta links stay clickable, but must not start a native link-drag (it would cancel the
    pointer-based card drag mid-gesture). */
 .kbMeta a { -webkit-user-drag: none; }
+
+.kbMetaValueWrap { display: inline-flex; align-items: baseline; min-width: 0; }
+.kbMetaClickable {
+  cursor: pointer; border-radius: 4px; padding: 1px 4px; margin: -1px -4px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.kbMetaClickable:hover { background: var(--surface-2); color: var(--fg); }
+.kbMetaInput {
+  width: 100%; max-width: 180px; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
+  background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 2px 5px; margin: -3px -5px;
+  font-family: var(--editor-font); font-size: 12px; color: var(--fg); outline: none;
+}
+.kbMetaSelect { display: inline-flex; margin: -3px -5px; }
+.kbMetaSelect :global(.ui-select-trigger) {
+  height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: 12px; border-radius: 5px;
+}
+/* A boolean meta property is always a Chip (display AND editor in one) — shrink the
+   generic .chip-toggle chrome to fit the card's compact meta rows. */
+.kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: 11px; border-radius: 5px; }
 
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {

@@ -21,6 +21,13 @@ export function Select(props: {
   onChange: (value: string) => void;
   placeholder?: string;
   class?: string;
+  /** Fired when the popover closes WITHOUT a choice — Escape or a backdrop click — as
+   *  opposed to `close()` after `choose()`, which already reported the new value via
+   *  `onChange`. Lets a caller that swaps in a Select as a transient editor (the kanban
+   *  meta chip editor) restore its own read-only state on a plain dismiss, matching the
+   *  Escape-to-cancel behavior of its sibling text/number/date inputs. Optional — callers
+   *  that don't host a transient editor (e.g. a settings row) can ignore it. */
+  onDismiss?: () => void;
 }) {
   const [open, setOpen] = createSignal(false);
   const [pos, setPos] = createSignal({ x: 0, y: 0, w: 0 });
@@ -31,7 +38,7 @@ export function Select(props: {
   const nav = createMenuNav({
     count: () => props.options.length,
     onSelect: (i) => choose(i),
-    onEscape: () => close(),
+    onEscape: () => dismiss(),
     wrap: true,
   });
 
@@ -46,6 +53,11 @@ export function Select(props: {
   function close() {
     setOpen(false);
     triggerRef?.focus();
+  }
+  /** Close WITHOUT a selection — Escape or a backdrop click. */
+  function dismiss() {
+    close();
+    props.onDismiss?.();
   }
   function choose(i: number) {
     const opt = props.options[i];
@@ -92,7 +104,7 @@ export function Select(props: {
       </button>
       <Show when={open()}>
         <Portal>
-          <div class="ui-select-backdrop" onClick={() => close()} />
+          <div class="ui-select-backdrop" onClick={() => dismiss()} />
           <PopoverList
             items={props.options.map((o) => ({ label: o.label, icon: o.value === props.value ? "Check" : undefined }))}
             active={nav.active()}
