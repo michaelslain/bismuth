@@ -1,6 +1,7 @@
 import { parse as parseYaml } from "yaml";
-import type { BaseConfig, ViewConfig, SortSpec, ParsedBase, BasePropertyDef, PropertyType } from "./types";
-import { isValidType, PROPERTY_TYPES } from "./types";
+import type { BaseConfig, ViewConfig, SortSpec, ParsedBase, BasePropertyDef } from "./types";
+import { isValidType } from "./types";
+import { parseBasePropertyType } from "./properties";
 import { parseRows } from "./rows";
 import { normalizeSource } from "./sourceSpec";
 
@@ -90,14 +91,15 @@ function normalizeGroupColors(raw: unknown): Record<string, string> | undefined 
 }
 
 // One property definition's optional fields, shared by both `properties:` forms.
-// `type` must be a known PropertyType (unknowns drop to undefined, like other enums);
+// `type` (+ its sibling carriers: options/number/unit/expr) is parsed into the canonical
+// BasePropertyType by parseBasePropertyType (undefined when no `type`; malformed → text);
 // `default` keeps any non-null value (false/0/"" are real defaults).
 function normalizePropertyDef(raw: unknown): BasePropertyDef {
   const o = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   return {
     displayName: typeof o.displayName === "string" ? o.displayName : undefined,
     hidden: o.hidden === true ? true : undefined,
-    type: PROPERTY_TYPES.includes(o.type as PropertyType) ? (o.type as PropertyType) : undefined,
+    type: parseBasePropertyType(o),
     default: o.default !== undefined && o.default !== null ? o.default : undefined,
   };
 }
