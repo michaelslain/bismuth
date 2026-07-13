@@ -68,7 +68,28 @@ Each list entry is either a **bare property name** or a map with:
 
 ## Property types
 
-A property's `type` is **functional**, not just informational (#99): it is parsed into a canonical `BasePropertyType` — a discriminated `kind` plus optional carriers — that is the single source of truth for the property's type. The value entry points (`propertyType`, `validatePropertyValue`, `coercePropertyValue`) live in `core/src/bases/properties.ts`; per-type editors and a settings panel are built on top of it by later work.
+A property's `type` is **functional**, not just informational (#99): it is parsed into a canonical `BasePropertyType` — a discriminated `kind` plus optional carriers — that is the single source of truth for the property's type. The value entry points (`propertyType`, `validatePropertyValue`, `coercePropertyValue`) live in `core/src/bases/properties.ts`; a settings panel is built on top of it by later work.
+
+### The kanban inline editor is type-driven (#100)
+
+The kanban card's inline meta-chip editor (`app/src/bases/{KanbanCard.tsx,PropertyValueEditor.tsx,propertyEdit.ts}`) reads a property's DECLARED type (`propertyType(config, id)`) and, when present, picks the editor/display straight from it — no more heuristic-guessing for a typed property:
+
+| Declared `kind` | Editor | Display |
+| --- | --- | --- |
+| `text` | single-line input | plain text (unchanged) |
+| `markdown` | multiline textarea | block markdown (`bases/markdown.ts` `renderMarkdown`) |
+| `number` | numeric input | formatted per `number`/`unit` — see below |
+| `boolean` | the existing `Chip` toggle | unchanged |
+| `date` | `<input type=date>` | unchanged |
+| `datetime` | `<input type=datetime-local>` | unchanged |
+
+`select`/`multiselect`/`list`/`link`/`formula` have **no dedicated editor yet** (#101/#102) — a declared property of one of those kinds falls through to the pre-#100 heuristic (vault-wide `.settings` registry, then the value's runtime type, then a "known sibling values" picker), so nothing regresses. A property with **no declared type at all** (`propertyType` returns `undefined`) takes the exact same fallback path — untyped bases are byte-for-byte unaffected.
+
+**Number format display** (`app/src/bases/numberFormat.ts`, pure + unit-tested):
+- `plain` — the raw value, as-is.
+- `unit` — `"<value> <unit>"` (e.g. `unit: kg` → `"5 kg"`); bare value when no unit is set.
+- `currency` — `Intl.NumberFormat({style:"currency"})` keyed by `unit` as an ISO-4217 code (defaults `USD` when unset), e.g. `unit: USD` → `"$5.00"`.
+- `percent` — **the stored/frontmatter value is a plain fraction 0–1** (`0.25` means 25%), matching what `Intl.NumberFormat({style:"percent"})` expects natively — so display needs no manual ×100. The EDIT BOX, though, shows/accepts the human percentage number (`25`, not `0.25`) since typing a fraction is far more surprising than typing a percentage; the ×100/÷100 conversion happens only at that edit boundary (`numberEditValue`/`parseNumberEdit`), so the canonical stored value always stays the 0–1 fraction.
 
 ### Type kinds
 

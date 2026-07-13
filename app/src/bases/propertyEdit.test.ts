@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { distinctStrings, propertyEditKind } from "./propertyEdit";
 import type { Schema } from "../../../core/src/schema/types";
+import type { BasePropertyType } from "../../../core/src/bases/types";
 
 describe("distinctStrings", () => {
   test("dedupes, drops empties/objects, sorts", () => {
@@ -70,5 +71,49 @@ describe("propertyEditKind", () => {
 
   test("null/undefined value with no siblings -> plain text", () => {
     expect(propertyEditKind("summary", null, noSchema, [])).toEqual({ kind: "text" });
+  });
+});
+
+describe("propertyEditKind — declared type (#100)", () => {
+  const noSchema: Schema = {};
+
+  test("declared text/boolean/date/datetime map straight onto their editor kinds", () => {
+    expect(propertyEditKind("title", "x", noSchema, [], { kind: "text" })).toEqual({ kind: "text" });
+    expect(propertyEditKind("done", "x", noSchema, [], { kind: "boolean" })).toEqual({ kind: "boolean" });
+    expect(propertyEditKind("due", "x", noSchema, [], { kind: "date" })).toEqual({ kind: "date" });
+    expect(propertyEditKind("start", "x", noSchema, [], { kind: "datetime" })).toEqual({ kind: "date", time: true });
+  });
+
+  test("declared markdown -> markdown editor kind", () => {
+    expect(propertyEditKind("notes", "x", noSchema, [], { kind: "markdown" })).toEqual({ kind: "markdown" });
+  });
+
+  test("declared number carries its format + unit through to the editor kind", () => {
+    const t: BasePropertyType = { kind: "number", number: "currency", unit: "USD" };
+    expect(propertyEditKind("price", 5, noSchema, [], t)).toEqual({ kind: "number", format: "currency", unit: "USD" });
+    expect(propertyEditKind("weight", 5, noSchema, [], { kind: "number", number: "unit", unit: "kg" })).toEqual({
+      kind: "number",
+      format: "unit",
+      unit: "kg",
+    });
+    expect(propertyEditKind("done", 5, noSchema, [], { kind: "number" })).toEqual({ kind: "number", format: undefined, unit: undefined });
+  });
+
+  test("declared type wins over a conflicting vault-registry entry or runtime value", () => {
+    const schema: Schema = { title: { type: "boolean" } }; // registry disagrees with the base's own declaration
+    expect(propertyEditKind("title", true, schema, [], { kind: "text" })).toEqual({ kind: "text" });
+  });
+
+  test("declared select/multiselect/list/link/formula have no dedicated editor yet — fall through to the heuristic", () => {
+    expect(propertyEditKind("stage", "todo", noSchema, [], { kind: "select", options: ["todo", "doing"] })).toEqual({ kind: "text" });
+    expect(propertyEditKind("labels", ["a", "b"], noSchema, [], { kind: "multiselect", options: ["a", "b"] })).toEqual({ kind: "tags" });
+    expect(propertyEditKind("items", ["a"], noSchema, [], { kind: "list" })).toEqual({ kind: "tags" });
+    expect(propertyEditKind("ref", "x", noSchema, [], { kind: "link" })).toEqual({ kind: "text" });
+    expect(propertyEditKind("total", 5, noSchema, [], { kind: "formula", expr: "a+b" })).toEqual({ kind: "number" });
+  });
+
+  test("no declared type (undefined) is the exact untyped fallback path — untouched", () => {
+    expect(propertyEditKind("flag", true, noSchema, [], undefined)).toEqual({ kind: "boolean" });
+    expect(propertyEditKind("flag", true, noSchema, [])).toEqual({ kind: "boolean" });
   });
 });

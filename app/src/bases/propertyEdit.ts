@@ -1,6 +1,12 @@
 // app/src/bases/propertyEdit.ts
 // Pure logic behind the kanban card's editable meta chips (KanbanCard.tsx): which
 // control a property's chip should open when clicked. Priority order:
+//  0. the BASE'S OWN DECLARED type (`properties:` list-form `type:` on the base itself,
+//     read via `core/src/bases/properties.ts` `propertyType()`) — #100. Wins over
+//     everything below for the kinds it has a dedicated editor for
+//     (text/markdown/number/boolean/date/datetime); a declared select/multiselect/list/
+//     link/formula has no dedicated editor YET (#101/#102), so those fall through to the
+//     heuristics below unchanged;
 //  1. the vault-wide property registry (`properties:` in .settings — the same schema
 //     the note editor's autocomplete/lint reads via propertyRegistry());
 //  2. the current value's own runtime type — a frontmatter value is already typed by
@@ -11,6 +17,7 @@
 //     status/priority-like column still gets a picker instead of a raw text box, without
 //     depending on an explicit per-base property schema (a separate concern).
 import type { Schema } from "../../../core/src/schema/types";
+import type { BasePropertyType, NumberFormat } from "../../../core/src/bases/types";
 
 // Duplicated (not imported) from renderValue.tsx's `bareName`, deliberately — that file is
 // a .tsx (JSX/Icon imports), and this module must stay importable from a plain `bun test`
@@ -24,7 +31,8 @@ export function bareName(id: string): string {
 
 export type PropertyEditKind =
   | { kind: "text" }
-  | { kind: "number" }
+  | { kind: "markdown" }
+  | { kind: "number"; format?: NumberFormat; unit?: string }
   | { kind: "boolean" }
   | { kind: "date"; time?: boolean }
   | { kind: "select"; options: string[] }
@@ -55,9 +63,29 @@ export function distinctStrings(values: unknown[]): string[] {
 /**
  * Which editor a property chip should open for `value` on this row. `siblingValues` is
  * every OTHER row's raw value for the same property (across the whole board), used only
- * for the "select from known values" fallback.
+ * for the "select from known values" fallback. `declaredType` (#100) is the BASE's own
+ * declared type for this property (`propertyType(config, id)`) — when present and its
+ * `kind` has a dedicated editor, it wins outright; the remaining kinds (select/
+ * multiselect/list/link/formula — no editor yet) fall through to the heuristics below.
  */
-export function propertyEditKind(id: string, value: unknown, schema: Schema, siblingValues: unknown[]): PropertyEditKind {
+export function propertyEditKind(
+  id: string,
+  value: unknown,
+  schema: Schema,
+  siblingValues: unknown[],
+  declaredType?: BasePropertyType,
+): PropertyEditKind {
+  if (declaredType) {
+    switch (declaredType.kind) {
+      case "text": return { kind: "text" };
+      case "markdown": return { kind: "markdown" };
+      case "number": return { kind: "number", format: declaredType.number, unit: declaredType.unit };
+      case "boolean": return { kind: "boolean" };
+      case "date": return { kind: "date" };
+      case "datetime": return { kind: "date", time: true };
+      // select/multiselect/list/link/formula: no dedicated editor yet — fall through.
+    }
+  }
   const entry = schema[bareName(id)];
   if (entry) {
     const t = entry.type;

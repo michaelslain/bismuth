@@ -1,8 +1,10 @@
-import { createSignal, createEffect, untrack, For, Show } from "solid-js";
+import { createSignal, createEffect, untrack, For, Show, type JSX } from "solid-js";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
+import { propertyType, coercePropertyValue } from "../../../core/src/bases/properties";
 import { renderMarkdown } from "./markdown";
 import { renderCell, isTagColumn } from "./renderValue";
+import { formatNumberDisplay } from "./numberFormat";
 import { columnLabel } from "./columnLabel";
 import { metaVisible, writableKey } from "./kanbanMeta";
 import { propertyEditKind } from "./propertyEdit";
@@ -136,7 +138,12 @@ export function KanbanCard(props: {
     if (writableKey(id) === null) return;
     const bare = id.startsWith("note.") ? id.slice(5) : id;
     const current = (props.row.note as Record<string, unknown>)[bare] ?? null;
-    const next = value ?? null;
+    // When the base declares this property's type, coerce the committed value through it
+    // (e.g. a number field's unparseable-input string fallback still ends up a real
+    // number here when it happens to parse; a genuinely unparseable value is left as-is —
+    // resilient over strict) — #100.
+    const t = propertyType(props.config, id);
+    const next = (t ? coercePropertyValue(t, value) : value) ?? null;
     setMetaEdit(null);
     props.onEditingChange(false);
     if (JSON.stringify(next) === JSON.stringify(current)) return; // unchanged — no write
@@ -244,8 +251,25 @@ export function KanbanCard(props: {
           <For each={visibleMeta()}>
             {(id) => {
               const value = () => resolveProperty(id, displayRow());
-              const kind = () => propertyEditKind(id, value(), propertyRegistry(), props.siblingValues(id));
+              const declType = () => propertyType(props.config, id);
+              const kind = () => propertyEditKind(id, value(), propertyRegistry(), props.siblingValues(id), declType());
               const writable = () => props.editable && writableKey(id) !== null;
+              // Type-aware display (#100): a declared `markdown` property renders as block
+              // markdown (like the description slot); a declared `number` property renders
+              // through its format (plain/unit/currency/percent). Everything else keeps the
+              // existing heuristic renderCell (status dots, tags, ratings, links, …).
+              const display = (): JSX.Element => {
+                const k = kind();
+                if (k.kind === "markdown") {
+                  const v = value();
+                  return <div class={styles.kbMetaMarkdown} innerHTML={renderMarkdown(v == null ? "" : String(v))} />;
+                }
+                if (k.kind === "number") {
+                  const v = value();
+                  if (typeof v === "number") return <span>{formatNumberDisplay(v, k.format, k.unit)}</span>;
+                }
+                return renderCell(id, displayRow());
+              };
               return (
                 <div class={styles.kbMetaItem}>
                   {/* #tags are self-describing — skip the label for tag columns. */}
@@ -265,7 +289,7 @@ export function KanbanCard(props: {
                             onPointerUp={writable() ? (e) => { if (tapped(e)) enterMeta(id); } : undefined}
                             title={writable() ? "Click to edit" : undefined}
                           >
-                            {renderCell(id, displayRow())}
+                            {display()}
                           </span>
                         }
                       >

@@ -771,6 +771,18 @@
 .kbMetaSelect :global(.ui-select-trigger) {
   height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: 12px; border-radius: 5px;
 }
+/* A declared `markdown` property (#100): rendered block-markdown display + a multiline
+   editor, both sized to the meta row's smaller type than the card-level description. */
+.kbMetaMarkdown { display: block; width: 100%; cursor: text; }
+.kbMetaMarkdown :global(p) { margin: 0 0 3px; }
+.kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
+.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: 2px 0; padding-left: 16px; }
+.kbMetaMarkdownArea {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
+  background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 4px 6px;
+  font-family: var(--editor-font); font-size: 12px; line-height: 1.4; color: var(--fg);
+  resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
+}
 /* A boolean meta property is always a Chip (display AND editor in one) — shrink the
    generic .chip-toggle chrome to fit the card's compact meta rows. */
 .kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: 11px; border-radius: 5px; }

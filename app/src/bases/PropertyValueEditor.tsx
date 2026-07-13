@@ -1,18 +1,33 @@
 // app/src/bases/PropertyValueEditor.tsx
 // The type-aware control a kanban meta chip swaps in on click (KanbanCard.tsx): a
-// `Select` for an enum / known-values property, a comma-separated box for a tag list,
-// and a plain (number/date-typed) input otherwise. Boolean properties never reach this
-// component — the caller toggles those directly via a `Chip`, so there is no boolean
-// branch here.
+// `Select` for an enum / known-values property, a comma-separated box for a tag list, a
+// multiline textarea for a declared `markdown` property (#100), and a plain (text/
+// number/date-typed) input otherwise. Boolean properties never reach this component —
+// the caller toggles those directly via a `Chip`, so there is no boolean branch here.
 //
-// Commits on blur or Enter; Escape reverts the draft to the ORIGINAL value first, then
+// Commits on blur or Enter (markdown: Enter inserts a newline like any textarea — only
+// blur/Escape leave it); Escape reverts the draft to the ORIGINAL value first, then
 // blurs — so the no-op comparison in the caller's commit handler (KanbanCard's
 // `commitMeta`) skips the write, matching the title/description editors' idiom above it
 // in the same file.
+//
+// A `number` kind carries its declared format (`plain`/`unit`/`currency`/`percent`) +
+// unit label — the edit box always shows/accepts the EDIT-space value (percent scales
+// ×100; see numberFormat.ts's module doc for the storage convention), converted back to
+// the canonical stored number on commit via `parseNumberEdit`.
 import { Show, createSignal } from "solid-js";
 import { Select } from "../ui/Select";
 import type { PropertyEditKind } from "./propertyEdit";
+import { numberEditValue, parseNumberEdit } from "./numberFormat";
 import styles from "./BaseView.module.css";
+
+/** Grow a textarea to fit its content (no scrollbar) — duplicated from KanbanCard.tsx's
+ *  identical helper (not imported: that file is the caller, not a shared module, and this
+ *  is a 3-line DOM tweak, matching the codebase's small-pure-duplication idiom elsewhere). */
+function autoGrow(el: HTMLTextAreaElement): void {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
 
 export function PropertyValueEditor(props: {
   kind: PropertyEditKind;
@@ -27,6 +42,10 @@ export function PropertyValueEditor(props: {
     }
     if (props.value == null) return "";
     if (k.kind === "date") return String(props.value).slice(0, k.time ? 16 : 10);
+    if (k.kind === "number") {
+      const n = typeof props.value === "number" ? props.value : Number(props.value);
+      return Number.isFinite(n) ? String(numberEditValue(n, k.format)) : String(props.value);
+    }
     return String(props.value);
   };
   const [draft, setDraft] = createSignal(toDraft());
@@ -41,8 +60,10 @@ export function PropertyValueEditor(props: {
     }
     if (k.kind === "number") {
       if (raw === "") { props.onCommit(null); return; }
-      const n = Number(raw);
-      props.onCommit(Number.isNaN(n) ? raw : n);
+      const n = parseNumberEdit(raw, k.format);
+      // Unparseable input keeps the raw string rather than silently dropping the edit —
+      // KanbanCard's commitMeta coerces through the declared type as a second pass.
+      props.onCommit(n === null ? raw : n);
       return;
     }
     props.onCommit(raw === "" ? null : raw);
@@ -57,24 +78,47 @@ export function PropertyValueEditor(props: {
     <Show
       when={selectKind()}
       fallback={
-        <input
-          class={styles.kbMetaInput}
-          type={props.kind.kind === "number" ? "number" : props.kind.kind === "date" ? (props.kind.time ? "datetime-local" : "date") : "text"}
-          value={draft()}
-          autofocus
-          onInput={(e) => setDraft(e.currentTarget.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              e.currentTarget.blur();
-            } else if (e.key === "Escape") {
-              e.stopPropagation();
-              setDraft(toDraft());
-              e.currentTarget.blur();
-            }
-          }}
-        />
+        <Show
+          when={props.kind.kind === "markdown"}
+          fallback={
+            <input
+              class={styles.kbMetaInput}
+              type={props.kind.kind === "number" ? "number" : props.kind.kind === "date" ? (props.kind.time ? "datetime-local" : "date") : "text"}
+              value={draft()}
+              autofocus
+              onInput={(e) => setDraft(e.currentTarget.value)}
+              onBlur={commit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                } else if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setDraft(toDraft());
+                  e.currentTarget.blur();
+                }
+              }}
+            />
+          }
+        >
+          <textarea
+            class={styles.kbMetaMarkdownArea}
+            value={draft()}
+            rows={1}
+            autofocus
+            ref={(el) => queueMicrotask(() => { el.focus(); autoGrow(el); })}
+            onInput={(e) => { setDraft(e.currentTarget.value); autoGrow(e.currentTarget); }}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              // Enter inserts a newline (multiline body) — only Escape/blur leave the editor.
+              if (e.key === "Escape") {
+                e.stopPropagation();
+                setDraft(toDraft());
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        </Show>
       }
     >
       {(sk) => (
