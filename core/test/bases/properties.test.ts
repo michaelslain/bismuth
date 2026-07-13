@@ -119,3 +119,12 @@ test("coercePropertyValue coerces to the kind's runtime shape, tolerant of junk"
   expect(coercePropertyValue({ kind: "text" }, "  ")).toBeNull(); // empty string clears
   expect(coercePropertyValue({ kind: "number" }, null)).toBeNull();
 });
+
+// #101: the kanban card editor commits a select as a plain string and a multiselect as a
+// string array directly (chosen from the declared `options`, never free-typed) — so
+// coercion for these two is a no-op passthrough, unlike multiselect's OTHER caller above
+// (the plain undeclared `tags` box, which hands coerce a raw comma-separated string).
+test("coercePropertyValue passes an already-array-shaped multiselect / string-shaped select straight through", () => {
+  expect(coercePropertyValue({ kind: "select", options: ["low", "medium", "high"] }, "medium")).toBe("medium");
+  expect(coercePropertyValue({ kind: "multiselect", options: ["bug", "feature"] }, ["bug", "feature"])).toEqual(["bug", "feature"]);
+});

@@ -787,6 +787,19 @@
    generic .chip-toggle chrome to fit the card's compact meta rows. */
 .kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: 11px; border-radius: 5px; }
 
+/* A declared `multiselect` property (#101): read-only display is a chip per selected
+   value; the editor is the same chip row, each clickable to remove, plus a shrunk
+   "+ Add" Select offering the remaining declared options. Both share the compact
+   chip-toggle sizing the boolean chip above already establishes. */
+.kbMetaMultiselectDisplay,
+.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kbMetaMultiselect { margin: -3px -5px; }
+.kbMetaMultiselectDisplay :global(.chip-toggle),
+.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; border-radius: 5px; }
+/* Select's `class` prop lands on the trigger BUTTON itself (already carrying
+   `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
+.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: 2px 20px 2px 6px; font-size: 11px; border-radius: 5px; }
+
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {
   display: inline-flex; align-items: center; justify-content: center;

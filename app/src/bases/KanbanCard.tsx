@@ -7,7 +7,7 @@ import { renderCell, isTagColumn } from "./renderValue";
 import { formatNumberDisplay } from "./numberFormat";
 import { columnLabel } from "./columnLabel";
 import { metaVisible, writableKey } from "./kanbanMeta";
-import { propertyEditKind } from "./propertyEdit";
+import { propertyEditKind, multiselectValues } from "./propertyEdit";
 import { propertyRegistry } from "../propertyRegistry";
 import { PropertyValueEditor } from "./PropertyValueEditor";
 import { Chip } from "../ui/Chip";
@@ -134,7 +134,10 @@ export function KanbanCard(props: {
     setMetaEdit(id);
     props.onEditingChange(true);
   }
-  function commitMeta(id: string, value: unknown): void {
+  // `opts.keepOpen` (the multiselect editor's add/remove writes — #101) leaves the editor
+  // mounted so a second/third change can follow the first, instead of the usual
+  // commit-once-and-close every other kind uses.
+  function commitMeta(id: string, value: unknown, opts?: { keepOpen?: boolean }): void {
     if (writableKey(id) === null) return;
     const bare = id.startsWith("note.") ? id.slice(5) : id;
     const current = (props.row.note as Record<string, unknown>)[bare] ?? null;
@@ -144,8 +147,10 @@ export function KanbanCard(props: {
     // resilient over strict) — #100.
     const t = propertyType(props.config, id);
     const next = (t ? coercePropertyValue(t, value) : value) ?? null;
-    setMetaEdit(null);
-    props.onEditingChange(false);
+    if (!opts?.keepOpen) {
+      setMetaEdit(null);
+      props.onEditingChange(false);
+    }
     if (JSON.stringify(next) === JSON.stringify(current)) return; // unchanged — no write
     setOverrides((prev) => ({ ...prev, [id]: next }));
     props.onSetMeta(id, next);
@@ -268,6 +273,15 @@ export function KanbanCard(props: {
                   const v = value();
                   if (typeof v === "number") return <span>{formatNumberDisplay(v, k.format, k.unit)}</span>;
                 }
+                if (k.kind === "multiselect") {
+                  const vals = multiselectValues(value());
+                  if (vals.length === 0) return <span class="bismuth-empty">—</span>;
+                  return (
+                    <span class={styles.kbMetaMultiselectDisplay}>
+                      <For each={vals}>{(t) => <Chip selected>{t}</Chip>}</For>
+                    </span>
+                  );
+                }
                 return renderCell(id, displayRow());
               };
               return (
@@ -312,7 +326,7 @@ export function KanbanCard(props: {
                     <PropertyValueEditor
                       kind={kind()}
                       value={value()}
-                      onCommit={(v) => commitMeta(id, v)}
+                      onCommit={(v, opts) => commitMeta(id, v, opts)}
                       onCancel={cancelMeta}
                     />
                   </Show>
