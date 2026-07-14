@@ -93,6 +93,40 @@ The kanban card's inline meta-chip editor (`app/src/bases/{KanbanCard.tsx,Proper
 - `currency` — `Intl.NumberFormat({style:"currency"})` keyed by `unit` as an ISO-4217 code (defaults `USD` when unset), e.g. `unit: USD` → `"$5.00"`.
 - `percent` — **the stored/frontmatter value is a plain fraction 0–1** (`0.25` means 25%), matching what `Intl.NumberFormat({style:"percent"})` expects natively — so display needs no manual ×100. The EDIT BOX, though, shows/accepts the human percentage number (`25`, not `0.25`) since typing a fraction is far more surprising than typing a percentage; the ×100/÷100 conversion happens only at that edit boundary (`numberEditValue`/`parseNumberEdit`), so the canonical stored value always stays the 0–1 fraction.
 
+```yaml
+properties:
+  - name: price
+    type: number
+    number: currency
+    unit: USD          # -> "$19.99"
+  - name: weight
+    type: number
+    number: unit
+    unit: kg           # -> "5 kg"
+  - name: progress
+    type: number
+    number: percent    # stored as 0.8, displayed as "80%", edit box shows/accepts 80
+  - name: score
+    type: number
+    number: plain      # bare number, no formatting
+```
+
+### Select and multiselect options
+
+A `select` property (single choice) and a `multiselect` property (any subset) both declare their choices with `options: [a, b, c]`:
+
+```yaml
+properties:
+  - name: stage
+    type: select
+    options: [todo, doing, done]
+  - name: labels
+    type: multiselect
+    options: [urgent, blocked, needs-review]
+```
+
+On a kanban card, a `select` chip opens a dropdown (`Select`) offering `options`; a `multiselect` chip opens a chip-based editor — click "+ Add" to pick another option, click a selected chip to remove it. A stored value **outside** the declared `options` (hand-edited YAML, or an option removed after the fact) is preserved rather than dropped: for `select` it still shows as the current selection; for `multiselect` it still renders as a removable chip. Neither editor rewrites a legacy value out from under you — it just doesn't re-offer it in the "add" menu.
+
 ### Type kinds
 
 | `type:` | Canonical `kind` | Carriers | Meaning |
@@ -183,6 +217,14 @@ The parsed config carries the names in declaration order as `BaseConfig.declared
 - Full-pane views (calendar / flashcards) use their own field bindings, not `runView` columns.
 - Filtering/sorting/grouping can still reference undeclared properties — the declaration shapes *display and creation*, it is not a validation schema.
 - `schema:` (column → type, used by the calendar serializer) is unrelated and unchanged; a declared property `type` is the canonical `BasePropertyType` consumed by editors/validation (see [Property types](#property-types)).
+
+## Editing properties in the settings panel
+
+You don't have to hand-edit the `properties:` YAML — open the view's settings (the gear icon next to the view tabs, `BaseSettings.tsx`) for a **Properties** section that writes the same list-form `properties:` for you. It's shown for every view type, not just kanban.
+
+Each declared property collapses to a single name/type/visibility line; clicking it expands one editor at a time (name, type, type-specific extras — `options` for select/multiselect, `number`/`unit` for number, `expr` for formula — plus a default value, reorder up/down arrows, and delete). An "ADD PROPERTY" button appends a new blank entry. The eye icon toggles a property's `hidden` flag without opening the row. Reordering here is what drives declared card/table field order (the same `declaredProperties` order described above).
+
+For kanban specifically, this Properties section **replaces** the old per-view "Columns" list — a kanban board's fields, their types, and their visibility all live in one place instead of two.
 
 ### Example: fields scoped to the board
 

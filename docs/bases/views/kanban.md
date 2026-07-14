@@ -136,6 +136,24 @@ views:
       - worktree      # cards show the note's #tags, an editable markdown description, and its worktree value
 ```
 
+### `hideLabels`
+
+```typescript
+hideLabels?: boolean   // default false
+```
+
+When `true`, every card's meta section shows only property **values** — no uppercase label caption above them (tag columns already have no label, and are unaffected). Default `false` (labels shown), so existing boards render unchanged. Set via the view's settings panel — a "Hide meta labels — show property values only" toggle, shown only for kanban views — or by hand:
+
+```yaml
+views:
+  - type: kanban
+    groupBy:
+      property: note.status
+    hideLabels: true
+```
+
+Normally (the default) each meta item stacks its label **above** its value — see [Card Face](#card-face).
+
 ### Other standard `ViewConfig` fields
 
 The following standard fields apply to kanban as they do to other view types. See [bases overview](../overview.md) for full details.
@@ -155,7 +173,7 @@ The following standard fields apply to kanban as they do to other view types. Se
 Each card (`app/src/bases/KanbanCard.tsx`) shows:
 
 1. **Title** — the note's filename (`file.name`). Bound to `file.name` specifically (not the base's first display column) so that editing the title is always a **rename** of the note, never a rewrite of some property value. Tap it to edit (see [Editable Cards](#editable-cards)).
-2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a chip. On an editable board, tapping a chip swaps in a control matched to the property's type (text/number/date/select/multiselect/tags; a declared `markdown` property — `description` included, since #103 dropped its dedicated slot — opens a multiline auto-growing textarea; a boolean toggles instantly with no popover). Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`). Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath` to write back to).
+2. **Meta** — every other property the view's `order:` lists (everything except the title column), each shown as a chip, its label stacked **above** its value. On an editable board, tapping a chip swaps in a control matched to the property's type (text/number/date/select/multiselect/tags; a declared `markdown` property — `description` included, since #103 dropped its dedicated slot — opens a multiline auto-growing textarea; a boolean toggles instantly with no popover). Tag columns render as teal `#tags` with no label; other columns get a small uppercase label (`columnLabel`) above the value — unless the view's [`hideLabels`](#hidelabels) is `true`, which suppresses every non-tag label and shows values only. Empty values are skipped entirely (except a declared/runtime-boolean property, which always shows so its chip stays reachable). Embedded ```` ```query ```` kanbans render the same meta section, read-only (no `basePath` to write back to).
 
 The card intentionally does **not** render the `groupBy` value or a generic field dump — the column already conveys the status, and only the properties the view's config explicitly lists appear on the card.
 
