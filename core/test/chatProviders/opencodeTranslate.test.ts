@@ -3,8 +3,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   newOpencodeTurnState,
+  opencodeErrorMessage,
   opencodeTitleFromPrompt,
   parseOpencodeModels,
+  parseOpencodeModelsVerbose,
   translateOpencodeEvent,
   translateOpencodeExport,
 } from "../../src/chatProviders/opencodeTranslate";
@@ -110,6 +112,32 @@ describe("translateOpencodeEvent", () => {
     expect(translateOpencodeEvent("garbage", state)).toEqual([]);
     expect(translateOpencodeEvent({ type: "text" }, state)).toEqual([]); // no part at all
   });
+
+  test("real API error (message nested under error.data) surfaces its actual message", () => {
+    // Captured live (1.17.15): a Zen 401 arrives with the message on error.data, NOT the event.
+    const state = newOpencodeTurnState();
+    const frames = translateOpencodeEvent(
+      {
+        type: "error",
+        timestamp: 1784005472272,
+        sessionID: SID,
+        error: { name: "APIError", data: { message: "Unauthorized: no payment method", statusCode: 401, isRetryable: false } },
+      },
+      state,
+    );
+    expect(frames).toEqual([{ type: "error", code: "error", message: "Unauthorized: no payment method" }]);
+  });
+});
+
+describe("opencodeErrorMessage", () => {
+  test("shallowest message wins; error.name backs a message-less error; generic bottom", () => {
+    expect(opencodeErrorMessage({ message: "top" })).toBe("top");
+    expect(opencodeErrorMessage({ error: { message: "mid" } })).toBe("mid");
+    expect(opencodeErrorMessage({ error: { data: { message: "deep" } } })).toBe("deep");
+    expect(opencodeErrorMessage({ error: { name: "APIError", data: {} } })).toBe("opencode reported an error (APIError)");
+    expect(opencodeErrorMessage({})).toBe("opencode reported an error");
+    expect(opencodeErrorMessage({ error: "string-error" })).toBe("opencode reported an error");
+  });
 });
 
 describe("translateOpencodeExport", () => {
@@ -159,6 +187,56 @@ describe("parseOpencodeModels", () => {
     expect(out.map((m) => m.value)).toEqual(["opencode/gpt-5.2", "moonshotai/kimi-k2", "anthropic/claude-sonnet-4-5"]);
     // No effort discovery on opencode → empty levels, which hides the frontend Effort picker.
     expect(out.every((m) => m.effortLevels.length === 0)).toBe(true);
+  });
+});
+
+describe("parseOpencodeModelsVerbose", () => {
+  // Mirrors real `opencode models --verbose` output (1.17.15): a column-0 id line, then a
+  // pretty-printed JSON metadata block whose inner lines are indented.
+  const block = (id: string, meta: Record<string, unknown>) => `${id}\n${JSON.stringify(meta, null, 2)}\n`;
+  const fixture = [
+    "some banner noise\n",
+    block("opencode/big-pickle", { id: "big-pickle", providerID: "opencode", name: "Big Pickle", cost: { input: 0, output: 0, cache: { read: 0, write: 0 } } }),
+    block("opencode/claude-sonnet-4-6", { id: "claude-sonnet-4-6", providerID: "opencode", name: "Claude Sonnet 4.6", cost: { input: 3, output: 15 } }),
+    block("opencode/kimi-k2.5", { id: "kimi-k2.5", providerID: "opencode", name: "Kimi K2.5", cost: { input: 0.6, output: 2.5 } }),
+    block("moonshotai/kimi-k2.5", { id: "kimi-k2.5", providerID: "moonshotai", name: "Kimi K2.5", cost: { input: 0.6, output: 2.5 } }),
+    "broken/model\nnot json at all\n",
+  ].join("");
+
+  test("classifies free vs paid off cost metadata and uses display names as labels", () => {
+    const out = parseOpencodeModelsVerbose(fixture);
+    expect(out.find((m) => m.value === "opencode/big-pickle")).toEqual({
+      value: "opencode/big-pickle",
+      label: "Big Pickle",
+      description: "opencode/big-pickle",
+      effortLevels: [],
+      free: true,
+    });
+    expect(out.find((m) => m.value === "opencode/claude-sonnet-4-6")?.free).toBe(false);
+    expect(out.find((m) => m.value === "opencode/claude-sonnet-4-6")?.label).toBe("Claude Sonnet 4.6");
+  });
+
+  test("disambiguates display-name collisions across providers", () => {
+    const out = parseOpencodeModelsVerbose(fixture);
+    expect(out.find((m) => m.value === "opencode/kimi-k2.5")?.label).toBe("Kimi K2.5 (opencode)");
+    expect(out.find((m) => m.value === "moonshotai/kimi-k2.5")?.label).toBe("Kimi K2.5 (moonshotai)");
+  });
+
+  test("a malformed metadata block degrades to the bare id with NO badge (free undefined)", () => {
+    const broken = parseOpencodeModelsVerbose(fixture).find((m) => m.value === "broken/model");
+    expect(broken).toEqual({ value: "broken/model", label: "broken/model", description: "broken/model", effortLevels: [] });
+    expect(broken && "free" in broken).toBe(false);
+  });
+
+  test("returns [] on output with no model ids (caller falls back to the plain list)", () => {
+    expect(parseOpencodeModelsVerbose("")).toEqual([]);
+    expect(parseOpencodeModelsVerbose("usage: opencode models [provider]\n")).toEqual([]);
+  });
+
+  test("drops duplicate ids, preserves order", () => {
+    const out = parseOpencodeModelsVerbose(fixture + block("opencode/big-pickle", { name: "Dup" }));
+    expect(out.filter((m) => m.value === "opencode/big-pickle")).toHaveLength(1);
+    expect(out[0].value).toBe("opencode/big-pickle");
   });
 });
 

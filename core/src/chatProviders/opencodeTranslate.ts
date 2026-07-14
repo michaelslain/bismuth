@@ -49,6 +49,22 @@ function toolContent(v: unknown): string {
   }
 }
 
+/**
+ * Dig the human-readable message out of an opencode error event. Verified live (1.17.15): a real
+ * API failure arrives as {type:"error", error:{name:"APIError", data:{message:"Unauthorized: …"}}}
+ * — the message is NESTED under error.data, not on the event itself. Checked shallowest-first so a
+ * simpler future shape still wins; bottoms out at a generic string, never throws.
+ */
+export function opencodeErrorMessage(ev: Record<string, unknown>): string {
+  if (typeof ev.message === "string" && ev.message) return ev.message;
+  const err = (ev.error && typeof ev.error === "object" ? ev.error : {}) as Record<string, unknown>;
+  if (typeof err.message === "string" && err.message) return err.message;
+  const data = (err.data && typeof err.data === "object" ? err.data : {}) as Record<string, unknown>;
+  if (typeof data.message === "string" && data.message) return data.message;
+  if (typeof err.name === "string" && err.name) return `opencode reported an error (${err.name})`;
+  return "opencode reported an error";
+}
+
 /** Suffix-only text emission: given a part id and its text-so-far, return the not-yet-emitted
  *  tail ("" when nothing new). Handles both the observed complete-part shape AND a hypothetical
  *  cumulative-streaming shape with one rule. */
@@ -117,12 +133,7 @@ export function translateOpencodeEvent(raw: unknown, state: OpencodeTurnState): 
     }
     case "error": {
       // A run-level error event — surface its message as a chat error frame.
-      const msg =
-        (typeof ev.message === "string" && ev.message) ||
-        (typeof (ev.error as Record<string, unknown> | undefined)?.message === "string" &&
-          ((ev.error as Record<string, unknown>).message as string)) ||
-        "opencode reported an error";
-      frames.push({ type: "error", code: "error", message: msg });
+      frames.push({ type: "error", code: "error", message: opencodeErrorMessage(ev) });
       return frames;
     }
     default:
@@ -185,24 +196,85 @@ export function translateOpencodeExport(raw: unknown): { title: string | null; f
   return { title, frames: out };
 }
 
+/** One entry of the chat `models` frame, opencode-side. `free` (card #90: "show which one free
+ *  and which one isnt") is tri-state: true/false when `opencode models --verbose` reported cost
+ *  metadata, undefined when only the plain id list was available (no badge shown). */
+export interface OpencodeModelEntry {
+  value: string;
+  label: string;
+  description: string;
+  effortLevels: string[];
+  free?: boolean;
+}
+
+/** A model id is `provider/model` — one slash-separated token, no spaces (anything else is
+ *  CLI banner/noise). */
+const MODEL_ID_RE = /^[\w.-]+\/[\w.:-]+$/;
+
 /**
  * Parse `opencode models` stdout (one `provider/model` per line) into the `models` frame's entry
  * shape. opencode has no per-model reasoning-effort discovery, so effortLevels is always [] —
  * which makes the frontend's Effort picker hide itself (exactly the graceful degradation the
  * header needs). Blank/garbage lines are dropped; order preserved; duplicates removed.
  */
-export function parseOpencodeModels(stdout: string): { value: string; label: string; description: string; effortLevels: string[] }[] {
+export function parseOpencodeModels(stdout: string): OpencodeModelEntry[] {
   const seen = new Set<string>();
-  const out: { value: string; label: string; description: string; effortLevels: string[] }[] = [];
+  const out: OpencodeModelEntry[] = [];
   for (const line of stdout.split("\n")) {
     const id = line.trim();
-    // A model id is `provider/model` — one slash-separated token, no spaces (anything else is
-    // CLI banner/noise).
-    if (!/^[\w.-]+\/[\w.:-]+$/.test(id) || seen.has(id)) continue;
+    if (!MODEL_ID_RE.test(id) || seen.has(id)) continue;
     seen.add(id);
     out.push({ value: id, label: id, description: "", effortLevels: [] });
   }
   return out;
+}
+
+/**
+ * Parse `opencode models --verbose` stdout: each model is its bare `provider/model` id on a line
+ * at column 0 followed by a pretty-printed JSON metadata block (verified live, 1.17.15 — inner
+ * JSON lines are indented, so only the id lines match at column 0). The metadata yields:
+ *   - `free`: cost.input === 0 && cost.output === 0 (opencode Zen's free tier) vs paid — the
+ *     header model picker renders it as a Free/Paid badge (card #90).
+ *   - `label`: the model's display `name` ("Claude Sonnet 4.6" beats "opencode/claude-sonnet-4-6");
+ *     a name shared by several providers gets ` (providerID)` appended so the picker stays
+ *     unambiguous. The full id remains the `value` (what `-m` needs) and the `description`.
+ * A block that fails to parse degrades to the plain id (free undefined → no badge), so a format
+ * drift can never lose a model. Returns [] when NO ids are found — the caller falls back to the
+ * plain `opencode models` list.
+ */
+export function parseOpencodeModelsVerbose(stdout: string): OpencodeModelEntry[] {
+  const seen = new Set<string>();
+  const entries: { id: string; name: string | null; free?: boolean }[] = [];
+  // Split at each column-0 id line; the first segment (anything before the first id) is noise.
+  const segments = stdout.split(/^(?=[\w.-]+\/[\w.:-]+[ \t]*\r?$)/m);
+  for (const seg of segments) {
+    const nl = seg.indexOf("\n");
+    const id = (nl >= 0 ? seg.slice(0, nl) : seg).trim();
+    if (!MODEL_ID_RE.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    let name: string | null = null;
+    let free: boolean | undefined;
+    try {
+      const meta = JSON.parse(nl >= 0 ? seg.slice(nl + 1) : "") as Record<string, unknown>;
+      if (typeof meta.name === "string" && meta.name.trim()) name = meta.name.trim();
+      const cost = (meta.cost && typeof meta.cost === "object" ? meta.cost : null) as Record<string, unknown> | null;
+      if (cost && typeof cost.input === "number" && typeof cost.output === "number") {
+        free = cost.input === 0 && cost.output === 0;
+      }
+    } catch {
+      /* malformed/missing metadata block — keep the id, skip the badge */
+    }
+    entries.push({ id, name, free });
+  }
+  // Disambiguate display-name collisions across providers (e.g. "Kimi K2.5" is served by both
+  // opencode/ and moonshotai/) — every collided entry shows its provider.
+  const nameCount = new Map<string, number>();
+  for (const e of entries) if (e.name) nameCount.set(e.name, (nameCount.get(e.name) ?? 0) + 1);
+  return entries.map((e) => {
+    const collided = e.name && (nameCount.get(e.name) ?? 0) > 1;
+    const label = e.name ? (collided ? `${e.name} (${e.id.split("/")[0]})` : e.name) : e.id;
+    return { value: e.id, label, description: e.id, effortLevels: [], ...(e.free === undefined ? {} : { free: e.free }) };
+  });
 }
 
 /** Session tab title from the user's first prompt: preamble stripped, whitespace collapsed,

@@ -1053,6 +1053,10 @@
   font-size: 13.5px;
   line-height: 1.5;
 }
+/* The setup screen's switch-provider escape hatch (card #90) — breathing room off the copy. */
+.chat-setup .btn {
+  margin-top: 10px;
+}
 .chat-setup code {
   font-family: var(--ui-font-stack);
   font-size: 0.9em;

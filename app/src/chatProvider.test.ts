@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   CHAT_PROVIDER_OPTIONS,
+  modelPriceBadge,
   modelStorageKeys,
   providerStorageKey,
   providerSupportsClaudeControls,
@@ -45,5 +46,13 @@ describe("header gating + options", () => {
   });
   test("provider key is per-tab", () => {
     expect(providerStorageKey("a")).not.toBe(providerStorageKey("b"));
+  });
+});
+
+describe("modelPriceBadge", () => {
+  test("free/paid off cost metadata; NO badge when the provider reported none (Claude models)", () => {
+    expect(modelPriceBadge(true)).toBe("Free");
+    expect(modelPriceBadge(false)).toBe("Paid");
+    expect(modelPriceBadge(undefined)).toBeUndefined();
   });
 });

@@ -28,8 +28,10 @@ import {
   newOpencodeTurnState,
   opencodeTitleFromPrompt,
   parseOpencodeModels,
+  parseOpencodeModelsVerbose,
   translateOpencodeEvent,
   translateOpencodeExport,
+  type OpencodeModelEntry,
 } from "./opencodeTranslate";
 
 /** Resolve the user's `opencode` binary against the SAME augmented PATH claude resolution uses
@@ -85,18 +87,23 @@ export function sessionCount(): number {
 
 // The models list is static per opencode config — fetch once per process and reuse for every
 // session's `models` frame (the CLI call takes ~1.4s; no need to pay it per chat open).
-type OpencodeModelEntry = { value: string; label: string; description: string; effortLevels: string[] };
+// `--verbose` carries each model's display name + cost metadata (→ the Free/Paid badge, card #90);
+// an older opencode without it degrades to the plain id list (no badges, still fully usable).
 let modelsCache: OpencodeModelEntry[] | null = null;
 let modelsInFlight: Promise<OpencodeModelEntry[]> | null = null;
+async function runModelsCommand(bin: string, cwd: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn([bin, "models", ...args], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
+  const out = await new Response(proc.stdout as ReadableStream).text();
+  await proc.exited;
+  return out;
+}
 async function fetchModels(bin: string, cwd: string): Promise<OpencodeModelEntry[]> {
   if (modelsCache) return modelsCache;
   if (!modelsInFlight) {
     modelsInFlight = (async () => {
       try {
-        const proc = Bun.spawn([bin, "models"], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
-        const out = await new Response(proc.stdout as ReadableStream).text();
-        await proc.exited;
-        modelsCache = parseOpencodeModels(out);
+        modelsCache = parseOpencodeModelsVerbose(await runModelsCommand(bin, cwd, ["--verbose"]));
+        if (!modelsCache.length) modelsCache = parseOpencodeModels(await runModelsCommand(bin, cwd, []));
       } catch {
         modelsCache = [];
       }
@@ -232,7 +239,9 @@ async function runTurn(s: OpencodeSession, text: string): Promise<void> {
     const tail = stderr.trim().split("\n").slice(-3).join("\n").trim();
     emit(s, { type: "error", code: "error", message: tail || `opencode exited with code ${exitCode}` });
   }
-  emit(s, { type: "result", isError: failed, numTurns: 1, costUsd: state.costUsd });
+  // A run that streamed an error event still EXITS 0 (verified live: an API 401 → error event,
+  // exit code 0) — the result must report the failure either way or the footer shows a clean turn.
+  emit(s, { type: "result", isError: failed || sawErrorFrame, numTurns: 1, costUsd: state.costUsd });
   emit(s, { type: "done" });
   // Name the tab off the first prompt (opencode's own session titling is async + truncated-prompt
   // based anyway) — latched once, like chat.ts maybeEmitTitle.

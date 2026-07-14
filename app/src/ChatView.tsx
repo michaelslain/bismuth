@@ -38,7 +38,7 @@ import { rememberChatSession, recallChatSession, forgetChatSession } from "./cha
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
 import { resolveInitialModel } from "./chatModelResolution";
-import { CHAT_PROVIDER_OPTIONS, modelStorageKeys, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
+import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -389,14 +389,17 @@ export function ChatView(props: {
   // truth: the user's picks update it (and persist), and on a session's FIRST manifest it's pushed
   // down to the session (see onFrame "manifest").
   const [permMode, setPermMode] = createSignal<string>(readLastMode());
-  // A fatal setup state (claude not installed) — replaces the transcript with guidance.
-  const [setupError, setSetupError] = createSignal(false);
+  // A fatal setup state — WHICH provider's CLI is missing (`no-claude`/`no-opencode`), or null.
+  // Replaces the transcript with provider-specific guidance + a one-click switch to the other
+  // provider (card #90: gate gracefully, never crash).
+  const [setupError, setSetupError] = createSignal<ChatProviderChoice | null>(null);
   // A non-fatal per-turn error to show inline below the conversation (spawn/exit/error).
   const [turnError, setTurnError] = createSignal<string | null>(null);
   // The models this login can run (`models` frame, once per session) — powers the header picker.
   // Each entry also carries the effort levels IT supports (FEATURE #63), so the Effort picker below
-  // tracks the SELECTED model's real levels rather than a hardcoded list.
-  const [models, setModels] = createSignal<{ value: string; label: string; description: string; effortLevels: string[] }[]>([]);
+  // tracks the SELECTED model's real levels rather than a hardcoded list; opencode entries carry
+  // `free` (cost metadata) → the picker's Free/Paid badge (card #90).
+  const [models, setModels] = createSignal<{ value: string; label: string; description: string; effortLevels: string[]; free?: boolean }[]>([]);
   // The reasoning-effort level shown in the header Select (FEATURE #63). Seeded to the LAST-CHOSEN
   // level (persisted) so the control reflects the user's preference the instant the chat opens; on a
   // session's first manifest a non-empty value is pushed down (see onFrame "manifest"). "" = never
@@ -754,7 +757,9 @@ export function ChatView(props: {
         });
         break;
       case "result":
-        if (frame.isError) setTurnError("The turn ended with an error.");
+        // Don't clobber the SPECIFIC message an earlier `error` frame already set — a failed
+        // opencode turn emits its error frame first, then a result with isError (exit code 0).
+        if (frame.isError && !turnError()) setTurnError("The turn ended with an error.");
         withAssistant((a) => {
           a.footer = { numTurns: frame.numTurns, costUsd: frame.costUsd };
         });
@@ -782,7 +787,8 @@ export function ChatView(props: {
         break;
       case "error":
         setStreaming(false);
-        if (frame.code === "no-claude") setSetupError(true);
+        if (frame.code === "no-claude") setSetupError("claude");
+        else if (frame.code === "no-opencode") setSetupError("opencode");
         else {
           setTurnError(frame.message || "Something went wrong.");
           // exit/error ended the session — a queued follow-up still gets dispatched (chatSend
@@ -1236,9 +1242,9 @@ export function ChatView(props: {
     // remembered session id so a close/reopen doesn't try (and error).
     forgetChatSession(props.chatId);
     setHistoryOpen(false);
-    // A missing `claude` blanks the transcript with the setup screen — switching to opencode must
-    // clear it (the whole point of a second provider when Claude Code isn't installed).
-    setSetupError(false);
+    // A missing CLI blanks the transcript with the setup screen — switching providers must clear
+    // it (the whole point of a second provider when the first one isn't installed).
+    setSetupError(null);
     resetTranscript();
     reconnectOn(crypto.randomUUID());
     focusComposer();
@@ -1710,7 +1716,7 @@ export function ChatView(props: {
             class="chat-model-select"
             value={displayModel()}
             placeholder="Default model"
-            options={models().map((m) => ({ value: m.value, label: m.label }))}
+            options={models().map((m) => ({ value: m.value, label: m.label, detail: modelPriceBadge(m.free) }))}
             onChange={switchModel}
           />
         </Show>
@@ -1804,11 +1810,30 @@ export function ChatView(props: {
             <div class="chat-setup-icon">
               <IconButton icon="MessageSquare" label="Chat" iconSize={28} disabled />
             </div>
-            <h3>Claude Code isn't available</h3>
-            <p>
-              Chat runs the <code>claude</code> CLI on your machine — it isn't installed or signed
-              in. Install Claude Code and sign in, then reopen this tab.
-            </p>
+            {/* Provider-specific guidance (card #90): name the missing CLI, how to get it, and a
+                one-click switch to the OTHER provider — gate gracefully, never a dead end. */}
+            <Show
+              when={setupError() === "opencode"}
+              fallback={
+                <>
+                  <h3>Claude Code isn't available</h3>
+                  <p>
+                    This chat runs the <code>claude</code> CLI on your machine — it isn't installed
+                    or signed in. Install Claude Code and sign in, then reopen this tab.
+                  </p>
+                </>
+              }
+            >
+              <h3>opencode isn't available</h3>
+              <p>
+                This chat is set to the opencode provider, but the <code>opencode</code> CLI wasn't
+                found on your machine. Install it from opencode.ai (e.g.{" "}
+                <code>brew install sst/tap/opencode</code>), then reopen this tab.
+              </p>
+            </Show>
+            <TextButton onClick={() => switchProvider(setupError() === "opencode" ? "claude" : "opencode")}>
+              {setupError() === "opencode" ? "USE CLAUDE CODE INSTEAD" : "USE OPENCODE INSTEAD"}
+            </TextButton>
           </div>
         }
       >

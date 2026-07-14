@@ -81,7 +81,7 @@ export type ChatFrame =
    *  Each model also carries the reasoning-effort levels IT supports (ModelInfo.supportedEffortLevels)
    *  so the header's Effort picker (FEATURE #63) offers exactly what the SELECTED model allows —
    *  never a hardcoded list. Empty for a model/CLI that doesn't expose effort → the picker hides. */
-  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[] }[] }
+  | { type: "models"; models: { value: string; label: string; description: string; effortLevels: string[]; free?: boolean }[] }
   /** The session's conversation summary (Query store via getSessionInfo) — names the chat tab.
    *  Emitted once per session, retried each turn-end until a non-empty summary exists. */
   | { type: "title"; title: string }

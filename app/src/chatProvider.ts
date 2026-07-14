@@ -44,3 +44,11 @@ export function modelStorageKeys(provider: ChatProviderChoice, chatId: string): 
 export function providerSupportsClaudeControls(provider: ChatProviderChoice): boolean {
   return provider === "claude";
 }
+
+/** The model picker row's price badge (card #90: "show which one free and which one isnt").
+ *  Tri-state: opencode models carry `free` off their cost metadata (`opencode models --verbose`);
+ *  Claude models (and an opencode list fetched without metadata) carry none → no badge. */
+export function modelPriceBadge(free: boolean | undefined): string | undefined {
+  if (free === undefined) return undefined;
+  return free ? "Free" : "Paid";
+}
