@@ -235,9 +235,6 @@ export const SETTINGS_SCHEMA: Schema = {
     } } },
     default: [
       { command: "create-menu", icon: "Plus" },
-      // The emoji library sits right beside the create ("+") menu so it's always one click away
-      // rather than buried in the `:emoji` completion popup (#67). Movable/removable like any button.
-      { command: "emoji-library", icon: "Smile" },
       { command: "search", icon: "Search" },
       // The daemon inbox lives here by default (hidden while the daemon is off; carries a
       // due-count badge — see App.tsx's toolbar render). Removable/movable like any button.
