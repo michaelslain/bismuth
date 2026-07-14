@@ -34,6 +34,10 @@ export const COMMAND_CATALOG: CommandSpec[] = [
   { id: "archive-tasks",     label: "Archive completed tasks (this note)", icon: "Archive" },
   { id: "archive-all-tasks", label: "Archive completed tasks (all notes)", icon: "ArchiveX" },
   { id: "detect-ai",       label: "Detect AI text",            icon: "Bot" },
+  // Opens the full emoji library (the grid picker) and inserts the pick at the caret. This is the
+  // ALWAYS-VISIBLE home for the library — the `:emoji` completion popup deliberately no longer
+  // carries an "Open emoji gallery" row (it buried / outranked real matches like `:rocket`, #67).
+  { id: "emoji-library",   label: "Emoji library…",            icon: "Smile" },
   { id: "terminal",        label: "Open Terminal",             icon: "SquareTerminal" },
   { id: "search",          label: "Search",                    icon: "Search" },
   { id: "settings",        label: "Open Settings",             icon: "Settings" },

@@ -72,7 +72,7 @@ import { PaneTree } from "./PaneTree";
 import { createViewDrag, type DragDescriptor, type DropTarget, type DropPoint } from "./dnd/viewDrag";
 import type { Zone as DropZone } from "./dnd/geometry";
 import { descriptorMovePath, descriptorNotePath, descriptorChatRefPath, isMarkdown, wikilinkFor } from "./dnd/noteRef";
-import { insertTextAtCoords } from "./editorRegistry";
+import { insertTextAtCoords, insertIntoFocusedEditor } from "./editorRegistry";
 import { ContextMenu, type MenuItem } from "./ContextMenu";
 import { openContextMenu, isTauri } from "./nativeMenu";
 import "./App.css";
@@ -689,6 +689,22 @@ export default function App() {
       pushToast((e as Error)?.name === "TooShortError" ? "Not enough text on this page to analyze" : `AI detection failed: ${(e as Error).message}`);
     }
   };
+  // Emoji library: pop the grid picker (the SAME gallery the icon-field completion uses, sourced to
+  // emoji only) and insert the chosen glyph at the last-focused editor's caret. The always-visible
+  // home for the full library — it lives here, on a toolbar button + in the palette, instead of as a
+  // buried "Open emoji gallery" row in the `:emoji` completion popup (which outranked real matches
+  // like `:rocket`, #67). Dynamically imported so lucide-solid / the gallery stay off the entry
+  // chunk. No focused note → a toast, since there's nowhere to insert.
+  const openEmojiLibrary = async () => {
+    const [{ openGallery }, sources] = await Promise.all([
+      import("./ui/gallery/galleryStore"),
+      import("./ui/gallery/sources"),
+    ]);
+    const char = await openGallery({ source: sources.emojiSource, title: "Emoji" });
+    if (char && !insertIntoFocusedEditor(char, char.length)) {
+      pushToast("Open a note to insert an emoji");
+    }
+  };
   // New window: reopen the CURRENT folder/backend in a new window, pinned to this
   // window's backend via ?api= (so it survives even if this window later opens a
   // different folder). A clean URL (only ?api=) — no other query state carries over.
@@ -915,7 +931,7 @@ export default function App() {
     }
   };
   // The catalog->action binding both the toolbar and the command palette consume.
-  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
+  const commands = () => bindCommands({ openSettings, openTerminal, openSearch, newNote, newFolder, newBase, newSpreadsheet, newDrawing, openCreateMenu, openGraph, openInbox, setMode, openDailyNote, equalizePanes, toggleSidebar, openFolder, newWindow, exportActive, detectAiActive, newTab, closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner, openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary, archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect, newClaudeChat, openEmojiLibrary, zoomIn, zoomOut, zoomReset }, settings.dailyNotes);
 
   // Native macOS menu bar (Tauri only) — the "File" menu and friends, wired to the same
   // command handlers as the palette so both surfaces stay in sync. No-op in the browser.

@@ -94,6 +94,7 @@ import Settings from "lucide-solid/icons/settings";
 import Settings2 from "lucide-solid/icons/settings-2";
 import Share from "lucide-solid/icons/share";
 import Share2 from "lucide-solid/icons/share-2";
+import Smile from "lucide-solid/icons/smile";
 import Square from "lucide-solid/icons/square";
 import SquarePlus from "lucide-solid/icons/square-plus";
 import SquareTerminal from "lucide-solid/icons/square-terminal";
@@ -129,7 +130,7 @@ const SEED: Record<string, LucideIcon> = {
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image, Inbox,
   Landmark, LayoutList, Link, Lock, Menu, MessageSquare, MessagesSquare, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Pin, PinOff, Plus, Redo2, RefreshCw, Regex, Repeat,
-  Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Square,
+  Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Smile, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
   WholeWord, Wrench, X, Zap, ZoomIn, ZoomOut,
 } as unknown as Record<string, LucideIcon>;

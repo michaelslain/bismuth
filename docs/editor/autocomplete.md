@@ -152,7 +152,7 @@ Each option has an `info` tooltip with its documentation string.
 - `filter: false` — CodeMirror's built-in label filter is disabled. The source owns all ranking so keyword matches (`:happy` → 😄) work even though the label starts with the glyph, not the query.
 - No `validFor` — re-queries on every keystroke.
 - The `apply` callback inserts the raw glyph character, replacing the full `:query[:]` span (both `from` and `to` are set).
-- The popup always includes an "Open emoji gallery" entry (type `"gallery"`, icon `Grip`) as the first option — this dynamically imports `ui/gallery/galleryStore` and `ui/gallery/sources` to open the grid picker. Picking from the gallery replaces the same range.
+- The popup is **emoji only** — the best-matching glyph is always the first, default-selected option, so `:rocket`↵ inserts 🚀 (#67). It carries **no "Open emoji gallery" row** (an earlier version did, pinned last, but it still drew the eye and, in some builds, floated above the match). The full emoji library now lives behind the always-visible **`emoji-library`** toolbar command / palette entry (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })` → `insertIntoFocusedEditor`), not inside this list. When nothing matches (e.g. `:zzzz`) the source returns `null`, so no empty popup appears. Ordering is pinned by `app/src/editor/emojiSource.test.ts` (covers both the note editor and the in-cell table editor, which share this source via `vaultCompletion()`).
 
 **Search algorithm** (in `emoji.ts` `rankEmoji`):
 

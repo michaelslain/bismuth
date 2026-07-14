@@ -64,27 +64,28 @@ The table below lists **every** entry in `COMMAND_CATALOG`, in exact catalog ord
 | 17 | `archive-tasks` | Archive completed tasks (this note) | `Archive` | `h.archiveTasks` |
 | 18 | `archive-all-tasks` | Archive completed tasks (all notes) | `ArchiveX` | `h.archiveAllTasks` |
 | 19 | `detect-ai` | Detect AI text | `Bot` | `h.detectAiActive` |
-| 20 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
-| 21 | `search` | Search | `Search` | `h.openSearch` |
-| 22 | `settings` | Open Settings | `Settings` | `h.openSettings` |
-| 23 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
-| 24 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
-| 25 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
-| 26 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
-| 27 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
-| 28 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
-| 29 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
-| 30 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
-| 31 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
-| 32 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
-| 33 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
-| 34 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
-| 35 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
-| 36 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
-| 37 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
-| 38 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
-| 39 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
-| 40 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
+| 20 | `emoji-library` | Emoji library… | `Smile` | `h.openEmojiLibrary` |
+| 21 | `terminal` | Open Terminal | `SquareTerminal` | `h.openTerminal` |
+| 22 | `search` | Search | `Search` | `h.openSearch` |
+| 23 | `settings` | Open Settings | `Settings` | `h.openSettings` |
+| 24 | `edit-dictionary` | Edit custom dictionary… | `BookOpen` | `h.openEditDictionary` |
+| 25 | `graph-2nd` | Graph: 2nd Brain (vault) | `Notebook` | `() => h.setMode("2nd")` |
+| 26 | `graph-3rd` | Graph: 3rd Brain (memory) | `Brain` | `() => h.setMode("3rd")` |
+| 27 | `graph-both` | Graph: Both Brains | `Network` | `() => h.setMode("both")` |
+| 28 | `graph-agents` | Graph: Agents | `Users` | `() => h.setMode("agents")` |
+| 29 | `equalize-panes` | Equalize panes | `Columns3` | `h.equalizePanes` |
+| 30 | `toggle-sidebar` | Toggle sidebar | `PanelLeft` | `h.toggleSidebar` |
+| 31 | `daemon-owner` | Set daemon owner device… | `Server` | `h.openDaemonOwner` |
+| 32 | `daemon-setup` | Set up daemon… | `Download` | `h.openDaemonSetup` |
+| 33 | `daemon-update` | Update daemon… | `RefreshCw` | `h.updateDaemon` |
+| 34 | `bismuth-install` | Install Bismuth CLI + MCP… | `Download` | `h.openBismuthInstall` |
+| 35 | `update-app` | Update Bismuth… | `RefreshCw` | `h.updateApp` |
+| 36 | `gcal-connect` | Connect Google Calendar… | `Calendar` | `h.gcalConnect` |
+| 37 | `gcal-sync` | Sync Google Calendar | `RefreshCw` | `h.gcalSync` |
+| 38 | `gcal-disconnect` | Disconnect Google Calendar | `CalendarX` | `h.gcalDisconnect` |
+| 39 | `zoom-in` | Zoom In | `ZoomIn` | `h.zoomIn` |
+| 40 | `zoom-out` | Zoom Out | `ZoomOut` | `h.zoomOut` |
+| 41 | `zoom-reset` | Reset Zoom | `RotateCcw` | `h.zoomReset` |
 
 Notes on individual commands:
 
@@ -94,6 +95,7 @@ Notes on individual commands:
 - **`new-base`** creates a `type: base` markdown file. As a plain command (palette / toolbar `command: new-base`) it calls `h.newBase` directly; as the `create-menu` "New base ▸" submenu it offers one entry per Bases view kind (see the chooser section).
 - **`archive-tasks` / `archive-all-tasks`**: permanently remove completed/cancelled tasks — from the **active note** (`h.archiveTasks`) or across **all notes** (`h.archiveAllTasks`).
 - **`detect-ai`**: estimates how AI-generated the active page reads and toasts the score. It runs a **local, offline** detector — see ["The `detect-ai` command"](#the-detect-ai-command).
+- **`emoji-library`**: opens the emoji grid picker (`h.openEmojiLibrary` → `openGallery({ source: emojiSource })`) and inserts the chosen glyph at the focused editor's caret (`insertIntoFocusedEditor`; toasts "Open a note to insert an emoji" when no note is focused). It is the **always-visible home** for the full library and ships in the **default sidebar toolbar** (beside `create-menu`). This is why the `:emoji` completion popup no longer carries an "Open emoji gallery" row — that buried the library and could outrank a real match like `:rocket` (#67; see `docs/editor/autocomplete.md`).
 - **`edit-dictionary`**: opens the modal to view/remove the user's custom spellcheck dictionary words (`h.openEditDictionary`).
 - **Graph-mode commands** (`graph-2nd`, `graph-3rd`, `graph-both`, `graph-agents`): each calls `h.setMode(...)` with the corresponding graph mode string.
 - **`daemon-owner` / `daemon-setup` / `daemon-update`**: open the daemon owner-picker modal (`h.openDaemonOwner`), the install/repair (adopt) panel (`h.openDaemonSetup`), and trigger an update of the daemon respectively. `daemon-update` binds to its **own** handler `h.updateDaemon` (POST `/daemon/update`, idempotent + fetch-gated, toasts progress) — the daemon updates *with* the app via `runSetup` (`core/src/daemonInstall.ts`), not a separate git-pull. See Daemon Integration in the project CLAUDE.md.
@@ -229,6 +231,8 @@ export interface CommandHandlers {
   gcalSync: () => void | Promise<void>;
   // Disconnect Google Calendar (revoke + wipe stored tokens).
   gcalDisconnect: () => void | Promise<void>;
+  // Open the emoji library (grid picker) and insert the pick at the focused editor's caret.
+  openEmojiLibrary: () => void | Promise<void>;
   // Open a fresh Claude Code chat session in its own tab.
   newClaudeChat: () => void;
 }
@@ -246,7 +250,7 @@ const commands = () => bindCommands(
     closeActiveTab, reopenClosedTab, historyBack, historyForward, openDaemonOwner,
     openDaemonSetup, updateDaemon, openBismuthInstall, updateApp, openEditDictionary,
     archiveTasks, archiveAllTasks, gcalConnect: openGcalConnect, gcalSync, gcalDisconnect,
-    newClaudeChat },
+    newClaudeChat, openEmojiLibrary },
   settings.dailyNotes,
 );
 ```
@@ -312,9 +316,10 @@ toolbar: {
                 doc: "Optional hover text (defaults to the command's label)." },
   } } },
   default: [
-    { command: "new-note",   icon: "FilePlus" },
-    { command: "new-folder", icon: "FolderPlus" },
-    { command: "search",     icon: "Search" },
+    { command: "create-menu",   icon: "Plus" },
+    { command: "emoji-library",  icon: "Smile" },   // always-visible home for the emoji library (#67)
+    { command: "search",         icon: "Search" },
+    { command: "open-inbox",     icon: "Inbox" },
   ],
   doc: "Buttons in the sidebar header bar, in order. Each runs a command-palette command.",
 }
