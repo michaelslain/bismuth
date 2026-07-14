@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createMemo, createEffect, untrack, onMount, onCleanup, Show, For } from "solid-js";
 import { api } from "../api";
 import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
@@ -20,6 +20,7 @@ import {
   buildQueue,
   nextPosAfterGrade,
   canGrade,
+  progressTotal,
   loadSession,
   saveSession,
   backField as revScheduleCol,
@@ -102,11 +103,24 @@ export function FlashcardsView(props: {
   });
 
   const current = () => (pos() < queue().length ? queue()[pos()] : null);
-  // Progress through the deck for this session: how many graded so far over the
-  // starting due count. The queue shrinks as cards are scheduled out, so anchor the
-  // total to graded + remaining.
   const graded = () => hardCount() + goodCount() + easyCount();
-  const total = () => graded() + queue().length;
+
+  // The progress denominator is ANCHORED ONCE per session and then frozen, so the
+  // displayed total can never drift as you review. Computing it live (the old
+  // `graded + queue.length`) made the count climb by one per grade in cram mode
+  // (there the queue length is constant while `graded` grows) and flicker during
+  // the post-grade refetch in normal mode — the reported "count changes between
+  // cram and normal, and sometimes goes up randomly". `progressTotal` gives the
+  // mode-correct starting size (cram = all cards; normal = due count, reconstructed
+  // as graded + remaining so a mid-session resume still anchors correctly).
+  const [sessionTotal, setSessionTotal] = createSignal<number | null>(null);
+  createEffect(() => {
+    const len = queue().length; // reactive: re-anchors when a new session repopulates the queue
+    if (sessionTotal() === null && len > 0) {
+      setSessionTotal(progressTotal(len, untrack(graded), untrack(cram)));
+    }
+  });
+  const total = () => sessionTotal() ?? progressTotal(queue().length, graded(), cram());
   const progressPct = () => {
     const t = total();
     return t === 0 ? 0 : (graded() / t) * 100;
@@ -159,6 +173,9 @@ export function FlashcardsView(props: {
     setHardCount(0);
     setGoodCount(0);
     setEasyCount(0);
+    // Drop the frozen denominator so the next queue (new mode / restarted session)
+    // re-anchors the total from scratch.
+    setSessionTotal(null);
   };
 
   const restart = () => {
