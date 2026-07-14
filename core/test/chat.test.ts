@@ -25,6 +25,7 @@ import {
   formatMcpStatus,
   withLocalSlashCommands,
   LOCAL_SLASH_COMMANDS,
+  computerUseChange,
   extractAskUserQuestions,
   buildAskUserQuestionAnswer,
   ASK_USER_QUESTION_TOOL,
@@ -280,6 +281,36 @@ describe("withLocalSlashCommands (BUG #39: /mcp shows in the autocomplete)", () 
     for (const c of LOCAL_SLASH_COMMANDS) {
       if (c === "mcp") expect(isMcpCommand(`/${c}`)).toBe(true);
     }
+  });
+});
+
+// BUG #87: whether a turn arriving on a LIVE session must respawn query() to change its --chrome
+// (browser/computer-use) capability. --chrome is spawn-fixed, so a toggle only reaches a running
+// session via a respawn — computerUseChange is the pure decision (current spawn flag vs the client's
+// current choice, carried on every turn). Before this the browser stayed disabled for the chat the
+// user was already in because nothing ever flipped the live flag.
+describe("computerUseChange (BUG #87: live --chrome toggle → respawn decision)", () => {
+  test("off → on: respawn, next=true", () => {
+    expect(computerUseChange(false, true)).toEqual({ next: true, respawn: true });
+  });
+  test("on → off: respawn, next=false", () => {
+    expect(computerUseChange(true, false)).toEqual({ next: false, respawn: true });
+  });
+  test("unchanged on → on: no respawn", () => {
+    expect(computerUseChange(true, true)).toEqual({ next: true, respawn: false });
+  });
+  test("unchanged off → off: no respawn", () => {
+    expect(computerUseChange(false, false)).toEqual({ next: false, respawn: false });
+  });
+  test("undefined (never-set) current is treated as off: undefined→true respawns", () => {
+    expect(computerUseChange(undefined, true)).toEqual({ next: true, respawn: true });
+  });
+  test("undefined current vs false request: same off state, no spurious respawn", () => {
+    expect(computerUseChange(undefined, false)).toEqual({ next: false, respawn: false });
+  });
+  test("undefined request is treated as off (a client that omits the flag never enables it)", () => {
+    expect(computerUseChange(true, undefined)).toEqual({ next: false, respawn: true });
+    expect(computerUseChange(false, undefined)).toEqual({ next: false, respawn: false });
   });
 });
 
