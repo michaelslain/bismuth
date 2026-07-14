@@ -1,0 +1,190 @@
+/* CardEditModal — the focused kanban-card edit modal (CardEditModal.tsx). Chrome mirrors the
+   app's other modals (Portal-mounted panel over the shared .ui-overlay backdrop). */
+
+.panel {
+  width: 460px;
+  max-width: 92vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, var(--rail));
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+.headTitle {
+  flex: 1;
+  font-family: var(--ui-font-stack);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.close:hover { background: var(--surface-2); color: var(--fg); }
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.titleField,
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-family: var(--ui-font-stack);
+}
+
+.titleInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 11px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--editor-font);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  outline: none;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.titleInput:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+.readonly {
+  font-family: var(--editor-font);
+  font-size: 14px;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+
+.boolChip :global(.chip-toggle) {
+  height: 26px;
+  padding: 0 11px;
+  gap: 5px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+
+/* The rich Milkdown description surface — a bordered box that reads like the note editor's body. */
+.mdField {
+  box-sizing: border-box;
+  min-height: 96px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: 9px;
+  background: var(--surface-2);
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+  cursor: text;
+}
+.mdField:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* Prose styling for the ProseMirror editable (Milkdown ships no CSS). The `attributes.class`
+   createDocEditor sets ("bismuth-doc-milkdown") lands on the contenteditable itself. */
+.mdField :global(.bismuth-doc-milkdown) {
+  outline: none;
+  font-family: var(--editor-font);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--fg);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mdField :global(.bismuth-doc-milkdown p) { margin: 0 0 8px; }
+.mdField :global(.bismuth-doc-milkdown p:last-child) { margin-bottom: 0; }
+.mdField :global(.bismuth-doc-milkdown h1) { font-size: 1.5em; font-weight: 700; line-height: 1.3; margin: 6px 0 6px; }
+.mdField :global(.bismuth-doc-milkdown h2) { font-size: 1.3em; font-weight: 700; line-height: 1.3; margin: 6px 0 6px; }
+.mdField :global(.bismuth-doc-milkdown h3) { font-size: 1.14em; font-weight: 650; line-height: 1.35; margin: 6px 0 4px; }
+.mdField :global(.bismuth-doc-milkdown ul),
+.mdField :global(.bismuth-doc-milkdown ol) { margin: 4px 0; padding-left: 22px; }
+.mdField :global(.bismuth-doc-milkdown li) { margin: 2px 0; }
+.mdField :global(.bismuth-doc-milkdown li > p) { margin: 0; }
+.mdField :global(.bismuth-doc-milkdown strong) { font-weight: 700; }
+.mdField :global(.bismuth-doc-milkdown em) { font-style: italic; }
+.mdField :global(.bismuth-doc-milkdown code) {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-3, var(--surface-2));
+}
+.mdField :global(.bismuth-doc-milkdown blockquote) {
+  margin: 6px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+.mdField :global(.bismuth-doc-milkdown a) { color: var(--accent); text-decoration: none; }
+/* Empty-editable placeholder — ProseMirror keeps a lone <p><br></p> when empty. */
+.mdField :global(.bismuth-doc-milkdown p:only-child:empty)::before,
+.mdField :global(.bismuth-doc-milkdown > p:only-child > br:only-child)::before {
+  content: "Add a description…";
+  color: var(--faint);
+  pointer-events: none;
+}
+
+.empty {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-soft);
+  flex: 0 0 auto;
+}
+.doneBtn {
+  padding: 7px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+  font-family: var(--ui-font-stack);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.12s ease;
+}
+.doneBtn:hover { filter: brightness(1.06); }

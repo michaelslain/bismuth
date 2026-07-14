@@ -526,6 +526,155 @@ export async function createBlockEditor(opts: CreateBlockEditorOptions): Promise
 }
 
 // ---------------------------------------------------------------------------------------
+// createDocEditor — a WHOLE-DOCUMENT rich-text surface (multi-block: headings/lists/quotes
+// as real blocks), for a standalone markdown STRING with no block-model / file coupling.
+// ---------------------------------------------------------------------------------------
+//
+// This is the minimal reusable piece factored out of the note surface so a kanban card's
+// `description` (or any `markdown`-typed base property) edits in the SAME true-WYSIWYG
+// Milkdown the note editor uses — bold renders bold, lists/headings render as blocks, no
+// markdown symbols shown — instead of a plain textarea (CardEditModal.tsx). It reuses the
+// EXACT shared config (STRINGIFY_OPTIONS + preserveAffixWhitespace + commonmark + inlineAtoms)
+// so it serializes byte-for-byte like the rest of the app, but DIFFERS from createBlockEditor
+// in two deliberate ways: (1) it injects NO structural keymap, so Enter/Backspace/Arrows behave
+// as normal commonmark editing (paragraph splits, list continuation) rather than routing to a
+// block store; (2) it serializes the ENTIRE document (all blocks), trimming trailing blank lines
+// so a frontmatter-string value stays clean.
+
+export interface DocEditorHandle {
+  /** Current serialized markdown of the whole document (trailing blank lines trimmed). */
+  getMarkdown: () => string;
+  /** Replace the document from external markdown; no-op (no onChange, no caret reset) when the
+   *  serialized doc already equals `md`. */
+  setMarkdown: (md: string) => void;
+  /** Focus the surface, placing the caret at the start or end (default end). */
+  focus: (caret?: "start" | "end") => void;
+  /** Tear down the ProseMirror view + Milkdown editor. */
+  destroy: () => void;
+}
+
+export interface CreateDocEditorOptions {
+  /** The mount node. */
+  root: HTMLElement;
+  /** Initial markdown. */
+  value: string;
+  /** Whether the user can type (default true). */
+  editable?: boolean;
+  /** Spellcheck toggle (settings.editor.spellcheck). */
+  spellcheck?: boolean;
+  /** Fired after every USER edit with the whole document's serialized markdown (never on a
+   *  programmatic setMarkdown). The host keeps this as its draft + persists it however it likes. */
+  onChange: (markdown: string) => void;
+  /** Fired when the editable loses focus — the host commits the draft here (like a textarea blur). */
+  onBlur?: () => void;
+}
+
+/** Create a full-document Milkdown WYSIWYG surface bound to a plain markdown string. Async
+ *  because Editor.create() is async; MilkdownField awaits it inside onMount. */
+export async function createDocEditor(opts: CreateDocEditorOptions): Promise<DocEditorHandle> {
+  let applyingExternal = false;
+  let lastEmitted = normalizeTrailing(opts.value);
+  let view: EditorView | null = null;
+
+  const serialize = (): string => {
+    if (!view) return lastEmitted;
+    const md = editor.action((ctx) => ctx.get(serializerCtx)(view!.state.doc));
+    return normalizeTrailing(md);
+  };
+
+  const onChangePlugin = new Plugin({
+    key: new PluginKey("bismuth-doc-onchange"),
+    view: () => ({
+      update: (v, prevState) => {
+        if (applyingExternal) return;
+        if (v.state.doc.eq(prevState.doc)) return; // selection-only move → nothing to emit
+        const md = serialize();
+        if (md !== lastEmitted) {
+          lastEmitted = md;
+          opts.onChange(md);
+        }
+      },
+    }),
+  });
+
+  const editor = await Editor.make()
+    .config((ctx) => {
+      ctx.set(rootCtx, opts.root);
+      ctx.set(defaultValueCtx, opts.value);
+      ctx.set(remarkStringifyOptionsCtx, STRINGIFY_OPTIONS as unknown as Record<string, unknown>);
+      // Only the onChange plugin — NO structural keymap, so Enter/lists/headings edit normally.
+      ctx.update(prosePluginsCtx, (prev) => [onChangePlugin, ...prev]);
+      ctx.update(editorViewOptionsCtx, (prev) => ({
+        ...prev,
+        editable: () => opts.editable !== false,
+        attributes: {
+          class: "bismuth-doc-milkdown",
+          spellcheck: opts.spellcheck ? "true" : "false",
+        },
+        handleDOMEvents: {
+          blur: () => {
+            opts.onBlur?.();
+            return false; // don't swallow — let ProseMirror handle its own blur
+          },
+        },
+      }));
+    })
+    .use(preserveAffixWhitespace)
+    .use(commonmark)
+    .use(inlineAtoms)
+    .create();
+
+  view = editor.ctx.get(editorViewCtx);
+
+  return {
+    getMarkdown: serialize,
+
+    setMarkdown: (md: string) => {
+      if (!view) return;
+      const want = normalizeTrailing(md);
+      if (serialize() === want) {
+        lastEmitted = want;
+        return;
+      }
+      applyingExternal = true;
+      try {
+        editor.action((ctx) => {
+          const v = ctx.get(editorViewCtx);
+          const parser = ctx.get(parserCtx);
+          const doc = parser(md);
+          if (!doc) return;
+          const tr = v.state.tr.replaceWith(0, v.state.doc.content.size, doc.content);
+          tr.setMeta("addToHistory", false);
+          v.dispatch(tr);
+        });
+        lastEmitted = want;
+      } finally {
+        applyingExternal = false;
+      }
+    },
+
+    focus: (caret?: "start" | "end") => {
+      if (!view) return;
+      const v = view;
+      v.focus();
+      placeCaret(v, caret === "start" ? 0 : v.state.doc.content.size);
+    },
+
+    destroy: () => {
+      view = null;
+      void editor.destroy();
+    },
+  };
+}
+
+/** Trim trailing blank lines from serialized markdown (the serializer always appends a
+ *  trailing "\n"; a multi-paragraph doc can accrue several) so a stored frontmatter-string
+ *  value stays clean. */
+function normalizeTrailing(md: string): string {
+  return md.replace(/\n+$/, "");
+}
+
+// ---------------------------------------------------------------------------------------
 // Caret / position helpers (ProseMirror equivalents of textarea selection math)
 // ---------------------------------------------------------------------------------------
 
