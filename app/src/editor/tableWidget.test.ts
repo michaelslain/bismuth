@@ -556,13 +556,17 @@ describe("#62 column resize drag updates width + persists", () => {
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 160 }));
     window.dispatchEvent(new MouseEvent("mouseup", { clientX: 160 }));
 
-    const raw = window.localStorage.getItem(storeKey);
+    // Read through the SAME binding the widget writes (the bare `localStorage` global, see
+    // saveVisual) — under full-suite cross-file DOM pollution `window.localStorage` can be a
+    // DIFFERENT store than the ambient global (a leftover `window` from an earlier test file),
+    // which made this exact assertion flaky in `bun test app` while passing standalone.
+    const raw = localStorage.getItem(storeKey);
     expect(raw).not.toBeNull();
     const stored = JSON.parse(raw!);
     expect(stored[headerKey]).toBeDefined();
     expect(stored[headerKey].cols[1]).toBe(100);
 
-    window.localStorage.removeItem(storeKey);
+    localStorage.removeItem(storeKey);
     view.destroy();
   });
 
@@ -601,7 +605,150 @@ describe("#62 column resize drag updates width + persists", () => {
     window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400 }));
     expect(wrap.querySelector<HTMLElement>("col:nth-child(2)")?.style.width).toBe(midWidth);
 
-    window.localStorage.removeItem("bismuth:table-size:note.md");
+    localStorage.removeItem("bismuth:table-size:note.md");
+    view.destroy();
+  });
+});
+
+// ── #92: ∞-mode resize — definite table width + reorder-drag always releases ───
+// The ∞ stylesheet gives the table `width: max-content`; once a resize freezes the layout to
+// `table-layout: fixed`, that intrinsic keyword leaves the fixed algorithm without a definite
+// width and engines fall back to content-driven column sizing — the <col> style changes but the
+// RENDERED column floors at its nowrap content width, so the drag visibly sticks. The widget must
+// give a frozen ∞ table a definite inline width (Σ frozen col widths), track it on every move,
+// and drop it in normal mode where the squash-to-page-width stylesheet layout is correct.
+describe("#92 infinity-mode resize keeps a definite table width", () => {
+  const storeKey = "bismuth:table-size:note.md";
+  // Bare `localStorage` — the binding the widget itself uses (see the #62 read note above).
+  afterEach(() => localStorage.removeItem(storeKey));
+
+  const toggleInfinity = (wrap: HTMLElement): void => {
+    wrap
+      .querySelector<HTMLElement>(".cm-table-tool-infinity")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  };
+  const dragCol1 = (wrap: HTMLElement, fromX: number, toX: number): void => {
+    const handle = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-resize"))[1]!;
+    handle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: fromX }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: toX }));
+    window.dispatchEvent(new MouseEvent("mouseup", { clientX: toX }));
+  };
+
+  test("∞ + drag → inline table width = Σ frozen col widths, tracking every move", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const table = wrap.querySelector<HTMLElement>("table")!;
+    toggleInfinity(wrap);
+    expect(wrap.classList.contains("cm-table-infinity")).toBe(true);
+
+    const handle = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-resize"))[1]!;
+    // Freeze: headless offsetWidth is 0 → every col frozen at 0px; the dragged col starts at MIN 40.
+    handle.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: 100 }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 160 })); // col1 → 100px
+    expect(table.style.width).toBe("100px"); // 0 + 100 + 0
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 180 })); // col1 → 120px
+    expect(table.style.width).toBe("120px"); // tracks the move
+    window.dispatchEvent(new MouseEvent("mouseup", { clientX: 180 }));
+    expect(table.style.width).toBe("120px"); // survives the release
+    view.destroy();
+  });
+
+  test("toggling ∞ off clears the inline width (normal mode squashes); back on restores it", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const table = wrap.querySelector<HTMLElement>("table")!;
+    toggleInfinity(wrap);
+    dragCol1(wrap, 100, 180); // freeze + col1 = 120px
+    expect(table.style.width).toBe("120px");
+    toggleInfinity(wrap); // ∞ OFF → the stylesheet's page-width squash must win again
+    expect(table.style.width).toBe("");
+    toggleInfinity(wrap); // ∞ back ON → re-derived from the (still frozen) col widths
+    expect(table.style.width).toBe("120px");
+    view.destroy();
+  });
+
+  test("a rebuilt widget with persisted ∞ + widths re-establishes the definite width", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    toggleInfinity(wrap);
+    dragCol1(wrap, 100, 180); // persists cols [0, 120, 0] + infinity: true
+    view.destroy();
+    // A fresh mount (same note path + header key) restores ∞ AND the definite width.
+    const view2 = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap2 = view2.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const table2 = wrap2.querySelector<HTMLElement>("table")!;
+    expect(wrap2.classList.contains("cm-table-infinity")).toBe(true);
+    expect(table2.style.width).toBe("120px");
+    view2.destroy();
+  });
+
+  test("normal (non-∞) resize never touches the table's own width", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const table = wrap.querySelector<HTMLElement>("table")!;
+    dragCol1(wrap, 100, 180);
+    expect(table.style.tableLayout).toBe("fixed"); // frozen…
+    expect(table.style.width).toBe(""); // …but the squash-to-page width is untouched
+    view.destroy();
+  });
+});
+
+// The reorder-grip drag (drag a column/row into a new slot) had the ORIGINAL stuck-drag bug the
+// column resize was already cured of: it ended ONLY on a window `mouseup`, which WebKit never
+// delivers for a button released outside the window (or an alt-tab / cancelled pointer) — leaving
+// the grabbing cursor, the reordering tint, and a leaked move listener forever. Every plausible
+// end event must run the one idempotent cleanup.
+describe("#92 reorder drag always releases", () => {
+  const grabGrip = (wrap: HTMLElement): HTMLElement => {
+    const grip = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-drag"))[0]!;
+    grip.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    return grip;
+  };
+
+  test("a window blur mid-drag releases (cursor + tint reset), and idempotently", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    grabGrip(wrap);
+    expect(document.body.style.cursor).toBe("grabbing");
+    expect(wrap.classList.contains("cm-table-reordering")).toBe(true);
+    // No mouseup ever arrives — only the window blur. It must run the same cleanup.
+    window.dispatchEvent(new Event("blur"));
+    expect(document.body.style.cursor).toBe("");
+    expect(document.body.style.userSelect).toBe("");
+    expect(wrap.classList.contains("cm-table-reordering")).toBe(false);
+    // Late end events (the trailing mouseup / a pointercancel) must no-op, not double-clean.
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    window.dispatchEvent(new Event("pointercancel"));
+    expect(document.body.style.cursor).toBe("");
+    view.destroy();
+  });
+
+  test("pointercancel releases too, and a NEW drag can start after (no leaked guard)", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    grabGrip(wrap);
+    window.dispatchEvent(new Event("pointercancel"));
+    expect(document.body.style.cursor).toBe("");
+    expect(wrap.classList.contains("cm-table-reordering")).toBe(false);
+    // The guard reset — a second grab starts a fresh drag.
+    grabGrip(wrap);
+    expect(document.body.style.cursor).toBe("grabbing");
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    expect(document.body.style.cursor).toBe("");
+    view.destroy();
+  });
+
+  test("one physical grab firing pointerdown + compat mousedown starts ONE drag that still releases", () => {
+    const view = mount("| A | B | C |\n| - | - | - |\n| x | y | z |");
+    const wrap = view.dom.querySelector<HTMLElement>(".cm-table-wrap")!;
+    const grip = Array.from(wrap.querySelectorAll<HTMLElement>(".cm-col-drag"))[0]!;
+    // happy-dom has no PointerEvent; the widget's pointerdown listener only reads MouseEvent fields.
+    grip.dispatchEvent(new MouseEvent("pointerdown", { button: 0, bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    grip.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+    expect(document.body.style.cursor).toBe("grabbing");
+    window.dispatchEvent(new Event("blur"));
+    expect(document.body.style.cursor).toBe("");
+    expect(wrap.classList.contains("cm-table-reordering")).toBe(false);
     view.destroy();
   });
 });
