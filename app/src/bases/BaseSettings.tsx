@@ -109,6 +109,12 @@ export function BaseSettings(props: {
 }) {
   const view = () => props.config.views[props.viewIdx];
   const isRecord = () => RECORD_TYPES.includes(props.type);
+  // Kanban gets column-visibility/reorder from the Properties section (declared
+  // fields + their eye toggle + reorder), so the Columns section (table-header-drag
+  // language, redundant visibility toggle) is suppressed for it. Other record views
+  // (table/list/cards/map/bullets) still have no per-property declarations driving
+  // order, so they keep Columns.
+  const showColumns = () => isRecord() && props.type !== "kanban";
   const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];
 
@@ -228,7 +234,13 @@ export function BaseSettings(props: {
   const save = async () => {
     if (props.basePath) {
       if (isRecord()) {
-        await api.setProperty(props.basePath, "order", cols().filter((c) => c.visible).map((c) => c.col));
+        // Kanban has no Columns UI (Properties supersedes it — see isRecordWithColumns
+        // below), so its field order must come from the declared `properties:` list, not
+        // a stale cols()-derived `order`. Writing `order` here would freeze whatever
+        // order existed at modal-open time instead of following Properties reordering.
+        if (props.type !== "kanban") {
+          await api.setProperty(props.basePath, "order", cols().filter((c) => c.visible).map((c) => c.col));
+        }
         await api.setProperty(props.basePath, "sort", sortProp() ? [{ property: sortProp(), direction: sortDir() }] : []);
         await api.setProperty(props.basePath, "groupBy", groupProp() ? { property: groupProp(), direction: groupDir() } : null);
         if (props.type === "kanban") await api.setProperty(props.basePath, "hideLabels", hideLabels());
@@ -312,24 +324,26 @@ export function BaseSettings(props: {
 
         {/* Record types: columns + sort + group */}
         <Show when={isRecord()}>
-          <div class="set-sect">Columns</div>
-          <div class="set-hint">Toggle to show or hide. Drag the column headers in the table to reorder.</div>
-          <div class="set-cols">
-            <For each={cols()}>{(item, i) => {
-              const locked = () => item.visible && visibleCount() <= 1;
-              return (
-                <div
-                  class="set-col"
-                  classList={{ off: !item.visible, locked: locked() }}
-                  title={locked() ? "At least one column must stay visible" : undefined}
-                  onClick={() => toggle(i())}
-                >
-                  <span class="set-col-name">{columnLabel(item.col, props.config)}</span>
-                  <span class={"evm-toggle" + (item.visible ? " on" : "")}><i /></span>
-                </div>
-              );
-            }}</For>
-          </div>
+          <Show when={showColumns()}>
+            <div class="set-sect">Columns</div>
+            <div class="set-hint">Toggle to show or hide. Drag the column headers in the table to reorder.</div>
+            <div class="set-cols">
+              <For each={cols()}>{(item, i) => {
+                const locked = () => item.visible && visibleCount() <= 1;
+                return (
+                  <div
+                    class="set-col"
+                    classList={{ off: !item.visible, locked: locked() }}
+                    title={locked() ? "At least one column must stay visible" : undefined}
+                    onClick={() => toggle(i())}
+                  >
+                    <span class="set-col-name">{columnLabel(item.col, props.config)}</span>
+                    <span class={"evm-toggle" + (item.visible ? " on" : "")}><i /></span>
+                  </div>
+                );
+              }}</For>
+            </div>
+          </Show>
 
           <div class="set-sect">Sort &amp; group</div>
           <div class="set-grid">

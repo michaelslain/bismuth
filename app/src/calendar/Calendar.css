@@ -355,8 +355,10 @@
 .evm-modal .evm-x { margin-left: auto; width: 28px; height: 28px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 7px; color: var(--lo); cursor: pointer; appearance: none; background: none; border: none; padding: 0; font: inherit; }
 .evm-modal .evm-x:hover { background: rgba(255, 255, 255, .06); color: var(--hi); }
 
-/* body (scrolls when tall) */
-.evm-modal .evm-body { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+/* body (scrolls when tall) — flex:1 1 auto lets it shrink below its content height
+   inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
+   so IT scrolls instead of the modal overflowing; head/foot stay pinned. */
+.evm-modal .evm-body { flex: 1 1 auto; padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
 
 /* big serif title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
