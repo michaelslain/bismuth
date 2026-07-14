@@ -22,7 +22,7 @@ import {
 } from "./embedSpec";
 
 // Kinds whose box can be drag-resized (and the new size persisted as `|WxH`).
-const RESIZABLE_KINDS = new Set<EmbedKind>(["image", "pdf", "video"]);
+const RESIZABLE_KINDS = new Set<EmbedKind>(["image", "pdf", "video", "html"]);
 
 interface EmbedCtx {
   getNotes: () => NoteCandidate[];
@@ -87,6 +87,32 @@ class EmbedWidget extends WidgetType {
       wrap.appendChild(frame);
       if (this.resizable) {
         this.makeResizable(wrap); // a PDF viewport isn't tied to a fixed aspect
+        wrap.style.width = s.width ? `${s.width}px` : "100%";
+        wrap.style.height = `${s.height ?? 520}px`;
+      }
+    } else if (s.kind === "html" && s.src) {
+      // Live, interactive HTML artifact (e.g. a self-contained inline-`<script>` force-directed
+      // SVG). An iframe is the ONLY path that keeps it interactive: every raw-HTML surface routes
+      // through sanitizeHtml.ts and DOMPurify strips `<script>`, so inlining kills the artifact.
+      // Modeled on the pdf branch above — both render an `<iframe>` via createElement, bypassing
+      // the sanitizer that the note-transclusion path (renderNote → renderMarkdown) enforces.
+      const frame = document.createElement("iframe");
+      frame.className = "cm-embed-html";
+      // SECURITY (two layers, BOTH required — do not "simplify" either away):
+      //   (1) sandbox WITHOUT `allow-same-origin` → the artifact's document gets an OPAQUE origin,
+      //       so it can't script-read this app's DOM/localStorage/cookies. NEVER add
+      //       allow-same-origin: that hands the frame our real origin and full same-origin access.
+      //   (2) BUT sandbox alone does NOT protect the vault: relative URLs inside the artifact
+      //       resolve against its document URL (= the core server), and the API is unauthenticated
+      //       with Access-Control-Allow-Origin:* (withCors), so `fetch('/file?path=private.md')`
+      //       from inside the artifact SUCCEEDS (ACAO:* matches the frame's null origin). The
+      //       second half is the `connect-src 'none'` CSP that GET /asset stamps on served .html
+      //       (see core/src/server.ts) — it kills fetch/XHR/WS/EventSource + external subresources.
+      frame.setAttribute("sandbox", "allow-scripts"); // (.sandbox is a read-only DOMTokenList; set the attr)
+      frame.src = s.page ? `${s.src}#${s.page}` : s.src; // `#region=form` → the artifact's location.hash
+      wrap.appendChild(frame);
+      if (this.resizable) {
+        this.makeResizable(wrap); // an HTML viewport isn't tied to a fixed aspect (like PDF)
         wrap.style.width = s.width ? `${s.width}px` : "100%";
         wrap.style.height = `${s.height ?? 520}px`;
       }
@@ -358,6 +384,11 @@ const embedTheme = EditorView.theme({
     width: "100%", height: "520px", border: "1px solid var(--border)",
     "border-radius": "8px", background: "var(--surface-2)",
   },
+  // HTML artifact iframe — same chrome as the PDF iframe (border + rounded + surface bg).
+  ".cm-embed-html": {
+    width: "100%", height: "520px", border: "1px solid var(--border)",
+    "border-radius": "8px", background: "var(--surface-2)",
+  },
   ".cm-embed-audio": { width: "min(420px, 100%)", display: "block" },
   ".cm-embed-video": { "max-width": "100%", "border-radius": "8px", display: "block" },
   ".cm-embed-note": {
@@ -379,6 +410,7 @@ const embedTheme = EditorView.theme({
     resize: "both", overflow: "hidden", "max-width": "100%", "box-sizing": "border-box",
   },
   ".cm-embed-resizable .cm-embed-pdf": { width: "100%", height: "100%", display: "block" },
+  ".cm-embed-resizable .cm-embed-html": { width: "100%", height: "100%", display: "block" },
   ".cm-embed-resizable .cm-embed-video": { width: "100%", height: "100%" },
   // Hide the native resize grip (the drag still works — hovering the corner shows the cursor).
   ".cm-embed-resizable::-webkit-resizer": { display: "none" },

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../src/server";
@@ -115,6 +115,34 @@ test("GET /asset streams a vault file's bytes; a miss is never cached (#38)", as
     // hit the miss before the file existed (or before a resolution bug was fixed) would keep
     // being served the stale 404 forever for that exact URL.
     expect(missing.headers.get("cache-control")).toBe("no-store");
+  } finally {
+    server.stop(true);
+  }
+});
+
+test("GET /asset stamps a locked-down CSP on embedded .html (blocks vault exfil), not on other assets", async () => {
+  const { vault, memory } = await makeSampleVault();
+  // A self-contained interactive artifact (inline <script>) embedded via `![[viz.html]]`.
+  writeFileSync(join(vault, "viz.html"), "<!doctype html><body><script>document.body.textContent='hi'</script>");
+  const server = createServer({ vault, memory, port: 0 });
+  const base = `http://localhost:${server.port}`;
+  try {
+    const html = await fetch(`${base}/asset?path=viz.html`);
+    expect(html.status).toBe(200);
+    expect(html.headers.get("content-type")).toContain("text/html");
+    const csp = html.headers.get("content-security-policy");
+    // The load-bearing directives: `connect-src 'none'` kills fetch/XHR/WS (so a malicious
+    // artifact can't read the unauthenticated ACAO:* API), and default-src/form-action lock the rest.
+    expect(csp).toContain("connect-src 'none'");
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("form-action 'none'");
+    // …but inline scripts still run (the artifact must stay interactive).
+    expect(csp).toContain("script-src 'unsafe-inline'");
+
+    // A .md asset is served as plain text, never framed as a live document → no CSP.
+    const md = await fetch(`${base}/asset?path=essay.md`);
+    expect(md.status).toBe(200);
+    expect(md.headers.get("content-security-policy")).toBeNull();
   } finally {
     server.stop(true);
   }

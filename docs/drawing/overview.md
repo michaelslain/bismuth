@@ -387,7 +387,7 @@ All three funnel through `imageElFromSrc(src, maxScale)`, which decodes the imag
 
 ### Image / PDF Markup (`ImageMarkupPage`)
 
-Opening an image file (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`) or a `.pdf` file does **not** show a plain image/PDF viewer — `PaneContent.tsx` routes both extensions to `ImageMarkupPage` (`app/src/drawing/DrawingPage.tsx`), which lets the file be annotated exactly like a drawing:
+Opening an image file (`.png`/`.jpg`/`.jpeg`/`.gif`/`.webp`/`.svg`) or a `.pdf` file now opens the read-only `PreviewView` by default (see `previewKind.ts`); markup is an explicit opt-in via the `::annotate:` sentinel, which `PaneContent.tsx` routes to `ImageMarkupPage` (`app/src/drawing/DrawingPage.tsx`) to annotate the file exactly like a drawing:
 
 - A sidecar `<file>.draw` is created next to the source file (e.g. `photo.png` → `photo.png.draw`, `report.pdf` → `report.pdf.draw`).
 - **First open (seeding)**: `seedMarkupDoc()` branches on extension.

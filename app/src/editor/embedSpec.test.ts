@@ -19,10 +19,14 @@ describe("kindForTarget", () => {
     expect(kindForTarget("doc.pdf")).toBe("pdf");
     expect(kindForTarget("clip.mp4")).toBe("video");
     expect(kindForTarget("song.mp3")).toBe("audio");
+    expect(kindForTarget("viz.html")).toBe("html");
+    expect(kindForTarget("viz.htm")).toBe("html");
+    expect(kindForTarget("VIZ.HTML")).toBe("html");
   });
-  test("bare names and unknown extensions are notes", () => {
+  test("bare names and unknown extensions are notes — but html is an interactive embed, not a note", () => {
     expect(kindForTarget("Another Note")).toBe("note");
     expect(kindForTarget("thing.xyz")).toBe("note");
+    expect(kindForTarget("viz.html")).not.toBe("note"); // classified BEFORE the note fallback
   });
   test(".draw is not embeddable", () => {
     expect(kindForTarget("Sketch.draw")).toBeNull();
@@ -65,6 +69,12 @@ describe("specForWikiEmbed", () => {
   test("pdf embed keeps the heading fragment as its page", () => {
     expect(specForWikiEmbed("doc.pdf#page=3", asset)).toMatchObject({ kind: "pdf", page: "page=3" });
   });
+  test("html embed carries src and passes the fragment through as its page (deep-link via location.hash)", () => {
+    expect(specForWikiEmbed("viz.html#region=form", asset)).toMatchObject({
+      kind: "html", src: asset("viz.html"), page: "region=form",
+    });
+    expect(specForWikiEmbed("viz.html", asset)).toMatchObject({ kind: "html", src: asset("viz.html") });
+  });
   test("bare target is a note; .draw is dropped", () => {
     expect(specForWikiEmbed("Some Note", asset)).toEqual({ kind: "note", target: "Some Note" });
     expect(specForWikiEmbed("Sketch.draw", asset)).toBeNull();
@@ -85,6 +95,9 @@ describe("specForMarkdownImage", () => {
     });
     expect(specForMarkdownImage("clip.mp4", "", asset)?.kind).toBe("video");
     expect(specForMarkdownImage("doc.pdf#page=2", "", asset)).toMatchObject({ kind: "pdf", page: "page=2" });
+    expect(specForMarkdownImage("viz.html#region=form", "", asset)).toMatchObject({
+      kind: "html", src: asset("viz.html"), page: "region=form",
+    });
   });
   test(".draw markdown embed is dropped", () => {
     expect(specForMarkdownImage("Sketch.draw", "", asset)).toBeNull();
