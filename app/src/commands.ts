@@ -173,31 +173,3 @@ export function resolveButtonCommands(
       : [];
   return ids.map((id) => map.get(id)).filter((c): c is BoundCommand => c !== undefined);
 }
-
-/** A single configurable sidebar/tab toolbar button (mirrors settings.toolbar rows). */
-export type ToolbarButton = { command?: string; commands?: string[]; icon: string; tooltip?: string };
-
-/** True when this button references `id` — either as its single `command` or anywhere in a
- *  `commands` list (the list form is what resolveButtonCommands runs, so we honor it here too). */
-function buttonReferences(btn: ToolbarButton, id: string): boolean {
-  if (btn.commands && btn.commands.length > 0) return btn.commands.includes(id);
-  return btn.command === id;
-}
-
-/**
- * Guarantee the emoji library is ALWAYS reachable from the sidebar icon bar, regardless of the
- * user's custom `toolbar:` in `.settings` (#67 re-fix). The prior fix only seeded `emoji-library`
- * into the DEFAULT toolbar, so anyone with a custom toolbar never saw the icon ("not even
- * visible"). This appends the button when the user's toolbar doesn't already carry it, placing it
- * immediately to the LEFT of the create ("+") menu (`create-menu`) — the user's requested home —
- * and falling back to the front of the bar when there's no create-menu. Pure: returns a new array,
- * never mutates. If the toolbar already references `emoji-library` anywhere, it's left untouched so
- * the user's chosen position/order is respected.
- */
-export function ensureEmojiLibrary(toolbar: ToolbarButton[]): ToolbarButton[] {
-  if (toolbar.some((btn) => buttonReferences(btn, "emoji-library"))) return toolbar;
-  const emoji: ToolbarButton = { command: "emoji-library", icon: "Smile" };
-  const createIdx = toolbar.findIndex((btn) => buttonReferences(btn, "create-menu"));
-  const at = createIdx >= 0 ? createIdx : 0;
-  return [...toolbar.slice(0, at), emoji, ...toolbar.slice(at)];
-}

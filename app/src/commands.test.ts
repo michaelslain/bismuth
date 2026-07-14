@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { bindCommands, resolveButtonCommands, ensureEmojiLibrary, type CommandHandlers, type ToolbarButton } from "./commands";
+import { bindCommands, resolveButtonCommands, type CommandHandlers } from "./commands";
 
 function noopHandlers(): { handlers: CommandHandlers; calls: string[] } {
   const calls: string[] = [];
@@ -115,55 +115,5 @@ describe("resolveButtonCommands", () => {
 
   it("returns [] when neither key is present", () => {
     expect(resolveButtonCommands({}, map)).toEqual([]);
-  });
-});
-
-describe("ensureEmojiLibrary", () => {
-  const ids = (bar: ToolbarButton[]) => bar.map((b) => b.command ?? b.commands?.join("+"));
-
-  it("inserts emoji-library immediately to the LEFT of create-menu when absent (custom toolbar)", () => {
-    // A custom toolbar with NO emoji-library — the exact case that made the icon "not even visible".
-    const custom: ToolbarButton[] = [
-      { command: "create-menu", icon: "Plus" },
-      { command: "search", icon: "Search" },
-      { command: "settings", icon: "Settings" },
-    ];
-    const out = ensureEmojiLibrary(custom);
-    expect(ids(out)).toEqual(["emoji-library", "create-menu", "search", "settings"]);
-    // The emoji button carries the Smile icon.
-    expect(out[0]).toEqual({ command: "emoji-library", icon: "Smile" });
-  });
-
-  it("prepends emoji-library to the front when there is no create-menu", () => {
-    const custom: ToolbarButton[] = [
-      { command: "search", icon: "Search" },
-      { command: "graph-2nd", icon: "Circle" },
-    ];
-    expect(ids(ensureEmojiLibrary(custom))).toEqual(["emoji-library", "search", "graph-2nd"]);
-  });
-
-  it("leaves the toolbar untouched when it already has emoji-library (respects user position)", () => {
-    const custom: ToolbarButton[] = [
-      { command: "search", icon: "Search" },
-      { command: "emoji-library", icon: "Smile" },
-      { command: "create-menu", icon: "Plus" },
-    ];
-    const out = ensureEmojiLibrary(custom);
-    expect(out).toBe(custom); // same reference — no copy/insert
-  });
-
-  it("detects emoji-library referenced inside a `commands` list too (no duplicate)", () => {
-    const custom: ToolbarButton[] = [
-      { commands: ["emoji-library", "settings"], icon: "Smile" },
-      { command: "create-menu", icon: "Plus" },
-    ];
-    expect(ensureEmojiLibrary(custom)).toBe(custom);
-  });
-
-  it("does not mutate the input array", () => {
-    const custom: ToolbarButton[] = [{ command: "create-menu", icon: "Plus" }];
-    const copy = [...custom];
-    ensureEmojiLibrary(custom);
-    expect(custom).toEqual(copy);
   });
 });

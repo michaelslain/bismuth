@@ -44,6 +44,7 @@ import ChevronDown from "lucide-solid/icons/chevron-down";
 import ChevronLeft from "lucide-solid/icons/chevron-left";
 import ChevronRight from "lucide-solid/icons/chevron-right";
 import ChevronUp from "lucide-solid/icons/chevron-up";
+import Clipboard from "lucide-solid/icons/clipboard";
 import Code from "lucide-solid/icons/code";
 import Columns3 from "lucide-solid/icons/columns-3";
 import Copy from "lucide-solid/icons/copy";
@@ -87,6 +88,7 @@ import Regex from "lucide-solid/icons/regex";
 import Repeat from "lucide-solid/icons/repeat";
 import Replace from "lucide-solid/icons/replace";
 import RotateCcw from "lucide-solid/icons/rotate-ccw";
+import Scissors from "lucide-solid/icons/scissors";
 import Search from "lucide-solid/icons/search";
 import Send from "lucide-solid/icons/send";
 import Server from "lucide-solid/icons/server";
@@ -126,11 +128,11 @@ const SEED: Record<string, LucideIcon> = {
   AppWindow, Archive, ArchiveX, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Blend, Book, BookOpen,
   Bot, Box, Brain, BrainCircuit, Calendar, CalendarX, CaseSensitive, Check, ChevronDown,
   ChevronLeft, ChevronRight,
-  ChevronUp, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
+  ChevronUp, Clipboard, Code, Columns3, Copy, Crown, Database, Download, Eraser, Eye, File,
   FilePlus, FileText, Folder, FolderOpen, FolderPlus, Hash, Highlighter, Image, Inbox,
   Landmark, LayoutList, Link, Lock, Menu, MessageSquare, MessagesSquare, Minus, Network, Notebook, PanelBottom, PanelLeft,
   PanelRight, Pen, Pencil, PenTool, Pin, PinOff, Plus, Redo2, RefreshCw, Regex, Repeat,
-  Replace, RotateCcw, Search, Send, Server, Settings, Settings2, Share, Share2, Smile, Square,
+  Replace, RotateCcw, Scissors, Search, Send, Server, Settings, Settings2, Share, Share2, Smile, Square,
   SquarePlus, SquareTerminal, Star, Table, Tag, Trash2, Undo2, Users, Vote,
   WholeWord, Wrench, X, Zap, ZoomIn, ZoomOut,
 } as unknown as Record<string, LucideIcon>;
