@@ -17,6 +17,8 @@ The subsystem is the `core/src/gcal/` module set plus a handful of `/gcal/*` HTT
 
 The Bismuth side of an event is a **row in a calendar base**: `sync.ts` reads the base file with `readNote`, parses it via `parseBaseFile`, mutates row `note` objects, and reassembles + writes it back with `reassemble` + `writeNote`. The synced field set mirrors the calendar view's `eventToRow` keys — `id`, `title`, `date`, `startTime`, `endTime`, `location`, `link`, `description`, `category`, `recurrence`, `localUpdated` (see `buildNote` in `map.ts`).
 
+Headless edits via the **`bismuth calendar …` CLI group** (see `docs/cli/reference.md`) are sync-safe by construction: they preserve event `id`s, stamp `localUpdated` on every create/edit exactly like the app, and never touch the manifest (which lives outside the vault) — the sync engine sees them as ordinary local edits. The flip side: a CLI `calendar delete` propagates to Google on the next sync (Phase C), just like an in-app delete.
+
 ---
 
 ## OAuth 2.0 + PKCE Loopback Flow

@@ -589,14 +589,53 @@ Prints the ref's current SHA: `{ ref, sha }` (`sha: null` if unset).
 
 ## Calendar commands (`commands/calendar.ts`)
 
-Edit a calendar base file **by API** instead of hand-editing raw YAML — the app rewrites hand-edited YAML (strips quotes, adds `localUpdated`) and can't cleanly remove a single recurring occurrence. A calendar is a `type: base` + `view: calendar` markdown file: events live in the base's row table, categories in frontmatter. Every write preserves the WHOLE frontmatter and touches only events + categories (ported from the app's calendar backend into `core/src/calendar.ts`). All commands are **headless** (the app's vault watcher picks up writes live) and **require a vault**. Bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists them.
+Edit a calendar base file **by API** instead of hand-editing raw YAML — the app rewrites hand-edited YAML (strips quotes, adds `localUpdated`) and can't cleanly remove a single recurring occurrence. A calendar is a `type: base` + `view: calendar` markdown file: events live in the base's row table, categories in frontmatter. Every write preserves the WHOLE frontmatter and touches only events + categories (ported from the app's calendar backend into `core/src/calendar.ts`). All commands are **headless** (the app's vault watcher picks up writes live) and **require a vault**. Bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists them — this is the Claude-side calendar-management surface.
 
-**Event-field flags (shared).** The mutating commands (`add`, `move`, `override`) build event fields from an optional `--json '{...}'` object first, then overlay convenience flags (**flags win**): `--title`, `--date` (→ `date`), `--start` (→ `startTime`), `--end` (→ `endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (→ `recurrence`). `--json` must be a valid JSON **object** (`--json is not valid JSON` / `--json must be a JSON object`). `--recurrence` must be valid JSON (`--recurrence is not valid JSON` / `--recurrence must be a JSON object`); if its `seriesId` is absent, a `crypto.randomUUID()` is filled in.
+**Google-Calendar sync safety.** These commands are safe on a gcal-synced calendar: the sync manifest lives outside the vault (`~/.bismuth/gcal/sync.json`), events are identified by their `id` column (preserved by every mutation), and each create/edit stamps `localUpdated` exactly like the app — so the two-way sync sees CLI edits as ordinary local edits. A locally deleted event is deleted from Google on the next sync (by design). See `docs/gcal/overview.md`.
+
+**Event-field flags (shared).** The mutating commands (`add`, `move`, `override`) build event fields from an optional `--json '{...}'` object first, then overlay convenience flags (**flags win**): `--title`, `--date` (→ `date`), `--start` (→ `startTime`), `--end` (→ `endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (→ `recurrence`). `--json` must be a valid JSON **object** (`--json is not valid JSON` / `--json must be a JSON object`). `--recurrence` must be valid JSON (`--recurrence is not valid JSON` / `--recurrence must be a JSON object`); if its `seriesId` is absent, a `crypto.randomUUID()` is filled in. The `Recurrence` JSON shape is `{"type": "daily"|"weekly"|"biweekly"|"monthly", "startDate": "YYYY-MM-DD", "endDate"?: "YYYY-MM-DD", "daysOfWeek"?: [0-6, Sunday=0], "seriesId"?: "..."}`. `calendar add` also accepts `--rrule` (an iCal RRULE) as a friendlier alternative — see below.
+
+### `calendar bases`
+Discover the vault's calendar base files: every `.md` whose frontmatter is `type: base` with a calendar view (`view: calendar` shorthand, or a `views:` array containing `{type: calendar}`). Prints `[{ path, title, events, categories }]` (title falls back to the basename; `categories` is the name list). Use this to find the `<basePath>` the other commands take.
+```bash
+bismuth calendar bases --vault ~/vault --pretty
+```
+
+### `calendar create <basePath> [--title '...']`
+Create a new, empty calendar base file (`type: base` + `view: calendar` frontmatter). `.md` is appended when missing; parent folders are created; an existing path fails with `EEXIST` (never clobbers). Prints `{ ok: true, path }`.
+```bash
+bismuth calendar create "Bases/Team Cal" --title "Team Cal" --vault ~/vault
+```
+
+### `calendar list <basePath> [--from YYYY-MM-DD --to YYYY-MM-DD]`
+List **raw stored events** — recurring masters unexpanded, with their real ids (this is how you find an `<id>` for `move`/`delete`/`override`). Optional window: singles filter by `date`, masters by series-window intersection; either bound may be omitted.
+```bash
+bismuth calendar list "Bases/Cal.md" --from 2026-07-01 --to 2026-07-31 --vault ~/vault --pretty
+```
+
+### `calendar range <basePath> <from> <to>`
+List **concrete event instances** in `[from, to]` with recurrences expanded (one instance per matching date), sorted by date then start time (`eventsForRange`).
+```bash
+bismuth calendar range "Bases/Cal.md" 2026-07-06 2026-07-12 --vault ~/vault --pretty
+```
 
 ### `calendar day <basePath> <date>`
 List a day's events with recurrences expanded to concrete instances (`eventsForDay`). Both positionals required (`<basePath> required` / `<date> (YYYY-MM-DD) required`). Prints the event array (read-only).
 ```bash
 bismuth calendar day "Bases/Cal.md" 2026-07-10 --vault ~/vault --pretty
+```
+
+### `calendar get <basePath> <id>`
+Print one event by id, as stored. Fails with `no event with id <id>` when absent.
+```bash
+bismuth calendar get "Bases/Cal.md" evt-123 --vault ~/vault --pretty
+```
+
+### `calendar search <basePath> <text> [--from YYYY-MM-DD --to YYYY-MM-DD]`
+Case-insensitive substring search over `title`/`description`/`location`/`category`/`categories`. Default: searches raw stored events (masters unexpanded). With **both** `--from` and `--to`: searches the expanded concrete instances in that window instead. Multi-word text works positionally (`calendar search Cal.md team sync`).
+```bash
+bismuth calendar search "Bases/Cal.md" dentist --vault ~/vault
+bismuth calendar search "Bases/Cal.md" standup --from 2026-07-01 --to 2026-07-31 --vault ~/vault
 ```
 
 ### `calendar overlaps <basePath> <date>`
@@ -605,12 +644,13 @@ Detect overlapping timed events on a given day (`detectOverlaps(eventsForDay(...
 bismuth calendar overlaps "Bases/Cal.md" 2026-07-10 --vault ~/vault --pretty
 ```
 
-### `calendar add <basePath> [--json '{...}'] [--title … --date … --start … --end … --recurrence '{...}' …]`
-Add an event; fields come from the shared `--json`/convenience flags above. `--date` (YYYY-MM-DD) is **required** (`--date (YYYY-MM-DD) required`); `<basePath>` required. Calls `addEvent`, writes the calendar back, prints `{ ok: true, event }` (the created event, with its new id).
+### `calendar add <basePath> [--json '{...}'] [--title … --date … --start … --end … --recurrence '{...}' --rrule '…']`
+Add an event; fields come from the shared `--json`/convenience flags above. `--date` (YYYY-MM-DD) is **required** (`--date (YYYY-MM-DD) required`); `<basePath>` required. `--rrule` accepts an iCal RRULE (`RRULE:` prefix optional; same subset the gcal sync supports — `FREQ=DAILY|WEEKLY|MONTHLY`, `INTERVAL=2` with `FREQ=WEEKLY` for biweekly, `BYDAY`, `UNTIL`; no `COUNT`/`YEARLY`) and normalizes the event's date to the first valid occurrence; an explicit `--recurrence` wins over `--rrule`. Calls `addEvent`, writes the calendar back, prints `{ ok: true, event }` (the created event, with its new id).
 ```bash
 bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Standup" --start 09:00 --end 09:15 --vault ~/vault
-bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Weekly" \
-  --recurrence '{"freq":"weekly","interval":1}' --vault ~/vault
+bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Weekly" --rrule 'FREQ=WEEKLY;BYDAY=FR' --vault ~/vault
+bismuth calendar add "Bases/Cal.md" --date 2026-07-10 --title "Daily" \
+  --recurrence '{"type":"daily","startDate":"2026-07-10"}' --vault ~/vault
 ```
 
 ### `calendar move <basePath> <id> [--date … --start … --end … --json '{...}' …]`
@@ -637,6 +677,30 @@ Delete **one** occurrence of a recurring event on a specific `<date>`, splitting
 bismuth calendar delete-occurrence "Bases/Cal.md" evt-weekly 2026-07-17 --vault ~/vault
 ```
 
+### `calendar categories <basePath>`
+List the calendar's categories: `[{ name, color }]` from frontmatter (read-only).
+```bash
+bismuth calendar categories "Bases/Cal.md" --vault ~/vault --pretty
+```
+
+### `calendar category add <basePath> <name> [--color '#b00020']`
+Add a category. `--color` is any CSS color (`"#b00020"`, `rgb(...)`, named) **or a theme token** (`accent`, `teal`, `blue`, `violet`, `green`, `gold`, `rose`) — defaults to `accent`. A duplicate name fails (`CALENDAR_CATEGORY_EXISTS`). Prints `{ ok: true, categories }`.
+```bash
+bismuth calendar category add "Bases/Cal.md" Work --color '#b00020' --vault ~/vault
+```
+
+### `calendar category update <basePath> <name> [--rename <newName>] [--color <c>]`
+Rename and/or recolor a category. A rename **cascades** into every event's `category`/`categories` fields (each changed event gets a fresh `localUpdated`, keeping gcal sync consistent). At least one of `--rename`/`--color` is required; renaming onto an existing name fails. Prints `{ ok: true, categories }`.
+```bash
+bismuth calendar category update "Bases/Cal.md" Work --rename Job --color teal --vault ~/vault
+```
+
+### `calendar category remove <basePath> <name> [--reassign <otherCategory>]`
+Remove a category. Events referencing it get the category **cleared** — or reassigned to `--reassign <other>` (which must be another existing category). Prints `{ ok: true, categories }`.
+```bash
+bismuth calendar category remove "Bases/Cal.md" Work --reassign Personal --vault ~/vault
+```
+
 ---
 
 ## Command index (by domain)
@@ -652,7 +716,7 @@ bismuth calendar delete-occurrence "Bases/Cal.md" evt-weekly 2026-07-17 --vault 
 | `card decks` `card all` `card due` `card note` `card review` | card.ts | yes | JSON / `{ok:true}` |
 | `prop set` `prop delete` | prop.ts | yes | `{ok:true}` |
 | `settings get` `settings set` `settings schema` `folder-icon` | settings.ts | yes | JSON / `{ok:true}` |
-| `calendar day/overlaps/add/move/delete/override/delete-occurrence` | calendar.ts | yes | JSON / `{ok:true}` |
+| `calendar bases/create/list/range/day/get/search/overlaps/add/move/delete/override/delete-occurrence` + `calendar categories` + `calendar category add/update/remove` | calendar.ts | yes | JSON / `{ok:true}` |
 | `daemon status/devices/owner/install/setup/update` | daemon.ts | **no** (machine `~/.bismuth/daemon`) | JSON / `ok` |
 | `daemon graph` `daemon cron toggle/run` `daemon process toggle` | daemon.ts | **yes** (per-vault `<vault>/.daemon`) | JSON / `ok` |
 | `render` | draw.ts | **no** (filesystem path) | `wrote <file>` |

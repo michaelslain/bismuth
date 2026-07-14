@@ -10,6 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { parseRows, serializeRows } from "./bases/rows";
 import type { Row } from "./bases/types";
 import { createError } from "./error";
+import { parseRRule, firstOccurrence } from "./gcal/recurrence";
 
 export type RecurrenceType = "daily" | "weekly" | "biweekly" | "monthly";
 
@@ -141,6 +142,29 @@ export function categoriesOf(frontmatter: Record<string, unknown>): Category[] {
 }
 
 /**
+ * Is this frontmatter a calendar base? Mirrors `parseBaseFile` (core/src/bases/parse.ts):
+ * an explicit `views:` array wins (calendar iff some view object has `type: calendar`);
+ * the `view: calendar` shorthand applies only when no `views:` array is present.
+ */
+export function isCalendarBase(frontmatter: Record<string, unknown>): boolean {
+  if (frontmatter.type !== "base") return false;
+  if (Array.isArray(frontmatter.views)) {
+    return frontmatter.views.some(
+      (v) => !!v && typeof v === "object" && (v as Record<string, unknown>).type === "calendar",
+    );
+  }
+  return frontmatter.view === "calendar";
+}
+
+/** A fresh, empty calendar base file (`type: base` + `view: calendar`). */
+export function emptyCalendarFile(opts: { title?: string; categories?: Category[] } = {}): string {
+  const fm: Record<string, unknown> = { type: "base", view: "calendar" };
+  if (opts.title) fm.title = opts.title;
+  if (opts.categories && opts.categories.length) fm.categories = opts.categories;
+  return serializeCalendarFile(fm, []);
+}
+
+/**
  * Re-emit the calendar base file: canonical YAML frontmatter (all original keys
  * preserved; categories written back only when non-empty) + the events table.
  */
@@ -229,6 +253,37 @@ export function eventsForDay(events: CalendarEvent[], date: string): CalendarEve
   return eventsForRange(events, date, date);
 }
 
+/**
+ * RAW stored events (recurring masters NOT expanded) intersecting [from, to] — for listing
+ * events *as stored* (with their real ids) so a caller can pick an id to edit. A single
+ * event matches when its date is inside the window; a recurring master when its series
+ * window [startDate, endDate ?? ∞] intersects it. Bounds optional (missing = open-ended).
+ */
+export function eventsInWindow(events: CalendarEvent[], from?: string, to?: string): CalendarEvent[] {
+  const lo = from ?? "0000-01-01";
+  const hi = to ?? "9999-12-31";
+  return events.filter((e) => {
+    if (!e.recurrence) return e.date >= lo && e.date <= hi;
+    return e.recurrence.startDate <= hi && (e.recurrence.endDate ?? "9999-12-31") >= lo;
+  });
+}
+
+/**
+ * Case-insensitive substring search over title / description / location / category /
+ * categories. Works on raw events or expanded instances (the caller picks the input).
+ */
+export function searchEvents(events: CalendarEvent[], query: string): CalendarEvent[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return events.filter((e) =>
+    [e.title, e.description, e.location, e.category, ...(e.categories ?? [])]
+      .filter((s): s is string => !!s)
+      .join("\n")
+      .toLowerCase()
+      .includes(q),
+  );
+}
+
 export interface OverlapPair {
   a: CalendarEvent;
   b: CalendarEvent;
@@ -255,6 +310,26 @@ export function detectOverlaps(dayEvents: CalendarEvent[]): OverlapPair[] {
 
 export function findEvent(events: CalendarEvent[], id: string): CalendarEvent | undefined {
   return events.find((e) => e.id === id);
+}
+
+/**
+ * Parse an iCalendar/Google RRULE string into a Bismuth Recurrence (same subset the gcal
+ * two-way sync supports: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL=2 only as weekly→biweekly,
+ * BYDAY, UNTIL — no COUNT/YEARLY/RDATE/EXDATE). The `RRULE:` prefix is optional. The
+ * returned startDate is normalized to the first VALID occurrence on/after `startDate`
+ * (Google's DTSTART semantics), so a weekly BYDAY rule never starts on an off-day.
+ * Throws CALENDAR_RRULE_FORMAT_ERROR on an unsupported rule.
+ */
+export function recurrenceFromRRule(rrule: string, startDate: string): Recurrence {
+  const body = rrule.trim().replace(/^rrule:/i, "");
+  const parsed = parseRRule([`RRULE:${body.toUpperCase()}`], startDate, newId());
+  if (!parsed) {
+    throw createError(
+      "CALENDAR_RRULE_FORMAT_ERROR",
+      `unsupported RRULE: ${rrule} (supported: FREQ=DAILY|WEEKLY|MONTHLY, INTERVAL=2 with FREQ=WEEKLY for biweekly, BYDAY, UNTIL)`,
+    );
+  }
+  return { ...parsed, startDate: firstOccurrence(parsed) };
 }
 
 function stamp(e: Omit<CalendarEvent, "id" | "localUpdated"> & { id?: string }): CalendarEvent {
@@ -344,4 +419,94 @@ export function deleteOccurrence(events: CalendarEvent[], masterId: string, occu
     list.push(stamp({ ...masterRest, recurrence: { ...master.recurrence, startDate: dayAfter(occurrenceDate), endDate: originalEndDate, seriesId } }));
   }
   return list;
+}
+
+// ── category mutations (pure; mirror app/src/calendar/EventStore.ts semantics) ──
+//
+// Categories live in frontmatter as [{name, color}] and are referenced from events via
+// `category` (primary) + `categories` (extra). `color` is any CSS color or a theme token
+// (accent/teal/…) — passed through unvalidated, exactly like the app. Rename/remove
+// CASCADE into events; every event actually changed gets a fresh `localUpdated` stamp so
+// the gcal sync (whose content signature includes `category`) treats it as a local edit
+// and resolves conflicts correctly.
+
+export interface CalendarPatch {
+  frontmatter: Record<string, unknown>;
+  events: CalendarEvent[];
+}
+
+/** Add a category. Throws CALENDAR_CATEGORY_EXISTS on a duplicate name. */
+export function addCategory(frontmatter: Record<string, unknown>, category: Category): Record<string, unknown> {
+  const name = category.name?.trim();
+  if (!name) throw createError("CALENDAR_CATEGORY_FORMAT_ERROR", "category name required");
+  const cats = categoriesOf(frontmatter);
+  if (cats.some((c) => c.name === name)) throw createError("CALENDAR_CATEGORY_EXISTS", `category ${name} already exists`, 409);
+  return { ...frontmatter, categories: [...cats, { name, color: category.color }] };
+}
+
+/**
+ * Rename and/or recolor a category. A rename cascades into every event's `category` /
+ * `categories` (stamping localUpdated on the events it changes). Throws if `name` is
+ * unknown or the new name collides with another category.
+ */
+export function updateCategory(
+  frontmatter: Record<string, unknown>,
+  events: CalendarEvent[],
+  name: string,
+  updates: Partial<Category>,
+): CalendarPatch {
+  const cats = categoriesOf(frontmatter);
+  const idx = cats.findIndex((c) => c.name === name);
+  if (idx === -1) throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${name}`, 404);
+  const nextName = updates.name?.trim();
+  if (nextName && nextName !== name && cats.some((c) => c.name === nextName)) {
+    throw createError("CALENDAR_CATEGORY_EXISTS", `category ${nextName} already exists`, 409);
+  }
+  const nextCats = cats.slice();
+  nextCats[idx] = {
+    ...nextCats[idx],
+    ...(nextName ? { name: nextName } : {}),
+    ...(updates.color !== undefined ? { color: updates.color } : {}),
+  };
+  let nextEvents = events;
+  if (nextName && nextName !== name) {
+    nextEvents = events.map((e) => {
+      let ev = e;
+      if (e.category === name) ev = { ...ev, category: nextName };
+      if (e.categories?.includes(name)) ev = { ...ev, categories: e.categories.map((c) => (c === name ? nextName : c)) };
+      return ev === e ? e : { ...ev, localUpdated: now() };
+    });
+  }
+  return { frontmatter: { ...frontmatter, categories: nextCats }, events: nextEvents };
+}
+
+/**
+ * Remove a category, clearing it from events (or reassigning them to `reassignTo`, which
+ * must be another existing category). Changed events get a fresh localUpdated stamp.
+ */
+export function removeCategory(
+  frontmatter: Record<string, unknown>,
+  events: CalendarEvent[],
+  name: string,
+  reassignTo?: string,
+): CalendarPatch {
+  const cats = categoriesOf(frontmatter);
+  if (!cats.some((c) => c.name === name)) throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${name}`, 404);
+  if (reassignTo !== undefined) {
+    if (reassignTo === name) throw createError("CALENDAR_CATEGORY_FORMAT_ERROR", "cannot reassign to the category being removed");
+    if (!cats.some((c) => c.name === reassignTo)) {
+      throw createError("CALENDAR_CATEGORY_NOT_FOUND", `no category named ${reassignTo} to reassign to`, 404);
+    }
+  }
+  const nextEvents = events.map((e) => {
+    let ev = e;
+    if (e.category === name) ev = { ...ev, category: reassignTo };
+    if (e.categories?.includes(name)) {
+      const mapped = e.categories.map((c) => (c === name ? reassignTo : c)).filter((c): c is string => !!c);
+      const deduped = [...new Set(mapped)];
+      ev = { ...ev, categories: deduped.length ? deduped : undefined };
+    }
+    return ev === e ? e : { ...ev, localUpdated: now() };
+  });
+  return { frontmatter: { ...frontmatter, categories: cats.filter((c) => c.name !== name) }, events: nextEvents };
 }

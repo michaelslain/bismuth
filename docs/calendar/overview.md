@@ -201,6 +201,8 @@ interface ParsedCalendar {
 | `serializeCalendarFile` | `(frontmatter, events) => string` | `stringifyYaml` on the FULL frontmatter (all original keys preserved) + `serializeRows` on the events; emits `---\n<fm>\n---\n\n<body>\n`, or a bare frontmatter block when there are no events |
 | `categoriesOf` | `(frontmatter) => Category[]` | Reads the `categories` frontmatter key (array of `{name, color}`), else `[]` |
 | `rowToEvent` | `(row: Row, i: number) => CalendarEvent` | Row→event mapping mirroring `calendarSerialize.ts`; `recurrence`/`categories` are JSON-decoded from their string cells (malformed → `undefined`/single-element); missing `id` → `row-<i>` |
+| `isCalendarBase` | `(frontmatter) => boolean` | Is this frontmatter a calendar base? Mirrors `parseBaseFile`: an explicit `views:` array wins (calendar iff some view object has `type: calendar`); the `view: calendar` shorthand applies only when no `views:` array is present. Drives `bismuth calendar bases` discovery |
+| `emptyCalendarFile` | `(opts?: {title?, categories?}) => string` | A fresh, empty calendar base file (`type: base` + `view: calendar` frontmatter, no events). Drives `bismuth calendar create` |
 
 The row↔event mapping is JSON-string-based for the compound fields: `recurrence` is `JSON.stringify`d into its column, and `categories` (when non-empty) is likewise JSON-encoded; the single-valued `category` field stays a plain string.
 
@@ -212,6 +214,8 @@ The row↔event mapping is JSON-string-based for the compound fields: `recurrenc
 | `eventsForRange` | `(events, rangeStart, rangeEnd) => CalendarEvent[]` | Concrete instances in `[rangeStart, rangeEnd]`; each recurring master is expanded to one `{...event, date}` per matching date; sorted by `date` then `startTime` |
 | `eventsForDay` | `(events, date) => CalendarEvent[]` | `eventsForRange(events, date, date)` |
 | `detectOverlaps` | `(dayEvents) => OverlapPair[]` | Pairs of timed events (`startTime` + `endTime` both set) whose half-open `[start, end)` intervals intersect; all-day events don't participate; `"HH:MM"` strings compare lexicographically. `OverlapPair = { a: CalendarEvent; b: CalendarEvent }` |
+| `eventsInWindow` | `(events, from?, to?) => CalendarEvent[]` | RAW stored events (masters **not** expanded — real ids, so a caller can pick an id to edit) intersecting `[from, to]`: singles by `date`, masters by series-window `[startDate, endDate ?? ∞]` intersection. Both bounds optional (missing = open-ended) |
+| `searchEvents` | `(events, query) => CalendarEvent[]` | Case-insensitive substring search over `title` / `description` / `location` / `category` / `categories`. Works on raw events or expanded instances (the caller picks the input) |
 
 The date helpers (`toDateStr`, `addDays`, internal `parseLocalDate`/`dayBefore`/`dayAfter`/`daysInMonth`/`matchesRecurrence`) use the same local-midnight convention as the app's `dates.ts` — `parseLocalDate(iso)` appends `"T00:00:00"` so nothing is UTC.
 
@@ -227,8 +231,17 @@ Each mutation returns a NEW `CalendarEvent[]` (or `{events, event}`); none touch
 | `deleteEvent` | `(events, id) => CalendarEvent[]` | Filters out the id. Throws `CALENDAR_EVENT_NOT_FOUND` if absent |
 | `overrideOccurrence` | `(events, masterId, occurrenceDate, updates) => CalendarEvent[]` | Splits a recurring master around `occurrenceDate` (truncate the head to the day before; re-add the tail as its own segment keeping the same `seriesId`) and inserts a standalone single event for that date carrying `updates` (its `recurrence`/`id` stripped). Editing the FIRST occurrence drops the master head entirely. Throws `CALENDAR_NOT_RECURRING` if the id isn't recurring. Ported from `EventStore.editOccurrence` |
 | `deleteOccurrence` | `(events, masterId, occurrenceDate) => CalendarEvent[]` | Same series split as `overrideOccurrence`, but with NO replacement single event. Throws `CALENDAR_NOT_RECURRING`. Ported from `EventStore.deleteOccurrence` |
+| `recurrenceFromRRule` | `(rrule, startDate) => Recurrence` | Parses an iCal/Google RRULE string (the same subset the gcal sync supports: `FREQ=DAILY\|WEEKLY\|MONTHLY`, `INTERVAL=2` only as weekly→biweekly, `BYDAY`, `UNTIL` — no `COUNT`/`YEARLY`/`RDATE`/`EXDATE`) into a `Recurrence` with a fresh `seriesId`. The `RRULE:` prefix is optional; `startDate` is normalized to the first VALID occurrence (Google DTSTART semantics — a weekly `BYDAY` rule never starts on an off-day). Throws `CALENDAR_RRULE_FORMAT_ERROR` on unsupported rules. Reuses `core/src/gcal/recurrence.ts` — one RRULE implementation |
 
-The error codes (`CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`) go through `createError` (`core/src/error.ts`); both map to a 400/500-class `AppError` when surfaced.
+**Category mutations** mirror `EventStore` semantics but as pure transforms returning `CalendarPatch = { frontmatter, events }`:
+
+| Function | Signature | Behavior |
+|----------|-----------|----------|
+| `addCategory` | `(frontmatter, category) => frontmatter` | Appends `{name, color}` to the `categories` frontmatter key. Throws `CALENDAR_CATEGORY_EXISTS` on a duplicate name, `CALENDAR_CATEGORY_FORMAT_ERROR` on a blank one |
+| `updateCategory` | `(frontmatter, events, name, updates) => CalendarPatch` | Rename and/or recolor. A rename **cascades** into every event's `category`/`categories`; each event actually changed gets a fresh `localUpdated` stamp (category is part of the gcal sync signature — see below). Throws `CALENDAR_CATEGORY_NOT_FOUND` / `CALENDAR_CATEGORY_EXISTS` (rename collision) |
+| `removeCategory` | `(frontmatter, events, name, reassignTo?) => CalendarPatch` | Removes the category and clears it from events (or reassigns them to `reassignTo`, which must be another existing category). Changed events get a fresh `localUpdated` stamp |
+
+The error codes (`CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`, `CALENDAR_CATEGORY_*`, `CALENDAR_RRULE_FORMAT_ERROR`) go through `createError` (`core/src/error.ts`); each maps to an `AppError` when surfaced.
 
 ---
 
@@ -236,19 +249,48 @@ The error codes (`CALENDAR_EVENT_NOT_FOUND`, `CALENDAR_NOT_RECURRING`) go throug
 
 The `bismuth calendar …` command group is the headless driver over `core/src/calendar.ts`. Every command follows the same shape: **read the vault file → `parseCalendarFile` → mutate → `serializeCalendarFile` → `writeNote`**, and the app's vault watcher picks up the write live. All commands are headless (no running server). The group is bridged to the MCP as `bismuth_cli` (no new MCP tool), so `bismuth_cli_help` lists these — this is how the daemon/agents author calendar edits.
 
-Two internal helpers wrap the round-trip: `readCalendar(vault, path)` → `readNote` + `parseCalendarFile`, and `writeCalendar(vault, path, frontmatter, events)` → `serializeCalendarFile` + `writeNote`. Event fields are assembled by `eventFieldsFromArgs`: `--json '{...}'` provides a base object, then convenience flags overlay it (flags win) — `--title`, `--date`, `--start` (`startTime`), `--end` (`endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (a JSON `Recurrence`; a missing `seriesId` is auto-filled with a fresh UUID). Malformed `--json`/`--recurrence` `fail`s the command.
+Two internal helpers wrap the round-trip: `readCalendar(vault, path)` → `readNote` + `parseCalendarFile`, and `writeCalendar(vault, path, frontmatter, events)` → `serializeCalendarFile` + `writeNote`. Event fields are assembled by `eventFieldsFromArgs`: `--json '{...}'` provides a base object, then convenience flags overlay it (flags win) — `--title`, `--date`, `--start` (`startTime`), `--end` (`endTime`), `--location`, `--link`, `--description`, `--category`, and `--recurrence '{...}'` (a JSON `Recurrence`; a missing `seriesId` is auto-filled with a fresh UUID). Malformed `--json`/`--recurrence` `fail`s the command. `calendar add` additionally accepts `--rrule 'FREQ=WEEKLY;BYDAY=MO'` (an iCal RRULE, translated via `recurrenceFromRRule`; an explicit `--recurrence` wins).
+
+**Discovery & creation**
 
 | Command | Usage | Behavior |
 |---------|-------|----------|
+| `calendar bases` | *(none)* | Walks the vault's markdown, filters by `isCalendarBase`, prints `[{path, title, events, categories}]` — how an agent finds (or verifies) the calendar file to target |
+| `calendar create` | `<basePath> [--title '…']` | Writes `emptyCalendarFile` at `<basePath>` (`.md` appended if missing); fails with `EEXIST` if the path exists |
+
+**Reading & searching**
+
+| Command | Usage | Behavior |
+|---------|-------|----------|
+| `calendar list` | `<basePath> [--from … --to …]` | RAW stored events via `eventsInWindow` — masters unexpanded, real ids (use this to find an id to edit) |
+| `calendar range` | `<basePath> <from> <to>` | Concrete instances via `eventsForRange` (recurrences expanded) |
 | `calendar day` | `<basePath> <date>` | Prints the day's events (recurrences expanded to concrete instances) via `eventsForDay` — read-only |
+| `calendar get` | `<basePath> <id>` | One event by id, as stored |
+| `calendar search` | `<basePath> <text> [--from … --to …]` | `searchEvents` over raw events; with BOTH `--from` and `--to` it searches expanded instances in that window instead |
 | `calendar overlaps` | `<basePath> <date>` | `detectOverlaps(eventsForDay(...))` for the day; prints `{ date, overlaps }` — read-only |
-| `calendar add` | `<basePath> --date YYYY-MM-DD --title '…' [--start HH:MM --end HH:MM]` | `addEvent` with fields from `eventFieldsFromArgs`; `--date` required; prints `{ ok, event }` |
+
+**Event mutations**
+
+| Command | Usage | Behavior |
+|---------|-------|----------|
+| `calendar add` | `<basePath> --date YYYY-MM-DD --title '…' [--start HH:MM --end HH:MM] [--rrule '…']` | `addEvent` with fields from `eventFieldsFromArgs`; `--date` required; prints `{ ok, event }`. With `--rrule`, the event date is normalized to the recurrence's first valid occurrence |
 | `calendar move` | `<basePath> <id> [--date … --start … --end …]` | `moveEvent(events, id, updates)`; fails if nothing to update; prints `{ ok, event }` |
 | `calendar delete` | `<basePath> <id>` | `deleteEvent(events, id)`; prints `{ ok }` |
 | `calendar override` | `<basePath> <id> <date> [--title/--start/--end/--json …]` | `overrideOccurrence(events, id, date, updates)` — the occurrence `<date>` is the positional, so any `--date` flag is dropped as ambiguous; prints `{ ok }` |
 | `calendar delete-occurrence` | `<basePath> <id> <date>` | `deleteOccurrence(events, id, date)`; prints `{ ok }` |
 
+**Category mutations**
+
+| Command | Usage | Behavior |
+|---------|-------|----------|
+| `calendar categories` | `<basePath>` | Prints the `[{name, color}]` list |
+| `calendar category add` | `<basePath> <name> [--color '#b00020']` | `addCategory`; `--color` is any CSS color or a theme token (`accent`/`teal`/…); defaults to `accent` |
+| `calendar category update` | `<basePath> <name> [--rename <new>] [--color <c>]` | `updateCategory`; a rename cascades into events |
+| `calendar category remove` | `<basePath> <name> [--reassign <other>]` | `removeCategory`; clears (or reassigns) the category on events |
+
 Vault is resolved by `requireVault` (`--vault` / `BISMUTH_VAULT`); output honors `--pretty` (via `out`).
+
+**Google-Calendar sync safety.** Headless edits are safe on a gcal-synced calendar: the sync bookkeeping (the Google-id → Bismuth-id manifest) lives OUTSIDE the vault in `~/.bismuth/gcal/sync.json`, so rewriting the base file can't corrupt it. The sync identifies events by their `id` column and detects local edits by a content signature + the `localUpdated` stamp — and every CLI mutation preserves ids and stamps `localUpdated` exactly like the app does. Consequences to be aware of: a locally deleted event **will be deleted from Google** on the next sync (by design), and edits win/lose conflicts per the configured policy (see [gcal overview](../gcal/overview.md)).
 
 ---
 
