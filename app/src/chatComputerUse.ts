@@ -7,12 +7,10 @@
 // is presented as "for this chat". Enabling it in one chat (or a value persisted from a prior
 // session) left it true EVERYWHERE, so the user's next chat opened with it already on — and typing
 // `/chrome` to "turn it on" instead flipped it OFF and (correctly, but confusingly) reported
-// "disabled". Making the state per-chat means each chat starts from the global DEFAULT and its first
-// `/chrome` reliably ENABLES, exactly matching the "for this chat" wording. The global
-// settings.chat.computerUse is retained as the DEFAULT seed for brand-new chats (so a user who opts
-// in globally still gets it on by default), but toggling a chat no longer mutates it.
+// "disabled". Making the state per-chat — DEFAULTING un-toggled chats to OFF (not the possibly-stale
+// global) — means each chat's first `/chrome` reliably ENABLES, exactly matching the "for this chat"
+// wording, and toggling a chat no longer mutates any global.
 import { createSignal } from "solid-js";
-import { settings } from "./settings";
 
 const KEY = "bismuth-chat-chrome-v1";
 const CAP = 200;
@@ -75,10 +73,11 @@ function persist(list: ChatChromeEntry[]): void {
 }
 
 /** Whether --chrome is enabled for a chat tab id. REACTIVE — read it inside a ChatView binding so
- *  the pill updates the instant the toggle flips. Falls back to the GLOBAL default
- *  (settings.chat.computerUse) for a chat that hasn't been toggled yet. */
+ *  the pill updates the instant the toggle flips. Defaults to OFF ("for this chat" semantics) for a
+ *  chat that hasn't been toggled yet, so the FIRST /chrome in ANY chat reliably ENABLES — regardless
+ *  of any stale global `settings.chat.computerUse` left true by earlier testing (BUG #87 re-fix). */
 export function chatComputerUse(chatId: string): boolean {
-  return lookupChrome(chrome(), chatId) ?? settings.chat.computerUse;
+  return lookupChrome(chrome(), chatId) ?? false;
 }
 
 /** Set a chat tab's --chrome state. Persists + updates the live signal. */
