@@ -284,3 +284,160 @@ export function opencodeTitleFromPrompt(text: string, max = 48): string {
   if (!clean) return "";
   return clean.length <= max ? clean : `${clean.slice(0, max - 1).trimEnd()}…`;
 }
+
+// ── opencode commands (RE-FIX #90: "i dont see any opencode commands autocompleting") ────────────
+
+/** One opencode command as offered in the composer's "/" autocomplete. */
+export interface OpencodeCommandEntry {
+  name: string;
+  description: string;
+}
+
+/**
+ * opencode's own built-in template commands, runnable non-interactively via
+ * `opencode run --command <name>` (verified against 1.17.15's command registry — GET /command on a
+ * live `opencode serve` lists both with source:"command"). TUI-only actions (/undo, /redo, /share,
+ * /models, /connect…) are NOT commands in that registry — they act on the TUI itself and can't run
+ * through `opencode run`, so offering them here would only produce server errors.
+ */
+export const OPENCODE_BUILTIN_COMMANDS: OpencodeCommandEntry[] = [
+  { name: "init", description: "Create or update AGENTS.md for this repository" },
+  { name: "review", description: "Review changes (commit, branch, PR — defaults to uncommitted)" },
+];
+
+/**
+ * Parse `opencode debug config` stdout into the user's command list. The output is the RESOLVED
+ * config as pretty-printed JSON — its `command` key merges commands from every source opencode
+ * itself resolves: `~/.config/opencode/command/*.md`, the project's `.opencode/command/*.md`, the
+ * `command` key in opencode.json(c), AND plugin-registered commands (verified live: the
+ * oh-my-opencode-slim plugin's /interview, /deepwork, /reflect, /loop, /preset all appear).
+ * Each value is `{ template, description?, … }` — description wins, else the template's first line
+ * stands in so the popover row always has a blurb. Tolerant: any parse failure yields [].
+ */
+export function parseOpencodeDebugConfigCommands(stdout: string): OpencodeCommandEntry[] {
+  const start = stdout.indexOf("{");
+  const end = stdout.lastIndexOf("}");
+  if (start < 0 || end <= start) return [];
+  let config: unknown;
+  try {
+    config = JSON.parse(stdout.slice(start, end + 1));
+  } catch {
+    return [];
+  }
+  if (!config || typeof config !== "object") return [];
+  const command = (config as Record<string, unknown>).command;
+  if (!command || typeof command !== "object" || Array.isArray(command)) return [];
+  const out: OpencodeCommandEntry[] = [];
+  for (const [name, raw] of Object.entries(command as Record<string, unknown>)) {
+    if (!name.trim() || /\s/.test(name)) continue; // a command name must be one "/"-typable token
+    const entry = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const description = typeof entry.description === "string" && entry.description.trim() ? entry.description.trim() : "";
+    const template = typeof entry.template === "string" ? entry.template.split("\n")[0].trim() : "";
+    out.push({ name, description: description || template });
+  }
+  return out;
+}
+
+/** Merge the built-in commands into a parsed command list, deduped by name — a same-named custom
+ *  command OVERRIDES the built-in (opencode's own documented precedence). Order: the user's own
+ *  commands first (they chose them), built-ins after. */
+export function withOpencodeBuiltinCommands(commands: OpencodeCommandEntry[]): OpencodeCommandEntry[] {
+  const out = [...commands];
+  const names = new Set(commands.map((c) => c.name));
+  for (const b of OPENCODE_BUILTIN_COMMANDS) if (!names.has(b.name)) out.push(b);
+  return out;
+}
+
+/**
+ * Detect a leading `/command [args…]` in a composer draft against the KNOWN opencode command
+ * names. A match runs the turn as `opencode run --command <name> [args]` (opencode's documented
+ * non-interactive command invocation — the message rides as $ARGUMENTS); anything else — including
+ * an unknown /word, which is far more likely prose than a typo'd command — flows through as an
+ * ordinary prompt. Case-sensitive: opencode command names are exact registry keys.
+ */
+export function parseOpencodeRunCommand(text: string, commandNames: string[]): { command: string; args: string } | null {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("/")) return null;
+  const sp = trimmed.search(/\s/);
+  const name = sp === -1 ? trimmed.slice(1) : trimmed.slice(1, sp);
+  if (!name || !commandNames.includes(name)) return null;
+  return { command: name, args: sp === -1 ? "" : trimmed.slice(sp + 1).trim() };
+}
+
+// ── opencode auth (RE-FIX #90: "i dont see a way to do auth") ────────────────────────────────────
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+const DIM = "\x1b[90m";
+
+/**
+ * Parse `opencode auth list` stdout into the stored-credential list. Verified live (1.17.15): a
+ * clack-style block where each credential line is `●  <Provider Name> <dim><kind>` — the
+ * provider name and the credential kind (api/oauth/…) are separated by the dim ANSI escape, so
+ * we split there when present and fall back to the last space-separated token when colors are
+ * absent (e.g. a future NO_COLOR-honoring opencode). Non-credential lines (the `┌ Credentials
+ * <path>` header, `└ N credentials` footer, `│` spacers) carry no bullet and are skipped.
+ * Tolerant of anything — worst case [] (= no stored credentials).
+ */
+export function parseOpencodeAuthList(stdout: string): { name: string; kind: string }[] {
+  const out: { name: string; kind: string }[] = [];
+  for (const rawLine of stdout.split("\n")) {
+    const bullet = rawLine.indexOf("\u25cf");
+    if (bullet < 0) continue;
+    const body = rawLine.slice(bullet + 1);
+    const dimAt = body.indexOf(DIM);
+    let name: string;
+    let kind: string;
+    if (dimAt >= 0) {
+      name = body.slice(0, dimAt).replace(ANSI_RE, "").trim();
+      kind = body.slice(dimAt).replace(ANSI_RE, "").trim();
+    } else {
+      const plain = body.replace(ANSI_RE, "").trim();
+      const lastSp = plain.lastIndexOf(" ");
+      name = lastSp > 0 ? plain.slice(0, lastSp).trim() : plain;
+      kind = lastSp > 0 ? plain.slice(lastSp + 1).trim() : "";
+    }
+    if (name) out.push({ name, kind });
+  }
+  return out;
+}
+
+// ── Zen free-model rotation (RE-FIX #90: "that thing that rotates between free models") ──────────
+
+/**
+ * The virtual model id for "rotate among opencode Zen's currently-free models". The `bismuth/`
+ * provider prefix can never collide with a real opencode provider id, still satisfies the
+ * `provider/model` shape setModel validates, and is intercepted in runTurn BEFORE `-m` is built —
+ * it never reaches the opencode CLI.
+ */
+export const ZEN_FREE_ROTATE_ID = "bismuth/zen-free-rotate";
+
+/** The ids eligible for rotation: opencode Zen models (`opencode/…` — Zen is the `opencode`
+ *  provider) whose cost metadata reported $0 in/out. Order preserved from the models list. */
+export function zenFreeModelIds(models: OpencodeModelEntry[]): string[] {
+  return models.filter((m) => m.free === true && m.value.startsWith("opencode/")).map((m) => m.value);
+}
+
+/** Prepend the virtual rotate entry when Zen currently offers free models (the free roster is
+ *  promotional and rotates over time — when it's empty the option simply disappears rather than
+ *  silently running nothing). Marked free so the picker badges it. */
+export function withZenFreeRotate(models: OpencodeModelEntry[]): OpencodeModelEntry[] {
+  const free = zenFreeModelIds(models);
+  if (!free.length) return models;
+  return [
+    {
+      value: ZEN_FREE_ROTATE_ID,
+      label: "Zen Free (rotating)",
+      description: `Rotates each turn among opencode Zen's ${free.length} currently-free models`,
+      effortLevels: [],
+      free: true,
+    },
+    ...models,
+  ];
+}
+
+/** Round-robin pick for a rotating-free-models turn: turn N runs free model N mod len. Null when
+ *  the free roster is empty/unknown (the run then omits `-m` — opencode's own default model). */
+export function pickZenFreeModel(freeIds: string[], turnIndex: number): string | null {
+  if (!freeIds.length) return null;
+  return freeIds[((turnIndex % freeIds.length) + freeIds.length) % freeIds.length];
+}
