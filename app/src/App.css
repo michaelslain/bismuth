@@ -467,8 +467,9 @@ html.view-dragging .graph-floater { pointer-events: none; }
 .fcbar i { display: block; height: 100%; width: 0; background: var(--grad); transition: width 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
 .tally { display: flex; gap: 16px; font-size: 11px; color: var(--faint); letter-spacing: 0.06em; }
 .tally b { font-weight: 600; }
-.tally .g b { color: var(--blue); }
 .tally .a b { color: var(--violet); }
+.tally .g b { color: var(--blue); }
+.tally .e b { color: var(--green); }
 .deckctrls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
 
 /* Stage — fills the full pane height and centers the card + grade row vertically. */
@@ -502,7 +503,10 @@ html.view-dragging .graph-floater { pointer-events: none; }
 }
 .flip-face {
   position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden;
-  display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 0;
+  /* `safe center` centers content that fits but falls back to start-alignment when
+     it overflows — without `safe`, a tall card (e.g. a long numbered list) is pushed
+     above the scroll origin by the centering and its top is clipped/unreachable. */
+  display: flex; flex-direction: column; align-items: stretch; justify-content: safe center; gap: 0;
   padding: 44px 46px 40px; box-sizing: border-box; overflow-y: auto;
   background: linear-gradient(180deg, var(--surface-1), var(--surface-2));
   border: 1px solid var(--border); border-radius: 18px;

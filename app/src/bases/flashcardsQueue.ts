@@ -62,3 +62,63 @@ export function nextPosAfterGrade(pos: number, opts: { cram: boolean; persisted:
   if (opts.cram) return pos + 1;
   return opts.persisted ? pos : pos + 1;
 }
+
+/**
+ * Whether a grade action may fire right now — the single-advance lock.
+ *
+ * A grade is valid only when the answer is REVEALED and no prior grade is still
+ * settling (`grading` = its async row-write / refetch in flight). The view used
+ * to guard on `revealed` alone, cleared synchronously at the start of grade();
+ * but grade() then `await`s the row write, and during that gap the user could
+ * re-reveal the SAME card and press again — grading it twice (the reported
+ * "sometimes pressing a flashcard skips it twice"). Gating on the in-flight
+ * `grading` flag as well guarantees exactly one advance per grade.
+ */
+export function canGrade(state: { revealed: boolean; grading: boolean }): boolean {
+  return state.revealed && !state.grading;
+}
+
+/**
+ * Ephemeral per-deck review-session state, preserved across a tab
+ * unmount→remount (switching AWAY from the flashcards tab and back) so returning
+ * resumes where the user left off instead of resetting to card 1 with a zeroed
+ * tally. `pos` is the cram-mode queue offset (a persisted review stays at 0 as
+ * cards drop out); the three counts are the per-grade tally. Lives only for the
+ * app session (module scope) — never written to disk.
+ */
+export interface SessionState {
+  cram: boolean;
+  pos: number;
+  good: number;
+  hard: number;
+  easy: number;
+}
+
+/** A fresh, zeroed session (first open of a deck, or one with no saved state). */
+export function emptySession(): SessionState {
+  return { cram: false, pos: 0, good: 0, hard: 0, easy: 0 };
+}
+
+// Session store, keyed by the deck's base path. Module scope so it survives a
+// FlashcardsView unmount (tab switch) but not a full app reload — matching the
+// noteCache / RowCache pattern of in-memory, SSE-lived caches.
+const sessions = new Map<string, SessionState>();
+
+/** Read the saved session for `key` (a deck's base path), or a fresh zeroed one.
+ *  Returns a COPY so the caller's signal writes don't mutate the stored record. */
+export function loadSession(key: string | undefined): SessionState {
+  const saved = key ? sessions.get(key) : undefined;
+  return saved ? { ...saved } : emptySession();
+}
+
+/** Persist the session for `key`. A missing key is a no-op — an unsaved deck
+ *  (e.g. an embedded query with no base path) has nothing to resume. */
+export function saveSession(key: string | undefined, state: SessionState): void {
+  if (!key) return;
+  sessions.set(key, { ...state });
+}
+
+/** Drop a deck's saved session. Exposed for tests / explicit resets. */
+export function clearSession(key: string | undefined): void {
+  if (key) sessions.delete(key);
+}
