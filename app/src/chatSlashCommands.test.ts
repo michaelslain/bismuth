@@ -1,6 +1,6 @@
 // app/src/chatSlashCommands.test.ts
 import { describe, it, expect } from "bun:test";
-import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, chromeToggleNote } from "./chatSlashCommands";
 
 describe("parseChatSlashCommand", () => {
   it("parses `/rename <name>`", () => {
@@ -69,5 +69,25 @@ describe("CLIENT_SLASH_COMMANDS / withClientSlashCommands (BUG #87 autocomplete 
 
   it("dedupes: a backend command sharing a client command's name isn't duplicated", () => {
     expect(withClientSlashCommands(["chrome"])).toEqual(["chrome", "rename", "color"]);
+  });
+});
+
+// BUG #87 (visible-feedback half): the transcript confirmation posted when /chrome (or the header
+// Globe pill) toggles --chrome. The wording is load-bearing — it must state the NEW state and that
+// it lands on the next message (the live session respawns then), and must NOT claim the current
+// in-flight turn changed (--chrome is spawn-fixed).
+describe("chromeToggleNote (BUG #87 visible feedback)", () => {
+  it("enabled → states enabled + 'for this chat' + 'next message'", () => {
+    expect(chromeToggleNote(true)).toBe("Browser (--chrome) enabled for this chat — takes effect from your next message.");
+  });
+  it("disabled → states disabled + 'for this chat' + 'next message'", () => {
+    expect(chromeToggleNote(false)).toBe("Browser (--chrome) disabled for this chat — takes effect from your next message.");
+  });
+  it("never falsely says the current/new session is unaffected", () => {
+    expect(chromeToggleNote(true)).not.toContain("unaffected");
+    expect(chromeToggleNote(false)).not.toContain("unaffected");
+  });
+  it("never claims it only applies to NEW/future sessions (the old broken wording)", () => {
+    expect(chromeToggleNote(true)).not.toContain("new sessions");
   });
 });

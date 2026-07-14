@@ -36,7 +36,7 @@ import { chatPersonaName } from "./daemonIdentity";
 import { chatTitle, publishChatTitle, resolveChatHeaderTitle } from "./chatTitles";
 import { rememberChatSession, recallChatSession } from "./chatSessionStore";
 import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
-import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands } from "./chatSlashCommands";
+import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, chromeToggleNote } from "./chatSlashCommands";
 import { resolveInitialModel } from "./chatModelResolution";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
@@ -539,7 +539,17 @@ export function ChatView(props: {
 
   const sendJson = (msg: unknown): boolean => {
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    ws.send(JSON.stringify(msg));
+    // BUG #87: carry the CURRENT --chrome (browser/computer-use) choice on every message that
+    // spawns or runs a turn (open/user/resume), so a /chrome or Globe-pill toggle takes effect on
+    // the next turn without waiting for the async .settings reload the server would otherwise read.
+    // The server reconciles it against the live session and respawns query() when it changed. Only
+    // stamped when the caller didn't set it explicitly, and only for turn-driving message types.
+    const m = msg as { type?: string; computerUse?: boolean };
+    const out =
+      m && (m.type === "open" || m.type === "user" || m.type === "resume") && m.computerUse === undefined
+        ? { ...m, computerUse: settings.chat.computerUse }
+        : msg;
+    ws.send(JSON.stringify(out));
     return true;
   };
 
@@ -964,6 +974,21 @@ export function ChatView(props: {
     scrollToBottom();
   };
 
+  /** Toggle Claude's --chrome (browser/computer-use) capability — ONE path shared by the header
+   *  Globe pill and the /chrome slash command so both behave identically (BUG #87). Persists the
+   *  choice (settings.chat.computerUse → carried on every subsequent turn + across reload), and
+   *  confirms in the transcript. --chrome is a spawn-fixed CLI flag, so the LIVE session picks it up
+   *  by respawning on the next message: the client stamps the new value onto the next user/open/
+   *  resume message (sendJson), and the server reconciles it against the running session and
+   *  respawns query() with/without --chrome, resuming the same conversation (core/src/chat.ts
+   *  computerUseChange + respawnSession). Before this, the toggle only touched settings, so the
+   *  browser stayed disabled for the chat the user was actually in. */
+  const toggleComputerUse = () => {
+    const next = !settings.chat.computerUse;
+    setSettings("chat", "computerUse", next);
+    pushSystemNote(chromeToggleNote(next));
+  };
+
   /** Apply a CLIENT-SIDE chat slash command (Row 75: `/rename`, `/color`, `/chrome`) intercepted in
    *  send() before the turn reaches the model. Returns true when it consumed the draft (command
    *  applied) so send() clears the composer; false when it couldn't (an unknown `/color` value),
@@ -979,17 +1004,11 @@ export function ChatView(props: {
       return true;
     }
     if (cmd.kind === "chrome") {
-      // Toggle --chrome browser/computer-use capability for NEW sessions. The current session is
-      // unaffected (extraArgs is spawn-fixed); the toolbar Globe button reflects the new value too,
-      // but that's easy to miss — surface it in the transcript so the command visibly DID something
-      // (BUG #87 cause #2: this used to post nothing at all, so it read as broken).
-      const next = !settings.chat.computerUse;
-      setSettings("chat", "computerUse", next);
-      pushSystemNote(
-        next
-          ? "Browser (--chrome) enabled for new sessions (current session unaffected)."
-          : "Browser (--chrome) disabled for new sessions (current session unaffected).",
-      );
+      // Toggle --chrome (browser/computer-use) for THIS chat — not just future ones (BUG #87's real
+      // gap: --chrome is spawn-fixed, so the old settings-only toggle silently did nothing for the
+      // session the user typed /chrome into and the browser kept reading disabled). toggleComputerUse
+      // persists the setting AND makes the live session respawn with the new flag on the next message.
+      toggleComputerUse();
       setTurnError(null);
       return true;
     }
@@ -1684,14 +1703,15 @@ export function ChatView(props: {
             </>
           )}
         </Show>
-        {/* Browser/computer-use (--chrome): toggle that writes to .settings so new sessions spawn
-            with the Chrome capability. The current session is unaffected (extraArgs is spawn-fixed). */}
+        {/* Browser/computer-use (--chrome): same toggle as the /chrome slash command
+            (toggleComputerUse) — persists the setting AND retargets the LIVE session, which picks
+            the flag up on the next message via a respawn that resumes this conversation (BUG #87). */}
         <IconButton
           icon="Globe"
           label={settings.chat.computerUse ? "Browser (--chrome) on" : "Browser (--chrome) off"}
-          title={settings.chat.computerUse ? "--chrome enabled (new sessions)" : "Enable --chrome for browser/computer-use (new sessions)"}
+          title={settings.chat.computerUse ? "--chrome enabled — click to disable (applies from your next message)" : "Enable --chrome browser/computer-use (applies from your next message)"}
           variant={settings.chat.computerUse ? "selected" : "normal"}
-          onClick={() => setSettings("chat", "computerUse", !settings.chat.computerUse)}
+          onClick={toggleComputerUse}
         />
         {/* Permission mode: rendered from the START (not gated on the manifest) so the header is
             populated the instant the chat opens (BUG #14). Seeded to the app default (Bypass) and

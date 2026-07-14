@@ -1810,6 +1810,7 @@ export function createServer(cfg: CoreConfig) {
             mode?: string;
             model?: string;
             effort?: string;
+            computerUse?: boolean;
             answers?: Record<string, unknown>;
             cancelled?: boolean;
           };
@@ -1825,7 +1826,15 @@ export function createServer(cfg: CoreConfig) {
               /* socket closed mid-turn */
             }
           };
-          const computerUse = !!(appConfig.chat as Record<string, unknown> | undefined)?.computerUse;
+          // --chrome (browser/computer-use) capability. The client carries its CURRENT choice on
+          // every open/user/resume message so a toggle takes effect on the next turn WITHOUT waiting
+          // for the async .settings reload (BUG #87: relying on appConfig alone raced the file-watch
+          // debounce, so a toggle-then-send used the stale value). Fall back to the persisted
+          // setting for any client that doesn't send it.
+          const computerUse =
+            typeof parsed.computerUse === "boolean"
+              ? parsed.computerUse
+              : !!(appConfig.chat as Record<string, unknown> | undefined)?.computerUse;
           if (parsed.type === "open") {
             // Chat OPEN (the ChatView just mounted / reconnected on a fresh id): spawn the session
             // eagerly so its `init` manifest + `models` frame + permission mode stream to the header

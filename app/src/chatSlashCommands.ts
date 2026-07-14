@@ -1,8 +1,9 @@
 // app/src/chatSlashCommands.ts
 // Pure parser for the chat composer's CLIENT-SIDE slash commands (Row 75): `/rename <name>`,
 // `/color <swatch|hex|clear>`, and `/chrome`. These are intercepted in ChatView BEFORE the turn is
-// sent to Claude — they act on the chat TAB (rename / pane tint) or app settings (chrome), never
-// reach the model as a prompt. Kept pure + DOM-free so it's unit-testable headlessly.
+// sent to Claude — they act on the chat TAB (rename / pane tint) or the chat's --chrome capability
+// (persists the setting AND retargets the LIVE session, which respawns on the next message — BUG
+// #87), never reach the model as a prompt. Kept pure + DOM-free so it's unit-testable headlessly.
 
 export type ChatSlashCommand =
   | { kind: "rename"; name: string }
@@ -40,8 +41,19 @@ export function parseChatSlashCommand(input: string): ChatSlashCommand | null {
 export const CLIENT_SLASH_COMMANDS: { name: string; detail: string }[] = [
   { name: "rename", detail: "Rename this chat tab" },
   { name: "color", detail: "Tint this chat's pane (swatch name, hex, or \"clear\")" },
-  { name: "chrome", detail: "Toggle browser (--chrome) for new sessions" },
+  { name: "chrome", detail: "Toggle Claude's browser access (--chrome) for this chat" },
 ];
+
+/** The transcript confirmation for a /chrome (or header Globe pill) toggle — the visible-feedback
+ *  half of BUG #87. --chrome is a spawn-fixed CLI flag, so the toggle can't flip a running turn; it
+ *  takes effect when the session (re)spawns, which happens on the user's very next message (the
+ *  client carries the new choice, the server respawns query() with/without --chrome, resuming the
+ *  same conversation). The wording is load-bearing (it must state the new state AND that it lands on
+ *  the next message, never falsely claiming the current in-flight turn changed), so it's pure +
+ *  unit-tested. */
+export function chromeToggleNote(enabled: boolean): string {
+  return `Browser (--chrome) ${enabled ? "enabled" : "disabled"} for this chat — takes effect from your next message.`;
+}
 
 /** Merge the client-side commands into a manifest's own slash-command names for the "/" autocomplete
  *  (BUG #87). Client commands are APPENDED after the backend's own list, deduped by name (a same-

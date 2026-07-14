@@ -350,6 +350,12 @@ interface ChatSession {
    *  sendMessage tears down + respawns query() with a fresh deny list (managedSettings/sandbox are
    *  spawn-fixed and can't be updated live, so a respawn is the only way to re-gate them). */
   visibilityDirty?: boolean;
+  /** Set when the /chrome toggle (or header Globe pill) flips computerUse for a LIVE session (BUG
+   *  #87): --chrome is a spawn-time CLI flag (extraArgs), not a runtime control request, so — like
+   *  visibilityDirty — the next sendMessage tears down + respawns query() (resuming the same
+   *  conversation) with the new capability. Without a respawn the toggle silently did nothing for
+   *  the session the user typed /chrome into, which is why the browser kept reading as disabled. */
+  spawnOptionsDirty?: boolean;
   /** From init: "none" when the user is on a Claude subscription login (no API key) — in that case
    *  the SDK's total_cost_usd is a notional API-equivalent figure the user does NOT pay, so we hide
    *  it. Any other value means real API-key billing, where the cost is meaningful. */
@@ -706,10 +712,21 @@ export async function sendMessage(chatId: string, text: string, cwd: string, sin
     existing.detached = false;
     existing.cwd = cwd;
     existing.lastActivityAt = Date.now();
-    // Visibility settings changed since this session spawned → respawn query() with a fresh deny
-    // list BEFORE running the turn (managedSettings/sandbox are spawn-fixed; a stale session would
-    // keep reading a since-hidden file). Resumes the same conversation, so history survives.
-    if (existing.visibilityDirty) await refreshVisibility(existing);
+    // BUG #87: --chrome (browser/computer-use) is a spawn-fixed CLI flag, so a session spawned
+    // without it stays without it — the toggle "did nothing" and the browser kept reading disabled.
+    // The client carries the CURRENT computerUse choice on every turn, so reconcile it here: if it
+    // changed since this session spawned, stash the new value + mark the session spawn-dirty so the
+    // respawn below re-runs query() with/without --chrome (resuming the same conversation).
+    const chrome = computerUseChange(existing.computerUse, computerUse);
+    if (chrome.respawn) {
+      existing.computerUse = chrome.next;
+      existing.spawnOptionsDirty = true;
+    }
+    // Visibility settings changed (visibilityDirty) or the --chrome flag flipped (spawnOptionsDirty)
+    // since this session spawned → respawn query() BEFORE running the turn: managedSettings/sandbox
+    // AND --chrome are spawn-fixed, so a stale session would keep reading a since-hidden file / keep
+    // the old browser capability. Resumes the same conversation, so history survives.
+    if (existing.visibilityDirty || existing.spawnOptionsDirty) await respawnSession(existing);
     // BUG #39: "/mcp" is answered locally instead of forwarded — see isMcpCommand/answerMcpCommand.
     // (images.length guard mirrors ChatView's own "slash commands can't carry images" send-time rule.)
     if (isMcpCommand(text) && !images?.length) {
@@ -866,14 +883,14 @@ async function createSession(chatId: string, cwd: string, sink: ChatSink, resume
   // parks on the empty input queue until sendMessage() pushes the first turn. Started here — exactly
   // once per session creation, de-duped by inFlightCreates + the `sessions.set` above — so no
   // caller (openSession, sendMessage's first turn, resumeSession) can race two concurrent drains
-  // over the same generator. (refreshVisibility respawns its own query() + drain out of band.)
+  // over the same generator. (respawnSession respawns its own query() + drain out of band.)
   void drain(session);
   return session;
 }
 
 /**
  * Build query() for a session from a fresh deny list and assign `session.q`. Extracted so a
- * mid-conversation visibility change can respawn (see refreshVisibility) — managedSettings +
+ * mid-conversation visibility change can respawn (see respawnSession) — managedSettings +
  * sandbox are fixed at spawn and cannot be updated on a running query(), so re-gating them means
  * a new query(). Returns false (after pushing a spawn error to the sink) if query() throws.
  */
@@ -1002,7 +1019,7 @@ function spawnChatQuery(session: ChatSession, denyEntries: DenyEntry[], resume?:
         // app's PRIMARY Claude surface saw none of the 3rd brain. Mirror that hook in-process: when
         // this vault's daemon is enabled (session.memoryDir is set), on every user turn recall the
         // memory relevant to the prompt and inject it as `additionalContext`. Read session.memoryDir
-        // via the closure so a refreshVisibility respawn keeps recall wired. captureToMemory already
+        // via the closure so a respawnSession respawn keeps recall wired. captureToMemory already
         // strips the injected `# Memories` block (stripInjectedBlocks) before collecting, so recall
         // never amplifies through the recall→collect→recall loop. recallMemory is budgeted + never
         // throws, so a bloated/slow graph degrades to "no recall" rather than stalling the turn.
@@ -1053,18 +1070,42 @@ export function invalidateChatVisibility(): void {
 }
 
 /**
- * Rebuild a session's deny list and respawn query() with fresh managedSettings/sandbox, resuming
- * the SAME Claude Code session so the conversation history survives. Tears the old query() down
- * WITHOUT firing captureToMemory (the conversation continues — capture happens only on a real
- * close). Best-effort: on a spawn failure the old (now-closed) query is gone, so the next turn
- * will surface the error; we clear the dirty flag regardless to avoid a respawn loop.
+ * Pure: decide whether a turn arriving on an EXISTING chat session must respawn query() to change
+ * its --chrome (browser/computer-use) capability (BUG #87). `current` is the flag the live session
+ * spawned with; `requested` is the client's CURRENT choice (carried on every turn). --chrome is a
+ * spawn-time CLI flag, so the ONLY way a toggle reaches a running session is a respawn — this
+ * returns the normalized next state + whether that respawn is needed. Both undefined/false are the
+ * same "off" state, so an unset session matches an explicit `false` byte-for-byte (no spurious
+ * respawn). Extracted so the enable/disable decision is unit-testable without a live `claude`.
  */
-async function refreshVisibility(session: ChatSession): Promise<void> {
+export function computerUseChange(
+  current: boolean | undefined,
+  requested: boolean | undefined,
+): { next: boolean; respawn: boolean } {
+  const next = !!requested;
+  return { next, respawn: !!current !== next };
+}
+
+/**
+ * Rebuild a session's deny list and respawn query() with fresh managedSettings/sandbox AND the
+ * session's current spawn options (effort / --chrome), resuming the SAME Claude Code session so the
+ * conversation history survives. Serves BOTH pre-turn dirty flags: visibilityDirty (a visibility
+ * settings change) and spawnOptionsDirty (the /chrome computerUse toggle — BUG #87; spawnChatQuery
+ * reads session.computerUse, so the respawn is what actually applies/removes --chrome). Tears the
+ * old query() down WITHOUT firing captureToMemory (the conversation continues — capture happens
+ * only on a real close). Best-effort: on a spawn failure the old (now-closed) query is gone, so the
+ * next turn will surface the error; we clear the dirty flags regardless to avoid a respawn loop.
+ */
+async function respawnSession(session: ChatSession): Promise<void> {
   session.visibilityDirty = false;
+  session.spawnOptionsDirty = false;
   const denyEntries = await buildDenyPaths(session.cwd, "chat");
   session.deniedPathSet = denyPathSet(denyEntries);
   // Tear down the old query() (interrupt any in-flight, then close) — NOT closeChat, which would
-  // capture-to-memory and drop the session from the registry.
+  // capture-to-memory and drop the session from the registry. NOTE: no await between the close and
+  // spawnChatQuery below — session.q must already point at the NEW query when the old drain loop's
+  // finally wakes up, so its respawn guard (drain's `session.q !== q` check) sees the swap and ends
+  // silently instead of evicting the session.
   try { session.q.interrupt?.()?.catch(() => {}); } catch { /* */ }
   try { session.q.close?.(); } catch { /* */ }
   // Respawn against the same conversation (resume) with the fresh gate, then re-drain.
@@ -1402,6 +1443,12 @@ export function chatAgentSnapshot(now: number = Date.now()): ChatAgentSession[] 
  * the tool_use blocks (which have no delta form).
  */
 async function drain(session: ChatSession): Promise<void> {
+  // The query THIS drain iterates. A respawn (respawnSession: a visibility change or the /chrome
+  // toggle) closes it and swaps session.q for a NEW query with its OWN drain — which ends THIS
+  // loop. Without pinning it, the finally below would see the session still registered and tear it
+  // down (capture + evict + an "exited" error frame) right after every respawn; the guard makes an
+  // out-from-under swap end this drain silently instead (the new drain owns the session now).
+  const q = session.q;
   let drainError: string | null = null;
   // Per-message streaming accounting for the assistant-block de-dupe (BUG #19). A NORMAL reply
   // arrives as `stream_event` text/thinking deltas FOLLOWED BY a final assistant message whose
@@ -1416,7 +1463,7 @@ async function drain(session: ChatSession): Promise<void> {
   // learned or actually changes (a resume can hand us a new id), not on every message.
   let sentSessionId = session.sessionId;
   try {
-    for await (const msg of session.q as AsyncIterable<SDKMessage>) {
+    for await (const msg of q as AsyncIterable<SDKMessage>) {
       // Capture the session id wherever it appears.
       const anyMsg = msg as { session_id?: string };
       if (typeof anyMsg.session_id === "string" && anyMsg.session_id) {
@@ -1543,6 +1590,9 @@ async function drain(session: ChatSession): Promise<void> {
   } catch (e) {
     drainError = (e as Error).message;
   } finally {
+    // A respawn swapped in a NEW query (and started its own drain) — THIS drain's query was closed
+    // deliberately, so ending it here must not read as the session dying. See the pinned `q` above.
+    if (session.q !== q) return;
     // If closeChat() tore the session down it was already removed from the registry, so reaching
     // here with the session STILL registered means the drain ended on its OWN — the `claude` child
     // exited (or threw). Evict it (so the next sendMessage re-spawns a fresh session) and tell the
