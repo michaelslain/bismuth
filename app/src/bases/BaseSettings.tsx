@@ -191,8 +191,25 @@ export function BaseSettings(props: {
   const [propRows, setPropRows] = createSignal<PropertyFormRow[]>(seedPropertyRows(props.config));
   const updateRow = (i: number, patch: Partial<PropertyFormRow>) =>
     setPropRows(propRows().map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
-  const addPropRow = () => setPropRows([...propRows(), blankPropertyRow(propRows().map((r) => r.name))]);
-  const removePropRow = (i: number) => setPropRows(propRows().filter((_, idx) => idx !== i));
+  // Progressive disclosure: at most one row's full editor is open at a time. `null` = every
+  // row collapsed to its quiet name/type/visibility line (see the render below).
+  const [editingProp, setEditingProp] = createSignal<number | null>(null);
+  const addPropRow = () => {
+    const next = [...propRows(), blankPropertyRow(propRows().map((r) => r.name))];
+    setPropRows(next);
+    setEditingProp(next.length - 1); // expand the new row for immediate editing
+  };
+  const removePropRow = (i: number) => {
+    setPropRows(propRows().filter((_, idx) => idx !== i));
+    setEditingProp((cur) => (cur === null ? null : cur === i ? null : cur > i ? cur - 1 : cur));
+  };
+  // Reorder keeps whichever row (if any) was open following its content, not its old index.
+  const moveRowAt = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= propRows().length) return;
+    setPropRows(moveRow(propRows(), i, dir));
+    setEditingProp((cur) => (cur === i ? j : cur === j ? i : cur));
+  };
 
   const reset = () => {
     setForm(Object.fromEntries(fields().map((f) => [f.key, f.def])));
@@ -205,6 +222,7 @@ export function BaseSettings(props: {
     setBin("day");
     setHideLabels(false);
     setPropRows(seedPropertyRows(props.config));
+    setEditingProp(null);
   };
 
   const save = async () => {
@@ -346,70 +364,104 @@ export function BaseSettings(props: {
         </Show>
 
         {/* Properties: the base's OWN declared property set — base-level, shown for every
-            view type (#104). Each row: name, type, visibility, reorder, delete, plus an
-            optional second line of type-specific fields. */}
+            view type (#104). Progressive disclosure: every row collapses to a single quiet
+            name/type/visibility line; clicking a row expands ONE full editor at a time
+            (name/type/type-specific extras/reorder/delete), collapsing whichever else was
+            open. Keeps a base with a dozen+ properties readable as a scannable list instead
+            of a wall of controls. */}
         <div class="set-sect">Properties</div>
         <div class="set-hint">
-          Declare this base's own fields — name, type, and whether it shows on cards/table. Order here drives card/table field order.
+          Declare this base's own fields — name, type, and whether it shows on cards/table. Order here drives card/table field order. Click a row to edit it.
         </div>
         <Show when={propRows().length > 0}>
-          <div class="propset-group">
-            <For each={propRows()}>{(row, i) => (
-              <div class="propset-row">
-                <div class="propset-main">
-                  <TextInput class="propset-name" value={row.name} placeholder="Property name" onInput={(v) => updateRow(i(), { name: v })} />
-                  <Select class="propset-type" value={row.kind} options={KIND_OPTS} onChange={(v) => updateRow(i(), { kind: v as BasePropertyKind })} />
+          <div class="propset-list">
+            <For each={propRows()}>{(row, i) => {
+              const open = () => editingProp() === i();
+              return (
+                <div class="propset-row" classList={{ open: open() }}>
                   <div
-                    class="propset-vis"
-                    title={row.hidden ? "Hidden from cards/table — click to show" : "Visible on cards/table — click to hide"}
-                    onClick={() => updateRow(i(), { hidden: !row.hidden })}
+                    class="propset-head"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={open()}
+                    onClick={() => setEditingProp(open() ? null : i())}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditingProp(open() ? null : i());
+                      }
+                    }}
                   >
-                    <span class="propset-vis-lab">{row.hidden ? "Hidden" : "Visible"}</span>
-                    <span class={"evm-toggle" + (row.hidden ? "" : " on")}><i /></span>
+                    <Icon value="chevron-right" class="propset-chev" size={13} strokeWidth={2} />
+                    <span class="propset-name-txt" classList={{ empty: !row.name }}>{row.name || "Untitled property"}</span>
+                    <span class="propset-kind">{row.kind}</span>
+                    <button
+                      type="button"
+                      class="propset-eye"
+                      aria-label={row.hidden ? `Show ${row.name || "property"} on cards/table` : `Hide ${row.name || "property"} from cards/table`}
+                      title={row.hidden ? "Hidden from cards/table — click to show" : "Visible on cards/table — click to hide"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateRow(i(), { hidden: !row.hidden });
+                      }}
+                    >
+                      <Icon value={row.hidden ? "eye-off" : "eye"} size={15} strokeWidth={1.75} />
+                    </button>
                   </div>
-                  <button type="button" class="propset-btn" disabled={i() === 0} aria-label="Move up" onClick={() => setPropRows(moveRow(propRows(), i(), -1))}>
-                    <Icon value="ArrowUp" size={13} />
-                  </button>
-                  <button type="button" class="propset-btn" disabled={i() === propRows().length - 1} aria-label="Move down" onClick={() => setPropRows(moveRow(propRows(), i(), 1))}>
-                    <Icon value="ArrowDown" size={13} />
-                  </button>
-                  <button type="button" class="propset-btn del" aria-label={`Remove ${row.name || "property"}`} onClick={() => removePropRow(i())}>
-                    <Icon value="Trash2" size={13} />
-                  </button>
+
+                  <Show when={open()}>
+                    <div class="propset-body">
+                      <div class="propset-fields">
+                        <TextInput class="propset-input" value={row.name} placeholder="Property name" onInput={(v) => updateRow(i(), { name: v })} />
+                        <Select class="propset-input" value={row.kind} options={KIND_OPTS} onChange={(v) => updateRow(i(), { kind: v as BasePropertyKind })} />
+                      </div>
+
+                      <Show when={row.kind === "select" || row.kind === "multiselect"}>
+                        <TextInput
+                          class="propset-extra propset-options"
+                          multiline
+                          value={row.optionsText}
+                          placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
+                          onInput={(v) => updateRow(i(), { optionsText: v })}
+                        />
+                      </Show>
+
+                      <Show when={row.kind === "number"}>
+                        <div class="propset-extra propset-numrow">
+                          <Select value={row.number} options={NUMBER_FORMAT_OPTS} onChange={(v) => updateRow(i(), { number: v as NumberFormat })} />
+                          <Show when={row.number === "unit" || row.number === "currency"}>
+                            <TextInput
+                              value={row.unit}
+                              placeholder={row.number === "currency" ? "Currency code (e.g. USD)" : "Unit label (e.g. kg)"}
+                              onInput={(v) => updateRow(i(), { unit: v })}
+                            />
+                          </Show>
+                        </div>
+                      </Show>
+
+                      <Show when={row.kind === "formula"}>
+                        <TextInput class="propset-extra" value={row.expr} placeholder="Expression, e.g. note.qty * note.price" onInput={(v) => updateRow(i(), { expr: v })} />
+                      </Show>
+
+                      <Show when={row.kind !== "formula"}>
+                        <TextInput class="propset-extra" value={row.defaultText} placeholder="Default value (optional)" onInput={(v) => updateRow(i(), { defaultText: v })} />
+                      </Show>
+
+                      <div class="propset-foot">
+                        <button type="button" class="propset-btn" disabled={i() === 0} aria-label="Move up" onClick={() => moveRowAt(i(), -1)}>
+                          <Icon value="ArrowUp" size={13} />
+                        </button>
+                        <button type="button" class="propset-btn" disabled={i() === propRows().length - 1} aria-label="Move down" onClick={() => moveRowAt(i(), 1)}>
+                          <Icon value="ArrowDown" size={13} />
+                        </button>
+                        <div class="sp" />
+                        <IconTextButton icon="Trash2" size="sm" iconSize={13} danger onClick={() => removePropRow(i())}>DELETE</IconTextButton>
+                      </div>
+                    </div>
+                  </Show>
                 </div>
-
-                <Show when={row.kind === "select" || row.kind === "multiselect"}>
-                  <TextInput
-                    class="propset-extra propset-options"
-                    multiline
-                    value={row.optionsText}
-                    placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
-                    onInput={(v) => updateRow(i(), { optionsText: v })}
-                  />
-                </Show>
-
-                <Show when={row.kind === "number"}>
-                  <div class="propset-extra propset-numrow">
-                    <Select value={row.number} options={NUMBER_FORMAT_OPTS} onChange={(v) => updateRow(i(), { number: v as NumberFormat })} />
-                    <Show when={row.number === "unit" || row.number === "currency"}>
-                      <TextInput
-                        value={row.unit}
-                        placeholder={row.number === "currency" ? "Currency code (e.g. USD)" : "Unit label (e.g. kg)"}
-                        onInput={(v) => updateRow(i(), { unit: v })}
-                      />
-                    </Show>
-                  </div>
-                </Show>
-
-                <Show when={row.kind === "formula"}>
-                  <TextInput class="propset-extra" value={row.expr} placeholder="Expression, e.g. note.qty * note.price" onInput={(v) => updateRow(i(), { expr: v })} />
-                </Show>
-
-                <Show when={row.kind !== "formula"}>
-                  <TextInput class="propset-extra" value={row.defaultText} placeholder="Default value (optional)" onInput={(v) => updateRow(i(), { defaultText: v })} />
-                </Show>
-              </div>
-            )}</For>
+              );
+            }}</For>
           </div>
         </Show>
         <div class="propset-add">

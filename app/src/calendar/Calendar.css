@@ -262,25 +262,42 @@
 .evm-modal .set-col.locked:hover { background: none; }
 
 /* ----- Base properties (#104) -----
-   Declares the base's OWN property set (list-form `properties:`): a group of
-   editable cards — name / type / visibility / reorder / delete on the main line,
-   an optional second line of type-specific fields (options / number format+unit /
-   formula expr / default). Shares the `.evm-toggle` switch used by the columns list. */
-.evm-modal .propset-group { display: flex; flex-direction: column; gap: 10px; }
-.evm-modal .propset-row { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 9px; }
-.evm-modal .propset-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.evm-modal .propset-name { flex: 1 1 34%; min-width: 90px; }
-.evm-modal .propset-type { flex: 1 1 30%; min-width: 100px; }
-.evm-modal .propset-vis { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.evm-modal .propset-vis-lab { font-family: var(--mono); font-size: 9.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--faint); }
-.evm-modal .propset-btn { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
-.evm-modal .propset-btn:hover:not(:disabled) { color: var(--hi); background: color-mix(in srgb, var(--accent) 10%, transparent); }
-.evm-modal .propset-btn:disabled { opacity: .3; cursor: default; }
-.evm-modal .propset-btn.del:hover:not(:disabled) { color: var(--rose); background: color-mix(in srgb, var(--rose) 15%, transparent); }
+   Progressive disclosure: a calm, scannable LIST (one bordered surface, like
+   `.set-cols`) where every row is a single quiet name/type/visibility line by
+   default. Clicking a row (`.propset-head`) expands ONE full editor at a time
+   (`.propset-body`: name/type inputs, type-specific extras, reorder/delete) —
+   collapsed rows never show a form control, only text + an icon toggle. */
+.evm-modal .propset-list { display: flex; flex-direction: column; background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; overflow: hidden; }
+.evm-modal .propset-row + .propset-row { border-top: 1px solid var(--border2); }
+
+/* collapsed line: chevron / name / muted type badge / eye toggle */
+.evm-modal .propset-head { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 7px 12px; cursor: pointer; transition: background .12s; }
+.evm-modal .propset-head:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.evm-modal .propset-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.evm-modal .propset-row.open .propset-head { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.evm-modal .propset-chev { flex: 0 0 auto; color: var(--faint); transition: transform .16s; }
+.evm-modal .propset-row.open .propset-chev { transform: rotate(90deg); }
+.evm-modal .propset-name-txt { flex: 1; min-width: 0; font-family: var(--mono); font-size: 13px; color: var(--hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evm-modal .propset-name-txt.empty { color: var(--faint); font-style: italic; }
+.evm-modal .propset-kind { flex: 0 0 auto; font-family: var(--mono); font-size: 10px; letter-spacing: .04em; text-transform: lowercase; color: var(--faint); border: 1px solid var(--border2); border-radius: 5px; padding: 2px 7px; }
+.evm-modal .propset-eye { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .propset-eye:hover { color: var(--hi); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.evm-modal .propset-eye:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* expanded editor: full form for exactly one row */
+.evm-modal .propset-body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid var(--border2); }
+.evm-modal .propset-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding-top: 10px; }
 .evm-modal .propset-extra { width: 100%; }
 .evm-modal .propset-options { min-height: 46px; resize: vertical; }
 .evm-modal .propset-numrow { display: flex; gap: 8px; }
 .evm-modal .propset-numrow .ui-input { flex: 1; }
+.evm-modal .propset-foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.evm-modal .propset-foot .sp { flex: 1; }
+.evm-modal .propset-btn { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--faint); background: transparent; border: none; cursor: pointer; transition: background .14s, color .14s; }
+.evm-modal .propset-btn:hover:not(:disabled) { color: var(--hi); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.evm-modal .propset-btn:disabled { opacity: .3; cursor: default; }
+.evm-modal .propset-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
 .evm-modal .propset-add { margin-top: 2px; }
 
 /* ----- Google Calendar sync section (in the calendar settings modal) ----- */
