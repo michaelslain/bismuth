@@ -169,7 +169,7 @@ views:
 `);
   expect(base.declaredProperties).toEqual(["status", "priority", "description"]);
   expect(base.properties?.status).toEqual({ displayName: undefined, hidden: undefined, type: undefined, default: undefined });
-  expect(base.properties?.priority?.type).toBe("number");
+  expect(base.properties?.priority?.type).toEqual({ kind: "number" });
   expect(base.properties?.priority?.default).toBe(1);
   expect(base.properties?.description?.displayName).toBe("Notes");
 });
@@ -184,11 +184,11 @@ test("map-form properties never sets declaredProperties (classic metadata semant
 test("map-form properties now also tolerates type/default as metadata", () => {
   const base = parseBase(`properties:\n  price:\n    type: number\n    default: 0\nviews:\n  - type: table\n    name: V\n`);
   expect(base.declaredProperties).toBeUndefined();
-  expect(base.properties?.price?.type).toBe("number");
+  expect(base.properties?.price?.type).toEqual({ kind: "number" });
   expect(base.properties?.price?.default).toBe(0);
 });
 
-test("list-form entries: unknown type drops to undefined, falsey defaults are kept, null default is not", () => {
+test("list-form entries: legacy checkbox→boolean, unknown type falls back to text, falsey defaults kept, null default is not", () => {
   const base = parseBase(`
 properties:
   - name: done
@@ -201,9 +201,10 @@ views:
   - type: table
     name: V
 `);
-  expect(base.properties?.done?.type).toBe("checkbox");
+  expect(base.properties?.done?.type).toEqual({ kind: "boolean" });
   expect(base.properties?.done?.default).toBe(false);
-  expect(base.properties?.weird?.type).toBeUndefined();
+  // a present-but-unrecognized type is tolerated → safe default (text), not dropped
+  expect(base.properties?.weird?.type).toEqual({ kind: "text" });
   expect(base.properties?.weird?.default).toBeUndefined();
 });
 
@@ -236,5 +237,104 @@ test("list-form properties parses inside a type:base file's frontmatter", () => 
     { name: "B", path: "B.md" },
   );
   expect(config.declaredProperties).toEqual(["status", "worktree"]);
-  expect(config.properties?.worktree?.type).toBe("text");
+  expect(config.properties?.worktree?.type).toEqual({ kind: "text" });
+});
+
+// ── Canonical functional property type (#99) ──────────────────────────────────────────
+
+test("#99: number with a format carrier parses to a canonical number type", () => {
+  const base = parseBase(`
+properties:
+  - name: price
+    type: number
+    number: currency
+    unit: USD
+views:
+  - type: table
+    name: V
+`);
+  expect(base.properties?.price?.type).toEqual({ kind: "number", number: "currency", unit: "USD" });
+});
+
+test("#99: number ignores an unknown format but keeps a plain number kind", () => {
+  const base = parseBase(`properties:\n  - name: qty\n    type: number\n    number: bananas\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.properties?.qty?.type).toEqual({ kind: "number" });
+});
+
+test("#99: select carries its options; multiselect too", () => {
+  const base = parseBase(`
+properties:
+  - name: stage
+    type: select
+    options: [todo, doing, done]
+  - name: labels
+    type: multiselect
+    options: [a, b]
+views:
+  - type: table
+    name: V
+`);
+  expect(base.properties?.stage?.type).toEqual({ kind: "select", options: ["todo", "doing", "done"] });
+  expect(base.properties?.labels?.type).toEqual({ kind: "multiselect", options: ["a", "b"] });
+});
+
+test("#99: select without options drops the empty options carrier", () => {
+  const base = parseBase(`properties:\n  - name: stage\n    type: select\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.properties?.stage?.type).toEqual({ kind: "select" });
+});
+
+test("#99: formula carries its expr", () => {
+  const base = parseBase(`properties:\n  - name: ppu\n    type: formula\n    expr: price / qty\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.properties?.ppu?.type).toEqual({ kind: "formula", expr: "price / qty" });
+});
+
+test("#99: legacy vocabulary maps onto canonical kinds", () => {
+  const base = parseBase(`
+properties:
+  - name: a
+    type: text
+  - name: b
+    type: checkbox
+  - name: c
+    type: date
+  - name: d
+    type: time
+  - name: e
+    type: list
+  - name: f
+    type: link
+views:
+  - type: table
+    name: V
+`);
+  expect(base.properties?.a?.type).toEqual({ kind: "text" });
+  expect(base.properties?.b?.type).toEqual({ kind: "boolean" });
+  expect(base.properties?.c?.type).toEqual({ kind: "date" });
+  expect(base.properties?.d?.type).toEqual({ kind: "datetime" }); // time → datetime
+  expect(base.properties?.e?.type).toEqual({ kind: "list" });
+  expect(base.properties?.f?.type).toEqual({ kind: "link" });
+});
+
+test("#99: the new canonical kinds parse directly", () => {
+  const base = parseBase(`
+properties:
+  - name: md
+    type: markdown
+  - name: ts
+    type: datetime
+  - name: b
+    type: boolean
+views:
+  - type: table
+    name: V
+`);
+  expect(base.properties?.md?.type).toEqual({ kind: "markdown" });
+  expect(base.properties?.ts?.type).toEqual({ kind: "datetime" });
+  expect(base.properties?.b?.type).toEqual({ kind: "boolean" });
+});
+
+test("#99: a property with no type key stays untyped (type undefined)", () => {
+  const base = parseBase(`properties:\n  - name: notes\n    displayName: Notes\nviews:\n  - type: table\n    name: V\n`);
+  expect(base.properties?.notes?.type).toBeUndefined();
+  expect(base.properties?.notes?.displayName).toBe("Notes");
 });

@@ -3,6 +3,7 @@ import { parseExpr } from "./parser";
 import { evaluate } from "./evaluate";
 import { passesFilter, combineFilters } from "./filters";
 import { compare, toNumber } from "./values";
+import { declaredFormulas } from "./properties";
 
 export function toContext(row: Row, hostThis?: Record<string, unknown>): EvalContext {
   return { file: row.file, note: row.note, formula: row.formula, this: hostThis };
@@ -50,6 +51,10 @@ function hiddenIds(base: BaseConfig): Set<string> {
     if (!meta?.hidden) continue;
     out.add(key);
     out.add(canonicalId(key));
+    // A formula-kind property resolves to a "formula.<bare>" column id (see
+    // declaredColumns below), not "note.<bare>" — register that spelling too so
+    // `hidden: true` on a declared formula property actually hides it.
+    out.add(`formula.${key.startsWith("note.") ? key.slice(5) : key}`);
   }
   return out;
 }
@@ -71,11 +76,19 @@ function deriveColumns(rows: Row[], hidden: Set<string>): string[] {
 // ids), instead of unioning whatever frontmatter the rows happen to carry. file.name is
 // seeded first for note rows (same rule as deriveColumns) unless already declared;
 // `hidden` still applies (under either the bare or canonical spelling).
-function declaredColumns(declared: string[], rows: Row[], hidden: Set<string>): string[] {
+//
+// A declared `{type: formula}` property (#102) canonicalizes to a "formula.<bare>" id
+// instead of "note.<bare>" — it has no frontmatter key, only a computed row.formula[bare]
+// value (populated by computeFormulas below via declaredFormulas). This is what makes it
+// read-only downstream: writableKey() (app/src/bases/kanbanMeta.ts) already treats any
+// "formula."-prefixed id as non-writable.
+function declaredColumns(declared: string[], rows: Row[], hidden: Set<string>, base: BaseConfig): string[] {
   const cols: string[] = [];
   if (rows.some((r) => r.file?.name)) cols.push("file.name");
   for (const name of declared) {
-    const c = canonicalId(name);
+    const t = base.properties?.[name]?.type;
+    const bare = name.startsWith("note.") ? name.slice(5) : name;
+    const c = t?.kind === "formula" ? `formula.${bare}` : canonicalId(name);
     if (!cols.includes(c)) cols.push(c);
   }
   return cols.filter((c) => !hidden.has(c) && !hidden.has(c.replace(/^note\./, "")));
@@ -113,8 +126,12 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
   // 1. Compute formulas for all rows (needed for filtering/sorting on formula.*).
   //    `hostThis` (the embedding note's frontmatter, when this base is being
   //    rendered inline in another note) flows into the eval context as `this.*`.
+  //    A declared `{type: formula, expr}` property (#102) is merged in here under its
+  //    bare name — SAME map shape, SAME evaluator call, as the base's own `formulas:`;
+  //    an explicit `formulas:` entry of the same name wins over a declared one.
   const rows = allRows.map((r) => ({ ...r, formula: { ...r.formula } }));
-  computeFormulas(rows, base.formulas, hostThis);
+  const formulas = { ...declaredFormulas(base), ...base.formulas };
+  computeFormulas(rows, formulas, hostThis);
 
   // 2. Filter (global AND view)
   const filter = combineFilters(base.filters, view.filters);
@@ -140,7 +157,7 @@ export function runView(base: BaseConfig, allRows: Row[], viewIndex: number, hos
   const columns = view.order && view.order.length
     ? view.order
     : base.declaredProperties && base.declaredProperties.length
-      ? declaredColumns(base.declaredProperties, filtered, hidden)
+      ? declaredColumns(base.declaredProperties, filtered, hidden, base)
       : deriveColumns(filtered, hidden);
 
   // 5. Group

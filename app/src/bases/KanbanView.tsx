@@ -6,7 +6,7 @@ import { placeholderFile } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
 import { api } from "../api";
 import { KanbanCard } from "./KanbanCard";
-import { descriptionField, metaColumns, metaSource, writableKey } from "./kanbanMeta";
+import { metaColumns, metaSource, writableKey } from "./kanbanMeta";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
 import styles from "./BaseView.module.css";
@@ -40,10 +40,7 @@ function safeFilename(title: string): string {
 
 export function KanbanView(props: { result: ViewResult; config: BaseConfig; basePath?: string; viewIndex?: number; onChange: () => void }) {
   const groupBy = () => props.result.view.groupBy;
-  // The editable description slot's frontmatter key, or null when the view's config doesn't
-  // list one (see descriptionField) — description is just another property, not a built-in.
-  const descField = () => descriptionField(props.result.view.order, props.result.view.descriptionField);
-  // Editing (rename / description / reorder / colors / add) only works against a real base
+  // Editing (rename / reorder / colors / add) only works against a real base
   // file to persist into. Embedded ```query kanbans stay read-only.
   const editable = () => !!props.basePath;
   // Adding a card also needs a WRITABLE groupBy: we can only place a new card in the clicked
@@ -51,19 +48,22 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // writable target, so the composer is hidden rather than silently creating a mis-placed card.
   const canAdd = () => editable() && !!groupBy() && writableKey(groupBy()!.property) !== null;
   const groupColors = (): Record<string, string> => props.result.view.groupColors ?? {};
+  // #105: hide each meta row's label caption, showing values only.
+  const hideLabels = () => props.result.view.hideLabels === true;
 
   // A kanban card IS a note; its title is the note's filename (editing it renames the file).
   // Bound to file.name — NOT the base's first display column — so an explicit `order:` that puts
   // a property first can't turn a title-edit into a rename-to-a-property-value.
   const titleCol = () => "file.name";
   // The view's remaining `order:` properties — or, when the base declares its own property
-  // set (list-form `properties:`), the engine-resolved columns — shown read-only on each card
-  // below the description (title + description keep their dedicated editable slots).
+  // set (list-form `properties:`), the engine-resolved columns — shown as editable meta chips
+  // on each card below the title (which keeps its own dedicated editable slot). `description`
+  // is not special-cased here (#103): a declared/`order`-listed `description` flows through
+  // like any other property, rendered via its type (markdown by default — propertyEdit.ts).
   const metaCols = () =>
     metaColumns(
       metaSource(props.result.view.order, props.config.declaredProperties, props.result.columns, groupBy()?.property),
       titleCol(),
-      descField(),
     );
 
   // Per-column color: explicit override > known-status palette > a palette slot chosen by a stable
@@ -509,15 +509,8 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     props.onChange();
   }
 
-  // ── Card description (a frontmatter property; only reachable when the view lists one) ──
-  async function setDescription(row: Row, value: string): Promise<void> {
-    const field = descField();
-    if (field === null) return;
-    if (value.trim() === "") await api.deleteProperty(row.file.path, field);
-    else await api.setProperty(row.file.path, field, value);
-  }
-
-  // ── Card meta property (any `order:` property besides title/description) ──
+  // ── Card meta property (any `order:` property besides title — including `description`,
+  // #103 dropped its own dedicated write path in favor of this one) ──
   // Persists a value the card's type-aware chip editor produced. `null` clears the key
   // entirely (rather than writing a literal null into frontmatter) — file./formula./this.
   // ids have no writable key and are silently ignored (KanbanCard already gates the click).
@@ -544,8 +537,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // Frontmatter shared by EVERY existing card (e.g. `board`, or a `tags` array the base filters
   // on) — copied onto new cards so they keep matching the base's source/filter. Compared by value
   // (JSON) so array/object fields count as equal across notes, and carried through as-is (the YAML
-  // serializer handles arrays/objects). Excludes the status/order keys, plus the description key
-  // when the view has one (a fresh card starts with an empty description slot, not a copied one).
+  // serializer handles arrays/objects). Excludes only the status/order keys — `description` is no
+  // longer special-cased (#103), so a fresh card only "inherits" one when every existing card
+  // happens to share the identical text (the normal constProps rule for any property).
   function constProps(exclude: Set<string>): Record<string, unknown> {
     const rows = props.result.groups.flatMap((g) => g.rows);
     if (rows.length === 0) return {};
@@ -585,8 +579,6 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     // every existing card overrides them (a new card must keep matching the base's filter),
     // and the clicked column's status value always wins.
     const exclude = new Set([statusKey, ORDER_KEY]);
-    const df = descField();
-    if (df !== null) exclude.add(df);
     const front: Record<string, unknown> = {
       ...declaredDefaults(props.config, exclude),
       ...constProps(exclude),
@@ -710,13 +702,12 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                   <KanbanCard
                                     row={r()}
                                     titleCol={titleCol()}
-                                    descField={descField()}
                                     metaCols={metaCols()}
                                     config={props.config}
                                     editable={editable()}
+                                    hideLabels={hideLabels()}
                                     onEditingChange={setEditing}
                                     onRename={(t) => void renameCard(r(), t)}
-                                    onSetDescription={(v) => void setDescription(r(), v)}
                                     onSetMeta={(id, v) => void setMetaProperty(r(), id, v)}
                                     siblingValues={siblingValuesFor}
                                   />
