@@ -733,7 +733,12 @@
   pointer-events: none;
 }
 
-/* Editable card face: title (renames the note) + meta chips (frontmatter properties) */
+/* The card face wrapper — a tap anywhere opens the focused edit modal (KanbanCard.tsx). Stacks
+   the title + meta with the same gap the cardBodyInner used, so display spacing is unchanged. */
+.kbCardFace { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kbFaceEditable { cursor: pointer; }
+
+/* Card face: read-only title + meta chips (frontmatter properties). Clicking opens the modal. */
 .kbCardTitle {
   font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg);
   line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;

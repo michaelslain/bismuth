@@ -43,7 +43,12 @@ export function PropertyValueEditor(props: {
   // every other kind commits exactly once and always closes, so they simply omit it.
   onCommit: (value: unknown, opts?: { keepOpen?: boolean }) => void;
   onCancel: () => void;
+  // Whether the control grabs focus on mount. Defaults to true (the kanban chip swaps this
+  // editor in already-focused). A multi-field form (CardEditModal) sets false and manages
+  // focus itself, so several editors mounting at once don't all fight to steal focus.
+  autofocus?: boolean;
 }) {
+  const autofocus = () => props.autofocus !== false;
   const toDraft = (): string => {
     const k = props.kind;
     if (k.kind === "tags") {
@@ -110,7 +115,7 @@ export function PropertyValueEditor(props: {
                   class={styles.kbMetaInput}
                   type={props.kind.kind === "number" ? "number" : props.kind.kind === "date" ? (props.kind.time ? "datetime-local" : "date") : "text"}
                   value={draft()}
-                  autofocus
+                  autofocus={autofocus()}
                   onInput={(e) => setDraft(e.currentTarget.value)}
                   onBlur={commit}
                   onKeyDown={(e) => {
@@ -130,8 +135,8 @@ export function PropertyValueEditor(props: {
                 class={styles.kbMetaMarkdownArea}
                 value={draft()}
                 rows={1}
-                autofocus
-                ref={(el) => queueMicrotask(() => { el.focus(); autoGrow(el); })}
+                autofocus={autofocus()}
+                ref={(el) => queueMicrotask(() => { if (autofocus()) el.focus(); autoGrow(el); })}
                 onInput={(e) => { setDraft(e.currentTarget.value); autoGrow(e.currentTarget); }}
                 onBlur={commit}
                 onKeyDown={(e) => {
