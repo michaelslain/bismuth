@@ -10,11 +10,18 @@
 // Bridged to the MCP as `bismuth_cli` (no new MCP tool) so `bismuth_cli_help` lists these.
 import type { CommandMap } from "../types";
 import { fail, flag, out, positionals, requireVault } from "../args";
-import { readNote, writeNote } from "../../../core/src/files";
+import { createEntry, listMarkdown, readNote, writeNote } from "../../../core/src/files";
+import { parseFrontmatter } from "../../../core/src/frontmatter";
 import {
   parseCalendarFile,
   serializeCalendarFile,
+  emptyCalendarFile,
+  isCalendarBase,
+  categoriesOf,
   eventsForDay,
+  eventsForRange,
+  eventsInWindow,
+  searchEvents,
   detectOverlaps,
   findEvent,
   addEvent,
@@ -22,6 +29,10 @@ import {
   deleteEvent,
   overrideOccurrence,
   deleteOccurrence,
+  recurrenceFromRRule,
+  addCategory,
+  updateCategory,
+  removeCategory,
   type CalendarEvent,
   type Recurrence,
 } from "../../../core/src/calendar";
@@ -88,6 +99,105 @@ function eventFieldsFromArgs(args: string[]): Record<string, unknown> {
 }
 
 export const commands: CommandMap = {
+  "calendar bases": {
+    summary: "Discover calendar base files in the vault (path, title, event/category counts)",
+    usage: "",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const result: { path: string; title: string; events: number; categories: string[] }[] = [];
+      for (const path of (await listMarkdown(vault)).sort()) {
+        let text: string;
+        try {
+          text = await readNote(vault, path);
+        } catch {
+          continue;
+        }
+        const { data } = parseFrontmatter(text);
+        if (!isCalendarBase(data)) continue;
+        const { events } = parseCalendarFile(text);
+        const basename = path.split("/").pop()!.replace(/\.md$/i, "");
+        result.push({
+          path,
+          title: typeof data.title === "string" && data.title ? data.title : basename,
+          events: events.length,
+          categories: categoriesOf(data).map((c) => c.name),
+        });
+      }
+      out(result, args);
+    },
+  },
+
+  "calendar create": {
+    summary: "Create a new empty calendar base file (fails if the path exists)",
+    usage: "<basePath> [--title '...']",
+    run: async (args) => {
+      const vault = requireVault(args);
+      let [path] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!/\.md$/i.test(path)) path += ".md";
+      createEntry(vault, path, "file"); // EEXIST guard
+      await writeNote(vault, path, emptyCalendarFile({ title: flag(args, "title") }));
+      out({ ok: true, path }, args);
+    },
+  },
+
+  "calendar list": {
+    summary: "List RAW stored events (masters unexpanded, with real ids) — optionally windowed",
+    usage: "<basePath> [--from YYYY-MM-DD --to YYYY-MM-DD]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path] = positionals(args);
+      if (!path) fail("<basePath> required");
+      const { events } = await readCalendar(vault, path);
+      out(eventsInWindow(events, flag(args, "from"), flag(args, "to")), args);
+    },
+  },
+
+  "calendar range": {
+    summary: "List concrete event instances in a date range (recurrences expanded)",
+    usage: "<basePath> <from> <to>",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, from, to] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!from || !to) fail("<from> and <to> (YYYY-MM-DD) required");
+      const { events } = await readCalendar(vault, path);
+      out(eventsForRange(events, from, to), args);
+    },
+  },
+
+  "calendar get": {
+    summary: "Print one event by id (as stored)",
+    usage: "<basePath> <id>",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, id] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!id) fail("<id> required");
+      const { events } = await readCalendar(vault, path);
+      const event = findEvent(events, id);
+      if (!event) fail(`no event with id ${id}`);
+      out(event, args);
+    },
+  },
+
+  "calendar search": {
+    summary: "Search events by text (title/description/location/category); --from/--to searches expanded instances",
+    usage: "<basePath> <text> [--from YYYY-MM-DD --to YYYY-MM-DD]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, ...words] = positionals(args);
+      if (!path) fail("<basePath> required");
+      const text = words.join(" ").trim();
+      if (!text) fail("<text> required");
+      const { events } = await readCalendar(vault, path);
+      const from = flag(args, "from");
+      const to = flag(args, "to");
+      const pool = from && to ? eventsForRange(events, from, to) : eventsInWindow(events, from, to);
+      out(searchEvents(pool, text), args);
+    },
+  },
+
   "calendar day": {
     summary: "List a day's events (recurrences expanded to concrete instances)",
     usage: "<basePath> <date>",
@@ -116,14 +226,21 @@ export const commands: CommandMap = {
   },
 
   "calendar add": {
-    summary: "Add an event (fields via --json and/or --title/--date/--start/--end/--recurrence …)",
-    usage: "<basePath> --date YYYY-MM-DD --title '...' [--start HH:MM --end HH:MM]",
+    summary: "Add an event (fields via --json and/or --title/--date/--start/--end/--recurrence/--rrule …)",
+    usage: "<basePath> --date YYYY-MM-DD --title '...' [--start HH:MM --end HH:MM] [--rrule 'FREQ=WEEKLY;BYDAY=MO']",
     run: async (args) => {
       const vault = requireVault(args);
       const [path] = positionals(args);
       if (!path) fail("<basePath> required");
       const fields = eventFieldsFromArgs(args);
       if (!fields.date) fail("--date (YYYY-MM-DD) required");
+      // --rrule: an iCal RRULE as an alternative to --recurrence JSON (--recurrence wins).
+      const rrule = flag(args, "rrule");
+      if (rrule !== undefined && fields.recurrence === undefined) {
+        const rec = recurrenceFromRRule(rrule, String(fields.date));
+        fields.recurrence = rec;
+        fields.date = rec.startDate; // normalized to the first valid occurrence (BYDAY off-day starts)
+      }
       const { frontmatter, events } = await readCalendar(vault, path);
       const { events: next, event } = addEvent(events, fields as Omit<CalendarEvent, "id" | "localUpdated">);
       await writeCalendar(vault, path, frontmatter, next);
@@ -194,6 +311,69 @@ export const commands: CommandMap = {
       const next = deleteOccurrence(events, id, date);
       await writeCalendar(vault, path, frontmatter, next);
       out({ ok: true }, args);
+    },
+  },
+
+  "calendar categories": {
+    summary: "List a calendar's categories ({name, color})",
+    usage: "<basePath>",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path] = positionals(args);
+      if (!path) fail("<basePath> required");
+      const { frontmatter } = await readCalendar(vault, path);
+      out(categoriesOf(frontmatter), args);
+    },
+  },
+
+  "calendar category add": {
+    summary: "Add a category (--color = any CSS color or a theme token like accent/teal)",
+    usage: "<basePath> <name> [--color '#b00020']",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, name] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!name) fail("<name> required");
+      const { frontmatter, events } = await readCalendar(vault, path);
+      const next = addCategory(frontmatter, { name, color: flag(args, "color") ?? "accent" });
+      await writeCalendar(vault, path, next, events);
+      out({ ok: true, categories: categoriesOf(next) }, args);
+    },
+  },
+
+  "calendar category update": {
+    summary: "Rename (--rename, cascades into events) and/or recolor (--color) a category",
+    usage: "<basePath> <name> [--rename <newName>] [--color <c>]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, name] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!name) fail("<name> required");
+      const rename = flag(args, "rename");
+      const color = flag(args, "color");
+      if (rename === undefined && color === undefined) fail("nothing to update — pass --rename and/or --color");
+      const { frontmatter, events } = await readCalendar(vault, path);
+      const next = updateCategory(frontmatter, events, name, {
+        ...(rename !== undefined ? { name: rename } : {}),
+        ...(color !== undefined ? { color } : {}),
+      });
+      await writeCalendar(vault, path, next.frontmatter, next.events);
+      out({ ok: true, categories: categoriesOf(next.frontmatter) }, args);
+    },
+  },
+
+  "calendar category remove": {
+    summary: "Remove a category, clearing it from events (or --reassign <other>)",
+    usage: "<basePath> <name> [--reassign <otherCategory>]",
+    run: async (args) => {
+      const vault = requireVault(args);
+      const [path, name] = positionals(args);
+      if (!path) fail("<basePath> required");
+      if (!name) fail("<name> required");
+      const { frontmatter, events } = await readCalendar(vault, path);
+      const next = removeCategory(frontmatter, events, name, flag(args, "reassign"));
+      await writeCalendar(vault, path, next.frontmatter, next.events);
+      out({ ok: true, categories: categoriesOf(next.frontmatter) }, args);
     },
   },
 };

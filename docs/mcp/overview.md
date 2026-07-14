@@ -32,6 +32,8 @@ The server (`mcp/src/server.ts`, low-level `@modelcontextprotocol/sdk` `Server` 
 
 Typical flow: `docs_search` → read only the top hit with `docs_read`; act with `bismuth_cli`.
 
+Every vault feature rides `bismuth_cli` the same way — notes, search, tasks, bases/rows, flashcards, settings, and **calendar management** (discover calendar bases, event CRUD incl. recurrence/RRULE and per-occurrence overrides, categories/colors — the `calendar` group; see `cli/reference.md` § Calendar commands). No per-feature MCP tools exist by design.
+
 ## App control — driving a running window (ZERO new MCP tools)
 
 A Claude session can also drive a **running Bismuth app** — list/open/close/focus tabs, run a safe command, author a daemon inbox page. This adds **no new MCP tool schemas** on purpose: the machine-wide MCP is loaded into every session on the machine, so an extra always-listed tool would tax the context of every unrelated session. Instead, app control decomposes into the existing `bismuth_cli` tool via two CLI groups the CLI already exposes — discover them with `bismuth_cli_help` (there is no `group: "app"` scoped help; the global help lists every `app …` / `page …` command):
