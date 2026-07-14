@@ -1,4 +1,4 @@
-import { createSignal, createMemo, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createMemo, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { api } from "../api";
 import { TextButton } from "../ui/TextButton";
 import { IconButton } from "../ui/IconButton";
@@ -16,7 +16,16 @@ import { todayISO } from "../../../core/src/dates";
 // Pure review-queue logic lives in its own module so it can be unit-tested headlessly
 // without importing this component (lucide-solid icons, Solid client-only code). Import
 // for local use, and re-export to preserve the existing `./FlashcardsView` public surface.
-import { buildQueue, nextPosAfterGrade, backField as revScheduleCol, type QueueItem, type CardDir } from "./flashcardsQueue";
+import {
+  buildQueue,
+  nextPosAfterGrade,
+  canGrade,
+  loadSession,
+  saveSession,
+  backField as revScheduleCol,
+  type QueueItem,
+  type CardDir,
+} from "./flashcardsQueue";
 export { buildQueue, nextPosAfterGrade, type QueueItem, type CardDir };
 
 /** Grade → digit shown on the key badge / bound to the number keys (1-3). */
@@ -55,7 +64,12 @@ export function FlashcardsView(props: {
   const intervalField = () => view().intervalField ?? "interval";
   const bidirectional = () => !!view().bidirectional;
 
-  const [cram, setCram] = createSignal(false);
+  // Restore any in-flight session for this deck: switching AWAY from the flashcards
+  // tab unmounts this component, so without a restore the cram flag, queue position,
+  // and per-grade tally would all reset to zero on return. Keyed by base path; a deck
+  // with no base path (embedded query) simply starts fresh every mount.
+  const restored = loadSession(props.basePath);
+  const [cram, setCram] = createSignal(restored.cram);
 
   // The review queue: due cards normally; ALL cards in cram mode (order preserved).
   // Bidirectional decks emit a forward + reverse entry per row (see flashcardsQueue).
@@ -63,18 +77,35 @@ export function FlashcardsView(props: {
   // re-evaluated on every recompute (not captured once at mount, in UTC).
   const queue = createMemo(() => buildQueue(props.rows, dueField(), todayISO(), cram(), bidirectional()));
 
-  const [pos, setPos] = createSignal(0);
+  const [pos, setPos] = createSignal(restored.pos);
   const [revealed, setRevealed] = createSignal(false);
+  // In-flight lock: true while a grade's async row-write / refetch is settling, so a
+  // second press can't advance a second card (see canGrade / the double-skip fix).
+  const [grading, setGrading] = createSignal(false);
 
-  // Per-session tally for the header strip. GOOD = good|easy presses, HARD = hard presses.
-  const [goodCount, setGoodCount] = createSignal(0);
-  const [hardCount, setHardCount] = createSignal(0);
+  // Per-session tally for the header strip — one bucket per SM-2 grade so EASY shows
+  // distinctly (it used to be folded into GOOD, hiding it from the progress surface).
+  const [hardCount, setHardCount] = createSignal(restored.hard);
+  const [goodCount, setGoodCount] = createSignal(restored.good);
+  const [easyCount, setEasyCount] = createSignal(restored.easy);
+
+  // Persist the session on every state change so a tab switch (unmount) leaves the
+  // latest position + tally in the module store for the next mount to restore.
+  createEffect(() => {
+    saveSession(props.basePath, {
+      cram: cram(),
+      pos: pos(),
+      good: goodCount(),
+      hard: hardCount(),
+      easy: easyCount(),
+    });
+  });
 
   const current = () => (pos() < queue().length ? queue()[pos()] : null);
   // Progress through the deck for this session: how many graded so far over the
   // starting due count. The queue shrinks as cards are scheduled out, so anchor the
   // total to graded + remaining.
-  const graded = () => goodCount() + hardCount();
+  const graded = () => hardCount() + goodCount() + easyCount();
   const total = () => graded() + queue().length;
   const progressPct = () => {
     const t = total();
@@ -97,36 +128,47 @@ export function FlashcardsView(props: {
 
   const grade = async (response: "hard" | "good" | "easy") => {
     const c = current();
-    if (!c || !revealed()) return;
+    // Single-advance lock: bail unless the answer is revealed AND no prior grade is
+    // still settling. Guarding on `revealed` alone left an async gap where a
+    // re-reveal + re-press double-graded the same card ("skips it twice").
+    if (!c || !canGrade({ revealed: revealed(), grading: grading() })) return;
+    setGrading(true);
     setRevealed(false);
     if (response === "hard") setHardCount((n) => n + 1);
+    else if (response === "easy") setEasyCount((n) => n + 1);
     else setGoodCount((n) => n + 1);
     // Cram mode never writes scheduling — it's practice, not review.
     const persisted = !cram() && !!props.basePath;
-    // Track the card by its stable row index (c.index), not the positional queue
-    // offset: reviewCardRow pushes the card's due date forward so it drops out of
-    // the due-only queue on the onReviewed refetch. The shorter queue shifts the
-    // next card into the current pos, so we stay put (mirrors deleteCurrent)
-    // rather than incrementing into a queue whose membership just changed.
-    if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
-    setPos(nextPosAfterGrade(pos(), { cram: cram(), persisted }));
-    if (!cram()) props.onReviewed();
+    try {
+      // Track the card by its stable row index (c.index), not the positional queue
+      // offset: reviewCardRow pushes the card's due date forward so it drops out of
+      // the due-only queue on the onReviewed refetch. The shorter queue shifts the
+      // next card into the current pos, so we stay put (mirrors deleteCurrent)
+      // rather than incrementing into a queue whose membership just changed.
+      if (persisted) await api.reviewCardRow(props.basePath!, c.index, response, scheduleFields(c.dir));
+      setPos(nextPosAfterGrade(pos(), { cram: cram(), persisted }));
+      if (!cram()) props.onReviewed();
+    } finally {
+      setGrading(false);
+    }
+  };
+
+  const resetTally = () => {
+    setPos(0);
+    setRevealed(false);
+    setHardCount(0);
+    setGoodCount(0);
+    setEasyCount(0);
   };
 
   const restart = () => {
-    setPos(0);
-    setRevealed(false);
-    setGoodCount(0);
-    setHardCount(0);
+    resetTally();
     if (!cram()) props.onReviewed();
   };
 
   const toggleCram = () => {
     setCram(!cram());
-    setPos(0);
-    setRevealed(false);
-    setGoodCount(0);
-    setHardCount(0);
+    resetTally();
   };
 
   // ── Deck-wide "Cards" modal (browse / add / edit / delete every card) ──
@@ -212,8 +254,9 @@ export function FlashcardsView(props: {
             <i style={{ width: `${progressPct()}%` }} />
           </div>
           <div class="tally">
-            <span class="g">GOOD <b>{goodCount()}</b></span>
             <span class="a">HARD <b>{hardCount()}</b></span>
+            <span class="g">GOOD <b>{goodCount()}</b></span>
+            <span class="e">EASY <b>{easyCount()}</b></span>
           </div>
         </div>
 
