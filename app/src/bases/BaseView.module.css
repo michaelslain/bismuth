@@ -714,42 +714,35 @@
 .kanbanColDragging { opacity: 0.5; }
 .kanbanColReorder { box-shadow: 0 0 0 2px var(--bismuth-accent-border) inset; }
 
-/* Editable card face: title (renames the note) + description (a frontmatter property) */
+/* Editable card face: title (renames the note) + meta chips (frontmatter properties) */
 .kbCardTitle {
   font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg);
   line-height: 1.3; letter-spacing: -0.01em; overflow-wrap: anywhere;
 }
 .kbEditable { cursor: text; }
 /* Editable inputs get a text caret + real text selection back (the card sets user-select:none). */
-.kbTitleInput, .kbDescArea, .kbComposer { cursor: text; user-select: text; -webkit-user-select: text; }
+.kbTitleInput, .kbComposer { cursor: text; user-select: text; -webkit-user-select: text; }
 .kbTitleInput {
   width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
   background: var(--surface-2, var(--panel)); border-radius: 6px; padding: 3px 5px; margin: -4px -6px;
   font-family: var(--editor-font); font-size: 14px; font-weight: 600; color: var(--fg); outline: none;
 }
-.kbDesc { font-size: 12.5px; color: var(--text-muted); line-height: 1.45; overflow-wrap: anywhere; cursor: text; }
-.kbDesc :global(p) { margin: 0 0 4px; }
-.kbDesc :global(p):last-child { margin-bottom: 0; }
-.kbDesc :global(ul), .kbDesc :global(ol) { margin: 2px 0; padding-left: 18px; }
-.kbDescEmpty { font-size: 12px; color: var(--faint); font-style: italic; cursor: text; }
-.kbDescArea {
-  width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
-  background: var(--surface-2, var(--panel)); border-radius: 6px; padding: 6px 7px;
-  font-family: var(--editor-font); font-size: 12.5px; line-height: 1.45; color: var(--fg);
-  resize: none; overflow: hidden; outline: none;
-}
 
-/* Editable meta section: the view's remaining `order:` properties below the description —
-   each value is a click-to-edit chip (text/number/date/select/tags; booleans toggle a Chip
-   instantly). See KanbanCard.tsx + PropertyValueEditor.tsx. */
-.kbMeta { display: flex; flex-direction: column; gap: 4px; margin-top: 1px; }
+/* Editable meta section: the view's remaining `order:` properties (including a `description`
+   property, #103 — no longer a dedicated slot) — each value is a click-to-edit chip
+   (text/number/date/select/tags/markdown; booleans toggle a Chip instantly). See
+   KanbanCard.tsx + PropertyValueEditor.tsx.
+   #105: each item stacks its label ABOVE the value (was label-left) for tighter
+   horizontal use on narrow cards — a column flex naturally stacks the label span and
+   the value span/chip/editor, whichever is present, as separate rows. */
+.kbMeta { display: flex; flex-direction: column; gap: 5px; margin-top: 1px; }
 .kbMetaItem {
-  display: flex; align-items: baseline; gap: 7px; min-width: 0;
-  font-size: 12px; color: var(--text-muted); line-height: 1.4; overflow-wrap: anywhere;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0;
+  font-size: 12px; color: var(--text-muted); line-height: 1.35; overflow-wrap: anywhere;
 }
 .kbMetaLabel {
-  flex: 0 0 auto; font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--faint);
+  flex: 0 0 auto; font-size: 9px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--faint); line-height: 1.2;
 }
 .kbMeta .tagRow { font-size: 11.5px; gap: 8px; }
 /* Meta links stay clickable, but must not start a native link-drag (it would cancel the
@@ -771,9 +764,34 @@
 .kbMetaSelect :global(.ui-select-trigger) {
   height: auto; min-height: 0; padding: 2px 22px 2px 6px; font-size: 12px; border-radius: 5px;
 }
+/* A declared `markdown` property (#100): rendered block-markdown display + a multiline
+   editor, both sized to the meta row's smaller type than the card-level description. */
+.kbMetaMarkdown { display: block; width: 100%; cursor: text; }
+.kbMetaMarkdown :global(p) { margin: 0 0 3px; }
+.kbMetaMarkdown :global(p):last-child { margin-bottom: 0; }
+.kbMetaMarkdown :global(ul), .kbMetaMarkdown :global(ol) { margin: 2px 0; padding-left: 16px; }
+.kbMetaMarkdownArea {
+  width: 100%; box-sizing: border-box; border: 1px solid var(--bismuth-accent-border);
+  background: var(--surface-2, var(--panel)); border-radius: 5px; padding: 4px 6px;
+  font-family: var(--editor-font); font-size: 12px; line-height: 1.4; color: var(--fg);
+  resize: none; overflow: hidden; outline: none; cursor: text; user-select: text; -webkit-user-select: text;
+}
 /* A boolean meta property is always a Chip (display AND editor in one) — shrink the
    generic .chip-toggle chrome to fit the card's compact meta rows. */
 .kbMetaBoolChip :global(.chip-toggle) { height: 20px; padding: 0 8px; gap: 4px; font-size: 11px; border-radius: 5px; }
+
+/* A declared `multiselect` property (#101): read-only display is a chip per selected
+   value; the editor is the same chip row, each clickable to remove, plus a shrunk
+   "+ Add" Select offering the remaining declared options. Both share the compact
+   chip-toggle sizing the boolean chip above already establishes. */
+.kbMetaMultiselectDisplay,
+.kbMetaMultiselect { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.kbMetaMultiselect { margin: -3px -5px; }
+.kbMetaMultiselectDisplay :global(.chip-toggle),
+.kbMetaMultiselect :global(.chip-toggle) { height: 20px; padding: 0 7px; gap: 4px; font-size: 11px; border-radius: 5px; }
+/* Select's `class` prop lands on the trigger BUTTON itself (already carrying
+   `.ui-select-trigger` globally) — not a wrapper — so this is a same-element rule. */
+.kbMetaMultiselectAdd { height: 20px; min-height: 0; padding: 2px 20px 2px 6px; font-size: 11px; border-radius: 5px; }
 
 /* Add-card composer — a compact "+" icon button */
 .kbAddBtn {

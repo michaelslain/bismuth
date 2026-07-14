@@ -1,13 +1,22 @@
 import { createSignal, createMemo, For, Show } from "solid-js";
 import { api } from "../api";
-import type { BaseConfig, Row, ViewType } from "../../../core/src/bases/types";
+import type { BaseConfig, BasePropertyKind, NumberFormat, Row, ViewType } from "../../../core/src/bases/types";
+import { BASE_PROPERTY_KINDS, NUMBER_FORMATS } from "../../../core/src/bases/types";
 import { fileBasename as noteLabel } from "../../../core/src/pathUtils";
 import { capitalize } from "./renderValue";
 import { columnLabel } from "./columnLabel";
 import { declaredPropertyKeys } from "../../../core/src/bases/properties";
+import {
+  blankPropertyRow,
+  buildPropertiesYaml,
+  moveRow,
+  seedPropertyRows,
+  type PropertyFormRow,
+} from "./basePropertiesForm";
 import { Modal } from "../ui/Modal";
 import { Icon } from "../icons/Icon";
 import { Select } from "../ui/Select";
+import { TextInput } from "../ui/TextInput";
 import { TextButton } from "../ui/TextButton";
 import { IconTextButton } from "../ui/IconTextButton";
 // Shares the calendar settings modal chrome (.evm-modal / .set-*).
@@ -78,6 +87,10 @@ const DIR_OPTS = [
   { value: "DESC", label: "Descending" },
 ];
 
+// Properties section (#104): kind + number-format pickers.
+const KIND_OPTS = BASE_PROPERTY_KINDS.map((k) => ({ value: k, label: capitalize(k) }));
+const NUMBER_FORMAT_OPTS = NUMBER_FORMATS.map((f) => ({ value: f, label: capitalize(f) }));
+
 /**
  * Per-view settings as a modal overlay — same chrome as the calendar's
  * CalendarSettings (`.evm-modal`), so every base type shares one polished design:
@@ -96,6 +109,12 @@ export function BaseSettings(props: {
 }) {
   const view = () => props.config.views[props.viewIdx];
   const isRecord = () => RECORD_TYPES.includes(props.type);
+  // Kanban gets column-visibility/reorder from the Properties section (declared
+  // fields + their eye toggle + reorder), so the Columns section (table-header-drag
+  // language, redundant visibility toggle) is suppressed for it. Other record views
+  // (table/list/cards/map/bullets) still have no per-property declarations driving
+  // order, so they keep Columns.
+  const showColumns = () => isRecord() && props.type !== "kanban";
   const isChart = () => CHART_TYPES.includes(props.type);
   const fields = () => FIELDS_BY_TYPE[props.type] ?? [];
 
@@ -126,6 +145,8 @@ export function BaseSettings(props: {
   // Flashcards: review every card both ways (front→back AND back→front), each direction
   // scheduled independently in `*Back` companion columns.
   const [bidi, setBidi] = createSignal<boolean>(!!view()?.bidirectional);
+  // Kanban (#105): hide each card's meta-row label captions, showing values only.
+  const [hideLabels, setHideLabels] = createSignal<boolean>(!!view()?.hideLabels);
 
   // --- record form (columns / sort / group) ---
   const seedCols = (): { col: string; visible: boolean }[] => {
@@ -164,6 +185,38 @@ export function BaseSettings(props: {
     ...allCols().map((c) => ({ value: c, label: columnLabel(c, props.config) })),
   ]);
 
+  // --- properties form (#104: define the base's OWN declared property set) ---
+  // Base-level, not per-view — shown regardless of `props.type`. Seeded ONLY from an
+  // existing list-form declaration (`declaredProperties`); a base using classic map-form
+  // metadata (or no `properties:` at all) starts from an empty list so the panel never
+  // surfaces entries it can't losslessly round-trip as a list. `hadDeclared` is captured
+  // once (not reactive) so save() only rewrites `properties:` when there's something to
+  // write — either the base already declared a list, or the user added one here — instead
+  // of clobbering an untouched map-form base with an empty list on every unrelated save.
+  const hadDeclared = props.config.declaredProperties !== undefined;
+  const [propRows, setPropRows] = createSignal<PropertyFormRow[]>(seedPropertyRows(props.config));
+  const updateRow = (i: number, patch: Partial<PropertyFormRow>) =>
+    setPropRows(propRows().map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  // Progressive disclosure: at most one row's full editor is open at a time. `null` = every
+  // row collapsed to its quiet name/type/visibility line (see the render below).
+  const [editingProp, setEditingProp] = createSignal<number | null>(null);
+  const addPropRow = () => {
+    const next = [...propRows(), blankPropertyRow(propRows().map((r) => r.name))];
+    setPropRows(next);
+    setEditingProp(next.length - 1); // expand the new row for immediate editing
+  };
+  const removePropRow = (i: number) => {
+    setPropRows(propRows().filter((_, idx) => idx !== i));
+    setEditingProp((cur) => (cur === null ? null : cur === i ? null : cur > i ? cur - 1 : cur));
+  };
+  // Reorder keeps whichever row (if any) was open following its content, not its old index.
+  const moveRowAt = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= propRows().length) return;
+    setPropRows(moveRow(propRows(), i, dir));
+    setEditingProp((cur) => (cur === i ? j : cur === j ? i : cur));
+  };
+
   const reset = () => {
     setForm(Object.fromEntries(fields().map((f) => [f.key, f.def])));
     setCols(allCols().map((c) => ({ col: c, visible: true })));
@@ -173,14 +226,24 @@ export function BaseSettings(props: {
     setGroupDir("ASC");
     setAggregate(view()?.y ? "sum" : "count");
     setBin("day");
+    setHideLabels(false);
+    setPropRows(seedPropertyRows(props.config));
+    setEditingProp(null);
   };
 
   const save = async () => {
     if (props.basePath) {
       if (isRecord()) {
-        await api.setProperty(props.basePath, "order", cols().filter((c) => c.visible).map((c) => c.col));
+        // Kanban has no Columns UI (Properties supersedes it — see isRecordWithColumns
+        // below), so its field order must come from the declared `properties:` list, not
+        // a stale cols()-derived `order`. Writing `order` here would freeze whatever
+        // order existed at modal-open time instead of following Properties reordering.
+        if (props.type !== "kanban") {
+          await api.setProperty(props.basePath, "order", cols().filter((c) => c.visible).map((c) => c.col));
+        }
         await api.setProperty(props.basePath, "sort", sortProp() ? [{ property: sortProp(), direction: sortDir() }] : []);
         await api.setProperty(props.basePath, "groupBy", groupProp() ? { property: groupProp(), direction: groupDir() } : null);
+        if (props.type === "kanban") await api.setProperty(props.basePath, "hideLabels", hideLabels());
       } else {
         for (const f of fields()) await api.setProperty(props.basePath, f.key, form()[f.key]);
         if (props.type === "flashcards") await api.setProperty(props.basePath, "bidirectional", bidi());
@@ -189,11 +252,12 @@ export function BaseSettings(props: {
           if (props.type !== "heatmap") await api.setProperty(props.basePath, "bin", bin());
         }
       }
+      if (hadDeclared || propRows().length > 0) {
+        await api.setProperty(props.basePath, "properties", buildPropertiesYaml(propRows()));
+      }
     }
     props.onSaved();
   };
-
-  const noSettings = () => !isRecord() && !isChart() && fields().length === 0;
 
   return (
     <Modal onClose={props.onClose} class="base-settings evm-modal">
@@ -260,24 +324,26 @@ export function BaseSettings(props: {
 
         {/* Record types: columns + sort + group */}
         <Show when={isRecord()}>
-          <div class="set-sect">Columns</div>
-          <div class="set-hint">Toggle to show or hide. Drag the column headers in the table to reorder.</div>
-          <div class="set-cols">
-            <For each={cols()}>{(item, i) => {
-              const locked = () => item.visible && visibleCount() <= 1;
-              return (
-                <div
-                  class="set-col"
-                  classList={{ off: !item.visible, locked: locked() }}
-                  title={locked() ? "At least one column must stay visible" : undefined}
-                  onClick={() => toggle(i())}
-                >
-                  <span class="set-col-name">{columnLabel(item.col, props.config)}</span>
-                  <span class={"evm-toggle" + (item.visible ? " on" : "")}><i /></span>
-                </div>
-              );
-            }}</For>
-          </div>
+          <Show when={showColumns()}>
+            <div class="set-sect">Columns</div>
+            <div class="set-hint">Toggle to show or hide. Drag the column headers in the table to reorder.</div>
+            <div class="set-cols">
+              <For each={cols()}>{(item, i) => {
+                const locked = () => item.visible && visibleCount() <= 1;
+                return (
+                  <div
+                    class="set-col"
+                    classList={{ off: !item.visible, locked: locked() }}
+                    title={locked() ? "At least one column must stay visible" : undefined}
+                    onClick={() => toggle(i())}
+                  >
+                    <span class="set-col-name">{columnLabel(item.col, props.config)}</span>
+                    <span class={"evm-toggle" + (item.visible ? " on" : "")}><i /></span>
+                  </div>
+                );
+              }}</For>
+            </div>
+          </Show>
 
           <div class="set-sect">Sort &amp; group</div>
           <div class="set-grid">
@@ -302,11 +368,119 @@ export function BaseSettings(props: {
               </div>
             </Show>
           </div>
+
+          <Show when={props.type === "kanban"}>
+            <div class="set-col" onClick={() => setHideLabels(!hideLabels())} style={{ "margin-top": "8px" }}>
+              <span class="set-col-name">Hide meta labels — show property values only</span>
+              <span class={"evm-toggle" + (hideLabels() ? " on" : "")}><i /></span>
+            </div>
+          </Show>
         </Show>
 
-        <Show when={noSettings()}>
-          <div class="set-hint">No extra settings for this view type yet.</div>
+        {/* Properties: the base's OWN declared property set — base-level, shown for every
+            view type (#104). Progressive disclosure: every row collapses to a single quiet
+            name/type/visibility line; clicking a row expands ONE full editor at a time
+            (name/type/type-specific extras/reorder/delete), collapsing whichever else was
+            open. Keeps a base with a dozen+ properties readable as a scannable list instead
+            of a wall of controls. */}
+        <div class="set-sect">Properties</div>
+        <div class="set-hint">
+          Declare this base's own fields — name, type, and whether it shows on cards/table. Order here drives card/table field order. Click a row to edit it.
+        </div>
+        <Show when={propRows().length > 0}>
+          <div class="propset-list">
+            <For each={propRows()}>{(row, i) => {
+              const open = () => editingProp() === i();
+              return (
+                <div class="propset-row" classList={{ open: open() }}>
+                  <div
+                    class="propset-head"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={open()}
+                    onClick={() => setEditingProp(open() ? null : i())}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditingProp(open() ? null : i());
+                      }
+                    }}
+                  >
+                    <Icon value="chevron-right" class="propset-chev" size={13} strokeWidth={2} />
+                    <span class="propset-name-txt" classList={{ empty: !row.name }}>{row.name || "Untitled property"}</span>
+                    <span class="propset-kind">{row.kind}</span>
+                    <button
+                      type="button"
+                      class="propset-eye"
+                      aria-label={row.hidden ? `Show ${row.name || "property"} on cards/table` : `Hide ${row.name || "property"} from cards/table`}
+                      title={row.hidden ? "Hidden from cards/table — click to show" : "Visible on cards/table — click to hide"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateRow(i(), { hidden: !row.hidden });
+                      }}
+                    >
+                      <Icon value={row.hidden ? "eye-off" : "eye"} size={15} strokeWidth={1.75} />
+                    </button>
+                  </div>
+
+                  <Show when={open()}>
+                    <div class="propset-body">
+                      <div class="propset-fields">
+                        <TextInput class="propset-input" value={row.name} placeholder="Property name" onInput={(v) => updateRow(i(), { name: v })} />
+                        <Select class="propset-input" value={row.kind} options={KIND_OPTS} onChange={(v) => updateRow(i(), { kind: v as BasePropertyKind })} />
+                      </div>
+
+                      <Show when={row.kind === "select" || row.kind === "multiselect"}>
+                        <TextInput
+                          class="propset-extra propset-options"
+                          multiline
+                          value={row.optionsText}
+                          placeholder="Options — one per line or comma-separated (e.g. todo, doing, done)"
+                          onInput={(v) => updateRow(i(), { optionsText: v })}
+                        />
+                      </Show>
+
+                      <Show when={row.kind === "number"}>
+                        <div class="propset-extra propset-numrow">
+                          <Select value={row.number} options={NUMBER_FORMAT_OPTS} onChange={(v) => updateRow(i(), { number: v as NumberFormat })} />
+                          <Show when={row.number === "unit" || row.number === "currency"}>
+                            <TextInput
+                              value={row.unit}
+                              placeholder={row.number === "currency" ? "Currency code (e.g. USD)" : "Unit label (e.g. kg)"}
+                              onInput={(v) => updateRow(i(), { unit: v })}
+                            />
+                          </Show>
+                        </div>
+                      </Show>
+
+                      <Show when={row.kind === "formula"}>
+                        <TextInput class="propset-extra" value={row.expr} placeholder="Expression, e.g. note.qty * note.price" onInput={(v) => updateRow(i(), { expr: v })} />
+                      </Show>
+
+                      <Show when={row.kind !== "formula"}>
+                        <TextInput class="propset-extra" value={row.defaultText} placeholder="Default value (optional)" onInput={(v) => updateRow(i(), { defaultText: v })} />
+                      </Show>
+
+                      <div class="propset-foot">
+                        <button type="button" class="propset-btn" disabled={i() === 0} aria-label="Move up" onClick={() => moveRowAt(i(), -1)}>
+                          <Icon value="ArrowUp" size={13} />
+                        </button>
+                        <button type="button" class="propset-btn" disabled={i() === propRows().length - 1} aria-label="Move down" onClick={() => moveRowAt(i(), 1)}>
+                          <Icon value="ArrowDown" size={13} />
+                        </button>
+                        <div class="sp" />
+                        <IconTextButton icon="Trash2" size="sm" iconSize={13} danger onClick={() => removePropRow(i())}>DELETE</IconTextButton>
+                      </div>
+                    </div>
+                  </Show>
+                </div>
+              );
+            }}</For>
+          </div>
         </Show>
+        <div class="propset-add">
+          <IconTextButton icon="Plus" size="sm" onClick={addPropRow}>ADD PROPERTY</IconTextButton>
+        </div>
       </div>
 
       <div class="evm-foot">

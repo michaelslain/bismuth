@@ -315,3 +315,77 @@ test("without declaredProperties the classic row-frontmatter derivation is uncha
   expect(res.columns).toContain("note.age");
   expect(res.columns).toContain("note.status");
 });
+
+// ── Declared `{type: formula}` property (#102) ─────────────────────────────────────────
+// A declared property can carry kind "formula" + an `expr`. It must compute through the
+// EXACT SAME evaluator as a base's own `formulas:` map (declaredFormulas merges into that
+// map at query time), and resolve as a "formula.<bare>" column — the SAME namespace an
+// explicit `formulas:` entry uses — which is what makes it non-writable downstream
+// (writableKey() in app/src/bases/kanbanMeta.ts already treats "formula."-prefixed ids
+// as non-writable; no new UI logic is needed for the read-only behavior).
+
+const formulaBase: BaseConfig = {
+  properties: {
+    price: { type: { kind: "number" } },
+    qty: { type: { kind: "number" } },
+    total: { type: { kind: "formula", expr: "price * qty" } },
+  },
+  declaredProperties: ["price", "qty", "total"],
+  views: [{ type: "table", name: "V" }],
+};
+
+test("a declared formula-kind property computes per-row via the same evaluator as `formulas:`", () => {
+  const priced: Row[] = [row("a", { price: 3, qty: 4 }), row("b", { price: 5, qty: 2 })];
+  const res = runView(formulaBase, priced, 0);
+  expect(res.columns).toEqual(["file.name", "note.price", "note.qty", "formula.total"]);
+  const byName = Object.fromEntries(res.groups[0].rows.map((r) => [r.file.name, r.formula.total]));
+  expect(byName.a).toBe(12);
+  expect(byName.b).toBe(10);
+});
+
+test("a declared formula property resolves as formula.<name>, never note.<name> (read-only namespace)", () => {
+  const res = runView(formulaBase, [row("a", { price: 3, qty: 4 })], 0);
+  expect(res.columns).toContain("formula.total");
+  expect(res.columns).not.toContain("note.total");
+  expect(res.groups[0].rows[0].note.total).toBeUndefined(); // never written to frontmatter
+});
+
+test("declared formula property tolerates a missing referenced field (NaN, not a throw) and a malformed expr (undefined)", () => {
+  const b: BaseConfig = {
+    properties: {
+      price: { type: { kind: "number" } },
+      total: { type: { kind: "formula", expr: "price * qty" } }, // qty never declared/present
+      broken: { type: { kind: "formula", expr: "price * (" } },  // malformed syntax
+    },
+    declaredProperties: ["price", "total", "broken"],
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, [row("a", { price: 3 })], 0);
+  const r = res.groups[0].rows[0];
+  expect(Number.isNaN(r.formula.total)).toBe(true); // 3 * undefined -> NaN, no throw
+  expect(r.formula.broken).toBeUndefined();          // parse failure -> undefined, no throw
+});
+
+test("an explicit `formulas:` entry wins over a same-named declared formula property", () => {
+  const b: BaseConfig = {
+    formulas: { total: "999" },
+    properties: { total: { type: { kind: "formula", expr: "price * qty" } } },
+    declaredProperties: ["total"],
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, [row("a", { price: 3, qty: 4 })], 0);
+  expect(res.groups[0].rows[0].formula.total).toBe(999);
+});
+
+test("hidden hides a declared formula property under its bare (or note.-prefixed) key", () => {
+  const b: BaseConfig = {
+    properties: {
+      price: { type: { kind: "number" } },
+      total: { type: { kind: "formula", expr: "price" }, hidden: true },
+    },
+    declaredProperties: ["price", "total"],
+    views: [{ type: "table", name: "V" }],
+  };
+  const res = runView(b, [row("a", { price: 3 })], 0);
+  expect(res.columns).toEqual(["file.name", "note.price"]);
+});

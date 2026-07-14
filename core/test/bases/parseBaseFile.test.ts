@@ -99,3 +99,40 @@ test("groupColors also parse inside an explicit views: entry, dropping empty val
   );
   expect(config.views[0].groupColors).toEqual({ A: "var(--teal)", C: "var(--rose)" });
 });
+
+test("top-level hideLabels folds into the default kanban view (#105)", () => {
+  const { config } = parseBaseFile(
+    ["---", "type: base", "view: kanban", "groupBy: status", "hideLabels: true", "---"].join("\n"),
+    { name: "Board", path: "Board.md" },
+  );
+  expect(config.views[0].hideLabels).toBe(true);
+});
+
+test("hideLabels defaults to unset (falsy) when omitted or malformed", () => {
+  const omitted = parseBaseFile(["---", "type: base", "view: kanban", "---"].join("\n"), { name: "Board", path: "Board.md" });
+  expect(omitted.config.views[0].hideLabels).toBeUndefined();
+
+  const malformed = parseBaseFile(
+    ["---", "type: base", "view: kanban", "hideLabels: yes", "---"].join("\n"),
+    { name: "Board", path: "Board.md" },
+  );
+  // "yes" is a YAML string here (not boolean true), so it's tolerated as unset.
+  expect(malformed.config.views[0].hideLabels).toBeUndefined();
+});
+
+test("hideLabels also parses inside an explicit views: entry", () => {
+  const { config } = parseBaseFile(
+    [
+      "---",
+      "type: base",
+      "views:",
+      "  - type: kanban",
+      "    name: Board",
+      "    groupBy: status",
+      "    hideLabels: true",
+      "---",
+    ].join("\n"),
+    { name: "Board", path: "Board.md" },
+  );
+  expect(config.views[0].hideLabels).toBe(true);
+});

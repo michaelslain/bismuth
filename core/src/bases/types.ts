@@ -47,9 +47,13 @@ export interface ViewConfig {
   // known-status palette, then a distinct auto-assigned palette color. Set by the column
   // header's color picker; persisted via the top-level `groupColors` frontmatter key.
   groupColors?: Record<string, string>;
-  // Kanban: which frontmatter property holds each card's editable multiline description
-  // (rendered + edited inline on the card face). Defaults to "description". A bare
-  // frontmatter name (no "note." prefix needed).
+  // Kanban (#105): when true, card meta rows show ONLY the value, no label caption above
+  // it. Default false (labels shown) so existing boards are unchanged.
+  hideLabels?: boolean;
+  // DEPRECATED (#103): kanban no longer has a dedicated description slot — `description` is
+  // just a normal (typically `type: markdown`) declared property, rendered/edited via the
+  // same generic meta-property path as any other. Still parsed (parse.ts) for backward
+  // compatibility with old base files, but it is now a no-op — nothing reads it.
   descriptionField?: string;
   // Table: per-column pixel widths, keyed by property id (set by drag-resizing headers).
   columnWidths?: Record<string, number>;
@@ -88,17 +92,65 @@ export interface ViewConfig {
 
 export interface SortSpec { property: string; direction?: "ASC" | "DESC"; }
 
-/** Value types a declared base property can carry (same vocabulary as `schema`). */
+/**
+ * LEGACY informational type vocabulary (the flat string a `type:` used to carry before
+ * #99). Still ACCEPTED as input for backward compat — `parseBasePropertyType`
+ * (properties.ts) maps each onto a canonical `BasePropertyType.kind`:
+ *   text→text, number→number, checkbox→boolean, date→date, time→datetime, list→list, link→link.
+ * Not stored anymore; kept exported so the docs/autocomplete vocabulary has one home.
+ */
 export type PropertyType = "text" | "number" | "checkbox" | "date" | "time" | "list" | "link";
 export const PROPERTY_TYPES: readonly PropertyType[] = ["text", "number", "checkbox", "date", "time", "list", "link"];
 
+/**
+ * The canonical, FUNCTIONAL type a declared base property carries (#99). A discriminated
+ * `kind` plus optional carriers for the kinds that need extra config. This is the single
+ * source of truth a property declares its type with — it replaces the informational-only
+ * string on `BasePropertyDef.type`. Behaviors for the newer kinds (markdown/select/…) are
+ * added by later cards; #99 only establishes + parses + exposes the model.
+ */
+export type BasePropertyKind =
+  | "text"        // plain single-line text
+  | "markdown"    // rich text / markdown body
+  | "number"      // numeric (see `number` format + `unit`)
+  | "boolean"     // checkbox
+  | "select"      // single choice from `options`
+  | "multiselect" // any subset of `options`
+  | "date"        // calendar date (YYYY-MM-DD)
+  | "datetime"    // date + time (ISO-8601)
+  | "list"        // free list of values
+  | "link"        // wikilink to another note
+  | "formula";    // computed from `expr`
+
+export const BASE_PROPERTY_KINDS: readonly BasePropertyKind[] = [
+  "text", "markdown", "number", "boolean", "select", "multiselect",
+  "date", "datetime", "list", "link", "formula",
+];
+
+/** How a `number`-kind property is presented. `unit` supplies the label for "unit"
+ *  (e.g. "kg") or the currency code for "currency" (e.g. "USD"). */
+export type NumberFormat = "plain" | "unit" | "currency" | "percent";
+export const NUMBER_FORMATS: readonly NumberFormat[] = ["plain", "unit", "currency", "percent"];
+
+/** Canonical parsed type of a declared base property. Only the carriers relevant to the
+ *  `kind` are ever populated (select/multiselect→`options`, number→`number`+`unit`,
+ *  formula→`expr`). */
+export interface BasePropertyType {
+  kind: BasePropertyKind;
+  options?: string[];      // select / multiselect choices
+  number?: NumberFormat;   // number formatting mode
+  unit?: string;           // unit label / currency code for number
+  expr?: string;           // formula expression
+}
+
 /** One entry of a base's `properties:` config. In the MAP form only the metadata fields
  *  (displayName/hidden) mattered historically; the LIST form (per-base declared properties)
- *  additionally carries an optional value `type` and a `default` seeded onto new cards/rows. */
+ *  additionally carries an optional canonical `type` and a `default` seeded onto new
+ *  cards/rows. `type` is undefined when the property declares no type. */
 export interface BasePropertyDef {
   displayName?: string;
   hidden?: boolean;
-  type?: PropertyType;
+  type?: BasePropertyType;
   default?: unknown;
 }
 

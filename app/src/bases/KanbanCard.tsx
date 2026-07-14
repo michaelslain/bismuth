@@ -1,11 +1,13 @@
-import { createSignal, createEffect, untrack, For, Show } from "solid-js";
+import { createSignal, createEffect, untrack, For, Show, type JSX } from "solid-js";
 import type { Row, BaseConfig } from "../../../core/src/bases/types";
 import { resolveProperty } from "../../../core/src/bases/query";
+import { propertyType, coercePropertyValue } from "../../../core/src/bases/properties";
 import { renderMarkdown } from "./markdown";
 import { renderCell, isTagColumn } from "./renderValue";
+import { formatNumberDisplay } from "./numberFormat";
 import { columnLabel } from "./columnLabel";
 import { metaVisible, writableKey } from "./kanbanMeta";
-import { propertyEditKind } from "./propertyEdit";
+import { propertyEditKind, multiselectValues } from "./propertyEdit";
 import { propertyRegistry } from "../propertyRegistry";
 import { PropertyValueEditor } from "./PropertyValueEditor";
 import { Chip } from "../ui/Chip";
@@ -17,63 +19,48 @@ function titleOf(row: Row, titleCol: string): string {
   return v == null || typeof v === "object" ? row.file.name : String(v);
 }
 
-/** Current description text from the card's frontmatter (empty string when unset/opted-out). */
-function descOf(row: Row, descField: string | null): string {
-  if (descField === null) return "";
-  const v = (row.note as Record<string, unknown>)[descField];
-  return v == null || typeof v === "object" ? "" : String(v);
-}
-
 /**
- * The editable face of a kanban card: a click-to-edit title (renames the note) and, ONLY when
- * the view's config lists a description property (`descField` non-null), a click-to-edit
- * multiline description (a frontmatter property, rendered as markdown and revealed as a raw
- * textarea on click). Editing either field flips the card out of draggable mode via
- * `onEditingChange` so text selection/caret placement work normally; blur (or Enter on the
- * title, Escape on either) commits and restores dragging.
+ * The editable face of a kanban card: a click-to-edit title (renames the note), plus the
+ * view's remaining `order:` properties (`metaCols`) rendered as EDITABLE chips — click one to
+ * swap in a type-aware control (text/number/date/select/tags/markdown; a boolean toggles
+ * instantly via a `Chip`, no popover) that persists to the note's frontmatter via `onSetMeta`.
  *
- * The description is NOT built-in — a board that never mentions one renders no slot and no
- * "Add a description…" affordance. When configured, it lives in frontmatter so it rides along
- * in the already-resolved Row — no per-card body fetch, keeping large boards cheap.
- *
- * Below the description, the view's remaining `order:` properties (`metaCols`) render as
- * EDITABLE chips — click one to swap in a type-aware control (text/number/date/select/tags;
- * a boolean toggles instantly via a `Chip`, no popover) that persists to the note's
- * frontmatter via `onSetMeta`. Only one editor (title/description/a single meta chip) is
- * ever open at a time, so the card's draggability and the editors never fight each other.
+ * `description` is NOT special-cased (#103) — a base that declares it (or lists it in
+ * `order:`) shows it as a normal meta property, same as any other. Only one editor
+ * (title/a single meta chip) is ever open at a time, so the card's draggability and the
+ * editors never fight each other.
  */
 export function KanbanCard(props: {
   row: Row;
   titleCol: string;
-  descField: string | null;
   metaCols: string[];
   config: BaseConfig;
   editable: boolean;
+  /** #105: the kanban view's `hideLabels` toggle — when true, meta rows show only the
+   *  value, no label caption above it. Tag rows already skip the label regardless. */
+  hideLabels?: boolean;
   onEditingChange: (editing: boolean) => void;
   onRename: (newTitle: string) => void;
-  onSetDescription: (value: string) => void;
   onSetMeta: (id: string, value: unknown) => void;
   /** Every OTHER row's raw value for a property id, across the whole board — feeds the
    *  meta chip editor's "select from known values" fallback. */
   siblingValues: (id: string) => unknown[];
 }) {
-  const [mode, setMode] = createSignal<"none" | "title" | "desc">("none");
-  // Local mirrors so a commit paints instantly without waiting for a refetch. Re-seed from the row
+  const [mode, setMode] = createSignal<"none" | "title">("none");
+  // Local mirror so a commit paints instantly without waiting for a refetch. Re-seed from the row
   // when the ROW's own values change (a refetch landed), NOT when `mode` changes — `mode` is read
   // untracked so committing (which flips mode → "none") doesn't re-run this effect and clobber the
   // just-committed optimistic value back to the stale `props.row` until the server round-trips.
   const [title, setTitle] = createSignal(titleOf(props.row, props.titleCol));
-  const [desc, setDesc] = createSignal(descOf(props.row, props.descField));
   createEffect(() => {
     const t = titleOf(props.row, props.titleCol);
-    const d = descOf(props.row, props.descField);
-    if (untrack(mode) === "none") { setTitle(t); setDesc(d); }
+    if (untrack(mode) === "none") setTitle(t);
   });
 
   // Which meta property (if any) currently shows its editor, and an optimistic echo of
   // just-committed meta values so the chip shows the new value instantly rather than
-  // waiting for the write's refetch. Same idiom as `title`/`desc` above, generalized to a
-  // map since any of several meta properties may be edited (one at a time).
+  // waiting for the write's refetch. Same idiom as `title` above, generalized to a map
+  // since any of several meta properties may be edited (one at a time).
   const [metaEdit, setMetaEdit] = createSignal<string | null>(null);
   const [overrides, setOverrides] = createSignal<Record<string, unknown>>({});
   createEffect(() => {
@@ -115,7 +102,7 @@ export function KanbanCard(props: {
   // is the only UI that can ever toggle it, see `metaVisible`.
   const visibleMeta = () => props.metaCols.filter((id) => metaVisible(id, resolveProperty(id, displayRow()), propertyRegistry()));
 
-  const enter = (m: "title" | "desc") => {
+  const enter = (m: "title") => {
     if (!props.editable) return;
     setMetaEdit(null);
     setMode(m);
@@ -132,13 +119,23 @@ export function KanbanCard(props: {
     setMetaEdit(id);
     props.onEditingChange(true);
   }
-  function commitMeta(id: string, value: unknown): void {
+  // `opts.keepOpen` (the multiselect editor's add/remove writes — #101) leaves the editor
+  // mounted so a second/third change can follow the first, instead of the usual
+  // commit-once-and-close every other kind uses.
+  function commitMeta(id: string, value: unknown, opts?: { keepOpen?: boolean }): void {
     if (writableKey(id) === null) return;
     const bare = id.startsWith("note.") ? id.slice(5) : id;
     const current = (props.row.note as Record<string, unknown>)[bare] ?? null;
-    const next = value ?? null;
-    setMetaEdit(null);
-    props.onEditingChange(false);
+    // When the base declares this property's type, coerce the committed value through it
+    // (e.g. a number field's unparseable-input string fallback still ends up a real
+    // number here when it happens to parse; a genuinely unparseable value is left as-is —
+    // resilient over strict) — #100.
+    const t = propertyType(props.config, id);
+    const next = (t ? coercePropertyValue(t, value) : value) ?? null;
+    if (!opts?.keepOpen) {
+      setMetaEdit(null);
+      props.onEditingChange(false);
+    }
     if (JSON.stringify(next) === JSON.stringify(current)) return; // unchanged — no write
     setOverrides((prev) => ({ ...prev, [id]: next }));
     props.onSetMeta(id, next);
@@ -153,11 +150,6 @@ export function KanbanCard(props: {
     leave();
     if (next && next !== titleOf(props.row, props.titleCol)) props.onRename(next);
     else setTitle(titleOf(props.row, props.titleCol));
-  };
-  const commitDesc = () => {
-    const next = desc();
-    leave();
-    if (next !== descOf(props.row, props.descField)) props.onSetDescription(next);
   };
 
   // Tap-to-edit: the card is `draggable`, and a `click` on a draggable element is swallowed by
@@ -199,44 +191,6 @@ export function KanbanCard(props: {
         />
       </Show>
 
-      {/* Description slot — only when the view's config lists a description property. */}
-      <Show when={props.descField !== null}>
-        <Show
-          when={mode() === "desc"}
-          fallback={
-            <Show
-              when={desc().trim() !== ""}
-              fallback={
-                <Show when={props.editable}>
-                  <div class={styles.kbDescEmpty} onPointerDown={onDown} onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}>Add a description…</div>
-                </Show>
-              }
-            >
-              <div
-                class={styles.kbDesc}
-                classList={{ [styles.kbEditable]: props.editable }}
-                onPointerDown={onDown}
-                onPointerUp={(e) => { if (tapped(e)) enter("desc"); }}
-                innerHTML={renderMarkdown(desc())}
-              />
-            </Show>
-          }
-        >
-          <textarea
-            class={styles.kbDescArea}
-            value={desc()}
-            rows={1}
-            placeholder="Description… (Markdown, ⏎ for a new line)"
-            ref={(el) => queueMicrotask(() => { el.focus(); autoGrow(el); })}
-            onInput={(e) => { setDesc(e.currentTarget.value); autoGrow(e.currentTarget); }}
-            onBlur={commitDesc}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") { setDesc(descOf(props.row, props.descField)); e.currentTarget.blur(); }
-            }}
-          />
-        </Show>
-      </Show>
-
       <Show when={visibleMeta().length > 0}>
         {/* Suppress native anchor drag on meta links — it would hijack the card's pointer-drag
             (a native link-drag fires pointercancel, tearing the card drag down mid-gesture). */}
@@ -244,12 +198,40 @@ export function KanbanCard(props: {
           <For each={visibleMeta()}>
             {(id) => {
               const value = () => resolveProperty(id, displayRow());
-              const kind = () => propertyEditKind(id, value(), propertyRegistry(), props.siblingValues(id));
+              const declType = () => propertyType(props.config, id);
+              const kind = () => propertyEditKind(id, value(), propertyRegistry(), props.siblingValues(id), declType());
               const writable = () => props.editable && writableKey(id) !== null;
+              // Type-aware display (#100): a declared `markdown` property (including a
+              // `description` property — #103 dropped its dedicated slot in favor of this
+              // same generic path) renders as block markdown; a declared `number` property
+              // renders through its format (plain/unit/currency/percent). Everything else
+              // keeps the existing heuristic renderCell (status dots, tags, ratings, links, …).
+              const display = (): JSX.Element => {
+                const k = kind();
+                if (k.kind === "markdown") {
+                  const v = value();
+                  return <div class={styles.kbMetaMarkdown} innerHTML={renderMarkdown(v == null ? "" : String(v))} />;
+                }
+                if (k.kind === "number") {
+                  const v = value();
+                  if (typeof v === "number") return <span>{formatNumberDisplay(v, k.format, k.unit)}</span>;
+                }
+                if (k.kind === "multiselect") {
+                  const vals = multiselectValues(value());
+                  if (vals.length === 0) return <span class="bismuth-empty">—</span>;
+                  return (
+                    <span class={styles.kbMetaMultiselectDisplay}>
+                      <For each={vals}>{(t) => <Chip selected>{t}</Chip>}</For>
+                    </span>
+                  );
+                }
+                return renderCell(id, displayRow());
+              };
               return (
                 <div class={styles.kbMetaItem}>
-                  {/* #tags are self-describing — skip the label for tag columns. */}
-                  <Show when={!isTagColumn(id)}>
+                  {/* #tags are self-describing — skip the label for tag columns. The view's
+                      `hideLabels` toggle (#105) suppresses every OTHER label too. */}
+                  <Show when={!isTagColumn(id) && !props.hideLabels}>
                     <span class={styles.kbMetaLabel}>{columnLabel(id, props.config)}</span>
                   </Show>
                   <Show
@@ -265,7 +247,7 @@ export function KanbanCard(props: {
                             onPointerUp={writable() ? (e) => { if (tapped(e)) enterMeta(id); } : undefined}
                             title={writable() ? "Click to edit" : undefined}
                           >
-                            {renderCell(id, displayRow())}
+                            {display()}
                           </span>
                         }
                       >
@@ -288,7 +270,7 @@ export function KanbanCard(props: {
                     <PropertyValueEditor
                       kind={kind()}
                       value={value()}
-                      onCommit={(v) => commitMeta(id, v)}
+                      onCommit={(v, opts) => commitMeta(id, v, opts)}
                       onCancel={cancelMeta}
                     />
                   </Show>
@@ -300,10 +282,4 @@ export function KanbanCard(props: {
       </Show>
     </>
   );
-}
-
-/** Grow a textarea to fit its content (no scrollbar) so the description reads like prose. */
-function autoGrow(el: HTMLTextAreaElement): void {
-  el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
 }
