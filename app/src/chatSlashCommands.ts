@@ -55,6 +55,16 @@ export function chromeToggleNote(enabled: boolean): string {
   return `Browser (--chrome) ${enabled ? "enabled" : "disabled"} for this chat — takes effect from your next message.`;
 }
 
+/** Pure toggle mapping shared by the `/chrome` slash command AND the header Globe pill (BUG #87
+ *  re-fix): given the chat's CURRENT --chrome state, return the NEW state to persist plus the
+ *  transcript note that describes it. Keeping the flip + the message in ONE pure function guarantees
+ *  they can never drift apart (the re-fix's core requirement: the note reflects the NEW state, and
+ *  turning it ON from OFF always yields `{ next: true, note: "…enabled…" }`). Unit-tested. */
+export function computeChromeToggle(current: boolean): { next: boolean; note: string } {
+  const next = !current;
+  return { next, note: chromeToggleNote(next) };
+}
+
 /** Merge the client-side commands into a manifest's own slash-command names for the "/" autocomplete
  *  (BUG #87). Client commands are APPENDED after the backend's own list, deduped by name (a same-
  *  named backend command — unlikely — isn't shadowed). Works even before any manifest exists (an
