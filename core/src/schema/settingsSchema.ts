@@ -198,7 +198,9 @@ export const SETTINGS_SCHEMA: Schema = {
     cursorBlinkSeconds: { type: "number", default: 1.2, min: 0.6, max: 2, doc: "Cursor blink cycle duration (seconds)." },
   }),
   chat: object({
-    computerUse: { type: "boolean", default: false, doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave)." },
+    computerUse: { type: "boolean", default: false, doc: "Enable Claude's browser/computer-use capability (--chrome) so the model can see and interact with a Chromium browser. Requires a Chromium-based browser on the system (Chrome/Edge/Brave). Claude Code provider only." },
+    // Coupled to ChatProviderId in core/src/chatProviders/index.ts.
+    provider: { type: enumType(["claude", "opencode"]), default: "claude", doc: "Default chat provider for NEW chat tabs: \"claude\" runs Claude Code, \"opencode\" runs the opencode CLI. Each chat can still pick its own provider in the header." },
   }),
   srs: object({
     baseEase: { type: "number", default: 250, min: 130, max: 400, doc: "Starting ease factor for a new flashcard (SM-2; higher = longer intervals)." },

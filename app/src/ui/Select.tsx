@@ -6,7 +6,9 @@ import { Icon } from "../icons/Icon";
 import "./ui.css";
 import "./popover/popover.css";
 
-export type SelectOption = { value: string; label: string };
+/** `detail` renders as the muted right-side text on the option's row (MenuRow detail) — e.g. the
+ *  chat model picker's Free/Paid badge. The closed trigger shows only the label. */
+export type SelectOption = { value: string; label: string; detail?: string };
 
 /**
  * A custom dropdown that replaces the native `<select>`. The trigger reuses the
@@ -106,7 +108,7 @@ export function Select(props: {
         <Portal>
           <div class="ui-select-backdrop" onClick={() => dismiss()} />
           <PopoverList
-            items={props.options.map((o) => ({ label: o.label, icon: o.value === props.value ? "Check" : undefined }))}
+            items={props.options.map((o) => ({ label: o.label, detail: o.detail, icon: o.value === props.value ? "Check" : undefined }))}
             active={nav.active()}
             onActivate={choose}
             onHover={nav.setActive}

@@ -74,6 +74,7 @@ When the dmg opens, drag **Bismuth → Applications**, eject, and launch it. Fir
 - [Calendar](calendar/overview.md) — events, recurrence, categories
 - [Google Calendar sync](gcal/overview.md) — OAuth/PKCE two-way sync, conflict policies, recurrence, manifest
 - [Visual Claude chat](chat/overview.md) — in-app Claude Code chat (`/chat` WS, Agent-SDK sessions, unified with terminals)
+- [Chat providers](chat/providers.md) — run a chat on Claude Code or opencode: the provider seam, opencode driver, graceful degradation
 - [Export](export/overview.md) — note/base/sheet/drawing → md|html|png|pdf, visual/data modes
 - [Drawing](drawing/overview.md) — the `.draw` vector format + export
 - [Sheets](sheets/overview.md) — the `.sheet` Univer workbook format
