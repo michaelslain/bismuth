@@ -4,6 +4,7 @@ import { parseFrontmatter } from "../lib/frontmatter.ts"
 import type { VaultContext } from "../lib/config.ts"
 import { isOwner } from "../lib/owner.ts"
 import { whichClaude } from "../lib/claudeWhich.ts"
+import { augmentPath } from "../lib/childEnv.ts"
 import { buildDenyPaths, buildManagedSettingsDeny, absDenyPaths, type DenyEntry } from "../lib/visibility.ts"
 import { mcpBin, cliBin, docsDir } from "../lib/bismuthPaths.ts"
 
@@ -142,7 +143,18 @@ export function buildQueryOptions(
     // Operate inside the vault, with this vault's memory dir injected so the bot's memory
     // tools target the right brain, and the vault's daemon name as the bot's identity.
     cwd: ctx.root,
-    env: { ...process.env, BISMUTH_MEMORY_DIR: ctx.memoryDir },
+    // A cron worker inherits this env. Its Bash tool runs `bismuth checkpoint diff/advance`
+    // (Feature #51 change-scoping), so PATH MUST include the CLI's install dirs REGARDLESS of the
+    // minimal PATH launchd hands the daemon — otherwise the checkpoint calls fail "command not
+    // found" and the dream/vault-review crons silently re-survey the whole vault every run (Bug
+    // #105). BISMUTH_CLI carries the absolute CLI path too, so a cron body can prefer it over a
+    // bare-name PATH lookup (belt-and-suspenders). See childEnv.ts.
+    env: {
+      ...process.env,
+      BISMUTH_MEMORY_DIR: ctx.memoryDir,
+      PATH: augmentPath(process.env.PATH || "/usr/bin:/bin:/usr/sbin:/sbin"),
+      ...(tools.cli ? { BISMUTH_CLI: tools.cli } : {}),
+    },
     appendSystemPrompt: tools.systemPrompt,
     model: opts?.model ?? "haiku",
   }

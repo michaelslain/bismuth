@@ -41,6 +41,29 @@ test("buildQueryOptions omits the MCP block entirely when the mcp binary is abse
   expect((o.env as Record<string, string>).BISMUTH_MEMORY_DIR).toBe("/vault/.daemon/memory")
 })
 
+// Bug #105: a cron worker inherits this env; its Bash `bismuth checkpoint …` must resolve
+// regardless of the minimal PATH launchd hands the daemon, so PATH is augmented with the CLI's
+// install dirs no matter the ambient PATH.
+test("buildQueryOptions augments the child env PATH with the CLI install dirs", () => {
+  const o = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" })
+  const path = (o.env as Record<string, string>).PATH
+  expect(path).toContain("/usr/local/bin")
+  expect(path).toContain("/opt/homebrew/bin")
+  expect(path).toContain(".bismuth/bin")
+})
+
+// Belt-and-suspenders: when the CLI is installed, its absolute path is exported so a cron body can
+// prefer "$BISMUTH_CLI" over a bare-name PATH lookup. Absent → not set (graceful degrade).
+test("buildQueryOptions exports BISMUTH_CLI only when the CLI binary is present", () => {
+  const withCli = buildQueryOptions(ctx, undefined, undefined, {
+    systemPrompt: "x",
+    cli: "/home/me/.bismuth/bin/bismuth",
+  })
+  expect((withCli.env as Record<string, string>).BISMUTH_CLI).toBe("/home/me/.bismuth/bin/bismuth")
+  const withoutCli = buildQueryOptions(ctx, undefined, undefined, { systemPrompt: "x" })
+  expect((withoutCli.env as Record<string, string>).BISMUTH_CLI).toBeUndefined()
+})
+
 test("buildQueryOptions resumes an existing session unless newSession is set", () => {
   expect(buildQueryOptions(ctx, undefined, "sess-1", { systemPrompt: "x" }).resume).toBe("sess-1")
   expect(buildQueryOptions(ctx, { newSession: true }, "sess-1", { systemPrompt: "x" }).resume).toBeUndefined()
