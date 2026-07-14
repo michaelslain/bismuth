@@ -5,10 +5,19 @@ import {
   newOpencodeTurnState,
   opencodeErrorMessage,
   opencodeTitleFromPrompt,
+  OPENCODE_BUILTIN_COMMANDS,
+  parseOpencodeAuthList,
+  parseOpencodeDebugConfigCommands,
   parseOpencodeModels,
   parseOpencodeModelsVerbose,
+  parseOpencodeRunCommand,
+  pickZenFreeModel,
   translateOpencodeEvent,
   translateOpencodeExport,
+  withOpencodeBuiltinCommands,
+  withZenFreeRotate,
+  zenFreeModelIds,
+  ZEN_FREE_ROTATE_ID,
 } from "../../src/chatProviders/opencodeTranslate";
 import { resolveChatProvider } from "../../src/chatProviders";
 
@@ -257,5 +266,167 @@ describe("resolveChatProvider", () => {
     expect(resolveChatProvider("gpt-cli", "opencode")).toBe("opencode");
     expect(resolveChatProvider(undefined, undefined)).toBe("claude");
     expect(resolveChatProvider(42, "banana")).toBe("claude");
+  });
+});
+
+// ── RE-FIX #90: commands / auth / Zen free rotation ──────────────────────────────────────────────
+
+// A trimmed `opencode debug config` capture (1.17.15): resolved config JSON on stdout whose
+// `command` key merges config-file AND plugin-registered commands.
+const DEBUG_CONFIG = JSON.stringify(
+  {
+    $schema: "https://opencode.ai/config.json",
+    plugin: ["oh-my-opencode-slim"],
+    command: {
+      interview: { template: "Start an interview and write a live markdown spec", description: "Open a localhost interview UI" },
+      deepwork: { template: "Start a deepwork session for a complex coding task" },
+      preset: { template: "List available presets and switch between them", description: "Switch agent presets at runtime" },
+    },
+    lsp: true,
+  },
+  null,
+  2,
+);
+
+describe("parseOpencodeDebugConfigCommands", () => {
+  test("extracts the command map; description wins, template's first line stands in", () => {
+    const cmds = parseOpencodeDebugConfigCommands(DEBUG_CONFIG);
+    expect(cmds).toEqual([
+      { name: "interview", description: "Open a localhost interview UI" },
+      { name: "deepwork", description: "Start a deepwork session for a complex coding task" },
+      { name: "preset", description: "Switch agent presets at runtime" },
+    ]);
+  });
+
+  test("tolerates banner noise around the JSON", () => {
+    const cmds = parseOpencodeDebugConfigCommands(`some log line\n${DEBUG_CONFIG}`);
+    expect(cmds.map((c) => c.name)).toEqual(["interview", "deepwork", "preset"]);
+  });
+
+  test("degenerate inputs yield [] (no command key / malformed JSON / not JSON at all)", () => {
+    expect(parseOpencodeDebugConfigCommands("{}")).toEqual([]);
+    expect(parseOpencodeDebugConfigCommands('{"command": []}')).toEqual([]);
+    expect(parseOpencodeDebugConfigCommands("{ nope")).toEqual([]);
+    expect(parseOpencodeDebugConfigCommands("")).toEqual([]);
+  });
+
+  test("skips command names that can't be typed as one /token", () => {
+    expect(parseOpencodeDebugConfigCommands('{"command": {"has space": {"template": "x"}, "ok": {"template": "y"}}}')).toEqual([
+      { name: "ok", description: "y" },
+    ]);
+  });
+});
+
+describe("withOpencodeBuiltinCommands", () => {
+  test("appends /init and /review after the user's own commands", () => {
+    const merged = withOpencodeBuiltinCommands([{ name: "deepwork", description: "d" }]);
+    expect(merged.map((c) => c.name)).toEqual(["deepwork", "init", "review"]);
+  });
+
+  test("a same-named custom command overrides the built-in (opencode's documented precedence)", () => {
+    const merged = withOpencodeBuiltinCommands([{ name: "init", description: "my own init" }]);
+    expect(merged).toEqual([{ name: "init", description: "my own init" }, OPENCODE_BUILTIN_COMMANDS[1]]);
+  });
+
+  test("bare list = just the built-ins (a config-less install still offers /init + /review)", () => {
+    expect(withOpencodeBuiltinCommands([]).map((c) => c.name)).toEqual(["init", "review"]);
+  });
+});
+
+describe("parseOpencodeRunCommand", () => {
+  const NAMES = ["init", "review", "deepwork"];
+
+  test("a leading /known-command splits into command + args", () => {
+    expect(parseOpencodeRunCommand("/init focus on the CLI", NAMES)).toEqual({ command: "init", args: "focus on the CLI" });
+    expect(parseOpencodeRunCommand("/review", NAMES)).toEqual({ command: "review", args: "" });
+    expect(parseOpencodeRunCommand("  /deepwork  refactor the parser ", NAMES)).toEqual({ command: "deepwork", args: "refactor the parser" });
+  });
+
+  test("unknown /word, plain prose, and a bare slash flow through as prompts (null)", () => {
+    expect(parseOpencodeRunCommand("/unknown thing", NAMES)).toBeNull();
+    expect(parseOpencodeRunCommand("just some prose", NAMES)).toBeNull();
+    expect(parseOpencodeRunCommand("/", NAMES)).toBeNull();
+    expect(parseOpencodeRunCommand("/init", [])).toBeNull();
+  });
+
+  test("case-sensitive: command names are exact registry keys", () => {
+    expect(parseOpencodeRunCommand("/Init", NAMES)).toBeNull();
+  });
+});
+
+describe("parseOpencodeAuthList", () => {
+  // Byte-accurate capture of `opencode auth list` (1.17.15): clack chrome + dim ANSI before the
+  // credential kind.
+  const AUTH_OUT = [
+    "\x1b[0m",
+    "┌  Credentials \x1b[90m~/.local/share/opencode/auth.json",
+    "│",
+    "●  Moonshot AI \x1b[90mapi",
+    "│",
+    "●  OpenCode Zen \x1b[90mapi",
+    "│",
+    "└  2 credentials",
+    "",
+  ].join("\n");
+
+  test("parses provider names + credential kinds off the live output", () => {
+    expect(parseOpencodeAuthList(AUTH_OUT)).toEqual([
+      { name: "Moonshot AI", kind: "api" },
+      { name: "OpenCode Zen", kind: "api" },
+    ]);
+  });
+
+  test("no credentials / garbage / empty → []", () => {
+    expect(parseOpencodeAuthList("┌  Credentials\n└  0 credentials\n")).toEqual([]);
+    expect(parseOpencodeAuthList("")).toEqual([]);
+    expect(parseOpencodeAuthList("random text\nwithout bullets")).toEqual([]);
+  });
+
+  test("colorless output falls back to the last-token split", () => {
+    expect(parseOpencodeAuthList("●  Moonshot AI api\n")).toEqual([{ name: "Moonshot AI", kind: "api" }]);
+    expect(parseOpencodeAuthList("●  Anthropic oauth\n")).toEqual([{ name: "Anthropic", kind: "oauth" }]);
+  });
+});
+
+describe("Zen free-model rotation", () => {
+  const MODELS = [
+    { value: "opencode/big-pickle", label: "Big Pickle", description: "opencode/big-pickle", effortLevels: [], free: true },
+    { value: "opencode/claude-sonnet-4-6", label: "Claude Sonnet 4.6", description: "opencode/claude-sonnet-4-6", effortLevels: [], free: false },
+    { value: "opencode/hy3-free", label: "HY3 Free", description: "opencode/hy3-free", effortLevels: [], free: true },
+    { value: "moonshotai/kimi-k2.5", label: "Kimi K2.5", description: "moonshotai/kimi-k2.5", effortLevels: [], free: true },
+    { value: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8", description: "anthropic/claude-opus-4-8", effortLevels: [] },
+  ];
+
+  test("zenFreeModelIds: only $0 Zen (opencode/…) models, order preserved", () => {
+    // moonshotai's free model is NOT Zen; the badge-less anthropic model is unknown, not free.
+    expect(zenFreeModelIds(MODELS)).toEqual(["opencode/big-pickle", "opencode/hy3-free"]);
+  });
+
+  test("withZenFreeRotate prepends the virtual rotating entry, marked free", () => {
+    const out = withZenFreeRotate(MODELS);
+    expect(out.length).toBe(MODELS.length + 1);
+    expect(out[0].value).toBe(ZEN_FREE_ROTATE_ID);
+    expect(out[0].free).toBe(true);
+    expect(out[0].label).toContain("Zen Free");
+    expect(out.slice(1)).toEqual(MODELS);
+  });
+
+  test("withZenFreeRotate is a no-op when Zen offers no free models", () => {
+    const paidOnly = MODELS.filter((m) => m.free !== true);
+    expect(withZenFreeRotate(paidOnly)).toEqual(paidOnly);
+    expect(withZenFreeRotate([])).toEqual([]);
+  });
+
+  test("pickZenFreeModel round-robins per turn and survives an empty roster", () => {
+    const free = ["opencode/a", "opencode/b", "opencode/c"];
+    expect(pickZenFreeModel(free, 0)).toBe("opencode/a");
+    expect(pickZenFreeModel(free, 1)).toBe("opencode/b");
+    expect(pickZenFreeModel(free, 2)).toBe("opencode/c");
+    expect(pickZenFreeModel(free, 3)).toBe("opencode/a");
+    expect(pickZenFreeModel([], 5)).toBeNull();
+  });
+
+  test("the virtual id looks like provider/model (setModel's shape check must accept it)", () => {
+    expect(/^[\w.-]+\/[\w.:-]+$/.test(ZEN_FREE_ROTATE_ID)).toBe(true);
   });
 });

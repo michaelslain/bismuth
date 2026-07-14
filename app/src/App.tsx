@@ -1511,15 +1511,20 @@ export default function App() {
       const tab = tabs().find((t) => leaves(t.root).some((l) => l.content === contentId));
       if (tab) updateTab(tab.id, (t) => ({ ...t, name: (d.name ?? "").trim() || undefined }));
     };
+    // Chat auth popover's "Open terminal" (RE-FIX #90): ChatView can't reach the tab tree, so it
+    // asks App to open a terminal tab (where the CLI-interactive `opencode auth login` runs).
+    const onOpenTerminal = () => openTerminal();
     window.addEventListener("bismuth-open", onOpen);
     window.addEventListener("bismuth-deleted", onDeleted);
     window.addEventListener("bismuth-moved", onMoved);
     window.addEventListener("bismuth-chat-rename", onChatRename);
+    window.addEventListener("bismuth-open-terminal", onOpenTerminal);
     onCleanup(() => {
       window.removeEventListener("bismuth-open", onOpen);
       window.removeEventListener("bismuth-deleted", onDeleted);
       window.removeEventListener("bismuth-moved", onMoved);
       window.removeEventListener("bismuth-chat-rename", onChatRename);
+      window.removeEventListener("bismuth-open-terminal", onOpenTerminal);
     });
   };
 

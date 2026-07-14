@@ -3,6 +3,8 @@ import {
   CHAT_PROVIDER_OPTIONS,
   modelPriceBadge,
   modelStorageKeys,
+  opencodeAuthSummary,
+  OPENCODE_LOGIN_COMMAND,
   providerStorageKey,
   providerSupportsClaudeControls,
   sanitizeChatProvider,
@@ -54,5 +56,21 @@ describe("modelPriceBadge", () => {
     expect(modelPriceBadge(true)).toBe("Free");
     expect(modelPriceBadge(false)).toBe("Paid");
     expect(modelPriceBadge(undefined)).toBeUndefined();
+  });
+});
+
+describe("opencodeAuthSummary (RE-FIX #90)", () => {
+  test("null (frame not landed) is unknown — a neutral label, never a false 'not signed in'", () => {
+    expect(opencodeAuthSummary(null)).toEqual({ label: "Auth", signedIn: null });
+  });
+  test("no stored credentials reads as not signed in", () => {
+    expect(opencodeAuthSummary([])).toEqual({ label: "Not signed in", signedIn: false });
+  });
+  test("counts providers, singular/plural", () => {
+    expect(opencodeAuthSummary([{ name: "OpenCode Zen" }])).toEqual({ label: "1 provider", signedIn: true });
+    expect(opencodeAuthSummary([{ name: "OpenCode Zen" }, { name: "Moonshot AI" }])).toEqual({ label: "2 providers", signedIn: true });
+  });
+  test("the popover's login command is opencode's own auth wizard", () => {
+    expect(OPENCODE_LOGIN_COMMAND).toBe("opencode auth login");
   });
 });

@@ -44,6 +44,10 @@ export interface ChatManifest {
   slashCommands: string[]; // from init.slash_commands
   tools: string[]; // from init.tools
   mcpServers: { name: string; status: string }[]; // from init.mcp_servers
+  /** Optional per-command blurbs for the composer's "/" popover. The Claude SDK's init carries
+   *  names only (never set here); the opencode provider fills it from its command registry
+   *  (`opencode debug config` — descriptions ride the same JSON). Absent keys just show no detail. */
+  commandDetails?: Record<string, string>;
 }
 
 export type ChatFrame =
@@ -92,6 +96,11 @@ export type ChatFrame =
   | { type: "session"; sessionId: string }
   /** Context-window usage after a completed turn (Query.getContextUsage) — the header pill. */
   | { type: "context"; percentage: number; totalTokens: number; maxTokens: number }
+  /** Provider credential state (opencode-only today — `opencode auth list`, re-fetched per session
+   *  open). Powers the header's auth pill: which providers hold stored credentials, so the user can
+   *  see logged-in-vs-not without leaving the chat. Claude sessions never emit it (the claude CLI
+   *  manages its own login and the SDK surfaces failures as turn errors). */
+  | { type: "auth"; providers: { name: string; kind: string }[] }
   /** A fatal problem. `no-claude` = the `claude` CLI isn't installed (surface setup, never fall
    *  back to an API); `no-opencode` = the `opencode` CLI isn't installed (the opencode provider —
    *  see chatProviders/); `spawn`/`exit` = the child failed; `error` = an SDK/turn error. */

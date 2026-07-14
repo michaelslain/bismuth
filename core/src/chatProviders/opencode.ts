@@ -12,9 +12,12 @@
 //    resolved (tool-use + tool-result emitted together).
 //  - `--auto` is passed so tools never park on a permission prompt the non-interactive run mode
 //    can't answer — the same effective posture as the app's Claude default (bypassPermissions).
-//    Claude-specific interactive surfaces (permission frames, AskUserQuestion, slash commands,
-//    permission modes, effort) simply never occur; the frontend hides those controls for
-//    opencode sessions.
+//    Claude-specific interactive surfaces (permission frames, AskUserQuestion, permission modes,
+//    effort) simply never occur; the frontend hides those controls for opencode sessions.
+//  - opencode-NATIVE surfaces (RE-FIX #90): the command registry (`opencode debug config` +
+//    built-ins) rides the manifest so `/…` autocompletes, and a matching turn runs as
+//    `run --command`; `opencode auth list` rides an `auth` frame (the header's auth pill); a
+//    virtual "Zen Free (rotating)" model rotates among Zen's currently-free models per turn.
 //  - History replay + resume: `opencode export <sessionID>` (JSON on stdout) → ChatFrames, and
 //    `-s` on the next run continues it — so a reopened chat tab resumes its opencode
 //    conversation just like a Claude one.
@@ -27,10 +30,19 @@ import { claudeLookupPath, claudeSpawnEnv } from "../claudeWhich";
 import {
   newOpencodeTurnState,
   opencodeTitleFromPrompt,
+  parseOpencodeAuthList,
+  parseOpencodeDebugConfigCommands,
   parseOpencodeModels,
   parseOpencodeModelsVerbose,
+  parseOpencodeRunCommand,
+  pickZenFreeModel,
   translateOpencodeEvent,
   translateOpencodeExport,
+  withOpencodeBuiltinCommands,
+  withZenFreeRotate,
+  zenFreeModelIds,
+  ZEN_FREE_ROTATE_ID,
+  type OpencodeCommandEntry,
   type OpencodeModelEntry,
 } from "./opencodeTranslate";
 
@@ -58,6 +70,9 @@ interface OpencodeSession {
   aborting: boolean;
   /** Turns staged while one is in flight (the client also queues; this is the backend guard). */
   queue: { text: string }[];
+  /** Completed-turn count — drives the Zen free-model ROTATION (turn N runs free model N mod
+   *  roster size) when the virtual `ZEN_FREE_ROTATE_ID` is the selected model. */
+  turnCount: number;
   detached: boolean;
   buffer: ChatFrame[];
   closeTimer?: ReturnType<typeof setTimeout>;
@@ -85,45 +100,83 @@ export function sessionCount(): number {
   return sessions.size;
 }
 
-// The models list is static per opencode config — fetch once per process and reuse for every
-// session's `models` frame (the CLI call takes ~1.4s; no need to pay it per chat open).
-// `--verbose` carries each model's display name + cost metadata (→ the Free/Paid badge, card #90);
-// an older opencode without it degrades to the plain id list (no badges, still fully usable).
-let modelsCache: OpencodeModelEntry[] | null = null;
-let modelsInFlight: Promise<OpencodeModelEntry[]> | null = null;
-async function runModelsCommand(bin: string, cwd: string, args: string[]): Promise<string> {
-  const proc = Bun.spawn([bin, "models", ...args], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
+/** One opencode CLI invocation → stdout text (stderr ignored). Every open-time discovery
+ *  (`models`, `debug config`, `auth list`) goes through here. */
+async function runCliText(bin: string, cwd: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn([bin, ...args], { cwd, stdout: "pipe", stderr: "ignore", env: claudeSpawnEnv() as Record<string, string> });
   const out = await new Response(proc.stdout as ReadableStream).text();
   await proc.exited;
   return out;
 }
-async function fetchModels(bin: string, cwd: string): Promise<OpencodeModelEntry[]> {
-  if (modelsCache) return modelsCache;
-  if (!modelsInFlight) {
-    modelsInFlight = (async () => {
+
+// Models + commands are static per opencode config — fetch once per process and reuse for every
+// session's open frames (each CLI call takes ~1.4s; no need to pay it per chat open). The two
+// fetches run SEQUENTIALLY in one shared promise: opencode's local sqlite rejects concurrent
+// openers at cold start ("database is locked" — observed live), so open-time CLI spawns must
+// never race each other (or the first turn — runTurn awaits this same promise).
+//  - models: `--verbose` carries display name + cost metadata (→ the Free/Paid badge and the Zen
+//    free-rotation roster, card #90); an older opencode degrades to the plain id list.
+//  - commands: `debug config` resolves the user's whole command registry (config dirs +
+//    opencode.json(c) + plugin-registered) — merged with the built-ins (/init, /review) for the
+//    composer's "/" autocomplete (RE-FIX #90).
+let modelsCache: OpencodeModelEntry[] | null = null;
+let commandsCache: OpencodeCommandEntry[] | null = null;
+let openInfoInFlight: Promise<void> | null = null;
+function ensureOpenInfo(bin: string, cwd: string): Promise<void> {
+  if (!openInfoInFlight) {
+    openInfoInFlight = (async () => {
       try {
-        modelsCache = parseOpencodeModelsVerbose(await runModelsCommand(bin, cwd, ["--verbose"]));
-        if (!modelsCache.length) modelsCache = parseOpencodeModels(await runModelsCommand(bin, cwd, []));
+        modelsCache = parseOpencodeModelsVerbose(await runCliText(bin, cwd, ["models", "--verbose"]));
+        if (!modelsCache.length) modelsCache = parseOpencodeModels(await runCliText(bin, cwd, ["models"]));
       } catch {
         modelsCache = [];
       }
-      return modelsCache;
+      try {
+        commandsCache = withOpencodeBuiltinCommands(parseOpencodeDebugConfigCommands(await runCliText(bin, cwd, ["debug", "config"])));
+      } catch {
+        commandsCache = withOpencodeBuiltinCommands([]); // built-ins need no config — always offer them
+      }
     })();
   }
-  return (await modelsInFlight) ?? [];
+  return openInfoInFlight;
 }
 
-/** Emit the open-time header frames for a fresh/resumed session: a synthetic manifest (opencode
- *  has no slash commands / tools list / MCP status to report — empty lists make the frontend hide
- *  those affordances) and the `models` frame (fetched once per process). */
-function emitOpenFrames(s: OpencodeSession): void {
-  emit(s, {
+/** The manifest frame for an opencode session: the command registry rides `slashCommands` (so the
+ *  composer's "/" popover autocompletes opencode commands exactly like Claude's) with per-command
+ *  blurbs in `commandDetails`; tools/MCP stay empty (nothing to report — the frontend hides those
+ *  pills) and permissionMode is nominal (runs are `--auto`; the picker is hidden for opencode). */
+function manifestFrame(s: OpencodeSession): ChatFrame {
+  const commands = commandsCache ?? [];
+  return {
     type: "manifest",
-    manifest: { model: s.model ?? "", permissionMode: "default", slashCommands: [], tools: [], mcpServers: [] },
-  });
+    manifest: {
+      model: s.model ?? "",
+      permissionMode: "default",
+      slashCommands: commands.map((c) => c.name),
+      tools: [],
+      mcpServers: [],
+      commandDetails: Object.fromEntries(commands.filter((c) => c.description).map((c) => [c.name, c.description])),
+    },
+  };
+}
+
+/** Emit the open-time header frames for a fresh/resumed session: the manifest (re-emitted once the
+ *  command registry lands, when the first one went out before the fetch finished), the `models`
+ *  frame (with the virtual "Zen Free (rotating)" entry prepended when Zen's free roster is
+ *  non-empty), and the `auth` frame (`opencode auth list`, re-fetched per open so logging in via a
+ *  terminal shows up on the next chat/new-chat without restarting the app). */
+function emitOpenFrames(s: OpencodeSession): void {
+  const hadCommands = commandsCache !== null;
+  emit(s, manifestFrame(s));
   if (s.sessionId) emit(s, { type: "session", sessionId: s.sessionId });
-  void fetchModels(s.bin, s.cwd).then((models) => {
-    if (sessions.get(s.id) === s && models.length) emit(s, { type: "models", models });
+  void ensureOpenInfo(s.bin, s.cwd).then(async () => {
+    if (sessions.get(s.id) !== s) return;
+    if (!hadCommands && commandsCache?.length) emit(s, manifestFrame(s));
+    const models = withZenFreeRotate(modelsCache ?? []);
+    if (models.length) emit(s, { type: "models", models });
+    // Auth AFTER the shared discovery chain (never concurrent with another cold-start spawn).
+    const providers = parseOpencodeAuthList(await runCliText(s.bin, s.cwd, ["auth", "list"]).catch(() => ""));
+    if (sessions.get(s.id) === s) emit(s, { type: "auth", providers });
   });
 }
 
@@ -143,6 +196,7 @@ function createSession(chatId: string, cwd: string, sink: ChatSink, resume?: str
     turnActive: false,
     aborting: false,
     queue: [],
+    turnCount: 0,
     detached: false,
     buffer: [],
     lastActivityAt: Date.now(),
@@ -159,11 +213,20 @@ async function runTurn(s: OpencodeSession, text: string): Promise<void> {
   s.turnActive = true;
   s.lastActivityAt = Date.now();
   // opencode's local sqlite rejects concurrent openers at cold start ("database is locked" —
-  // observed live when the session-open `opencode models` fetch and the first turn's run spawned
-  // together). Await the in-flight models fetch before spawning so the first turn never races it;
-  // afterwards the cache makes this a no-op.
-  if (modelsInFlight && !modelsCache) await modelsInFlight.catch(() => null);
+  // observed live when a session-open discovery fetch and the first turn's run spawned together).
+  // Await the shared open-info chain before spawning so the first turn never races it; afterwards
+  // the caches make this a no-op. (Also required here: the command registry below and the Zen
+  // free-rotation roster both come off these caches.)
+  if (openInfoInFlight) await openInfoInFlight.catch(() => null);
   const state = newOpencodeTurnState();
+  // A leading `/name` matching a KNOWN opencode command runs as `--command name <args>` —
+  // opencode's non-interactive command invocation (the composer autocompletes these off the
+  // manifest; RE-FIX #90). Anything else is an ordinary prompt.
+  const slash = parseOpencodeRunCommand(text, (commandsCache ?? []).map((c) => c.name));
+  // The virtual "Zen Free (rotating)" model resolves to a REAL free Zen model per turn —
+  // round-robin over the currently-free roster; an empty roster omits `-m` (opencode's default).
+  const model = s.model === ZEN_FREE_ROTATE_ID ? pickZenFreeModel(zenFreeModelIds(modelsCache ?? []), s.turnCount) : s.model;
+  s.turnCount += 1;
   const args = [
     s.bin,
     "run",
@@ -174,8 +237,8 @@ async function runTurn(s: OpencodeSession, text: string): Promise<void> {
     // bypassPermissions). Their config's explicit denies still win.
     "--auto",
     ...(s.sessionId ? ["-s", s.sessionId] : []),
-    ...(s.model ? ["-m", s.model] : []),
-    text,
+    ...(model ? ["-m", model] : []),
+    ...(slash ? ["--command", slash.command, ...(slash.args ? [slash.args] : [])] : [text]),
   ];
   let proc: ReturnType<typeof Bun.spawn>;
   try {
@@ -335,7 +398,9 @@ export function abortTurn(chatId: string): void {
 
 /** Switch the model for FUTURE turns (each run passes `-m`). opencode model ids are
  *  `provider/model`; anything else (e.g. a Claude model id from a stale localStorage key) is
- *  ignored rather than poisoning the next run. */
+ *  ignored rather than poisoning the next run. The virtual `ZEN_FREE_ROTATE_ID`
+ *  (`bismuth/zen-free-rotate`) shares the shape, passes here, and is resolved to a real free Zen
+ *  model per turn in runTurn — it never reaches the CLI. */
 export function setModel(chatId: string, model: string): void {
   const s = sessions.get(chatId);
   if (!s) return;

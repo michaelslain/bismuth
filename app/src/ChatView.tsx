@@ -39,7 +39,7 @@ import { chatColor, setChatColor, resolveChatColorArg } from "./chatColors";
 import { parseChatSlashCommand, CLIENT_SLASH_COMMANDS, withClientSlashCommands, computeChromeToggle } from "./chatSlashCommands";
 import { chatComputerUse, setChatComputerUse } from "./chatComputerUse";
 import { resolveInitialModel } from "./chatModelResolution";
-import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
+import { CHAT_PROVIDER_OPTIONS, modelPriceBadge, modelStorageKeys, opencodeAuthSummary, OPENCODE_LOGIN_COMMAND, providerStorageKey, providerSupportsClaudeControls, sanitizeChatProvider, type ChatProviderChoice } from "./chatProvider";
 import { restoreQueuedComposerState } from "./chatQueueRestore";
 import { pushToast } from "./Toast";
 import { lastChange } from "./serverVersion";
@@ -401,6 +401,11 @@ export function ChatView(props: {
   // tracks the SELECTED model's real levels rather than a hardcoded list; opencode entries carry
   // `free` (cost metadata) → the picker's Free/Paid badge (card #90).
   const [models, setModels] = createSignal<{ value: string; label: string; description: string; effortLevels: string[]; free?: boolean }[]>([]);
+  // opencode credential state (`auth` frame ← `opencode auth list`, RE-FIX #90) — the header's
+  // auth pill + popover. null = the frame hasn't landed (or a Claude session, which never emits
+  // it); [] = opencode is installed but has no stored credentials ("Not signed in").
+  const [authProviders, setAuthProviders] = createSignal<{ name: string; kind: string }[] | null>(null);
+  const [authOpen, setAuthOpen] = createSignal(false);
   // The reasoning-effort level shown in the header Select (FEATURE #63). Seeded to the LAST-CHOSEN
   // level (persisted) so the control reflects the user's preference the instant the chat opens; on a
   // session's first manifest a non-empty value is pushed down (see onFrame "manifest"). "" = never
@@ -781,6 +786,11 @@ export function ChatView(props: {
         break;
       case "models":
         setModels(frame.models);
+        break;
+      case "auth":
+        // opencode credential state (RE-FIX #90) — refreshed per session open, so logging in via
+        // a terminal shows up on the next chat/new-chat without an app restart.
+        setAuthProviders(frame.providers);
         break;
       case "title":
         // Names this TAB (props.chatId — the tab's identity, independent of the view-internal
@@ -1262,6 +1272,8 @@ export function ChatView(props: {
     if (next === provider()) return;
     rememberProvider(next);
     setModels([]); // the other provider's model list is stale — the new session re-emits its own
+    setAuthProviders(null); // opencode-only state — a fresh opencode session re-emits its own
+    setAuthOpen(false);
     setLastModel(readLastModel(next, props.chatId));
     // The old provider's conversation can't be resumed by the new one — forget the tab's
     // remembered session id so a close/reopen doesn't try (and error).
@@ -1396,15 +1408,18 @@ export function ChatView(props: {
   const slashMatches = createMemo<string[]>(() => {
     const q = slashQuery();
     if (q === null) return [];
-    // opencode sessions have no backend slash commands (the manifest's list is empty) and no
-    // --chrome capability — only the provider-agnostic client commands (/rename, /color) remain.
+    // opencode sessions autocomplete opencode's OWN command registry (the manifest's list —
+    // config/plugin commands + /init + /review, RE-FIX #90) but have no --chrome capability;
+    // the provider-agnostic client commands (/rename, /color) ride along for both providers.
     const cmds = withClientSlashCommands(manifest()?.slashCommands ?? []).filter(
       (c) => providerSupportsClaudeControls(provider()) || c !== "chrome",
     );
     return cmds.filter((c) => c.toLowerCase().startsWith(q)).slice(0, 50);
   });
   const slashRows = createMemo<PopoverRow[]>(() =>
-    slashMatches().map((c) => ({ label: `/${c}`, icon: "ChevronRight", detail: SLASH_COMMAND_DETAILS[c] })),
+    // Per-command blurbs: the manifest's own details win (opencode's command registry carries
+    // descriptions over the wire — RE-FIX #90), else the synthesized/client-side table.
+    slashMatches().map((c) => ({ label: `/${c}`, icon: "ChevronRight", detail: manifest()?.commandDetails?.[c] ?? SLASH_COMMAND_DETAILS[c] })),
   );
   const slashNav = createMenuNav({
     count: () => slashMatches().length,
@@ -1788,6 +1803,27 @@ export function ChatView(props: {
             </>
           )}
         </Show>
+        {/* opencode auth (RE-FIX #90: "i dont see a way to do auth"): a pill showing whether
+            `opencode auth list` has stored credentials, with a popover listing the providers +
+            the in-app path to log in (opencode's login wizard is CLI-interactive — open a
+            terminal tab / copy the command). Hidden for Claude sessions (claude manages its own
+            login). */}
+        <Show when={provider() === "opencode"}>
+          <div class="chat-auth-anchor">
+            <button
+              type="button"
+              class="chat-stat chat-auth-pill"
+              classList={{ "chat-auth-out": opencodeAuthSummary(authProviders()).signedIn === false, selected: authOpen() }}
+              title="opencode credentials"
+              onClick={() => setAuthOpen(!authOpen())}
+            >
+              <Icon value="KeyRound" size={13} /> {opencodeAuthSummary(authProviders()).label}
+            </button>
+            <Show when={authOpen()}>
+              <AuthPanel />
+            </Show>
+          </div>
+        </Show>
         {/* Claude-specific controls (card #90 graceful degradation): permission modes, --chrome,
             and the Claude Code session-history picker have no opencode counterpart (`opencode run`
             is non-interactive + a separate session store) — hidden rather than broken. The Effort
@@ -2058,6 +2094,76 @@ export function ChatView(props: {
   // by /chat/search, which filters the SDK's own session data; FEATURE #34): empty query → the plain
   // "resume" list (session summary + relative time), a non-empty query → matching sessions each with
   // a snippet of where it matched. Picking either resumes it. Dismisses on an outside click / Escape.
+  /** The opencode auth popover (RE-FIX #90): lists stored credentials (`opencode auth list`) and
+   *  gives the in-app login path. opencode's login wizard (`opencode auth login` — pick a provider
+   *  or opencode Zen, paste an API key) is CLI-interactive, so the affordance here is honest: open
+   *  a Bismuth terminal tab (the wizard runs right there) or copy the command. State refreshes on
+   *  the next session open (new chat / reopen) once the user has logged in. */
+  function AuthPanel() {
+    let panel!: HTMLDivElement;
+    const onDocPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      // Ignore clicks inside the panel OR on the auth pill (which toggles it itself).
+      if (panel?.contains(t) || (t as HTMLElement)?.closest?.(".chat-auth-anchor")) return;
+      setAuthOpen(false);
+    };
+    const onDocKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAuthOpen(false);
+    };
+    onMount(() => {
+      document.addEventListener("pointerdown", onDocPointerDown, true);
+      document.addEventListener("keydown", onDocKey, true);
+    });
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      document.removeEventListener("keydown", onDocKey, true);
+    });
+    const openTerminal = () => {
+      window.dispatchEvent(new CustomEvent("bismuth-open-terminal"));
+      setAuthOpen(false);
+      pushToast(`Run ${OPENCODE_LOGIN_COMMAND} in the terminal, then start a new chat.`);
+    };
+    const copyCommand = () => {
+      void navigator.clipboard?.writeText(OPENCODE_LOGIN_COMMAND).then(
+        () => pushToast(`Copied "${OPENCODE_LOGIN_COMMAND}"`),
+        () => pushToast(`Couldn't copy — type ${OPENCODE_LOGIN_COMMAND} in a terminal.`),
+      );
+    };
+    return (
+      <div ref={panel!} class="chat-auth-panel bismuth-popover">
+        <div class="chat-auth-title">opencode credentials</div>
+        <Show
+          when={(authProviders() ?? []).length > 0}
+          fallback={
+            <div class="chat-auth-state">
+              {authProviders() === null ? "Checking credentials…" : "No providers signed in yet."}
+            </div>
+          }
+        >
+          <For each={authProviders() ?? []}>
+            {(p) => (
+              <div class="chat-auth-row">
+                <Icon value="KeyRound" size={13} />
+                <span class="chat-auth-name">{p.name}</span>
+                <Show when={p.kind}>
+                  <span class="chat-auth-kind">{p.kind}</span>
+                </Show>
+              </div>
+            )}
+          </For>
+        </Show>
+        <div class="chat-auth-help">
+          Add or change providers (including opencode Zen) with <code>{OPENCODE_LOGIN_COMMAND}</code> — it's an
+          interactive wizard, so it runs in a terminal.
+        </div>
+        <div class="chat-auth-actions">
+          <TextButton onClick={openTerminal}>OPEN TERMINAL</TextButton>
+          <TextButton onClick={copyCommand}>COPY COMMAND</TextButton>
+        </div>
+      </div>
+    );
+  }
+
   function HistoryPanel() {
     let panel!: HTMLDivElement;
     const rows = createMemo<PopoverRow[]>(() =>

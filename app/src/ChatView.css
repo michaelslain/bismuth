@@ -125,6 +125,83 @@
   position: relative;
   display: inline-flex;
 }
+/* opencode auth pill + popover (RE-FIX #90: "i dont see a way to do auth"). The pill reuses the
+   .chat-stat look but is a BUTTON (it opens the panel); "not signed in" warns like the context
+   pill so a 401-bound session is visible before the first failed turn. */
+.chat-auth-anchor {
+  position: relative;
+  display: inline-flex;
+}
+.chat-auth-pill {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+.chat-auth-pill:hover,
+.chat-auth-pill.selected { color: var(--fg); }
+.chat-auth-pill.chat-auth-out { color: var(--danger); }
+.chat-auth-pill.chat-auth-out svg { opacity: 1; }
+.chat-auth-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  width: 300px;
+  max-width: min(340px, 80vw);
+  overflow: hidden;
+}
+.chat-auth-title {
+  padding: 9px 12px 7px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+  border-bottom: 1px solid var(--chat-border-soft);
+}
+.chat-auth-state {
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.chat-auth-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  font-size: 12.5px;
+}
+.chat-auth-row svg { opacity: 0.7; }
+.chat-auth-name { flex: 1; }
+.chat-auth-kind {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--faint);
+  border: 1px solid var(--chat-border-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.chat-auth-help {
+  padding: 8px 12px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-muted);
+  border-top: 1px solid var(--chat-border-soft);
+}
+.chat-auth-help code {
+  font-size: 11px;
+  background: var(--chat-border-soft);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.chat-auth-actions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 10px;
+}
 .chat-history-panel {
   position: absolute;
   top: calc(100% + 6px);
