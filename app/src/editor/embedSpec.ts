@@ -9,13 +9,14 @@ const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "
 const AUDIO_EXT = new Set(["mp3", "wav", "ogg", "m4a", "flac", "aac", "opus"]);
 const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogv", "mkv"]);
 
-export type EmbedKind = "image" | "pdf" | "audio" | "video" | "note";
+export type EmbedKind = "image" | "pdf" | "audio" | "video" | "html" | "note";
 
 export interface EmbedSpec {
   kind: EmbedKind;
   src?: string;       // asset URL (media) — undefined for note transclusion
   target?: string;    // the raw target/basename (note transclusion + alt text)
-  page?: string;      // PDF fragment, e.g. "page=2"
+  page?: string;      // PDF fragment ("page=2") OR an html embed's URL fragment ("region=form"),
+                      //   carried onto `frame.src#…` so `![[viz.html#region=form]]` deep-links via location.hash
   width?: number;
   height?: number;
   alt?: string;
@@ -33,6 +34,9 @@ export function kindForTarget(target: string): EmbedKind | null {
   if (ext === "pdf") return "pdf";
   if (AUDIO_EXT.has(ext)) return "audio";
   if (VIDEO_EXT.has(ext)) return "video";
+  // Interactive HTML artifact — before the `note` fallback so `![[viz.html]]` renders live in a
+  // sandboxed iframe (embedBlock.ts) instead of trying to transclude it as a (missing) markdown note.
+  if (ext === "html" || ext === "htm") return "html";
   return "note";
 }
 
@@ -63,6 +67,8 @@ export function specForWikiEmbed(inner: string, assetUrl: (target: string) => st
   const src = assetUrl(target); // backend resolves filename-first
   if (kind === "image") return { kind, src, alt: target, ...parseSize(alias) };
   if (kind === "pdf") return { kind, src, page: heading };
+  // html reuses the wikilink `#heading` slot as the iframe URL fragment (deep-link, mirrors pdf).
+  if (kind === "html") return { kind, src, page: heading };
   return { kind, src };
 }
 
@@ -80,6 +86,7 @@ export function specForMarkdownImage(url: string, rawAlt: string, assetUrl: (tar
   if (kind === null) return null; // .draw — not embeddable (scanEmbeds drops a null spec)
   const src = assetUrl(target);
   if (kind === "pdf") return { kind, src, page: frag };
+  if (kind === "html") return { kind, src, page: frag }; // `![](viz.html#region=form)` deep-links too
   if (kind === "audio" || kind === "video") return { kind, src };
   return { kind: "image", src, alt, width }; // image, or a non-media ext we can only try as an image
 }

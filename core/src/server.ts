@@ -705,9 +705,26 @@ export function createServer(cfg: CoreConfig) {
       const file = Bun.file(abs);
       // Short cache so re-opening a note doesn't re-fetch (and re-walk the vault for the
       // filename-first resolution) every time; `private` keeps it out of shared proxies.
-      return new Response(file, {
-        headers: { "Content-Type": file.type || "application/octet-stream", "Cache-Control": "private, max-age=60" },
-      });
+      const headers: Record<string, string> = {
+        "Content-Type": file.type || "application/octet-stream",
+        "Cache-Control": "private, max-age=60",
+      };
+      // SECURITY — a `.html` asset embedded via `![[viz.html]]` is served as text/html and framed
+      // as a LIVE document (sandboxed iframe, sandbox="allow-scripts", opaque origin — see
+      // app/src/editor/embedBlock.ts). The sandbox alone does NOT protect the vault: relative URLs
+      // inside the artifact resolve against THIS server (its document URL), and the API is
+      // unauthenticated with Access-Control-Allow-Origin:* (withCors, ~line 102 above), so a
+      // malicious artifact's `fetch('/file?path=private.md')` would SUCCEED (ACAO:* matches the
+      // frame's null origin). This CSP is the load-bearing second half: `connect-src 'none'` kills
+      // fetch/XHR/WebSocket/EventSource, `form-action 'none'` blocks form POSTs, and `default-src
+      // 'none'` + the narrow allowances block every external subresource — while a self-contained
+      // artifact still runs FULLY (inline <script>/<style>, inline SVG, data:/blob: images/scripts).
+      // BOTH layers are required (the element sandbox AND this response CSP); neither is optional.
+      if (/\.html?$/i.test(abs)) {
+        headers["Content-Security-Policy"] =
+          "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' blob:; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'";
+      }
+      return new Response(file, { headers });
     },
 
     // Resolve a vault-relative path to its ABSOLUTE machine-local path (FILENAME-FIRST, like
