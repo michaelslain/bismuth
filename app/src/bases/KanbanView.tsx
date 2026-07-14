@@ -9,6 +9,9 @@ import { KanbanCard } from "./KanbanCard";
 import { metaColumns, metaSource, writableKey } from "./kanbanMeta";
 import { declaredDefaults } from "../../../core/src/bases/properties";
 import { STATUS_COLOR } from "../ui/StatusDot";
+import { ContextMenu, type MenuItem } from "../ContextMenu";
+import { openContextMenu } from "../nativeMenu";
+import { pushToast } from "../Toast";
 import styles from "./BaseView.module.css";
 
 // Frontmatter key used to persist manual within-column ordering.
@@ -38,7 +41,16 @@ function safeFilename(title: string): string {
   return s.slice(0, 120) || "Untitled";
 }
 
-export function KanbanView(props: { result: ViewResult; config: BaseConfig; basePath?: string; viewIndex?: number; onChange: () => void }) {
+export function KanbanView(props: {
+  result: ViewResult;
+  config: BaseConfig;
+  basePath?: string;
+  viewIndex?: number;
+  onChange: () => void;
+  /** Open the card's note in a tab (from the right-click menu's "Open"). Same plumbing as
+   *  MapView's marker-click open — omitted (no menu row) when the host doesn't wire it. */
+  onOpen?: (path: string) => void;
+}) {
   const groupBy = () => props.result.view.groupBy;
   // Editing (rename / reorder / colors / add) only works against a real base
   // file to persist into. Embedded ```query kanbans stay read-only.
@@ -262,7 +274,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   // Cards shown in column: while dragging, lift the dragged card out of EVERY column (the floating
   // ghost represents it) so the placeholder is the only thing marking its new home.
   const visibleRows = (group: ResultGroup): Row[] => {
-    const rows = sortedRows(group);
+    const rows = sortedRows(group).filter((r) => !deletedPaths().has(r.file.path));
     return dragActive() ? rows.filter((r) => r.file.path !== dragPath()) : rows;
   };
   // Path list per column (the <For> is keyed by these primitive strings, so a within-column
@@ -551,6 +563,55 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
     }
     return out;
   }
+  // ── Right-click card menu: Delete (trash + undo toast, mirrors FileTree) + optional Open. ──
+  const [cardMenu, setCardMenu] = createSignal<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  // Paths deleted this session but not yet confirmed gone by a refetch — hidden from every
+  // column immediately (like FileTree's optimisticRemove) so the card vanishes without waiting
+  // on the round-trip. Reverted on failure; a successful Undo also drops its entry.
+  const [deletedPaths, setDeletedPaths] = createSignal<Set<string>>(new Set());
+
+  function buildCardMenuItems(row: Row): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (editable()) {
+      items.push({ label: "Delete", icon: "Trash2", danger: true, onSelect: () => void deleteCard(row) });
+    }
+    return items;
+  }
+
+  function openCardMenu(e: MouseEvent, row: Row): void {
+    e.preventDefault();
+    const items = buildCardMenuItems(row);
+    if (items.length === 0) return;
+    e.stopPropagation();
+    openContextMenu(e.clientX, e.clientY, items, setCardMenu);
+  }
+
+  async function deleteCard(row: Row): Promise<void> {
+    if (!editable()) return;
+    const path = row.file.path;
+    const name = row.file.name;
+    setDeletedPaths((prev) => new Set(prev).add(path)); // instant; reverted on failure
+    try {
+      const { trashPath } = await api.del(path);
+      props.onChange();
+      pushToast(`Deleted "${name}"`, { label: "Undo", onClick: () => void restoreCard(trashPath, path) });
+    } catch (e) {
+      setDeletedPaths((prev) => { const n = new Set(prev); n.delete(path); return n; });
+      pushToast(`Delete failed: ${(e as Error).message}`);
+    }
+  }
+
+  async function restoreCard(trashPath: string, to: string): Promise<void> {
+    try {
+      await api.restore(trashPath, to);
+      setDeletedPaths((prev) => { const n = new Set(prev); n.delete(to); return n; });
+      props.onChange();
+      pushToast(`Restored "${to.split("/").pop()?.replace(/\.md$/, "") ?? to}"`);
+    } catch (e) {
+      pushToast(`Restore failed: ${(e as Error).message}`);
+    }
+  }
+
   const takenPaths = (): Set<string> =>
     new Set([...props.result.groups.flatMap((g) => g.rows).map((r) => r.file.path), ...created]);
   // Resolve a non-colliding path against the board's own notes + this session's fresh adds. (A
@@ -605,6 +666,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
   }
 
   return (
+    <>
     <Show
       when={groupBy()}
       fallback={
@@ -697,6 +759,7 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
                                 data-kbcard=""
                                 data-path={path}
                                 onPointerDown={(e) => { if (!editing()) startCardDrag(e, path, group().key); }}
+                                onContextMenu={(e) => { if (!editing()) openCardMenu(e, r()); }}
                               >
                                 <div class={styles.cardBodyInner}>
                                   <KanbanCard
@@ -770,5 +833,9 @@ export function KanbanView(props: { result: ViewResult; config: BaseConfig; base
         </For>
       </div>
     </Show>
+    <Show when={cardMenu()}>
+      {(m) => <ContextMenu x={m().x} y={m().y} items={m().items} onClose={() => setCardMenu(null)} />}
+    </Show>
+    </>
   );
 }
