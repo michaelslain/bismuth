@@ -3,6 +3,8 @@ import {
   buildQueue,
   backField,
   canGrade,
+  progressTotal,
+  nextPosAfterGrade,
   emptySession,
   loadSession,
   saveSession,
@@ -128,4 +130,139 @@ test("clearSession drops a saved deck's resume state", () => {
   saveSession(key, { cram: true, pos: 7, good: 3, hard: 1, easy: 2 });
   clearSession(key);
   expect(loadSession(key)).toEqual(emptySession());
+});
+
+// ── progressTotal: the frozen progress denominator (the count-drift fix) ────
+//
+// These prove the semantics that make the header total well-defined per mode and
+// prevent it from climbing during review — the reported "total card count changes
+// between cram mode and normal studying, and sometimes the card count goes up".
+
+test("progressTotal cram = deck size and is independent of how many are graded", () => {
+  // Cram counts EVERY card; the same deck yields the same total no matter the tally.
+  expect(progressTotal(5, 0, true)).toBe(5);
+  expect(progressTotal(5, 3, true)).toBe(5);
+  expect(progressTotal(5, 5, true)).toBe(5);
+});
+
+test("progressTotal normal = due count, reconstructed as graded + still-queued", () => {
+  // Fresh normal session (nothing graded yet): total is just the due-queue length.
+  expect(progressTotal(4, 0, false)).toBe(4);
+  // Resuming mid-session: 3 already graded + 1 still queued rebuilds the original 4.
+  expect(progressTotal(1, 3, false)).toBe(4);
+  // Same original total regardless of how far along the resume is.
+  expect(progressTotal(2, 2, false)).toBe(4);
+});
+
+test("cram vs normal totals are each deterministic for a fixed deck", () => {
+  // A deck of 3 cards; two are due, one is scheduled into the future.
+  const rows = [
+    row({ front: "a", back: "b" }),                       // new -> due
+    row({ front: "c", back: "d", due: "2026-01-01" }),    // past -> due
+    row({ front: "e", back: "f", due: "2026-12-01" }),    // future -> not due
+  ];
+  const today = "2026-05-30";
+  const cramLen = buildQueue(rows, "due", today, true, false).length;   // all 3
+  const normalLen = buildQueue(rows, "due", today, false, false).length; // 2 due
+
+  // Each mode's total is fixed and reproducible for the fixed deck...
+  expect(progressTotal(cramLen, 0, true)).toBe(3);
+  expect(progressTotal(cramLen, 0, true)).toBe(3); // recompute -> same
+  expect(progressTotal(normalLen, 0, false)).toBe(2);
+  expect(progressTotal(normalLen, 0, false)).toBe(2);
+  // ...and cram (all cards) covers at least as many as normal (due only).
+  expect(cramLen).toBeGreaterThanOrEqual(normalLen);
+});
+
+// Mirror the view's frozen-total anchoring: capture progressTotal ONCE when the
+// queue first has cards, then keep it fixed while grading mutates the live queue /
+// tally. `anchor(len)` is a no-op after the first non-empty queue (matches the
+// `sessionTotal() === null && len > 0` guard in FlashcardsView).
+function makeSession(cram: boolean) {
+  let total: number | null = null;
+  let graded = 0;
+  return {
+    anchor(queueLen: number) {
+      if (total === null && queueLen > 0) total = progressTotal(queueLen, graded, cram);
+    },
+    grade() { graded += 1; },
+    get total() { return total ?? 0; },
+    get graded() { return graded; },
+  };
+}
+
+test("cram: total is anchored at deck size and never grows across a full pass", () => {
+  const N = 5;
+  const s = makeSession(true);
+  const totals: number[] = [];
+  // The cram queue length is CONSTANT (cram writes no scheduling, no refetch).
+  for (let pos = 0; pos < N; pos++) {
+    s.anchor(N);                 // re-check the anchor each render (only the first sticks)
+    totals.push(s.total);
+    s.grade();                   // grade this card, advance
+  }
+  s.anchor(N);
+  totals.push(s.total);
+  // Frozen at 5 the whole way — the old `graded + queueLen` would have gone 5,6,7,8,9,10.
+  expect(totals).toEqual([5, 5, 5, 5, 5, 5]);
+  expect(Math.max(...totals)).toBe(Math.min(...totals));
+});
+
+test("normal persisted: total holds as the due queue shrinks and graded grows", () => {
+  const D = 4; // four due cards at session start
+  const s = makeSession(false);
+  let remaining = D;
+  const totals: number[] = [];
+  for (let i = 0; i < D; i++) {
+    s.anchor(remaining);         // first anchor -> 4; later calls are no-ops
+    totals.push(s.total);
+    // grade() then the post-grade refetch drops the graded card out of the due queue
+    s.grade();
+    remaining -= 1;
+    // Invariant the view relies on: graded + still-queued == frozen total, always.
+    expect(s.graded + remaining).toBe(4);
+  }
+  expect(totals).toEqual([4, 4, 4, 4]);
+  expect(s.total).toBe(4); // still 4 at completion (graded === total)
+});
+
+test("total does not grow even if a graded card is requeued ('Again')", () => {
+  // Model an "Again"-style requeue: the graded card is put BACK, so the live queue
+  // length does NOT shrink (and could even grow). The frozen session total must not
+  // move regardless — requeuing re-reviews a card, it does not add to the deck.
+  const s = makeSession(false);
+  s.anchor(3);                   // 3 cards due at start -> total 3
+  const totals: number[] = [];
+  // Live queue length fluctuates up and down as cards are requeued; total is frozen.
+  for (const liveLen of [3, 4, 3, 2, 3, 1, 0]) {
+    s.grade();
+    s.anchor(liveLen);           // no-op: already anchored
+    totals.push(s.total);
+  }
+  expect(totals.every((t) => t === 3)).toBe(true);
+});
+
+// ── No regression to the just-landed single-advance + persistence behavior ──
+test("progressTotal fix does not disturb canGrade / nextPosAfterGrade semantics", () => {
+  // canGrade unchanged: reveal + not in-flight.
+  expect(canGrade({ revealed: true, grading: false })).toBe(true);
+  expect(canGrade({ revealed: true, grading: true })).toBe(false);
+  // nextPosAfterGrade unchanged: cram steps forward; persisted normal stays put.
+  expect(nextPosAfterGrade(2, { cram: true, persisted: false })).toBe(3);
+  expect(nextPosAfterGrade(2, { cram: false, persisted: true })).toBe(2);
+  expect(nextPosAfterGrade(2, { cram: false, persisted: false })).toBe(3);
+});
+
+test("session persistence is unchanged (SessionState carries no frozen total)", () => {
+  // The frozen denominator lives only in a view signal and is re-anchored on
+  // remount from the restored tally + remaining queue, so SessionState is untouched.
+  const key = "deck-total-freeze.md";
+  clearSession(key);
+  const mid: SessionState = { cram: false, pos: 2, good: 1, hard: 1, easy: 0 };
+  saveSession(key, mid);
+  const restored = loadSession(key);
+  expect(restored).toEqual(mid);
+  // Re-anchoring on remount reconstructs the original due total from restored state:
+  // 2 graded + (say) 2 still queued == 4 due at session start.
+  expect(progressTotal(2, restored.good + restored.hard + restored.easy, restored.cram)).toBe(4);
 });
