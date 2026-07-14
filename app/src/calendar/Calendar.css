@@ -359,6 +359,11 @@
    inside the column-flex `.evm-modal` (which caps at max-height: calc(100vh - 48px)),
    so IT scrolls instead of the modal overflowing; head/foot stay pinned. */
 .evm-modal .evm-body { flex: 1 1 auto; padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
+/* The body is a column-flex; its section children must keep their natural height and
+   let the BODY scroll — otherwise a flexible child (e.g. `.propset-list`, which has
+   overflow:hidden) shrinks to fit and silently clips its overflow instead of the body
+   scrolling. `.set-cols` opts back into its own capped internal scroll below. */
+.evm-modal .evm-body > * { flex-shrink: 0; }
 
 /* big serif title input */
 .evm-modal .evm-titlefield { display: flex; flex-direction: column; gap: 0; }
